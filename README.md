@@ -21,7 +21,7 @@ and Checker/Worker pairs in parallel.
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.2.1`.
+Current version: `1.2.2`.
 
-Version `1.2.1` uses Worker as the unit of work and removes Block terminology.
-SLK has one Worker, one Checker, and one sequential GO/CELL chain.
+Version `1.2.2` defines its single Worker as independently inspectable and
+acceptable. SLK has one Worker, one Checker, and one sequential GO/CELL chain.

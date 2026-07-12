@@ -17,6 +17,10 @@ Owner -> Supervisor -> Checker <-> Worker
 The loop has one Worker. The Worker may own several GO phases, and each GO may
 contain several CELLs, but only one CELL is executable at a time.
 
+This Worker must own a result that can be inspected and accepted independently.
+SLK deliberately launches no parallel Worker; use MSLK only when several such
+Workers can all start without waiting for one another's future output.
+
 ## Single-Loop Boundary
 
 SLK always uses:
