@@ -21,8 +21,8 @@ and Checker/Worker pairs in parallel.
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.2.4`.
+Current version: `1.2.5`.
 
-Version `1.2.4` keeps the combined Supervisor/Checker role, requires a fresh
-Worker for each new project, and permits a recorded upgrade to MSLK only when
-multiple Workers are acceptance-independent and immediately startable.
+Version `1.2.5` adds CELL-level Worker model planning: use only 5.6 Terra or
+Sol at `medium` or higher, while the combined Supervisor/Checker is recommended
+to use 5.6 Sol at `xhigh`.

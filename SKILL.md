@@ -62,6 +62,25 @@ continuation of the same project identity, objective lineage, coordination
 records, and evidence chain. A renamed, copied, adjacent, or merely similar
 project is new and must receive a fresh Worker.
 
+## Model Policy
+
+Use `gpt-5.6-sol` with `xhigh` reasoning for the combined
+Supervisor/Checker. This is the recommended controlling-role configuration.
+
+Workers may use only:
+
+- `gpt-5.6-terra` with `medium` reasoning or higher;
+- `gpt-5.6-sol` with `medium` reasoning or higher.
+
+During planning, assign a Worker model and reasoning level to every CELL based
+on its difficulty, risk, and validation burden. Record the assignment in the
+CELL plan before launch.
+
+The Supervisor/Checker may raise or lower the Worker's model or reasoning level
+as execution evidence changes the difficulty estimate. Record the change before
+dispatch or rework. Never go below `medium`, use a model outside the two allowed
+5.6 Worker models, or fall back to 5.5/5.4-era models.
+
 ## Role Contract
 
 ### Supervisor/Checker
@@ -150,7 +169,8 @@ Before launch, provide:
 3. One CELL index and one detailed file per CELL.
 
 Every CELL must define objective, inputs, allowed scope, forbidden scope,
-outputs, checks, evidence, dependencies, and completion criteria.
+outputs, checks, evidence, dependencies, Worker model/reasoning assignment,
+and completion criteria.
 
 ## Loop Protocol
 
@@ -258,6 +278,7 @@ Before launch, confirm:
 - The current thread is the combined Supervisor/Checker and exactly one Worker is assigned.
 - The receipt target, method-log path, and final queue are unique.
 - Tests, scans, safety boundaries, and external-action gates are explicit.
+- Every CELL declares an allowed Worker model and reasoning level.
 - The supervisor board identifies the Worker and current CELL.
 - A 15/30/60-minute same-thread heartbeat is active and recorded.
 - The heartbeat will be removed after final acceptance.
