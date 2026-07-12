@@ -1,4 +1,4 @@
 interface:
-  display_name: "Small Loop Skill (slk)"
+  display_name: "Multi Small Loop (MSLK)"
   short_description: "Parallel loops with timed oversight"
-  default_prompt: "Use $small-loop-skill (slk) for parallel Checker-Worker loops with timed Supervisor oversight and evidence-based acceptance."
+  default_prompt: "Use $multi-small-loop-skill (MSLK) for multiple parallel Checker-Worker loops with timed Supervisor oversight and evidence-based acceptance."

@@ -1,9 +1,9 @@
-# Small Loop Skill (slk)
+# Multi Small Loop Skill (MSLK)
 
 A Codex skill for running large projects as multiple independent small loops.
 
-The official abbreviation is **slk**. Use `slk` in conversation and
-documentation; use `$small-loop-skill` as the Codex invocation name.
+The official abbreviation is **MSLK**. Use `MSLK` in conversation and
+documentation; use `$multi-small-loop-skill` as the Codex invocation name.
 
 Each loop uses two working roles:
 
@@ -28,12 +28,11 @@ removed automatically after every loop passes Supervisor acceptance.
   explains the fix inside the next formal CELL assignment.
 - Worker: one bounded CELL at a time with append-only evidence.
 
-Install the `small-loop-skill` folder under your Codex skills directory, then
-invoke `$small-loop-skill` when a project should run through several
+Install the `multi-small-loop-skill` folder under your Codex skills directory,
+then invoke `$multi-small-loop-skill` when a project should run through several
 parallel Checker/Worker loops.
 
-Current version: `1.1.2`.
+Current version: `1.1.3`.
 
-Version `1.1.2` renames the skill and repository to `small-loop-skill`, makes
-`slk` the official abbreviation, and preserves the parallel loop and timed
-Overseer behavior from `1.1.1`.
+Version `1.1.3` restores the canonical MSLK identity as part of the repository
+separation. SLK now lives in its own repository with a single-loop contract.

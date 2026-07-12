@@ -1,12 +1,12 @@
 ---
-name: small-loop-skill
-description: Use when large projects must be split into disjoint Checker-Worker loops under one Supervisor, including GO/CELL planning, concurrent pairs, periodic oversight, stalled Checker wakeups, completion queues, and reliable cross-thread receipts; also use when the user says slk or small-loop-skill.
+name: multi-small-loop-skill
+description: Run large projects as multiple independent small loops under one Supervisor. The official abbreviation is MSLK; use this skill when the user says MSLK or multi-small-loop-skill, or when work must be split into multiple disjoint streams with one Checker-Worker pair per stream, concurrent GO/CELL execution, periodic oversight, stalled Checker wakeups, completion queues, and reliable cross-thread receipts. Use SLK instead when the project needs exactly one Block and one Checker-Worker pair.
 ---
 
-# Small Loop Skill (slk)
+# Multi Small Loop Skill (MSLK)
 
-Use `slk` as the official abbreviation. Keep `$small-loop-skill` as the Codex
-invocation name.
+Use `MSLK` as the official abbreviation. Keep `$multi-small-loop-skill` as the
+Codex invocation name.
 
 Use one Supervisor to organize and oversee multiple independent small loops.
 
