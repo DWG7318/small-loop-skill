@@ -1,4 +1,4 @@
 interface:
-  display_name: "Multi Small Loop"
+  display_name: "Multi Small Loop (MSLK)"
   short_description: "Parallel loops with timed oversight"
-  default_prompt: "Use $multi-small-loop-skill to split this project into independent Checker-Worker loops, create a same-thread 15/30/60-minute Overseer heartbeat, wake stalled Checkers, and remove monitoring after every CELL is accepted."
+  default_prompt: "Use $multi-small-loop-skill (MSLK) to split this project into independent Checker-Worker loops, create a same-thread 15/30/60-minute Overseer heartbeat, wake stalled Checkers, and remove monitoring after every CELL is accepted."

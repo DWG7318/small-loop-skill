@@ -1,6 +1,9 @@
-# Multi Small Loop Skill
+# Multi Small Loop Skill (MSLK)
 
 A Codex skill for running large projects as multiple independent small loops.
+
+The official abbreviation is **MSLK**. Use `MSLK` in conversation and
+documentation; use `$multi-small-loop-skill` as the Codex invocation name.
 
 Each loop uses two working roles:
 
@@ -29,4 +32,4 @@ Install the `multi-small-loop-skill` folder under your Codex skills directory,
 then invoke `$multi-small-loop-skill` when a project should run through several
 parallel Checker/Worker loops.
 
-Current version: `1.1.0`.
+Current version: `1.1.1`.
