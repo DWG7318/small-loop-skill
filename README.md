@@ -1,39 +1,27 @@
-# Small Loop Skill (slk)
+# Small Loop Skill (SLK)
 
-A Codex skill for running large projects as multiple independent small loops.
+A Codex skill for running one bounded project Block through one supervised
+`Checker <-> Worker` loop.
 
-The official abbreviation is **slk**. Use `slk` in conversation and
+The official abbreviation is **SLK**. Use `SLK` in conversation and
 documentation; use `$small-loop-skill` as the Codex invocation name.
 
-Each loop uses two working roles:
-
 ```text
-Checker <-> Worker
+Owner -> Supervisor -> Checker <-> Worker
 ```
 
-One Supervisor splits the project, launches multiple pairs, periodically acts
-as Overseer (`监工`), wakes stalled Checkers, and performs final acceptance.
+The Block contains multiple GO phases. Each GO contains sequential CELLs. The
+Checker sends one CELL at a time, validates delivery, routes rework or the next
+CELL, and writes the final result queue. The Supervisor keeps a same-thread
+heartbeat, resolves real plan defects, and performs final acceptance.
 
-Starting the skill also creates a heartbeat attached to the same Supervisor
-conversation. Its interval is selected from 15, 30, or 60 minutes according to
-project size and CELL duration. It never creates a new conversation, and it is
-removed automatically after every loop passes Supervisor acceptance.
-
-## Roles
-
-- Supervisor: project planning, decomposition, periodic oversight, blocker
-  resolution, and final acceptance.
-- Checker: one stream's CELL planning, validation, bounded direct repair,
-  routing, and final queue. After repairing a Worker mistake, the Checker
-  explains the fix inside the next formal CELL assignment.
-- Worker: one bounded CELL at a time with append-only evidence.
+Use MSLK instead when the project has multiple materially independent Blocks
+that should run through multiple Checker/Worker pairs in parallel.
 
 Install the `small-loop-skill` folder under your Codex skills directory, then
-invoke `$small-loop-skill` when a project should run through several
-parallel Checker/Worker loops.
+invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.1.2`.
+Current version: `1.2.0`.
 
-Version `1.1.2` renames the skill and repository to `small-loop-skill`, makes
-`slk` the official abbreviation, and preserves the parallel loop and timed
-Overseer behavior from `1.1.1`.
+Version `1.2.0` separates SLK from MSLK and establishes the single-Block,
+single-Checker, single-Worker contract.
