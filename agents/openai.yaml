@@ -1,4 +1,4 @@
 interface:
   display_name: "Small Loop Skill (SLK)"
   short_description: "One supervised Checker-Worker loop"
-  default_prompt: "Use $small-loop-skill (SLK) to run one Block through one Checker-Worker pair with sequential GO/CELL execution, timed Supervisor oversight, and evidence-based acceptance."
+  default_prompt: "Use $small-loop-skill (SLK) to run one Worker with one Checker through sequential GO/CELL execution, timed Supervisor oversight, and evidence-based acceptance."

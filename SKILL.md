@@ -1,6 +1,6 @@
 ---
 name: small-loop-skill
-description: Run one bounded project Block through exactly one supervised Checker-Worker loop. The official abbreviation is SLK; use this skill when the user says SLK or small-loop-skill, or when one coupled workstream should progress through multiple GO phases and sequential CELLs with periodic Supervisor oversight, direct Checker repair, append-only evidence, and final acceptance. Do not use for multiple independent parallel Blocks; use MSLK instead.
+description: Run one bounded project through exactly one supervised Checker-Worker loop. The official abbreviation is SLK; use this skill when the user says SLK or small-loop-skill, or when exactly one Worker should own multiple GO phases and sequential CELLs with one Checker, periodic Supervisor oversight, direct Checker repair, append-only evidence, and final acceptance. Do not use when multiple independent Workers should run in parallel; use MSLK instead.
 ---
 
 # Small Loop Skill (SLK)
@@ -14,24 +14,22 @@ Run exactly one stable small loop:
 Owner -> Supervisor -> Checker <-> Worker
 ```
 
-The loop owns one Block. The Block may contain several GO phases, and each GO
-may contain several CELLs, but only one CELL is executable at a time.
+The loop has one Worker. The Worker may own several GO phases, and each GO may
+contain several CELLs, but only one CELL is executable at a time.
 
 ## Single-Loop Boundary
 
 SLK always uses:
 
 - one Supervisor;
-- one Block / workstream;
 - one Checker;
 - one Worker;
 - one fixed solution and GO/CELL plan;
 - one append-only method-log chain;
 - one final result queue.
 
-Do not create a second Checker or Worker pair. Do not run multiple Blocks in
-parallel. If the work genuinely requires independent parallel Blocks, stop
-before launch and use MSLK.
+Do not create a second Checker or Worker pair. If the work genuinely requires
+multiple independent Workers in parallel, stop before launch and use MSLK.
 
 ## Role Contract
 
@@ -39,7 +37,7 @@ before launch and use MSLK.
 
 The Supervisor owns the overall result and stays outside ordinary CELL traffic.
 
-- Translate Owner intent into the Block objective and acceptance target.
+- Translate Owner intent into the Worker objective and acceptance target.
 - Produce or approve the solution, GO map, CELL index, and detailed CELL files.
 - Create exactly one Checker/Worker pair.
 - Maintain the supervisor board and the same-thread Overseer heartbeat.
@@ -62,7 +60,7 @@ The Checker controls the one loop.
 - Write the final passed or blocked queue record.
 
 The Checker must not add a new GO, renumber work, weaken acceptance, or change
-the Block scope after launch. Route plan defects to the Supervisor.
+the Worker scope after launch. Route plan defects to the Supervisor.
 
 ### Worker
 
@@ -107,7 +105,7 @@ Use GO for a phase and CELL for the smallest inspectable work package.
 The structure is:
 
 ```text
-Block
+Worker
   -> GO-01
       -> CELL-01.01
       -> CELL-01.02
@@ -199,11 +197,11 @@ or completed shard. Every new shard cites the previous shard and its hash.
 Only the Checker writes the final record:
 
 ```text
-SLK_YYYYMMDD-HHMMSS_<block>_<plan-version>_<result>.md
+SLK_YYYYMMDD-HHMMSS_<worker>_<plan-version>_<result>.md
 ```
 
 Valid results are `passed`, `blocked`, `plan-defect`, `owner-decision`, and
-`stopped`. The Block is complete only after a passed record exists and the
+`stopped`. The Worker is complete only after a passed record exists and the
 Supervisor's final audit accepts it.
 
 No generated coordination Markdown file may exceed 999 lines.
@@ -230,10 +228,10 @@ Before launch, confirm:
 - Exactly one Checker and one Worker are assigned.
 - The receipt target, method-log path, and final queue are unique.
 - Tests, scans, safety boundaries, and external-action gates are explicit.
-- The supervisor board identifies the Block and current CELL.
+- The supervisor board identifies the Worker and current CELL.
 - A 15/30/60-minute same-thread heartbeat is active and recorded.
 - The heartbeat will be removed after final acceptance.
-- No second Block or parallel pair is hidden in the plan.
+- No second Worker or parallel pair is hidden in the plan.
 
 Then send the complete plan to the Checker. The Checker sends the first formal
 CELL to the Worker. The Supervisor begins periodic oversight and stays outside
