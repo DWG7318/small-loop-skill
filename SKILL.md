@@ -34,6 +34,34 @@ SLK always uses:
 Do not create a separate Checker or a second Worker. If the work genuinely requires
 multiple independent Workers in parallel, stop before launch and use MSLK.
 
+## Mode Selection And Upgrade
+
+Start with SLK when only one Worker is justified. During planning or execution,
+the Supervisor/Checker may upgrade to MSLK only after proving that at least two
+necessary Workers satisfy both conditions:
+
+1. Acceptance independence: each result can be inspected and accepted without
+   another Worker's future output or evidence, and concurrent writes, state,
+   fixtures, tests, or external side effects cannot invalidate acceptance.
+2. Launch independence: every Worker's first CELL can be dispatched now without
+   waiting for another Worker's future output, decision, or mutation.
+
+When both become true, stop issuing new CELLs, preserve accepted evidence,
+record the mode change, and replan under MSLK before creating roles. Never
+upgrade silently inside an executable CELL. MSLK must similarly return to SLK
+when fewer than two Workers satisfy both conditions.
+
+## Fresh Worker Requirement
+
+Every new project must create a fresh Worker. Do not reuse a Worker from another
+project, even when the scope looks similar; prior context can contaminate the
+new project's execution and evidence.
+
+Treat "new project" narrowly: reuse is allowed only for an explicit upgrade or
+continuation of the same project identity, objective lineage, coordination
+records, and evidence chain. A renamed, copied, adjacent, or merely similar
+project is new and must receive a fresh Worker.
+
 ## Role Contract
 
 ### Supervisor/Checker

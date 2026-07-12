@@ -21,7 +21,8 @@ and Checker/Worker pairs in parallel.
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.2.3`.
+Current version: `1.2.4`.
 
-Version `1.2.3` corrects the role contract: SLK combines Supervisor and Checker
-in the controlling thread and launches exactly one Worker.
+Version `1.2.4` keeps the combined Supervisor/Checker role, requires a fresh
+Worker for each new project, and permits a recorded upgrade to MSLK only when
+multiple Workers are acceptance-independent and immediately startable.
