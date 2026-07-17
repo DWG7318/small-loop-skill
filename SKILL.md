@@ -137,6 +137,7 @@ result, and handles ordinary CELL traffic.
 
 - Translate Owner intent into the Worker objective and acceptance target.
 - Produce or approve the solution, GO map, CELL index, and detailed CELL files.
+- Act as the Planner for evidence-driven GO review and revision.
 - Create exactly one Worker and no separate Checker.
 - Maintain the supervisor board and the same-thread Overseer heartbeat.
 - Resolve plan defects, Owner decisions, shared-resource issues, and genuine
@@ -221,16 +222,21 @@ and completion criteria.
 
 ## Evidence-Driven GO Revision
 
-After every GO is completed and checked, the Supervisor/Checker must compare
-the accepted plan with the actual result, including delivered scope, defects,
-residual risk, new dependencies, changed estimates, and incomplete outcomes.
+After every GO is completed and checked, the combined Supervisor/Checker must
+act in its Planner capacity and compare the accepted plan with the actual
+result, including delivered scope, defects, residual risk, new dependencies,
+changed estimates, and incomplete outcomes.
 
-Based on that evidence, the Supervisor/Checker may:
+The Planner owns the resulting GO revision proposal and may:
 
 - adjust any subsequent GO that has not started;
 - add a supplementary GO for a historical GO when the completed result exposes
   missing, corrective, or follow-up work;
 - revise the future CELL map and model assignments affected by that change.
+
+The Worker must not revise GO or CELL plans. The combined role approves its
+Planner proposal only after confirming that it stays within the Owner objective,
+one-Worker boundary, acceptance standard, and safety gates.
 
 GO revision is append-only and versioned:
 
