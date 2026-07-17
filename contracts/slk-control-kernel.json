@@ -1,0 +1,141 @@
+{
+  "schema_version": "1.0",
+  "mode": "SLK",
+  "initial_start": "SLK START",
+  "states": [
+    "NOT_STARTED",
+    "RUNNING",
+    "PAUSE_SCHEDULED",
+    "PAUSE_PENDING",
+    "PAUSED",
+    "RESUME_SCHEDULED",
+    "BLOCKED",
+    "COMPLETE"
+  ],
+  "commands": [
+    {
+      "syntax": "SLK START",
+      "kind": "start",
+      "allowed_from": ["NOT_STARTED"],
+      "to": "RUNNING",
+      "manual_only": true,
+      "dispatch": true,
+      "same_worker": true,
+      "requires": [
+        "SLK_READINESS_EVAL_PASS_EXACT_ROSTER",
+        "PLAN_APPROVED",
+        "SIMULATION_PASS",
+        "GO_DETECTION_PROFILES_APPROVED",
+        "CONTINUATION_CONDITIONS_PASS"
+      ]
+    },
+    {
+      "syntax": "SLK STATUS",
+      "kind": "status",
+      "allowed_from": [
+        "NOT_STARTED",
+        "RUNNING",
+        "PAUSE_SCHEDULED",
+        "PAUSE_PENDING",
+        "PAUSED",
+        "RESUME_SCHEDULED",
+        "BLOCKED",
+        "COMPLETE"
+      ],
+      "to": null,
+      "read_only": true,
+      "dispatch": false
+    },
+    {
+      "syntax": "SLK PAUSE NOW",
+      "kind": "pause",
+      "allowed_from": ["RUNNING"],
+      "to": "PAUSED",
+      "safe_boundary": true,
+      "dispatch": false,
+      "requires": ["ACTIVE_CELL_VALIDATED_AND_REPAIRED"]
+    },
+    {
+      "syntax": "SLK PAUSE AFTER <accepted-cell-count>",
+      "kind": "pause_schedule",
+      "allowed_from": ["RUNNING"],
+      "to": "PAUSE_SCHEDULED",
+      "threshold_scope": "project_accepted_absolute",
+      "safe_boundary": true,
+      "dispatch": false
+    },
+    {
+      "syntax": "SLK PAUSE AT <RFC3339-time>",
+      "kind": "pause_schedule",
+      "allowed_from": ["RUNNING"],
+      "to": "PAUSE_SCHEDULED",
+      "time_format": "RFC3339",
+      "safe_boundary": true,
+      "dispatch": false
+    },
+    {
+      "syntax": "SLK RESUME NOW",
+      "kind": "resume",
+      "allowed_from": ["PAUSED"],
+      "to": "RUNNING",
+      "same_worker": true,
+      "revalidate": true,
+      "dispatch": true,
+      "requires": [
+        "PLAN_CURRENT",
+        "READINESS_RECEIPTS_CURRENT",
+        "SIMULATION_CURRENT",
+        "CONTINUATION_CONDITIONS_PASS"
+      ]
+    },
+    {
+      "syntax": "SLK RESUME AT <RFC3339-time>",
+      "kind": "resume_schedule",
+      "allowed_from": ["PAUSED"],
+      "to": "RESUME_SCHEDULED",
+      "time_format": "RFC3339",
+      "same_worker": true,
+      "revalidate": true,
+      "dispatch": false
+    },
+    {
+      "syntax": "SLK CANCEL SCHEDULE",
+      "kind": "cancel_schedule",
+      "allowed_from": [
+        "PAUSE_SCHEDULED",
+        "PAUSE_PENDING",
+        "RESUME_SCHEDULED"
+      ],
+      "to": "RUNNING",
+      "to_by_state": {
+        "PAUSE_SCHEDULED": "RUNNING",
+        "PAUSE_PENDING": "RUNNING",
+        "RESUME_SCHEDULED": "PAUSED"
+      },
+      "dispatch": false
+    }
+  ],
+  "errors": {
+    "INVALID_COMMAND": {"state_change": false, "dispatch": false},
+    "INVALID_STATE": {"state_change": false, "dispatch": false},
+    "PRECONDITION_FAILED": {"state_change": false, "dispatch": false},
+    "SCHEDULE_CONFLICT": {"state_change": false, "dispatch": false},
+    "ALREADY_APPLIED": {"state_change": false, "dispatch": false}
+  },
+  "receipt_fields": [
+    "receipt_type",
+    "command_id",
+    "normalized_command",
+    "actor",
+    "pre_state",
+    "trigger",
+    "target",
+    "prerequisite_evidence",
+    "action",
+    "result",
+    "post_state",
+    "schedule_version",
+    "progress_snapshot"
+  ],
+  "references": ["references/slk-control-operations.md"]
+}
