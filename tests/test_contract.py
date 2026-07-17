@@ -7,6 +7,7 @@ SKILL = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 PROMPT = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
 ALL_TEXT = "\n".join((SKILL, README, PROMPT))
+NORMALIZED_SKILL = " ".join(SKILL.split())
 
 
 class SmallLoopContractTest(unittest.TestCase):
@@ -30,6 +31,23 @@ class SmallLoopContractTest(unittest.TestCase):
             SKILL,
         )
         self.assertIn("Use exactly one visible combined Supervisor/Checker", PROMPT)
+
+    def test_optional_goal_gate_stays_in_supervisor_responsibility(self):
+        required = (
+            "## Optional Goal Gate",
+            "The Owner may define one optional Goal",
+            "Checker completion is provisional",
+            "Supervisor responsibility must independently validate the Goal",
+            "GOAL_SATISFIED",
+            "GOAL_GAP",
+            "must not declare project completion",
+            "Supervisor responsibility designs the next PLAN/GO/CELL continuation",
+            "If no Goal is configured",
+            "Accepted CELLs with an untested Goal or `GOAL_GAP` remain unfinished Supervisor work",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
 
     def test_shared_rules_remain_inside_slk(self):
         required = (

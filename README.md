@@ -50,10 +50,15 @@ Every formal task shows project-wide accepted CELL progress, for example
 `正在完成 GO-03：35/231`. The count continues through every assignment and ends
 only when the final queue shows `全部完成：231/231`.
 
+The Owner may optionally define a measurable Goal. In that case, CELL completion
+is provisional until the Supervisor responsibility independently records
+`GOAL_SATISFIED`. A `GOAL_GAP` creates an append-only PLAN/GO/CELL continuation
+inside the same SLK; no Goal is invented when the Owner did not configure one.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.3.2`.
+Current version: `1.4.0`.
 
-Version `1.3.2` hardens strict SLK/MSLK isolation and records SLK role ownership
-without creating extra roles.
+Version `1.4.0` adds the optional Supervisor-managed Goal completion gate and
+evidence-driven continuation until the Goal is satisfied.

@@ -143,6 +143,7 @@ classification. Record the change before dispatch. Never assign a Worker below
 | Method gate, project plan, GO/CELL plan, and GO revision | Supervisor responsibility inside the combined Supervisor/Checker |
 | CELL assignment, validation, and routing | Checker responsibility inside the same combined Supervisor/Checker |
 | Worker-result repair | Supervisor responsibility inside the combined Supervisor/Checker |
+| Optional Goal management and final Goal validation | Supervisor responsibility inside the combined Supervisor/Checker |
 | Project progress and final queue | Combined Supervisor/Checker |
 | CELL execution | Worker |
 
@@ -160,6 +161,7 @@ result, and handles ordinary CELL traffic.
 - Own evidence-driven GO review and revision as a Supervisor responsibility.
 - Create exactly one Worker and no separate Checker.
 - Maintain the supervisor board and the same-thread Overseer heartbeat.
+- Manage and independently validate the optional Goal completion gate.
 - Resolve plan defects, Owner decisions, shared-resource issues, and genuine
   blockers that cannot be resolved inside the current authorized plan.
 - Write the final queue and perform final local acceptance.
@@ -326,7 +328,8 @@ the accepted count. The numerator never decreases.
 
 The Supervisor/Checker recomputes this snapshot immediately before every formal
 task assignment and continues displaying it until project completion. When all
-CELLs are accepted and no next task exists, the final queue must display:
+CELLs are accepted and no next task exists, the final queue may display the
+following only when no Goal is configured or the optional Goal has passed:
 
 ```text
 全部完成：231/231
@@ -353,7 +356,8 @@ Supervisor thread while the loop remains unfinished.
   verification command that cannot be split safely.
 - Record the heartbeat id and interval on the supervisor board.
 - Never create a detached conversation or replacement loop from the heartbeat.
-- Remove or disable the heartbeat after final Supervisor acceptance.
+- Remove or disable the heartbeat after final Supervisor acceptance. When a
+  Goal is configured, this also requires `GOAL_SATISFIED`.
 
 At each heartbeat, inspect once:
 
@@ -366,11 +370,48 @@ Classify the loop as `active_worker`, `active_checker`,
 `waiting_for_worker_delivery`, `waiting_for_checker_validation`, `blocked`,
 `stalled`, or `complete`.
 
+Classify the project as `complete` only when ordinary acceptance passes and any
+configured Goal has `GOAL_SATISFIED`. Accepted CELLs with an untested Goal or
+`GOAL_GAP` remain unfinished Supervisor work.
+
 If neither execution side is genuinely active and the loop is unfinished, the
 heartbeat wakes the combined Supervisor/Checker with exactly one required next
 action. Never tell the Worker to select new work. If the environment cannot
 create a same-thread heartbeat, report the missing capability and do not
 substitute detached automation.
+
+## Optional Goal Gate
+
+The Owner may define one optional Goal. A Goal is active only when the Owner
+explicitly supplies or approves its identifier, objective, measurable success
+criteria, required evidence, and safety boundaries. The Supervisor must not
+invent, broaden, or silently change it. Owner-authorized Goal changes are
+versioned and append-only.
+
+If no Goal is configured, this section adds no completion gate and ordinary SLK
+acceptance applies.
+
+Checker completion is provisional. After the Checker responsibility has
+accepted every current PLAN/GO/CELL and reports completion, the Supervisor
+responsibility must independently validate the Goal against fresh local
+evidence:
+
+- record `GOAL_SATISFIED` only when every Goal criterion is proven;
+- otherwise record `GOAL_GAP` with each unmet criterion, evidence, residual
+  risk, and required outcome;
+- while `GOAL_GAP` exists, the combined role must not declare project completion
+  or write the final passed queue.
+
+After `GOAL_GAP`, the Supervisor responsibility designs the next PLAN/GO/CELL
+continuation inside the same SLK topology. Preserve accepted history, append new
+identifiers, run the evidence-driven revision review, and obtain
+`GO_REVISION_SIMULATION_PASS` before dispatching new CELLs. Recompute the total
+CELL denominator, unarchive the same Worker only when its next formal task is
+ready, and continue the loop until `GOAL_SATISFIED`.
+
+If the Goal cannot be pursued within Owner authority, safety gates, available
+evidence, or the selected SLK boundary, record `BLOCKED`, `PLAN_DEFECT`, or an
+Owner decision instead of claiming completion or switching to MSLK.
 
 ## Evidence And Queue
 
@@ -396,7 +437,8 @@ SLK_YYYYMMDD-HHMMSS_<worker>_<plan-version>_<result>.md
 
 Valid results are `passed`, `blocked`, `plan-defect`, `owner-decision`, and
 `stopped`. The Worker is complete only after a passed record exists and the
-combined Supervisor/Checker's final audit accepts it.
+combined Supervisor/Checker's final audit accepts it. When a Goal is configured,
+the passed record also requires `GOAL_SATISFIED`.
 
 No generated coordination Markdown file may exceed 999 lines.
 
@@ -437,6 +479,8 @@ Before launch, confirm:
   the current computer without weakening GO acceptance.
 - Every formal task displays `正在完成 GO-NN：accepted/total`, and the final queue
   displays `全部完成：total/total`.
+- The optional Goal is either absent or explicitly defined; a configured Goal
+  blocks final completion until the Supervisor records `GOAL_SATISFIED`.
 - The supervisor board identifies the Worker and current CELL.
 - A 15/30/60-minute same-thread heartbeat is active and recorded.
 - The heartbeat will be removed after final acceptance.
