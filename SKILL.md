@@ -142,6 +142,8 @@ classification. Record the change before dispatch. Never assign a Worker below
 | --- | --- |
 | Method gate, project plan, GO/CELL plan, and GO revision | Supervisor responsibility inside the combined Supervisor/Checker |
 | CELL assignment, validation, and routing | Checker responsibility inside the same combined Supervisor/Checker |
+| Continuation-condition stop, report, and resume validation | Checker responsibility inside the same combined Supervisor/Checker |
+| Continuation-condition resolution and Owner-assistance decision | Supervisor responsibility inside the combined Supervisor/Checker |
 | Worker-result repair | Supervisor responsibility inside the combined Supervisor/Checker |
 | Optional Goal management and final Goal validation | Supervisor responsibility inside the combined Supervisor/Checker |
 | Project progress and final queue | Combined Supervisor/Checker |
@@ -171,6 +173,8 @@ take over ordinary Worker execution.
 
 - Read the complete current solution and versioned GO/CELL plan.
 - Package and send exactly one CELL at a time.
+- Stop dispatch when required continuation conditions are not satisfied and
+  hand the evidence to the Supervisor responsibility.
 - Inspect files, diffs, tests, scans, method logs, and boundaries locally.
 - Route `NEXT`, `REDO`, `COMPLETE`, `BLOCKED`, or `PLAN_DEFECT`.
 - Move to the next GO only after every CELL in the current GO is accepted.
@@ -306,6 +310,45 @@ Worker assignment. `REDO` means the Supervisor/Checker repairs and revalidates
 the delivery; it does not send correction work back to the Worker. Messages
 without the formal task heading are discussion, not executable Worker work.
 
+## Continuation Condition Gate
+
+Before every Worker assignment, verify that its authoritative inputs,
+dependencies, allowed scope, required tools or credentials, safety gates,
+acceptance criteria, and necessary Owner decisions are ready. A condition is
+clearly unmet only when evidence identifies the failed prerequisite and its
+effect on safe or valid execution.
+
+When a condition is clearly unmet, the Checker responsibility must stop
+dispatching formal tasks. It records `CONDITION_BLOCKED` with the current
+GO/CELL, failed condition, evidence, impact, and required outcome, then hands the
+case to the Supervisor responsibility. It must not send speculative, filler, or
+repair work to the Worker. Archive the Worker when it has no active formal task;
+the accepted/total progress count does not increase while blocked.
+
+The Supervisor responsibility decides whether Owner assistance is required:
+
+- If resolution requires an Owner-only decision, credential, consent, external
+  action, scope change, or acceptance change, record
+  `OWNER_ASSISTANCE_REQUIRED`, stop the loop, and notify the Owner with one
+  specific request plus the evidence and consequence. Do not resume until the
+  required response is available.
+- If Owner assistance is unnecessary and resolution is within existing
+  authority and safety gates, the Supervisor responsibility resolves the
+  condition, records `SUPERVISOR_RESOLVED` with evidence, records
+  `RESUME_AUTHORIZED`, and must resume the Checker responsibility inside the same
+  combined conversation. This internal handoff creates no separate Checker.
+
+After an Owner response, the Supervisor responsibility verifies that the
+response actually resolves the failed condition, records
+`OWNER_ASSISTANCE_RECEIVED`, then records `SUPERVISOR_RESOLVED` and
+`RESUME_AUTHORIZED`. An incomplete response leaves the loop blocked.
+
+After `RESUME_AUTHORIZED`, the Checker responsibility must revalidate every
+blocked condition before dispatching a formal task. If any condition still
+fails, keep `CONDITION_BLOCKED` and return control to the Supervisor
+responsibility. Never wake the Worker merely to discover whether prerequisites
+are ready, and never activate MSLK to bypass the block.
+
 ## Mandatory Progress Display
 
 Every formal task assignment from the Supervisor/Checker to the Worker must
@@ -368,7 +411,7 @@ At each heartbeat, inspect once:
 
 Classify the loop as `active_worker`, `active_checker`,
 `waiting_for_worker_delivery`, `waiting_for_checker_validation`, `blocked`,
-`stalled`, or `complete`.
+`condition_blocked`, `stalled`, or `complete`.
 
 Classify the project as `complete` only when ordinary acceptance passes and any
 configured Goal has `GOAL_SATISFIED`. Accepted CELLs with an untested Goal or
@@ -479,6 +522,9 @@ Before launch, confirm:
   the current computer without weakening GO acceptance.
 - Every formal task displays `正在完成 GO-NN：accepted/total`, and the final queue
   displays `全部完成：total/total`.
+- Every assignment has passed the continuation-condition gate; any
+  `CONDITION_BLOCKED` record has either active Owner assistance or a verified
+  `SUPERVISOR_RESOLVED` plus `RESUME_AUTHORIZED` sequence.
 - The optional Goal is either absent or explicitly defined; a configured Goal
   blocks final completion until the Supervisor records `GOAL_SATISFIED`.
 - The supervisor board identifies the Worker and current CELL.

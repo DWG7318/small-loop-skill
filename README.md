@@ -55,10 +55,15 @@ is provisional until the Supervisor responsibility independently records
 `GOAL_SATISFIED`. A `GOAL_GAP` creates an append-only PLAN/GO/CELL continuation
 inside the same SLK; no Goal is invented when the Owner did not configure one.
 
+Before each assignment, the Checker responsibility verifies continuation
+conditions. A clear failure stops Worker dispatch and hands evidence to the
+Supervisor responsibility, which either requests specific Owner assistance or
+resolves the condition and authorizes the same combined role to resume.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.4.0`.
+Current version: `1.4.1`.
 
-Version `1.4.0` adds the optional Supervisor-managed Goal completion gate and
-evidence-driven continuation until the Goal is satisfied.
+Version `1.4.1` adds the continuation-condition stop, escalation, resolution,
+and verified-resume gate.

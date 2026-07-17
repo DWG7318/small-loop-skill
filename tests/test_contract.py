@@ -49,6 +49,23 @@ class SmallLoopContractTest(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, NORMALIZED_SKILL)
 
+    def test_continuation_condition_gate_uses_combined_role_responsibilities(self):
+        required = (
+            "## Continuation Condition Gate",
+            "Checker responsibility must stop dispatching formal tasks",
+            "CONDITION_BLOCKED",
+            "Supervisor responsibility decides whether Owner assistance is required",
+            "OWNER_ASSISTANCE_REQUIRED",
+            "OWNER_ASSISTANCE_RECEIVED",
+            "SUPERVISOR_RESOLVED",
+            "RESUME_AUTHORIZED",
+            "resume the Checker responsibility inside the same combined conversation",
+            "must revalidate every blocked condition before dispatching",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
+
     def test_shared_rules_remain_inside_slk(self):
         required = (
             "Never use a subagent",
