@@ -12,8 +12,9 @@ Owner -> Supervisor/Checker <-> Worker
 
 The Worker owns multiple GO phases. Each GO contains sequential CELLs. The
 combined Supervisor/Checker sends one CELL at a time, validates delivery,
-routes rework or the next CELL, keeps the same-thread heartbeat, resolves plan
-defects, writes the final result queue, and performs final acceptance.
+repairs every Worker-result defect itself, sends the next CELL, keeps the
+same-thread heartbeat, resolves plan defects, writes the final result queue,
+and performs final acceptance. Repair tasks are never returned to the Worker.
 
 SLK and MSLK are mutually exclusive. Select SLK exactly once for a project run;
 never load both skills, switch methods, repeat the invocation, or borrow MSLK
@@ -36,10 +37,15 @@ propose adjustments to unstarted GO or an append-only supplementary GO for
 historical work. Preserve all historical evidence and identifiers, and require
 `GO_REVISION_SIMULATION_PASS` before executing the revised plan.
 
+The combined Supervisor/Checker uses `gpt-5.6-sol xhigh`. Workers range from
+`gpt-5.5 high` to `gpt-5.6-sol high`, selected by task type. GO scope follows
+project need and ignores device limits; CELLs are made smaller as needed for
+reliable execution on the current computer.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.2.9`.
+Current version: `1.3.0`.
 
-Version `1.2.9` assigns evidence-driven GO revision to the Supervisor
-responsibility inside the combined Supervisor/Checker without adding a role.
+Version `1.3.0` makes Supervisor repair ownership mandatory, updates model
+tiers, and makes CELL sizing device-aware without constraining GO scope.
