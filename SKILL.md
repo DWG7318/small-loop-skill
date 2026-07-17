@@ -8,6 +8,19 @@ description: Use when the user says SLK or small-loop-skill, or when one bounded
 Use `SLK` as the official abbreviation. Keep `$small-loop-skill` as the Codex
 invocation name.
 
+## Canonical Identity
+
+- Product name: `Small Loop Skill`.
+- Abbreviation: `SLK`.
+- Canonical repository: `https://github.com/DWG7318/small-loop-skill`.
+- GitHub repository ID: `1295599218`.
+- Default branch: `main`.
+- Version source: repository `VERSION` file and matching `v*` tag.
+
+Before publishing, verify the owner/name, repository ID, default branch, tested
+global installation, remote HEAD, and annotated release tag. Never publish SLK
+content to the MSLK repository or a similarly named compatibility repository.
+
 Run exactly one stable small loop:
 
 ```text
@@ -70,8 +83,8 @@ under the same project. Hidden execution is forbidden.
 
 ### Visible Conversation Lifecycle
 
-- Create or unarchive a role conversation only when an authorized formal task
-  is ready for that role.
+- Create or unarchive a role conversation only when an authorized readiness Eval
+  or formal task is ready for that role.
 - Keep the conversation visible while that task is active.
 - Archive it immediately when its authorized work is complete and no formal
   task remains assigned.
@@ -81,12 +94,33 @@ under the same project. Hidden execution is forbidden.
   permit MSLK activation.
 - An archived conversation performs no hidden or background work.
 
+## Mandatory Readiness Eval
+
+Before planning simulation or formal CELL dispatch, the exact two-role roster
+must complete the SLK-only readiness Eval: one combined Supervisor/Checker and
+one sole Worker. Eval is authorized ready work; archive a role afterward when no
+next authorized work is ready, then unarchive that same conversation later.
+
+Run the questions through `scripts/run_slk_readiness_eval.py`. The question bank
+and canonical answer key are separate SLK files. Every role must score exactly
+`24/24`; one wrong, missing, extra, or misordered answer fails the whole attempt.
+Retry only after rereading the cited rules, with a new seed and all 24 questions.
+Partial credit, rounding, manual override, inherited receipts, and claims of
+understanding the spirit are forbidden.
+
+Each current `SLK_READINESS_EVAL_PASS` binds the skill version/release identity,
+content and Eval hashes, role, conversation, model/reasoning, seed, attempt, and
+per-question results. Any skill/Eval change, role replacement, conversation
+replacement, or model change makes it stale. The candidate must not inspect the
+answer key or grading tests during the attempt. Missing or unverifiable evidence
+fails closed.
+
 ## Mandatory Simulation Gate
 
-Run a no-side-effect simulation before formal work. Planning and simulation may
-inspect metadata, but must not edit project files, execute implementation
-commands, call external services, create formal Worker assignments, or start a
-CELL.
+Only after current readiness receipts exist for the exact two-role roster, run a
+no-side-effect simulation before formal work. Planning and simulation may inspect
+metadata, but must not edit project files, execute implementation commands, call
+external services, create formal Worker assignments, or start a CELL.
 
 The simulation must:
 
@@ -101,8 +135,8 @@ The simulation must:
    one focused-to-regression evidence route.
 
 Record either `SIMULATION_PASS` with the checked facts or `SIMULATION_FAIL` with
-the reason. Formal work may begin only after `SIMULATION_PASS`. A failed or
-missing simulation forbids role launch and CELL execution.
+the reason. Formal work may begin only after current readiness receipts and
+`SIMULATION_PASS`. A failed or missing gate forbids CELL execution.
 
 ## Fresh Worker Requirement
 
@@ -146,7 +180,7 @@ classification. Record the change before dispatch. Never assign a Worker below
 | CELL assignment, validation, and routing | Checker responsibility inside the same combined Supervisor/Checker |
 | Continuation-condition stop, report, and resume validation | Checker responsibility inside the same combined Supervisor/Checker |
 | Continuation-condition resolution and Owner-assistance decision | Supervisor responsibility inside the combined Supervisor/Checker |
-| Optional timed or accepted-CELL-threshold loop control | Supervisor responsibility inside the combined Supervisor/Checker |
+| Manual start and Owner-configured safe pause/resume control | Supervisor responsibility inside the combined Supervisor/Checker |
 | Checker capability, skill, and tool provisioning | Supervisor responsibility inside the combined Supervisor/Checker |
 | Detection-system design, execution, calibration, and evidence | Checker responsibility inside the same combined Supervisor/Checker |
 | Worker-result repair | Supervisor responsibility inside the combined Supervisor/Checker |
@@ -168,7 +202,7 @@ result, and handles ordinary CELL traffic.
 - Own evidence-driven GO review and revision as a Supervisor responsibility.
 - Create exactly one Worker and no separate Checker.
 - Maintain the supervisor board and the same-thread Overseer heartbeat.
-- Manage any Owner-configured optional Overseer start/resume/pause schedule.
+- Manage Owner-configured safe pause and same-Worker resume controls.
 - Provision the Checker responsibility with the authorized skills, tools,
   permissions, versions, configurations, and compute budget needed for precise
   acceptance.
@@ -504,43 +538,40 @@ action. Never tell the Worker to select new work. If the environment cannot
 create a same-thread heartbeat, report the missing capability and do not
 substitute detached automation.
 
-## Optional Overseer Control Schedule
+## SLK Control Commands
 
-The Owner may preconfigure one optional Overseer control schedule. Without an
-Owner-configured schedule, the heartbeat performs status inspection only and
-must not invent start, resume, pause, or close actions.
+Read and follow
+[`references/slk-control-operations.md`](references/slk-control-operations.md)
+for the complete SLK-only command, state, rejection, and receipt contract.
 
-The schedule must record:
+`SLK START` is manual only and is the sole initial-start command. It requires
+current exact-roster readiness receipts, approved plan/detection profiles,
+`SIMULATION_PASS`, and passing continuation conditions. It authorizes the first
+formal CELL for the same prepared Worker and never creates a second Worker.
 
-- action: start/resume or safe pause/close;
-- trigger: a timestamp with timezone, an accepted CELL threshold, or both;
-- scope: the one SLK loop;
-- one-shot or recurring behavior;
-- the safe-boundary and resume conditions.
+The Owner may preconfigure only safe control of an already-started SLK:
 
-Record a future action as `SCHEDULED_START` or `SCHEDULED_PAUSE`. A time trigger
-fires on the first Supervisor inspection at or after its timestamp. An accepted
-CELL threshold is checked after every CELL acceptance and again before every new
-Worker assignment, so reaching the threshold prevents another dispatch.
+```text
+SLK STATUS
+SLK PAUSE NOW
+SLK PAUSE AFTER <accepted-cell-count>
+SLK PAUSE AT <RFC3339-time>
+SLK RESUME NOW
+SLK RESUME AT <RFC3339-time>
+SLK CANCEL SCHEDULE
+```
 
-For pause/close, stop new dispatch and record pause-pending state. The Supervisor
-must not interrupt an active CELL. Let the Worker reach its normal receipt, then
-validate and repair that result before recording `PAUSED_BY_POLICY`. Archive the
-Worker after the safe boundary and display the unchanged progress snapshot, for
-example `已暂停：35/231`. A paused loop is not complete, does not satisfy a Goal,
-and retains all append-only evidence and progress.
+Without Owner-configured control, the heartbeat performs status inspection only.
+An accepted CELL threshold is absolute project progress. A pause trigger may
+become pending, but the Supervisor must not interrupt an active CELL. Let the
+Worker finish, validate and repair the result, then pause at the safe boundary.
+A paused SLK is not complete and does not satisfy a Goal.
 
-For start/resume, a scheduled action does not repeat the SLK invocation, create
-a second Worker, or activate MSLK. At the trigger, unarchive the same Worker only
-when formal work is ready, confirm the current plan and simulation remain valid,
-and pass the continuation-condition gate before dispatch resumes. Then record
-`RESUMED_BY_POLICY` and send the next formal CELL with the normal progress line.
-If any prerequisite fails, record `CONDITION_BLOCKED` instead of starting.
-
-The same-thread Overseer remains active while a future control action exists.
-Owner changes or cancellation of the schedule are versioned on the supervisor
-board. Scheduled control never bypasses Owner assistance, safety gates, Goal
-validation, method exclusivity, or final acceptance.
+Resume only the same Worker after revalidating the plan, readiness receipts,
+simulation, detection profile, and continuation conditions. Timed first start,
+replacement Worker, MSLK/pair command, generic command, or reopening `COMPLETE`
+is rejected without state change or dispatch. Every attempt records an
+idempotent `SLK_CONTROL_RECEIPT` and keeps the project progress snapshot.
 
 ## Optional Goal Gate
 
@@ -589,10 +620,11 @@ governed until the plan requires modifying it; then the Supervisor responsibilit
 must authorize a semantic split or record `PLAN_DEFECT`/`CONDITION_BLOCKED`.
 
 During solution design, Supervisor responsibility defines the Markdown artifact
-map and a `WORK_CONTINUATION_INDEX`. The index records objective, plan version,
-current GO/CELL, semantic shard sequence, accepted evidence references,
-invariants, unresolved decisions, and next action. It also stays within 1000
-lines.
+map and a `WORK_CONTINUATION_INDEX`. The index is a bounded mutable current-state
+pointer below 200 physical lines, not append-only history. It records objective,
+plan version, active semantic shard, predecessor, current GO/CELL, invariants,
+unresolved decisions, latest accepted evidence, and next action. Historical
+detail remains in linked semantic shards.
 
 Prefer multiple files that follow how work continues and split at a semantic
 work-continuation boundary such as a GO, coherent CELL group, completed decision,
@@ -662,6 +694,8 @@ No governed coordination Markdown file may exceed 1000 lines.
 
 Before launch, confirm:
 
+- Current `SLK_READINESS_EVAL_PASS` receipts prove exactly `24/24` for the exact
+  combined Supervisor/Checker and sole Worker conversations.
 - `SIMULATION_PASS` exists for this exact plan and role roster.
 - SLK is the sole method, was invoked once, and no MSLK capability is present.
 - Every role is a visible conversation under the same project; no subagent,
@@ -669,8 +703,9 @@ Before launch, confirm:
 - Every role conversation has work ready, and every no-work conversation is
   archived with an explicit unarchive path for later same-project work.
 - One complete solution/GO/CELL plan exists.
-- The plan defines the Markdown artifact map and `WORK_CONTINUATION_INDEX`; every
-  governed file is at most 1000 physical lines.
+- The plan defines the Markdown artifact map and a bounded mutable current-state
+  `WORK_CONTINUATION_INDEX` below 200 physical lines; every governed file is at
+  most 1000 physical lines.
 - The GO revision ledger is present; every completed GO has an evidence review,
   and every revised or supplementary GO has `GO_REVISION_SIMULATION_PASS`.
 - The current thread is the combined Supervisor/Checker and exactly one Worker is assigned.
@@ -700,13 +735,14 @@ Before launch, confirm:
 - The optional Goal is either absent or explicitly defined; a configured Goal
   blocks final completion until the Supervisor records `GOAL_SATISFIED`.
 - The supervisor board identifies the Worker and current CELL.
-- Any optional Overseer control schedule is Owner-configured, versioned, and
-  includes action, trigger, timezone, safe boundary, and resume conditions.
+- Any safe pause or same-Worker resume control is Owner-configured, versioned,
+  and uses the SLK command contract.
 - A 15/30/60-minute same-thread heartbeat is active and recorded.
 - The heartbeat will be removed after final acceptance.
 - No second Worker or parallel pair is hidden in the plan.
 - The role authority matrix is unchanged; no MSLK role, pair, state, or message
   route has been borrowed.
 
-Then the combined Supervisor/Checker sends the first formal CELL to the Worker
-and performs periodic oversight, validation, routing, and final acceptance.
+Then the combined Supervisor/Checker records manual `SLK START`, sends the first
+formal CELL to the same Worker, and performs periodic oversight, validation,
+routing, and final acceptance.

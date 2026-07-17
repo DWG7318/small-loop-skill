@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import unittest
 
 
@@ -9,12 +10,56 @@ PROMPT = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
 DETECTION_REFERENCE = (ROOT / "references" / "checker-detection-catalog.md").read_text(
     encoding="utf-8"
 )
+CONTROL_REFERENCE = (ROOT / "references" / "slk-control-operations.md").read_text(
+    encoding="utf-8"
+)
+CONTROL_CONTRACT = json.loads(
+    (ROOT / "contracts" / "slk-control-kernel.json").read_text(encoding="utf-8")
+)
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 ALL_TEXT = "\n".join((SKILL, README, PROMPT, DETECTION_REFERENCE))
 NORMALIZED_SKILL = " ".join(SKILL.split())
 NORMALIZED_DETECTION = " ".join((SKILL + "\n" + DETECTION_REFERENCE).split())
 
 
 class SmallLoopContractTest(unittest.TestCase):
+    def test_canonical_identity_and_release_version(self):
+        required = (
+            "## Canonical Identity",
+            "https://github.com/DWG7318/small-loop-skill",
+            "1295599218",
+            "Default branch: `main`",
+            "Version source: repository `VERSION` file and matching `v*` tag",
+        )
+        for item in required:
+            with self.subTest(item=item):
+                self.assertIn(item, SKILL)
+        self.assertEqual(VERSION, "1.8.0")
+        self.assertIn("Current version: `1.8.0`", README)
+        self.assertNotIn("all nine rules", README.lower())
+
+    def test_readiness_eval_precedes_simulation_and_manual_start(self):
+        self.assertIn("## Mandatory Readiness Eval", SKILL)
+        self.assertIn("SLK_READINESS_EVAL_PASS", SKILL)
+        self.assertIn("exactly `24/24`", SKILL)
+        self.assertIn("exact two-role roster", SKILL)
+        self.assertLess(
+            SKILL.index("## Mandatory Readiness Eval"),
+            SKILL.index("## Mandatory Simulation Gate"),
+        )
+        self.assertIn("SLK START", SKILL)
+        self.assertIn("manual only", CONTROL_REFERENCE)
+        self.assertNotIn("SCHEDULED_START", SKILL)
+        self.assertNotIn("start/resume", SKILL.lower())
+        self.assertEqual(CONTROL_CONTRACT["initial_start"], "SLK START")
+
+    def test_continuation_index_is_bounded_current_state(self):
+        self.assertIn("bounded mutable current-state pointer", NORMALIZED_SKILL)
+        self.assertIn("below 200 physical lines", NORMALIZED_SKILL)
+        self.assertIn(
+            "Historical detail remains in linked semantic shards", NORMALIZED_SKILL
+        )
+
     def test_mode_is_strictly_exclusive(self):
         self.assertIn("invoke SLK exactly once", SKILL)
         self.assertIn("do not borrow MSLK role topology", SKILL)
@@ -70,23 +115,23 @@ class SmallLoopContractTest(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, NORMALIZED_SKILL)
 
-    def test_optional_overseer_schedule_controls_single_loop_safely(self):
+    def test_control_commands_only_pause_and_resume_existing_loop_safely(self):
         required = (
-            "## Optional Overseer Control Schedule",
-            "The Owner may preconfigure one optional Overseer control schedule",
+            "## SLK Control Commands",
+            "`SLK START` is manual only",
+            "SLK PAUSE AFTER <accepted-cell-count>",
+            "SLK PAUSE AT <RFC3339-time>",
+            "SLK RESUME AT <RFC3339-time>",
             "accepted CELL threshold",
-            "SCHEDULED_START",
-            "SCHEDULED_PAUSE",
-            "PAUSED_BY_POLICY",
-            "RESUMED_BY_POLICY",
+            "`SLK_CONTROL_RECEIPT`",
             "must not interrupt an active CELL",
-            "does not repeat the SLK invocation",
-            "continuation-condition gate before dispatch resumes",
-            "A paused loop is not complete",
+            "same Worker",
+            "A paused SLK is not complete",
         )
         for rule in required:
             with self.subTest(rule=rule):
                 self.assertIn(rule, NORMALIZED_SKILL)
+        self.assertNotIn("SCHEDULED_START", SKILL)
 
     def test_checker_detection_system_and_supervisor_capability_supply(self):
         required = (

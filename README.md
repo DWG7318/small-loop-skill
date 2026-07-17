@@ -21,9 +21,9 @@ never load both skills, switch methods, repeat the invocation, or borrow MSLK
 capabilities. If SLK is not suitable, stop and return the method decision to the
 Owner instead of converting the active run.
 
-Common rules do not make the skills composable. SLK implements all nine rules
-only through one combined Supervisor/Checker and one Worker; it never creates a
-separate Checker or imports an MSLK Checker/Worker pair.
+Common rules do not make the skills composable. SLK implements its governing
+rules only through one combined Supervisor/Checker and one Worker; it never
+creates a separate Checker or imports an MSLK Checker/Worker pair.
 
 All roles must be visible Codex conversations under the same project. SLK never
 uses subagents, background agents, hidden workers, or `delegate_task`.
@@ -31,9 +31,10 @@ Create or unarchive a role conversation only when formal work is ready; archive
 it immediately when that work finishes. Later same-project work should
 unarchive the existing conversation instead of creating a duplicate.
 
-Before formal role launch or CELL execution, run a no-side-effect simulation of
-the first assignment, delivery, validation, and routing cycle. Formal work is
-allowed only after the simulation records `SIMULATION_PASS`.
+Before simulation, both visible roles must pass SLK's independent 24-question
+readiness Eval with exactly `24/24`. Then run a no-side-effect simulation of the
+first assignment, delivery, validation, and routing cycle. Formal work is
+allowed only after both current readiness receipts and `SIMULATION_PASS` exist.
 
 After each GO, the Supervisor responsibility within the combined
 Supervisor/Checker reviews the actual accepted result. The Supervisor may
@@ -60,10 +61,10 @@ conditions. A clear failure stops Worker dispatch and hands evidence to the
 Supervisor responsibility, which either requests specific Owner assistance or
 resolves the condition and authorizes the same combined role to resume.
 
-The Owner may also configure the Overseer to start/resume or safely pause the
-single loop at a specified time or accepted-CELL threshold. Pausing stops new
-dispatch at a safe CELL boundary; resuming reuses the same SLK invocation and
-Worker only after prerequisite validation.
+Initial `SLK START` is manual only. The Owner may configure safe pause at a
+specified time or absolute accepted-CELL threshold and same-Worker resume.
+Pausing stops new dispatch at a safe CELL boundary; resuming reuses the same SLK
+invocation and Worker only after prerequisite validation.
 
 The combined role also maintains a versioned Checker detection system. The
 Supervisor responsibility provisions a layered tool stack including CodeGraph,
@@ -79,13 +80,15 @@ may narrow arguments, but cannot omit or replace GO-level capabilities.
 
 Every Markdown work artifact has a hard 1000-physical-line maximum because Codex
 must be able to read and recover the working context reliably. The Supervisor
-responsibility plans semantic continuation files and a `WORK_CONTINUATION_INDEX`;
-every Markdown-writing CELL runs `markdown-line-budget` before acceptance.
+responsibility plans semantic continuation files and a bounded current-state
+`WORK_CONTINUATION_INDEX` below 200 lines; every Markdown-writing CELL runs
+`markdown-line-budget` before acceptance.
 
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.7.0`.
+Current version: `1.8.0`.
 
-Version `1.7.0` adds the hard 1000-line Markdown context boundary, semantic work
-continuation, compaction recovery, and per-CELL line-budget evidence.
+Version `1.8.0` adds the independent 24/24 readiness Eval, SLK-only control
+kernel, manual-first-start rule, deployable receipts, and hardened release and
+context-index contracts.
