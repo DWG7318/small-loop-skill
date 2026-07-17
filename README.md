@@ -65,10 +65,17 @@ single loop at a specified time or accepted-CELL threshold. Pausing stops new
 dispatch at a safe CELL boundary; resuming reuses the same SLK invocation and
 Worker only after prerequisite validation.
 
+The combined role also maintains a versioned Checker detection system. The
+Supervisor responsibility provisions a layered tool stack including CodeGraph,
+native build/test tools, Semgrep/CodeQL, Gitleaks, OSV-Scanner/Trivy, and
+risk-appropriate runtime, coverage, mutation, or contract checks. The Checker
+responsibility independently verifies every CELL and evolves the detection
+matrix from observed defects and graph impact.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.5.0`.
+Current version: `1.6.0`.
 
-Version `1.5.0` adds optional Owner-configured timed and CELL-threshold Overseer
-start/resume/pause control.
+Version `1.6.0` adds Supervisor-provisioned, CodeGraph-based layered Checker
+detection and evidence calibration.

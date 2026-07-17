@@ -96,7 +96,9 @@ The simulation must:
    decision, and one `NEXT`, `REDO`, or `BLOCKED` route;
 4. prove no subagent or MSLK capability is used;
 5. validate ownership, write scope, evidence paths, model assignment, tests,
-   safety gates, and heartbeat behavior.
+   safety gates, and heartbeat behavior;
+6. rehearse the Checker detection capability manifest, CodeGraph baseline, and
+   one focused-to-regression evidence route.
 
 Record either `SIMULATION_PASS` with the checked facts or `SIMULATION_FAIL` with
 the reason. Formal work may begin only after `SIMULATION_PASS`. A failed or
@@ -145,6 +147,8 @@ classification. Record the change before dispatch. Never assign a Worker below
 | Continuation-condition stop, report, and resume validation | Checker responsibility inside the same combined Supervisor/Checker |
 | Continuation-condition resolution and Owner-assistance decision | Supervisor responsibility inside the combined Supervisor/Checker |
 | Optional timed or accepted-CELL-threshold loop control | Supervisor responsibility inside the combined Supervisor/Checker |
+| Checker capability, skill, and tool provisioning | Supervisor responsibility inside the combined Supervisor/Checker |
+| Detection-system design, execution, calibration, and evidence | Checker responsibility inside the same combined Supervisor/Checker |
 | Worker-result repair | Supervisor responsibility inside the combined Supervisor/Checker |
 | Optional Goal management and final Goal validation | Supervisor responsibility inside the combined Supervisor/Checker |
 | Project progress and final queue | Combined Supervisor/Checker |
@@ -165,6 +169,9 @@ result, and handles ordinary CELL traffic.
 - Create exactly one Worker and no separate Checker.
 - Maintain the supervisor board and the same-thread Overseer heartbeat.
 - Manage any Owner-configured optional Overseer start/resume/pause schedule.
+- Provision the Checker responsibility with the authorized skills, tools,
+  permissions, versions, configurations, and compute budget needed for precise
+  acceptance.
 - Manage and independently validate the optional Goal completion gate.
 - Resolve plan defects, Owner decisions, shared-resource issues, and genuine
   blockers that cannot be resolved inside the current authorized plan.
@@ -177,6 +184,7 @@ take over ordinary Worker execution.
 - Package and send exactly one CELL at a time.
 - Stop dispatch when required continuation conditions are not satisfied and
   hand the evidence to the Supervisor responsibility.
+- Maintain and execute the evolving Checker detection system defined below.
 - Inspect files, diffs, tests, scans, method logs, and boundaries locally.
 - Route `NEXT`, `REDO`, `COMPLETE`, `BLOCKED`, or `PLAN_DEFECT`.
 - Move to the next GO only after every CELL in the current GO is accepted.
@@ -185,6 +193,93 @@ take over ordinary Worker execution.
 The combined role must not add or alter a GO ad hoc, renumber historical work,
 weaken acceptance, or change Worker scope silently. GO changes are allowed only
 through the evidence-driven revision rule below.
+
+## Checker Detection System
+
+Checker responsibility must maintain one evolving detection system for the
+project. Supervisor responsibility must provision the Checker responsibility
+with enough mature skills and tools to execute that system; naming a tool without
+working access, configuration, or permission is not provisioning.
+
+Before formal work, record `DETECTION_CAPABILITY_MANIFEST` with the selected
+layers, required skills, executable tools, tool version, configuration, and
+omission rationale, permissions, expected evidence, and compute constraints.
+The manifest is versioned with the plan and revalidated after material tool,
+architecture, dependency, or acceptance changes.
+
+Provision mature detection skills as part of the same manifest:
+
+| Detection skill | Required use |
+| --- | --- |
+| `superpowers:verification-before-completion` | Fresh evidence gate before acceptance or completion claims |
+| `superpowers:systematic-debugging` | Root-cause investigation for failures, regressions, and contradictory evidence |
+| `superpowers:test-driven-development` | Test-first behavior for fixes and acceptance-sensitive changes |
+| `security-best-practices` | Language/framework security review when the changed surface is security-relevant |
+| `playwright` | Real browser/runtime inspection for applicable UI and end-to-end flows |
+| Trusted language or framework inspection skills | Official or established project-specific checks selected for the actual stack |
+
+Record each skill source, version, and compatibility with the current task and
+Codex environment. Confirm the skill is installed and readable before relying on
+it; never invent an unavailable skill. Any skill that requires subagents is
+incompatible with SLK and must not be loaded, because all roles must remain
+visible conversations. A skill guides the Checker responsibility but never
+becomes a hidden Checker or transfers acceptance authority.
+
+CodeGraph is mandatory for code or repository work when relevant source can be
+indexed. Use it to establish the structural and dependency baseline, ownership
+boundaries, entry points, call/dependency paths, and affected closure before the
+first CELL. Refresh the changed graph slice after each accepted CELL and the
+broader baseline at GO and final acceptance. CodeGraph output complements but
+never replaces source inspection, tests, or runtime evidence.
+
+Build a task-fit layered detection stack from mature tools:
+
+| Layer | Preferred tools and evidence |
+| --- | --- |
+| Native correctness | The language compiler, type checker, formatter, linter, and native test runner |
+| Structure and impact | CodeGraph plus diff and ownership-boundary inspection |
+| Static and semantic security | Semgrep or CodeQL with pinned project rules |
+| Secret exposure | Gitleaks with reviewed allowlists |
+| Dependency and supply chain | OSV-Scanner or Trivy; add SBOM/container checks when relevant |
+| Behavioral confidence | Focused tests, broader regression, coverage and mutation testing when risk justifies them |
+| Runtime and user flow | Playwright for browser/TUI-adjacent web flows or an equivalent real runtime harness |
+| Interface contracts | Spectral, Schemathesis, or another API or schema contract validator |
+
+Not every optional layer runs for every CELL. The Supervisor responsibility
+selects required layers from risk, technology, changed dependency closure,
+external surface, and acceptance burden. Any omitted applicable layer needs a
+recorded rationale; convenience, speed, or Worker confidence is not a rationale.
+Use pinned versions/configuration, immutable baselines where possible, and
+incremental or differential scans for CELL checks. Run broader regression at GO
+boundaries and every required full gate at final acceptance.
+If the computer cannot execute a required layer safely in one pass, split or
+serialize the detection commands and reduce CELL size or loop concurrency, not
+acceptance quality.
+
+For each CELL, the Checker responsibility maintains an acceptance matrix mapping
+every invariant and criterion to an independent command, configuration, expected
+result, and evidence path. Maintain a false-positive register with reviewed
+suppressions and expiry/revisit conditions; never silence a finding only to make
+the scan green. Record focused, graph-impact, regression, security, and runtime
+results as `REGRESSION_EVIDENCE` linked to the CELL and manifest version.
+
+The Checker responsibility must not accept a CELL from Worker self-report alone.
+It must inspect authoritative artifacts and run independent checks. Tool output
+is evidence, not the acceptance decision: reconcile conflicts, investigate
+unexpected omissions, and preserve raw summaries or stable references without
+leaking secrets or private paths.
+
+After every accepted CELL and GO, calibrate the detection system from escaped
+defects, noisy rules, new dependencies, and changed risk. Detection evidence may
+update the next CELL, GO revision, or supplementary GO under the existing
+append-only planning rules. It never authorizes silent scope or acceptance
+changes.
+
+If CodeGraph or another required layer, skill, permission, or safe execution
+capacity is unavailable, record `CONDITION_BLOCKED` and stop dispatch. The
+Supervisor responsibility must provision or safely resolve the capability under
+existing authority, or request specific Owner assistance. Never substitute a
+weaker tool silently or accept with a knowingly incomplete detection system.
 
 ### Worker
 
@@ -555,6 +650,12 @@ Before launch, confirm:
 - The current thread is the combined Supervisor/Checker and exactly one Worker is assigned.
 - The receipt target, method-log path, and final queue are unique.
 - Tests, scans, safety boundaries, and external-action gates are explicit.
+- `DETECTION_CAPABILITY_MANIFEST` exists, CodeGraph has produced the current
+  structural baseline for code/repository work, and the acceptance matrix maps
+  every CELL criterion to independent evidence.
+- Required native checks and task-relevant Semgrep/CodeQL, Gitleaks,
+  OSV-Scanner/Trivy, Playwright, coverage/mutation, and API/schema layers are
+  provisioned or have an approved risk-based omission rationale.
 - Every CELL declares an allowed Worker model and reasoning level.
 - The combined Supervisor/Checker is `gpt-5.6-sol xhigh`; every Worker is from
   `gpt-5.5 high` through `gpt-5.6-sol high` according to task type.
