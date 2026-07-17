@@ -21,6 +21,10 @@ never load both skills, switch methods, repeat the invocation, or borrow MSLK
 capabilities. If SLK is not suitable, stop and return the method decision to the
 Owner instead of converting the active run.
 
+Common rules do not make the skills composable. SLK implements all nine rules
+only through one combined Supervisor/Checker and one Worker; it never creates a
+separate Checker or imports an MSLK Checker/Worker pair.
+
 All roles must be visible Codex conversations under the same project. SLK never
 uses subagents, background agents, hidden workers, or `delegate_task`.
 Create or unarchive a role conversation only when formal work is ready; archive
@@ -49,7 +53,7 @@ only when the final queue shows `全部完成：231/231`.
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.3.1`.
+Current version: `1.3.2`.
 
-Version `1.3.1` adds mandatory accepted-CELL progress to every task assignment
-and the final queue.
+Version `1.3.2` hardens strict SLK/MSLK isolation and records SLK role ownership
+without creating extra roles.

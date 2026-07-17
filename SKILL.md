@@ -45,6 +45,11 @@ selected for a project run:
   or any other MSLK capability;
 - do not present SLK and MSLK as interchangeable or generally combinable.
 
+Shared rules never transfer role ownership, topology, messages, state, or
+capabilities between SLK and MSLK. Implement every common requirement entirely
+inside the selected SLK role structure. Mentioning MSLK for prohibition does not
+load it or authorize any of its behavior.
+
 If SLK is the wrong method, record `METHOD_SELECTION_FAILED`, stop without
 formal work, and ask the Owner to start a new, separate run with an explicit
 method choice. The current run never converts itself into MSLK.
@@ -87,8 +92,8 @@ The simulation must:
 
 1. confirm SLK is the sole selected method and has not been invoked already;
 2. model one visible same-project Supervisor/Checker and one visible Worker;
-3. rehearse the first CELL assignment, Worker delivery, Checker decision, and
-   one `NEXT`, `REDO`, or `BLOCKED` route;
+3. rehearse the first CELL assignment, Worker delivery, combined-role validation
+   decision, and one `NEXT`, `REDO`, or `BLOCKED` route;
 4. prove no subagent or MSLK capability is used;
 5. validate ownership, write scope, evidence paths, model assignment, tests,
    safety gates, and heartbeat behavior.
@@ -130,6 +135,20 @@ classification. Record the change before dispatch. Never assign a Worker below
 `high`.
 
 ## Role Contract
+
+### Role Authority Matrix
+
+| Responsibility | SLK owner |
+| --- | --- |
+| Method gate, project plan, GO/CELL plan, and GO revision | Supervisor responsibility inside the combined Supervisor/Checker |
+| CELL assignment, validation, and routing | Checker responsibility inside the same combined Supervisor/Checker |
+| Worker-result repair | Supervisor responsibility inside the combined Supervisor/Checker |
+| Project progress and final queue | Combined Supervisor/Checker |
+| CELL execution | Worker |
+
+These are responsibilities inside exactly two visible roles: one combined
+Supervisor/Checker and one Worker. The functional distinction never creates a
+separate Checker, extra Worker, or MSLK-style pair.
 
 ### Supervisor/Checker
 
@@ -422,6 +441,8 @@ Before launch, confirm:
 - A 15/30/60-minute same-thread heartbeat is active and recorded.
 - The heartbeat will be removed after final acceptance.
 - No second Worker or parallel pair is hidden in the plan.
+- The role authority matrix is unchanged; no MSLK role, pair, state, or message
+  route has been borrowed.
 
 Then the combined Supervisor/Checker sends the first formal CELL to the Worker
 and performs periodic oversight, validation, routing, and final acceptance.
