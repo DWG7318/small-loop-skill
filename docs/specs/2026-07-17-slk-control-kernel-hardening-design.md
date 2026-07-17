@@ -24,14 +24,61 @@ tests, role ownership, or commands.
   commands, transitions, errors, and required audit fields.
 - `references/slk-control-operations.md`: human execution instructions for the
   combined Supervisor/Checker.
+- `evals/slk-readiness-questions.json`: exactly 24 SLK-only adversarial
+  comprehension questions with stable question and option IDs.
+- `evals/slk-readiness-answer-key.json`: canonical answers, rationales,
+  governing rule anchors, and forbidden interpretations for all 24 questions.
+- `scripts/run_slk_readiness_eval.py`: SLK-only question presentation, seeded
+  ordering, exact grading, and receipt generation.
 - `SKILL.md`: concise mandatory summary and conditional reference link.
 - `tests/test_control_kernel.py`: model-based positive and negative scenarios
   loaded from the SLK JSON contract.
+- `tests/test_readiness_eval.py`: question coverage, answer-key completeness,
+  fail-closed grading, stale-receipt, and bypass tests.
 - `tests/test_contract.py`: role, documentation, link, version, and line-budget
   contracts.
 
 No file in this list is shared with MSLK. Similar behavior is intentionally
 defined and tested again under SLK ownership.
+
+## Mandatory Readiness Eval
+
+Every visible role conversation in the exact SLK roster, including the combined
+Supervisor/Checker and the sole Worker, must pass the SLK readiness eval before
+any formal CELL is dispatched. Taking the eval is ready work, so creating a role
+conversation for this purpose does not violate the no-idle-role rule. Archive a
+role immediately after its eval if no next authorized work is ready; later
+resume that same conversation.
+
+The 24 questions use exact multiple-select, ordering, and state-transition
+responses rather than free-form self-attestation. They cover all SLK governance
+rules, with extra adversarial cases for:
+
+- SLK/MSLK mutual exclusion, one-Worker topology, and visible-role lifecycle;
+- Supervisor-owned planning, checking, routing, and repair instead of Worker
+  self-repair or a separate Checker;
+- mandatory simulation, GO revision, supplementary historical GO, and progress
+  denominator changes;
+- model assignment, device-sized CELLs versus project-sized GOs, optional Goal,
+  blocker handling, and weakened Overseer scheduling;
+- GO-level detection profiles used for every CELL, Markdown limits, command
+  transitions, idempotency, and release evidence.
+
+The runner displays questions without answers and grades against the separate
+canonical key. A pass requires exactly `24/24`; partial credit, rounded scores,
+manual overrides, inherited receipts, and “understood in spirit” claims are
+invalid. One wrong, missing, extra, or misordered answer produces
+`SLK_READINESS_EVAL_FAIL`. A retry requires rereading the cited governing rules,
+a new seed, and all 24 questions again; prior correct answers do not carry over.
+
+`SLK_READINESS_EVAL_PASS` records skill version and commit, question-bank and
+answer-key hashes, candidate role and conversation ID, model/reasoning level,
+seed, attempt number, per-question result, `24/24`, and timestamp. The receipt is
+stale after any skill/eval change, candidate conversation replacement, or model
+change. Standard answers remain committed and reviewable, but the candidate may
+not inspect the answer key or grading tests during an attempt; unverifiable
+ordering fails closed. `SIMULATION_PASS` is attempted only after every exact
+roster receipt is current, and formal work requires both gates.
 
 ## Public Command Contract
 
@@ -49,9 +96,10 @@ SLK CANCEL SCHEDULE
 ```
 
 `SLK START` is the only initial-start command and is never scheduled. It is valid
-only after method selection, plan approval, `SIMULATION_PASS`, detection-profile
-approval, and continuation checks. It creates exactly one fresh visible Worker
-and dispatches the prepared first CELL.
+only after method selection, current `SLK_READINESS_EVAL_PASS` receipts for the
+exact two-role roster, plan approval, `SIMULATION_PASS`, detection-profile
+approval, and continuation checks. It authorizes the prepared first CELL for the
+same sole Worker used by readiness evaluation and never creates a second Worker.
 
 Timed commands apply only after the loop has started:
 
@@ -76,7 +124,7 @@ no others. No implicit state is permitted.
 
 Key invariants:
 
-- `NOT_STARTED -> RUNNING` requires `SLK START` and creates the sole Worker.
+- `NOT_STARTED -> RUNNING` requires `SLK START` and the sole prepared Worker.
 - Active CELL work is never interrupted.
 - Pause becomes effective only after validation and any required repair by the
   combined Supervisor/Checker.
@@ -101,6 +149,7 @@ visibility.
 Tests load the JSON contract and verify at least:
 
 - valid initial manual start;
+- rejection of start when either role's readiness receipt is missing or stale;
 - rejection of timed initial start;
 - safe pause during an active CELL;
 - pause at accepted-CELL threshold without overshoot;
@@ -136,6 +185,8 @@ matching `VERSION`, README version, canonical metadata, pushed HEAD, and annotat
 - All SLK Markdown files are at most 1000 lines; target `SKILL.md` below 900.
 - No initial timed start remains.
 - Exactly one Worker can ever exist in one SLK run.
+- Every exact-roster role passes an independent, current `24/24` SLK eval before
+  simulation or formal dispatch.
 - Command and scenario tests pass independently of MSLK.
 - Global install equals the repository by tracked-file hash.
 - Remote `main` and annotated `v1.8.0` identify the same release commit.
