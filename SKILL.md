@@ -208,31 +208,11 @@ and compute constraints. This is an availability inventory, not GO allocation.
 The manifest is versioned with the plan and revalidated after material tool,
 architecture, dependency, or acceptance changes.
 
-Provision mature detection skills as part of the same manifest. The baseline
-catalog is `superpowers:verification-before-completion`,
-`superpowers:systematic-debugging`, `superpowers:test-driven-development`,
-`security-best-practices`, and `playwright`, plus trusted official or established
-language/framework inspection skills selected for the actual stack.
-
-Record each skill source, version, and compatibility with the current task and
-Codex environment. Confirm the skill is installed and readable before relying on
-it; never invent an unavailable skill. Any skill that requires subagents is
-incompatible with SLK and must not be loaded, because all roles must remain
-visible conversations. A skill guides the Checker responsibility but never
-becomes a hidden Checker or transfers acceptance authority.
-
-CodeGraph is mandatory for code or repository work when relevant source can be
-indexed. Use it to establish the structural and dependency baseline, ownership
-boundaries, entry points, call/dependency paths, and affected closure before the
-first CELL. Refresh the changed graph slice after each accepted CELL and the
-broader baseline at GO and final acceptance. CodeGraph output complements but
-never replaces source inspection, tests, or runtime evidence.
-
-Build a task-fit layered detection stack from mature tools: native compiler,
-type, lint, format, and test tools; CodeGraph; Semgrep or CodeQL; Gitleaks;
-OSV-Scanner or Trivy; focused/regression tests plus coverage and mutation
-testing; Playwright or an equivalent real runtime harness; and Spectral,
-Schemathesis, or another API or schema contract validator.
+Before defining a GO profile, read
+[`references/checker-detection-catalog.md`](references/checker-detection-catalog.md)
+and verify its skill/tool catalog against the manifest. CodeGraph is mandatory
+for code or repository work when relevant source can be indexed; Checker
+responsibility owns its use and evidence.
 
 ### GO Detection Profile Contract
 
@@ -275,24 +255,8 @@ bundle safely in one pass, split or serialize the detection commands and reduce
 CELL size or loop concurrency, not acceptance quality; complete every receipt
 before accepting the CELL.
 
-For each CELL, the Checker responsibility maintains an acceptance matrix mapping
-every invariant and criterion to an independent command, configuration, expected
-result, and evidence path. Maintain a false-positive register with reviewed
-suppressions and expiry/revisit conditions; never silence a finding only to make
-the scan green. Record focused, graph-impact, regression, security, and runtime
-results as `REGRESSION_EVIDENCE` linked to the CELL and manifest version.
-
-The Checker responsibility must not accept a CELL from Worker self-report alone.
-It must inspect authoritative artifacts and run independent checks. Tool output
-is evidence, not the acceptance decision: reconcile conflicts, investigate
-unexpected omissions, and preserve raw summaries or stable references without
-leaking secrets or private paths.
-
-After every accepted CELL and GO, calibrate the detection system from escaped
-defects, noisy rules, new dependencies, and changed risk. Detection evidence may
-update the next CELL, GO revision, or supplementary GO under the existing
-append-only planning rules. It never authorizes silent scope or acceptance
-changes.
+The reference defines acceptance-matrix, false-positive, `REGRESSION_EVIDENCE`,
+and calibration requirements. They remain mandatory parts of Checker acceptance.
 
 If CodeGraph or another required layer, skill, permission, or safe execution
 capacity is unavailable, record `CONDITION_BLOCKED` and stop dispatch. The
@@ -611,6 +575,45 @@ If the Goal cannot be pursued within Owner authority, safety gates, available
 evidence, or the selected SLK boundary, record `BLOCKED`, `PLAN_DEFECT`, or an
 Owner decision instead of claiming completion or switching to MSLK.
 
+## Markdown Context Boundary
+
+Every Markdown file governed by the loop has a hard maximum of 1000 physical
+lines, counting blank lines and fenced content. This is a Codex
+context-readability limit, not a device-capacity limit. A stronger computer,
+model, or context window does not waive it.
+
+Governed files include every solution, plan, GO, CELL, manifest, profile, index,
+log, receipt, evidence, queue, coordination file, and other Markdown created or
+materially expanded by the loop. Existing read-only source or third-party Markdown is not
+governed until the plan requires modifying it; then the Supervisor responsibility
+must authorize a semantic split or record `PLAN_DEFECT`/`CONDITION_BLOCKED`.
+
+During solution design, Supervisor responsibility defines the Markdown artifact
+map and a `WORK_CONTINUATION_INDEX`. The index records objective, plan version,
+current GO/CELL, semantic shard sequence, accepted evidence references,
+invariants, unresolved decisions, and next action. It also stays within 1000
+lines.
+
+Prefer multiple files that follow how work continues and split at a semantic
+work-continuation boundary such as a GO, coherent CELL group, completed decision,
+evidence batch, or execution phase. The split must not hard-cut a requirement,
+table, code block, acceptance record, or evidence chain. Each successor names
+its predecessor, continuation reason, carried invariants, and next action; update
+the index before continuing.
+
+Any GO that can write Markdown must assign `markdown-line-budget` in its
+`GO_DETECTION_PROFILE`. Every CELL acceptance checks all created or materially
+expanded Markdown files and records `MD_LINE_BUDGET_PASS` with paths and physical
+line counts. Before the next append would exceed 1000 lines, close the current
+file at the nearest semantic boundary and continue in a linked file. Never delete
+required detail or compress evidence merely to pass the limit.
+
+After context compaction or a shard transition, reload the
+`WORK_CONTINUATION_INDEX`, current semantic file, predecessor handoff, governing
+GO profile, and latest accepted evidence before routing work. If a valid split
+cannot be made within scope or format constraints, stop dispatch rather than
+accepting an unreadable or misleading Markdown artifact.
+
 ## Evidence And Queue
 
 Use project-local coordination paths unless the project defines others:
@@ -624,8 +627,9 @@ coordination/
   final-queue/
 ```
 
-Method logs are append-only. Rotate before 999 lines or when sealing a damaged
-or completed shard. Every new shard cites the previous shard and its hash.
+Method logs are append-only. Rotate before the next append would exceed 1000
+lines or when sealing a damaged or completed shard. Every new shard cites the
+previous shard and its hash.
 
 Only the Supervisor/Checker writes the final record:
 
@@ -638,7 +642,7 @@ Valid results are `passed`, `blocked`, `plan-defect`, `owner-decision`, and
 combined Supervisor/Checker's final audit accepts it. When a Goal is configured,
 the passed record also requires `GOAL_SATISFIED`.
 
-No generated coordination Markdown file may exceed 999 lines.
+No governed coordination Markdown file may exceed 1000 lines.
 
 ## Recovery Rules
 
@@ -665,6 +669,8 @@ Before launch, confirm:
 - Every role conversation has work ready, and every no-work conversation is
   archived with an explicit unarchive path for later same-project work.
 - One complete solution/GO/CELL plan exists.
+- The plan defines the Markdown artifact map and `WORK_CONTINUATION_INDEX`; every
+  governed file is at most 1000 physical lines.
 - The GO revision ledger is present; every completed GO has an evidence review,
   and every revised or supplementary GO has `GO_REVISION_SIMULATION_PASS`.
 - The current thread is the combined Supervisor/Checker and exactly one Worker is assigned.
@@ -675,6 +681,8 @@ Before launch, confirm:
   every CELL criterion to independent evidence.
 - Every GO has an approved `GO_DETECTION_PROFILE`; every CELL references it and
   requires a complete Checker-owned `CELL_DETECTION_RECEIPT` before acceptance.
+- Every GO that can write Markdown includes `markdown-line-budget`, and the
+  latest accepted CELL has `MD_LINE_BUDGET_PASS` evidence.
 - Required native checks and task-relevant Semgrep/CodeQL, Gitleaks,
   OSV-Scanner/Trivy, Playwright, coverage/mutation, and API/schema layers are
   assigned at GO level and provisioned, or are excluded from that GO with an

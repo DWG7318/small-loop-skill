@@ -6,8 +6,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 PROMPT = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
-ALL_TEXT = "\n".join((SKILL, README, PROMPT))
+DETECTION_REFERENCE = (ROOT / "references" / "checker-detection-catalog.md").read_text(
+    encoding="utf-8"
+)
+ALL_TEXT = "\n".join((SKILL, README, PROMPT, DETECTION_REFERENCE))
 NORMALIZED_SKILL = " ".join(SKILL.split())
+NORMALIZED_DETECTION = " ".join((SKILL + "\n" + DETECTION_REFERENCE).split())
 
 
 class SmallLoopContractTest(unittest.TestCase):
@@ -119,7 +123,7 @@ class SmallLoopContractTest(unittest.TestCase):
         )
         for rule in required:
             with self.subTest(rule=rule):
-                self.assertIn(rule, NORMALIZED_SKILL)
+                self.assertIn(rule, NORMALIZED_DETECTION)
 
     def test_go_detection_profile_is_planned_and_executed_for_every_cell(self):
         required = (
@@ -140,6 +144,30 @@ class SmallLoopContractTest(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, NORMALIZED_SKILL)
         self.assertNotIn("Not every optional layer runs for every CELL", SKILL)
+
+    def test_markdown_context_boundary_is_hard_and_semantic(self):
+        required = (
+            "## Markdown Context Boundary",
+            "Every Markdown file governed by the loop has a hard maximum of 1000 physical lines",
+            "This is a Codex context-readability limit, not a device-capacity limit",
+            "A stronger computer, model, or context window does not waive it",
+            "WORK_CONTINUATION_INDEX",
+            "MD_LINE_BUDGET_PASS",
+            "split at a semantic work-continuation boundary",
+            "must not hard-cut a requirement, table, code block, acceptance record, or evidence chain",
+            "before the next append would exceed 1000 lines",
+            "Every CELL acceptance checks all created or materially expanded Markdown files",
+            "After context compaction or a shard transition",
+            "read-only source or third-party Markdown",
+            "markdown-line-budget",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
+        self.assertNotIn("999 lines", SKILL)
+        for path in ROOT.rglob("*.md"):
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertLessEqual(len(path.read_text(encoding="utf-8").splitlines()), 1000)
 
     def test_shared_rules_remain_inside_slk(self):
         required = (

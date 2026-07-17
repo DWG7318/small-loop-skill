@@ -77,10 +77,15 @@ The Checker responsibility executes every skill and tool assigned by that
 profile for every CELL in the GO and records a `CELL_DETECTION_RECEIPT`; CELLs
 may narrow arguments, but cannot omit or replace GO-level capabilities.
 
+Every Markdown work artifact has a hard 1000-physical-line maximum because Codex
+must be able to read and recover the working context reliably. The Supervisor
+responsibility plans semantic continuation files and a `WORK_CONTINUATION_INDEX`;
+every Markdown-writing CELL runs `markdown-line-budget` before acceptance.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.6.1`.
+Current version: `1.7.0`.
 
-Version `1.6.1` makes detection allocation GO-level plan data and requires the
-Checker to execute the complete assigned bundle for every CELL.
+Version `1.7.0` adds the hard 1000-line Markdown context boundary, semantic work
+continuation, compaction recovery, and per-CELL line-budget evidence.
