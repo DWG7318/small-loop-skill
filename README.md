@@ -42,10 +42,14 @@ The combined Supervisor/Checker uses `gpt-5.6-sol xhigh`. Workers range from
 project need and ignores device limits; CELLs are made smaller as needed for
 reliable execution on the current computer.
 
+Every formal task shows project-wide accepted CELL progress, for example
+`正在完成 GO-03：35/231`. The count continues through every assignment and ends
+only when the final queue shows `全部完成：231/231`.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.3.0`.
+Current version: `1.3.1`.
 
-Version `1.3.0` makes Supervisor repair ownership mandatory, updates model
-tiers, and makes CELL sizing device-aware without constraining GO scope.
+Version `1.3.1` adds mandatory accepted-CELL progress to every task assignment
+and the final queue.

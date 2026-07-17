@@ -285,6 +285,34 @@ Worker assignment. `REDO` means the Supervisor/Checker repairs and revalidates
 the delivery; it does not send correction work back to the Worker. Messages
 without the formal task heading are discussion, not executable Worker work.
 
+## Mandatory Progress Display
+
+Every formal task assignment from the Supervisor/Checker to the Worker must
+include exactly one project progress line after the task details:
+
+```text
+正在完成 GO-03：35/231
+```
+
+The GO identifier is the GO of the newly assigned CELL. The numerator counts
+accepted CELLs only, after any required Supervisor repair and local validation.
+Assigned, running, delivered-but-unchecked, blocked, revoked, and duplicate CELLs
+do not count as complete. Count each accepted CELL identifier exactly once.
+
+The denominator is the total CELL count in the current versioned plan across all
+GO, including accepted historical CELLs and every active remaining CELL. After
+an approved GO revision or historical-GO supplement, recompute the denominator,
+record the old and new totals in the revision ledger, and never reduce it below
+the accepted count. The numerator never decreases.
+
+The Supervisor/Checker recomputes this snapshot immediately before every formal
+task assignment and continues displaying it until project completion. When all
+CELLs are accepted and no next task exists, the final queue must display:
+
+```text
+全部完成：231/231
+```
+
 After finishing a CELL, the Worker sends the Supervisor/Checker:
 
 ```text
@@ -388,6 +416,8 @@ Before launch, confirm:
   `gpt-5.5 high` through `gpt-5.6-sol high` according to task type.
 - GO scope follows project need; every CELL is sized for reliable execution on
   the current computer without weakening GO acceptance.
+- Every formal task displays `正在完成 GO-NN：accepted/total`, and the final queue
+  displays `全部完成：total/total`.
 - The supervisor board identifies the Worker and current CELL.
 - A 15/30/60-minute same-thread heartbeat is active and recorded.
 - The heartbeat will be removed after final acceptance.

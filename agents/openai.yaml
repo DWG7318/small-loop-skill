@@ -1,4 +1,4 @@
 interface:
   display_name: "Small Loop Skill (SLK)"
   short_description: "One Supervisor/Checker with one Worker"
-  default_prompt: "Use only $small-loop-skill (SLK), exactly once. Use visible same-project conversations, never subagents or MSLK capabilities. The combined Supervisor/Checker uses gpt-5.6-sol xhigh, repairs Worker-result defects itself, and never returns repair tasks. Assign Workers from gpt-5.5 high through gpt-5.6-sol high by task type. Size GO by project need and CELL by current-computer capacity. Simulate before formal work and every evidence-driven GO revision."
+  default_prompt: "Use only $small-loop-skill (SLK), exactly once. Use visible same-project conversations, never subagents or MSLK capabilities. The combined Supervisor/Checker uses gpt-5.6-sol xhigh, repairs Worker-result defects itself, and never returns repair tasks. Assign Workers from gpt-5.5 high through gpt-5.6-sol high by task type. Size GO by project need and CELL by current-computer capacity. Every formal task shows current GO plus accepted/total project CELL progress until the final total/total line. Simulate before formal work and every evidence-driven GO revision."
