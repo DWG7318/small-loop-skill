@@ -30,16 +30,16 @@ Before formal role launch or CELL execution, run a no-side-effect simulation of
 the first assignment, delivery, validation, and routing cycle. Formal work is
 allowed only after the simulation records `SIMULATION_PASS`.
 
-After each GO, the combined Supervisor/Checker acts as Planner and reviews the
-actual accepted result. The Planner may propose adjustments to unstarted GO or
-an append-only supplementary GO for historical work. Preserve all historical
-evidence and identifiers, and require `GO_REVISION_SIMULATION_PASS` before
-executing the revised plan.
+After each GO, the Supervisor responsibility within the combined
+Supervisor/Checker reviews the actual accepted result. The Supervisor may
+propose adjustments to unstarted GO or an append-only supplementary GO for
+historical work. Preserve all historical evidence and identifiers, and require
+`GO_REVISION_SIMULATION_PASS` before executing the revised plan.
 
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.2.8`.
+Current version: `1.2.9`.
 
-Version `1.2.8` assigns evidence-driven GO revision explicitly to the Planner
-capacity of the combined Supervisor/Checker.
+Version `1.2.9` assigns evidence-driven GO revision to the Supervisor
+responsibility inside the combined Supervisor/Checker without adding a role.

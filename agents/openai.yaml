@@ -1,4 +1,4 @@
 interface:
   display_name: "Small Loop Skill (SLK)"
   short_description: "One Supervisor/Checker with one Worker"
-  default_prompt: "Use only $small-loop-skill (SLK), exactly once. Use visible same-project conversations, never subagents or MSLK capabilities. Simulate before formal work, lifecycle-manage conversations, and after every GO have the combined Supervisor/Checker act as Planner to propose evidence-driven subsequent-GO adjustments or historical-GO supplements before a delta simulation."
+  default_prompt: "Use only $small-loop-skill (SLK), exactly once. Use visible same-project conversations, never subagents or MSLK capabilities. Simulate before formal work, lifecycle-manage conversations, and after every GO have the Supervisor responsibility within the combined Supervisor/Checker propose evidence-driven subsequent-GO adjustments or historical-GO supplements before a delta simulation."
