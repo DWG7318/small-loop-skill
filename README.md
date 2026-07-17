@@ -60,10 +60,15 @@ conditions. A clear failure stops Worker dispatch and hands evidence to the
 Supervisor responsibility, which either requests specific Owner assistance or
 resolves the condition and authorizes the same combined role to resume.
 
+The Owner may also configure the Overseer to start/resume or safely pause the
+single loop at a specified time or accepted-CELL threshold. Pausing stops new
+dispatch at a safe CELL boundary; resuming reuses the same SLK invocation and
+Worker only after prerequisite validation.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.4.1`.
+Current version: `1.5.0`.
 
-Version `1.4.1` adds the continuation-condition stop, escalation, resolution,
-and verified-resume gate.
+Version `1.5.0` adds optional Owner-configured timed and CELL-threshold Overseer
+start/resume/pause control.

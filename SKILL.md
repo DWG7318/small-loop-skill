@@ -144,6 +144,7 @@ classification. Record the change before dispatch. Never assign a Worker below
 | CELL assignment, validation, and routing | Checker responsibility inside the same combined Supervisor/Checker |
 | Continuation-condition stop, report, and resume validation | Checker responsibility inside the same combined Supervisor/Checker |
 | Continuation-condition resolution and Owner-assistance decision | Supervisor responsibility inside the combined Supervisor/Checker |
+| Optional timed or accepted-CELL-threshold loop control | Supervisor responsibility inside the combined Supervisor/Checker |
 | Worker-result repair | Supervisor responsibility inside the combined Supervisor/Checker |
 | Optional Goal management and final Goal validation | Supervisor responsibility inside the combined Supervisor/Checker |
 | Project progress and final queue | Combined Supervisor/Checker |
@@ -163,6 +164,7 @@ result, and handles ordinary CELL traffic.
 - Own evidence-driven GO review and revision as a Supervisor responsibility.
 - Create exactly one Worker and no separate Checker.
 - Maintain the supervisor board and the same-thread Overseer heartbeat.
+- Manage any Owner-configured optional Overseer start/resume/pause schedule.
 - Manage and independently validate the optional Goal completion gate.
 - Resolve plan defects, Owner decisions, shared-resource issues, and genuine
   blockers that cannot be resolved inside the current authorized plan.
@@ -423,6 +425,44 @@ action. Never tell the Worker to select new work. If the environment cannot
 create a same-thread heartbeat, report the missing capability and do not
 substitute detached automation.
 
+## Optional Overseer Control Schedule
+
+The Owner may preconfigure one optional Overseer control schedule. Without an
+Owner-configured schedule, the heartbeat performs status inspection only and
+must not invent start, resume, pause, or close actions.
+
+The schedule must record:
+
+- action: start/resume or safe pause/close;
+- trigger: a timestamp with timezone, an accepted CELL threshold, or both;
+- scope: the one SLK loop;
+- one-shot or recurring behavior;
+- the safe-boundary and resume conditions.
+
+Record a future action as `SCHEDULED_START` or `SCHEDULED_PAUSE`. A time trigger
+fires on the first Supervisor inspection at or after its timestamp. An accepted
+CELL threshold is checked after every CELL acceptance and again before every new
+Worker assignment, so reaching the threshold prevents another dispatch.
+
+For pause/close, stop new dispatch and record pause-pending state. The Supervisor
+must not interrupt an active CELL. Let the Worker reach its normal receipt, then
+validate and repair that result before recording `PAUSED_BY_POLICY`. Archive the
+Worker after the safe boundary and display the unchanged progress snapshot, for
+example `已暂停：35/231`. A paused loop is not complete, does not satisfy a Goal,
+and retains all append-only evidence and progress.
+
+For start/resume, a scheduled action does not repeat the SLK invocation, create
+a second Worker, or activate MSLK. At the trigger, unarchive the same Worker only
+when formal work is ready, confirm the current plan and simulation remain valid,
+and pass the continuation-condition gate before dispatch resumes. Then record
+`RESUMED_BY_POLICY` and send the next formal CELL with the normal progress line.
+If any prerequisite fails, record `CONDITION_BLOCKED` instead of starting.
+
+The same-thread Overseer remains active while a future control action exists.
+Owner changes or cancellation of the schedule are versioned on the supervisor
+board. Scheduled control never bypasses Owner assistance, safety gates, Goal
+validation, method exclusivity, or final acceptance.
+
 ## Optional Goal Gate
 
 The Owner may define one optional Goal. A Goal is active only when the Owner
@@ -528,6 +568,8 @@ Before launch, confirm:
 - The optional Goal is either absent or explicitly defined; a configured Goal
   blocks final completion until the Supervisor records `GOAL_SATISFIED`.
 - The supervisor board identifies the Worker and current CELL.
+- Any optional Overseer control schedule is Owner-configured, versioned, and
+  includes action, trigger, timezone, safe boundary, and resume conditions.
 - A 15/30/60-minute same-thread heartbeat is active and recorded.
 - The heartbeat will be removed after final acceptance.
 - No second Worker or parallel pair is hidden in the plan.
