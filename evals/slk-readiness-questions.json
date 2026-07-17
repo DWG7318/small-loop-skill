@@ -1,0 +1,272 @@
+{
+  "schema_version": "1.0",
+  "eval_id": "slk-readiness-v1",
+  "mode": "SLK",
+  "question_count": 24,
+  "questions": [
+    {
+      "id": "SLK-Q01",
+      "type": "multiple_select",
+      "prompt": "A bounded project selected SLK, but a useful MSLK checking pattern looks harmless. Which actions are valid?",
+      "options": [
+        {"id": "A", "text": "Invoke SLK exactly once and keep all behavior inside SLK."},
+        {"id": "B", "text": "Load MSLK only for its checking pattern."},
+        {"id": "C", "text": "Reject MSLK role, state, command, and capability borrowing."},
+        {"id": "D", "text": "Switch to MSLK after the current CELL."}
+      ]
+    },
+    {
+      "id": "SLK-Q02",
+      "type": "multiple_select",
+      "prompt": "Which statements satisfy the SLK visibility boundary?",
+      "options": [
+        {"id": "A", "text": "The Worker is a visible same-project conversation."},
+        {"id": "B", "text": "A hidden background worker is acceptable if logs are copied later."},
+        {"id": "C", "text": "Subagents and delegate_task are forbidden."},
+        {"id": "D", "text": "An internal tool call may be labeled as the Worker."}
+      ]
+    },
+    {
+      "id": "SLK-Q03",
+      "type": "ordering",
+      "prompt": "Order the visible-role lifecycle when Eval is ready now but later formal work is not yet ready.",
+      "options": [
+        {"id": "A", "text": "Create or unarchive the role for the authorized Eval."},
+        {"id": "B", "text": "Complete and record the Eval result."},
+        {"id": "C", "text": "Archive the role because no next authorized work is ready."},
+        {"id": "D", "text": "Unarchive the same conversation when later work becomes ready."}
+      ]
+    },
+    {
+      "id": "SLK-Q04",
+      "type": "multiple_select",
+      "prompt": "The project needs stronger checking. Which SLK responses preserve topology?",
+      "options": [
+        {"id": "A", "text": "Keep one combined Supervisor/Checker."},
+        {"id": "B", "text": "Create a separate visible Checker."},
+        {"id": "C", "text": "Strengthen Checker responsibility inside the combined role."},
+        {"id": "D", "text": "Make the Worker accept its own result."}
+      ]
+    },
+    {
+      "id": "SLK-Q05",
+      "type": "single_select",
+      "prompt": "The Worker delivery has a small correctable defect. Who performs the repair?",
+      "options": [
+        {"id": "A", "text": "Return a repair CELL to the Worker."},
+        {"id": "B", "text": "Supervisor responsibility repairs it and records evidence."},
+        {"id": "C", "text": "Create a replacement Worker."},
+        {"id": "D", "text": "Accept it because the defect is small."}
+      ]
+    },
+    {
+      "id": "SLK-Q06",
+      "type": "single_select",
+      "prompt": "A completed GO reveals missing follow-up work. Who owns the GO revision?",
+      "options": [
+        {"id": "A", "text": "The Worker rewrites the historical GO."},
+        {"id": "B", "text": "Supervisor responsibility appends a versioned revision or supplement."},
+        {"id": "C", "text": "A new Checker takes ownership."},
+        {"id": "D", "text": "The old evidence is deleted and replaced."}
+      ]
+    },
+    {
+      "id": "SLK-Q07",
+      "type": "multiple_select",
+      "prompt": "Select the valid SLK model assignments.",
+      "options": [
+        {"id": "A", "text": "Combined Supervisor/Checker: gpt-5.6-sol xhigh."},
+        {"id": "B", "text": "Combined Supervisor/Checker: gpt-5.5 high."},
+        {"id": "C", "text": "Worker: gpt-5.5 high or gpt-5.6-sol high by task."},
+        {"id": "D", "text": "Worker: gpt-5.6-sol xhigh."}
+      ]
+    },
+    {
+      "id": "SLK-Q08",
+      "type": "single_select",
+      "prompt": "The computer cannot reliably execute a large CELL, but the GO is necessary. What changes?",
+      "options": [
+        {"id": "A", "text": "Reduce GO acceptance until it fits."},
+        {"id": "B", "text": "Keep the GO and split it into smaller reliable CELLs."},
+        {"id": "C", "text": "Skip broad regression."},
+        {"id": "D", "text": "Add a second Worker."}
+      ]
+    },
+    {
+      "id": "SLK-Q09",
+      "type": "ordering",
+      "prompt": "Order the gates before the first formal CELL.",
+      "options": [
+        {"id": "A", "text": "Both exact-roster roles pass the 24-question readiness Eval."},
+        {"id": "B", "text": "Plan and GO detection profiles are approved."},
+        {"id": "C", "text": "The exact-plan no-side-effect simulation records SIMULATION_PASS."},
+        {"id": "D", "text": "Manual SLK START authorizes the first formal CELL."}
+      ]
+    },
+    {
+      "id": "SLK-Q10",
+      "type": "single_select",
+      "prompt": "A role scores 23/24 on its first readiness attempt. What happens?",
+      "options": [
+        {"id": "A", "text": "Round up because understanding is sufficient."},
+        {"id": "B", "text": "Retest only the missed question."},
+        {"id": "C", "text": "Fail the gate, reread anchors, and retake all 24 with a new seed."},
+        {"id": "D", "text": "Let simulation decide whether the miss matters."}
+      ]
+    },
+    {
+      "id": "SLK-Q11",
+      "type": "multiple_select",
+      "prompt": "Which progress accounting rules are valid after an approved supplementary GO adds CELLs?",
+      "options": [
+        {"id": "A", "text": "Reset accepted CELLs to zero."},
+        {"id": "B", "text": "The accepted numerator never decreases."},
+        {"id": "C", "text": "Keep the old denominator to look complete."},
+        {"id": "D", "text": "Increase the denominator and record old and new totals."}
+      ]
+    },
+    {
+      "id": "SLK-Q12",
+      "type": "ordering",
+      "prompt": "Order an evidence-driven supplementary GO before its first CELL.",
+      "options": [
+        {"id": "A", "text": "Review the accepted GO against actual evidence."},
+        {"id": "B", "text": "Append the supplementary GO without rewriting history."},
+        {"id": "C", "text": "Update dependencies, CELL map, models, and total denominator."},
+        {"id": "D", "text": "Record GO_REVISION_SIMULATION_PASS before dispatch."}
+      ]
+    },
+    {
+      "id": "SLK-Q13",
+      "type": "ordering",
+      "prompt": "Order the response when a required continuation condition is clearly absent.",
+      "options": [
+        {"id": "A", "text": "Checker responsibility stops formal dispatch and records CONDITION_BLOCKED."},
+        {"id": "B", "text": "Supervisor responsibility decides whether Owner assistance is needed."},
+        {"id": "C", "text": "The Owner assists or Supervisor responsibility resolves the condition."},
+        {"id": "D", "text": "Checker responsibility revalidates every condition before dispatch resumes."}
+      ]
+    },
+    {
+      "id": "SLK-Q14",
+      "type": "single_select",
+      "prompt": "All planned CELLs passed, but the optional Owner-defined Goal is not satisfied. What is valid?",
+      "options": [
+        {"id": "A", "text": "Declare completion because CELLs passed."},
+        {"id": "B", "text": "Record GOAL_GAP and design an append-only continuation."},
+        {"id": "C", "text": "Drop the Goal without Owner approval."},
+        {"id": "D", "text": "Switch to MSLK."}
+      ]
+    },
+    {
+      "id": "SLK-Q15",
+      "type": "single_select",
+      "prompt": "One required GO-level detection tool appears irrelevant to one CELL. What is required?",
+      "options": [
+        {"id": "A", "text": "The Worker may skip it."},
+        {"id": "B", "text": "The Checker may silently substitute another tool."},
+        {"id": "C", "text": "Redesign or split the GO, or revise and resimulate the profile before dispatch."},
+        {"id": "D", "text": "Run it only at final completion."}
+      ]
+    },
+    {
+      "id": "SLK-Q16",
+      "type": "multiple_select",
+      "prompt": "A governed Markdown file is about to exceed its context boundary. Select the valid actions.",
+      "options": [
+        {"id": "A", "text": "Split at a semantic continuation boundary before the append."},
+        {"id": "B", "text": "Hard-cut the current table at line 1000."},
+        {"id": "C", "text": "Keep WORK_CONTINUATION_INDEX as a current-state pointer below 200 lines."},
+        {"id": "D", "text": "Delete evidence until the file fits."}
+      ]
+    },
+    {
+      "id": "SLK-Q17",
+      "type": "single_select",
+      "prompt": "SLK PAUSE AFTER 35 is scheduled when 34 CELLs are accepted and no CELL is active. What does 35 mean?",
+      "options": [
+        {"id": "A", "text": "Pause after 35 additional CELLs."},
+        {"id": "B", "text": "Allow work only until the absolute accepted count reaches 35, then stop dispatch."},
+        {"id": "C", "text": "Pause immediately at 34."},
+        {"id": "D", "text": "The threshold is advisory."}
+      ]
+    },
+    {
+      "id": "SLK-Q18",
+      "type": "ordering",
+      "prompt": "A pause trigger matures during an active CELL. Order the safe boundary sequence.",
+      "options": [
+        {"id": "A", "text": "Mark PAUSE_PENDING and let the Worker finish normally."},
+        {"id": "B", "text": "Validate the delivery and evidence."},
+        {"id": "C", "text": "Supervisor responsibility performs any required repair."},
+        {"id": "D", "text": "Record PAUSED and archive the Worker if no next work is ready."}
+      ]
+    },
+    {
+      "id": "SLK-Q19",
+      "type": "single_select",
+      "prompt": "The Owner asks for SLK START AT 2030-01-01T00:00:00Z before the loop exists. What happens?",
+      "options": [
+        {"id": "A", "text": "Schedule the first start."},
+        {"id": "B", "text": "Create the Worker early and wait."},
+        {"id": "C", "text": "Convert it to RESUME AT."},
+        {"id": "D", "text": "Reject it; initial start is manual only."}
+      ]
+    },
+    {
+      "id": "SLK-Q20",
+      "type": "single_select",
+      "prompt": "The paused Worker conversation is inconvenient, so a fresh Worker is proposed for resume. What is valid?",
+      "options": [
+        {"id": "A", "text": "Use the fresh Worker if it reads the logs."},
+        {"id": "B", "text": "Use both Workers for one transition."},
+        {"id": "C", "text": "Reject replacement and wake the same paused Worker after revalidation."},
+        {"id": "D", "text": "Switch methods."}
+      ]
+    },
+    {
+      "id": "SLK-Q21",
+      "type": "single_select",
+      "prompt": "SLK CANCEL SCHEDULE is issued while a CELL is active and a pause is pending. What changes?",
+      "options": [
+        {"id": "A", "text": "Interrupt the CELL immediately."},
+        {"id": "B", "text": "Cancel only the pending schedule; active work continues normally."},
+        {"id": "C", "text": "Mark the project complete."},
+        {"id": "D", "text": "Create a new schedule automatically."}
+      ]
+    },
+    {
+      "id": "SLK-Q22",
+      "type": "single_select",
+      "prompt": "The same control command ID is received twice. What must the second receipt do?",
+      "options": [
+        {"id": "A", "text": "Return ALREADY_APPLIED without repeating transition or dispatch."},
+        {"id": "B", "text": "Repeat the assignment for safety."},
+        {"id": "C", "text": "Generate a new command ID silently."},
+        {"id": "D", "text": "Delete the first receipt."}
+      ]
+    },
+    {
+      "id": "SLK-Q23",
+      "type": "single_select",
+      "prompt": "A control command attempts to resume an SLK already in COMPLETE. What is valid?",
+      "options": [
+        {"id": "A", "text": "Reopen it if the Worker still exists."},
+        {"id": "B", "text": "Reopen it if no Goal was configured."},
+        {"id": "C", "text": "Create a supplementary CELL without revision."},
+        {"id": "D", "text": "Reject the transition; control commands cannot reopen COMPLETE."}
+      ]
+    },
+    {
+      "id": "SLK-Q24",
+      "type": "single_select",
+      "prompt": "VERSION says 1.8.0, but README, global mirror, remote main, or annotated tag differs. Is publication complete?",
+      "options": [
+        {"id": "A", "text": "No; every release identity and content check must align."},
+        {"id": "B", "text": "Yes; VERSION alone is authoritative."},
+        {"id": "C", "text": "Yes; a lightweight tag is enough."},
+        {"id": "D", "text": "Yes; the global mirror may lag."}
+      ]
+    }
+  ]
+}
