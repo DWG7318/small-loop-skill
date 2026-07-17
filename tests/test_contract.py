@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 import unittest
 
 
@@ -23,6 +24,51 @@ NORMALIZED_DETECTION = " ".join((SKILL + "\n" + DETECTION_REFERENCE).split())
 
 
 class SmallLoopContractTest(unittest.TestCase):
+    def test_required_operational_links_are_explicit(self):
+        required = (
+            "(scripts/run_slk_readiness_eval.py)",
+            "(contracts/slk-control-kernel.json)",
+            "(references/slk-control-operations.md)",
+            "(references/checker-detection-catalog.md)",
+        )
+        for link in required:
+            with self.subTest(link=link):
+                self.assertIn(link, SKILL)
+
+    def test_markdown_reference_graph_is_closed_and_bounded(self):
+        link_pattern = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+        queue = [ROOT / "SKILL.md"]
+        visited = set()
+        while queue:
+            source = queue.pop()
+            if source in visited:
+                continue
+            visited.add(source)
+            text = source.read_text(encoding="utf-8")
+            for raw_target in link_pattern.findall(text):
+                target_text = raw_target.split("#", 1)[0]
+                if not target_text or "://" in target_text:
+                    continue
+                target = (source.parent / target_text).resolve()
+                self.assertTrue(target.is_relative_to(ROOT.resolve()), raw_target)
+                self.assertTrue(target.is_file(), raw_target)
+                if target.suffix.lower() == ".md":
+                    queue.append(target)
+
+        for reference in CONTROL_CONTRACT["references"]:
+            target = (ROOT / reference).resolve()
+            self.assertTrue(target.is_relative_to(ROOT.resolve()), reference)
+            self.assertTrue(target.is_file(), reference)
+            queue.append(target)
+
+        reference_files = set((ROOT / "references").glob("*.md"))
+        self.assertTrue(reference_files.issubset(visited | set(queue)))
+        for path in ROOT.rglob("*.md"):
+            self.assertLessEqual(
+                len(path.read_text(encoding="utf-8").splitlines()), 1000, path
+            )
+        self.assertLess(len(SKILL.splitlines()), 900)
+
     def test_canonical_identity_and_release_version(self):
         required = (
             "## Canonical Identity",

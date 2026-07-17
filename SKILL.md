@@ -101,9 +101,11 @@ must complete the SLK-only readiness Eval: one combined Supervisor/Checker and
 one sole Worker. Eval is authorized ready work; archive a role afterward when no
 next authorized work is ready, then unarchive that same conversation later.
 
-Run the questions through `scripts/run_slk_readiness_eval.py`. The question bank
-and canonical answer key are separate SLK files. Every role must score exactly
-`24/24`; one wrong, missing, extra, or misordered answer fails the whole attempt.
+Run the questions through
+[`scripts/run_slk_readiness_eval.py`](scripts/run_slk_readiness_eval.py). The
+question bank and canonical answer key are separate SLK files. Every role must
+score exactly `24/24`; one wrong, missing, extra, or misordered answer fails the
+whole attempt.
 Retry only after rereading the cited rules, with a new seed and all 24 questions.
 Partial credit, rounding, manual override, inherited receipts, and claims of
 understanding the spirit are forbidden.
@@ -542,7 +544,9 @@ substitute detached automation.
 
 Read and follow
 [`references/slk-control-operations.md`](references/slk-control-operations.md)
-for the complete SLK-only command, state, rejection, and receipt contract.
+and its machine-readable
+[`contracts/slk-control-kernel.json`](contracts/slk-control-kernel.json) for the
+complete SLK-only command, state, rejection, and receipt contract.
 
 `SLK START` is manual only and is the sole initial-start command. It requires
 current exact-roster readiness receipts, approved plan/detection profiles,
