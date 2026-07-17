@@ -1,6 +1,6 @@
 ---
 name: small-loop-skill
-description: Run one bounded project through one combined Supervisor/Checker controlling exactly one Worker. The official abbreviation is SLK; use this skill when the user says SLK or small-loop-skill, or when exactly one Worker should own multiple GO phases and sequential CELLs under combined supervision and checking, periodic oversight, direct repair, append-only evidence, and final acceptance. Do not use when multiple independent Workers should run in parallel; use MSLK instead.
+description: Use when the user says SLK or small-loop-skill, or when one bounded project needs exactly one visible Worker conversation controlled by one combined Supervisor/Checker. Never trigger together with MSLK.
 ---
 
 # Small Loop Skill (SLK)
@@ -18,8 +18,7 @@ The loop has one Worker. The Worker may own several GO phases, and each GO may
 contain several CELLs, but only one CELL is executable at a time.
 
 This Worker must own a result that can be inspected and accepted independently.
-SLK deliberately launches no parallel Worker; use MSLK only when several such
-Workers can all start without waiting for one another's future output.
+SLK deliberately launches no parallel Worker.
 
 ## Single-Loop Boundary
 
@@ -31,36 +30,84 @@ SLK always uses:
 - one append-only method-log chain;
 - one final result queue.
 
-Do not create a separate Checker or a second Worker. If the work genuinely requires
-multiple independent Workers in parallel, stop before launch and use MSLK.
+Do not create a separate Checker or a second Worker. If the work requires
+multiple independent Workers, fail the SLK simulation and return the decision
+to the Owner. Do not activate MSLK inside the same run.
 
-## Mode Selection And Upgrade
+## Exclusive Mode Lock
 
-Start with SLK when only one Worker is justified. During planning or execution,
-the Supervisor/Checker may upgrade to MSLK only after proving that at least two
-necessary Workers satisfy both conditions:
+Choose exactly one method before role creation: SLK or MSLK. Once SLK is
+selected for a project run:
 
-1. Acceptance independence: each result can be inspected and accepted without
-   another Worker's future output or evidence, and concurrent writes, state,
-   fixtures, tests, or external side effects cannot invalidate acceptance.
-2. Launch independence: every Worker's first CELL can be dispatched now without
-   waiting for another Worker's future output, decision, or mutation.
+- invoke SLK exactly once;
+- do not load, invoke, nest, repeat, alternate with, or switch to MSLK;
+- do not borrow MSLK role topology, parallel-Worker behavior, Checker pairing,
+  or any other MSLK capability;
+- do not present SLK and MSLK as interchangeable or generally combinable.
 
-When both become true, stop issuing new CELLs, preserve accepted evidence,
-record the mode change, and replan under MSLK before creating roles. Never
-upgrade silently inside an executable CELL. MSLK must similarly return to SLK
-when fewer than two Workers satisfy both conditions.
+If SLK is the wrong method, record `METHOD_SELECTION_FAILED`, stop without
+formal work, and ask the Owner to start a new, separate run with an explicit
+method choice. The current run never converts itself into MSLK.
+
+## Visible Conversation Only
+
+Every Supervisor/Checker and Worker role must be a visible Codex conversation
+under the same project. Hidden execution is forbidden.
+
+- Never use a subagent, sub-agent, background agent, hidden worker,
+  `delegate_task`, or any subagent-dispatch capability.
+- Never represent an internal tool call, background job, or invisible execution
+  context as the Worker.
+- Confirm the visible Worker conversation belongs to the current project before
+  assigning the first CELL.
+- Keep formal assignments, receipts, rework, and completion messages in the
+  visible project conversations.
+
+### Visible Conversation Lifecycle
+
+- Create or unarchive a role conversation only when an authorized formal task
+  is ready for that role.
+- Keep the conversation visible while that task is active.
+- Archive it immediately when its authorized work is complete and no formal
+  task remains assigned.
+- If later work is authorized for the same role in the same project, unarchive
+  the existing conversation instead of creating a duplicate.
+- Unarchiving a conversation does not repeat the SLK invocation and does not
+  permit MSLK activation.
+- An archived conversation performs no hidden or background work.
+
+## Mandatory Simulation Gate
+
+Run a no-side-effect simulation before formal work. Planning and simulation may
+inspect metadata, but must not edit project files, execute implementation
+commands, call external services, create formal Worker assignments, or start a
+CELL.
+
+The simulation must:
+
+1. confirm SLK is the sole selected method and has not been invoked already;
+2. model one visible same-project Supervisor/Checker and one visible Worker;
+3. rehearse the first CELL assignment, Worker delivery, Checker decision, and
+   one `NEXT`, `REDO`, or `BLOCKED` route;
+4. prove no subagent or MSLK capability is used;
+5. validate ownership, write scope, evidence paths, model assignment, tests,
+   safety gates, and heartbeat behavior.
+
+Record either `SIMULATION_PASS` with the checked facts or `SIMULATION_FAIL` with
+the reason. Formal work may begin only after `SIMULATION_PASS`. A failed or
+missing simulation forbids role launch and CELL execution.
 
 ## Fresh Worker Requirement
 
-Every new project must create a fresh Worker. Do not reuse a Worker from another
-project, even when the scope looks similar; prior context can contaminate the
-new project's execution and evidence.
+Every new project must create a fresh visible Worker conversation under that
+same project. Do not reuse a Worker from another project, even when the scope
+looks similar; prior context can contaminate the new project's execution and
+evidence.
 
-Treat "new project" narrowly: reuse is allowed only for an explicit upgrade or
-continuation of the same project identity, objective lineage, coordination
-records, and evidence chain. A renamed, copied, adjacent, or merely similar
-project is new and must receive a fresh Worker.
+Treat "new project" narrowly: reuse is allowed only for a continuation of the
+same project identity, objective lineage, coordination records, and evidence
+chain. A renamed, copied, adjacent, or merely similar project is new and must
+receive a fresh Worker.
 
 ## Model Policy
 
@@ -274,6 +321,12 @@ No generated coordination Markdown file may exceed 999 lines.
 
 Before launch, confirm:
 
+- `SIMULATION_PASS` exists for this exact plan and role roster.
+- SLK is the sole method, was invoked once, and no MSLK capability is present.
+- Every role is a visible conversation under the same project; no subagent,
+  hidden worker, or background agent exists.
+- Every role conversation has work ready, and every no-work conversation is
+  archived with an explicit unarchive path for later same-project work.
 - One complete solution/GO/CELL plan exists.
 - The current thread is the combined Supervisor/Checker and exactly one Worker is assigned.
 - The receipt target, method-log path, and final queue are unique.
