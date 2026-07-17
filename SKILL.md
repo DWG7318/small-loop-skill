@@ -26,7 +26,7 @@ SLK always uses:
 
 - one combined Supervisor/Checker;
 - one Worker;
-- one fixed solution and GO/CELL plan;
+- one governed, versioned solution and GO/CELL plan;
 - one append-only method-log chain;
 - one final result queue.
 
@@ -140,22 +140,22 @@ result, and handles ordinary CELL traffic.
 - Create exactly one Worker and no separate Checker.
 - Maintain the supervisor board and the same-thread Overseer heartbeat.
 - Resolve plan defects, Owner decisions, shared-resource issues, and genuine
-  blockers that cannot be resolved inside the fixed plan.
+  blockers that cannot be resolved inside the current authorized plan.
 - Write the final queue and perform final local acceptance.
 
 The combined Supervisor/Checker controls the one loop but must not silently
 take over ordinary Worker execution.
 
-- Read the complete fixed solution and GO/CELL plan.
+- Read the complete current solution and versioned GO/CELL plan.
 - Package and send exactly one CELL at a time.
 - Inspect files, diffs, tests, scans, method logs, and boundaries locally.
 - Route `NEXT`, `REDO`, `COMPLETE`, `BLOCKED`, or `PLAN_DEFECT`.
 - Move to the next GO only after every CELL in the current GO is accepted.
 - Write the final passed or blocked queue record.
 
-The combined role must not add a new GO, renumber work, weaken acceptance, or
-change the Worker scope after launch. It records plan defects before resolving
-them under Supervisor authority.
+The combined role must not add or alter a GO ad hoc, renumber historical work,
+weaken acceptance, or change Worker scope silently. GO changes are allowed only
+through the evidence-driven revision rule below.
 
 ### Worker
 
@@ -218,6 +218,33 @@ Before launch, provide:
 Every CELL must define objective, inputs, allowed scope, forbidden scope,
 outputs, checks, evidence, dependencies, Worker model/reasoning assignment,
 and completion criteria.
+
+## Evidence-Driven GO Revision
+
+After every GO is completed and checked, the Supervisor/Checker must compare
+the accepted plan with the actual result, including delivered scope, defects,
+residual risk, new dependencies, changed estimates, and incomplete outcomes.
+
+Based on that evidence, the Supervisor/Checker may:
+
+- adjust any subsequent GO that has not started;
+- add a supplementary GO for a historical GO when the completed result exposes
+  missing, corrective, or follow-up work;
+- revise the future CELL map and model assignments affected by that change.
+
+GO revision is append-only and versioned:
+
+- never rewrite the historical GO, its evidence, or its acceptance result;
+- retain existing identifiers and add a revision or supplement identifier such
+  as `GO-03-R1` or `GO-03-S1`;
+- record the triggering evidence, reason, old/new scope, dependencies,
+  acceptance criteria, affected CELLs, and Owner decision when required;
+- keep the revision within the selected SLK method, Owner objective, one-Worker
+  boundary, and existing safety gates.
+
+Before dispatching a revised or supplementary GO, run a no-side-effect delta
+simulation and record `GO_REVISION_SIMULATION_PASS`. Without that record, the
+revision remains proposed and no formal CELL may start.
 
 ## Loop Protocol
 
@@ -328,6 +355,8 @@ Before launch, confirm:
 - Every role conversation has work ready, and every no-work conversation is
   archived with an explicit unarchive path for later same-project work.
 - One complete solution/GO/CELL plan exists.
+- The GO revision ledger is present; every completed GO has an evidence review,
+  and every revised or supplementary GO has `GO_REVISION_SIMULATION_PASS`.
 - The current thread is the combined Supervisor/Checker and exactly one Worker is assigned.
 - The receipt target, method-log path, and final queue are unique.
 - Tests, scans, safety boundaries, and external-action gates are explicit.
