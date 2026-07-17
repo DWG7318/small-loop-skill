@@ -72,10 +72,15 @@ risk-appropriate runtime, coverage, mutation, or contract checks. The Checker
 responsibility independently verifies every CELL and evolves the detection
 matrix from observed defects and graph impact.
 
+Allocation is explicit in the plan: every GO owns one `GO_DETECTION_PROFILE`.
+The Checker responsibility executes every skill and tool assigned by that
+profile for every CELL in the GO and records a `CELL_DETECTION_RECEIPT`; CELLs
+may narrow arguments, but cannot omit or replace GO-level capabilities.
+
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.6.0`.
+Current version: `1.6.1`.
 
-Version `1.6.0` adds Supervisor-provisioned, CodeGraph-based layered Checker
-detection and evidence calibration.
+Version `1.6.1` makes detection allocation GO-level plan data and requires the
+Checker to execute the complete assigned bundle for every CELL.
