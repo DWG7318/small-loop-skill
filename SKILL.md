@@ -195,6 +195,18 @@ These are responsibilities inside exactly two visible roles: one combined
 Supervisor/Checker and one Worker. The functional distinction never creates a
 separate Checker, extra Worker, or MSLK-style pair.
 
+## No Self-Wait Boundary
+
+Supervisor and Checker are responsibilities inside one visible role, not two conversations or asynchronous parties. When Checker responsibility needs Supervisor responsibility, the internal responsibility transition is immediate in the same turn; the combined role must never wait for, message, wake, or hand off to a separate Supervisor. It must never emit `waiting_for_supervisor` or describe Checker as waiting for Supervisor, because that would be the role waiting for itself. Returning to Checker responsibility is the same immediate internal transition.
+
+## Owner Assistance Authority
+
+The Worker must never ask the Owner for confirmation, approval, credentials, troubleshooting, or execution help; it must solve the CELL within authority or send a formal blocker receipt. Checker responsibility must never ask the Owner either; it solves checking issues within authority or immediately transitions internally to Supervisor responsibility. Only Supervisor responsibility may contact the Owner, after exhausting safe authorization repair, local provisioning, versioned plan repair, and work-method repair. It must minimize Owner assistance and make one specific request only for an Owner-exclusive decision, credential, consent, external action, scope or acceptance change, Goal change, or safety boundary.
+
+## Supervisor Safeguard Patrol
+
+A configured periodic patrol is the last guarantee that work continues. It runs as the combined role acting as Supervisor, never as a separate Checker, and has the highest on-site decision authority within the Owner's objective, safety rules, selected SLK method, and external-action boundaries. It may perform bounded status inspection, authorization repair, a versioned plan revision followed by required simulation, and work-method improvement. If the Worker is genuinely active, it records that fact and returns offline without concurrent edits or Checker acceptance; if work is stalled or blocked, it takes the smallest authorized action that restores progress or uses the Owner Assistance Authority only when unavoidable.
+
 ### Supervisor/Checker
 
 The controlling thread combines Supervisor and Checker, owns the overall
@@ -220,7 +232,7 @@ take over ordinary Worker execution.
 - Read the complete current solution and versioned GO/CELL plan.
 - Package and send exactly one CELL at a time.
 - Stop dispatch when required continuation conditions are not satisfied and
-  hand the evidence to the Supervisor responsibility.
+  immediately transition internally to Supervisor responsibility with evidence.
 - Maintain and execute the evolving Checker detection system defined below.
 - Inspect files, diffs, tests, scans, method logs, and boundaries locally.
 - Route `NEXT`, `REDO`, `COMPLETE`, `BLOCKED`, or `PLAN_DEFECT`.
@@ -467,10 +479,13 @@ successful send atomically enters `OFFLINE_WAITING_WORKER_SIGNAL`.
 After dispatch, the combined role must immediately end its turn and go offline.
 It must not poll, inspect, run status, perform oversight, or do more project work
 while the Worker owns the CELL. Do not attach a heartbeat or scheduled inspection
-that wakes this combined role during Worker execution.
+that wakes Checker responsibility during Worker execution.
 
-Only `WORKER_COMPLETION_RECEIPT`, `WORKER_BLOCKER_RECEIPT`, or
-`WORKER_EXECUTION_FAILURE` may wake the combined role for that CELL. Owner input
+Only `WORKER_COMPLETION_RECEIPT`, `WORKER_BLOCKER_RECEIPT`,
+`WORKER_EXECUTION_FAILURE`, or a configured `SUPERVISOR_PATROL_TRIGGER` may wake
+the combined role for that CELL. The patrol trigger starts a new turn in
+Supervisor responsibility and follows the Supervisor Safeguard Patrol boundary;
+it does not activate Checker responsibility merely to inspect the Worker. Owner input
 may change future requirements, but it does not authorize background inspection
 of the active Worker. On wake, validate or resolve exactly as the SLK role contract
 requires; any next formal assignment is again the final action before going offline.
@@ -485,8 +500,9 @@ effect on safe or valid execution.
 
 When a condition is clearly unmet, the Checker responsibility must stop
 dispatching formal tasks. It records `CONDITION_BLOCKED` with the current
-GO/CELL, failed condition, evidence, impact, and required outcome, then hands the
-case to the Supervisor responsibility. It must not send speculative, filler, or
+GO/CELL, failed condition, evidence, impact, and required outcome, then immediately
+switches internally to Supervisor responsibility in the same combined conversation.
+It never waits for or messages a Supervisor. It must not send speculative, filler, or
 repair work to the Worker. Archive the Worker when it has no active formal task;
 the accepted/total progress count does not increase while blocked.
 
@@ -761,8 +777,9 @@ Before launch, confirm:
   and uses the SLK command contract.
 - Every dispatch precomputes all records, uses the assignment as the final online
   action, and leaves the combined role in `OFFLINE_WAITING_WORKER_SIGNAL`.
-- No heartbeat, polling loop, or scheduled inspection wakes the combined role
-  before a Worker completion, blocker, or execution-failure signal.
+- No routine heartbeat or polling loop wakes Checker responsibility; any
+  configured `SUPERVISOR_PATROL_TRIGGER` runs only as Supervisor responsibility
+  under the safeguard-patrol boundary.
 - No second Worker or parallel pair is hidden in the plan.
 - The role authority matrix is unchanged; no MSLK role, pair, state, or message
   route has been borrowed.

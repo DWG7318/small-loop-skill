@@ -30,8 +30,11 @@ Complete every controller-side check, record, and message field before dispatch.
 Sending the formal assignment is the combined Supervisor/Checker's final action
 and enters `OFFLINE_WAITING_WORKER_SIGNAL`. The role then ends its turn and does
 not poll, inspect, run status, or perform periodic oversight of the active Worker.
-It wakes only for `WORKER_COMPLETION_RECEIPT`, `WORKER_BLOCKER_RECEIPT`, or
-`WORKER_EXECUTION_FAILURE`. A next assignment repeats this final-action rule.
+It wakes only for `WORKER_COMPLETION_RECEIPT`, `WORKER_BLOCKER_RECEIPT`,
+`WORKER_EXECUTION_FAILURE`, or configured `SUPERVISOR_PATROL_TRIGGER`. The patrol
+wakes the same combined role only in Supervisor responsibility; it never creates
+a separate Supervisor or activates Checker responsibility to poll the Worker.
+A next assignment repeats this final-action rule.
 
 Before that final action, require `WORKER_EXECUTION_GATE_PASS`: the canonical
 assignment workspace equals the visible Worker's bound workspace, and all
@@ -40,6 +43,24 @@ prompt is `WORKER_EXECUTION_FAILURE`, never an Owner click task.
 
 `SLK STATUS` is read-only and may run only while the combined role is already
 legitimately awake. It must not create, wake, archive, schedule, or dispatch a role.
+
+## No Self-Wait And Owner Contact
+
+Supervisor and Checker are responsibilities inside the same visible role. A
+transition between them is immediate internal control flow: Checker never waits
+for, messages, or wakes Supervisor. Worker and Checker responsibility never ask
+the Owner for help or confirmation. Only Supervisor responsibility may do so,
+after exhausting safe authorization, provisioning, plan, and method repair, and
+only for a genuinely Owner-exclusive action or decision.
+
+## Supervisor Safeguard Patrol
+
+The configured patrol is SLK's last progress guarantee and runs as Supervisor
+responsibility with highest on-site authority under Owner objective and safety
+boundaries. It may inspect bounded status, repair authorization, make a versioned
+plan revision with required simulation, or improve the work method. A healthy
+active Worker is left untouched and the role immediately returns offline. A
+stalled or blocked loop receives the smallest authorized recovery action.
 
 ## Safe Pause
 

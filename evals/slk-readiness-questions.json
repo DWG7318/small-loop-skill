@@ -142,9 +142,9 @@
       "prompt": "Order the response when a required continuation condition is clearly absent.",
       "options": [
         {"id": "A", "text": "Checker responsibility stops formal dispatch and records CONDITION_BLOCKED."},
-        {"id": "B", "text": "Supervisor responsibility decides whether Owner assistance is needed."},
-        {"id": "C", "text": "The Owner assists or Supervisor responsibility resolves the condition."},
-        {"id": "D", "text": "Checker responsibility revalidates every condition before dispatch resumes."}
+        {"id": "B", "text": "The same combined role immediately transitions to Supervisor responsibility; it never waits for or messages itself."},
+        {"id": "C", "text": "Supervisor responsibility resolves locally or, only for an Owner-exclusive need, asks the Owner once."},
+        {"id": "D", "text": "The role immediately transitions back to Checker responsibility, which revalidates every condition before dispatch resumes."}
       ]
     },
     {
@@ -260,7 +260,7 @@
     {
       "id": "SLK-Q24",
       "type": "single_select",
-      "prompt": "VERSION says 1.8.2, but README, global mirror, remote main, or annotated tag differs. Is publication complete?",
+      "prompt": "VERSION says 1.8.3, but README, global mirror, remote main, or annotated tag differs. Is publication complete?",
       "options": [
         {"id": "A", "text": "No; every release identity and content check must align."},
         {"id": "B", "text": "Yes; VERSION alone is authoritative."},
@@ -276,7 +276,7 @@
         {"id": "A", "text": "Verify the canonical assignment workspace exactly matches the Worker's bound conversation workspace."},
         {"id": "B", "text": "Record WORKER_EXECUTION_GATE_PASS after pre-authorizing every routine allowlisted edit and command."},
         {"id": "C", "text": "Send the formal assignment as the final online action."},
-        {"id": "D", "text": "Enter OFFLINE_WAITING_WORKER_SIGNAL; an unexpected routine approval prompt is WORKER_EXECUTION_FAILURE, not an Owner click task."}
+        {"id": "D", "text": "Enter OFFLINE_WAITING_WORKER_SIGNAL; only a Worker signal or configured SUPERVISOR_PATROL_TRIGGER may start a new turn, and routine approval is never an Owner click task."}
       ]
     }
   ]

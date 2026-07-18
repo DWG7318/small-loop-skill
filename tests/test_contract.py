@@ -80,8 +80,8 @@ class SmallLoopContractTest(unittest.TestCase):
         for item in required:
             with self.subTest(item=item):
                 self.assertIn(item, SKILL)
-        self.assertEqual(VERSION, "1.8.2")
-        self.assertIn("Current version: `1.8.2`", README)
+        self.assertEqual(VERSION, "1.8.3")
+        self.assertIn("Current version: `1.8.3`", README)
         self.assertNotIn("all nine rules", README.lower())
 
     def test_readiness_eval_precedes_simulation_and_manual_start(self):
@@ -189,6 +189,7 @@ class SmallLoopContractTest(unittest.TestCase):
             "WORKER_COMPLETION_RECEIPT",
             "WORKER_BLOCKER_RECEIPT",
             "WORKER_EXECUTION_FAILURE",
+            "SUPERVISOR_PATROL_TRIGGER",
         )
         for rule in required:
             with self.subTest(rule=rule):
@@ -204,9 +205,65 @@ class SmallLoopContractTest(unittest.TestCase):
                 "WORKER_COMPLETION_RECEIPT",
                 "WORKER_BLOCKER_RECEIPT",
                 "WORKER_EXECUTION_FAILURE",
+                "SUPERVISOR_PATROL_TRIGGER",
             ],
         )
-        self.assertFalse(boundary["periodic_worker_inspection"])
+        self.assertFalse(boundary["routine_periodic_worker_inspection"])
+        self.assertTrue(boundary["supervisor_safeguard_patrol"])
+
+    def test_combined_role_never_waits_for_itself(self):
+        required = (
+            "## No Self-Wait Boundary",
+            "Supervisor and Checker are responsibilities inside one visible role",
+            "must never wait for, message, wake, or hand off to a separate Supervisor",
+            "internal responsibility transition is immediate",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
+
+        identity = CONTROL_CONTRACT["combined_role_identity"]
+        self.assertTrue(identity["one_visible_role"])
+        self.assertTrue(identity["internal_responsibility_transition"])
+        self.assertFalse(identity["checker_waits_for_supervisor"])
+
+    def test_only_supervisor_responsibility_may_contact_owner(self):
+        required = (
+            "## Owner Assistance Authority",
+            "The Worker must never ask the Owner",
+            "Checker responsibility must never ask the Owner",
+            "Only Supervisor responsibility may contact the Owner",
+            "minimize Owner assistance",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
+
+        authority = CONTROL_CONTRACT["owner_assistance"]
+        self.assertFalse(authority["worker_may_contact_owner"])
+        self.assertFalse(authority["checker_may_contact_owner"])
+        self.assertEqual(authority["sole_contact_authority"], "Supervisor responsibility")
+
+    def test_supervisor_patrol_is_last_progress_guarantee(self):
+        required = (
+            "## Supervisor Safeguard Patrol",
+            "last guarantee that work continues",
+            "highest on-site decision authority",
+            "authorization repair",
+            "versioned plan revision",
+            "work-method improvement",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
+
+        patrol = CONTROL_CONTRACT["supervisor_patrol"]
+        self.assertEqual(patrol["actor"], "combined role acting as Supervisor")
+        self.assertTrue(patrol["highest_on_site_decision_authority"])
+        self.assertEqual(
+            patrol["powers"],
+            ["authorization_repair", "versioned_plan_revision", "work_method_improvement"],
+        )
 
     def test_worker_execution_is_preauthorized_before_dispatch(self):
         required = (

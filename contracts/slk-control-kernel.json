@@ -9,9 +9,32 @@
     "wake_signals": [
       "WORKER_COMPLETION_RECEIPT",
       "WORKER_BLOCKER_RECEIPT",
-      "WORKER_EXECUTION_FAILURE"
+      "WORKER_EXECUTION_FAILURE",
+      "SUPERVISOR_PATROL_TRIGGER"
     ],
-    "periodic_worker_inspection": false
+    "routine_periodic_worker_inspection": false,
+    "supervisor_safeguard_patrol": true
+  },
+  "combined_role_identity": {
+    "one_visible_role": true,
+    "internal_responsibility_transition": true,
+    "checker_waits_for_supervisor": false
+  },
+  "owner_assistance": {
+    "worker_may_contact_owner": false,
+    "checker_may_contact_owner": false,
+    "sole_contact_authority": "Supervisor responsibility"
+  },
+  "supervisor_patrol": {
+    "actor": "combined role acting as Supervisor",
+    "highest_on_site_decision_authority": true,
+    "powers": [
+      "authorization_repair",
+      "versioned_plan_revision",
+      "work_method_improvement"
+    ],
+    "routine_polling": false,
+    "concurrent_worker_mutation": false
   },
   "worker_execution_gate": {
     "controller": "Supervisor/Checker",
