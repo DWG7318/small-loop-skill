@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "eval_id": "slk-readiness-v1",
   "mode": "SLK",
-  "question_count": 24,
+  "question_count": 25,
   "questions": [
     {
       "id": "SLK-Q01",
@@ -106,11 +106,11 @@
     {
       "id": "SLK-Q10",
       "type": "single_select",
-      "prompt": "A role scores 23/24 on its first readiness attempt. What happens?",
+      "prompt": "A role scores 24/25 on its first readiness attempt. What happens?",
       "options": [
         {"id": "A", "text": "Round up because understanding is sufficient."},
         {"id": "B", "text": "Retest only the missed question."},
-        {"id": "C", "text": "Fail the gate, reread anchors, and retake all 24 with a new seed."},
+        {"id": "C", "text": "Fail the gate, reread anchors, and retake all 25 with a new seed."},
         {"id": "D", "text": "Let simulation decide whether the miss matters."}
       ]
     },
@@ -260,12 +260,23 @@
     {
       "id": "SLK-Q24",
       "type": "single_select",
-      "prompt": "VERSION says 1.8.0, but README, global mirror, remote main, or annotated tag differs. Is publication complete?",
+      "prompt": "VERSION says 1.8.1, but README, global mirror, remote main, or annotated tag differs. Is publication complete?",
       "options": [
         {"id": "A", "text": "No; every release identity and content check must align."},
         {"id": "B", "text": "Yes; VERSION alone is authoritative."},
         {"id": "C", "text": "Yes; a lightweight tag is enough."},
         {"id": "D", "text": "Yes; the global mirror may lag."}
+      ]
+    },
+    {
+      "id": "SLK-Q25",
+      "type": "single_select",
+      "prompt": "The combined Supervisor/Checker has completed every pre-dispatch action and sends a formal CELL. What is valid immediately afterward?",
+      "options": [
+        {"id": "A", "text": "Update the board once more, then start a heartbeat."},
+        {"id": "B", "text": "End the turn and remain offline until Worker completion, blocker, or execution-failure signal."},
+        {"id": "C", "text": "Poll the Worker because status checks are not project work."},
+        {"id": "D", "text": "Begin Checker validation while the Worker is still executing."}
       ]
     }
   ]

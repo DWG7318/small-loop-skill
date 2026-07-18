@@ -43,9 +43,9 @@ class SlkReadinessEvalTest(unittest.TestCase):
     def test_bank_and_key_are_complete_and_independent(self):
         question_ids = [item["id"] for item in self.questions["questions"]]
         answer_ids = [item["question_id"] for item in self.key["answers"]]
-        self.assertEqual(len(question_ids), 24)
-        self.assertEqual(len(set(question_ids)), 24)
-        self.assertEqual(question_ids, [f"SLK-Q{i:02d}" for i in range(1, 25)])
+        self.assertEqual(len(question_ids), 25)
+        self.assertEqual(len(set(question_ids)), 25)
+        self.assertEqual(question_ids, [f"SLK-Q{i:02d}" for i in range(1, 26)])
         self.assertEqual(set(question_ids), set(answer_ids))
         self.assertEqual(self.questions["mode"], "SLK")
         self.assertEqual(self.key["mode"], "SLK")
@@ -53,7 +53,7 @@ class SlkReadinessEvalTest(unittest.TestCase):
     def test_question_output_hides_answer_material(self):
         payload = self.module.question_payload(seed=7318, root=ROOT)
         serialized = json.dumps(payload).lower()
-        self.assertEqual(len(payload["questions"]), 24)
+        self.assertEqual(len(payload["questions"]), 25)
         self.assertNotIn('"answer"', serialized)
         self.assertNotIn("rationale", serialized)
         self.assertNotIn("forbidden_interpretations", serialized)
@@ -61,15 +61,15 @@ class SlkReadinessEvalTest(unittest.TestCase):
     def test_canonical_answers_pass_exactly(self):
         receipt = self.module.grade(self.answers, metadata(), seed=7318, root=ROOT)
         self.assertEqual(receipt["result"], "SLK_READINESS_EVAL_PASS")
-        self.assertEqual(receipt["score"], "24/24")
-        self.assertEqual(len(receipt["question_results"]), 24)
+        self.assertEqual(receipt["score"], "25/25")
+        self.assertEqual(len(receipt["question_results"]), 25)
 
     def test_one_wrong_answer_fails_entire_attempt(self):
         answers = dict(self.answers)
         answers["SLK-Q17"] = ["WRONG"]
         receipt = self.module.grade(answers, metadata(), seed=7318, root=ROOT)
         self.assertEqual(receipt["result"], "SLK_READINESS_EVAL_FAIL")
-        self.assertEqual(receipt["score"], "23/24")
+        self.assertEqual(receipt["score"], "24/25")
         self.assertEqual(receipt["review_question_ids"], ["SLK-Q17"])
 
     def test_missing_extra_and_misordered_answers_fail(self):
@@ -154,7 +154,7 @@ class SlkReadinessEvalTest(unittest.TestCase):
             target = Path(directory) / "receipt.json"
             self.module.write_receipt(receipt, target, root=ROOT)
             self.assertEqual(
-                json.loads(target.read_text(encoding="utf-8"))["score"], "24/24"
+                json.loads(target.read_text(encoding="utf-8"))["score"], "25/25"
             )
 
     def test_git_commit_is_optional_outside_repository(self):

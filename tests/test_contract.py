@@ -80,14 +80,14 @@ class SmallLoopContractTest(unittest.TestCase):
         for item in required:
             with self.subTest(item=item):
                 self.assertIn(item, SKILL)
-        self.assertEqual(VERSION, "1.8.0")
-        self.assertIn("Current version: `1.8.0`", README)
+        self.assertEqual(VERSION, "1.8.1")
+        self.assertIn("Current version: `1.8.1`", README)
         self.assertNotIn("all nine rules", README.lower())
 
     def test_readiness_eval_precedes_simulation_and_manual_start(self):
         self.assertIn("## Mandatory Readiness Eval", SKILL)
         self.assertIn("SLK_READINESS_EVAL_PASS", SKILL)
-        self.assertIn("exactly `24/24`", SKILL)
+        self.assertIn("exactly `25/25`", SKILL)
         self.assertIn("exact two-role roster", SKILL)
         self.assertLess(
             SKILL.index("## Mandatory Readiness Eval"),
@@ -178,6 +178,35 @@ class SmallLoopContractTest(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, NORMALIZED_SKILL)
         self.assertNotIn("SCHEDULED_START", SKILL)
+
+    def test_dispatch_is_final_action_and_combined_role_goes_offline(self):
+        required = (
+            "## Dispatch-Then-Offline Boundary",
+            "The formal Worker assignment is the final action",
+            "OFFLINE_WAITING_WORKER_SIGNAL",
+            "must immediately end its turn and go offline",
+            "must not poll, inspect, run status, perform oversight, or do more project work",
+            "WORKER_COMPLETION_RECEIPT",
+            "WORKER_BLOCKER_RECEIPT",
+            "WORKER_EXECUTION_FAILURE",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
+
+        boundary = CONTROL_CONTRACT["dispatch_boundary"]
+        self.assertEqual(boundary["controller"], "Supervisor/Checker")
+        self.assertTrue(boundary["assignment_is_final_action"])
+        self.assertEqual(boundary["post_dispatch_state"], "OFFLINE_WAITING_WORKER_SIGNAL")
+        self.assertEqual(
+            boundary["wake_signals"],
+            [
+                "WORKER_COMPLETION_RECEIPT",
+                "WORKER_BLOCKER_RECEIPT",
+                "WORKER_EXECUTION_FAILURE",
+            ],
+        )
+        self.assertFalse(boundary["periodic_worker_inspection"])
 
     def test_checker_detection_system_and_supervisor_capability_supply(self):
         required = (

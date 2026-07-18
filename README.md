@@ -12,8 +12,8 @@ Owner -> Supervisor/Checker <-> Worker
 
 The Worker owns multiple GO phases. Each GO contains sequential CELLs. The
 combined Supervisor/Checker sends one CELL at a time, validates delivery,
-repairs every Worker-result defect itself, sends the next CELL, keeps the
-same-thread heartbeat, resolves plan defects, writes the final result queue,
+repairs every Worker-result defect itself, sends the next CELL as its final
+online action, then remains offline until a Worker receipt or failure signal,
 and performs final acceptance. Repair tasks are never returned to the Worker.
 
 SLK and MSLK are mutually exclusive. Select SLK exactly once for a project run;
@@ -32,7 +32,7 @@ it immediately when that work finishes. Later same-project work should
 unarchive the existing conversation instead of creating a duplicate.
 
 Before simulation, both visible roles must pass SLK's independent 24-question
-readiness Eval with exactly `24/24`. Then run a no-side-effect simulation of the
+readiness Eval with exactly `25/25`. Then run a no-side-effect simulation of the
 first assignment, delivery, validation, and routing cycle. Formal work is
 allowed only after both current readiness receipts and `SIMULATION_PASS` exist.
 
@@ -87,8 +87,9 @@ responsibility plans semantic continuation files and a bounded current-state
 Install the `small-loop-skill` folder under your Codex skills directory, then
 invoke `$small-loop-skill` for one supervised sequential loop.
 
-Current version: `1.8.0`.
+Current version: `1.8.1`.
 
-Version `1.8.0` adds the independent 24/24 readiness Eval, SLK-only control
+Version `1.8.1` adds the dispatch-then-offline boundary and a 25/25 readiness
+Eval. Version `1.8.0` added the independent readiness Eval, SLK-only control
 kernel, manual-first-start rule, deployable receipts, and hardened release and
 context-index contracts.

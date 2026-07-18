@@ -24,8 +24,17 @@ plan, `SIMULATION_PASS`, approved GO detection profiles, and passing continuatio
 conditions. It authorizes the first formal CELL for the same prepared Worker.
 It never creates a second Worker.
 
-`SLK STATUS` is read-only. It must not create, wake, archive, schedule, or
-dispatch a role.
+## Dispatch Boundary
+
+Complete every controller-side check, record, and message field before dispatch.
+Sending the formal assignment is the combined Supervisor/Checker's final action
+and enters `OFFLINE_WAITING_WORKER_SIGNAL`. The role then ends its turn and does
+not poll, inspect, run status, or perform periodic oversight of the active Worker.
+It wakes only for `WORKER_COMPLETION_RECEIPT`, `WORKER_BLOCKER_RECEIPT`, or
+`WORKER_EXECUTION_FAILURE`. A next assignment repeats this final-action rule.
+
+`SLK STATUS` is read-only and may run only while the combined role is already
+legitimately awake. It must not create, wake, archive, schedule, or dispatch a role.
 
 ## Safe Pause
 

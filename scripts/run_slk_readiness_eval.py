@@ -15,6 +15,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 QUESTION_PATH = Path("evals/slk-readiness-questions.json")
 ANSWER_PATH = Path("evals/slk-readiness-answer-key.json")
+QUESTION_COUNT = 25
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -41,15 +42,15 @@ def validate_assets(questions: dict[str, Any], key: dict[str, Any]) -> None:
         raise ValueError("eval_id_mismatch")
     entries = questions.get("questions", [])
     answers = key.get("answers", [])
-    if questions.get("question_count") != 24 or len(entries) != 24:
+    if questions.get("question_count") != QUESTION_COUNT or len(entries) != QUESTION_COUNT:
         raise ValueError("question_count_mismatch")
     question_ids = [item["id"] for item in entries]
     answer_ids = [item["question_id"] for item in answers]
-    if question_ids != [f"SLK-Q{i:02d}" for i in range(1, 25)]:
+    if question_ids != [f"SLK-Q{i:02d}" for i in range(1, QUESTION_COUNT + 1)]:
         raise ValueError("question_ids_invalid")
-    if len(answer_ids) != 24 or set(question_ids) != set(answer_ids):
+    if len(answer_ids) != QUESTION_COUNT or set(question_ids) != set(answer_ids):
         raise ValueError("answer_coverage_invalid")
-    if len(set(answer_ids)) != 24:
+    if len(set(answer_ids)) != QUESTION_COUNT:
         raise ValueError("duplicate_answer_id")
     option_ids = {
         item["id"]: {option["id"] for option in item["options"]}
@@ -77,7 +78,7 @@ def question_payload(seed: int, root: Path = ROOT) -> dict[str, Any]:
         "eval_id": questions["eval_id"],
         "mode": "SLK",
         "seed": seed,
-        "question_count": 24,
+        "question_count": QUESTION_COUNT,
         "questions": rendered,
     }
 
@@ -195,7 +196,7 @@ def grade(
     review_ids.extend(extra_ids)
     metadata_error = _metadata_error(metadata, seed)
     answer_set_error = candidate_ids != expected_ids
-    passed = correct_count == 24 and not answer_set_error and metadata_error is None
+    passed = correct_count == QUESTION_COUNT and not answer_set_error and metadata_error is None
     failure_reason = None
     if metadata_error:
         failure_reason = metadata_error
@@ -223,7 +224,7 @@ def grade(
         "answer_key_not_opened": metadata.get("answer_key_not_opened") is True,
         "seed": seed,
         "attempt": metadata.get("attempt"),
-        "score": f"{correct_count}/24",
+        "score": f"{correct_count}/{QUESTION_COUNT}",
         "question_results": results,
         "review_question_ids": sorted(set(review_ids)),
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -239,7 +240,7 @@ def verify_receipt(
     version = (root / "VERSION").read_text(encoding="utf-8").strip()
     checks = {
         "pass_result": receipt.get("result") == "SLK_READINESS_EVAL_PASS",
-        "perfect_score": receipt.get("score") == "24/24",
+        "perfect_score": receipt.get("score") == f"{QUESTION_COUNT}/{QUESTION_COUNT}",
         "version": receipt.get("skill_version") == version,
         "release_tag": receipt.get("release_tag") == f"v{version}",
         "tree_hash": receipt.get("tracked_content_sha256") == tracked_content_hash(root),

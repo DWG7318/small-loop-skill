@@ -2,6 +2,17 @@
   "schema_version": "1.0",
   "mode": "SLK",
   "initial_start": "SLK START",
+  "dispatch_boundary": {
+    "controller": "Supervisor/Checker",
+    "assignment_is_final_action": true,
+    "post_dispatch_state": "OFFLINE_WAITING_WORKER_SIGNAL",
+    "wake_signals": [
+      "WORKER_COMPLETION_RECEIPT",
+      "WORKER_BLOCKER_RECEIPT",
+      "WORKER_EXECUTION_FAILURE"
+    ],
+    "periodic_worker_inspection": false
+  },
   "states": [
     "NOT_STARTED",
     "RUNNING",

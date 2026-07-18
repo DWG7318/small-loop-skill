@@ -104,9 +104,9 @@ next authorized work is ready, then unarchive that same conversation later.
 Run the questions through
 [`scripts/run_slk_readiness_eval.py`](scripts/run_slk_readiness_eval.py). The
 question bank and canonical answer key are separate SLK files. Every role must
-score exactly `24/24`; one wrong, missing, extra, or misordered answer fails the
+score exactly `25/25`; one wrong, missing, extra, or misordered answer fails the
 whole attempt.
-Retry only after rereading the cited rules, with a new seed and all 24 questions.
+Retry only after rereading the cited rules, with a new seed and all 25 questions.
 Partial credit, rounding, manual override, inherited receipts, and claims of
 understanding the spirit are forbidden.
 
@@ -132,7 +132,7 @@ The simulation must:
    decision, and one `NEXT`, `REDO`, or `BLOCKED` route;
 4. prove no subagent or MSLK capability is used;
 5. validate ownership, write scope, evidence paths, model assignment, tests,
-   safety gates, and heartbeat behavior;
+   safety gates, and the dispatch-then-offline boundary;
 6. rehearse the Checker detection capability manifest, CodeGraph baseline, and
    one focused-to-regression evidence route.
 
@@ -203,7 +203,7 @@ result, and handles ordinary CELL traffic.
 - Produce or approve the solution, GO map, CELL index, and detailed CELL files.
 - Own evidence-driven GO review and revision as a Supervisor responsibility.
 - Create exactly one Worker and no separate Checker.
-- Maintain the supervisor board and the same-thread Overseer heartbeat.
+- Maintain the supervisor board while the combined role is online.
 - Manage Owner-configured safe pause and same-Worker resume controls.
 - Provision the Checker responsibility with the authorized skills, tools,
   permissions, versions, configurations, and compute budget needed for precise
@@ -427,6 +427,24 @@ Worker assignment. `REDO` means the Supervisor/Checker repairs and revalidates
 the delivery; it does not send correction work back to the Worker. Messages
 without the formal task heading are discussion, not executable Worker work.
 
+## Dispatch-Then-Offline Boundary
+
+Before dispatch, finish every plan update, condition check, progress snapshot,
+board update, receipt preparation, and message composition. The formal Worker
+assignment is the final action of the online Supervisor/Checker turn and its
+successful send atomically enters `OFFLINE_WAITING_WORKER_SIGNAL`.
+
+After dispatch, the combined role must immediately end its turn and go offline.
+It must not poll, inspect, run status, perform oversight, or do more project work
+while the Worker owns the CELL. Do not attach a heartbeat or scheduled inspection
+that wakes this combined role during Worker execution.
+
+Only `WORKER_COMPLETION_RECEIPT`, `WORKER_BLOCKER_RECEIPT`, or
+`WORKER_EXECUTION_FAILURE` may wake the combined role for that CELL. Owner input
+may change future requirements, but it does not authorize background inspection
+of the active Worker. On wake, validate or resolve exactly as the SLK role contract
+requires; any next formal assignment is again the final action before going offline.
+
 ## Continuation Condition Gate
 
 Before every Worker assignment, verify that its authoritative inputs,
@@ -502,43 +520,8 @@ After finishing a CELL, the Worker sends the Supervisor/Checker:
 ```
 
 The Worker's final visible reply must also be exactly `完成，请检验`. This means
-ready for validation, not accepted. Do not actively wait or continuously poll
-after sending a task or receipt.
-
-## Mandatory Overseer
-
-Starting SLK requires one recurring Overseer heartbeat attached to the current
-Supervisor thread while the loop remains unfinished.
-
-- Choose 15 minutes for short/light CELLs.
-- Choose 30 minutes for medium projects or mixed device-safe CELL runtimes.
-- Choose 60 minutes only for large projects, many CELLs, or an inherently long
-  verification command that cannot be split safely.
-- Record the heartbeat id and interval on the supervisor board.
-- Never create a detached conversation or replacement loop from the heartbeat.
-- Remove or disable the heartbeat after final Supervisor acceptance. When a
-  Goal is configured, this also requires `GOAL_SATISFIED`.
-
-At each heartbeat, inspect once:
-
-1. Supervisor board and current GO/CELL.
-2. Supervisor/Checker and Worker state and latest turn.
-3. Latest formal task, repair record, receipt, or queue record.
-4. Method-log/artifact timestamp when state is ambiguous.
-
-Classify the loop as `active_worker`, `active_checker`,
-`waiting_for_worker_delivery`, `waiting_for_checker_validation`, `blocked`,
-`condition_blocked`, `stalled`, or `complete`.
-
-Classify the project as `complete` only when ordinary acceptance passes and any
-configured Goal has `GOAL_SATISFIED`. Accepted CELLs with an untested Goal or
-`GOAL_GAP` remain unfinished Supervisor work.
-
-If neither execution side is genuinely active and the loop is unfinished, the
-heartbeat wakes the combined Supervisor/Checker with exactly one required next
-action. Never tell the Worker to select new work. If the environment cannot
-create a same-thread heartbeat, report the missing capability and do not
-substitute detached automation.
+ready for validation, not accepted. The formal receipt wakes the offline
+Supervisor/Checker; no polling or periodic Worker inspection substitutes for it.
 
 ## SLK Control Commands
 
@@ -565,8 +548,9 @@ SLK RESUME AT <RFC3339-time>
 SLK CANCEL SCHEDULE
 ```
 
-Without Owner-configured control, the heartbeat performs status inspection only.
-An accepted CELL threshold is absolute project progress. A pause trigger may
+Owner-configured control is evaluated only while the combined role is legitimately
+awake; it never wakes the role during Worker execution. An accepted CELL threshold
+is absolute project progress. A pause trigger may
 become pending, but the Supervisor must not interrupt an active CELL. Let the
 Worker finish, validate and repair the result, then pause at the safe boundary.
 A paused SLK is not complete and does not satisfy a Goal.
@@ -587,6 +571,7 @@ versioned and append-only.
 
 If no Goal is configured, this section adds no completion gate and ordinary SLK
 acceptance applies.
+Accepted CELLs with an untested Goal or `GOAL_GAP` remain unfinished Supervisor work.
 
 Checker completion is provisional. After the Checker responsibility has
 accepted every current PLAN/GO/CELL and reports completion, the Supervisor
@@ -698,7 +683,7 @@ No governed coordination Markdown file may exceed 1000 lines.
 
 Before launch, confirm:
 
-- Current `SLK_READINESS_EVAL_PASS` receipts prove exactly `24/24` for the exact
+- Current `SLK_READINESS_EVAL_PASS` receipts prove exactly `25/25` for the exact
   combined Supervisor/Checker and sole Worker conversations.
 - `SIMULATION_PASS` exists for this exact plan and role roster.
 - SLK is the sole method, was invoked once, and no MSLK capability is present.
@@ -741,12 +726,13 @@ Before launch, confirm:
 - The supervisor board identifies the Worker and current CELL.
 - Any safe pause or same-Worker resume control is Owner-configured, versioned,
   and uses the SLK command contract.
-- A 15/30/60-minute same-thread heartbeat is active and recorded.
-- The heartbeat will be removed after final acceptance.
+- Every dispatch precomputes all records, uses the assignment as the final online
+  action, and leaves the combined role in `OFFLINE_WAITING_WORKER_SIGNAL`.
+- No heartbeat, polling loop, or scheduled inspection wakes the combined role
+  before a Worker completion, blocker, or execution-failure signal.
 - No second Worker or parallel pair is hidden in the plan.
 - The role authority matrix is unchanged; no MSLK role, pair, state, or message
   route has been borrowed.
 
-Then the combined Supervisor/Checker records manual `SLK START`, sends the first
-formal CELL to the same Worker, and performs periodic oversight, validation,
-routing, and final acceptance.
+Then the combined Supervisor/Checker records manual `SLK START` and sends the
+first formal CELL to the same Worker as its final action before going offline.
