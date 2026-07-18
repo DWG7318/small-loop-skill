@@ -131,8 +131,9 @@ The simulation must:
 3. rehearse the first CELL assignment, Worker delivery, combined-role validation
    decision, and one `NEXT`, `REDO`, or `BLOCKED` route;
 4. prove no subagent or MSLK capability is used;
-5. validate ownership, write scope, evidence paths, model assignment, tests,
-   safety gates, and the dispatch-then-offline boundary;
+5. validate ownership, canonical Worker workspace binding, pre-authorized CELL
+   operations, write scope, evidence paths, model assignment, tests, safety
+   gates, and the dispatch-then-offline boundary;
 6. rehearse the Checker detection capability manifest, CodeGraph baseline, and
    one focused-to-regression evidence route.
 
@@ -426,6 +427,35 @@ Controller-owned repair evidence starts with `Repair record:` and is never a
 Worker assignment. `REDO` means the Supervisor/Checker repairs and revalidates
 the delivery; it does not send correction work back to the Worker. Messages
 without the formal task heading are discussion, not executable Worker work.
+
+## Pre-Authorized Worker Execution Gate
+
+Before composing a formal assignment, the combined Supervisor/Checker must
+record `WORKER_EXECUTION_GATE_PASS`. The gate is part of the continuation
+conditions and requires all of the following:
+
+1. The assignment's canonical workspace path must exactly match the Worker's
+   bound conversation workspace. A second worktree, junction, symlink, sibling
+   checkout, or path that merely points at equivalent Git content does not pass.
+2. The combined role must pre-authorize every routine operation inside the CELL
+   allowlist: editing listed files, creating declared evidence, running listed
+   local checks, and committing when the CELL explicitly permits it.
+3. The assignment must name the allowed paths and commands tightly enough that
+   no blanket or project-wide approval is needed. Pre-authorization never
+   expands the CELL scope or weakens platform safety controls.
+4. Credentials, external side effects, destructive or security-sensitive
+   operations, writes outside the allowlist, and scope, acceptance, or Goal
+   changes remain an Owner-only decision when existing authority does not cover
+   them.
+
+Routine file or command approval inside an already authorized CELL must never
+be delegated to the Owner. If workspace binding or permissions cannot be proven
+before dispatch, record `CONDITION_BLOCKED`; the Supervisor responsibility
+repairs the execution environment without waking the Worker. If an unexpected
+routine approval prompt appears after dispatch, classify it as
+`WORKER_EXECUTION_FAILURE`, stop that execution attempt, wake the combined role,
+and repair the binding or permission envelope. Never ask the Owner to click an
+`Allow once` control for ordinary Worker execution.
 
 ## Dispatch-Then-Offline Boundary
 
@@ -721,6 +751,9 @@ Before launch, confirm:
 - Every assignment has passed the continuation-condition gate; any
   `CONDITION_BLOCKED` record has either active Owner assistance or a verified
   `SUPERVISOR_RESOLVED` plus `RESUME_AUTHORIZED` sequence.
+- Every assignment has `WORKER_EXECUTION_GATE_PASS`: its canonical workspace
+  matches the Worker's bound conversation workspace and every routine allowed
+  operation is pre-authorized without Owner approval.
 - The optional Goal is either absent or explicitly defined; a configured Goal
   blocks final completion until the Supervisor records `GOAL_SATISFIED`.
 - The supervisor board identifies the Worker and current CELL.

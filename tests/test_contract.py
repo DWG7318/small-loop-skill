@@ -80,8 +80,8 @@ class SmallLoopContractTest(unittest.TestCase):
         for item in required:
             with self.subTest(item=item):
                 self.assertIn(item, SKILL)
-        self.assertEqual(VERSION, "1.8.1")
-        self.assertIn("Current version: `1.8.1`", README)
+        self.assertEqual(VERSION, "1.8.2")
+        self.assertIn("Current version: `1.8.2`", README)
         self.assertNotIn("all nine rules", README.lower())
 
     def test_readiness_eval_precedes_simulation_and_manual_start(self):
@@ -207,6 +207,30 @@ class SmallLoopContractTest(unittest.TestCase):
             ],
         )
         self.assertFalse(boundary["periodic_worker_inspection"])
+
+    def test_worker_execution_is_preauthorized_before_dispatch(self):
+        required = (
+            "## Pre-Authorized Worker Execution Gate",
+            "canonical workspace path",
+            "must exactly match the Worker's bound conversation workspace",
+            "pre-authorize every routine operation inside the CELL allowlist",
+            "must never be delegated to the Owner",
+            "WORKER_EXECUTION_FAILURE",
+            "Owner-only decision",
+        )
+        for rule in required:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, NORMALIZED_SKILL)
+
+        gate = CONTROL_CONTRACT["worker_execution_gate"]
+        self.assertEqual(gate["controller"], "Supervisor/Checker")
+        self.assertTrue(gate["workspace_binding_required"])
+        self.assertTrue(gate["allowlist_preauthorized"])
+        self.assertTrue(gate["owner_routine_approval_forbidden"])
+        self.assertEqual(
+            gate["unexpected_routine_approval_signal"],
+            "WORKER_EXECUTION_FAILURE",
+        )
 
     def test_checker_detection_system_and_supervisor_capability_supply(self):
         required = (

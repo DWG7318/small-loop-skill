@@ -33,6 +33,11 @@ not poll, inspect, run status, or perform periodic oversight of the active Worke
 It wakes only for `WORKER_COMPLETION_RECEIPT`, `WORKER_BLOCKER_RECEIPT`, or
 `WORKER_EXECUTION_FAILURE`. A next assignment repeats this final-action rule.
 
+Before that final action, require `WORKER_EXECUTION_GATE_PASS`: the canonical
+assignment workspace equals the visible Worker's bound workspace, and all
+allowlisted routine edits and commands are pre-authorized. A routine approval
+prompt is `WORKER_EXECUTION_FAILURE`, never an Owner click task.
+
 `SLK STATUS` is read-only and may run only while the combined role is already
 legitimately awake. It must not create, wake, archive, schedule, or dispatch a role.
 

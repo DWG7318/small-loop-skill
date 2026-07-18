@@ -260,7 +260,7 @@
     {
       "id": "SLK-Q24",
       "type": "single_select",
-      "prompt": "VERSION says 1.8.1, but README, global mirror, remote main, or annotated tag differs. Is publication complete?",
+      "prompt": "VERSION says 1.8.2, but README, global mirror, remote main, or annotated tag differs. Is publication complete?",
       "options": [
         {"id": "A", "text": "No; every release identity and content check must align."},
         {"id": "B", "text": "Yes; VERSION alone is authoritative."},
@@ -270,13 +270,13 @@
     },
     {
       "id": "SLK-Q25",
-      "type": "single_select",
-      "prompt": "The combined Supervisor/Checker has completed every pre-dispatch action and sends a formal CELL. What is valid immediately afterward?",
+      "type": "ordering",
+      "prompt": "Order the valid SLK boundary when a CELL will edit files and run local checks.",
       "options": [
-        {"id": "A", "text": "Update the board once more, then start a heartbeat."},
-        {"id": "B", "text": "End the turn and remain offline until Worker completion, blocker, or execution-failure signal."},
-        {"id": "C", "text": "Poll the Worker because status checks are not project work."},
-        {"id": "D", "text": "Begin Checker validation while the Worker is still executing."}
+        {"id": "A", "text": "Verify the canonical assignment workspace exactly matches the Worker's bound conversation workspace."},
+        {"id": "B", "text": "Record WORKER_EXECUTION_GATE_PASS after pre-authorizing every routine allowlisted edit and command."},
+        {"id": "C", "text": "Send the formal assignment as the final online action."},
+        {"id": "D", "text": "Enter OFFLINE_WAITING_WORKER_SIGNAL; an unexpected routine approval prompt is WORKER_EXECUTION_FAILURE, not an Owner click task."}
       ]
     }
   ]
