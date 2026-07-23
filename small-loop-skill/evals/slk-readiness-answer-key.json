@@ -1,0 +1,30 @@
+{
+  "version": "1.9.0",
+  "answers": {
+    "Q01": "Small Loop Skill；SLK；一个可见Control Conversation和一个可见Worker Conversation。",
+    "Q02": "同一个Control Conversation中的两个不可互换职责，不是一个无差别角色。",
+    "Q03": "RESPONSIBILITY_MODE: SUPERVISOR或RESPONSIBILITY_MODE: CHECKER，且一次正式决策只能有一个活动模式。",
+    "Q04": "需要；Full Calabash或至少Grandpa、Product Architecture、Ontology组成的Minimum Calabash。",
+    "Q05": "仅严格非产品技术任务，且有证据证明不改变用户行为、产品语义、角色、流程、权限、动作或验收，并由冻结技术合同唯一确定。",
+    "Q06": "Supervisor responsibility从权威Owner意图和项目证据建立，并在方案、GO/CELL计划、readiness、simulation或正式执行前冻结。",
+    "Q07": "一个持久Worker；任一时刻只执行一个CELL。",
+    "Q08": "不能；Worker实施、Supervisor控制、Checker验证必须使用分离的授权可变环境。",
+    "Q09": "不意味着；Checker仍必须在干净独立worktree/sandbox中验证不可变候选并写独立证据。",
+    "Q10": "不声称；同对话不提供盲记忆隔离，只提供职责、合同、环境和证据独立。",
+    "Q11": "Worker。",
+    "Q12": "不能；Checker只能修自己的验证工具或协调资产，不能修改Worker产品候选后自我验收。",
+    "Q13": "Checker responsibility。",
+    "Q14": "Checker responsibility在新鲜独立GO边界验证环境中依据Calabash-traced GO_EVIDENCE_CONTRACT执行。",
+    "Q15": "需要多个固定并行Chain/Level或独立盲Verification时用CLK；需要自由GO图、Grapher、条件路由、join、fallback或cycle时用GLK。",
+    "Q16": "是；包络内常规工作无需逐CELL、逐GO或普通技术确认。",
+    "Q17": "仅不可约Owner独占事项，如目标/Grandpa/范围/验收/安全变更、真实产品歧义、私密凭证、法律同意、破坏性不可逆高成本物理或外部账户动作。",
+    "Q18": "CELL_REWORK交给同一Worker新Round；需要改目标/计划则PLAN_DEFECT；新工作不再使用REDO。",
+    "Q19": "所有必需CELL经Checker接受，并由Checker在新鲜GO边界环境依据GO_CALABASH_TRACE和GO_EVIDENCE_CONTRACT返回GO_ACCEPTED。",
+    "Q20": "不能；这是GO_BOUNDARY_VIOLATION。",
+    "Q21": "已GO_ACCEPTED的前置GO及其冻结、版本化输出。",
+    "Q22": "CELL_ALWAYS、CELL_TRIGGERED、GO_BOUNDARY、PROJECT_FINAL。",
+    "Q23": "不能；这会改变SLK拓扑，应停止并开启独立CLK或GLK运行。",
+    "Q24": "不是；它只做项目组合、治理、安全和最终Evidence审计，不重复普通CELL验收。",
+    "Q25": "所有必需GO已GO_ACCEPTED，组合/安全/最终Evidence通过，无未解决缺陷，且配置的PROJECT_GOAL已满足。"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "method": "SLK",
+  "product_name": "Small Loop Skill",
+  "version": "1.9.0",
+  "visible_conversations": [
+    "CONTROL",
+    "WORKER"
+  ],
+  "control_responsibilities": [
+    "SUPERVISOR_RESPONSIBILITY",
+    "CHECKER_RESPONSIBILITY"
+  ],
+  "calabash_gate": {
+    "product_affecting_required": true,
+    "minimum_layers": [
+      "GRANDPA",
+      "PRODUCT_ARCHITECTURE",
+      "ONTOLOGY"
+    ],
+    "narrow_technical_exemption": true,
+    "supervisor_establishes_when_missing": true,
+    "go_trace_required": true
+  },
+  "worker_count": 1,
+  "active_cell_count": 1,
+  "product_write_authority": [
+    "WORKER"
+  ],
+  "cell_acceptance_authority": [
+    "CHECKER_RESPONSIBILITY"
+  ],
+  "go_acceptance_authority": [
+    "CHECKER_RESPONSIBILITY"
+  ],
+  "final_audit_authority": [
+    "SUPERVISOR_RESPONSIBILITY"
+  ],
+  "separate_blind_verification_conversation": false,
+  "checker_environment_isolation_required": true,
+  "cell_routes": [
+    "NEXT",
+    "CELL_REWORK",
+    "GO_ACCEPTANCE",
+    "COMPLETE",
+    "BLOCKED",
+    "PLAN_DEFECT",
+    "METHOD_BOUNDARY_EXCEEDED"
+  ],
+  "go_results": [
+    "GO_ACCEPTED",
+    "GO_EVIDENCE_GAP",
+    "GO_REWORK_REQUIRED",
+    "GO_PLAN_DEFECT",
+    "GO_BLOCKED",
+    "CALABASH_TRACE_INVALID",
+    "CALABASH_UPGRADE_REQUIRED"
+  ],
+  "cross_go_rule": {
+    "cell_to_cell_dependency_allowed": false,
+    "required_predecessor_state": "GO_ACCEPTED"
+  },
+  "detection_tiers": [
+    "CELL_ALWAYS",
+    "CELL_TRIGGERED",
+    "GO_BOUNDARY",
+    "PROJECT_FINAL"
+  ],
+  "autonomy": {
+    "project_autonomy_envelope_required": true,
+    "routine_owner_authorization_required": false,
+    "only_supervisor_may_contact_owner": true
+  },
+  "method_boundaries": {
+    "parallel_fixed_chains": "CLK",
+    "free_go_graph": "GLK"
+  }
+}

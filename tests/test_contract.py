@@ -80,8 +80,8 @@ class SmallLoopContractTest(unittest.TestCase):
         for item in required:
             with self.subTest(item=item):
                 self.assertIn(item, SKILL)
-        self.assertEqual(VERSION, "1.8.3")
-        self.assertIn("Current version: `1.8.3`", README)
+        self.assertEqual(VERSION, "1.9.0")
+        self.assertIn("Current version: **1.9.0**", README)
         self.assertNotIn("all nine rules", README.lower())
 
     def test_readiness_eval_precedes_simulation_and_manual_start(self):
