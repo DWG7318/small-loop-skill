@@ -1,0 +1,105 @@
+{
+  "version": "1.9.0",
+  "questions": [
+    {
+      "id": "Q01",
+      "prompt": "SLK的正式产品名称、缩写和外部对话拓扑是什么？"
+    },
+    {
+      "id": "Q02",
+      "prompt": "Supervisor与Checker在SLK中是同一个对话还是同一个无差别角色？"
+    },
+    {
+      "id": "Q03",
+      "prompt": "每个正式Control记录必须声明什么？"
+    },
+    {
+      "id": "Q04",
+      "prompt": "产品相关SLK工作是否需要Calabash？Minimum Calabash包含什么？"
+    },
+    {
+      "id": "Q05",
+      "prompt": "什么时候允许CALABASH_EXEMPTION？"
+    },
+    {
+      "id": "Q06",
+      "prompt": "项目没有Calabash时谁建立，何时冻结？"
+    },
+    {
+      "id": "Q07",
+      "prompt": "SLK有多少Worker和同时多少活动CELL？"
+    },
+    {
+      "id": "Q08",
+      "prompt": "Worker、Supervisor控制环境、Checker验证环境能否共享一个可变工作区？"
+    },
+    {
+      "id": "Q09",
+      "prompt": "同一个Control对话是否意味着Checker没有独立环境？"
+    },
+    {
+      "id": "Q10",
+      "prompt": "SLK是否声称Supervisor和Checker具有盲认知隔离？"
+    },
+    {
+      "id": "Q11",
+      "prompt": "谁拥有产品实施与产品返工？"
+    },
+    {
+      "id": "Q12",
+      "prompt": "Checker能否修改产品代码后验收自己的修改？"
+    },
+    {
+      "id": "Q13",
+      "prompt": "谁拥有CELL验收和路由？"
+    },
+    {
+      "id": "Q14",
+      "prompt": "SLK中谁进行GO evidence acceptance？"
+    },
+    {
+      "id": "Q15",
+      "prompt": "什么情况下SLK应改选CLK或GLK？"
+    },
+    {
+      "id": "Q16",
+      "prompt": "PROJECT_AUTONOMY_ENVELOPE是否免除常规Owner逐项确认？"
+    },
+    {
+      "id": "Q17",
+      "prompt": "哪些事情才可由Supervisor请求Owner？"
+    },
+    {
+      "id": "Q18",
+      "prompt": "发现产品缺陷时使用什么路由，REDO是否继续？"
+    },
+    {
+      "id": "Q19",
+      "prompt": "一个GO什么时候完成？"
+    },
+    {
+      "id": "Q20",
+      "prompt": "一个GO的CELL能否等待另一个GO未完成CELL？"
+    },
+    {
+      "id": "Q21",
+      "prompt": "跨GO输入必须来自什么状态？"
+    },
+    {
+      "id": "Q22",
+      "prompt": "检测四个层级是什么？"
+    },
+    {
+      "id": "Q23",
+      "prompt": "需要独立Verification对话时是否能在SLK中临时增加？"
+    },
+    {
+      "id": "Q24",
+      "prompt": "Supervisor最终审计是否是第二个Checker？"
+    },
+    {
+      "id": "Q25",
+      "prompt": "SLK项目何时可以宣布完成？"
+    }
+  ]
+}
