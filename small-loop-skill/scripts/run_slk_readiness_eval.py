@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run or grade the SLK 1.9.0 readiness evaluation."""
+"""Run or grade the SLK readiness evaluation."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 ROLE_TYPES = {"SUPERVISOR_RESPONSIBILITY", "CHECKER_RESPONSIBILITY", "WORKER"}
+CHOICE_IDS = ("A", "B", "C", "D")
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -22,16 +23,30 @@ def load_json(path: Path) -> dict[str, Any]:
         raise SystemExit(f"invalid JSON in {path}: {exc}") from exc
 
 
-def normalize(value: str) -> str:
-    return " ".join(value.strip().split()).casefold()
-
-
 def content_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def emit_questions(bank: dict[str, Any], seed: int) -> list[dict[str, str]]:
-    questions = list(bank["questions"])
+def correct_choice_id(key: dict[str, Any], question_id: str) -> str:
+    choice_id = key["answers"][question_id]
+    if choice_id not in CHOICE_IDS:
+        raise SystemExit(f"answer key for {question_id} must contain a choice ID")
+    return choice_id
+
+
+def _public_question(item: dict[str, Any]) -> dict[str, Any]:
+    question_id = item["id"]
+    choices = item.get("choices")
+    if not isinstance(choices, list) or [choice.get("id") for choice in choices] != list(CHOICE_IDS):
+        raise SystemExit(f"question {question_id} must contain choices A through D")
+    texts = [str(choice.get("text", "")) for choice in choices]
+    if any(not text for text in texts) or len(set(texts)) != len(CHOICE_IDS):
+        raise SystemExit(f"question {question_id} choices must be unique")
+    return {"id": question_id, "prompt": item["prompt"], "choices": choices}
+
+
+def emit_questions(bank: dict[str, Any], seed: int) -> list[dict[str, Any]]:
+    questions = [_public_question(item) for item in bank["questions"]]
     random.Random(seed).shuffle(questions)
     return questions
 
@@ -48,8 +63,13 @@ def grade(bank: dict[str, Any], key: dict[str, Any], submitted: dict[str, Any]) 
     results = []
     passed_all = True
     for item in supplied:
+        if not isinstance(item, dict) or set(item) != {"id", "choice_id"}:
+            raise SystemExit("each answer must contain exactly 'id' and 'choice_id'")
         qid = item["id"]
-        passed = normalize(str(item.get("answer", ""))) == normalize(str(key["answers"][qid]))
+        choice_id = item["choice_id"]
+        if choice_id not in CHOICE_IDS:
+            raise SystemExit("choice_id must be one of A, B, C, or D")
+        passed = choice_id == correct_choice_id(key, qid)
         passed_all = passed_all and passed
         results.append({"id": qid, "passed": passed})
     return passed_all, results

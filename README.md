@@ -3,7 +3,7 @@
 A Codex skill for one bounded project executed by one persistent Worker under one
 visible Control Conversation with distinct Supervisor and Checker responsibilities.
 
-Current version: **1.9.0**
+Current version: **1.9.1**
 
 ## Topology
 
@@ -42,6 +42,13 @@ Every product-facing GO has a `GO_CALABASH_TRACE` and `GO_EVIDENCE_CONTRACT`.
 - no cross-GO CELL dependency;
 - tiered detection;
 - clear boundaries to CLK and GLK.
+
+## Readiness 1.9.1 fix
+
+- readiness packets expose four public choices with stable `choice_id` values;
+- grading uses the selected ID instead of exact free-text matching;
+- the hidden answer key still determines the correct choice and remains prohibited
+  during an attempt.
 
 ## Method boundary
 

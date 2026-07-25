@@ -15,7 +15,7 @@ invocation name.
 - Canonical repository: `https://github.com/DWG7318/small-loop-skill`.
 - Default branch: `main`.
 - Version source: repository `VERSION` file and matching `v*` tag.
-- Current specification version: `1.9.0`.
+- Current specification version: `1.9.1`.
 
 Before publishing, verify owner/name, repository identity, default branch, remote
 HEAD, tested installation, version file, and release tag. Never publish SLK content
@@ -262,6 +262,10 @@ small-loop-skill/scripts/run_slk_readiness_eval.py
 
 Partial credit, manual override, inherited receipts, answer-key inspection during an
 attempt, missing answers, extra answers, or reordered answers are forbidden.
+The emitted packet provides four public multiple-choice options per question.
+Participants submit exactly one stable `choice_id` (`A` through `D`) per question;
+free-text answer matching is forbidden. The answer key remains hidden and must not
+be inspected during an attempt.
 
 ## Mandatory Simulation Gate
 
@@ -689,7 +693,9 @@ rework ownership, routes, GO acceptance, and detection execution.
 
 ## Version Note
 
-Version `1.9.0` makes Calabash conditionally mandatory, separates Supervisor and
+Version `1.9.1` replaces exact free-text readiness grading with public
+multiple-choice options and stable choice IDs while preserving the hidden-key and
+25/25 gates. Version `1.9.0` made Calabash conditionally mandatory, separates Supervisor and
 Checker responsibilities inside one Control Conversation, requires Checker
 environment isolation, forbids routine Owner confirmation and controller product
 self-repair, adds Calabash-traced GO evidence acceptance and GO-boundary independence,

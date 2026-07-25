@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.1
+
+- Replaced brittle exact free-text readiness grading with deterministic public
+  multiple-choice packets and stable `choice_id` submissions.
+- Preserved the 25/25 threshold, hidden answer-key boundary, seeded question order,
+  and fail-closed receipt behavior.
+
 ## 1.9.0
 
 - Added mandatory Full/Minimum Calabash for product-affecting runs and a narrow

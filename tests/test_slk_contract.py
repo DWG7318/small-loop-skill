@@ -13,7 +13,7 @@ def contract() -> dict:
 
 def test_version_and_identity() -> None:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "1.9.0"
+    assert version == "1.9.1"
     assert f"Current version: **{version}**" in (ROOT / "README.md").read_text(encoding="utf-8")
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     assert "# Small Loop Skill (SLK)" in text
@@ -67,3 +67,10 @@ def test_readiness_count() -> None:
     assert len(q["questions"]) == 25
     assert len(a["answers"]) == 25
     assert {x["id"] for x in q["questions"]} == set(a["answers"])
+
+
+def test_readiness_uses_public_choices_and_stable_choice_ids() -> None:
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    assert "public multiple-choice options" in text
+    assert "`choice_id`" in text
+    assert "free-text answer matching is forbidden" in text
