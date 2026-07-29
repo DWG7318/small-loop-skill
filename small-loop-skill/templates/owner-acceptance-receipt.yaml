@@ -1,0 +1,13 @@
+receipt_id: ""
+receipt_type: RUN_OWNER_ACCEPTANCE
+verdict: PENDING
+contract_ref: {}
+baseline_ref: {}
+candidate_ref: {}
+responsibility: OWNER
+execution_context_ref: ""
+issued_at: ""
+evidence_refs: []
+consumed_receipts: []
+invalidation: {status: CURRENT, reason: ""}
+supersedes: []

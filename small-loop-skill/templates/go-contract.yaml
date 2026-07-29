@@ -1,0 +1,10 @@
+go_id: GO-001
+version: 1
+intent: ""
+scope: []
+claim: ""
+acceptance: []
+counter_evidence: []
+evidence_required: []
+readiness_conditions: []
+security_impact: []

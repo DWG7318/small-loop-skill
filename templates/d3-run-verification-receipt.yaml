@@ -1,0 +1,15 @@
+receipt_id: ""
+receipt_type: D3
+verdict: PENDING
+contract_ref: {}
+baseline_ref: {}
+candidate_ref: {}
+responsibility: VERIFIER_RESPONSIBILITY
+execution_context_ref: ""
+issued_at: ""
+cross_go_checks: []
+repeated_checks: []
+evidence_refs: []
+consumed_receipts: []
+invalidation: {status: CURRENT, reason: ""}
+supersedes: []

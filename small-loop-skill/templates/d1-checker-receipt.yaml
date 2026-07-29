@@ -1,0 +1,14 @@
+receipt_id: ""
+receipt_type: D1
+verdict: PENDING
+contract_ref: {}
+baseline_ref: {}
+candidate_ref: {}
+responsibility: CHECKER_RESPONSIBILITY
+execution_context_ref: ""
+issued_at: ""
+commands_results: []
+evidence_refs: []
+consumed_receipts: []
+invalidation: {status: CURRENT, reason: ""}
+supersedes: []

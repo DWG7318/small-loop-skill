@@ -1,75 +1,101 @@
 {
+  "schema_version": "2.0",
   "method": "SLK",
   "product_name": "Small Loop Skill",
-  "version": "1.9.1",
+  "version": "2.3.1",
   "visible_conversations": [
     "CONTROL",
     "WORKER"
   ],
   "control_responsibilities": [
     "SUPERVISOR_RESPONSIBILITY",
-    "CHECKER_RESPONSIBILITY"
+    "CHECKER_RESPONSIBILITY",
+    "VERIFIER_RESPONSIBILITY"
   ],
-  "calabash_gate": {
-    "product_affecting_required": true,
-    "minimum_layers": [
-      "GRANDPA",
-      "PRODUCT_ARCHITECTURE",
-      "ONTOLOGY"
-    ],
-    "narrow_technical_exemption": true,
-    "supervisor_establishes_when_missing": true,
-    "go_trace_required": true
-  },
+  "one_active_control_responsibility": true,
   "worker_count": 1,
   "active_cell_count": 1,
-  "product_write_authority": [
-    "WORKER"
+  "separate_verification_conversation": false,
+  "blind_context_independence_claimed": false,
+  "run_contract_required": true,
+  "calabash_owner": "LCCODING",
+  "centralized_security_audit_owner": "LCCODING",
+  "verification_authority": {
+    "D0": ["WORKER"],
+    "D1": ["CHECKER_RESPONSIBILITY"],
+    "D2": ["VERIFIER_RESPONSIBILITY"],
+    "D3": ["VERIFIER_RESPONSIBILITY"],
+    "RUN_OWNER_ACCEPTANCE": ["OWNER"]
+  },
+  "product_write_authority": ["WORKER"],
+  "receipt_default": "PENDING",
+  "receipt_envelope_required_fields": [
+    "receipt_id",
+    "receipt_type",
+    "contract_ref",
+    "baseline_ref",
+    "candidate_ref",
+    "responsibility",
+    "execution_context_ref",
+    "issued_at",
+    "evidence_refs",
+    "consumed_receipts",
+    "invalidation",
+    "supersedes"
   ],
-  "cell_acceptance_authority": [
-    "CHECKER_RESPONSIBILITY"
-  ],
-  "go_acceptance_authority": [
-    "CHECKER_RESPONSIBILITY"
-  ],
-  "final_audit_authority": [
-    "SUPERVISOR_RESPONSIBILITY"
-  ],
-  "separate_blind_verification_conversation": false,
-  "checker_environment_isolation_required": true,
-  "cell_routes": [
-    "NEXT",
-    "CELL_REWORK",
-    "GO_ACCEPTANCE",
-    "COMPLETE",
+  "run_pointers": {
+    "current_go_id": "zero_or_one",
+    "active_go_id": "zero_or_one",
+    "active_must_equal_current": true
+  },
+  "go_lifecycle_states": [
+    "FROZEN",
+    "READY",
+    "IMPLEMENTING",
+    "D1_PENDING",
+    "D2_PENDING",
+    "VERIFIED",
     "BLOCKED",
-    "PLAN_DEFECT",
-    "METHOD_BOUNDARY_EXCEEDED"
+    "CANCELLED",
+    "SUPERSEDED"
   ],
-  "go_results": [
-    "GO_ACCEPTED",
-    "GO_EVIDENCE_GAP",
-    "GO_REWORK_REQUIRED",
-    "GO_PLAN_DEFECT",
-    "GO_BLOCKED",
-    "CALABASH_TRACE_INVALID",
-    "CALABASH_UPGRADE_REQUIRED"
-  ],
-  "cross_go_rule": {
-    "cell_to_cell_dependency_allowed": false,
-    "required_predecessor_state": "GO_ACCEPTED"
+  "required_go_completion": "D2_PASS",
+  "formal_resolution": {
+    "allowed_results": [
+      "CANCELLED_BY_AUTHORITY",
+      "REMOVED_FROM_SCOPE",
+      "SUPERSEDED"
+    ],
+    "requires_baseline_amendment": true,
+    "may_replace_required_go_d2": false
   },
-  "detection_tiers": [
-    "CELL_ALWAYS",
-    "CELL_TRIGGERED",
-    "GO_BOUNDARY",
-    "PROJECT_FINAL"
-  ],
-  "autonomy": {
-    "project_autonomy_envelope_required": true,
-    "routine_owner_authorization_required": false,
-    "only_supervisor_may_contact_owner": true
+  "candidate_change": {
+    "invalidates_affected_receipts": true,
+    "invalidates_dependent_higher_receipts": true,
+    "product_visible_change_invalidates_owner_acceptance": true
   },
+  "security_hard_brakes": [
+    "CRITICAL_VULNERABILITY",
+    "HIGH_VULNERABILITY",
+    "AUTHENTICATION_BYPASS",
+    "AUTHORIZATION_BYPASS",
+    "PRIVILEGE_ESCALATION",
+    "CREDENTIAL_LEAK",
+    "CROSS_TENANT_LEAK",
+    "DESTRUCTIVE_RISK",
+    "RUN_SECURITY_REQUIREMENT_FAILED"
+  ],
+  "known_high_risk_blocks_d3": true,
+  "owner_verdicts": [
+    "LOOP_OWNER_ACCEPTED",
+    "LOOP_PRODUCT_REWORK",
+    "PRODUCT_DEFINITION_CHANGE",
+    "NEW_FEATURE_REQUEST"
+  ],
+  "output": [
+    "SLK_RUN_RECEIPT",
+    "LOOP_OWNER_ACCEPTED"
+  ],
   "method_boundaries": {
     "parallel_fixed_chains": "CLK",
     "free_go_graph": "GLK"

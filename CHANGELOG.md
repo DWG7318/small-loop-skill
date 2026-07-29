@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.3.1
+
+- Preserved the canonical `Small Loop Skill` identity and exactly two visible
+  conversations: one Control and one persistent Worker.
+- Added non-interchangeable Supervisor, Checker, and Verifier responsibility modes
+  inside the Control Conversation; Checker owns D1 and Verifier owns D2/D3.
+- Made every D0-D3 and Owner receipt template fail closed with canonical `PENDING`.
+- Replaced assertion-only plan checks with strict serial-plan validation and stable
+  error codes that remain active under `python -O`.
+- Required D2 PASS for every current Required GO; formal resolution now changes the
+  Required set only through a versioned Baseline Amendment.
+- Added minimum auditable Receipt Envelopes, Current/Active pointers, candidate
+  invalidation, known-risk security hard brakes, Manifest verification, Windows CI,
+  and a complete MIT License.
+- Kept Calabash and centralized project security audit under LCCoding ownership.
+
+## 2.3.0 (withdrawn draft)
+
+- This draft was never approved for installation or release because it contained
+  success-by-default receipts, weak validation, an undefined D2 bypass, incomplete
+  release integrity, and an unresolved identity/topology change.
+
 ## 1.9.1
 
 - Replaced brittle exact free-text readiness grading with deterministic public

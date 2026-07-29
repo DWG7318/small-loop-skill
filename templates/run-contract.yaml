@@ -1,0 +1,16 @@
+run_id: RUN-001
+feature_slice_id: FS-001
+run_feature: ""
+run_scope: []
+baselines:
+  product: {id: "", version: "", sha256: ""}
+  integration: {id: "", version: "", sha256: ""}
+  ui_lock: {id: "", version: "", sha256: ""}
+claims: []
+counter_evidence: []
+evidence_required: []
+autonomy: {}
+owner_exclusive_decisions: []
+candidate_binding: {}
+security_requirements: []
+security_hard_brakes: []
