@@ -1,0 +1,265 @@
+{
+  "name": "Small Loop Skill",
+  "version": "2.3.1",
+  "excludes": [
+    "MANIFEST.json"
+  ],
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "837cf8eaab09850d66f19639004480d984060b2f5176ea006716d2ba6e15a107"
+    },
+    {
+      "path": ".github/workflows/validate.yml",
+      "sha256": "7d17aaf595e2cd6952e2f1162da3f6b6b9e637b848712d5ec9501520f095a010"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "816084475b819573b8005807f79f5c8592e9b3d085a60a9d1d3c782e5df88a88"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "b2800a173c82664ac07b358a6ee2dbb1ecb93bbc4518193744f55dbb8af23c96"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7"
+    },
+    {
+      "path": "MIGRATION.md",
+      "sha256": "628a1bba7b8b9852b5eb6261d1c96f0741f8094c975f16c7004f062b4cf0c26e"
+    },
+    {
+      "path": "README.md",
+      "sha256": "2863bacac3f0a870e29343c799033d18968fbe6929162ca557bec317d1de8eb8"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "sha256": "ce98cd1bd450dfb30bc3bc1b96ce5c24f03fd35d44fe5dc6f2f32da7a122791e"
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "5855d5cd94db24a29d4618c0a0fe406c606c6293d501f8fe406f81525d653310"
+    },
+    {
+      "path": "SPEC.md",
+      "sha256": "b51ef1266714200839f185dcf220fb6ab85a8ef27aa72ce8c1f40674add8ca6d"
+    },
+    {
+      "path": "VALIDATION-REPORT.md",
+      "sha256": "720bd4857b7098f81287b181eec529b5dde27291e110706e3aedfc6d76f05219"
+    },
+    {
+      "path": "VERSION",
+      "sha256": "ad8650bc9057d9dfd809961b69dbad640c288d809fa44437d44d83d3b118c821"
+    },
+    {
+      "path": "agents/openai.yaml",
+      "sha256": "d119632bc3288994a4ba41542f12bdcb9ea9903ac25a82a34fb93b6b3da72f9c"
+    },
+    {
+      "path": "contracts/slk-control-kernel.json",
+      "sha256": "8a1d6bdcf623b8e1788c972a64637b0e5edc01e3bafc682391b388423a333e62"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
+      "sha256": "7b557073f45d36cfde9f70615c3f2824bfccbacee405bec418b25aa694192b81"
+    },
+    {
+      "path": "examples/minimal-run/README.md",
+      "sha256": "ab8446ebe1c959e7fca5fb570804fa223de9ac439e232c22189d3627234b4d2f"
+    },
+    {
+      "path": "examples/minimal-run/contracts/go-001.yaml",
+      "sha256": "ec86145472ba6ed618fe21b54895d4d86c6c06af7ad6ba54f85f13049b8ba486"
+    },
+    {
+      "path": "examples/minimal-run/contracts/go-002.yaml",
+      "sha256": "eacc69414c14fafcbf15b02acd51aede1caf67866fbdede58ca0212e4868718c"
+    },
+    {
+      "path": "examples/minimal-run/serial-plan.yaml",
+      "sha256": "677d827c5e68fe36e233df88c5b10c0b9287829e35be7e7dc7c0a783943d6df4"
+    },
+    {
+      "path": "references/amendment-and-rework.md",
+      "sha256": "509b4d2952b5f3fbc000acc1fa6e52bb78a71d168b19e2a4de30baa5b6bf93c2"
+    },
+    {
+      "path": "references/lccoding-interface.md",
+      "sha256": "a6fd0941ab004f243f0752c3a6aced99baf908ca6b5a6478ab528bd3f14cfd73"
+    },
+    {
+      "path": "references/owner-acceptance.md",
+      "sha256": "d4c8dc06a012cbb50ae31f05b8960b041da1f7c884ca92eca719258fcd39c736"
+    },
+    {
+      "path": "references/role-and-environment-isolation.md",
+      "sha256": "4eb823a2b72f212a48977f03e73337a14990dfaabd0cccd7d2b8bda9d8d9820b"
+    },
+    {
+      "path": "references/security-boundary.md",
+      "sha256": "83b21ed1b018537c657857c54b07750f470787c6e2bd57917d6c2d6d3031ff27"
+    },
+    {
+      "path": "references/serial-plan-construction.md",
+      "sha256": "020017d7a6d0c47a1cf3a2bc43f2befb3be562cd19a74ca29ad1209f7a56d3ba"
+    },
+    {
+      "path": "references/verification-de-duplication.md",
+      "sha256": "00ce1eaa6bf4d8513ce8ed0034541c505d7fef4018d520db05cd1d57ab4d11d9"
+    },
+    {
+      "path": "scripts/validate_repository.py",
+      "sha256": "ee325ff4751eb35ac17ab7a3a30934021e2f2fe44f7c98c90cd09f7cf9e08636"
+    },
+    {
+      "path": "scripts/validate_serial_plan.py",
+      "sha256": "e39fb3d6b97bde34a0b4cc3b7c7b0e1ca1555fcb13ef520b4870da35b8be2fb2"
+    },
+    {
+      "path": "small-loop-skill/SKILL.md",
+      "sha256": "5855d5cd94db24a29d4618c0a0fe406c606c6293d501f8fe406f81525d653310"
+    },
+    {
+      "path": "small-loop-skill/SPEC.md",
+      "sha256": "b51ef1266714200839f185dcf220fb6ab85a8ef27aa72ce8c1f40674add8ca6d"
+    },
+    {
+      "path": "small-loop-skill/contracts/slk-control-kernel.json",
+      "sha256": "8a1d6bdcf623b8e1788c972a64637b0e5edc01e3bafc682391b388423a333e62"
+    },
+    {
+      "path": "small-loop-skill/references/amendment-and-rework.md",
+      "sha256": "509b4d2952b5f3fbc000acc1fa6e52bb78a71d168b19e2a4de30baa5b6bf93c2"
+    },
+    {
+      "path": "small-loop-skill/references/lccoding-interface.md",
+      "sha256": "a6fd0941ab004f243f0752c3a6aced99baf908ca6b5a6478ab528bd3f14cfd73"
+    },
+    {
+      "path": "small-loop-skill/references/owner-acceptance.md",
+      "sha256": "d4c8dc06a012cbb50ae31f05b8960b041da1f7c884ca92eca719258fcd39c736"
+    },
+    {
+      "path": "small-loop-skill/references/role-and-environment-isolation.md",
+      "sha256": "4eb823a2b72f212a48977f03e73337a14990dfaabd0cccd7d2b8bda9d8d9820b"
+    },
+    {
+      "path": "small-loop-skill/references/security-boundary.md",
+      "sha256": "83b21ed1b018537c657857c54b07750f470787c6e2bd57917d6c2d6d3031ff27"
+    },
+    {
+      "path": "small-loop-skill/references/serial-plan-construction.md",
+      "sha256": "020017d7a6d0c47a1cf3a2bc43f2befb3be562cd19a74ca29ad1209f7a56d3ba"
+    },
+    {
+      "path": "small-loop-skill/references/verification-de-duplication.md",
+      "sha256": "00ce1eaa6bf4d8513ce8ed0034541c505d7fef4018d520db05cd1d57ab4d11d9"
+    },
+    {
+      "path": "small-loop-skill/scripts/validate_serial_plan.py",
+      "sha256": "e39fb3d6b97bde34a0b4cc3b7c7b0e1ca1555fcb13ef520b4870da35b8be2fb2"
+    },
+    {
+      "path": "small-loop-skill/templates/baseline-amendment.yaml",
+      "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
+    },
+    {
+      "path": "small-loop-skill/templates/cell-contract.yaml",
+      "sha256": "3e618a4c284364e4e620e01ca98799ef22339bd00bbdbe6ce5e3a8f11ecb0e86"
+    },
+    {
+      "path": "small-loop-skill/templates/d0-worker-receipt.yaml",
+      "sha256": "2b8ad79234987823136ab76af18ab4d96823266e218d9b249b787b49bf0af6fa"
+    },
+    {
+      "path": "small-loop-skill/templates/d1-checker-receipt.yaml",
+      "sha256": "53a4c97dff5527da2eda32c67b18ae550261748734168702aa82e863d3619005"
+    },
+    {
+      "path": "small-loop-skill/templates/d2-go-verification-receipt.yaml",
+      "sha256": "0e9226200129abbf6bb002269ddf8e66ff3f579b853c3dfd34f6d9fb7fcdf30d"
+    },
+    {
+      "path": "small-loop-skill/templates/d3-run-verification-receipt.yaml",
+      "sha256": "32aae4dcf0329f3a1bf92954b02a4e09053f9ce4201c0f50ec0b8c0f6fe3b520"
+    },
+    {
+      "path": "small-loop-skill/templates/go-contract.yaml",
+      "sha256": "257ac71d1b87e597c90f14e013bd4ceb867cba549d74dcdf10a8b336bd262f85"
+    },
+    {
+      "path": "small-loop-skill/templates/owner-acceptance-receipt.yaml",
+      "sha256": "66b6c9808e83f888bcad90047375aa04448fac9ac9ecc429c91be19f75e92b44"
+    },
+    {
+      "path": "small-loop-skill/templates/run-contract.yaml",
+      "sha256": "1448a7e2d5bf59f806b77dfcb2be1eadfb1fd51a5739fabc0878a7e5a4bee253"
+    },
+    {
+      "path": "small-loop-skill/templates/serial-plan.yaml",
+      "sha256": "d747a1d127f915bb0f1ca439b299b58e1e924e507c334f0663b78b0283078fdc"
+    },
+    {
+      "path": "small-loop-skill/templates/slk-run-receipt.yaml",
+      "sha256": "f491fffbc92bedf6ee1045206986a4189af0ead7612f665bbd301eebc167ba7f"
+    },
+    {
+      "path": "templates/baseline-amendment.yaml",
+      "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
+    },
+    {
+      "path": "templates/cell-contract.yaml",
+      "sha256": "3e618a4c284364e4e620e01ca98799ef22339bd00bbdbe6ce5e3a8f11ecb0e86"
+    },
+    {
+      "path": "templates/d0-worker-receipt.yaml",
+      "sha256": "2b8ad79234987823136ab76af18ab4d96823266e218d9b249b787b49bf0af6fa"
+    },
+    {
+      "path": "templates/d1-checker-receipt.yaml",
+      "sha256": "53a4c97dff5527da2eda32c67b18ae550261748734168702aa82e863d3619005"
+    },
+    {
+      "path": "templates/d2-go-verification-receipt.yaml",
+      "sha256": "0e9226200129abbf6bb002269ddf8e66ff3f579b853c3dfd34f6d9fb7fcdf30d"
+    },
+    {
+      "path": "templates/d3-run-verification-receipt.yaml",
+      "sha256": "32aae4dcf0329f3a1bf92954b02a4e09053f9ce4201c0f50ec0b8c0f6fe3b520"
+    },
+    {
+      "path": "templates/go-contract.yaml",
+      "sha256": "257ac71d1b87e597c90f14e013bd4ceb867cba549d74dcdf10a8b336bd262f85"
+    },
+    {
+      "path": "templates/owner-acceptance-receipt.yaml",
+      "sha256": "66b6c9808e83f888bcad90047375aa04448fac9ac9ecc429c91be19f75e92b44"
+    },
+    {
+      "path": "templates/run-contract.yaml",
+      "sha256": "1448a7e2d5bf59f806b77dfcb2be1eadfb1fd51a5739fabc0878a7e5a4bee253"
+    },
+    {
+      "path": "templates/serial-plan.yaml",
+      "sha256": "d747a1d127f915bb0f1ca439b299b58e1e924e507c334f0663b78b0283078fdc"
+    },
+    {
+      "path": "templates/slk-run-receipt.yaml",
+      "sha256": "f491fffbc92bedf6ee1045206986a4189af0ead7612f665bbd301eebc167ba7f"
+    },
+    {
+      "path": "tests/test_contract.py",
+      "sha256": "4f956c45f7e5b3a824433a7efea6822b1ddcc0ce31e1623a804449a69cdb9afa"
+    },
+    {
+      "path": "tests/test_repository_validator.py",
+      "sha256": "b4b0021602b698947916e361013cab44b4a24aa0daad33eb06b07f165a1c5561"
+    },
+    {
+      "path": "tests/test_serial_plan_validator.py",
+      "sha256": "0903abb7bd333bef5315fdd7116ed3725e948569b4e9b3ad702cc663d17207dd"
+    }
+  ]
+}

@@ -1,189 +1,103 @@
 {
-  "schema_version": "1.0",
-  "mode": "SLK",
-  "initial_start": "SLK START",
-  "dispatch_boundary": {
-    "controller": "Supervisor/Checker",
-    "assignment_is_final_action": true,
-    "post_dispatch_state": "OFFLINE_WAITING_WORKER_SIGNAL",
-    "wake_signals": [
-      "WORKER_COMPLETION_RECEIPT",
-      "WORKER_BLOCKER_RECEIPT",
-      "WORKER_EXECUTION_FAILURE",
-      "SUPERVISOR_PATROL_TRIGGER"
-    ],
-    "routine_periodic_worker_inspection": false,
-    "supervisor_safeguard_patrol": true
-  },
-  "combined_role_identity": {
-    "one_visible_role": true,
-    "internal_responsibility_transition": true,
-    "checker_waits_for_supervisor": false
-  },
-  "owner_assistance": {
-    "worker_may_contact_owner": false,
-    "checker_may_contact_owner": false,
-    "sole_contact_authority": "Supervisor responsibility"
-  },
-  "supervisor_patrol": {
-    "actor": "combined role acting as Supervisor",
-    "highest_on_site_decision_authority": true,
-    "powers": [
-      "authorization_repair",
-      "versioned_plan_revision",
-      "work_method_improvement"
-    ],
-    "routine_polling": false,
-    "concurrent_worker_mutation": false
-  },
-  "worker_execution_gate": {
-    "controller": "Supervisor/Checker",
-    "workspace_binding_required": true,
-    "allowlist_preauthorized": true,
-    "owner_routine_approval_forbidden": true,
-    "unexpected_routine_approval_signal": "WORKER_EXECUTION_FAILURE",
-    "owner_only_categories": [
-      "credentials",
-      "external_side_effects",
-      "scope_or_acceptance_change",
-      "destructive_or_security_sensitive_operation",
-      "write_outside_allowlist"
-    ]
-  },
-  "states": [
-    "NOT_STARTED",
-    "RUNNING",
-    "PAUSE_SCHEDULED",
-    "PAUSE_PENDING",
-    "PAUSED",
-    "RESUME_SCHEDULED",
-    "BLOCKED",
-    "COMPLETE"
+  "schema_version": "2.0",
+  "method": "SLK",
+  "product_name": "Small Loop Skill",
+  "version": "2.3.1",
+  "visible_conversations": [
+    "CONTROL",
+    "WORKER"
   ],
-  "commands": [
-    {
-      "syntax": "SLK START",
-      "kind": "start",
-      "allowed_from": ["NOT_STARTED"],
-      "to": "RUNNING",
-      "manual_only": true,
-      "dispatch": true,
-      "same_worker": true,
-      "requires": [
-        "SLK_READINESS_EVAL_PASS_EXACT_ROSTER",
-        "PLAN_APPROVED",
-        "SIMULATION_PASS",
-        "GO_DETECTION_PROFILES_APPROVED",
-        "CONTINUATION_CONDITIONS_PASS"
-      ]
-    },
-    {
-      "syntax": "SLK STATUS",
-      "kind": "status",
-      "allowed_from": [
-        "NOT_STARTED",
-        "RUNNING",
-        "PAUSE_SCHEDULED",
-        "PAUSE_PENDING",
-        "PAUSED",
-        "RESUME_SCHEDULED",
-        "BLOCKED",
-        "COMPLETE"
-      ],
-      "to": null,
-      "read_only": true,
-      "dispatch": false
-    },
-    {
-      "syntax": "SLK PAUSE NOW",
-      "kind": "pause",
-      "allowed_from": ["RUNNING"],
-      "to": "PAUSED",
-      "safe_boundary": true,
-      "dispatch": false,
-      "requires": ["ACTIVE_CELL_VALIDATED_AND_REPAIRED"]
-    },
-    {
-      "syntax": "SLK PAUSE AFTER <accepted-cell-count>",
-      "kind": "pause_schedule",
-      "allowed_from": ["RUNNING"],
-      "to": "PAUSE_SCHEDULED",
-      "threshold_scope": "project_accepted_absolute",
-      "safe_boundary": true,
-      "dispatch": false
-    },
-    {
-      "syntax": "SLK PAUSE AT <RFC3339-time>",
-      "kind": "pause_schedule",
-      "allowed_from": ["RUNNING"],
-      "to": "PAUSE_SCHEDULED",
-      "time_format": "RFC3339",
-      "safe_boundary": true,
-      "dispatch": false
-    },
-    {
-      "syntax": "SLK RESUME NOW",
-      "kind": "resume",
-      "allowed_from": ["PAUSED"],
-      "to": "RUNNING",
-      "same_worker": true,
-      "revalidate": true,
-      "dispatch": true,
-      "requires": [
-        "PLAN_CURRENT",
-        "READINESS_RECEIPTS_CURRENT",
-        "SIMULATION_CURRENT",
-        "CONTINUATION_CONDITIONS_PASS"
-      ]
-    },
-    {
-      "syntax": "SLK RESUME AT <RFC3339-time>",
-      "kind": "resume_schedule",
-      "allowed_from": ["PAUSED"],
-      "to": "RESUME_SCHEDULED",
-      "time_format": "RFC3339",
-      "same_worker": true,
-      "revalidate": true,
-      "dispatch": false
-    },
-    {
-      "syntax": "SLK CANCEL SCHEDULE",
-      "kind": "cancel_schedule",
-      "allowed_from": [
-        "PAUSE_SCHEDULED",
-        "PAUSE_PENDING",
-        "RESUME_SCHEDULED"
-      ],
-      "to": "RUNNING",
-      "to_by_state": {
-        "PAUSE_SCHEDULED": "RUNNING",
-        "PAUSE_PENDING": "RUNNING",
-        "RESUME_SCHEDULED": "PAUSED"
-      },
-      "dispatch": false
-    }
+  "control_responsibilities": [
+    "SUPERVISOR_RESPONSIBILITY",
+    "CHECKER_RESPONSIBILITY",
+    "VERIFIER_RESPONSIBILITY"
   ],
-  "errors": {
-    "INVALID_COMMAND": {"state_change": false, "dispatch": false},
-    "INVALID_STATE": {"state_change": false, "dispatch": false},
-    "PRECONDITION_FAILED": {"state_change": false, "dispatch": false},
-    "SCHEDULE_CONFLICT": {"state_change": false, "dispatch": false},
-    "ALREADY_APPLIED": {"state_change": false, "dispatch": false}
+  "one_active_control_responsibility": true,
+  "worker_count": 1,
+  "active_cell_count": 1,
+  "separate_verification_conversation": false,
+  "blind_context_independence_claimed": false,
+  "run_contract_required": true,
+  "calabash_owner": "LCCODING",
+  "centralized_security_audit_owner": "LCCODING",
+  "verification_authority": {
+    "D0": ["WORKER"],
+    "D1": ["CHECKER_RESPONSIBILITY"],
+    "D2": ["VERIFIER_RESPONSIBILITY"],
+    "D3": ["VERIFIER_RESPONSIBILITY"],
+    "RUN_OWNER_ACCEPTANCE": ["OWNER"]
   },
-  "receipt_fields": [
+  "product_write_authority": ["WORKER"],
+  "receipt_default": "PENDING",
+  "receipt_envelope_required_fields": [
+    "receipt_id",
     "receipt_type",
-    "command_id",
-    "normalized_command",
-    "actor",
-    "pre_state",
-    "trigger",
-    "target",
-    "prerequisite_evidence",
-    "action",
-    "result",
-    "post_state",
-    "schedule_version",
-    "progress_snapshot"
+    "contract_ref",
+    "baseline_ref",
+    "candidate_ref",
+    "responsibility",
+    "execution_context_ref",
+    "issued_at",
+    "evidence_refs",
+    "consumed_receipts",
+    "invalidation",
+    "supersedes"
   ],
-  "references": ["references/slk-control-operations.md"]
+  "run_pointers": {
+    "current_go_id": "zero_or_one",
+    "active_go_id": "zero_or_one",
+    "active_must_equal_current": true
+  },
+  "go_lifecycle_states": [
+    "FROZEN",
+    "READY",
+    "IMPLEMENTING",
+    "D1_PENDING",
+    "D2_PENDING",
+    "VERIFIED",
+    "BLOCKED",
+    "CANCELLED",
+    "SUPERSEDED"
+  ],
+  "required_go_completion": "D2_PASS",
+  "formal_resolution": {
+    "allowed_results": [
+      "CANCELLED_BY_AUTHORITY",
+      "REMOVED_FROM_SCOPE",
+      "SUPERSEDED"
+    ],
+    "requires_baseline_amendment": true,
+    "may_replace_required_go_d2": false
+  },
+  "candidate_change": {
+    "invalidates_affected_receipts": true,
+    "invalidates_dependent_higher_receipts": true,
+    "product_visible_change_invalidates_owner_acceptance": true
+  },
+  "security_hard_brakes": [
+    "CRITICAL_VULNERABILITY",
+    "HIGH_VULNERABILITY",
+    "AUTHENTICATION_BYPASS",
+    "AUTHORIZATION_BYPASS",
+    "PRIVILEGE_ESCALATION",
+    "CREDENTIAL_LEAK",
+    "CROSS_TENANT_LEAK",
+    "DESTRUCTIVE_RISK",
+    "RUN_SECURITY_REQUIREMENT_FAILED"
+  ],
+  "known_high_risk_blocks_d3": true,
+  "owner_verdicts": [
+    "LOOP_OWNER_ACCEPTED",
+    "LOOP_PRODUCT_REWORK",
+    "PRODUCT_DEFINITION_CHANGE",
+    "NEW_FEATURE_REQUEST"
+  ],
+  "output": [
+    "SLK_RUN_RECEIPT",
+    "LOOP_OWNER_ACCEPTED"
+  ],
+  "method_boundaries": {
+    "parallel_fixed_chains": "CLK",
+    "free_go_graph": "GLK"
+  }
 }

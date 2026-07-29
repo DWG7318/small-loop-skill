@@ -1,0 +1,17 @@
+run_id: RUN-001
+serial_baseline:
+  baseline_id: SB-001
+  version: 1
+  sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+current_go_id: GO-001
+active_go_id: null
+gos:
+  - go_id: GO-001
+    ordinal: 1
+    go_contract_ref: contracts/go-001.yaml
+    go_contract_version: 1
+    go_contract_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+    lifecycle_state: READY
+    required: true
+    d2_receipt: null
+    formal_resolution: null

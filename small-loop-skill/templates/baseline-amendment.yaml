@@ -1,0 +1,12 @@
+amendment_id: BA-001
+authority: ""
+reason: ""
+evidence_refs: []
+old_required_sequence: []
+new_required_sequence: []
+affected_receipts: []
+resolution:
+  go_id: ""
+  result: ""
+  replacement_go_id: null
+issued_at: ""

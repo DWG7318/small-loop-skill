@@ -1,67 +1,55 @@
 # Small Loop Skill (SLK)
 
-A Codex skill for one bounded project executed by one persistent Worker under one
-visible Control Conversation with distinct Supervisor and Checker responsibilities.
+Small Loop Skill is the strict serial engineering method for one bounded LCCoding
+Run executed through one visible Control Conversation and one persistent Worker
+Conversation.
 
-Current version: **1.9.1**
-
-## Topology
+Current version: **2.3.1**
 
 ```text
 Owner
   ↓
 Control Conversation
   ├─ Supervisor responsibility
-  └─ Checker responsibility
+  ├─ Checker responsibility (D1)
+  └─ Verifier responsibility (D2/D3)
          ↕
-      one Worker
+one persistent Worker Conversation (D0)
 ```
 
-Supervisor and Checker share a conversation but are not one interchangeable role.
-Checker validates immutable candidates in a separate clean environment.
+Only one Control responsibility mode is active for a formal decision. Only one CELL
+may be active. Verifier responsibility uses a clean validation environment and
+immutable candidate evidence; SLK does not claim blind conversation-memory
+independence and does not add a third visible conversation.
 
-## Definition first
-
-Product-affecting work requires Full Calabash or Minimum Calabash:
+## Run flow
 
 ```text
-Grandpa → Product Architecture → Ontology
+Frozen LCCoding Run Contract
+→ strict Serial Plan
+→ GO-001 → GO-002 → … → GO-N
+→ D3 Run Verification
+→ Run Owner Acceptance
+→ LOOP_OWNER_ACCEPTED
 ```
 
-A narrow non-product technical task may use a documented `CALABASH_EXEMPTION`.
-Every product-facing GO has a `GO_CALABASH_TRACE` and `GO_EVIDENCE_CONTRACT`.
+SLK consumes product meaning and acceptance from LCCoding. It does not own Calabash,
+centralized project security audit, packaging, delivery, or project completion.
 
-## Core 1.9.0 changes
+Use CLK for fixed parallel Chains/Stages. Use GLK for branches, joins, fallbacks,
+cycles, or a free GO graph.
 
-- conditionally mandatory Calabash Gate;
-- explicit Supervisor/Checker responsibility modes in one Control Conversation;
-- isolated Checker validation environment;
-- Worker-owned product implementation and rework;
-- routine Owner confirmation forbidden inside the autonomy envelope;
-- Calabash-traced GO evidence acceptance;
-- no cross-GO CELL dependency;
-- tiered detection;
-- clear boundaries to CLK and GLK.
+## Validation
 
-## Readiness 1.9.1 fix
-
-- readiness packets expose four public choices with stable `choice_id` values;
-- grading uses the selected ID instead of exact free-text matching;
-- the hidden answer key still determines the correct choice and remains prohibited
-  during an attempt.
-
-## Method boundary
-
-Use CLK for fixed parallel Chains advancing through synchronized Levels. Use GLK
-for a free GO graph with Grapher, conditions, joins, fallbacks, or cycles.
+```text
+python scripts/validate_repository.py
+python scripts/validate_serial_plan.py examples/minimal-run/serial-plan.yaml
+python -m pytest -q
+```
 
 ## Install
 
-Install `small-loop-skill/` and invoke:
-
-```text
-$small-loop-skill
-```
+Install `small-loop-skill/` and invoke `$small-loop-skill`.
 
 ## License
 
