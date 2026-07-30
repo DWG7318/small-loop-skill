@@ -110,6 +110,11 @@ def test_causal_defect_repair_is_native_and_bounded() -> None:
     assert repair["d0_pass_after_equals_receipt_candidate"] is True
     assert repair["original_failure_round"] == 0
     assert repair["repair_candidate_minimum_round"] == 1
+    assert repair["original_candidate_allowed_verdicts"] == ["FAIL"]
+    assert repair["d1_pass_current_candidate_ref_required"] is True
+    assert repair["d1_pass_lineage_failed_candidate_ref_required"] is True
+    assert repair["repair_fail_rejected_count_offset"] == 0
+    assert repair["repair_pass_rejected_count_offset"] == -1
     assert {
         "ARCHITECTURE_REVIEW_REQUIRED",
         "METHOD_BOUNDARY_EXCEEDED",

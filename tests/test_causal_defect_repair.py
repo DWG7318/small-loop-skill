@@ -112,7 +112,7 @@ def d1_acceptance_for_exemption() -> dict:
             "status": "REPAIR_ACCEPTED",
             "repair_round": 1,
             "candidate_kind": "REPAIR",
-            "failed_candidate_ref": {},
+            "failed_candidate_ref": {"sha256": "a" * 64},
             "failure_fingerprint": "settings-reset-after-restart",
             "rejected_fix_candidate_count": 0,
             "route": "NEXT",
@@ -150,6 +150,34 @@ def test_d1_failure_rejects_failed_candidate_mismatch(tmp_path: Path) -> None:
     result = run_packet(tmp_path, packet, optimized=True)
     assert result.returncode == 1
     assert "SLK_DEFECT_FAILED_CANDIDATE_MISMATCH" in result.stderr
+
+
+def test_original_candidate_cannot_receive_d1_pass(tmp_path: Path) -> None:
+    packet = d1_acceptance_for_exemption()
+    packet["defect_repair"].update(
+        {
+            "candidate_kind": "ORIGINAL",
+            "repair_round": 0,
+            "rejected_fix_candidate_count": 0,
+        }
+    )
+    result = run_packet(tmp_path, packet, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_ORIGINAL_VERDICT_INVALID" in result.stderr
+
+
+def test_rejected_repair_candidate_count_equals_round(tmp_path: Path) -> None:
+    packet = d1_failure()
+    packet["defect_repair"].update(
+        {
+            "candidate_kind": "REPAIR",
+            "repair_round": 2,
+            "rejected_fix_candidate_count": 1,
+        }
+    )
+    result = run_packet(tmp_path, packet, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_LINEAGE_COUNT_INVALID" in result.stderr
 
 
 def test_third_rejected_fix_requires_architecture_review(tmp_path: Path) -> None:
@@ -315,6 +343,35 @@ def test_checker_pass_cannot_leave_exemption_unreviewed(tmp_path: Path) -> None:
     result = run_packet(tmp_path, packet)
     assert result.returncode == 1
     assert "SLK_DEFECT_EXEMPTION_REVIEW_REQUIRED" in result.stderr
+
+
+def test_d1_passing_repair_requires_current_candidate_ref(tmp_path: Path) -> None:
+    packet = d1_acceptance_for_exemption()
+    packet["candidate_ref"] = {}
+    result = run_packet(tmp_path, packet, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_CURRENT_CANDIDATE_REQUIRED" in result.stderr
+
+
+def test_d1_passing_repair_preserves_failed_candidate_lineage_anchor(
+    tmp_path: Path,
+) -> None:
+    packet = d1_acceptance_for_exemption()
+    packet["defect_repair"]["failed_candidate_ref"] = {}
+    result = run_packet(tmp_path, packet, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_FAILED_CANDIDATE_REQUIRED" in result.stderr
+
+
+def test_d1_passing_repair_count_equals_prior_rejected_rounds(
+    tmp_path: Path,
+) -> None:
+    packet = d1_acceptance_for_exemption()
+    packet["defect_repair"]["repair_round"] = 2
+    packet["defect_repair"]["rejected_fix_candidate_count"] = 0
+    result = run_packet(tmp_path, packet, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_LINEAGE_COUNT_INVALID" in result.stderr
 
 
 def test_d1_passing_repair_cannot_use_original_round_zero(tmp_path: Path) -> None:

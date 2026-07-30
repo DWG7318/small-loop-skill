@@ -250,22 +250,50 @@ def validate_d1(receipt: dict[str, Any], defect: dict[str, Any]) -> None:
             "SLK_DEFECT_REPAIR_ROUND_INVALID",
             "a repair Candidate must use repair_round >= 1",
         )
+    verdict = receipt.get("verdict")
+    current_candidate_ref = require_ref(
+        receipt.get("candidate_ref"),
+        "SLK_DEFECT_CURRENT_CANDIDATE_REQUIRED",
+        "D1 candidate_ref is required",
+    )
+    failed_candidate_ref = require_ref(
+        defect.get("failed_candidate_ref"),
+        "SLK_DEFECT_FAILED_CANDIDATE_REQUIRED",
+        "D1 defect lineage failed_candidate_ref is required",
+    )
+    rejected = defect.get("rejected_fix_candidate_count")
+    if isinstance(rejected, bool) or not isinstance(rejected, int) or rejected < 0:
+        fail(
+            "SLK_DEFECT_REJECTED_COUNT_INVALID",
+            "rejected_fix_candidate_count must be a non-negative integer",
+        )
+    if candidate_kind == "ORIGINAL":
+        if verdict != "FAIL":
+            fail(
+                "SLK_DEFECT_ORIGINAL_VERDICT_INVALID",
+                "an ORIGINAL Candidate is valid only as the round-zero D1 failure",
+            )
+        if repair_round != 0 or rejected != 0:
+            fail(
+                "SLK_DEFECT_LINEAGE_COUNT_INVALID",
+                "the original failed Candidate uses round zero and rejected count zero",
+            )
+    elif verdict == "FAIL" and rejected != repair_round:
+        fail(
+            "SLK_DEFECT_LINEAGE_COUNT_INVALID",
+            "a rejected repair Candidate requires rejected count equal to repair round",
+        )
+    elif verdict == "PASS" and rejected != repair_round - 1:
+        fail(
+            "SLK_DEFECT_LINEAGE_COUNT_INVALID",
+            "an accepted repair Candidate requires rejected count one less than repair round",
+        )
+
     validate_reproduction(defect.get("reproduction"), require_steps=True)
 
-    verdict = receipt.get("verdict")
     if verdict == "FAIL":
         if defect.get("status") != "FAILURE_BOUND":
             fail("SLK_DEFECT_D1_STATUS_INVALID", "failed D1 defect.status must be FAILURE_BOUND")
-        current_candidate_ref = require_ref(
-            receipt.get("candidate_ref"),
-            "SLK_DEFECT_CURRENT_CANDIDATE_REQUIRED",
-            "D1 candidate_ref is required",
-        )
-        failed_candidate_ref = require_ref(
-            defect.get("failed_candidate_ref"),
-            "SLK_DEFECT_FAILED_CANDIDATE_REQUIRED",
-            "failed_candidate_ref is required",
-        )
         if failed_candidate_ref != current_candidate_ref:
             fail(
                 "SLK_DEFECT_FAILED_CANDIDATE_MISMATCH",
@@ -276,22 +304,6 @@ def validate_d1(receipt: dict[str, Any], defect: dict[str, Any]) -> None:
             "SLK_DEFECT_FAILURE_FINGERPRINT_REQUIRED",
             "failure_fingerprint is required",
         )
-        rejected = defect.get("rejected_fix_candidate_count")
-        if isinstance(rejected, bool) or not isinstance(rejected, int) or rejected < 0:
-            fail(
-                "SLK_DEFECT_REJECTED_COUNT_INVALID",
-                "rejected_fix_candidate_count must be a non-negative integer",
-            )
-        if candidate_kind == "ORIGINAL" and (repair_round != 0 or rejected != 0):
-            fail(
-                "SLK_DEFECT_LINEAGE_COUNT_INVALID",
-                "the original failed candidate starts repair_round and rejected count at zero",
-            )
-        if candidate_kind == "REPAIR" and rejected != repair_round:
-            fail(
-                "SLK_DEFECT_LINEAGE_COUNT_INVALID",
-                "a Checker-rejected immutable repair Candidate increments the repair round once",
-            )
         route = defect.get("route")
         ordinary_allowed = defect.get("ordinary_rework_allowed")
         if rejected >= 3:

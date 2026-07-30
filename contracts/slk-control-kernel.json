@@ -103,7 +103,14 @@
     "d0_fail_before_equals_failed_candidate": true,
     "d0_pass_after_equals_receipt_candidate": true,
     "original_failure_round": 0,
-    "repair_candidate_minimum_round": 1
+    "repair_candidate_minimum_round": 1,
+    "original_candidate_allowed_verdicts": [
+      "FAIL"
+    ],
+    "d1_pass_current_candidate_ref_required": true,
+    "d1_pass_lineage_failed_candidate_ref_required": true,
+    "repair_fail_rejected_count_offset": 0,
+    "repair_pass_rejected_count_offset": -1
   },
   "bug_regression_first": {
     "scope": "DEFECT_REPAIR_ONLY",

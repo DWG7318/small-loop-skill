@@ -150,10 +150,13 @@ For repair D0, require:
 - regression `REQUIRED` with fail-before/pass-after/regression evidence, or
   `EXEMPT` with reason and alternative evidence.
 
-D1 FAIL requires `defect_repair.failed_candidate_ref == candidate_ref`. The original
-failure alone uses round zero; every `REPAIR` Candidate uses round one or greater.
-For required regression, D0 fail-before Candidate equals `failed_candidate_ref` and
-pass-after Candidate equals the D0 Receipt Envelope `candidate_ref`.
+D1 `ORIGINAL` permits only FAIL with round zero and rejected count zero. Every
+`REPAIR` Candidate uses round one or greater. On REPAIR FAIL,
+`failed_candidate_ref == candidate_ref` and rejected count equals round. On REPAIR
+PASS, both current `candidate_ref` and prior lineage `failed_candidate_ref` are
+required, and rejected count equals round minus one. For required regression, D0
+fail-before Candidate equals `failed_candidate_ref` and pass-after Candidate equals
+the D0 Receipt Envelope `candidate_ref`.
 
 Validate D0/D1 repair packets with:
 

@@ -162,9 +162,14 @@ current bounded strictly serial Run.
 D1 Checker binds one `DEFECT_LINEAGE` to the exact immutable failed Candidate,
 failure fingerprint, reproduction evidence, and repair round.
 `defect_repair.failed_candidate_ref` must equal the D1 Receipt Envelope
-`candidate_ref`. The original failure alone uses round zero; every repair Candidate,
-whether passed or rejected, uses round one or greater. Only a later immutable repair
-Candidate rejected by Checker increments `rejected_fix_candidate_count`;
+`candidate_ref` on FAIL. An `ORIGINAL` Candidate permits only FAIL, round zero, and
+rejected count zero. Every `REPAIR` Candidate, whether passed or rejected, uses
+round one or greater. A rejected repair Candidate requires
+`rejected_fix_candidate_count == repair_round`; an accepted repair Candidate
+requires `rejected_fix_candidate_count == repair_round - 1` and preserves both the
+current Receipt Envelope `candidate_ref` and the prior lineage
+`failed_candidate_ref`. Only a later immutable repair Candidate rejected by Checker
+increments `rejected_fix_candidate_count`;
 unsuccessful investigation hypotheses do not count as repair Candidates.
 
 Before product change, Worker D0 must record stable reproduction or evidence-backed

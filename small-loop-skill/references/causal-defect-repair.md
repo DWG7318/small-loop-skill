@@ -7,8 +7,11 @@ serial Run.
 
 Checker binds the immutable failed Candidate, a stable failure fingerprint,
 reproduction evidence, and one `defect_lineage_id`. The D1 nested
-`failed_candidate_ref` equals the Receipt Envelope `candidate_ref`. The original
-failure alone uses round zero. Every repair Candidate starts at round one; each
+`failed_candidate_ref` equals the Receipt Envelope `candidate_ref` on FAIL.
+`ORIGINAL` permits only FAIL with round zero and rejected count zero. Every repair
+Candidate starts at round one. On repair FAIL, rejected count equals round; on
+repair PASS, rejected count equals round minus one and the receipt preserves both
+the current `candidate_ref` and prior lineage `failed_candidate_ref`. Each
 Checker-rejected immutable repair Candidate advances the round once. Discarded
 hypotheses and experiments do not.
 
