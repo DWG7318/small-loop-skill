@@ -17,6 +17,7 @@ defect_repair:
   defect_lineage_id: ""
   repair_round: 0
   source_failure_receipt: ""
+  failed_candidate_ref: {}
   reproduction:
     status: PENDING
     steps_or_commands: []

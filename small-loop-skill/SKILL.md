@@ -141,13 +141,19 @@ candidate identity, regression delta, and uncovered Run risk for D3.
 
 For repair D0, require:
 
-- `defect_lineage_id`, `repair_round`, and source D1 failure;
+- `defect_lineage_id`, `repair_round`, source D1 failure, and its
+  `failed_candidate_ref`;
 - `REPRODUCED` or evidence-backed `NOT_REPRODUCIBLE`;
 - one scalar hypothesis and one minimal experiment;
 - `CONFIRMED` root cause before `product_change_made: true`;
 - smallest `change_scope`;
 - regression `REQUIRED` with fail-before/pass-after/regression evidence, or
   `EXEMPT` with reason and alternative evidence.
+
+D1 FAIL requires `defect_repair.failed_candidate_ref == candidate_ref`. The original
+failure alone uses round zero; every `REPAIR` Candidate uses round one or greater.
+For required regression, D0 fail-before Candidate equals `failed_candidate_ref` and
+pass-after Candidate equals the D0 Receipt Envelope `candidate_ref`.
 
 Validate D0/D1 repair packets with:
 

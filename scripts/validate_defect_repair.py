@@ -81,7 +81,12 @@ def validate_reproduction(value: Any, *, require_steps: bool) -> None:
         )
 
 
-def validate_regression(value: Any) -> None:
+def validate_regression(
+    value: Any,
+    *,
+    failed_candidate_ref: Any,
+    current_candidate_ref: Any,
+) -> None:
     regression = require_mapping(
         value,
         "SLK_DEFECT_REGRESSION_DECISION_REQUIRED",
@@ -99,11 +104,21 @@ def validate_regression(value: Any) -> None:
                 "SLK_DEFECT_FAIL_BEFORE_REQUIRED",
                 "REQUIRED regression needs candidate-bound fail-before evidence",
             )
+        if fail_before["candidate_ref"] != failed_candidate_ref:
+            fail(
+                "SLK_DEFECT_FAIL_BEFORE_CANDIDATE_MISMATCH",
+                "fail-before must bind the defect lineage failed Candidate",
+            )
         pass_after = regression.get("pass_after_ref")
         if not isinstance(pass_after, dict) or not pass_after.get("candidate_ref") or not pass_after.get("evidence_ref"):
             fail(
                 "SLK_DEFECT_PASS_AFTER_REQUIRED",
                 "REQUIRED regression needs candidate-bound pass-after evidence",
+            )
+        if pass_after["candidate_ref"] != current_candidate_ref:
+            fail(
+                "SLK_DEFECT_PASS_AFTER_CANDIDATE_MISMATCH",
+                "pass-after must bind the current D0 repair Candidate",
             )
         require_evidence(
             regression.get("regression_refs"),
@@ -146,6 +161,16 @@ def validate_d0(receipt: dict[str, Any], defect: dict[str, Any]) -> None:
         defect.get("source_failure_receipt"),
         "SLK_DEFECT_SOURCE_FAILURE_REQUIRED",
         "source_failure_receipt is required",
+    )
+    current_candidate_ref = require_ref(
+        receipt.get("candidate_ref"),
+        "SLK_DEFECT_CURRENT_CANDIDATE_REQUIRED",
+        "D0 candidate_ref is required",
+    )
+    failed_candidate_ref = require_ref(
+        defect.get("failed_candidate_ref"),
+        "SLK_DEFECT_FAILED_CANDIDATE_REQUIRED",
+        "D0 defect lineage failed_candidate_ref is required",
     )
     validate_reproduction(defect.get("reproduction"), require_steps=False)
 
@@ -200,7 +225,11 @@ def validate_d0(receipt: dict[str, Any], defect: dict[str, Any]) -> None:
             "SLK_DEFECT_CHANGE_SCOPE_REQUIRED",
             "change_scope is required when product_change_made is true",
         )
-    validate_regression(defect.get("regression"))
+    validate_regression(
+        defect.get("regression"),
+        failed_candidate_ref=failed_candidate_ref,
+        current_candidate_ref=current_candidate_ref,
+    )
 
 
 def validate_d1(receipt: dict[str, Any], defect: dict[str, Any]) -> None:
@@ -216,17 +245,32 @@ def validate_d1(receipt: dict[str, Any], defect: dict[str, Any]) -> None:
             "SLK_DEFECT_CANDIDATE_KIND_INVALID",
             "candidate_kind must be ORIGINAL or REPAIR",
         )
+    if candidate_kind == "REPAIR" and repair_round < 1:
+        fail(
+            "SLK_DEFECT_REPAIR_ROUND_INVALID",
+            "a repair Candidate must use repair_round >= 1",
+        )
     validate_reproduction(defect.get("reproduction"), require_steps=True)
 
     verdict = receipt.get("verdict")
     if verdict == "FAIL":
         if defect.get("status") != "FAILURE_BOUND":
             fail("SLK_DEFECT_D1_STATUS_INVALID", "failed D1 defect.status must be FAILURE_BOUND")
-        require_ref(
+        current_candidate_ref = require_ref(
+            receipt.get("candidate_ref"),
+            "SLK_DEFECT_CURRENT_CANDIDATE_REQUIRED",
+            "D1 candidate_ref is required",
+        )
+        failed_candidate_ref = require_ref(
             defect.get("failed_candidate_ref"),
             "SLK_DEFECT_FAILED_CANDIDATE_REQUIRED",
             "failed_candidate_ref is required",
         )
+        if failed_candidate_ref != current_candidate_ref:
+            fail(
+                "SLK_DEFECT_FAILED_CANDIDATE_MISMATCH",
+                "D1 failed_candidate_ref must equal the immutable Candidate under validation",
+            )
         require_text(
             defect.get("failure_fingerprint"),
             "SLK_DEFECT_FAILURE_FINGERPRINT_REQUIRED",

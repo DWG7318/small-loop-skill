@@ -104,6 +104,12 @@ def test_causal_defect_repair_is_native_and_bounded() -> None:
     assert repair["failed_hypotheses_count_as_fix_candidates"] is False
     assert repair["fourth_ordinary_rework_allowed"] is False
     assert repair["third_rejection_route_ref_required"] is True
+    assert repair["d1_failed_candidate_equals_receipt_candidate"] is True
+    assert repair["d0_failed_candidate_ref_required"] is True
+    assert repair["d0_fail_before_equals_failed_candidate"] is True
+    assert repair["d0_pass_after_equals_receipt_candidate"] is True
+    assert repair["original_failure_round"] == 0
+    assert repair["repair_candidate_minimum_round"] == 1
     assert {
         "ARCHITECTURE_REVIEW_REQUIRED",
         "METHOD_BOUNDARY_EXCEEDED",

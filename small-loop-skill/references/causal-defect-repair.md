@@ -6,9 +6,11 @@ serial Run.
 ## D1 lineage binding
 
 Checker binds the immutable failed Candidate, a stable failure fingerprint,
-reproduction evidence, and one `defect_lineage_id`. The original failure opens
-round zero. Each later Checker-rejected immutable repair Candidate advances the
-round once; discarded hypotheses and experiments do not.
+reproduction evidence, and one `defect_lineage_id`. The D1 nested
+`failed_candidate_ref` equals the Receipt Envelope `candidate_ref`. The original
+failure alone uses round zero. Every repair Candidate starts at round one; each
+Checker-rejected immutable repair Candidate advances the round once. Discarded
+hypotheses and experiments do not.
 
 ## D0 investigation and repair
 
@@ -19,8 +21,9 @@ confirmed by evidence, and its scope is limited to the smallest root-cause repai
 
 When the defect is stably reproducible and reasonably automatable, D0 binds:
 
-- fail-before evidence to the failed Candidate;
-- pass-after evidence to the repair Candidate;
+- lineage `failed_candidate_ref` to the prior failed Candidate;
+- fail-before evidence to that exact failed Candidate;
+- pass-after evidence to the current D0 Receipt Envelope Candidate;
 - regression evidence proportional to the changed risk.
 
 When that rule is not applicable, D0 records a reason and alternative evidence.

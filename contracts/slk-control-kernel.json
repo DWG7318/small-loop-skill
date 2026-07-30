@@ -97,7 +97,13 @@
     "count_unit": "CHECKER_REJECTED_IMMUTABLE_REPAIR_CANDIDATE",
     "failed_hypotheses_count_as_fix_candidates": false,
     "fourth_ordinary_rework_allowed": false,
-    "third_rejection_route_ref_required": true
+    "third_rejection_route_ref_required": true,
+    "d1_failed_candidate_equals_receipt_candidate": true,
+    "d0_failed_candidate_ref_required": true,
+    "d0_fail_before_equals_failed_candidate": true,
+    "d0_pass_after_equals_receipt_candidate": true,
+    "original_failure_round": 0,
+    "repair_candidate_minimum_round": 1
   },
   "bug_regression_first": {
     "scope": "DEFECT_REPAIR_ONLY",

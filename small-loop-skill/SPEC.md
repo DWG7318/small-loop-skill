@@ -160,20 +160,24 @@ This discipline applies only when D1 identifies an implementation defect inside 
 current bounded strictly serial Run.
 
 D1 Checker binds one `DEFECT_LINEAGE` to the exact immutable failed Candidate,
-failure fingerprint, reproduction evidence, and repair round. The original failure
-opens round zero. Only a later immutable repair Candidate rejected by Checker
-increments `rejected_fix_candidate_count`; unsuccessful investigation hypotheses
-do not count as repair Candidates.
+failure fingerprint, reproduction evidence, and repair round.
+`defect_repair.failed_candidate_ref` must equal the D1 Receipt Envelope
+`candidate_ref`. The original failure alone uses round zero; every repair Candidate,
+whether passed or rejected, uses round one or greater. Only a later immutable repair
+Candidate rejected by Checker increments `rejected_fix_candidate_count`;
+unsuccessful investigation hypotheses do not count as repair Candidates.
 
 Before product change, Worker D0 must record stable reproduction or evidence-backed
 `NOT_REPRODUCIBLE`, one scalar active root-cause hypothesis, and one minimal
 experiment that changes one variable. Product change requires a
 `CONFIRMED` root cause and is limited to the smallest root-cause repair.
 
-When the defect is stably reproducible and reasonably automatable, D0 binds
-fail-before evidence to the failed Candidate and pass-after plus risk-scaled
-regression evidence to the repair Candidate. Otherwise D0 records a reasoned
-exemption and alternative evidence; D1 Checker must explicitly approve it.
+Every repair D0 carries the lineage `failed_candidate_ref`. When the defect is
+stably reproducible and reasonably automatable, D0 `fail_before_ref.candidate_ref`
+must equal that failed Candidate and `pass_after_ref.candidate_ref` must equal the
+D0 Receipt Envelope `candidate_ref`; D0 also binds risk-scaled regression evidence
+to the repair Candidate. Otherwise D0 records a reasoned exemption and alternative
+evidence; D1 Checker must explicitly approve it.
 This is defect-repair discipline, not a universal TDD requirement.
 
 After three Checker-rejected immutable repair Candidates in one lineage, a fourth

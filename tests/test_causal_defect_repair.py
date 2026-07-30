@@ -56,6 +56,7 @@ def d0_repair(*, regression_mode: str = "REQUIRED") -> dict:
             "defect_lineage_id": "DL-001",
             "repair_round": 1,
             "source_failure_receipt": "D1-001",
+            "failed_candidate_ref": {"sha256": "a" * 64},
             "reproduction": {
                 "status": "REPRODUCED",
                 "evidence_refs": ["evidence/reproduction.txt"],
@@ -141,6 +142,14 @@ def test_original_d1_failure_can_open_one_lineage(tmp_path: Path) -> None:
     result = run_packet(tmp_path, d1_failure())
     assert result.returncode == 0, result.stderr
     assert "PASS: defect repair receipt" in result.stdout
+
+
+def test_d1_failure_rejects_failed_candidate_mismatch(tmp_path: Path) -> None:
+    packet = d1_failure()
+    packet["defect_repair"]["failed_candidate_ref"] = {"sha256": "c" * 64}
+    result = run_packet(tmp_path, packet, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_FAILED_CANDIDATE_MISMATCH" in result.stderr
 
 
 def test_third_rejected_fix_requires_architecture_review(tmp_path: Path) -> None:
@@ -257,6 +266,26 @@ def test_required_regression_needs_fail_before_and_pass_after(tmp_path: Path) ->
     assert "SLK_DEFECT_FAIL_BEFORE_REQUIRED" in result.stderr
 
 
+def test_d0_regression_candidate_refs_bind_lineage_failure_and_current_repair(
+    tmp_path: Path,
+) -> None:
+    fail_before_mismatch = d0_repair()
+    fail_before_mismatch["defect_repair"]["regression"]["fail_before_ref"][
+        "candidate_ref"
+    ] = {"sha256": "c" * 64}
+    result = run_packet(tmp_path, fail_before_mismatch, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_FAIL_BEFORE_CANDIDATE_MISMATCH" in result.stderr
+
+    pass_after_mismatch = d0_repair()
+    pass_after_mismatch["defect_repair"]["regression"]["pass_after_ref"][
+        "candidate_ref"
+    ] = {"sha256": "c" * 64}
+    result = run_packet(tmp_path, pass_after_mismatch, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_PASS_AFTER_CANDIDATE_MISMATCH" in result.stderr
+
+
 def test_exemption_needs_reason_and_alternative_evidence(tmp_path: Path) -> None:
     packet = d0_repair(regression_mode="EXEMPT")
     packet["defect_repair"]["regression"]["exemption"]["alternative_evidence_refs"] = []
@@ -286,3 +315,11 @@ def test_checker_pass_cannot_leave_exemption_unreviewed(tmp_path: Path) -> None:
     result = run_packet(tmp_path, packet)
     assert result.returncode == 1
     assert "SLK_DEFECT_EXEMPTION_REVIEW_REQUIRED" in result.stderr
+
+
+def test_d1_passing_repair_cannot_use_original_round_zero(tmp_path: Path) -> None:
+    packet = d1_acceptance_for_exemption()
+    packet["defect_repair"]["repair_round"] = 0
+    result = run_packet(tmp_path, packet, optimized=True)
+    assert result.returncode == 1
+    assert "SLK_DEFECT_REPAIR_ROUND_INVALID" in result.stderr

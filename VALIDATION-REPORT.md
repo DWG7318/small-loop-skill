@@ -7,13 +7,14 @@ Local platform: Windows, Python 3.14
 
 - PASS: repository identity, root/install mirrors, file set, and SHA-256 Manifest;
 - PASS: official minimal Serial Plan and referenced frozen GO Contract hashes;
-- PASS: 40 pytest contract, causal-repair, negative, integrity, and cross-platform
+- PASS: 43 pytest contract, causal-repair, negative, integrity, and cross-platform
   configuration tests;
-- PASS: 25 focused causal-repair and invariant tests;
-- PASS: invalid plans and fourth ordinary repair attempts remain rejected under
-  `python -O`;
+- PASS: 28 focused causal-repair and invariant tests;
+- PASS: invalid plans, Candidate-binding mismatches, repair round zero, and fourth
+  ordinary repair attempts remain rejected under `python -O`;
 - PASS: blank D0-D3, Owner, and Run templates are `PENDING`;
 - PASS: D1 lineage binding, one-hypothesis/one-experiment D0 evidence,
+  exact failed/current Candidate binding, repair-round rules,
   regression-first/exemption paths, and the third-rejection gate;
 - PASS: temporary installed-skill smoke check, UTF-8 reads, YAML parsing, JSON
   contract parsing, and local reference closure;
