@@ -1,4 +1,4 @@
-# Small Loop Skill Standard Specification 2.3.1
+# Small Loop Skill Standard Specification 2.4.0
 
 ## 1. Identity
 
@@ -154,7 +154,40 @@ risks. A check is repeated only for candidate/environment change, expired or
 contradictory evidence, composition effects, expanded regression, or a specific new
 risk. Repetition records source layer, reason, scope difference, and result.
 
-## 9. Fail-closed receipts
+## 9. Causal defect repair
+
+This discipline applies only when D1 identifies an implementation defect inside the
+current bounded strictly serial Run.
+
+D1 Checker binds one `DEFECT_LINEAGE` to the exact immutable failed Candidate,
+failure fingerprint, reproduction evidence, and repair round. The original failure
+opens round zero. Only a later immutable repair Candidate rejected by Checker
+increments `rejected_fix_candidate_count`; unsuccessful investigation hypotheses
+do not count as repair Candidates.
+
+Before product change, Worker D0 must record stable reproduction or evidence-backed
+`NOT_REPRODUCIBLE`, one scalar active root-cause hypothesis, and one minimal
+experiment that changes one variable. Product change requires a
+`CONFIRMED` root cause and is limited to the smallest root-cause repair.
+
+When the defect is stably reproducible and reasonably automatable, D0 binds
+fail-before evidence to the failed Candidate and pass-after plus risk-scaled
+regression evidence to the repair Candidate. Otherwise D0 records a reasoned
+exemption and alternative evidence; D1 Checker must explicitly approve it.
+This is defect-repair discipline, not a universal TDD requirement.
+
+After three Checker-rejected immutable repair Candidates in one lineage, a fourth
+ordinary `CELL_REWORK` is forbidden. Supervisor routes
+`ARCHITECTURE_REVIEW_REQUIRED`, `METHOD_BOUNDARY_EXCEEDED`, or a versioned Contract
+revision through `CONTRACT_REVISION_REQUIRED` using existing amendment authority.
+The selected route binds a traceable `route_ref`. Owner is contacted only if the
+chosen route crosses an Owner-exclusive decision in the Run Contract.
+
+All causal evidence remains inside D0/D1. D2/D3 continue to add only GO/Run
+composition evidence. This mechanism creates no D4, role, visible conversation,
+Chain/Stage/Barrier, or graph activation.
+
+## 10. Fail-closed receipts
 
 Every blank D0-D3, Owner Acceptance, and Run Receipt uses the canonical state
 `PENDING`. Silence, timeout, missing fields, unavailable environments, stale green
@@ -169,7 +202,7 @@ A material candidate change invalidates the affected receipt and every dependent
 higher receipt. Product-visible change after Owner Acceptance invalidates that
 acceptance.
 
-## 10. Lifecycle and transitions
+## 11. Lifecycle and transitions
 
 GO lifecycle values are:
 
@@ -188,7 +221,7 @@ SUPERSEDED
 The frozen transition table rejects skipped or unauthorized transitions. Every
 transition binds its actor, trigger receipt, candidate, baseline, and timestamp.
 
-## 11. Formal resolution
+## 12. Formal resolution
 
 Formal resolution is limited to `CANCELLED_BY_AUTHORITY`, `REMOVED_FROM_SCOPE`, and
 `SUPERSEDED`. It requires a versioned `BASELINE_AMENDMENT` with authority, reason,
@@ -197,7 +230,7 @@ evidence, old/new Required sequence, affected receipts, and replacement relation
 The amendment must remove the GO from the current Required set before D3. No GO that
 remains Required may use formal resolution instead of D2 PASS.
 
-## 12. Security boundary
+## 13. Security boundary
 
 SLK runs the safety checks required by the current Run Contract. LCCoding owns the
 centralized project-wide vulnerability audit after Required Runs are accepted.
@@ -211,7 +244,7 @@ change also invalidates prior Run Owner Acceptance.
 This hard brake does not make SLK responsible for full project penetration,
 supply-chain, or centralized vulnerability closure.
 
-## 13. Run Owner Acceptance
+## 14. Run Owner Acceptance
 
 After D3 PASS, Supervisor provides the Run Feature, exact candidate identity,
 entry/account/role, short steps, visible outcomes, known limitations, and invisible
@@ -229,7 +262,7 @@ NEW_FEATURE_REQUEST
 Owner Acceptance is not another technical test. Product-definition changes return
 to LCCoding; bounded product defects return to the persistent Worker.
 
-## 14. Completion
+## 15. Completion
 
 SLK completion requires every current Required GO to have D2 PASS, one D3 PASS for
 the exact final candidate, synchronized non-invalidated receipts, no unresolved hard

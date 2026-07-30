@@ -1,4 +1,22 @@
-# Migration to SLK 2.3.1
+# Migration to SLK 2.4.0
+
+## From 2.3.1
+
+- Preserve the same two visible conversations, responsibility modes, and D0-D3
+  authority. Do not create a repair role, D4 receipt, or another verification
+  conversation.
+- On a D1 defect failure, create one candidate-bound `DEFECT_LINEAGE` with a stable
+  failure fingerprint, reproduction evidence, and repair-round count.
+- Before product repair, record evidence-backed reproduction or documented
+  non-reproduction, one scalar active root-cause hypothesis, and one minimal
+  experiment in D0.
+- For stably reproducible and reasonably automatable defects, bind fail-before,
+  pass-after, and risk-scaled regression evidence. Otherwise record the exemption
+  reason and alternative evidence for Checker approval.
+- Count only Checker-rejected immutable repair Candidates. A failed hypothesis is
+  investigation evidence, not a repair Candidate. At three rejected repairs, stop
+  ordinary CELL rework and route architecture review, method-boundary exit, or a
+  versioned Contract revision.
 
 ## Identity and topology
 

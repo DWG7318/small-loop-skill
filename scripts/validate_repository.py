@@ -10,11 +10,12 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
 EXCLUDED_FILES = {"MANIFEST.json"}
-VERSION = "2.3.1"
+VERSION = "2.4.0"
 MIRRORED = [
     Path("SKILL.md"),
     Path("SPEC.md"),
     Path("contracts/slk-control-kernel.json"),
+    Path("scripts/validate_defect_repair.py"),
     Path("scripts/validate_serial_plan.py"),
 ]
 
@@ -84,6 +85,7 @@ def validate(root: Path) -> list[str]:
         "MANIFEST.json",
         "VALIDATION-REPORT.md",
         "contracts/slk-control-kernel.json",
+        "scripts/validate_defect_repair.py",
         "scripts/validate_serial_plan.py",
         "small-loop-skill/SKILL.md",
     ]

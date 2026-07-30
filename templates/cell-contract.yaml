@@ -6,3 +6,10 @@ acceptance: []
 counter_evidence: []
 evidence_required: []
 candidate_binding: {}
+defect_repair:
+  applicability: PENDING
+  defect_lineage_id: ""
+  failure_criteria: []
+  reproduction_evidence_required: []
+  regression_mode: PENDING
+  exemption_allowed: false

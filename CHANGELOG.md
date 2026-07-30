@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.0
+
+- Added candidate-bound `DEFECT_LINEAGE` and repair-round records to D1 failures
+  and D0 repair candidates.
+- Required evidence-backed reproduction or documented non-reproduction, one active
+  root-cause hypothesis, one minimal experiment, and root cause before product
+  change.
+- Added defect-only, risk-proportional regression-first evidence: fail-before,
+  pass-after, and regression coverage, or a Checker-approved exemption with
+  alternative evidence.
+- Added a hard gate after three Checker-rejected immutable repair candidates:
+  ordinary rework stops and Control routes architecture review, method-boundary
+  exit, or a versioned Contract revision.
+- Kept the existing two-conversation topology and D0-D3 authority; no D4, role,
+  general TDD mandate, Chain/Stage/Barrier, or graph activation was added.
+
 ## 2.3.1
 
 - Preserved the canonical `Small Loop Skill` identity and exactly two visible

@@ -2,7 +2,7 @@
   "schema_version": "2.0",
   "method": "SLK",
   "product_name": "Small Loop Skill",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "visible_conversations": [
     "CONTROL",
     "WORKER"
@@ -73,6 +73,46 @@
     "invalidates_affected_receipts": true,
     "invalidates_dependent_higher_receipts": true,
     "product_visible_change_invalidates_owner_acceptance": true
+  },
+  "cell_routes": [
+    "NEXT",
+    "CELL_REWORK",
+    "ARCHITECTURE_REVIEW_REQUIRED",
+    "CONTRACT_REVISION_REQUIRED",
+    "BLOCKED",
+    "PLAN_DEFECT",
+    "METHOD_BOUNDARY_EXCEEDED"
+  ],
+  "defect_repair": {
+    "scope": "ONE_BOUNDED_STRICTLY_SERIAL_RUN",
+    "lineage_binding_authority": "CHECKER_RESPONSIBILITY",
+    "investigation_and_fix_authority": "WORKER",
+    "independent_acceptance_authority": "CHECKER_RESPONSIBILITY",
+    "architecture_review_authority": "SUPERVISOR_RESPONSIBILITY",
+    "stable_reproduction_or_documented_non_reproduction": true,
+    "root_cause_before_product_change": true,
+    "active_hypothesis_count": 1,
+    "minimal_experiment_count": 1,
+    "rejected_fix_candidate_threshold": 3,
+    "count_unit": "CHECKER_REJECTED_IMMUTABLE_REPAIR_CANDIDATE",
+    "failed_hypotheses_count_as_fix_candidates": false,
+    "fourth_ordinary_rework_allowed": false,
+    "third_rejection_route_ref_required": true
+  },
+  "bug_regression_first": {
+    "scope": "DEFECT_REPAIR_ONLY",
+    "required_when": [
+      "STABLY_REPRODUCIBLE",
+      "REASONABLY_AUTOMATABLE"
+    ],
+    "required_evidence": [
+      "FAIL_BEFORE",
+      "PASS_AFTER",
+      "RISK_SCALED_REGRESSION"
+    ],
+    "exemption_requires_checker_approval": true,
+    "exemption_requires_alternative_evidence": true,
+    "universal_tdd_required": false
   },
   "security_hard_brakes": [
     "CRITICAL_VULNERABILITY",

@@ -1,7 +1,7 @@
 ---
 name: small-loop-skill
 description: Use SLK for one bounded LCCoding Run whose GO outcomes form exactly one strict serial sequence executed through one visible Control Conversation and one persistent Worker Conversation. Never combine SLK with CLK or GLK in the same Run.
-version: 2.3.1
+version: 2.4.0
 ---
 
 # Small Loop Skill (SLK)
@@ -14,7 +14,7 @@ version: 2.3.1
 - Repository: `https://github.com/DWG7318/small-loop-skill`.
 - Repository ID: `1295599218`.
 - Default branch: `main`.
-- Current specification version: `2.3.1`.
+- Current specification version: `2.4.0`.
 - Version source: repository `VERSION` file and matching annotated `v*` tag.
 
 ## Trigger
@@ -73,20 +73,32 @@ RUN_CONTRACT
 6. Worker alone owns product implementation and D0 evidence.
 7. Checker alone owns D1 CELL acceptance and CELL rework routing.
 8. Verifier alone owns D2 GO and D3 Run verification.
-9. Worker, Checker, and Verifier never accept product edits they authored in the
+9. D1 defect failure binds one immutable Candidate, failure fingerprint,
+   reproduction evidence, `DEFECT_LINEAGE`, and repair round.
+10. Worker establishes reproduction or evidenced non-reproduction, then tests one
+    active root-cause hypothesis with one minimal experiment before product change.
+11. A stably reproducible and reasonably automatable defect requires candidate-bound
+    fail-before, pass-after, and risk-scaled regression evidence; an exemption
+    requires Checker approval and alternative evidence.
+12. Three Checker-rejected immutable repair Candidates in one lineage forbid a
+    fourth ordinary rework and require architecture review, method-boundary exit, or
+    a versioned Contract revision, bound to a traceable `route_ref`.
+13. Failed hypotheses do not count as rejected repair Candidates, and regression
+    first is not a universal TDD mandate.
+14. Worker, Checker, and Verifier never accept product edits they authored in the
    same candidate.
-10. Every validation binds the exact immutable candidate and clean environment.
-11. Every blank receipt is `PENDING`; absence and silence never pass.
-12. Release no successor until every current Required predecessor has D2 PASS.
-13. Every current Required GO must have D2 PASS before D3.
-14. Formal resolution never replaces D2 for a GO that remains Required.
-15. A resolution changes the Required set only through a versioned Baseline
+15. Every validation binds the exact immutable candidate and clean environment.
+16. Every blank receipt is `PENDING`; absence and silence never pass.
+17. Release no successor until every current Required predecessor has D2 PASS.
+18. Every current Required GO must have D2 PASS before D3.
+19. Formal resolution never replaces D2 for a GO that remains Required.
+20. A resolution changes the Required set only through a versioned Baseline
     Amendment.
-16. Material candidate change invalidates affected and dependent receipts.
-17. Product-visible change invalidates prior Owner Acceptance.
-18. Known Critical/High security risk blocks D3 and Owner Acceptance.
-19. SLK consumes product meaning from LCCoding and never invents it.
-20. SLK never claims centralized vulnerability closure, delivery readiness, or
+21. Material candidate change invalidates affected and dependent receipts.
+22. Product-visible change invalidates prior Owner Acceptance.
+23. Known Critical/High security risk blocks D3 and Owner Acceptance.
+24. SLK consumes product meaning from LCCoding and never invents it.
+25. SLK never claims centralized vulnerability closure, delivery readiness, or
     project completion.
 
 ## Responsibility modes
@@ -110,12 +122,40 @@ Validate the immutable CELL candidate against the frozen CELL Contract in a clea
 environment. Sign D1 or return bounded CELL rework. Worker evidence is input, not
 Checker evidence.
 
+For a defect failure, bind `DEFECT_LINEAGE`, failed Candidate, fingerprint,
+reproduction evidence, repair round, and rejection count. On repaired D1, rerun
+independent reproduction and approve either required regression evidence or a
+reasoned exemption. The third rejected repair Candidate routes
+`ARCHITECTURE_REVIEW_REQUIRED`, `METHOD_BOUNDARY_EXCEEDED`, or
+`CONTRACT_REVISION_REQUIRED` with `route_ref` and cannot return ordinary
+`CELL_REWORK`.
+
 ### Verifier
 
 At a GO boundary, consume valid D0/D1 receipts and add only GO composition,
 integration, scope, side-effect, and GO-risk checks for D2. At the Run boundary,
 consume valid D2 receipts and add only cross-GO seams, end-to-end route, final
 candidate identity, regression delta, and uncovered Run risk for D3.
+
+## Causal defect repair packet
+
+For repair D0, require:
+
+- `defect_lineage_id`, `repair_round`, and source D1 failure;
+- `REPRODUCED` or evidence-backed `NOT_REPRODUCIBLE`;
+- one scalar hypothesis and one minimal experiment;
+- `CONFIRMED` root cause before `product_change_made: true`;
+- smallest `change_scope`;
+- regression `REQUIRED` with fail-before/pass-after/regression evidence, or
+  `EXEMPT` with reason and alternative evidence.
+
+Validate D0/D1 repair packets with:
+
+```text
+python scripts/validate_defect_repair.py <d0-or-d1-receipt.yaml>
+```
+
+This packet changes neither the D0-D3 layers nor the fixed visible topology.
 
 ## Current and Active control
 
@@ -185,5 +225,6 @@ HEAD, and annotated release tag. Never publish SLK content to CLK or GLK.
 See [SPEC.md](SPEC.md), [serial plan construction](references/serial-plan-construction.md),
 [role isolation](references/role-and-environment-isolation.md), [verification
 de-duplication](references/verification-de-duplication.md), [amendment and
-rework](references/amendment-and-rework.md), [security boundary](references/security-boundary.md),
+rework](references/amendment-and-rework.md), [causal defect
+repair](references/causal-defect-repair.md), [security boundary](references/security-boundary.md),
 and [Owner Acceptance](references/owner-acceptance.md).

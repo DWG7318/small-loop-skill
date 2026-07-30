@@ -12,3 +12,32 @@ evidence_refs: []
 consumed_receipts: []
 invalidation: {status: CURRENT, reason: ""}
 supersedes: []
+defect_repair:
+  status: PENDING
+  defect_lineage_id: ""
+  repair_round: 0
+  source_failure_receipt: ""
+  reproduction:
+    status: PENDING
+    steps_or_commands: []
+    observed_failure: ""
+    evidence_refs: []
+  root_cause:
+    status: PENDING
+    hypothesis: ""
+    evidence_refs: []
+  minimal_experiment:
+    variable: ""
+    expected: ""
+    observed: ""
+    evidence_refs: []
+  product_change_made: false
+  change_scope: []
+  regression:
+    mode: PENDING
+    fail_before_ref: {candidate_ref: "", evidence_ref: ""}
+    pass_after_ref: {candidate_ref: "", evidence_ref: ""}
+    regression_refs: []
+    exemption:
+      reason: ""
+      alternative_evidence_refs: []

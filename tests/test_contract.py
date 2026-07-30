@@ -20,9 +20,9 @@ def contract() -> dict:
 
 def test_version_identity_and_owner_choice() -> None:
     version = read(ROOT / "VERSION").strip()
-    assert version == "2.3.1"
+    assert version == "2.4.0"
     assert "# Small Loop Skill (SLK)" in read(ROOT / "SKILL.md")
-    assert "Current version: **2.3.1**" in read(ROOT / "README.md")
+    assert "Current version: **2.4.0**" in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.zh-CN.md")
     assert "Small Loop Skill" in read(ROOT / "SPEC.md")
@@ -31,7 +31,7 @@ def test_version_identity_and_owner_choice() -> None:
 def test_two_visible_conversations_and_three_control_modes() -> None:
     value = contract()
     assert value["product_name"] == "Small Loop Skill"
-    assert value["version"] == "2.3.1"
+    assert value["version"] == "2.4.0"
     assert value["visible_conversations"] == ["CONTROL", "WORKER"]
     assert value["control_responsibilities"] == [
         "SUPERVISOR_RESPONSIBILITY",
@@ -42,6 +42,7 @@ def test_two_visible_conversations_and_three_control_modes() -> None:
     assert value["active_cell_count"] == 1
     assert value["separate_verification_conversation"] is False
     assert value["blind_context_independence_claimed"] is False
+    assert "D4" not in value["verification_authority"]
 
 
 def test_d0_d3_authority_is_non_interchangeable() -> None:
@@ -91,6 +92,34 @@ def test_receipt_envelope_has_minimum_audit_fields() -> None:
     } <= fields
 
 
+def test_causal_defect_repair_is_native_and_bounded() -> None:
+    value = contract()
+    repair = value["defect_repair"]
+    assert repair["stable_reproduction_or_documented_non_reproduction"] is True
+    assert repair["root_cause_before_product_change"] is True
+    assert repair["active_hypothesis_count"] == 1
+    assert repair["minimal_experiment_count"] == 1
+    assert repair["rejected_fix_candidate_threshold"] == 3
+    assert repair["count_unit"] == "CHECKER_REJECTED_IMMUTABLE_REPAIR_CANDIDATE"
+    assert repair["failed_hypotheses_count_as_fix_candidates"] is False
+    assert repair["fourth_ordinary_rework_allowed"] is False
+    assert repair["third_rejection_route_ref_required"] is True
+    assert {
+        "ARCHITECTURE_REVIEW_REQUIRED",
+        "METHOD_BOUNDARY_EXCEEDED",
+        "CONTRACT_REVISION_REQUIRED",
+    } <= set(value["cell_routes"])
+
+
+def test_bug_regression_first_is_proportional_not_universal_tdd() -> None:
+    policy = contract()["bug_regression_first"]
+    assert policy["scope"] == "DEFECT_REPAIR_ONLY"
+    assert policy["required_when"] == ["STABLY_REPRODUCIBLE", "REASONABLY_AUTOMATABLE"]
+    assert policy["required_evidence"] == ["FAIL_BEFORE", "PASS_AFTER", "RISK_SCALED_REGRESSION"]
+    assert policy["exemption_requires_checker_approval"] is True
+    assert policy["universal_tdd_required"] is False
+
+
 def test_required_go_never_bypasses_d2() -> None:
     value = contract()
     assert value["required_go_completion"] == "D2_PASS"
@@ -121,6 +150,7 @@ def test_runtime_install_tree_is_mirrored() -> None:
         Path("SKILL.md"),
         Path("contracts/slk-control-kernel.json"),
         Path("scripts/validate_serial_plan.py"),
+        Path("scripts/validate_defect_repair.py"),
     ]
     relative_paths.extend(path.relative_to(ROOT) for path in sorted((ROOT / "templates").glob("*.yaml")))
     relative_paths.extend(path.relative_to(ROOT) for path in sorted((ROOT / "references").glob("*.md")))
