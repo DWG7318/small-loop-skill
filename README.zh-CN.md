@@ -2,7 +2,7 @@
 
 Small Loop Skill 是用于一个有界 LCCoding Run 的严格串行工程执行方法。
 
-当前版本：**2.4.0**
+当前版本：**2.5.0**
 
 ```text
 Owner
@@ -50,3 +50,16 @@ D1 拒绝候选后，Checker 把一个 `DEFECT_LINEAGE` 绑定到不可变失败
 
 该纪律只嵌入 D0/D1 缺陷返工，不新增 D4、角色、可见 Conversation，也不引入
 Chain/Stage/Barrier 或图激活。
+
+## Worker 信号连续性
+
+每次正式 CELL 派工使用一个耐久 dispatch identity 和一条绑定信号流：
+
+```text
+ACK → PROGRESS* → BLOCKED | FINAL
+```
+
+终态信号自动唤醒 Control。未摄取终态明确表示为 `BLOCKED_UNREAD` 或
+`COMPLETED_UNREAD`，不能再被误判为一般沉默，也不能据此创建第二 Worker。
+Control 只摄取一次，并原子同步路由、Run 状态、可见进度和 Owner 可见状态。
+只有证据证明 `TASK_NOT_DELIVERED_PROVEN` 才能向同一持久 Worker 重新派工。

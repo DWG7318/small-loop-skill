@@ -1,14 +1,17 @@
-# Validation Report — SLK 2.4.0
+# Validation Report — SLK 2.5.0
 
-Local validation date: 2026-07-30
-Local platform: Windows, Python 3.14
+Local validation date: 2026-08-03
+Local platform: Windows, Python 3.13
 
 ## Verified locally
 
 - PASS: repository identity, root/install mirrors, file set, and SHA-256 Manifest;
 - PASS: official minimal Serial Plan and referenced frozen GO Contract hashes;
-- PASS: 48 pytest contract, causal-repair, negative, integrity, and cross-platform
-  configuration tests;
+- PASS: 61 pytest contract, signal-continuity, causal-repair, negative, integrity,
+  and cross-platform configuration tests;
+- PASS: 12 focused Worker signal tests covering ACK ordering, terminal safety,
+  `BLOCKED_UNREAD`, `COMPLETED_UNREAD`, atomic ingestion, binding drift, duplicate
+  signals, proven-non-delivery redispatch, and no-Candidate routing;
 - PASS: 33 focused causal-repair and invariant tests;
 - PASS: invalid plans, Candidate-binding mismatches, missing D1 PASS Candidate/
   lineage anchors, invalid round/count states, and fourth ordinary repair attempts

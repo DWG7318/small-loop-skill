@@ -1,0 +1,24 @@
+schema_version: "2.5"
+dispatch:
+  run_id: ""
+  dispatch_id: ""
+  worker_conversation_id: ""
+  go_id: ""
+  cell_id: ""
+  round_id: ""
+  task_ref: ""
+  created_at: ""
+delivery:
+  status: PENDING
+  redispatch_count: 0
+  prior_delivery_status: ""
+  redispatch_authority_ref: ""
+control_state: PENDING
+events: []
+ingestion:
+  status: PENDING
+  terminal_signal_id: ""
+  terminal_signal_sha256: ""
+  ingested_at: ""
+  resulting_route: ""
+  state_sync_receipt_ref: ""

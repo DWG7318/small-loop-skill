@@ -4,7 +4,7 @@ Small Loop Skill is the strict serial engineering method for one bounded LCCodin
 Run executed through one visible Control Conversation and one persistent Worker
 Conversation.
 
-Current version: **2.4.0**
+Current version: **2.5.0**
 
 ```text
 Owner
@@ -56,12 +56,27 @@ architecture review, method-boundary exit, or a versioned Contract revision.
 This discipline is embedded only in D0/D1 defect repair. It adds no D4, role, visible
 conversation, Chain/Stage/Barrier, or graph activation.
 
+## Worker signal continuity
+
+Every formal CELL dispatch has one durable identity and one bound stream:
+
+```text
+ACK → PROGRESS* → BLOCKED | FINAL
+```
+
+Terminal signals wake Control. An unread terminal is explicitly
+`BLOCKED_UNREAD` or `COMPLETED_UNREAD`, never generic silence and never permission
+to create another Worker. Control ingests it exactly once and synchronizes route,
+Run status, visible progress, and Owner-visible status atomically. Redispatch
+requires proven non-delivery and always targets the same persistent Worker.
+
 ## Validation
 
 ```text
 python scripts/validate_repository.py
 python scripts/validate_serial_plan.py examples/minimal-run/serial-plan.yaml
 python scripts/validate_defect_repair.py <d0-or-d1-receipt.yaml>
+python scripts/validate_worker_signal_stream.py <stream.yaml|json>
 python -m pytest -q
 ```
 

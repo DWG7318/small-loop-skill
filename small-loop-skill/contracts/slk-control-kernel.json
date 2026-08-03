@@ -2,7 +2,7 @@
   "schema_version": "2.0",
   "method": "SLK",
   "product_name": "Small Loop Skill",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "visible_conversations": [
     "CONTROL",
     "WORKER"
@@ -15,6 +15,32 @@
   "one_active_control_responsibility": true,
   "worker_count": 1,
   "active_cell_count": 1,
+  "worker_signal_continuity": {
+    "dispatch_id_required": true,
+    "ordered_event_types": [
+      "ACK",
+      "PROGRESS",
+      "BLOCKED",
+      "FINAL"
+    ],
+    "terminal_event_types": [
+      "BLOCKED",
+      "FINAL"
+    ],
+    "terminal_signal_wakes_control": true,
+    "control_offline_waiting_state": "OFFLINE_WAITING_WORKER_SIGNAL",
+    "unread_terminal_states": [
+      "BLOCKED_UNREAD",
+      "COMPLETED_UNREAD"
+    ],
+    "duplicate_dispatch_brakes": [
+      "BLOCKED_UNREAD",
+      "COMPLETED_UNREAD"
+    ],
+    "redispatch_requires": "TASK_NOT_DELIVERED_PROVEN",
+    "atomic_ingestion_receipt": "CONTROL_SIGNAL_INGESTION",
+    "disconnect_state": "CONTROL_DISCONNECTED"
+  },
   "separate_verification_conversation": false,
   "blind_context_independence_claimed": false,
   "run_contract_required": true,

@@ -1,4 +1,19 @@
-# Migration to SLK 2.4.0
+# Migration to SLK 2.5.0
+
+## From 2.4.0
+
+- Preserve the same two visible conversations, one persistent Worker, and D0-D3
+  authority. Worker signal continuity adds no role or conversation.
+- Give every formal CELL dispatch one durable `dispatch_id` and record one ordered
+  `ACK → PROGRESS* → (BLOCKED | FINAL)` stream.
+- Treat unread terminal signals as `BLOCKED_UNREAD` or `COMPLETED_UNREAD`; do not
+  redispatch, advance progress, or provision another Worker.
+- Ingest a terminal signal once with `CONTROL_SIGNAL_INGESTION`, atomically syncing
+  route, Run state, visible progress, and Owner-visible status.
+- Allow redispatch only after `TASK_NOT_DELIVERED_PROVEN`, always to the same
+  persistent Worker with explicit authority.
+- Map thread registry, unknown-conversation, IPC, and app-server continuity failures
+  to `CONTROL_DISCONNECTED`; recover original bindings before resuming.
 
 ## From 2.3.1
 

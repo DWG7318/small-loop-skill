@@ -1,7 +1,6 @@
 ---
 name: small-loop-skill
 description: Use SLK for one bounded LCCoding Run whose GO outcomes form exactly one strict serial sequence executed through one visible Control Conversation and one persistent Worker Conversation. Never combine SLK with CLK or GLK in the same Run.
-version: 2.4.0
 ---
 
 # Small Loop Skill (SLK)
@@ -14,7 +13,7 @@ version: 2.4.0
 - Repository: `https://github.com/DWG7318/small-loop-skill`.
 - Repository ID: `1295599218`.
 - Default branch: `main`.
-- Current specification version: `2.4.0`.
+- Current specification version: `2.5.0`.
 - Version source: repository `VERSION` file and matching annotated `v*` tag.
 
 ## Trigger
@@ -98,7 +97,18 @@ RUN_CONTRACT
 22. Product-visible change invalidates prior Owner Acceptance.
 23. Known Critical/High security risk blocks D3 and Owner Acceptance.
 24. SLK consumes product meaning from LCCoding and never invents it.
-25. SLK never claims centralized vulnerability closure, delivery readiness, or
+25. Every formal dispatch has one durable `dispatch_id` and one ordered Worker
+    signal stream: `ACK`, optional `PROGRESS`, then one `BLOCKED` or `FINAL`.
+26. `BLOCKED_UNREAD` and `COMPLETED_UNREAD` are hard duplicate-dispatch brakes;
+    elapsed time, missing commentary, or stale UI never proves non-delivery.
+27. A terminal Worker signal wakes Control and is ingested exactly once with a
+    `CONTROL_SIGNAL_INGESTION` receipt that synchronizes route, Run status, visible
+    progress, and Owner-visible status.
+28. Redispatch requires `TASK_NOT_DELIVERED_PROVEN`, uses the same persistent
+    Worker, and records explicit redispatch authority.
+29. Thread/IPC loss sets `CONTROL_DISCONNECTED`; recovery rebinds the original
+    conversations and never provisions a duplicate Worker.
+30. SLK never claims centralized vulnerability closure, delivery readiness, or
     project completion.
 
 ## Responsibility modes
@@ -115,6 +125,10 @@ Owner-exclusive decisions; prepare bounded Owner Acceptance; record the verdict.
 Implement only the authorized CELL in the bound mutable workspace. Return candidate
 identity, changes, D0 checks, evidence, and risks. Never accept work, revise the
 plan, contact Owner, or start another CELL.
+
+For each formal dispatch, emit a bound `ACK`; optionally emit lightweight
+`PROGRESS`; then emit exactly one `BLOCKED` or `FINAL`. The terminal signal is a
+Control wake event, not acceptance. A no-Candidate final carries its required route.
 
 ### Checker
 
@@ -165,6 +179,33 @@ python scripts/validate_defect_repair.py <d0-or-d1-receipt.yaml>
 ```
 
 This packet changes neither the D0-D3 layers nor the fixed visible topology.
+
+## Worker signal continuity
+
+Checker assigns one `dispatch_id` as its final online action, then Control enters
+`OFFLINE_WAITING_WORKER_SIGNAL`. The platform maintains the wake subscription;
+Control does not poll product state or pair-work with Worker.
+
+The signal sequence is `ACK → PROGRESS* → (BLOCKED | FINAL)`. Events bind Run,
+persistent Worker conversation, GO, CELL, Round, task, sequence, ID, and hash.
+Nothing follows a terminal event. `BLOCKED` and `FINAL` wake Control.
+
+A terminal signal not yet consumed is `BLOCKED_UNREAD` or `COMPLETED_UNREAD`.
+Neither state permits redispatch. Control consumes the terminal event exactly once
+through `CONTROL_SIGNAL_INGESTION`, authenticates its identity, selects the route,
+and atomically synchronizes Run status, visible progress, and Owner-visible status.
+If synchronization is partial, the signal remains unread.
+
+Missing commentary, timeout, sidebar drift, or unavailable UI never proves task
+non-delivery. Redispatch is allowed only after `TASK_NOT_DELIVERED_PROVEN`, uses the
+same Worker, and records authority. Thread/IPC loss is `CONTROL_DISCONNECTED` and
+recovers the original bindings before work resumes.
+
+Validate streams with:
+
+```text
+python scripts/validate_worker_signal_stream.py <stream.yaml|json>
+```
 
 ## Current and Active control
 
@@ -236,4 +277,5 @@ See [SPEC.md](SPEC.md), [serial plan construction](references/serial-plan-constr
 de-duplication](references/verification-de-duplication.md), [amendment and
 rework](references/amendment-and-rework.md), [causal defect
 repair](references/causal-defect-repair.md), [security boundary](references/security-boundary.md),
-and [Owner Acceptance](references/owner-acceptance.md).
+[Worker signal continuity](references/worker-signal-continuity.md), and [Owner
+Acceptance](references/owner-acceptance.md).
