@@ -20,9 +20,9 @@ def contract() -> dict:
 
 def test_version_identity_and_owner_choice() -> None:
     version = read(ROOT / "VERSION").strip()
-    assert version == "2.5.0"
+    assert version == "2.4.0"
     assert "# Small Loop Skill (SLK)" in read(ROOT / "SKILL.md")
-    assert "Current version: **2.5.0**" in read(ROOT / "README.md")
+    assert "Current version: **2.4.0**" in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.zh-CN.md")
     assert "Small Loop Skill" in read(ROOT / "SPEC.md")
@@ -31,7 +31,7 @@ def test_version_identity_and_owner_choice() -> None:
 def test_two_visible_conversations_and_three_control_modes() -> None:
     value = contract()
     assert value["product_name"] == "Small Loop Skill"
-    assert value["version"] == "2.5.0"
+    assert value["version"] == "2.4.0"
     assert value["visible_conversations"] == ["CONTROL", "WORKER"]
     assert value["control_responsibilities"] == [
         "SUPERVISOR_RESPONSIBILITY",
@@ -72,25 +72,6 @@ def test_blank_receipts_are_fail_closed() -> None:
         assert package_value == root_value, filename
         assert "PASS" not in {root_value.get(field), root_value.get("owner_verdict")}
         assert root_value.get("owner_verdict") != "LOOP_OWNER_ACCEPTED"
-
-    signal_stream = yaml.safe_load(read(ROOT / "templates" / "worker-signal-stream.yaml"))
-    ingestion = yaml.safe_load(read(ROOT / "templates" / "control-signal-ingestion-receipt.yaml"))
-    assert signal_stream["control_state"] == "PENDING"
-    assert signal_stream["delivery"]["status"] == "PENDING"
-    assert signal_stream["ingestion"]["status"] == "PENDING"
-    assert ingestion["status"] == "PENDING"
-
-
-def test_worker_signal_continuity_is_fail_closed() -> None:
-    signal = contract()["worker_signal_continuity"]
-    assert signal["ordered_event_types"] == ["ACK", "PROGRESS", "BLOCKED", "FINAL"]
-    assert signal["terminal_event_types"] == ["BLOCKED", "FINAL"]
-    assert signal["terminal_signal_wakes_control"] is True
-    assert signal["unread_terminal_states"] == ["BLOCKED_UNREAD", "COMPLETED_UNREAD"]
-    assert signal["duplicate_dispatch_brakes"] == ["BLOCKED_UNREAD", "COMPLETED_UNREAD"]
-    assert signal["redispatch_requires"] == "TASK_NOT_DELIVERED_PROVEN"
-    assert signal["atomic_ingestion_receipt"] == "CONTROL_SIGNAL_INGESTION"
-    assert signal["disconnect_state"] == "CONTROL_DISCONNECTED"
 
 
 def test_receipt_envelope_has_minimum_audit_fields() -> None:
@@ -177,12 +158,10 @@ def test_lccoding_and_security_boundaries() -> None:
 
 def test_runtime_install_tree_is_mirrored() -> None:
     relative_paths = [
-        Path("agents/openai.yaml"),
         Path("SKILL.md"),
         Path("contracts/slk-control-kernel.json"),
         Path("scripts/validate_serial_plan.py"),
         Path("scripts/validate_defect_repair.py"),
-        Path("scripts/validate_worker_signal_stream.py"),
     ]
     relative_paths.extend(path.relative_to(ROOT) for path in sorted((ROOT / "templates").glob("*.yaml")))
     relative_paths.extend(path.relative_to(ROOT) for path in sorted((ROOT / "references").glob("*.md")))

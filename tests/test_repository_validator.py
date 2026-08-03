@@ -28,7 +28,7 @@ def test_manifest_covers_validation_report_and_excludes_itself() -> None:
     assert "VALIDATION-REPORT.md" in paths
     assert "MANIFEST.json" not in paths
     assert manifest["name"] == "Small Loop Skill"
-    assert manifest["version"] == "2.5.0"
+    assert manifest["version"] == "2.4.0"
 
 
 def test_license_is_complete_mit_text() -> None:

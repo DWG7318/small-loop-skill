@@ -10,15 +10,13 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
 EXCLUDED_FILES = {"MANIFEST.json"}
-VERSION = "2.5.0"
+VERSION = "2.4.0"
 MIRRORED = [
-    Path("agents/openai.yaml"),
     Path("SKILL.md"),
     Path("SPEC.md"),
     Path("contracts/slk-control-kernel.json"),
     Path("scripts/validate_defect_repair.py"),
     Path("scripts/validate_serial_plan.py"),
-    Path("scripts/validate_worker_signal_stream.py"),
 ]
 
 
@@ -89,9 +87,7 @@ def validate(root: Path) -> list[str]:
         "contracts/slk-control-kernel.json",
         "scripts/validate_defect_repair.py",
         "scripts/validate_serial_plan.py",
-        "scripts/validate_worker_signal_stream.py",
         "small-loop-skill/SKILL.md",
-        "small-loop-skill/agents/openai.yaml",
     ]
     for relative in required:
         check((root / relative).is_file(), "SLK_REPO_REQUIRED_FILE", relative, errors)
@@ -104,12 +100,7 @@ def validate(root: Path) -> list[str]:
     skill = utf8_text(root / "SKILL.md", errors)
     spec = utf8_text(root / "SPEC.md", errors)
     check(f"Current version: **{VERSION}**" in readme, "SLK_REPO_README_VERSION", "README version drift", errors)
-    check(
-        f"Current specification version: `{VERSION}`." in skill,
-        "SLK_REPO_SKILL_VERSION",
-        "SKILL body version drift",
-        errors,
-    )
+    check(f"version: {VERSION}" in skill, "SLK_REPO_SKILL_VERSION", "SKILL frontmatter version drift", errors)
     check("Small Loop Skill" in skill and "Small Loop Skill" in spec, "SLK_REPO_IDENTITY", "canonical identity missing", errors)
     check("Serial Loop Kit" not in readme and "Serial Loop Kit" not in skill and "Serial Loop Kit" not in spec, "SLK_REPO_IDENTITY", "unapproved canonical rename", errors)
 

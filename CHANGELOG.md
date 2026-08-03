@@ -1,18 +1,5 @@
 # Changelog
 
-## 2.5.0
-
-- Added durable Worker signal continuity without changing the fixed two-conversation
-  topology or D0-D3 authority.
-- Required one dispatch identity and ordered `ACK`, optional `PROGRESS`, then one
-  `BLOCKED` or `FINAL` event for every formal CELL assignment.
-- Added `BLOCKED_UNREAD`, `COMPLETED_UNREAD`, and `CONTROL_DISCONNECTED` states,
-  terminal wake semantics, duplicate-dispatch brakes, and proven-non-delivery-only
-  redispatch to the same persistent Worker.
-- Added atomic `CONTROL_SIGNAL_INGESTION`, templates, a fail-closed stream validator,
-  and regression coverage for binding, ordering, terminal, replay, ingestion, and
-  redispatch invariants.
-
 ## 2.4.0
 
 - Added candidate-bound `DEFECT_LINEAGE` and repair-round records to D1 failures

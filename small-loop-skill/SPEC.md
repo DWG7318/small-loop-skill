@@ -1,4 +1,4 @@
-# Small Loop Skill Standard Specification 2.5.0
+# Small Loop Skill Standard Specification 2.4.0
 
 ## 1. Identity
 
@@ -108,10 +108,6 @@ equal Current.
 9. No hidden Chain, Stage, barrier, branch, merge, fallback, or cycle is allowed.
 10. No silent insertion, deletion, reorder, split, merge, or receipt inheritance is
     allowed.
-11. Every formal CELL dispatch has one durable dispatch identity and one ordered
-    Worker signal stream bound to the persistent Worker, GO, CELL, and Round.
-12. `BLOCKED_UNREAD` and `COMPLETED_UNREAD` forbid duplicate dispatch and progress
-    advancement until one atomic Control ingestion succeeds.
 
 ## 7. Responsibility authority
 
@@ -145,39 +141,6 @@ receipts even when the same Control mode performs both.
 
 After D3 PASS, Owner performs bounded product acceptance for the exact Run candidate.
 Only an explicit Owner verdict may produce `LOOP_OWNER_ACCEPTED`.
-
-### Worker signal continuity
-
-Checker creates one durable `dispatch_id` as its final online action. Control then
-enters `OFFLINE_WAITING_WORKER_SIGNAL`; the orchestration layer maintains a wake
-subscription without Control-side product polling or pair work.
-
-The bound Worker emits exactly this ordered lifecycle:
-
-```text
-ACK → zero or more PROGRESS → exactly one BLOCKED or FINAL
-```
-
-Every event binds Run, dispatch, persistent Worker conversation, GO, CELL, Round,
-sequence, event identity, hash, and issue time. `BLOCKED` carries a required route.
-`FINAL` carries an immutable Candidate or an explicit no-Candidate route. Nothing
-may follow a terminal event, and replay is deduplicated by event identity.
-
-Terminal events wake Control. Before ingestion they are `BLOCKED_UNREAD` or
-`COMPLETED_UNREAD`; both are hard duplicate-dispatch brakes. Control ingests one
-terminal event exactly once through a `CONTROL_SIGNAL_INGESTION` receipt that binds
-the event, route, old/new state, Run status, visible progress, and Owner-visible
-status. Partial synchronization leaves the terminal event unread.
-
-Redispatch is permitted only after a delivery receipt proves
-`TASK_NOT_DELIVERED_PROVEN`; it always targets the same persistent Worker and binds
-explicit authority. Missing commentary, elapsed time, stale sidebar state, or an
-unavailable UI is not proof of non-delivery.
-
-Thread registry loss, unknown-conversation events, IPC failure, or app-server
-disconnect sets `CONTROL_DISCONNECTED`. Recovery re-authenticates the original
-Control, Worker, dispatch, and latest durable signal. It never creates a duplicate
-Worker or reruns accepted work solely because the UI stalled.
 
 ## 8. Verification layers
 
