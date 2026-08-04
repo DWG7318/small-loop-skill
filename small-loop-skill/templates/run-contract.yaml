@@ -14,3 +14,9 @@ owner_exclusive_decisions: []
 candidate_binding: {}
 security_requirements: []
 security_hard_brakes: []
+runtime_control_ref: {}
+required_set_ref: {}
+device_capacity_profile_ref: {}
+cumulative_engineering_load_ref: {}
+cell_capacity_gate_ref: {}
+thread_pin_policy_ref: {}

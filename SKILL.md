@@ -1,7 +1,7 @@
 ---
 name: small-loop-skill
 description: Use SLK for one bounded LCCoding Run whose GO outcomes form exactly one strict serial sequence executed through one visible Control Conversation and one persistent Worker Conversation. Never combine SLK with CLK or GLK in the same Run.
-version: 2.4.0
+version: 2.5.0
 ---
 
 # Small Loop Skill (SLK)
@@ -14,7 +14,7 @@ version: 2.4.0
 - Repository: `https://github.com/DWG7318/small-loop-skill`.
 - Repository ID: `1295599218`.
 - Default branch: `main`.
-- Current specification version: `2.4.0`.
+- Current specification version: `2.5.0`.
 - Version source: repository `VERSION` file and matching annotated `v*` tag.
 
 ## Trigger

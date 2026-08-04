@@ -4,7 +4,7 @@ Small Loop Skill is the strict serial engineering method for one bounded LCCodin
 Run executed through one visible Control Conversation and one persistent Worker
 Conversation.
 
-Current version: **2.4.0**
+Current version: **2.5.0**
 
 ```text
 Owner

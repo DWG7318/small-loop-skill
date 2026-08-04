@@ -2,7 +2,7 @@
 
 Small Loop Skill 是用于一个有界 LCCoding Run 的严格串行工程执行方法。
 
-当前版本：**2.4.0**
+当前版本：**2.5.0**
 
 ```text
 Owner

@@ -1,4 +1,4 @@
-# Small Loop Skill Standard Specification 2.4.0
+# Small Loop Skill Standard Specification 2.5.0
 
 ## 1. Identity
 

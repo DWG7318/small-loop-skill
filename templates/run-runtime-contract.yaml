@@ -1,0 +1,60 @@
+schema_version: 2.5.0
+record_type: RUN_RUNTIME_CONTRACT
+status: PENDING
+run_id: ""
+baseline_ref: {}
+formal_conversations:
+  CONTROL: ""
+  WORKER: ""
+patrol:
+  conversation_id: ""
+  conversation_count: 0
+  heartbeat_id: ""
+  heartbeat_count: 0
+  model: gpt-5.6-luna
+  reasoning_effort: xhigh
+  interval_minutes: 0
+checker_binding:
+  thread_id: ""
+  host_id: ""
+worker_capabilities:
+  send_message_to_thread: PENDING
+  read_thread: PENDING
+  list_threads: PENDING
+  unarchive_thread: PENDING
+  bounded_ack_wait: PENDING
+  temporary_heartbeat_upsert: PENDING
+  temporary_heartbeat_delete: PENDING
+  pending_wake_write: PENDING
+supervisor_wait:
+  positive_timeout_allowed: false
+  loop_allowed: false
+  snapshot_timeout_zero_allowed: true
+required_sets:
+  version: 0
+  required_go_ids: []
+  required_cells_by_go: {}
+device_capacity_profile_ref: {}
+cumulative_engineering_load_ref: {}
+cell_capacity_policy:
+  required_before_dispatch: true
+  allowed_dispatch_outcome: PASS
+  worker_self_split_allowed: false
+thread_pin_policy:
+  method_roles:
+    - SUPERVISOR_RESPONSIBILITY
+    - CHECKER_RESPONSIBILITY
+    - VERIFIER_RESPONSIBILITY
+    - WORKER
+    - RUN_PATROL
+    - ROUTER
+    - GRAPHER
+  default_method_pin_allowed: false
+  set_thread_pinned_true_capability: DENIED
+  owner_manual_allowed: true
+  owner_explicit_item_authorization_allowed: true
+  inferred_authorization_allowed: false
+  patrol_auto_unpin_allowed: false
+  pin_lifecycle_independent: true
+  unauthorized_history_persists_after_unpin: true
+evidence_refs: []

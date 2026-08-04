@@ -1,0 +1,30 @@
+schema_version: 2.5.0
+record_type: RUN_PATROL_RECEIPT
+status: PENDING
+run_id: ""
+actor: RUN_PATROL
+model: gpt-5.6-luna
+reasoning_effort: xhigh
+authority: NONE
+conversation_id: ""
+conversation_count: 0
+heartbeat_id: ""
+heartbeat_count: 0
+interval_minutes: 0
+run_state: RUNNING
+observation:
+  kind: NORMAL
+  evidence_kind: PENDING
+  source_text: PENDING
+  timeout_ms: 0
+  inside_loop: false
+  result: NORMAL
+  alert_code: ""
+  legitimate_reason_ref: ""
+actions: []
+engineering_progress_reported: false
+terminal_cleanup:
+  loop_terminal_confirmed: false
+  heartbeat_deleted: false
+  conversation_archived: false
+evidence_refs: []

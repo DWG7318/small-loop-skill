@@ -1,0 +1,20 @@
+schema_version: 2.5.0
+record_type: THREAD_PIN_AUDIT
+status: PENDING
+run_id: ""
+task_thread_id: ""
+task_role: WORKER
+lifecycle_state: CREATED
+pinned_state: false
+provenance: NONE
+owner_authorization_ref: ""
+operations: []
+violation_history_retained: false
+pin_lifecycle_independent: true
+patrol:
+  result: NORMAL
+  alert_code: ""
+  automatic_pin_attempted: false
+  automatic_unpin_attempted: false
+  owner_notified: false
+evidence_refs: []

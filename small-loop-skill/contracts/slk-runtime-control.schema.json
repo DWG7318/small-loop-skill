@@ -1,0 +1,995 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/limitless-dwg/small-loop-skill/contracts/slk-runtime-control.schema.json",
+  "title": "SLK 2.5.0 Runtime Control Records",
+  "oneOf": [
+    {"$ref": "#/$defs/run_runtime_contract"},
+    {"$ref": "#/$defs/device_capacity_profile"},
+    {"$ref": "#/$defs/cumulative_engineering_load"},
+    {"$ref": "#/$defs/cell_capacity_gate"},
+    {"$ref": "#/$defs/cell_capacity_event"},
+    {"$ref": "#/$defs/worker_wake_trace"},
+    {"$ref": "#/$defs/pending_wake"},
+    {"$ref": "#/$defs/run_patrol_receipt"},
+    {"$ref": "#/$defs/progress_trace"},
+    {"$ref": "#/$defs/runtime_simulation"},
+    {"$ref": "#/$defs/thread_pin_audit"}
+  ],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "non_negative": {"type": "number", "minimum": 0},
+    "positive_integer": {"type": "integer", "minimum": 1},
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/text"}
+    },
+    "versioned_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/positive_integer"}
+      }
+    },
+    "hashed_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/positive_integer"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "checker_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thread_id", "host_id"],
+      "properties": {
+        "thread_id": {"$ref": "#/$defs/text"},
+        "host_id": {"$ref": "#/$defs/text"}
+      }
+    },
+    "required_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "required_go_ids", "required_cells_by_go"],
+      "properties": {
+        "version": {"$ref": "#/$defs/positive_integer"},
+        "required_go_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/text"}
+        },
+        "required_cells_by_go": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^GO-[A-Za-z0-9._-]+$": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/text"}
+            }
+          }
+        },
+        "amendment_reason": {"enum": ["CAPACITY_SPLIT", "BASELINE_AMENDMENT", "GRAPH_AMENDMENT"]},
+        "supersedes_cell_id": {"$ref": "#/$defs/text"}
+      }
+    },
+    "run_runtime_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "baseline_ref",
+        "formal_conversations", "patrol", "checker_binding",
+        "worker_capabilities", "supervisor_wait", "required_sets",
+        "device_capacity_profile_ref", "cumulative_engineering_load_ref",
+        "cell_capacity_policy", "thread_pin_policy", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "RUN_RUNTIME_CONTRACT"},
+        "status": {"const": "READY"},
+        "run_id": {"$ref": "#/$defs/text"},
+        "baseline_ref": {"$ref": "#/$defs/hashed_ref"},
+        "formal_conversations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["CONTROL", "WORKER"],
+          "properties": {
+            "CONTROL": {"$ref": "#/$defs/text"},
+            "WORKER": {"$ref": "#/$defs/text"}
+          }
+        },
+        "patrol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversation_id", "conversation_count", "heartbeat_id",
+            "heartbeat_count", "model", "reasoning_effort", "interval_minutes"
+          ],
+          "properties": {
+            "conversation_id": {"$ref": "#/$defs/text"},
+            "conversation_count": {"const": 1},
+            "heartbeat_id": {"$ref": "#/$defs/text"},
+            "heartbeat_count": {"const": 1},
+            "model": {"const": "gpt-5.6-luna"},
+            "reasoning_effort": {"const": "xhigh"},
+            "interval_minutes": {"enum": [10, 15, 30]}
+          }
+        },
+        "checker_binding": {"$ref": "#/$defs/checker_binding"},
+        "worker_capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "send_message_to_thread", "read_thread", "list_threads",
+            "unarchive_thread", "bounded_ack_wait",
+            "temporary_heartbeat_upsert", "temporary_heartbeat_delete",
+            "pending_wake_write"
+          ],
+          "properties": {
+            "send_message_to_thread": {"const": "AVAILABLE"},
+            "read_thread": {"const": "AVAILABLE"},
+            "list_threads": {"const": "AVAILABLE"},
+            "unarchive_thread": {"const": "AVAILABLE"},
+            "bounded_ack_wait": {"const": "AVAILABLE"},
+            "temporary_heartbeat_upsert": {"const": "AVAILABLE"},
+            "temporary_heartbeat_delete": {"const": "AVAILABLE"},
+            "pending_wake_write": {"const": "AVAILABLE"}
+          }
+        },
+        "supervisor_wait": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "positive_timeout_allowed", "loop_allowed",
+            "snapshot_timeout_zero_allowed"
+          ],
+          "properties": {
+            "positive_timeout_allowed": {"const": false},
+            "loop_allowed": {"const": false},
+            "snapshot_timeout_zero_allowed": {"const": true}
+          }
+        },
+        "required_sets": {"$ref": "#/$defs/required_set"},
+        "device_capacity_profile_ref": {"$ref": "#/$defs/versioned_ref"},
+        "cumulative_engineering_load_ref": {"$ref": "#/$defs/versioned_ref"},
+        "cell_capacity_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "required_before_dispatch", "allowed_dispatch_outcome",
+            "worker_self_split_allowed"
+          ],
+          "properties": {
+            "required_before_dispatch": {"const": true},
+            "allowed_dispatch_outcome": {"const": "PASS"},
+            "worker_self_split_allowed": {"const": false}
+          }
+        },
+        "thread_pin_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method_roles", "default_method_pin_allowed",
+            "set_thread_pinned_true_capability", "owner_manual_allowed",
+            "owner_explicit_item_authorization_allowed",
+            "inferred_authorization_allowed", "patrol_auto_unpin_allowed",
+            "pin_lifecycle_independent",
+            "unauthorized_history_persists_after_unpin"
+          ],
+          "properties": {
+            "method_roles": {
+              "type": "array",
+              "minItems": 7,
+              "maxItems": 7,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "SUPERVISOR_RESPONSIBILITY", "CHECKER_RESPONSIBILITY",
+                  "VERIFIER_RESPONSIBILITY", "WORKER", "RUN_PATROL",
+                  "ROUTER", "GRAPHER"
+                ]
+              }
+            },
+            "default_method_pin_allowed": {"const": false},
+            "set_thread_pinned_true_capability": {"const": "DENIED"},
+            "owner_manual_allowed": {"const": true},
+            "owner_explicit_item_authorization_allowed": {"const": true},
+            "inferred_authorization_allowed": {"const": false},
+            "patrol_auto_unpin_allowed": {"const": false},
+            "pin_lifecycle_independent": {"const": true},
+            "unauthorized_history_persists_after_unpin": {"const": true}
+          }
+        },
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "device_capacity_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "profile_id",
+        "version", "captured_at", "cpu", "memory", "gpu", "disk", "network",
+        "process_limits", "duration_budgets_seconds",
+        "context_evidence_budgets", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "DEVICE_CAPACITY_PROFILE"},
+        "status": {"enum": ["PENDING", "READY"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "profile_id": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/positive_integer"},
+        "captured_at": {"$ref": "#/$defs/text"},
+        "cpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model", "logical_cores"],
+          "properties": {
+            "model": {"$ref": "#/$defs/text"},
+            "logical_cores": {"$ref": "#/$defs/positive_integer"}
+          }
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["available_ram_mb"],
+          "properties": {"available_ram_mb": {"type": "number", "exclusiveMinimum": 0}}
+        },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["applicable", "model", "vram_mb"],
+          "properties": {
+            "applicable": {"type": "boolean"},
+            "model": {"$ref": "#/$defs/text"},
+            "vram_mb": {"$ref": "#/$defs/non_negative"}
+          }
+        },
+        "disk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["free_mb", "read_mb_s", "write_mb_s"],
+          "properties": {
+            "free_mb": {"type": "number", "exclusiveMinimum": 0},
+            "read_mb_s": {"type": "number", "exclusiveMinimum": 0},
+            "write_mb_s": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["external_service_access", "max_mbps", "constraints"],
+          "properties": {
+            "external_service_access": {"enum": ["AVAILABLE", "LIMITED", "UNAVAILABLE"]},
+            "max_mbps": {"$ref": "#/$defs/non_negative"},
+            "constraints": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "process_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_processes", "allowed_ports", "safe_concurrency"],
+          "properties": {
+            "max_processes": {"$ref": "#/$defs/positive_integer"},
+            "allowed_ports": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "safe_concurrency": {"$ref": "#/$defs/positive_integer"}
+          }
+        },
+        "duration_budgets_seconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["single_command", "full_test", "build", "cell_total"],
+          "properties": {
+            "single_command": {"type": "number", "exclusiveMinimum": 0},
+            "full_test": {"type": "number", "exclusiveMinimum": 0},
+            "build": {"type": "number", "exclusiveMinimum": 0},
+            "cell_total": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "context_evidence_budgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["context_tokens", "evidence_mb"],
+          "properties": {
+            "context_tokens": {"type": "number", "exclusiveMinimum": 0},
+            "evidence_mb": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "load_measurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted_cell_count", "file_count", "dependency_count",
+        "build_seconds", "full_regression_seconds", "peak_ram_mb",
+        "peak_disk_mb", "evidence_mb", "hash_file_count",
+        "context_restore_seconds", "external_tool_seconds",
+        "rollback_retry_seconds", "coupling_score"
+      ],
+      "properties": {
+        "accepted_cell_count": {"$ref": "#/$defs/non_negative"},
+        "file_count": {"$ref": "#/$defs/non_negative"},
+        "dependency_count": {"$ref": "#/$defs/non_negative"},
+        "build_seconds": {"$ref": "#/$defs/non_negative"},
+        "full_regression_seconds": {"$ref": "#/$defs/non_negative"},
+        "peak_ram_mb": {"$ref": "#/$defs/non_negative"},
+        "peak_disk_mb": {"$ref": "#/$defs/non_negative"},
+        "evidence_mb": {"$ref": "#/$defs/non_negative"},
+        "hash_file_count": {"$ref": "#/$defs/non_negative"},
+        "context_restore_seconds": {"$ref": "#/$defs/non_negative"},
+        "external_tool_seconds": {"$ref": "#/$defs/non_negative"},
+        "rollback_retry_seconds": {"$ref": "#/$defs/non_negative"},
+        "coupling_score": {"$ref": "#/$defs/non_negative"}
+      }
+    },
+    "cumulative_engineering_load": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "load_id",
+        "version", "device_capacity_profile_ref", "baseline_ref",
+        "boundary_kind", "required_set_version", "measurements", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "CUMULATIVE_ENGINEERING_LOAD"},
+        "status": {"enum": ["PENDING", "CURRENT"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "load_id": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/positive_integer"},
+        "device_capacity_profile_ref": {"$ref": "#/$defs/versioned_ref"},
+        "baseline_ref": {"$ref": "#/$defs/hashed_ref"},
+        "boundary_kind": {
+          "enum": [
+            "RUN_FREEZE", "GO_BOUNDARY", "REQUIRED_SET_AMENDMENT",
+            "MEASURED_DEVIATION"
+          ]
+        },
+        "required_set_version": {"$ref": "#/$defs/positive_integer"},
+        "measurements": {"$ref": "#/$defs/load_measurements"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "cell_estimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "implementation_minutes", "input_dependency_count", "output_count",
+        "build_seconds", "test_seconds", "checker_seconds",
+        "regression_seconds", "evidence_hash_cleanup_seconds",
+        "context_load_seconds", "external_tool_seconds",
+        "rollback_retry_seconds", "cumulative_coupling_score",
+        "peak_ram_mb", "peak_disk_mb", "requested_device_concurrency"
+      ],
+      "properties": {
+        "implementation_minutes": {"$ref": "#/$defs/non_negative"},
+        "input_dependency_count": {"$ref": "#/$defs/non_negative"},
+        "output_count": {"$ref": "#/$defs/non_negative"},
+        "build_seconds": {"$ref": "#/$defs/non_negative"},
+        "test_seconds": {"$ref": "#/$defs/non_negative"},
+        "checker_seconds": {"$ref": "#/$defs/non_negative"},
+        "regression_seconds": {"$ref": "#/$defs/non_negative"},
+        "evidence_hash_cleanup_seconds": {"$ref": "#/$defs/non_negative"},
+        "context_load_seconds": {"$ref": "#/$defs/non_negative"},
+        "external_tool_seconds": {"$ref": "#/$defs/non_negative"},
+        "rollback_retry_seconds": {"$ref": "#/$defs/non_negative"},
+        "cumulative_coupling_score": {"$ref": "#/$defs/non_negative"},
+        "peak_ram_mb": {"$ref": "#/$defs/non_negative"},
+        "peak_disk_mb": {"$ref": "#/$defs/non_negative"},
+        "requested_device_concurrency": {"$ref": "#/$defs/non_negative"}
+      }
+    },
+    "capacity_decision_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available_ram_mb", "free_disk_mb", "safe_device_concurrency",
+        "cell_total_budget_seconds", "cumulative_full_regression_seconds",
+        "cumulative_context_restore_seconds",
+        "cumulative_rollback_retry_seconds", "cumulative_coupling_score"
+      ],
+      "properties": {
+        "available_ram_mb": {"$ref": "#/$defs/non_negative"},
+        "free_disk_mb": {"$ref": "#/$defs/non_negative"},
+        "safe_device_concurrency": {"$ref": "#/$defs/non_negative"},
+        "cell_total_budget_seconds": {"$ref": "#/$defs/non_negative"},
+        "cumulative_full_regression_seconds": {"$ref": "#/$defs/non_negative"},
+        "cumulative_context_restore_seconds": {"$ref": "#/$defs/non_negative"},
+        "cumulative_rollback_retry_seconds": {"$ref": "#/$defs/non_negative"},
+        "cumulative_coupling_score": {"$ref": "#/$defs/non_negative"}
+      }
+    },
+    "successor_cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cell_id", "depends_on", "independently_deliverable",
+        "independently_d1_checkable"
+      ],
+      "properties": {
+        "cell_id": {"$ref": "#/$defs/text"},
+        "depends_on": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+        "independently_deliverable": {"const": true},
+        "independently_d1_checkable": {"const": true}
+      }
+    },
+    "split_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "successor_count", "preserves_go_outcome_sha256",
+        "preserves_acceptance_sha256", "creates_new_go",
+        "creates_worker_or_subagent", "verification_weakened",
+        "successor_cells"
+      ],
+      "properties": {
+        "successor_count": {"type": "integer", "minimum": 0},
+        "preserves_go_outcome_sha256": {"$ref": "#/$defs/sha256"},
+        "preserves_acceptance_sha256": {"$ref": "#/$defs/sha256"},
+        "creates_new_go": {"const": false},
+        "creates_worker_or_subagent": {"const": false},
+        "verification_weakened": {"const": false},
+        "successor_cells": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/successor_cell"}
+        }
+      }
+    },
+    "cell_capacity_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "go_id",
+        "cell_id", "required_set_version", "phase",
+        "device_capacity_profile_ref", "cumulative_engineering_load_ref",
+        "go_outcome_sha256", "acceptance_sha256", "estimate",
+        "decision_inputs", "logical_parallelism", "decision",
+        "split_plan", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "CELL_CAPACITY_GATE"},
+        "status": {"enum": ["PENDING", "DECIDED"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "cell_id": {"$ref": "#/$defs/text"},
+        "required_set_version": {"$ref": "#/$defs/positive_integer"},
+        "phase": {"const": "PRE_DISPATCH"},
+        "device_capacity_profile_ref": {"$ref": "#/$defs/versioned_ref"},
+        "cumulative_engineering_load_ref": {"$ref": "#/$defs/versioned_ref"},
+        "go_outcome_sha256": {"$ref": "#/$defs/sha256"},
+        "acceptance_sha256": {"$ref": "#/$defs/sha256"},
+        "estimate": {"$ref": "#/$defs/cell_estimate"},
+        "decision_inputs": {"$ref": "#/$defs/capacity_decision_inputs"},
+        "logical_parallelism": {"$ref": "#/$defs/positive_integer"},
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "dispatch_allowed", "reason_codes"],
+          "properties": {
+            "outcome": {"enum": ["PASS", "SPLIT_REQUIRED", "CAPACITY_BLOCKED"]},
+            "dispatch_allowed": {"type": "boolean"},
+            "reason_codes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/text"}
+            }
+          }
+        },
+        "split_plan": {"$ref": "#/$defs/split_plan"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "cell_capacity_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "go_id",
+        "cell_id", "round_id", "event", "actor", "worker_stopped",
+        "worker_self_split", "returned_to", "checkpoint_ref",
+        "successor_count", "planning_defect", "severity",
+        "reevaluate_remaining_plan", "reevaluate_device_budget",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "CELL_CAPACITY_EVENT"},
+        "status": {"enum": ["PENDING", "RECORDED"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "cell_id": {"$ref": "#/$defs/text"},
+        "round_id": {"$ref": "#/$defs/text"},
+        "event": {"enum": ["CELL_SCOPE_EXCEEDED", "POST_DISPATCH_CELL_SPLIT"]},
+        "actor": {"enum": ["WORKER", "SUPERVISOR_RESPONSIBILITY"]},
+        "worker_stopped": {"type": "boolean"},
+        "worker_self_split": {"const": false},
+        "returned_to": {"const": "CHECKER_RESPONSIBILITY"},
+        "checkpoint_ref": {"$ref": "#/$defs/hashed_ref"},
+        "successor_count": {"type": "integer", "minimum": 0},
+        "planning_defect": {"type": "boolean"},
+        "severity": {"enum": ["NONE", "CELL_OVERSIZE_SEVERE"]},
+        "reevaluate_remaining_plan": {"type": "boolean"},
+        "reevaluate_device_budget": {"type": "boolean"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "run_id", "go_id", "cell_id", "round_id"],
+      "properties": {
+        "message": {"$ref": "#/$defs/text"},
+        "run_id": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "cell_id": {"$ref": "#/$defs/text"},
+        "round_id": {"$ref": "#/$defs/text"}
+      }
+    },
+    "wake_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thread_found", "registry_thread_id", "registry_host_id",
+        "was_archived", "unarchived", "host_repaired", "guessed_id",
+        "replacement_created"
+      ],
+      "properties": {
+        "thread_found": {"type": "boolean"},
+        "registry_thread_id": {"$ref": "#/$defs/text"},
+        "registry_host_id": {"$ref": "#/$defs/text"},
+        "was_archived": {"type": "boolean"},
+        "unarchived": {"type": "boolean"},
+        "host_repaired": {"type": "boolean"},
+        "guessed_id": {"const": false},
+        "replacement_created": {"const": false}
+      }
+    },
+    "wake_heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heartbeat_id", "heartbeat_count"],
+      "properties": {
+        "heartbeat_id": {"$ref": "#/$defs/text"},
+        "heartbeat_count": {"const": 1}
+      }
+    },
+    "wake_attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level", "offset_seconds", "action", "thread_id", "host_id",
+        "message", "wait_seconds", "result", "evidence_refs"
+      ],
+      "properties": {
+        "level": {"type": "integer", "minimum": 1, "maximum": 4},
+        "offset_seconds": {"enum": [0, 120, 240, 360]},
+        "action": {
+          "enum": [
+            "SEND_MESSAGE_TO_THREAD", "READ_LIST_RESOLVE_RESEND",
+            "UPSERT_CHECKER_WAKE_HEARTBEAT", "WRITE_PENDING_WAKE"
+          ]
+        },
+        "thread_id": {"$ref": "#/$defs/text"},
+        "host_id": {"$ref": "#/$defs/text"},
+        "message": {"$ref": "#/$defs/text"},
+        "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 120},
+        "result": {
+          "enum": [
+            "ACK", "NO_ACK", "THREAD_NOT_FOUND", "PENDING_WAKE_WRITTEN",
+            "PROCESSING_STARTED"
+          ]
+        },
+        "ack": {"$ref": "#/$defs/ack"},
+        "resolution": {"$ref": "#/$defs/wake_resolution"},
+        "heartbeat": {"$ref": "#/$defs/wake_heartbeat"},
+        "pending_wake_ref": {"type": "string"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "worker_wake_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "go_id",
+        "cell_id", "cell_ordinal", "required_cell_total", "round_id",
+        "sender_role", "receiver_responsibility", "checker_binding",
+        "delivery_state", "message", "clock_source", "attempts", "stopped",
+        "temporary_heartbeat_state", "pending_wake_ref", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "WORKER_WAKE_TRACE"},
+        "status": {"enum": ["PENDING", "ACKNOWLEDGED", "PENDING_WAKE_WRITTEN"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "cell_id": {"$ref": "#/$defs/text"},
+        "cell_ordinal": {"$ref": "#/$defs/positive_integer"},
+        "required_cell_total": {"$ref": "#/$defs/positive_integer"},
+        "round_id": {"$ref": "#/$defs/text"},
+        "sender_role": {"const": "WORKER"},
+        "receiver_responsibility": {"const": "CHECKER_RESPONSIBILITY"},
+        "checker_binding": {"$ref": "#/$defs/checker_binding"},
+        "delivery_state": {"enum": ["DELIVERED", "BLOCKED", "EXECUTION_FAILURE"]},
+        "message": {"$ref": "#/$defs/text"},
+        "clock_source": {"const": "INJECTED"},
+        "attempts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/wake_attempt"}
+        },
+        "stopped": {"type": "boolean"},
+        "temporary_heartbeat_state": {"enum": ["NOT_CREATED", "ACTIVE", "DELETED"]},
+        "pending_wake_ref": {"type": "string"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "pending_wake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "pending_wake_id",
+        "run_id", "go_id", "cell_id", "cell_ordinal", "required_cell_total",
+        "round_id", "worker_thread_id", "checker_binding", "attempt_count",
+        "attempt_errors", "created_at", "patrol", "checker_ack", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "PENDING_WAKE"},
+        "status": {"enum": ["PENDING", "PATROL_OBSERVED", "ACKNOWLEDGED", "CONSUMED"]},
+        "pending_wake_id": {"$ref": "#/$defs/text"},
+        "run_id": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "cell_id": {"$ref": "#/$defs/text"},
+        "cell_ordinal": {"$ref": "#/$defs/positive_integer"},
+        "required_cell_total": {"$ref": "#/$defs/positive_integer"},
+        "round_id": {"$ref": "#/$defs/text"},
+        "worker_thread_id": {"$ref": "#/$defs/text"},
+        "checker_binding": {"$ref": "#/$defs/checker_binding"},
+        "attempt_count": {"const": 3},
+        "attempt_errors": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"$ref": "#/$defs/text"}
+        },
+        "created_at": {"$ref": "#/$defs/text"},
+        "patrol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "conversation_id", "conversation_count", "heartbeat_id",
+            "heartbeat_count", "observed", "alert_code"
+          ],
+          "properties": {
+            "conversation_id": {"$ref": "#/$defs/text"},
+            "conversation_count": {"const": 1},
+            "heartbeat_id": {"$ref": "#/$defs/text"},
+            "heartbeat_count": {"const": 1},
+            "observed": {"type": "boolean"},
+            "alert_code": {"type": "string"}
+          }
+        },
+        "checker_ack": {
+          "oneOf": [
+            {"type": "object", "maxProperties": 0, "additionalProperties": false},
+            {"$ref": "#/$defs/ack"}
+          ]
+        },
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "patrol_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind", "evidence_kind", "source_text", "timeout_ms",
+        "inside_loop", "result", "alert_code", "legitimate_reason_ref"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "NORMAL", "STALL", "PENDING_WAKE", "SUBAGENT_EVIDENCE",
+            "SUPERVISOR_WAIT", "DUPLICATE_PATROL", "TERMINAL_CHECK"
+          ]
+        },
+        "evidence_kind": {"$ref": "#/$defs/text"},
+        "source_text": {"$ref": "#/$defs/text"},
+        "timeout_ms": {"type": "integer", "minimum": 0},
+        "inside_loop": {"type": "boolean"},
+        "result": {"enum": ["NORMAL", "ALERT"]},
+        "alert_code": {"type": "string"},
+        "legitimate_reason_ref": {"type": "string"}
+      }
+    },
+    "terminal_cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "loop_terminal_confirmed", "heartbeat_deleted",
+        "conversation_archived"
+      ],
+      "properties": {
+        "loop_terminal_confirmed": {"type": "boolean"},
+        "heartbeat_deleted": {"type": "boolean"},
+        "conversation_archived": {"type": "boolean"}
+      }
+    },
+    "run_patrol_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "actor",
+        "model", "reasoning_effort", "authority", "conversation_id",
+        "conversation_count", "heartbeat_id", "heartbeat_count",
+        "interval_minutes", "run_state", "observation", "actions",
+        "engineering_progress_reported", "terminal_cleanup", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "RUN_PATROL_RECEIPT"},
+        "status": {"enum": ["PENDING", "OBSERVED", "ALERT", "PATROL_CLOSED"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "actor": {"const": "RUN_PATROL"},
+        "model": {"const": "gpt-5.6-luna"},
+        "reasoning_effort": {"const": "xhigh"},
+        "authority": {"const": "NONE"},
+        "conversation_id": {"$ref": "#/$defs/text"},
+        "conversation_count": {"const": 1},
+        "heartbeat_id": {"$ref": "#/$defs/text"},
+        "heartbeat_count": {"const": 1},
+        "interval_minutes": {"enum": [10, 15, 30]},
+        "run_state": {
+          "enum": [
+            "RUNNING", "FORMALLY_PAUSED", "LEGAL_BLOCKED",
+            "WAITING_EXTERNAL", "LOOP_TERMINAL"
+          ]
+        },
+        "observation": {"$ref": "#/$defs/patrol_observation"},
+        "actions": {"type": "array", "maxItems": 0},
+        "engineering_progress_reported": {"const": false},
+        "terminal_cleanup": {"$ref": "#/$defs/terminal_cleanup"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "d1_receipt_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id", "cell_id", "candidate_ref", "verdict",
+        "invalidation_status"
+      ],
+      "properties": {
+        "receipt_id": {"$ref": "#/$defs/text"},
+        "cell_id": {"$ref": "#/$defs/text"},
+        "candidate_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256"],
+          "properties": {"sha256": {"$ref": "#/$defs/sha256"}}
+        },
+        "verdict": {"const": "PASS"},
+        "invalidation_status": {"const": "CURRENT"}
+      }
+    },
+    "d2_receipt_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id", "go_id", "candidate_ref", "verdict",
+        "invalidation_status"
+      ],
+      "properties": {
+        "receipt_id": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "candidate_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256"],
+          "properties": {"sha256": {"$ref": "#/$defs/sha256"}}
+        },
+        "verdict": {"const": "PASS"},
+        "invalidation_status": {"const": "CURRENT"}
+      }
+    },
+    "progress_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence", "event", "actor", "audience", "go_id", "go_ordinal",
+        "cell_id", "cell_ordinal", "round_id", "required_set_version",
+        "required_cell_total", "required_go_total",
+        "current_d1_pass_receipts", "current_d2_pass_receipts",
+        "accepted_cell_count", "verified_go_count", "d3_state",
+        "owner_acceptance_state", "status", "message", "milestone_id",
+        "recomputed", "evidence_refs"
+      ],
+      "properties": {
+        "sequence": {"$ref": "#/$defs/positive_integer"},
+        "event": {
+          "enum": [
+            "DELIVERED", "WAKE_ACK", "CHECKING", "D1_ACCEPTED",
+            "REWORK", "BLOCKED", "EXECUTION_FAILURE",
+            "GO_CANDIDATE_READY", "D2_VERIFYING", "D2_VERIFIED",
+            "GLOBAL_PROGRESS", "AMENDMENT", "RUN_VERIFIED",
+            "OWNER_ACCEPTED"
+          ]
+        },
+        "actor": {"$ref": "#/$defs/text"},
+        "audience": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "go_ordinal": {"$ref": "#/$defs/positive_integer"},
+        "cell_id": {"type": "string"},
+        "cell_ordinal": {"type": "integer", "minimum": 0},
+        "round_id": {"$ref": "#/$defs/text"},
+        "required_set_version": {"$ref": "#/$defs/positive_integer"},
+        "required_cell_total": {"$ref": "#/$defs/positive_integer"},
+        "required_go_total": {"$ref": "#/$defs/positive_integer"},
+        "current_d1_pass_receipts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/d1_receipt_ref"}
+        },
+        "current_d2_pass_receipts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/d2_receipt_ref"}
+        },
+        "accepted_cell_count": {"type": "integer", "minimum": 0},
+        "verified_go_count": {"type": "integer", "minimum": 0},
+        "d3_state": {"$ref": "#/$defs/text"},
+        "owner_acceptance_state": {"$ref": "#/$defs/text"},
+        "status": {"$ref": "#/$defs/text"},
+        "message": {"$ref": "#/$defs/text"},
+        "milestone_id": {"type": "string"},
+        "recomputed": {"type": "boolean"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "progress_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id",
+        "history_immutable", "required_sets", "events", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "PROGRESS_TRACE"},
+        "status": {"enum": ["PENDING", "VALID"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "history_immutable": {"const": true},
+        "required_sets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/required_set"}
+        },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/progress_event"}
+        },
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "simulation_scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "result", "evidence_refs"],
+      "properties": {
+        "scenario_id": {"$ref": "#/$defs/text"},
+        "result": {"enum": ["PENDING", "PASS", "FAIL"]},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "runtime_simulation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id",
+        "clock_source", "scenarios"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "RUNTIME_SIMULATION"},
+        "status": {"enum": ["PENDING", "SIMULATION_PASS"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "clock_source": {"const": "INJECTED"},
+        "scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/simulation_scenario"}
+        }
+      }
+    },
+    "pin_operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "action", "actor", "tool", "authorization_ref"],
+      "properties": {
+        "sequence": {"$ref": "#/$defs/positive_integer"},
+        "action": {"enum": ["PIN", "UNPIN"]},
+        "actor": {"$ref": "#/$defs/text"},
+        "tool": {"$ref": "#/$defs/text"},
+        "authorization_ref": {"type": "string"}
+      }
+    },
+    "pin_patrol_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result", "alert_code", "automatic_pin_attempted",
+        "automatic_unpin_attempted", "owner_notified"
+      ],
+      "properties": {
+        "result": {"enum": ["NORMAL", "ALERT"]},
+        "alert_code": {
+          "enum": ["", "UNAUTHORIZED_THREAD_PIN", "PIN_PROVENANCE_UNKNOWN"]
+        },
+        "automatic_pin_attempted": {"const": false},
+        "automatic_unpin_attempted": {"const": false},
+        "owner_notified": {"type": "boolean"}
+      }
+    },
+    "thread_pin_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id",
+        "task_thread_id", "task_role", "lifecycle_state", "pinned_state",
+        "provenance", "owner_authorization_ref", "operations",
+        "violation_history_retained", "pin_lifecycle_independent",
+        "patrol", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "THREAD_PIN_AUDIT"},
+        "status": {"enum": ["PENDING", "VALID"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "task_thread_id": {"$ref": "#/$defs/text"},
+        "task_role": {
+          "enum": [
+            "SUPERVISOR_RESPONSIBILITY", "CHECKER_RESPONSIBILITY",
+            "VERIFIER_RESPONSIBILITY", "WORKER", "RUN_PATROL",
+            "ROUTER", "GRAPHER"
+          ]
+        },
+        "lifecycle_state": {
+          "enum": [
+            "CREATED", "DISPATCHED", "ACTIVE", "WAITING_RECEIPT",
+            "BLOCKED", "REWORK", "VERIFYING", "MILESTONE",
+            "IMPORTANT", "ARCHIVED", "UNARCHIVED", "TERMINAL"
+          ]
+        },
+        "pinned_state": {"type": "boolean"},
+        "provenance": {
+          "enum": [
+            "NONE", "OWNER_MANUAL_UI", "OWNER_EXPLICIT_ITEM_AUTHORIZATION",
+            "AGENT_TOOL_CALL", "UNKNOWN"
+          ]
+        },
+        "owner_authorization_ref": {"type": "string"},
+        "operations": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/pin_operation"}
+        },
+        "violation_history_retained": {"type": "boolean"},
+        "pin_lifecycle_independent": {"const": true},
+        "patrol": {"$ref": "#/$defs/pin_patrol_result"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    }
+  }
+}
