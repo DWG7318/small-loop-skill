@@ -34,6 +34,7 @@ REQUIRED_SCENARIOS = {
     "WAKE_LEVEL3_HEARTBEAT_UNIQUE_CLEANUP",
     "WAKE_LEVEL4_PENDING_PATROL",
     "WAKE_ACK_STOPS_ESCALATION",
+    "WAKE_PROCESSING_EVIDENCE_STOPS_ESCALATION",
     "NON_WORKER_LADDER_REJECTED",
     "SUPERVISOR_WAIT_DETECTED",
     "VISIBLE_TASK_NOT_SUBAGENT",
@@ -227,6 +228,7 @@ def validate_run_runtime_contract(packet: dict) -> None:
     if (
         wait.get("positive_timeout_allowed") is not False
         or wait.get("loop_allowed") is not False
+        or wait.get("wait_for_all_members_allowed") is not False
         or wait.get("snapshot_timeout_zero_allowed") is not True
     ):
         fail("SLK_RUNTIME_SUPERVISOR_WAIT_FORBIDDEN", "Supervisor may only take zero-time snapshots")
@@ -407,9 +409,21 @@ def validate_worker_wake(packet: dict) -> None:
         if item.get("result") == "ACK":
             validate_ack(packet, item.get("ack"))
             ack_seen = True
+        elif item.get("result") == "PROCESSING_STARTED":
+            text(
+                item.get("processing_started_ref"),
+                "SLK_RUNTIME_WAKE_PROCESSING_EVIDENCE",
+                "processing_started_ref",
+            )
+            ack_seen = True
 
     if ack_seen:
-        if packet.get("status") != "ACKNOWLEDGED" or packet.get("stopped") is not True:
+        expected_status = (
+            "ACKNOWLEDGED"
+            if attempts[-1].get("result") == "ACK"
+            else "PROCESSING_STARTED"
+        )
+        if packet.get("status") != expected_status or packet.get("stopped") is not True:
             fail("SLK_RUNTIME_WAKE_AFTER_ACK", "matching ACK must stop the ladder")
         if len(attempts) >= 3 and packet.get("temporary_heartbeat_state") != "DELETED":
             fail("SLK_RUNTIME_WAKE_HEARTBEAT_NOT_CLEAN", "ACK must delete temporary heartbeat")
@@ -466,11 +480,21 @@ def validate_patrol(packet: dict) -> None:
     result = observation.get("result")
     alert = observation.get("alert_code")
     source = str(observation.get("source_text", ""))
-    false_positive = (
-        evidence_kind == "VISIBLE_PEER_TASK"
-        or "子任务" in source
-        or packet.get("run_state") in {"FORMALLY_PAUSED", "LEGAL_BLOCKED", "WAITING_EXTERNAL"}
+    explicit_fault = kind in {
+        "SUBAGENT_EVIDENCE",
+        "SUPERVISOR_WAIT",
+        "PENDING_WAKE",
+        "DUPLICATE_PATROL",
+    }
+    visible_peer = (
+        evidence_kind == "VISIBLE_PEER_TASK" or "子任务" in source
+    ) and not explicit_fault
+    legitimate_pause = (
+        packet.get("run_state")
+        in {"FORMALLY_PAUSED", "LEGAL_BLOCKED", "WAITING_EXTERNAL"}
+        and kind in {"NORMAL", "STALL"}
     )
+    false_positive = visible_peer or legitimate_pause
     if false_positive and (result != "NORMAL" or alert):
         fail("SLK_RUNTIME_PATROL_FALSE_POSITIVE", "visible tasks and legitimate pauses are not subagents/stalls")
     if kind == "SUBAGENT_EVIDENCE":
@@ -487,6 +511,14 @@ def validate_patrol(packet: dict) -> None:
         if timeout_ms > 0 and observation.get("inside_loop") is True:
             if result != "ALERT" or alert != "SUPERVISOR_WAIT_FORBIDDEN":
                 fail("SLK_RUNTIME_PATROL_MISSED_ALERT", "positive Supervisor wait requires alert")
+    fixed_alerts = {
+        "STALL": "UNEXPLAINED_STALL",
+        "PENDING_WAKE": "PENDING_WAKE_UNCONSUMED",
+        "DUPLICATE_PATROL": "DUPLICATE_PATROL",
+    }
+    if kind in fixed_alerts and not false_positive:
+        if result != "ALERT" or alert != fixed_alerts[kind]:
+            fail("SLK_RUNTIME_PATROL_MISSED_ALERT", f"{kind} requires fixed alert")
     cleanup = mapping(
         packet.get("terminal_cleanup"),
         "SLK_RUNTIME_PATROL_NOT_CLOSED",
@@ -518,6 +550,16 @@ def current_receipt_set(
     for item in values:
         value = mapping(item, "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH", "receipt")
         receipt_ids.append(str(value.get(id_field)))
+        candidate = mapping(
+            value.get("candidate_ref"),
+            "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH",
+            "receipt.candidate_ref",
+        )
+        sha256(
+            candidate.get("sha256"),
+            "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH",
+            "receipt.candidate_ref.sha256",
+        )
         if (
             value.get("verdict") == "PASS"
             and value.get("invalidation_status") == "CURRENT"
@@ -542,6 +584,9 @@ def validate_progress(packet: dict) -> None:
         required_sets[version] = item
     events = sequence(packet.get("events"), "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH", "events")
     milestones: set[str] = set()
+    acknowledged: set[tuple[str, str, str]] = set()
+    last_accepted: dict[int, set[str]] = {}
+    last_verified: dict[int, set[str]] = {}
     for expected_sequence, raw in enumerate(events, start=1):
         event = mapping(raw, "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH", "event")
         if event.get("sequence") != expected_sequence:
@@ -570,8 +615,27 @@ def validate_progress(packet: dict) -> None:
             member_field="go_id",
             required=required_gos,
         )
-        if event.get("event") == "GO_CANDIDATE_READY" and event.get("verified_go_count") != 0:
-            fail("SLK_RUNTIME_PROGRESS_LAYER_CONFUSION", "candidate-ready is not D2 verified")
+        event_kind = event.get("event")
+        prior_accepted = last_accepted.get(version, set())
+        prior_verified = last_verified.get(version, set())
+        new_accepted = accepted - prior_accepted
+        new_verified = verified - prior_verified
+        if event_kind not in {"D1_ACCEPTED", "AMENDMENT"} and new_accepted:
+            fail("SLK_RUNTIME_PROGRESS_COUNT_MISMATCH", "delivery/check/rework cannot add D1 acceptance")
+        if event_kind == "D1_ACCEPTED" and (
+            len(new_accepted) > 1
+            or (new_accepted and event.get("cell_id") not in new_accepted)
+        ):
+            fail("SLK_RUNTIME_PROGRESS_COUNT_MISMATCH", "one D1 decision can accept only its CELL")
+        if event_kind == "GO_CANDIDATE_READY" and new_verified:
+            fail("SLK_RUNTIME_PROGRESS_LAYER_CONFUSION", "candidate-ready is not a new D2 verdict")
+        if (
+            event_kind == "GO_CANDIDATE_READY"
+            and event.get("verified_go_count") != len(verified)
+        ):
+            fail("SLK_RUNTIME_PROGRESS_LAYER_CONFUSION", "candidate-ready cannot claim a D2 count")
+        if event_kind not in {"D2_VERIFIED", "AMENDMENT"} and new_verified:
+            fail("SLK_RUNTIME_PROGRESS_LAYER_CONFUSION", "only a D2 verdict adds GO verification")
         if (
             event.get("accepted_cell_count") != len(accepted)
             or event.get("verified_go_count") != len(verified)
@@ -587,7 +651,6 @@ def validate_progress(packet: dict) -> None:
         if message.strip() == "已完成":
             fail("SLK_RUNTIME_PROGRESS_LAYER_CONFUSION", "generic completion hides the authority layer")
         actor = event.get("actor")
-        event_kind = event.get("event")
         audience = event.get("audience")
         if actor == "RUN_PATROL":
             fail("SLK_RUNTIME_PROGRESS_ROLE_FORBIDDEN", "Patrol cannot emit engineering progress")
@@ -615,9 +678,18 @@ def validate_progress(packet: dict) -> None:
             milestones.add(milestone)
         elif event.get("milestone_id"):
             fail("SLK_RUNTIME_PROGRESS_NOISE", "milestone IDs belong only to GO boundary reports")
+        scope = (str(go_id), str(event.get("cell_id")), str(event.get("round_id")))
+        if event_kind == "WAKE_ACK":
+            if actor != "CHECKER":
+                fail("SLK_RUNTIME_PROGRESS_LAYER_CONFUSION", "Checker owns WAKE_ACK")
+            acknowledged.add(scope)
+        if event_kind == "CHECKING" and scope not in acknowledged:
+            fail("SLK_RUNTIME_PROGRESS_LAYER_CONFUSION", "Checker must ACK before checking")
         if event_kind == "AMENDMENT":
             if event.get("recomputed") is not True or version != max(required_sets):
                 fail("SLK_RUNTIME_PROGRESS_AMENDMENT_STALE", "amendment must use latest version and recompute")
+        last_accepted[version] = accepted
+        last_verified[version] = verified
     evidence(packet.get("evidence_refs"))
 
 
@@ -675,11 +747,9 @@ def validate_cumulative_load(packet: dict) -> None:
     if packet.get("status") != "CURRENT":
         fail("SLK_RUNTIME_LOAD_STALE", "cumulative load must be CURRENT")
     text(packet.get("load_id"), "SLK_RUNTIME_LOAD_STALE", "load_id")
-    version = integer(packet.get("version"), "SLK_RUNTIME_LOAD_STALE", "version", minimum=1)
+    integer(packet.get("version"), "SLK_RUNTIME_LOAD_STALE", "version", minimum=1)
     ref(packet.get("device_capacity_profile_ref"), "SLK_RUNTIME_LOAD_STALE", "device profile")
-    baseline = ref(packet.get("baseline_ref"), "SLK_RUNTIME_LOAD_STALE", "baseline", hashed=True)
-    if baseline.get("version") != version:
-        fail("SLK_RUNTIME_LOAD_STALE", "load version must bind accepted baseline version")
+    ref(packet.get("baseline_ref"), "SLK_RUNTIME_LOAD_STALE", "baseline", hashed=True)
     if packet.get("boundary_kind") not in {
         "RUN_FREEZE",
         "GO_BOUNDARY",

@@ -149,11 +149,13 @@
           "additionalProperties": false,
           "required": [
             "positive_timeout_allowed", "loop_allowed",
+            "wait_for_all_members_allowed",
             "snapshot_timeout_zero_allowed"
           ],
           "properties": {
             "positive_timeout_allowed": {"const": false},
             "loop_allowed": {"const": false},
+            "wait_for_all_members_allowed": {"const": false},
             "snapshot_timeout_zero_allowed": {"const": true}
           }
         },
@@ -597,6 +599,7 @@
         "resolution": {"$ref": "#/$defs/wake_resolution"},
         "heartbeat": {"$ref": "#/$defs/wake_heartbeat"},
         "pending_wake_ref": {"type": "string"},
+        "processing_started_ref": {"type": "string"},
         "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
       }
     },
@@ -613,7 +616,7 @@
       "properties": {
         "schema_version": {"const": "2.5.0"},
         "record_type": {"const": "WORKER_WAKE_TRACE"},
-        "status": {"enum": ["PENDING", "ACKNOWLEDGED", "PENDING_WAKE_WRITTEN"]},
+        "status": {"enum": ["PENDING", "ACKNOWLEDGED", "PROCESSING_STARTED", "PENDING_WAKE_WRITTEN"]},
         "run_id": {"$ref": "#/$defs/text"},
         "go_id": {"$ref": "#/$defs/text"},
         "cell_id": {"$ref": "#/$defs/text"},

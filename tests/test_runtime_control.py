@@ -19,6 +19,7 @@ REQUIRED_SIMULATION_SCENARIOS = {
     "WAKE_LEVEL3_HEARTBEAT_UNIQUE_CLEANUP",
     "WAKE_LEVEL4_PENDING_PATROL",
     "WAKE_ACK_STOPS_ESCALATION",
+    "WAKE_PROCESSING_EVIDENCE_STOPS_ESCALATION",
     "NON_WORKER_LADDER_REJECTED",
     "SUPERVISOR_WAIT_DETECTED",
     "VISIBLE_TASK_NOT_SUBAGENT",
@@ -144,6 +145,7 @@ def runtime_contract() -> dict:
         "supervisor_wait": {
             "positive_timeout_allowed": False,
             "loop_allowed": False,
+            "wait_for_all_members_allowed": False,
             "snapshot_timeout_zero_allowed": True,
         },
         "required_sets": {
@@ -434,20 +436,22 @@ def progress_event(
 
 
 def d1(receipt_id: str, cell_id: str) -> dict:
+    digest = receipt_id.lower().replace("-", "").ljust(64, "a")[:64]
     return {
         "receipt_id": receipt_id,
         "cell_id": cell_id,
-        "candidate_ref": {"sha256": receipt_id.lower().ljust(64, "a")[:64]},
+        "candidate_ref": {"sha256": digest},
         "verdict": "PASS",
         "invalidation_status": "CURRENT",
     }
 
 
 def d2(receipt_id: str, go_id: str) -> dict:
+    digest = receipt_id.lower().replace("-", "").ljust(64, "b")[:64]
     return {
         "receipt_id": receipt_id,
         "go_id": go_id,
-        "candidate_ref": {"sha256": receipt_id.lower().ljust(64, "b")[:64]},
+        "candidate_ref": {"sha256": digest},
         "verdict": "PASS",
         "invalidation_status": "CURRENT",
     }
@@ -866,6 +870,14 @@ def test_runtime_contract_rejects_checker_or_supervisor_wait_drift(
         "SLK_RUNTIME_SUPERVISOR_WAIT_FORBIDDEN",
         optimized=True,
     )
+    packet = runtime_contract()
+    packet["supervisor_wait"]["wait_for_all_members_allowed"] = True
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_SUPERVISOR_WAIT_FORBIDDEN",
+        optimized=True,
+    )
 
 
 def test_runtime_simulation_requires_every_unique_pass_scenario(
@@ -956,6 +968,26 @@ def test_matching_ack_stops_escalation(tmp_path: Path) -> None:
     )
 
 
+def test_mechanical_checker_processing_evidence_also_stops_escalation(
+    tmp_path: Path,
+) -> None:
+    packet = wake_trace(success_level=2)
+    packet["status"] = "PROCESSING_STARTED"
+    packet["attempts"][1]["result"] = "PROCESSING_STARTED"
+    packet["attempts"][1].pop("ack")
+    packet["attempts"][1]["processing_started_ref"] = (
+        "evidence/checker-processing-thread-control.txt"
+    )
+    assert_pass(tmp_path, packet)
+    packet["attempts"][1]["processing_started_ref"] = ""
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_WAKE_PROCESSING_EVIDENCE",
+        optimized=True,
+    )
+
+
 def test_wake_is_worker_only_and_checker_only(tmp_path: Path) -> None:
     packet = wake_trace()
     packet["sender_role"] = "SUPERVISOR_RESPONSIBILITY"
@@ -1032,6 +1064,7 @@ def test_patrol_detects_subagent_and_supervisor_wait_evidence(
             "alert_code": "SUBAGENT_MISUSE",
         }
     )
+    packet["run_state"] = "FORMALLY_PAUSED"
     assert_pass(tmp_path, packet)
     packet = patrol_receipt()
     packet["observation"].update(
@@ -1054,6 +1087,31 @@ def test_patrol_detects_subagent_and_supervisor_wait_evidence(
         "SLK_RUNTIME_PATROL_MISSED_ALERT",
         optimized=True,
     )
+
+
+def test_patrol_detects_stall_pending_wake_and_duplicate_patrol(
+    tmp_path: Path,
+) -> None:
+    cases = (
+        ("STALL", "NO_FORWARD_MOTION", "UNEXPLAINED_STALL"),
+        ("PENDING_WAKE", "PENDING_WAKE", "PENDING_WAKE_UNCONSUMED"),
+        ("DUPLICATE_PATROL", "PATROL_COUNT", "DUPLICATE_PATROL"),
+    )
+    for kind, evidence_kind, alert in cases:
+        packet = patrol_receipt()
+        packet["observation"].update(
+            {
+                "kind": kind,
+                "evidence_kind": evidence_kind,
+                "source_text": f"mechanical evidence: {kind}",
+                "result": "ALERT",
+                "alert_code": alert,
+            }
+        )
+        assert_pass(tmp_path, packet)
+        packet["observation"]["result"] = "NORMAL"
+        packet["observation"]["alert_code"] = ""
+        assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_MISSED_ALERT")
 
 
 def test_patrol_cannot_gain_authority_or_report_progress(tmp_path: Path) -> None:
@@ -1125,6 +1183,24 @@ def test_delivery_checking_and_rework_do_not_increment_accepted(
     for index, event in enumerate(packet["events"], start=1):
         event["sequence"] = index
     assert_pass(tmp_path, packet)
+    packet = progress_trace()
+    forged = d1("D1-099", "CELL-01.01")
+    packet["events"][0]["current_d1_pass_receipts"] = [forged]
+    packet["events"][0]["accepted_cell_count"] = 1
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH",
+        optimized=True,
+    )
+
+
+def test_checker_must_ack_before_starting_inspection(tmp_path: Path) -> None:
+    packet = progress_trace()
+    packet["events"].pop(1)
+    for index, event in enumerate(packet["events"], start=1):
+        event["sequence"] = index
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_PROGRESS_LAYER_CONFUSION")
 
 
 def test_d1_pass_increments_once_and_duplicate_receipt_does_not(

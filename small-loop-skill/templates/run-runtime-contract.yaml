@@ -29,6 +29,7 @@ worker_capabilities:
 supervisor_wait:
   positive_timeout_allowed: false
   loop_allowed: false
+  wait_for_all_members_allowed: false
   snapshot_timeout_zero_allowed: true
 required_sets:
   version: 0
