@@ -1,0 +1,319 @@
+# SLK 2.5.0 Runtime Control and Progress
+
+This is the canonical operational reference for SLK 2.5.0 runtime safeguards.
+`SKILL.md` and `SPEC.md` define authority; this reference defines the machine-
+checkable records, sequences, messages, and fail-closed behavior. It never creates a
+new Runtime method or changes D0-D3.
+
+## 1. Topology
+
+Formal execution remains exactly:
+
+```text
+CONTROL ⇄ WORKER
+```
+
+Each Run also has exactly one visible `RUN_PATROL` conversation and one heartbeat.
+Patrol is a non-authoritative safeguard, not a third technical role. Control still
+activates one of `SUPERVISOR_RESPONSIBILITY`, `CHECKER_RESPONSIBILITY`, or
+`VERIFIER_RESPONSIBILITY`; the Checker receiver is that same Control task while in
+Checker mode.
+
+Patrol uses `gpt-5.6-luna` with `xhigh`. The frozen project difficulty selects a
+10-, 15-, or 30-minute heartbeat. Duplicate Patrol tasks or heartbeats fail closed.
+
+## 2. Readiness
+
+Before Worker dispatch, `RUN_RUNTIME_CONTRACT` must be `READY` and bind:
+
+- Run/baseline/Required-set identities and hashes;
+- Control, persistent Worker, original Checker thread/host, Patrol, and heartbeat;
+- Worker send/read/list/unarchive, bounded ACK wait, temporary heartbeat
+  upsert/delete, and `PENDING_WAKE` write capabilities as `AVAILABLE`;
+- Supervisor wait prohibition;
+- current device profile, cumulative load, and CELL capacity policy;
+- role-wide default-deny Pin policy.
+
+Missing, `PENDING`, unavailable, unknown, or contradictory readiness evidence blocks
+dispatch. `python scripts/validate_runtime_control.py <record.yaml>` validates one
+record and returns a stable `SLK_RUNTIME_*` error on failure.
+
+## 3. Worker-to-Checker wake ladder
+
+Only Worker may initiate the ladder, and only for its frozen original Checker after
+CELL delivery, `BLOCKED`, or `EXECUTION_FAILURE`.
+
+The message is:
+
+```text
+<GO_ID> CELL <ordinal>/<Required-CELL-total> <state>，请检查
+```
+
+For normal delivery, `<state>` is `已交付`. The ordinal is the delivery position,
+not D1 accepted count. Rework keeps the same CELL ordinal.
+
+| Level | Offset | Required action | Maximum ACK wait |
+|---|---:|---|---:|
+| 1 | T+0 | send to frozen Checker thread+host | 120 s |
+| 2 | T+120 | read/list, repair archive/host only from frozen registry, resend | 120 s |
+| 3 | T+240 | create/update one deterministic temporary Checker heartbeat | 120 s |
+| 4 | T+360 | write deterministic `PENDING_WAKE` | 0 s |
+
+Level 2 never guesses an ID and never creates a replacement Checker. Level 3 never
+creates a conversation. Tests use an injected clock; production records may cite
+host timestamps but must preserve these bounds.
+
+Checker's first action is:
+
+```text
+WAKE_ACK <RUN_ID> <GO_ID> <CELL_ID> <ROUND_ID>
+```
+
+A matching ACK or mechanical evidence that the original Checker started processing
+stops all later levels. Temporary heartbeat is deleted and any `PENDING_WAKE` is
+consumed. No second Worker/Checker, duplicate implementation, or duplicate
+acceptance is allowed.
+
+If levels 1-3 fail, level 4 records Worker/Checker/Run/GO/CELL/Round, the three
+attempt errors and timestamps, and evidence. The unique Patrol discovers it from
+its own heartbeat even if every best-effort message fails.
+
+The repository-owner task completion receipt remains the separate plain text
+`完成，请检验`; it is not a method runtime delivery message.
+
+## 4. Supervisor wait
+
+Supervisor never performs positive-timeout `wait_threads`, never loops it, and never
+waits for all members. A `timeoutMs: 0` snapshot or `read_thread` is not a wait.
+After dispatch/control, Supervisor ends its turn. Only Worker may perform the finite
+ACK waits above.
+
+## 5. Run Patrol
+
+Patrol observes only:
+
+- unexplained lack of legal forward motion;
+- unconsumed `PENDING_WAKE`;
+- explicit `spawn_agent`, `delegate_task`, hidden-Agent, or background-Agent evidence;
+- positive-timeout/looped Supervisor wait;
+- duplicate Patrol conversation or heartbeat;
+- related-task Pin state and available Pin-operation provenance;
+- Patrol still active after formal termination.
+
+Formal pause, legal `BLOCKED`, waiting for external conditions, and visible peer
+tasks are normal when evidence binds the reason.
+
+Patrol emits fixed status, evidence, and alert codes. It does not inspect code
+quality, plan quality, D0-D3 sufficiency, or progress. It does not repair, take over,
+route, dispatch, verify, accept, Pin, Unpin, create/fork tasks, or create/delegate
+agents.
+
+Terminal order is:
+
+```text
+LOOP_TERMINAL
+→ delete Patrol heartbeat
+→ PATROL_CLOSED
+→ archive Patrol conversation
+```
+
+## 6. Task and subagent definition
+
+`GO`, `CELL`, `Round`, plan step, “subtask”, and “子任务” are planning units.
+A visible same-project peer task with stable `threadId` is not a subagent.
+
+Only these are prohibited subagent evidence:
+
+```text
+spawn_agent
+delegate_task
+HIDDEN_AGENT
+BACKGROUND_AGENT
+```
+
+`create_thread` and `fork_thread` remain forbidden to Patrol but are not
+misclassified as subagent evidence.
+
+## 7. Layered progress
+
+### Worker layer
+
+Worker reports only scoped delivery position to Checker. Delivery, green tests,
+checking, rework, or a wake retry never increments acceptance.
+
+### Checker layer
+
+After ACK, Checker displays:
+
+```text
+收到 <GO_ID> CELL <n>/<N>，开始检查
+```
+
+After each D1 decision:
+
+```text
+PASS:        <GO_ID> CELL验收 <a>/<N>；下一状态=<...>
+FAIL/REWORK: <GO_ID> CELL验收仍为 <a>/<N>；当前CELL进入<Rxx>返工
+BLOCKED:     <GO_ID> CELL验收仍为 <a>/<N>；阻断=<...>
+```
+
+Only one current, non-invalidated D1 PASS for a Required CELL contributes to `a`.
+Repeated receipts for the same CELL do not increment it.
+
+When all current Required CELLs of one GO have D1 PASS, Checker may send one GO
+boundary milestone to Supervisor:
+
+```text
+GO <ordinal>/<Required-GO-total>；
+本GO CELL <N>/<N>已验收；
+当前状态=GO_CANDIDATE_READY
+```
+
+`GO_CANDIDATE_READY`, `D2_VERIFYING`, and `D2_VERIFIED` are distinct.
+
+### Supervisor layer
+
+Supervisor reports Owner-visible progress only after material GO/Run state change:
+
+```text
+RequiredSet v<version>；
+当前GO D1 CELL <accepted>/<required>；
+Required GO D2 <verified>/<required>；
+D3=<state>；
+Owner=<state>
+```
+
+CELL numerator comes from current D1 PASS receipts. GO numerator comes from current
+D2 PASS receipts. D3 and Owner Acceptance are separate. Verifier emits formal
+verdicts only; Patrol reports no engineering progress.
+
+Required-set amendments create a new version and recompute denominators/numerators
+from current receipts. History is immutable. A CELL split does not itself add
+accepted progress. Generic cross-layer “已完成” is forbidden; use:
+
+```text
+DELIVERED
+D1_ACCEPTED
+GO_CANDIDATE_READY
+D2_VERIFYING
+D2_VERIFIED
+RUN_VERIFIED
+OWNER_ACCEPTED
+BLOCKED
+REWORK
+```
+
+## 8. Device and cumulative load capacity
+
+Supervisor freezes a versioned `DEVICE_CAPACITY_PROFILE` before plan dispatch. It
+uses measurable CPU/logical-core, available RAM, GPU/VRAM or explicit N/A,
+free-disk/IO, network/external limits, process/port, device-safe concurrency,
+command/test/build duration, context, and evidence budgets. “High performance” or
+unknown capability is not evidence and fails closed.
+
+Supervisor versions `CUMULATIVE_ENGINEERING_LOAD` at Run freeze, every important
+SLK GO boundary, Required-set amendment, and material measured deviation. It binds
+accepted-baseline file/dependency scale, build/full-regression duration, peak
+memory/disk, evidence/hash volume, context restore, external tools, rollback/retry,
+and coupling. SLK has no Level/Graph boundary.
+
+Every CELL estimates total engineering cost:
+
+- implementation, inputs/dependencies, and outputs;
+- build/test matrix and Checker independent validation;
+- affected regression;
+- evidence/hash/cleanup and context loading;
+- external tools/services and rollback/retry;
+- cumulative baseline coupling and peak resources.
+
+Diff or file count alone never determines CELL size.
+
+Before dispatch, Checker reviews the Supervisor-frozen `CELL_CAPACITY_GATE`:
+
+| Result | Dispatch | Meaning |
+|---|---|---|
+| `PASS` | yes | measured/conservative cost fits current capacity |
+| `SPLIT_REQUIRED` | no | pre-split into independent D1-checkable CELLs |
+| `CAPACITY_BLOCKED` | no | route through existing authority |
+
+A pre-split preserves the original GO outcome/acceptance hashes, dependencies, and
+verification quality. It creates no new GO, Worker, or subagent. Logical work
+parallelism never overrides device-safe concurrency or SLK serial execution.
+
+If actual scope exceeds the frozen budget, Worker stops, preserves an immutable
+checkpoint/evidence package, emits `CELL_SCOPE_EXCEEDED`, and returns to original
+Checker/Supervisor authority. Worker never self-splits.
+
+A split discovered after dispatch records `POST_DISPATCH_CELL_SPLIT`. Three or more
+successors records `CELL_OVERSIZE_SEVERE` and forces remaining-plan plus
+device-budget re-evaluation; 6, 7, and 8 successors are always severe. Capacity
+splits version the Required set and recompute progress without adding acceptance.
+
+## 9. Owner-only task Pin authority
+
+All method roles default to denied for `set_thread_pinned(true)` and equivalent
+Pin capability:
+
+```text
+SUPERVISOR_RESPONSIBILITY
+CHECKER_RESPONSIBILITY
+VERIFIER_RESPONSIBILITY
+WORKER
+RUN_PATROL
+ROUTER
+GRAPHER
+```
+
+Task creation, dispatch, ACTIVE, wait, `BLOCKED`, rework, verification, milestone,
+importance, longevity, or frequent Owner viewing never grants authority. Pin is
+independent of archive/unarchive and every lifecycle state. It cannot replace a
+status board, progress report, role registry, or recovery index.
+
+Legal provenance is one of:
+
+- `OWNER_MANUAL_UI`: Owner directly chose Pin in Codex UI;
+- `OWNER_EXPLICIT_ITEM_AUTHORIZATION`: current-Run evidence names the exact task.
+
+An Agent/method Pin without the exact authorization records
+`UNAUTHORIZED_THREAD_PIN`. The violation remains after a later Unpin. A pinned task
+whose provenance cannot be proven records `PIN_PROVENANCE_UNKNOWN` and prompts
+Owner. Patrol never automatically Unpins because the Pin may be Owner-authored.
+
+`THREAD_PIN_AUDIT` binds current state and ordered operation history. Its Patrol
+result is `NORMAL` for proven Owner provenance, otherwise one fixed alert:
+
+```text
+UNAUTHORIZED_THREAD_PIN
+PIN_PROVENANCE_UNKNOWN
+```
+
+## 10. Simulation and records
+
+`RUNTIME_SIMULATION` must contain every version-required scenario exactly once with
+`PASS` and evidence. It includes all four wake outcomes, readiness failures,
+Supervisor wait, Patrol/subagent/terminal cases, layered counts/amendments, capacity
+growth/resource/split/deviation cases, and Pin authority/provenance/history cases.
+
+Blank templates remain `PENDING`. The validator uses explicit conditionals, not
+Python `assert`, so negative gates remain active under `python -O`.
+
+The published assets are:
+
+```text
+contracts/slk-runtime-control.schema.json
+scripts/validate_runtime_control.py
+templates/run-runtime-contract.yaml
+templates/device-capacity-profile.yaml
+templates/cumulative-engineering-load.yaml
+templates/cell-capacity-gate.yaml
+templates/cell-capacity-event.yaml
+templates/worker-wake-trace.yaml
+templates/pending-wake.yaml
+templates/run-patrol-receipt.yaml
+templates/progress-trace.yaml
+templates/runtime-simulation.yaml
+templates/thread-pin-audit.yaml
+```
+
+These records augment D0/D1 and existing Run control. They create no D4, new
+technical role, general message bus, device monitor, scheduler, or Runtime method.

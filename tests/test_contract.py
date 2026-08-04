@@ -134,6 +134,64 @@ def test_blank_receipts_are_fail_closed() -> None:
         assert root_value.get("owner_verdict") != "LOOP_OWNER_ACCEPTED"
 
 
+def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
+    schema = json.loads(read(ROOT / "contracts" / "slk-runtime-control.schema.json"))
+    assert len(schema["oneOf"]) == 11
+    assert {
+        "run_runtime_contract",
+        "device_capacity_profile",
+        "cumulative_engineering_load",
+        "cell_capacity_gate",
+        "cell_capacity_event",
+        "worker_wake_trace",
+        "pending_wake",
+        "run_patrol_receipt",
+        "progress_trace",
+        "runtime_simulation",
+        "thread_pin_audit",
+    } <= set(schema["$defs"])
+    assert all(
+        definition.get("additionalProperties") is False
+        for definition in schema["$defs"].values()
+        if definition.get("type") == "object"
+    )
+    names = {
+        "run-runtime-contract.yaml",
+        "device-capacity-profile.yaml",
+        "cumulative-engineering-load.yaml",
+        "cell-capacity-gate.yaml",
+        "cell-capacity-event.yaml",
+        "worker-wake-trace.yaml",
+        "pending-wake.yaml",
+        "run-patrol-receipt.yaml",
+        "progress-trace.yaml",
+        "runtime-simulation.yaml",
+        "thread-pin-audit.yaml",
+    }
+    for name in names:
+        root_path = ROOT / "templates" / name
+        installed_path = PACKAGE / "templates" / name
+        value = yaml.safe_load(read(root_path))
+        assert value["status"] == "PENDING", name
+        assert read(installed_path) == read(root_path), name
+
+
+def test_default_prompt_contains_runtime_hard_brakes() -> None:
+    prompt = yaml.safe_load(read(ROOT / "agents" / "openai.yaml"))["interface"][
+        "default_prompt"
+    ]
+    for phrase in (
+        "positive-timeout wait_threads",
+        "GO/CELL n/N",
+        "gpt-5.6-luna+xhigh",
+        "CELL_CAPACITY_GATE",
+        "set_thread_pinned(true)",
+        "UNAUTHORIZED_THREAD_PIN",
+        "PIN_PROVENANCE_UNKNOWN",
+    ):
+        assert phrase in prompt
+
+
 def test_receipt_envelope_has_minimum_audit_fields() -> None:
     fields = set(contract()["receipt_envelope_required_fields"])
     assert {

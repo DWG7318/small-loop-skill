@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.5.0
+
+- Added the Worker-only four-level wake ladder for the frozen Checker, scoped
+  GO/CELL n/N delivery messages, matching `WAKE_ACK`, deterministic temporary
+  heartbeat, and Patrol-readable `PENDING_WAKE` fallback.
+- Prohibited positive-timeout/looped Supervisor waits and added exactly one visible
+  non-authoritative Run Patrol conversation/heartbeat using
+  `gpt-5.6-luna` + `xhigh`.
+- Defined visible peer tasks and planning “subtasks” separately from prohibited
+  spawned, delegated, hidden, or background agents.
+- Added receipt-derived layered progress: Worker delivery position, Checker D1
+  acceptance, and Supervisor D2 GO/Run milestones with versioned denominators.
+- Added versioned device capacity and cumulative engineering load, total-cost
+  `CELL_CAPACITY_GATE`, dynamic feedback, `CELL_SCOPE_EXCEEDED`, post-dispatch split
+  defects, and severe 3+ successor re-evaluation.
+- Added default-deny task Pin capability for every method role, Owner-only proven
+  provenance, fixed unauthorized/unknown alerts, and immutable Pin-then-Unpin
+  history without Patrol auto-Unpin.
+- Added one closed runtime schema, explicit optimized-safe validator, fail-closed
+  templates, simulation gate, tests, mirrors, and migration/reference material.
+- Preserved Control + persistent Worker as the formal engineering topology and
+  D0-D3/Owner authority. Patrol is a safeguard, not a third technical role.
+
 ## 2.4.0
 
 - Added candidate-bound `DEFECT_LINEAGE` and repair-round records to D1 failures
