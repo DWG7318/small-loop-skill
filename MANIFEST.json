@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "excludes": [
     "MANIFEST.json"
   ],
@@ -19,7 +19,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "c510a8138e55cd9815860cf930513cd5943505694913d47df0953bb653bad8a7"
+      "sha256": "420736a0d5cb006f28d055333c2ef4f4d7ab1f6eb7a31233a26daca6fe53e647"
     },
     {
       "path": "LICENSE",
@@ -27,39 +27,43 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "73a25cbc64367477c450183fae2390c81f73cc2b3c7e4e00c73cad4c14045820"
+      "sha256": "4ac9a8eb73154d780a6d3987eef1f49dac3c1f7edb08fb8a14b250985a456ed7"
     },
     {
       "path": "README.md",
-      "sha256": "27d152773c1d99e3de991439f594f99f27db0ac3e1924dcaa83512a05c2f3fe3"
+      "sha256": "b8cb052fa10a1845633492f43aec1b4934bfd9ce688936291f4326dba687bd44"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "8ba8878fabac0c144282dd5fda6a24475e7a9c77fed58c2cde5592f8b726343e"
+      "sha256": "01a746dbd7625c5163a58b7fc31b99e746184edbb560fde195c33be8f8c3004d"
     },
     {
       "path": "SKILL.md",
-      "sha256": "2839f133b2f56353490016298aedd94952d06bb71954525f76fc2dd83274bac7"
+      "sha256": "0662283ed8d48ab41789327ea40e148f4c757ba3dd93449d4e7490a6b31e415e"
     },
     {
       "path": "SPEC.md",
-      "sha256": "25245b29c25b10542763e9301b5c9a0114ae3de97d9b82ca67d1a318e677fdaf"
+      "sha256": "4cc013e0c7f5a0fa8d767377162a9abefe710eadafb92095ea9feab9707fcee1"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "0ebf90a6ef5420941c738292729e0153ac4e7b4f45131470780da24fe97b77b2"
+      "sha256": "ea32773403ac8cee961e42934b8797b1c1fa85e0aca5a87a6927e656fa1bc3d0"
     },
     {
       "path": "VERSION",
-      "sha256": "2ad7b0c3f0ede58c3165b7a8a5479e890a758d39bfe8683eaef50ce6afad7232"
+      "sha256": "732f64d874f90788c0199b0c19bfd9b3b6436e140114e53e462832532d74c61c"
     },
     {
       "path": "agents/openai.yaml",
-      "sha256": "06f52ec190c6152221e01b48a8329aac7b161a5dcf3278e0f273ee786df29622"
+      "sha256": "40450a8129a89d05c385283ce3b75529011a2e3de758a0cc8e2078c819958d03"
     },
     {
       "path": "contracts/slk-control-kernel.json",
-      "sha256": "5b900f2a8b09bb05933493f8939f891cb306ada728814c168e11857fc5e671be"
+      "sha256": "611784e15932717afa55705ffdb4157674689363eb5b56f7f2e4eed54bee23b4"
+    },
+    {
+      "path": "contracts/slk-runtime-control.schema.json",
+      "sha256": "a0a7edafdd108b4ea38dbc717c546eb2b888a9db18f9246da682425c103d00f5"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -68,6 +72,14 @@
     {
       "path": "docs/superpowers/plans/2026-07-30-slk-2.4.0-causal-defect-repair.md",
       "sha256": "cbd883191a0ff5e8e2c35cd65a5c59c3eaf19e3a75191ae3d559c33fea521d8b"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-04-slk-2.5.0-worker-wake-patrol.md",
+      "sha256": "6c7d12c40235be1e20e47076c363003447cdcf0a33d58b698ee67630b63f6771"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
+      "sha256": "3032ff7219d8f7931ad62b92e99deb581ecf592798327d50d5aa16a427df9338"
     },
     {
       "path": "examples/minimal-run/README.md",
@@ -103,7 +115,11 @@
     },
     {
       "path": "references/role-and-environment-isolation.md",
-      "sha256": "4eb823a2b72f212a48977f03e73337a14990dfaabd0cccd7d2b8bda9d8d9820b"
+      "sha256": "28c1d82041cea152c6e91e4085da3133da344d2355fbd7fe427c8de2ad03de94"
+    },
+    {
+      "path": "references/runtime-control-and-progress.md",
+      "sha256": "a5c360404c6b3724b584a8296eb5d48aad2c22fb4f955e55e33524473719966f"
     },
     {
       "path": "references/security-boundary.md",
@@ -123,7 +139,11 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "071d74ef13b747af075259f2c6da1d4cae340879cd03794f2dd2eff24176f703"
+      "sha256": "40cc158d003d25e109ba2aacfb80a36ff60a9961247a197388a48a8e19a5cbbe"
+    },
+    {
+      "path": "scripts/validate_runtime_control.py",
+      "sha256": "d580226de8d88f4a08a446d015d444af66ada8beb9654e2e475cc0fdcf58c6db"
     },
     {
       "path": "scripts/validate_serial_plan.py",
@@ -131,15 +151,19 @@
     },
     {
       "path": "small-loop-skill/SKILL.md",
-      "sha256": "2839f133b2f56353490016298aedd94952d06bb71954525f76fc2dd83274bac7"
+      "sha256": "0662283ed8d48ab41789327ea40e148f4c757ba3dd93449d4e7490a6b31e415e"
     },
     {
       "path": "small-loop-skill/SPEC.md",
-      "sha256": "25245b29c25b10542763e9301b5c9a0114ae3de97d9b82ca67d1a318e677fdaf"
+      "sha256": "4cc013e0c7f5a0fa8d767377162a9abefe710eadafb92095ea9feab9707fcee1"
     },
     {
       "path": "small-loop-skill/contracts/slk-control-kernel.json",
-      "sha256": "5b900f2a8b09bb05933493f8939f891cb306ada728814c168e11857fc5e671be"
+      "sha256": "611784e15932717afa55705ffdb4157674689363eb5b56f7f2e4eed54bee23b4"
+    },
+    {
+      "path": "small-loop-skill/contracts/slk-runtime-control.schema.json",
+      "sha256": "a0a7edafdd108b4ea38dbc717c546eb2b888a9db18f9246da682425c103d00f5"
     },
     {
       "path": "small-loop-skill/references/amendment-and-rework.md",
@@ -159,7 +183,11 @@
     },
     {
       "path": "small-loop-skill/references/role-and-environment-isolation.md",
-      "sha256": "4eb823a2b72f212a48977f03e73337a14990dfaabd0cccd7d2b8bda9d8d9820b"
+      "sha256": "28c1d82041cea152c6e91e4085da3133da344d2355fbd7fe427c8de2ad03de94"
+    },
+    {
+      "path": "small-loop-skill/references/runtime-control-and-progress.md",
+      "sha256": "a5c360404c6b3724b584a8296eb5d48aad2c22fb4f955e55e33524473719966f"
     },
     {
       "path": "small-loop-skill/references/security-boundary.md",
@@ -178,6 +206,10 @@
       "sha256": "1380c2d709499d4b35b242764cf8b42c2821a708e2405bc12963e908c0492d38"
     },
     {
+      "path": "small-loop-skill/scripts/validate_runtime_control.py",
+      "sha256": "d580226de8d88f4a08a446d015d444af66ada8beb9654e2e475cc0fdcf58c6db"
+    },
+    {
       "path": "small-loop-skill/scripts/validate_serial_plan.py",
       "sha256": "e39fb3d6b97bde34a0b4cc3b7c7b0e1ca1555fcb13ef520b4870da35b8be2fb2"
     },
@@ -186,8 +218,20 @@
       "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
     },
     {
+      "path": "small-loop-skill/templates/cell-capacity-event.yaml",
+      "sha256": "c732bb958ca0ed67e281bab5a9df86e6ec5e71375ce2b3454fd7d19e09b3a34f"
+    },
+    {
+      "path": "small-loop-skill/templates/cell-capacity-gate.yaml",
+      "sha256": "4cddf768cf71d671715d8b5564d061889f453131308b14c84a5ff2dbac0ba156"
+    },
+    {
       "path": "small-loop-skill/templates/cell-contract.yaml",
       "sha256": "671416ba50970059a4d29af48fd6546547f846bdbfc8ea2be31e60db241d731b"
+    },
+    {
+      "path": "small-loop-skill/templates/cumulative-engineering-load.yaml",
+      "sha256": "59546fc1e6b3bbb8ffb04fe948a84c65e561f601bbebd104f58783598da5414b"
     },
     {
       "path": "small-loop-skill/templates/d0-worker-receipt.yaml",
@@ -206,6 +250,10 @@
       "sha256": "32aae4dcf0329f3a1bf92954b02a4e09053f9ce4201c0f50ec0b8c0f6fe3b520"
     },
     {
+      "path": "small-loop-skill/templates/device-capacity-profile.yaml",
+      "sha256": "213c191627ff18b418d126c74bd3851c333fcc708171904a0c70faf0b17ea9e4"
+    },
+    {
       "path": "small-loop-skill/templates/go-contract.yaml",
       "sha256": "257ac71d1b87e597c90f14e013bd4ceb867cba549d74dcdf10a8b336bd262f85"
     },
@@ -214,8 +262,28 @@
       "sha256": "66b6c9808e83f888bcad90047375aa04448fac9ac9ecc429c91be19f75e92b44"
     },
     {
+      "path": "small-loop-skill/templates/pending-wake.yaml",
+      "sha256": "ed7517f869b04d1dbee0f350c7b7bc88a9d3b1798bf5f78f9cc0e4c72eb18874"
+    },
+    {
+      "path": "small-loop-skill/templates/progress-trace.yaml",
+      "sha256": "4174fd4c932ea94e1427cc4bc26257391cb3c1624efaedf894a1f1b8980faeeb"
+    },
+    {
       "path": "small-loop-skill/templates/run-contract.yaml",
-      "sha256": "1448a7e2d5bf59f806b77dfcb2be1eadfb1fd51a5739fabc0878a7e5a4bee253"
+      "sha256": "496976da43c1f36709b4ad14ab98b1f64af2262440d3c9540a83a601b7bb97f7"
+    },
+    {
+      "path": "small-loop-skill/templates/run-patrol-receipt.yaml",
+      "sha256": "431d05e95b95b55534a1c62f922c8c12229bc601ff1c48d8b7d2003748dac813"
+    },
+    {
+      "path": "small-loop-skill/templates/run-runtime-contract.yaml",
+      "sha256": "756b5c593f5bf3a2249c418abcc891107c46eb195afff4b8c7e6734b706defce"
+    },
+    {
+      "path": "small-loop-skill/templates/runtime-simulation.yaml",
+      "sha256": "bc93ca4c1c89e18ae471cb10d9730c591e01e594830945c98ad626602e37167d"
     },
     {
       "path": "small-loop-skill/templates/serial-plan.yaml",
@@ -226,12 +294,32 @@
       "sha256": "f491fffbc92bedf6ee1045206986a4189af0ead7612f665bbd301eebc167ba7f"
     },
     {
+      "path": "small-loop-skill/templates/thread-pin-audit.yaml",
+      "sha256": "f694fbe0a73fbfaf71b93107c5ca109fdca1809540717f36be571fd8d2e5b5a5"
+    },
+    {
+      "path": "small-loop-skill/templates/worker-wake-trace.yaml",
+      "sha256": "3f7fa28c34f2cca42b3313474af25def2cd444fb23e79f4c654f16f2a845230a"
+    },
+    {
       "path": "templates/baseline-amendment.yaml",
       "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
     },
     {
+      "path": "templates/cell-capacity-event.yaml",
+      "sha256": "c732bb958ca0ed67e281bab5a9df86e6ec5e71375ce2b3454fd7d19e09b3a34f"
+    },
+    {
+      "path": "templates/cell-capacity-gate.yaml",
+      "sha256": "4cddf768cf71d671715d8b5564d061889f453131308b14c84a5ff2dbac0ba156"
+    },
+    {
       "path": "templates/cell-contract.yaml",
       "sha256": "671416ba50970059a4d29af48fd6546547f846bdbfc8ea2be31e60db241d731b"
+    },
+    {
+      "path": "templates/cumulative-engineering-load.yaml",
+      "sha256": "59546fc1e6b3bbb8ffb04fe948a84c65e561f601bbebd104f58783598da5414b"
     },
     {
       "path": "templates/d0-worker-receipt.yaml",
@@ -250,6 +338,10 @@
       "sha256": "32aae4dcf0329f3a1bf92954b02a4e09053f9ce4201c0f50ec0b8c0f6fe3b520"
     },
     {
+      "path": "templates/device-capacity-profile.yaml",
+      "sha256": "213c191627ff18b418d126c74bd3851c333fcc708171904a0c70faf0b17ea9e4"
+    },
+    {
       "path": "templates/go-contract.yaml",
       "sha256": "257ac71d1b87e597c90f14e013bd4ceb867cba549d74dcdf10a8b336bd262f85"
     },
@@ -258,8 +350,28 @@
       "sha256": "66b6c9808e83f888bcad90047375aa04448fac9ac9ecc429c91be19f75e92b44"
     },
     {
+      "path": "templates/pending-wake.yaml",
+      "sha256": "ed7517f869b04d1dbee0f350c7b7bc88a9d3b1798bf5f78f9cc0e4c72eb18874"
+    },
+    {
+      "path": "templates/progress-trace.yaml",
+      "sha256": "4174fd4c932ea94e1427cc4bc26257391cb3c1624efaedf894a1f1b8980faeeb"
+    },
+    {
       "path": "templates/run-contract.yaml",
-      "sha256": "1448a7e2d5bf59f806b77dfcb2be1eadfb1fd51a5739fabc0878a7e5a4bee253"
+      "sha256": "496976da43c1f36709b4ad14ab98b1f64af2262440d3c9540a83a601b7bb97f7"
+    },
+    {
+      "path": "templates/run-patrol-receipt.yaml",
+      "sha256": "431d05e95b95b55534a1c62f922c8c12229bc601ff1c48d8b7d2003748dac813"
+    },
+    {
+      "path": "templates/run-runtime-contract.yaml",
+      "sha256": "756b5c593f5bf3a2249c418abcc891107c46eb195afff4b8c7e6734b706defce"
+    },
+    {
+      "path": "templates/runtime-simulation.yaml",
+      "sha256": "bc93ca4c1c89e18ae471cb10d9730c591e01e594830945c98ad626602e37167d"
     },
     {
       "path": "templates/serial-plan.yaml",
@@ -270,16 +382,28 @@
       "sha256": "f491fffbc92bedf6ee1045206986a4189af0ead7612f665bbd301eebc167ba7f"
     },
     {
+      "path": "templates/thread-pin-audit.yaml",
+      "sha256": "f694fbe0a73fbfaf71b93107c5ca109fdca1809540717f36be571fd8d2e5b5a5"
+    },
+    {
+      "path": "templates/worker-wake-trace.yaml",
+      "sha256": "3f7fa28c34f2cca42b3313474af25def2cd444fb23e79f4c654f16f2a845230a"
+    },
+    {
       "path": "tests/test_causal_defect_repair.py",
       "sha256": "48b22290681ba48ec86d788bc041fb639ca876e90f7be71b9a01bb150335f5e5"
     },
     {
       "path": "tests/test_contract.py",
-      "sha256": "43ba55b172fabcb38ebf6df5158f96bdeadaffc9995e58a70f219055c7613f77"
+      "sha256": "34e9d6e692f407d937357e98f026ed7efe0f1ededc0b9cf1ab26650cd625d052"
     },
     {
       "path": "tests/test_repository_validator.py",
-      "sha256": "826e81b33f5339ffe0c3fb90e9d1039deafc3e797e0e11627eab32d3e84c48e2"
+      "sha256": "16f4dd1e4ab59fc79e6ff2e3b753ac0504187c30dfedad437976798b975309de"
+    },
+    {
+      "path": "tests/test_runtime_control.py",
+      "sha256": "64ff2cca33e5021e760c05a63bddba44cb0df833571c2548b254394e9f2d48cc"
     },
     {
       "path": "tests/test_serial_plan_validator.py",
