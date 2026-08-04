@@ -103,18 +103,21 @@ RUN_CONTRACT
 24. SLK consumes product meaning from LCCoding and never invents it.
 25. SLK never claims centralized vulnerability closure, delivery readiness, or
     project completion.
-26. Supervisor never loops or uses positive-timeout `wait_threads`; Worker alone may
-    perform the four bounded Checker-ACK waits.
+26. Supervisor never uses positive-timeout `wait_threads`, even once, never loops
+    it, and never waits for all members; Worker alone may perform the four bounded
+    Checker-ACK waits. `timeoutMs:0` remains a snapshot.
 27. Runtime delivery messages bind GO/CELL n/N; only current D1 PASS increments CELL
     acceptance and only current D2 PASS increments GO verification.
 28. Every Run has exactly one non-authoritative Patrol conversation/heartbeat using
-    `gpt-5.6-luna` + `xhigh`.
+    `gpt-5.6-luna` + `xhigh`; `LOW→10`, `MEDIUM→15`, `HIGH→30` minutes, and every
+    cycle records the complete fixed minimum-error checklist.
 29. Visible tasks and “子任务” are not subagents; explicit spawn/delegate/hidden/
     background Agent evidence is prohibited.
 30. Supervisor freezes measurable device capacity and cumulative engineering load;
     only a `CELL_CAPACITY_GATE` PASS permits dispatch, and Worker never self-splits.
-31. Every method role defaults to task Pin denied. Only exact Owner manual or
-    item-specific authorization provenance is legal; Patrol reports but never Unpins.
+31. The three Control responsibilities and Worker default to task Pin denied. Patrol
+    is not a technical role and has its Pin/Unpin denial validated separately. Only
+    exact Owner manual or item-specific provenance is legal.
 
 ## Responsibility modes
 
@@ -195,7 +198,11 @@ SLK 2.5.0 runtime safeguards are defined once in
 [runtime control and progress](references/runtime-control-and-progress.md). They
 cover readiness, Worker wake, Supervisor waits, Run Patrol, subagent classification,
 receipt-derived progress, device/load CELL capacity, and Owner-only task Pin
-authority. Validate every runtime record with:
+authority. Every D2/D3/Owner material verdict requires exactly one bound Supervisor
+progress event. `RUN_RUNTIME_INDEX` proves every formal RUN/GO/CELL/ROUND dispatch
+has a capacity PASS bound to that Round, wake, progress, and Patrol-cycle evidence
+without creating a Runtime.
+Validate every runtime record or index with:
 
 ```text
 python scripts/validate_runtime_control.py <record.yaml>

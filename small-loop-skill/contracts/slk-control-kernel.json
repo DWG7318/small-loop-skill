@@ -30,7 +30,20 @@
     "heartbeat_count_per_run": 1,
     "model": "gpt-5.6-luna",
     "reasoning_effort": "xhigh",
-    "interval_minutes": [10, 15, 30],
+    "workload_interval_minutes": {
+      "LOW": 10,
+      "MEDIUM": 15,
+      "HIGH": 30
+    },
+    "complete_cycle_checklist": [
+      "FORWARD_MOTION",
+      "PENDING_WAKE",
+      "SUBAGENT_EVIDENCE",
+      "SUPERVISOR_WAIT",
+      "PATROL_UNIQUENESS",
+      "THREAD_PIN",
+      "TERMINAL_CLOSURE"
+    ],
     "progress_reporting_allowed": false,
     "repair_or_dispatch_allowed": false,
     "terminal_sequence": [
@@ -53,6 +66,7 @@
   },
   "supervisor_wait": {
     "positive_timeout_allowed": false,
+    "any_positive_timeout_forbidden_regardless_of_loop": true,
     "loop_allowed": false,
     "wait_for_all_members_allowed": false,
     "snapshot_timeout_zero_allowed": true
@@ -79,7 +93,9 @@
     "worker_delivery_increments_accepted": false,
     "go_candidate_ready_equals_d2_verified": false,
     "split_increments_accepted": false,
-    "generic_completed_status_allowed": false
+    "generic_completed_status_allowed": false,
+    "material_milestone_requires_one_supervisor_progress": true,
+    "progress_trigger_binding_required": true
   },
   "cell_capacity": {
     "hard_rule_number": 6,
@@ -107,26 +123,35 @@
   },
   "thread_pin": {
     "hard_rule_number": 7,
-    "scope": "ALL_METHOD_ROLES",
-    "method_roles": [
+    "scope": "SLK_TECHNICAL_ROLES_PLUS_RUN_PATROL",
+    "technical_roles": [
       "SUPERVISOR_RESPONSIBILITY",
       "CHECKER_RESPONSIBILITY",
       "VERIFIER_RESPONSIBILITY",
-      "WORKER",
-      "RUN_PATROL",
-      "ROUTER",
-      "GRAPHER"
+      "WORKER"
     ],
-    "method_role_pin_allowed_by_default": false,
+    "technical_role_pin_allowed_by_default": false,
     "owner_manual_or_exact_authorization_only": true,
     "inferred_authorization_allowed": false,
-    "patrol_pin_or_unpin_allowed": false,
+    "run_patrol_pin_or_unpin_allowed": false,
     "pin_lifecycle_independent": true,
     "unauthorized_history_persists_after_unpin": true,
     "alerts": [
       "UNAUTHORIZED_THREAD_PIN",
       "PIN_PROVENANCE_UNKNOWN"
     ]
+  },
+  "runtime_index": {
+    "record_type": "RUN_RUNTIME_INDEX",
+    "scope": "ONE_BOUNDED_STRICTLY_SERIAL_RUN",
+    "implementation_kind": "METHOD_COMPLETENESS_INDEX_NOT_RUNTIME",
+    "every_dispatch_requires": [
+      "CELL_CAPACITY_GATE_PASS",
+      "WORKER_WAKE_TRACE",
+      "PROGRESS_TRACE_DELIVERY",
+      "CURRENT_COMPLETE_RUN_PATROL_RECEIPT"
+    ],
+    "missing_extra_duplicate_stale_or_scope_drift_fails_closed": true
   },
   "separate_verification_conversation": false,
   "blind_context_independence_claimed": false,

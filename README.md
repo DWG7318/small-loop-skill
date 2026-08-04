@@ -64,9 +64,12 @@ SLK 2.5.0 adds a Worker-only four-level Checker wake ladder, prohibits Superviso
 wait loops, derives layered progress from D1/D2 receipts, and uses exactly one
 non-authoritative Patrol. Supervisor freezes measurable device capacity and
 cumulative engineering load; only a pre-dispatch `CELL_CAPACITY_GATE` PASS permits
-work. Every method role defaults to task Pin denied; only proven Owner manual or
-exact item authorization is legal, and Patrol reports unknown/unauthorized Pins
-without automatically Unpinning.
+work. Workload maps `LOW→10`, `MEDIUM→15`, and `HIGH→30` Patrol minutes; every cycle
+proves the full minimum-error checklist. The Control responsibilities and Worker
+default to task Pin denied, while non-technical Patrol is denied separately. Every
+material verdict has one bound Supervisor progress update, and a lightweight
+`RUN_RUNTIME_INDEX` proves each dispatch has capacity, wake, progress, and Patrol
+evidence without becoming a Runtime.
 
 See [runtime control and progress](references/runtime-control-and-progress.md).
 

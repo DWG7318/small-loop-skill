@@ -4,6 +4,7 @@ status: PENDING
 run_id: ""
 go_id: ""
 cell_id: ""
+round_id: ""
 required_set_version: 0
 phase: PRE_DISPATCH
 device_capacity_profile_ref: {}

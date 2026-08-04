@@ -70,15 +70,66 @@ REQUIRED_SCENARIOS = {
     "AGENT_PIN_ALERTED",
     "UNKNOWN_PIN_NO_AUTO_UNPIN",
     "PIN_THEN_UNPIN_RETAINS_VIOLATION",
+    "EXTRA_SLK_ROLE_REJECTED",
+    "OUTSIDE_LOOP_SUPERVISOR_WAIT_REJECTED",
+    "SUPERVISOR_WAIT_LOOP_WAIT_ALL_REJECTED",
+    "PROGRESS_TRIGGER_BOUND",
+    "PATROL_COMPLETE_CHECKLIST",
+    "RUN_RUNTIME_INDEX_COMPLETE",
+    "PATROL_DIFFICULTY_INTERVAL_BOUND",
 }
-METHOD_PIN_ROLES = {
+SLK_TECHNICAL_ROLES = {
     "SUPERVISOR_RESPONSIBILITY",
     "CHECKER_RESPONSIBILITY",
     "VERIFIER_RESPONSIBILITY",
     "WORKER",
-    "RUN_PATROL",
-    "ROUTER",
-    "GRAPHER",
+}
+PIN_SUBJECT_ROLES = SLK_TECHNICAL_ROLES | {"RUN_PATROL"}
+WORKLOAD_INTERVALS = {"LOW": 10, "MEDIUM": 15, "HIGH": 30}
+PATROL_REQUIRED_CHECKS = {
+    "FORWARD_MOTION",
+    "PENDING_WAKE",
+    "SUBAGENT_EVIDENCE",
+    "SUPERVISOR_WAIT",
+    "PATROL_UNIQUENESS",
+    "THREAD_PIN",
+    "TERMINAL_CLOSURE",
+}
+PATROL_FINDINGS = {
+    "FORWARD_MOTION": {
+        "LEGAL_FORWARD_MOTION": ("NORMAL", ""),
+        "LEGITIMATE_PAUSE": ("NORMAL", ""),
+        "UNEXPLAINED_STALL": ("ALERT", "UNEXPLAINED_STALL"),
+    },
+    "PENDING_WAKE": {
+        "NO_PENDING_WAKE": ("NORMAL", ""),
+        "UNCONSUMED_PENDING_WAKE": ("ALERT", "PENDING_WAKE_UNCONSUMED"),
+    },
+    "SUBAGENT_EVIDENCE": {
+        "NO_SUBAGENT_EVIDENCE": ("NORMAL", ""),
+        "PROHIBITED_SUBAGENT_EVIDENCE": ("ALERT", "SUBAGENT_MISUSE"),
+    },
+    "SUPERVISOR_WAIT": {
+        "ZERO_SNAPSHOT_OR_NONE": ("NORMAL", ""),
+        "POSITIVE_WAIT": ("ALERT", "SUPERVISOR_WAIT_FORBIDDEN"),
+        "LOOPED_WAIT": ("ALERT", "SUPERVISOR_WAIT_FORBIDDEN"),
+        "WAIT_ALL": ("ALERT", "SUPERVISOR_WAIT_FORBIDDEN"),
+    },
+    "PATROL_UNIQUENESS": {
+        "UNIQUE_PATROL_AND_HEARTBEAT": ("NORMAL", ""),
+        "DUPLICATE_PATROL": ("ALERT", "DUPLICATE_PATROL"),
+        "DUPLICATE_HEARTBEAT": ("ALERT", "DUPLICATE_PATROL"),
+    },
+    "THREAD_PIN": {
+        "UNPINNED_OR_OWNER_PROVEN": ("NORMAL", ""),
+        "UNAUTHORIZED_THREAD_PIN": ("ALERT", "UNAUTHORIZED_THREAD_PIN"),
+        "PIN_PROVENANCE_UNKNOWN": ("ALERT", "PIN_PROVENANCE_UNKNOWN"),
+    },
+    "TERMINAL_CLOSURE": {
+        "RUN_NOT_TERMINAL": ("NORMAL", ""),
+        "PATROL_CLOSED": ("NORMAL", ""),
+        "TERMINAL_CLOSURE_MISSING": ("ALERT", "PATROL_NOT_CLOSED"),
+    },
 }
 PROHIBITED_PATROL_ACTIONS = {
     "create_thread",
@@ -194,8 +245,11 @@ def validate_run_runtime_contract(packet: dict) -> None:
         fail("SLK_RUNTIME_PATROL_UNIQUE", "exactly one Patrol and heartbeat are required")
     if patrol.get("model") != "gpt-5.6-luna" or patrol.get("reasoning_effort") != "xhigh":
         fail("SLK_RUNTIME_PATROL_MODEL", "Patrol requires gpt-5.6-luna + xhigh")
-    if patrol.get("interval_minutes") not in {10, 15, 30}:
-        fail("SLK_RUNTIME_PATROL_INTERVAL", "Patrol interval must be 10, 15, or 30")
+    workload_class = packet.get("workload_class")
+    if workload_class not in WORKLOAD_INTERVALS:
+        fail("SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL", "workload_class must be LOW, MEDIUM, or HIGH")
+    if patrol.get("interval_minutes") != WORKLOAD_INTERVALS[workload_class]:
+        fail("SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL", "Patrol interval must match frozen workload_class")
     text(patrol.get("conversation_id"), "SLK_RUNTIME_PATROL_UNIQUE", "patrol.conversation_id")
     expected_heartbeat = f"SLK-PATROL-{run_id}"
     if patrol.get("heartbeat_id") != expected_heartbeat:
@@ -272,14 +326,15 @@ def validate_run_runtime_contract(packet: dict) -> None:
         "SLK_RUNTIME_PIN_CAPABILITY_FORBIDDEN",
         "thread_pin_policy",
     )
-    if set(pin.get("method_roles", [])) != METHOD_PIN_ROLES:
-        fail("SLK_RUNTIME_PIN_CAPABILITY_FORBIDDEN", "every method role must be Pin-denied")
+    if set(pin.get("technical_roles", [])) != SLK_TECHNICAL_ROLES:
+        fail("SLK_RUNTIME_PIN_ROLE_INVALID", "SLK technical roles are Control responsibilities plus Worker")
     if (
-        pin.get("default_method_pin_allowed") is not False
+        pin.get("technical_role_pin_allowed_by_default") is not False
         or pin.get("set_thread_pinned_true_capability") != "DENIED"
         or pin.get("owner_manual_allowed") is not True
         or pin.get("owner_explicit_item_authorization_allowed") is not True
         or pin.get("inferred_authorization_allowed") is not False
+        or pin.get("patrol_pin_capability") != "DENIED"
         or pin.get("patrol_auto_unpin_allowed") is not False
         or pin.get("pin_lifecycle_independent") is not True
         or pin.get("unauthorized_history_persists_after_unpin") is not True
@@ -466,64 +521,101 @@ def validate_patrol(packet: dict) -> None:
         or packet.get("heartbeat_count") != 1
     ):
         fail("SLK_RUNTIME_PATROL_UNIQUE", "Patrol and heartbeat are unique per Run")
-    if packet.get("interval_minutes") not in {10, 15, 30}:
-        fail("SLK_RUNTIME_PATROL_INTERVAL", "invalid Patrol interval")
+    workload_class = packet.get("workload_class")
+    if workload_class not in WORKLOAD_INTERVALS:
+        fail("SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL", "Patrol workload_class is required")
+    if packet.get("interval_minutes") != WORKLOAD_INTERVALS[workload_class]:
+        fail("SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL", "Patrol interval must match workload_class")
+    cycle_id = text(
+        packet.get("patrol_cycle_id"),
+        "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE",
+        "patrol_cycle_id",
+    )
+    if not cycle_id.startswith(f"PATROL-{packet.get('run_id')}-CYCLE-"):
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "patrol_cycle_id must bind the Run")
     actions = sequence(packet.get("actions"), "SLK_RUNTIME_PATROL_ACTION_FORBIDDEN", "actions")
     if actions:
         fail("SLK_RUNTIME_PATROL_ACTION_FORBIDDEN", "Patrol may only observe and alert")
     if packet.get("engineering_progress_reported") is not False:
         fail("SLK_RUNTIME_PATROL_PROGRESS_FORBIDDEN", "Patrol cannot report engineering progress")
 
-    observation = mapping(packet.get("observation"), "SLK_RUNTIME_PATROL_OBSERVATION", "observation")
-    kind = observation.get("kind")
-    evidence_kind = observation.get("evidence_kind")
-    result = observation.get("result")
-    alert = observation.get("alert_code")
-    source = str(observation.get("source_text", ""))
-    explicit_fault = kind in {
-        "SUBAGENT_EVIDENCE",
-        "SUPERVISOR_WAIT",
-        "PENDING_WAKE",
-        "DUPLICATE_PATROL",
-    }
-    visible_peer = (
-        evidence_kind == "VISIBLE_PEER_TASK" or "子任务" in source
-    ) and not explicit_fault
-    legitimate_pause = (
-        packet.get("run_state")
-        in {"FORMALLY_PAUSED", "LEGAL_BLOCKED", "WAITING_EXTERNAL"}
-        and kind in {"NORMAL", "STALL"}
+    checklist = sequence(
+        packet.get("checklist"),
+        "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE",
+        "checklist",
     )
-    false_positive = visible_peer or legitimate_pause
-    if false_positive and (result != "NORMAL" or alert):
-        fail("SLK_RUNTIME_PATROL_FALSE_POSITIVE", "visible tasks and legitimate pauses are not subagents/stalls")
-    if kind == "SUBAGENT_EVIDENCE":
-        if evidence_kind not in SUBAGENT_EVIDENCE:
-            fail("SLK_RUNTIME_PATROL_FALSE_POSITIVE", "only explicit agent evidence is prohibited")
-        if result != "ALERT" or alert != "SUBAGENT_MISUSE":
-            fail("SLK_RUNTIME_PATROL_MISSED_ALERT", "subagent evidence requires fixed alert")
-    if kind == "SUPERVISOR_WAIT":
-        timeout_ms = integer(
-            observation.get("timeout_ms"),
-            "SLK_RUNTIME_PATROL_OBSERVATION",
-            "timeout_ms",
-        )
-        if timeout_ms > 0 and observation.get("inside_loop") is True:
-            if result != "ALERT" or alert != "SUPERVISOR_WAIT_FORBIDDEN":
-                fail("SLK_RUNTIME_PATROL_MISSED_ALERT", "positive Supervisor wait requires alert")
-    fixed_alerts = {
-        "STALL": "UNEXPLAINED_STALL",
-        "PENDING_WAKE": "PENDING_WAKE_UNCONSUMED",
-        "DUPLICATE_PATROL": "DUPLICATE_PATROL",
+    kinds = [item.get("check_kind") for item in checklist if isinstance(item, dict)]
+    if len(kinds) != len(set(kinds)):
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_DUPLICATE", "each check_kind appears once per cycle")
+    if set(kinds) != PATROL_REQUIRED_CHECKS:
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "every patrol cycle requires the fixed checklist")
+    expected_fields = {
+        "check_kind",
+        "finding",
+        "result",
+        "alert_code",
+        "timeout_ms",
+        "inside_loop",
+        "looped",
+        "wait_all",
+        "legitimate_reason_ref",
+        "evidence_refs",
     }
-    if kind in fixed_alerts and not false_positive:
-        if result != "ALERT" or alert != fixed_alerts[kind]:
-            fail("SLK_RUNTIME_PATROL_MISSED_ALERT", f"{kind} requires fixed alert")
+    by_kind: dict[str, dict] = {}
+    for raw in checklist:
+        item = mapping(raw, "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "patrol check")
+        if set(item) != expected_fields:
+            fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "free text cannot replace checklist fields")
+        kind = item["check_kind"]
+        finding = item.get("finding")
+        if finding not in PATROL_FINDINGS[kind]:
+            fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", f"invalid {kind} finding")
+        expected_result, expected_alert = PATROL_FINDINGS[kind][finding]
+        if item.get("result") != expected_result or item.get("alert_code") != expected_alert:
+            code = (
+                "SLK_RUNTIME_PATROL_FALSE_POSITIVE"
+                if expected_result == "NORMAL" and item.get("result") == "ALERT"
+                else "SLK_RUNTIME_PATROL_MISSED_ALERT"
+            )
+            fail(code, f"{kind}/{finding} requires {expected_result}/{expected_alert}")
+        integer(item.get("timeout_ms"), "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "timeout_ms")
+        for name in ("inside_loop", "looped", "wait_all"):
+            boolean(item.get(name), "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", name)
+        if not isinstance(item.get("legitimate_reason_ref"), str):
+            fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "legitimate_reason_ref must be text")
+        evidence(item.get("evidence_refs"), "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE")
+        by_kind[kind] = item
+
+    wait = by_kind["SUPERVISOR_WAIT"]
+    wait_fault = wait["timeout_ms"] > 0 or wait["looped"] or wait["wait_all"]
+    if wait_fault and wait["result"] != "ALERT":
+        fail("SLK_RUNTIME_PATROL_MISSED_ALERT", "any positive, looped, or wait-all Supervisor wait alerts")
+    if wait["finding"] == "POSITIVE_WAIT" and wait["timeout_ms"] <= 0:
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "POSITIVE_WAIT requires timeout_ms > 0")
+    if wait["finding"] == "LOOPED_WAIT" and wait["looped"] is not True:
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "LOOPED_WAIT requires looped=true")
+    if wait["finding"] == "WAIT_ALL" and wait["wait_all"] is not True:
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "WAIT_ALL requires wait_all=true")
+    if not wait_fault and wait["finding"] != "ZERO_SNAPSHOT_OR_NONE":
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "zero snapshot/absence is the only normal wait state")
+
+    forward = by_kind["FORWARD_MOTION"]
+    legitimate_state = packet.get("run_state") in {
+        "FORMALLY_PAUSED",
+        "LEGAL_BLOCKED",
+        "WAITING_EXTERNAL",
+    }
+    if legitimate_state:
+        if forward["finding"] != "LEGITIMATE_PAUSE" or not forward["legitimate_reason_ref"]:
+            fail("SLK_RUNTIME_PATROL_FALSE_POSITIVE", "legal pause/block/external wait needs reason evidence")
+    elif forward["finding"] == "LEGITIMATE_PAUSE":
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "LEGITIMATE_PAUSE requires a legal Run state")
     cleanup = mapping(
         packet.get("terminal_cleanup"),
         "SLK_RUNTIME_PATROL_NOT_CLOSED",
         "terminal_cleanup",
     )
+    terminal = by_kind["TERMINAL_CLOSURE"]
     if packet.get("run_state") == "LOOP_TERMINAL" or packet.get("status") == "PATROL_CLOSED":
         if packet.get("status") != "PATROL_CLOSED" or not all(
             cleanup.get(name) is True
@@ -534,6 +626,10 @@ def validate_patrol(packet: dict) -> None:
             )
         ):
             fail("SLK_RUNTIME_PATROL_NOT_CLOSED", "terminal order must delete heartbeat then archive")
+        if terminal["finding"] != "PATROL_CLOSED":
+            fail("SLK_RUNTIME_PATROL_NOT_CLOSED", "closed Patrol cycle must record PATROL_CLOSED")
+    elif terminal["finding"] != "RUN_NOT_TERMINAL":
+        fail("SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE", "non-terminal Run must record RUN_NOT_TERMINAL")
     evidence(packet.get("evidence_refs"))
 
 
@@ -587,10 +683,37 @@ def validate_progress(packet: dict) -> None:
     acknowledged: set[tuple[str, str, str]] = set()
     last_accepted: dict[int, set[str]] = {}
     last_verified: dict[int, set[str]] = {}
+    seen_events: dict[str, dict] = {}
+    material_trigger_ids: list[str] = []
+    supervisor_progress_by_trigger: dict[str, int] = {}
+    candidate_ready_by_go: dict[tuple[int, str], str] = {}
+    candidate_trigger_by_go: dict[tuple[int, str], tuple[str, str]] = {}
+    initial_required_set_version = min(required_sets)
+    amended_versions: set[int] = set()
     for expected_sequence, raw in enumerate(events, start=1):
         event = mapping(raw, "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH", "event")
         if event.get("sequence") != expected_sequence:
             fail("SLK_RUNTIME_PROGRESS_COUNT_MISMATCH", "event sequence must be contiguous")
+        event_id = text(
+            event.get("event_id"),
+            "SLK_RUNTIME_PROGRESS_TRIGGER_INVALID",
+            "event_id",
+        )
+        if event_id in seen_events:
+            fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "event_id must be unique")
+        trigger_id = event.get("trigger_event_id")
+        if expected_sequence == 1:
+            if trigger_id != "":
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "first progress event has no trigger")
+            trigger_event = None
+        else:
+            if not isinstance(trigger_id, str) or trigger_id not in seen_events:
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "trigger_event_id must name an earlier event")
+            trigger_event = seen_events[trigger_id]
+        trigger_receipt_id = event.get("trigger_receipt_id")
+        trigger_verdict = event.get("trigger_verdict")
+        if not isinstance(trigger_receipt_id, str) or trigger_verdict not in {"NONE", "PASS", "FAIL", "BLOCKED"}:
+            fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "trigger receipt/verdict binding is invalid")
         version = event.get("required_set_version")
         if version not in required_sets:
             fail("SLK_RUNTIME_PROGRESS_AMENDMENT_STALE", "event references unknown Required set")
@@ -616,6 +739,14 @@ def validate_progress(packet: dict) -> None:
             required=required_gos,
         )
         event_kind = event.get("event")
+        if version != initial_required_set_version and version not in amended_versions:
+            if event_kind != "AMENDMENT":
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "Required-set version must begin with its amendment progress")
+            if trigger_event is None or trigger_event.get("required_set_version") >= version:
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "amendment must follow an earlier Required-set version")
+            amended_versions.add(version)
+        elif event_kind == "AMENDMENT":
+            fail("SLK_RUNTIME_PROGRESS_MILESTONE_DUPLICATE", "Required-set amendment progress must be unique")
         prior_accepted = last_accepted.get(version, set())
         prior_verified = last_verified.get(version, set())
         new_accepted = accepted - prior_accepted
@@ -654,8 +785,10 @@ def validate_progress(packet: dict) -> None:
         audience = event.get("audience")
         if actor == "RUN_PATROL":
             fail("SLK_RUNTIME_PROGRESS_ROLE_FORBIDDEN", "Patrol cannot emit engineering progress")
-        if actor == "VERIFIER" and event_kind != "D2_VERIFIED":
+        if actor == "VERIFIER" and event_kind not in {"D2_VERIFIED", "RUN_VERIFIED"}:
             fail("SLK_RUNTIME_PROGRESS_ROLE_FORBIDDEN", "Verifier emits formal verdicts only")
+        if actor == "OWNER" and event_kind != "OWNER_ACCEPTED":
+            fail("SLK_RUNTIME_PROGRESS_ROLE_FORBIDDEN", "Owner emits Owner Acceptance only")
         if actor == "WORKER":
             if event_kind not in {"DELIVERED", "BLOCKED", "EXECUTION_FAILURE"} or audience != "CHECKER":
                 fail("SLK_RUNTIME_PROGRESS_ROLE_FORBIDDEN", "Worker only reports scoped delivery to Checker")
@@ -678,6 +811,67 @@ def validate_progress(packet: dict) -> None:
             milestones.add(milestone)
         elif event.get("milestone_id"):
             fail("SLK_RUNTIME_PROGRESS_NOISE", "milestone IDs belong only to GO boundary reports")
+
+        d1_ids = {
+            item.get("receipt_id") for item in event.get("current_d1_pass_receipts", [])
+        }
+        d1_receipt_members = {
+            item.get("receipt_id"): item.get("cell_id")
+            for item in event.get("current_d1_pass_receipts", [])
+        }
+        d2_ids = {
+            item.get("receipt_id") for item in event.get("current_d2_pass_receipts", [])
+        }
+        if event_kind in {"D1_ACCEPTED", "GO_CANDIDATE_READY"}:
+            if trigger_receipt_id not in d1_ids or trigger_verdict != "PASS":
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "D1/GO boundary requires current D1 PASS binding")
+            if event_kind == "D1_ACCEPTED" and new_accepted:
+                if d1_receipt_members.get(trigger_receipt_id) != event.get("cell_id"):
+                    fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "D1 event must bind its newly accepted CELL receipt")
+                if accepted == required_cells:
+                    candidate_trigger_by_go[(version, str(go_id))] = (
+                        event_id,
+                        trigger_receipt_id,
+                    )
+            if event_kind == "GO_CANDIDATE_READY":
+                key = (version, str(go_id))
+                if actor != "CHECKER" or audience != "SUPERVISOR":
+                    fail("SLK_RUNTIME_PROGRESS_ROLE_FORBIDDEN", "GO candidate is Checker-to-Supervisor only")
+                if key in candidate_ready_by_go:
+                    fail("SLK_RUNTIME_PROGRESS_MILESTONE_DUPLICATE", "GO candidate milestone must be unique")
+                if candidate_trigger_by_go.get(key) != (trigger_id, trigger_receipt_id):
+                    fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "GO candidate must follow the D1 event that completed its Required CELL set")
+                candidate_ready_by_go[key] = event_id
+        elif event_kind == "D2_VERIFIED":
+            if trigger_receipt_id not in d2_ids or trigger_verdict != "PASS":
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "D2 event requires current D2 PASS binding")
+            ready_id = candidate_ready_by_go.get((version, str(go_id)))
+            if not ready_id or trigger_id != ready_id:
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "D2 must follow the bound GO_CANDIDATE_READY")
+            material_trigger_ids.append(event_id)
+        elif event_kind in {"RUN_VERIFIED", "OWNER_ACCEPTED"}:
+            if not trigger_receipt_id or trigger_verdict != "PASS":
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "Run/Owner milestone requires formal PASS receipt")
+            material_trigger_ids.append(event_id)
+        elif event_kind == "GLOBAL_PROGRESS":
+            if actor != "SUPERVISOR" or audience != "OWNER" or trigger_event is None:
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "GLOBAL_PROGRESS is Supervisor-to-Owner")
+            if trigger_event.get("event") not in {"D2_VERIFIED", "RUN_VERIFIED", "OWNER_ACCEPTED"}:
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "GLOBAL_PROGRESS trigger is not a material verdict")
+            if (
+                trigger_receipt_id != trigger_event.get("trigger_receipt_id")
+                or trigger_verdict != trigger_event.get("trigger_verdict")
+            ):
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "GLOBAL_PROGRESS must bind the exact verdict receipt")
+            supervisor_progress_by_trigger[trigger_id] = (
+                supervisor_progress_by_trigger.get(trigger_id, 0) + 1
+            )
+        elif event_kind == "AMENDMENT":
+            if actor != "SUPERVISOR" or audience != "OWNER" or not trigger_receipt_id:
+                fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "amendment progress binds its versioned receipt")
+        elif trigger_receipt_id or trigger_verdict != "NONE":
+            fail("SLK_RUNTIME_PROGRESS_TRIGGER_INVALID", "non-verdict event cannot claim a verdict receipt")
+
         scope = (str(go_id), str(event.get("cell_id")), str(event.get("round_id")))
         if event_kind == "WAKE_ACK":
             if actor != "CHECKER":
@@ -690,6 +884,16 @@ def validate_progress(packet: dict) -> None:
                 fail("SLK_RUNTIME_PROGRESS_AMENDMENT_STALE", "amendment must use latest version and recompute")
         last_accepted[version] = accepted
         last_verified[version] = verified
+        seen_events[event_id] = event
+    for trigger_id in material_trigger_ids:
+        count = supervisor_progress_by_trigger.get(trigger_id, 0)
+        if count == 0:
+            fail("SLK_RUNTIME_PROGRESS_MILESTONE_MISSING", "material verdict lacks Supervisor progress")
+        if count != 1:
+            fail("SLK_RUNTIME_PROGRESS_MILESTONE_DUPLICATE", "material verdict has duplicate Supervisor progress")
+    missing_amendments = set(required_sets) - {initial_required_set_version} - amended_versions
+    if missing_amendments:
+        fail("SLK_RUNTIME_PROGRESS_MILESTONE_MISSING", "Required-set amendment progress is missing")
     evidence(packet.get("evidence_refs"))
 
 
@@ -784,6 +988,7 @@ def validate_cumulative_load(packet: dict) -> None:
 def validate_capacity_gate(packet: dict) -> None:
     if packet.get("status") != "DECIDED" or packet.get("phase") != "PRE_DISPATCH":
         fail("SLK_RUNTIME_CAPACITY_DISPATCH_FORBIDDEN", "capacity gate is pre-dispatch")
+    text(packet.get("round_id"), "SLK_RUNTIME_CAPACITY_UNKNOWN", "round_id")
     ref(packet.get("device_capacity_profile_ref"), "SLK_RUNTIME_CAPACITY_UNKNOWN", "device profile")
     ref(packet.get("cumulative_engineering_load_ref"), "SLK_RUNTIME_LOAD_STALE", "load")
     sha256(packet.get("go_outcome_sha256"), "SLK_RUNTIME_CAPACITY_SPLIT_INVALID", "go outcome")
@@ -935,8 +1140,8 @@ def validate_thread_pin_audit(packet: dict) -> None:
         fail("SLK_RUNTIME_PIN_AUDIT_INVALID", "Pin audit must be VALID")
     text(packet.get("run_id"), "SLK_RUNTIME_PIN_AUDIT_INVALID", "run_id")
     text(packet.get("task_thread_id"), "SLK_RUNTIME_PIN_AUDIT_INVALID", "task_thread_id")
-    if packet.get("task_role") not in METHOD_PIN_ROLES:
-        fail("SLK_RUNTIME_PIN_AUDIT_INVALID", "task_role is not a method role")
+    if packet.get("task_role") not in PIN_SUBJECT_ROLES:
+        fail("SLK_RUNTIME_PIN_ROLE_INVALID", "task_role is neither an SLK technical role nor Run Patrol")
     if packet.get("lifecycle_state") not in {
         "CREATED",
         "DISPATCHED",
@@ -1036,6 +1241,160 @@ def validate_thread_pin_audit(packet: dict) -> None:
     evidence(packet.get("evidence_refs"))
 
 
+def dispatch_scope(value: dict) -> tuple[str, str, str, str]:
+    return (
+        str(value.get("run_id")),
+        str(value.get("go_id")),
+        str(value.get("cell_id")),
+        str(value.get("round_id")),
+    )
+
+
+def validate_runtime_index(packet: dict) -> None:
+    if packet.get("status") != "COMPLETE":
+        fail("SLK_RUNTIME_INDEX_MISSING", "Run runtime index must be COMPLETE")
+    run_id = text(packet.get("run_id"), "SLK_RUNTIME_INDEX_SCOPE", "run_id")
+    integer(packet.get("index_version"), "SLK_RUNTIME_INDEX_STALE", "index_version", minimum=1)
+    contract = mapping(
+        packet.get("runtime_contract"),
+        "SLK_RUNTIME_INDEX_MISSING",
+        "runtime_contract",
+    )
+    if not contract:
+        fail("SLK_RUNTIME_INDEX_MISSING", "runtime_contract is required")
+    validate(contract)
+    if contract.get("record_type") != "RUN_RUNTIME_CONTRACT" or contract.get("run_id") != run_id:
+        fail("SLK_RUNTIME_INDEX_SCOPE", "runtime contract must bind the indexed Run")
+
+    dispatches = sequence(packet.get("dispatches"), "SLK_RUNTIME_INDEX_MISSING", "dispatches")
+    if not dispatches:
+        fail("SLK_RUNTIME_INDEX_MISSING", "at least one formal dispatch is required")
+    expected_dispatch_fields = {
+        "dispatch_id",
+        "run_id",
+        "go_id",
+        "cell_id",
+        "cell_ordinal",
+        "required_cell_total",
+        "round_id",
+        "required_set_version",
+    }
+    scopes: list[tuple[str, str, str, str]] = []
+    dispatch_by_scope: dict[tuple[str, str, str, str], dict] = {}
+    required = contract["required_sets"]
+    for raw in dispatches:
+        item = mapping(raw, "SLK_RUNTIME_INDEX_SCOPE", "dispatch")
+        if set(item) != expected_dispatch_fields:
+            fail("SLK_RUNTIME_INDEX_SCOPE", "dispatch fields are closed")
+        text(item.get("dispatch_id"), "SLK_RUNTIME_INDEX_SCOPE", "dispatch_id")
+        scope = dispatch_scope(item)
+        scopes.append(scope)
+        if item.get("run_id") != run_id:
+            fail("SLK_RUNTIME_INDEX_SCOPE", "dispatch Run scope mismatch")
+        if item.get("required_set_version") != required.get("version"):
+            fail("SLK_RUNTIME_INDEX_STALE", "dispatch Required-set version is stale")
+        cells = required.get("required_cells_by_go", {}).get(item.get("go_id"), [])
+        if item.get("cell_id") not in cells:
+            fail("SLK_RUNTIME_INDEX_SCOPE", "dispatch CELL is outside current Required set")
+        if (
+            item.get("required_cell_total") != len(cells)
+            or item.get("cell_ordinal") != cells.index(item.get("cell_id")) + 1
+        ):
+            fail("SLK_RUNTIME_INDEX_SCOPE", "dispatch ordinal/denominator mismatch")
+        dispatch_by_scope[scope] = item
+    if len(scopes) != len(set(scopes)) or len({item["dispatch_id"] for item in dispatches}) != len(dispatches):
+        fail("SLK_RUNTIME_INDEX_DUPLICATE", "dispatch scopes and IDs must be unique")
+    expected_scopes = set(scopes)
+
+    gates = sequence(packet.get("capacity_gates"), "SLK_RUNTIME_INDEX_MISSING", "capacity_gates")
+    if not gates:
+        fail("SLK_RUNTIME_INDEX_MISSING", "every dispatch requires a capacity gate")
+    gate_scopes: list[tuple[str, str, str, str]] = []
+    for raw in gates:
+        gate = mapping(raw, "SLK_RUNTIME_INDEX_SCOPE", "capacity gate")
+        validate(gate)
+        if gate.get("record_type") != "CELL_CAPACITY_GATE":
+            fail("SLK_RUNTIME_INDEX_SCOPE", "capacity_gates may contain only CELL_CAPACITY_GATE")
+        scope = dispatch_scope(gate)
+        if scope not in expected_scopes:
+            gate_scopes.append(scope)
+            continue
+        dispatch = dispatch_by_scope[scope]
+        if (
+            gate.get("required_set_version") != dispatch["required_set_version"]
+            or gate.get("decision", {}).get("outcome") != "PASS"
+            or gate.get("decision", {}).get("dispatch_allowed") is not True
+        ):
+            fail("SLK_RUNTIME_INDEX_STALE", "dispatch requires current capacity PASS")
+        gate_scopes.append(scope)
+    if len(gate_scopes) != len(set(gate_scopes)):
+        fail("SLK_RUNTIME_INDEX_DUPLICATE", "capacity gates must be unique per dispatch")
+    if len(gate_scopes) > len(expected_scopes):
+        fail("SLK_RUNTIME_INDEX_EXTRA", "unindexed capacity gate")
+    if set(gate_scopes) != expected_scopes:
+        code = "SLK_RUNTIME_INDEX_MISSING" if len(gate_scopes) < len(expected_scopes) else "SLK_RUNTIME_INDEX_SCOPE"
+        fail(code, "capacity gate scope set differs from dispatch set")
+
+    wakes = sequence(packet.get("wake_traces"), "SLK_RUNTIME_INDEX_MISSING", "wake_traces")
+    if not wakes:
+        fail("SLK_RUNTIME_INDEX_MISSING", "every dispatch requires a wake trace")
+    wake_scopes: list[tuple[str, str, str, str]] = []
+    wake_values: list[dict] = []
+    for raw in wakes:
+        wake = mapping(raw, "SLK_RUNTIME_INDEX_SCOPE", "wake trace")
+        if wake.get("record_type") != "WORKER_WAKE_TRACE":
+            fail("SLK_RUNTIME_INDEX_SCOPE", "wake_traces may contain only WORKER_WAKE_TRACE")
+        wake_values.append(wake)
+        scope = dispatch_scope(wake)
+        wake_scopes.append(scope)
+        if scope in dispatch_by_scope:
+            dispatch = dispatch_by_scope[scope]
+            if (
+                wake.get("cell_ordinal") != dispatch["cell_ordinal"]
+                or wake.get("required_cell_total") != dispatch["required_cell_total"]
+            ):
+                fail("SLK_RUNTIME_INDEX_SCOPE", "wake position differs from dispatch")
+    if len(wake_scopes) != len(set(wake_scopes)):
+        fail("SLK_RUNTIME_INDEX_DUPLICATE", "wake traces must be unique per dispatch")
+    if len(wake_scopes) > len(expected_scopes):
+        fail("SLK_RUNTIME_INDEX_EXTRA", "unindexed wake trace")
+    if set(wake_scopes) != expected_scopes:
+        code = "SLK_RUNTIME_INDEX_MISSING" if len(wake_scopes) < len(expected_scopes) else "SLK_RUNTIME_INDEX_SCOPE"
+        fail(code, "wake trace scope set differs from dispatch set")
+    for wake in wake_values:
+        validate(wake)
+
+    progress = mapping(packet.get("progress_trace"), "SLK_RUNTIME_INDEX_MISSING", "progress_trace")
+    if not progress:
+        fail("SLK_RUNTIME_INDEX_MISSING", "indexed progress trace is required")
+    validate(progress)
+    if progress.get("record_type") != "PROGRESS_TRACE" or progress.get("run_id") != run_id:
+        fail("SLK_RUNTIME_INDEX_SCOPE", "progress trace must bind the indexed Run")
+    delivery_scopes = [
+        dispatch_scope({**event, "run_id": run_id})
+        for event in progress.get("events", [])
+        if event.get("event") == "DELIVERED"
+    ]
+    if len(delivery_scopes) != len(set(delivery_scopes)):
+        fail("SLK_RUNTIME_INDEX_DUPLICATE", "delivery progress must be unique per dispatch")
+    if len(delivery_scopes) > len(expected_scopes):
+        fail("SLK_RUNTIME_INDEX_EXTRA", "unindexed Worker delivery progress")
+    if set(delivery_scopes) != expected_scopes:
+        fail("SLK_RUNTIME_INDEX_MISSING", "every dispatch requires matching Worker delivery progress")
+
+    patrols = sequence(packet.get("patrol_receipts"), "SLK_RUNTIME_INDEX_MISSING", "patrol_receipts")
+    if len(patrols) != 1:
+        code = "SLK_RUNTIME_INDEX_MISSING" if not patrols else "SLK_RUNTIME_INDEX_DUPLICATE"
+        fail(code, "index requires exactly one current Patrol cycle")
+    patrol = mapping(patrols[0], "SLK_RUNTIME_INDEX_SCOPE", "patrol receipt")
+    validate(patrol)
+    if patrol.get("record_type") != "RUN_PATROL_RECEIPT" or patrol.get("run_id") != run_id:
+        fail("SLK_RUNTIME_INDEX_SCOPE", "Patrol receipt must bind the indexed Run")
+    if patrol.get("workload_class") != contract.get("workload_class"):
+        fail("SLK_RUNTIME_INDEX_STALE", "Patrol workload class differs from runtime contract")
+    evidence(packet.get("evidence_refs"))
+
+
 VALIDATORS: dict[str, Callable[[dict], None]] = {
     "RUN_RUNTIME_CONTRACT": validate_run_runtime_contract,
     "DEVICE_CAPACITY_PROFILE": validate_device_capacity,
@@ -1048,6 +1407,7 @@ VALIDATORS: dict[str, Callable[[dict], None]] = {
     "PROGRESS_TRACE": validate_progress,
     "RUNTIME_SIMULATION": validate_simulation,
     "THREAD_PIN_AUDIT": validate_thread_pin_audit,
+    "RUN_RUNTIME_INDEX": validate_runtime_index,
 }
 
 

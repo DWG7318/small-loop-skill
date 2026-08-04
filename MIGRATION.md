@@ -8,13 +8,19 @@ D0-D3/Owner receipts, then freeze:
 - one `RUN_RUNTIME_CONTRACT` binding the original Control/Worker, Checker thread and
   host, Required sets, one Patrol conversation/heartbeat, and available wake
   capabilities;
-- one `gpt-5.6-luna` + `xhigh` Patrol with a 10/15/30-minute interval; Patrol is a
-  safeguard and receives no D0-D3, product, routing, progress, or Pin/Unpin authority;
+- one `gpt-5.6-luna` + `xhigh` Patrol with frozen
+  `LOW→10`/`MEDIUM→15`/`HIGH→30` interval and a complete per-cycle checklist;
+  Patrol is a safeguard and receives no D0-D3, product, routing, progress, or
+  Pin/Unpin authority;
 - Supervisor's no-positive-wait policy and Worker-only scoped wake ladder;
 - current receipt-derived progress snapshot and Required-set version;
 - versioned `DEVICE_CAPACITY_PROFILE`, `CUMULATIVE_ENGINEERING_LOAD`, and a
   pre-dispatch capacity gate for every undispatched CELL;
-- default-deny Pin policy for every method role plus current related-task Pin audits;
+- default-deny Pin policy for the three Control responsibilities and Worker, plus a
+  separately denied Patrol and current related-task Pin audits;
+- one `RUN_RUNTIME_INDEX` covering every formal RUN/GO/CELL/ROUND dispatch with a
+  capacity PASS bound to that Round, wake, delivery progress, and complete
+  Patrol-cycle evidence;
 - a complete `RUNTIME_SIMULATION` PASS with immutable evidence.
 
 If a pre-dispatch CELL splits, version and recompute the Required denominator without

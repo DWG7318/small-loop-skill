@@ -13,7 +13,8 @@
     {"$ref": "#/$defs/run_patrol_receipt"},
     {"$ref": "#/$defs/progress_trace"},
     {"$ref": "#/$defs/runtime_simulation"},
-    {"$ref": "#/$defs/thread_pin_audit"}
+    {"$ref": "#/$defs/thread_pin_audit"},
+    {"$ref": "#/$defs/run_runtime_index"}
   ],
   "$defs": {
     "text": {"type": "string", "minLength": 1},
@@ -85,7 +86,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "schema_version", "record_type", "status", "run_id", "baseline_ref",
+        "schema_version", "record_type", "status", "run_id", "workload_class", "baseline_ref",
         "formal_conversations", "patrol", "checker_binding",
         "worker_capabilities", "supervisor_wait", "required_sets",
         "device_capacity_profile_ref", "cumulative_engineering_load_ref",
@@ -96,6 +97,7 @@
         "record_type": {"const": "RUN_RUNTIME_CONTRACT"},
         "status": {"const": "READY"},
         "run_id": {"$ref": "#/$defs/text"},
+        "workload_class": {"enum": ["LOW", "MEDIUM", "HIGH"]},
         "baseline_ref": {"$ref": "#/$defs/hashed_ref"},
         "formal_conversations": {
           "type": "object",
@@ -179,32 +181,33 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "method_roles", "default_method_pin_allowed",
+            "technical_roles", "technical_role_pin_allowed_by_default",
             "set_thread_pinned_true_capability", "owner_manual_allowed",
             "owner_explicit_item_authorization_allowed",
-            "inferred_authorization_allowed", "patrol_auto_unpin_allowed",
+            "inferred_authorization_allowed", "patrol_pin_capability",
+            "patrol_auto_unpin_allowed",
             "pin_lifecycle_independent",
             "unauthorized_history_persists_after_unpin"
           ],
           "properties": {
-            "method_roles": {
+            "technical_roles": {
               "type": "array",
-              "minItems": 7,
-              "maxItems": 7,
+              "minItems": 4,
+              "maxItems": 4,
               "uniqueItems": true,
               "items": {
                 "enum": [
                   "SUPERVISOR_RESPONSIBILITY", "CHECKER_RESPONSIBILITY",
-                  "VERIFIER_RESPONSIBILITY", "WORKER", "RUN_PATROL",
-                  "ROUTER", "GRAPHER"
+                  "VERIFIER_RESPONSIBILITY", "WORKER"
                 ]
               }
             },
-            "default_method_pin_allowed": {"const": false},
+            "technical_role_pin_allowed_by_default": {"const": false},
             "set_thread_pinned_true_capability": {"const": "DENIED"},
             "owner_manual_allowed": {"const": true},
             "owner_explicit_item_authorization_allowed": {"const": true},
             "inferred_authorization_allowed": {"const": false},
+            "patrol_pin_capability": {"const": "DENIED"},
             "patrol_auto_unpin_allowed": {"const": false},
             "pin_lifecycle_independent": {"const": true},
             "unauthorized_history_persists_after_unpin": {"const": true}
@@ -456,7 +459,7 @@
       "additionalProperties": false,
       "required": [
         "schema_version", "record_type", "status", "run_id", "go_id",
-        "cell_id", "required_set_version", "phase",
+        "cell_id", "round_id", "required_set_version", "phase",
         "device_capacity_profile_ref", "cumulative_engineering_load_ref",
         "go_outcome_sha256", "acceptance_sha256", "estimate",
         "decision_inputs", "logical_parallelism", "decision",
@@ -469,6 +472,7 @@
         "run_id": {"$ref": "#/$defs/text"},
         "go_id": {"$ref": "#/$defs/text"},
         "cell_id": {"$ref": "#/$defs/text"},
+        "round_id": {"$ref": "#/$defs/text"},
         "required_set_version": {"$ref": "#/$defs/positive_integer"},
         "phase": {"const": "PRE_DISPATCH"},
         "device_capacity_profile_ref": {"$ref": "#/$defs/versioned_ref"},
@@ -696,27 +700,41 @@
         "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
       }
     },
-    "patrol_observation": {
+    "patrol_check": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "kind", "evidence_kind", "source_text", "timeout_ms",
-        "inside_loop", "result", "alert_code", "legitimate_reason_ref"
+        "check_kind", "finding", "result", "alert_code", "timeout_ms",
+        "inside_loop", "looped", "wait_all", "legitimate_reason_ref",
+        "evidence_refs"
       ],
       "properties": {
-        "kind": {
+        "check_kind": {
           "enum": [
-            "NORMAL", "STALL", "PENDING_WAKE", "SUBAGENT_EVIDENCE",
-            "SUPERVISOR_WAIT", "DUPLICATE_PATROL", "TERMINAL_CHECK"
+            "FORWARD_MOTION", "PENDING_WAKE", "SUBAGENT_EVIDENCE",
+            "SUPERVISOR_WAIT", "PATROL_UNIQUENESS", "THREAD_PIN",
+            "TERMINAL_CLOSURE"
           ]
         },
-        "evidence_kind": {"$ref": "#/$defs/text"},
-        "source_text": {"$ref": "#/$defs/text"},
+        "finding": {
+          "enum": [
+            "LEGAL_FORWARD_MOTION", "LEGITIMATE_PAUSE", "UNEXPLAINED_STALL",
+            "NO_PENDING_WAKE", "UNCONSUMED_PENDING_WAKE",
+            "NO_SUBAGENT_EVIDENCE", "PROHIBITED_SUBAGENT_EVIDENCE",
+            "ZERO_SNAPSHOT_OR_NONE", "POSITIVE_WAIT", "LOOPED_WAIT", "WAIT_ALL",
+            "UNIQUE_PATROL_AND_HEARTBEAT", "DUPLICATE_PATROL", "DUPLICATE_HEARTBEAT",
+            "UNPINNED_OR_OWNER_PROVEN", "UNAUTHORIZED_THREAD_PIN", "PIN_PROVENANCE_UNKNOWN",
+            "RUN_NOT_TERMINAL", "PATROL_CLOSED", "TERMINAL_CLOSURE_MISSING"
+          ]
+        },
         "timeout_ms": {"type": "integer", "minimum": 0},
         "inside_loop": {"type": "boolean"},
+        "looped": {"type": "boolean"},
+        "wait_all": {"type": "boolean"},
         "result": {"enum": ["NORMAL", "ALERT"]},
         "alert_code": {"type": "string"},
-        "legitimate_reason_ref": {"type": "string"}
+        "legitimate_reason_ref": {"type": "string"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
       }
     },
     "terminal_cleanup": {
@@ -736,10 +754,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "schema_version", "record_type", "status", "run_id", "actor",
+        "schema_version", "record_type", "status", "run_id", "patrol_cycle_id",
+        "workload_class", "actor",
         "model", "reasoning_effort", "authority", "conversation_id",
         "conversation_count", "heartbeat_id", "heartbeat_count",
-        "interval_minutes", "run_state", "observation", "actions",
+        "interval_minutes", "run_state", "checklist", "actions",
         "engineering_progress_reported", "terminal_cleanup", "evidence_refs"
       ],
       "properties": {
@@ -747,6 +766,8 @@
         "record_type": {"const": "RUN_PATROL_RECEIPT"},
         "status": {"enum": ["PENDING", "OBSERVED", "ALERT", "PATROL_CLOSED"]},
         "run_id": {"$ref": "#/$defs/text"},
+        "patrol_cycle_id": {"$ref": "#/$defs/text"},
+        "workload_class": {"enum": ["LOW", "MEDIUM", "HIGH"]},
         "actor": {"const": "RUN_PATROL"},
         "model": {"const": "gpt-5.6-luna"},
         "reasoning_effort": {"const": "xhigh"},
@@ -762,7 +783,12 @@
             "WAITING_EXTERNAL", "LOOP_TERMINAL"
           ]
         },
-        "observation": {"$ref": "#/$defs/patrol_observation"},
+        "checklist": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {"$ref": "#/$defs/patrol_check"}
+        },
         "actions": {"type": "array", "maxItems": 0},
         "engineering_progress_reported": {"const": false},
         "terminal_cleanup": {"$ref": "#/$defs/terminal_cleanup"},
@@ -813,7 +839,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "sequence", "event", "actor", "audience", "go_id", "go_ordinal",
+        "sequence", "event_id", "trigger_event_id", "trigger_receipt_id",
+        "trigger_verdict", "event", "actor", "audience", "go_id", "go_ordinal",
         "cell_id", "cell_ordinal", "round_id", "required_set_version",
         "required_cell_total", "required_go_total",
         "current_d1_pass_receipts", "current_d2_pass_receipts",
@@ -823,6 +850,10 @@
       ],
       "properties": {
         "sequence": {"$ref": "#/$defs/positive_integer"},
+        "event_id": {"$ref": "#/$defs/text"},
+        "trigger_event_id": {"type": "string"},
+        "trigger_receipt_id": {"type": "string"},
+        "trigger_verdict": {"enum": ["NONE", "PASS", "FAIL", "BLOCKED"]},
         "event": {
           "enum": [
             "DELIVERED", "WAKE_ACK", "CHECKING", "D1_ACCEPTED",
@@ -965,8 +996,7 @@
         "task_role": {
           "enum": [
             "SUPERVISOR_RESPONSIBILITY", "CHECKER_RESPONSIBILITY",
-            "VERIFIER_RESPONSIBILITY", "WORKER", "RUN_PATROL",
-            "ROUTER", "GRAPHER"
+            "VERIFIER_RESPONSIBILITY", "WORKER", "RUN_PATROL"
           ]
         },
         "lifecycle_state": {
@@ -991,6 +1021,64 @@
         "violation_history_retained": {"type": "boolean"},
         "pin_lifecycle_independent": {"const": true},
         "patrol": {"$ref": "#/$defs/pin_patrol_result"},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "runtime_dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dispatch_id", "run_id", "go_id", "cell_id", "cell_ordinal",
+        "required_cell_total", "round_id", "required_set_version"
+      ],
+      "properties": {
+        "dispatch_id": {"$ref": "#/$defs/text"},
+        "run_id": {"$ref": "#/$defs/text"},
+        "go_id": {"$ref": "#/$defs/text"},
+        "cell_id": {"$ref": "#/$defs/text"},
+        "cell_ordinal": {"$ref": "#/$defs/positive_integer"},
+        "required_cell_total": {"$ref": "#/$defs/positive_integer"},
+        "round_id": {"$ref": "#/$defs/text"},
+        "required_set_version": {"$ref": "#/$defs/positive_integer"}
+      }
+    },
+    "run_runtime_index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "index_version",
+        "runtime_contract", "dispatches", "capacity_gates", "wake_traces",
+        "progress_trace", "patrol_receipts", "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.5.0"},
+        "record_type": {"const": "RUN_RUNTIME_INDEX"},
+        "status": {"enum": ["PENDING", "COMPLETE"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "index_version": {"$ref": "#/$defs/positive_integer"},
+        "runtime_contract": {"$ref": "#/$defs/run_runtime_contract"},
+        "dispatches": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/runtime_dispatch"}
+        },
+        "capacity_gates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/cell_capacity_gate"}
+        },
+        "wake_traces": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/worker_wake_trace"}
+        },
+        "progress_trace": {"$ref": "#/$defs/progress_trace"},
+        "patrol_receipts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {"$ref": "#/$defs/run_patrol_receipt"}
+        },
         "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
       }
     }

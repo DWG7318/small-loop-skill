@@ -19,8 +19,10 @@ activates one of `SUPERVISOR_RESPONSIBILITY`, `CHECKER_RESPONSIBILITY`, or
 `VERIFIER_RESPONSIBILITY`; the Checker receiver is that same Control task while in
 Checker mode.
 
-Patrol uses `gpt-5.6-luna` with `xhigh`. The frozen project difficulty selects a
-10-, 15-, or 30-minute heartbeat. Duplicate Patrol tasks or heartbeats fail closed.
+Patrol uses `gpt-5.6-luna` with `xhigh`. Frozen workload class maps mechanically:
+`LOW→10`, `MEDIUM→15`, and `HIGH→30` minutes. This is capacity/difficulty binding,
+not a risk-frequency reinterpretation. Duplicate Patrol tasks or heartbeats fail
+closed.
 
 ## 2. Readiness
 
@@ -32,7 +34,8 @@ Before Worker dispatch, `RUN_RUNTIME_CONTRACT` must be `READY` and bind:
   upsert/delete, and `PENDING_WAKE` write capabilities as `AVAILABLE`;
 - Supervisor wait prohibition;
 - current device profile, cumulative load, and CELL capacity policy;
-- role-wide default-deny Pin policy.
+- default-deny Pin policy for the four SLK technical roles and, separately, Patrol;
+- frozen workload class and its exact Patrol interval.
 
 Missing, `PENDING`, unavailable, unknown, or contradictory readiness evidence blocks
 dispatch. `python scripts/validate_runtime_control.py <record.yaml>` validates one
@@ -83,22 +86,29 @@ The repository-owner task completion receipt remains the separate plain text
 
 ## 4. Supervisor wait
 
-Supervisor never performs positive-timeout `wait_threads`, never loops it, and never
-waits for all members. A `timeoutMs: 0` snapshot or `read_thread` is not a wait.
+Supervisor never performs positive-timeout `wait_threads`, even once or outside a
+loop; never loops it; and never waits for all members. A `timeoutMs: 0` snapshot or
+`read_thread` is not a wait.
 After dispatch/control, Supervisor ends its turn. Only Worker may perform the finite
 ACK waits above.
 
 ## 5. Run Patrol
 
-Patrol observes only:
+Every `patrol_cycle_id` contains every fixed check exactly once:
 
-- unexplained lack of legal forward motion;
-- unconsumed `PENDING_WAKE`;
-- explicit `spawn_agent`, `delegate_task`, hidden-Agent, or background-Agent evidence;
-- positive-timeout/looped Supervisor wait;
-- duplicate Patrol conversation or heartbeat;
-- related-task Pin state and available Pin-operation provenance;
-- Patrol still active after formal termination.
+| Check | Normal evidence | Fixed alert when present |
+|---|---|---|
+| `FORWARD_MOTION` | legal movement or evidenced pause/block/external wait | `UNEXPLAINED_STALL` |
+| `PENDING_WAKE` | no pending wake | `PENDING_WAKE_UNCONSUMED` |
+| `SUBAGENT_EVIDENCE` | no prohibited Agent evidence | `SUBAGENT_MISUSE` |
+| `SUPERVISOR_WAIT` | no wait or `timeoutMs:0` snapshot | `SUPERVISOR_WAIT_FORBIDDEN` |
+| `PATROL_UNIQUENESS` | one Patrol and heartbeat | `DUPLICATE_PATROL` |
+| `THREAD_PIN` | unpinned or proven Owner provenance | Pin fixed alert |
+| `TERMINAL_CLOSURE` | Run non-terminal or Patrol closed in order | `PATROL_NOT_CLOSED` |
+
+Each check has an enumerated finding/result, immutable evidence references, and its
+fixed alert when required. Missing, duplicate, free-text substitute, or missed alert
+fails closed.
 
 Formal pause, legal `BLOCKED`, waiting for external conditions, and visible peer
 tasks are normal when evidence binds the reason.
@@ -187,9 +197,19 @@ CELL numerator comes from current D1 PASS receipts. GO numerator comes from curr
 D2 PASS receipts. D3 and Owner Acceptance are separate. Verifier emits formal
 verdicts only; Patrol reports no engineering progress.
 
-Required-set amendments create a new version and recompute denominators/numerators
-from current receipts. History is immutable. A CELL split does not itself add
-accepted progress. Generic cross-layer “已完成” is forbidden; use:
+Every event has a unique `event_id` plus an earlier `trigger_event_id`, formal
+receipt/verdict binding where applicable, and immutable evidence. Each
+`D2_VERIFIED`, `RUN_VERIFIED`, and `OWNER_ACCEPTED` event requires exactly one later
+Supervisor-to-Owner `GLOBAL_PROGRESS` bound to that exact event and receipt.
+Verifier verdicts do not substitute for Supervisor progress. Missing, duplicate,
+wrong-order, or wrong-trigger progress fails closed. `GO_CANDIDATE_READY` remains the
+single Checker-to-Supervisor GO-boundary milestone.
+
+Each Required-set version after the initial set begins with exactly one ordered
+Supervisor-to-Owner `AMENDMENT` progress event bound to its versioned receipt; it
+recomputes denominators/numerators from current receipts. History is immutable. A
+CELL split does not itself add accepted progress. Generic cross-layer “已完成” is
+forbidden; use:
 
 ```text
 DELIVERED
@@ -251,18 +271,18 @@ splits version the Required set and recompute progress without adding acceptance
 
 ## 9. Owner-only task Pin authority
 
-All method roles default to denied for `set_thread_pinned(true)` and equivalent
-Pin capability:
+The SLK technical roles default to denied for `set_thread_pinned(true)` and
+equivalent Pin capability:
 
 ```text
 SUPERVISOR_RESPONSIBILITY
 CHECKER_RESPONSIBILITY
 VERIFIER_RESPONSIBILITY
 WORKER
-RUN_PATROL
-ROUTER
-GRAPHER
 ```
+
+`RUN_PATROL` is not a technical role; its Pin and Unpin capability is denied and
+validated separately.
 
 Task creation, dispatch, ACTIVE, wait, `BLOCKED`, rework, verification, milestone,
 importance, longevity, or frequent Owner viewing never grants authority. Pin is
@@ -287,12 +307,25 @@ UNAUTHORIZED_THREAD_PIN
 PIN_PROVENANCE_UNKNOWN
 ```
 
-## 10. Simulation and records
+## 10. Run runtime completeness index
+
+`RUN_RUNTIME_INDEX` is a versioned, lightweight completeness package, not a session
+Runtime. It embeds the current `RUN_RUNTIME_CONTRACT`, formal dispatch scopes,
+capacity gates, wake traces, one progress trace, and the current complete Patrol
+cycle. Every RUN/GO/CELL/ROUND dispatch scope must have exactly one current capacity
+`PASS` bound to that ROUND, matching wake trace, matching Worker delivery progress,
+and the unique current Patrol cycle.
+Missing, unindexed extra, duplicate, stale-version, or wrong-scope records fail
+closed.
+
+## 11. Simulation and records
 
 `RUNTIME_SIMULATION` must contain every version-required scenario exactly once with
 `PASS` and evidence. It includes all four wake outcomes, readiness failures,
 Supervisor wait, Patrol/subagent/terminal cases, layered counts/amendments, capacity
 growth/resource/split/deviation cases, and Pin authority/provenance/history cases.
+It also covers complete Patrol cycles, workload/interval mapping, event-triggered
+progress, extra-role rejection, and complete Run index packages.
 
 Blank templates remain `PENDING`. The validator uses explicit conditionals, not
 Python `assert`, so negative gates remain active under `python -O`.
@@ -313,6 +346,7 @@ templates/run-patrol-receipt.yaml
 templates/progress-trace.yaml
 templates/runtime-simulation.yaml
 templates/thread-pin-audit.yaml
+templates/run-runtime-index.yaml
 ```
 
 These records augment D0/D1 and existing Run control. They create no D4, new

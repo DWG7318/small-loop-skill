@@ -19,7 +19,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "420736a0d5cb006f28d055333c2ef4f4d7ab1f6eb7a31233a26daca6fe53e647"
+      "sha256": "97f6caa6e2f4a7f08e466a62736a7372c8b80e18696d45810fb2da042748d318"
     },
     {
       "path": "LICENSE",
@@ -27,27 +27,27 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "4ac9a8eb73154d780a6d3987eef1f49dac3c1f7edb08fb8a14b250985a456ed7"
+      "sha256": "8c8d688353cecb339fd0b2c6a8b352c262cf4161fa2d153bd44a2e608c2071ac"
     },
     {
       "path": "README.md",
-      "sha256": "b8cb052fa10a1845633492f43aec1b4934bfd9ce688936291f4326dba687bd44"
+      "sha256": "f9110a8453b9341c3b171ea9ea8c883799f4518483df8b45888f307fe3473634"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "01a746dbd7625c5163a58b7fc31b99e746184edbb560fde195c33be8f8c3004d"
+      "sha256": "b5dd338c9175a37477c6a5645bbc4e7fbb60e96f50133c68746f8328328ae15b"
     },
     {
       "path": "SKILL.md",
-      "sha256": "0662283ed8d48ab41789327ea40e148f4c757ba3dd93449d4e7490a6b31e415e"
+      "sha256": "72cc668fa0e417fc4158af575c3c772673bf1cfa6305ae021ea9c9bba86c6ca8"
     },
     {
       "path": "SPEC.md",
-      "sha256": "4cc013e0c7f5a0fa8d767377162a9abefe710eadafb92095ea9feab9707fcee1"
+      "sha256": "9bd774ba592ef79c9b6d22733e506dff9e10f1c0f4ba13a51bd2c39213ebe88d"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "ea32773403ac8cee961e42934b8797b1c1fa85e0aca5a87a6927e656fa1bc3d0"
+      "sha256": "e51c7f78ae01efb2cbc277c400ac6ae184b6a2357ef72fe018402f4bae648910"
     },
     {
       "path": "VERSION",
@@ -55,15 +55,15 @@
     },
     {
       "path": "agents/openai.yaml",
-      "sha256": "40450a8129a89d05c385283ce3b75529011a2e3de758a0cc8e2078c819958d03"
+      "sha256": "86288742a5e30c097bb95047912457f2994628f725f48edf2208606cdd5a14a3"
     },
     {
       "path": "contracts/slk-control-kernel.json",
-      "sha256": "611784e15932717afa55705ffdb4157674689363eb5b56f7f2e4eed54bee23b4"
+      "sha256": "1a226771403d1f27933e33953bdc97ea21b1b1f44d26a9f65db03a3eb13d8165"
     },
     {
       "path": "contracts/slk-runtime-control.schema.json",
-      "sha256": "a0a7edafdd108b4ea38dbc717c546eb2b888a9db18f9246da682425c103d00f5"
+      "sha256": "d8247f384bbedb716c8a6c731d804d7640a97e11a75e91f239335dff64a9ffac"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -75,11 +75,11 @@
     },
     {
       "path": "docs/superpowers/plans/2026-08-04-slk-2.5.0-worker-wake-patrol.md",
-      "sha256": "6c7d12c40235be1e20e47076c363003447cdcf0a33d58b698ee67630b63f6771"
+      "sha256": "66e69e96c0348b48dcfa98cf51052b076ccc214767dc2fba7e6d7dd1c1afd582"
     },
     {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
-      "sha256": "3032ff7219d8f7931ad62b92e99deb581ecf592798327d50d5aa16a427df9338"
+      "sha256": "d26a2d488e8ac2159750b332d8eb1bd02a1187aa9143f0e75a105ad8b601dcfd"
     },
     {
       "path": "examples/minimal-run/README.md",
@@ -119,7 +119,7 @@
     },
     {
       "path": "references/runtime-control-and-progress.md",
-      "sha256": "a5c360404c6b3724b584a8296eb5d48aad2c22fb4f955e55e33524473719966f"
+      "sha256": "46798969ca2db5227acc10663f116a09eee03f90f7bfba896f277895d613e761"
     },
     {
       "path": "references/security-boundary.md",
@@ -143,7 +143,7 @@
     },
     {
       "path": "scripts/validate_runtime_control.py",
-      "sha256": "d580226de8d88f4a08a446d015d444af66ada8beb9654e2e475cc0fdcf58c6db"
+      "sha256": "d5cbad2010652ec917f293f997b2398bae77f5b9ae63b2076db9029409e9fa82"
     },
     {
       "path": "scripts/validate_serial_plan.py",
@@ -151,19 +151,19 @@
     },
     {
       "path": "small-loop-skill/SKILL.md",
-      "sha256": "0662283ed8d48ab41789327ea40e148f4c757ba3dd93449d4e7490a6b31e415e"
+      "sha256": "72cc668fa0e417fc4158af575c3c772673bf1cfa6305ae021ea9c9bba86c6ca8"
     },
     {
       "path": "small-loop-skill/SPEC.md",
-      "sha256": "4cc013e0c7f5a0fa8d767377162a9abefe710eadafb92095ea9feab9707fcee1"
+      "sha256": "9bd774ba592ef79c9b6d22733e506dff9e10f1c0f4ba13a51bd2c39213ebe88d"
     },
     {
       "path": "small-loop-skill/contracts/slk-control-kernel.json",
-      "sha256": "611784e15932717afa55705ffdb4157674689363eb5b56f7f2e4eed54bee23b4"
+      "sha256": "1a226771403d1f27933e33953bdc97ea21b1b1f44d26a9f65db03a3eb13d8165"
     },
     {
       "path": "small-loop-skill/contracts/slk-runtime-control.schema.json",
-      "sha256": "a0a7edafdd108b4ea38dbc717c546eb2b888a9db18f9246da682425c103d00f5"
+      "sha256": "d8247f384bbedb716c8a6c731d804d7640a97e11a75e91f239335dff64a9ffac"
     },
     {
       "path": "small-loop-skill/references/amendment-and-rework.md",
@@ -187,7 +187,7 @@
     },
     {
       "path": "small-loop-skill/references/runtime-control-and-progress.md",
-      "sha256": "a5c360404c6b3724b584a8296eb5d48aad2c22fb4f955e55e33524473719966f"
+      "sha256": "46798969ca2db5227acc10663f116a09eee03f90f7bfba896f277895d613e761"
     },
     {
       "path": "small-loop-skill/references/security-boundary.md",
@@ -207,7 +207,7 @@
     },
     {
       "path": "small-loop-skill/scripts/validate_runtime_control.py",
-      "sha256": "d580226de8d88f4a08a446d015d444af66ada8beb9654e2e475cc0fdcf58c6db"
+      "sha256": "d5cbad2010652ec917f293f997b2398bae77f5b9ae63b2076db9029409e9fa82"
     },
     {
       "path": "small-loop-skill/scripts/validate_serial_plan.py",
@@ -223,7 +223,7 @@
     },
     {
       "path": "small-loop-skill/templates/cell-capacity-gate.yaml",
-      "sha256": "4cddf768cf71d671715d8b5564d061889f453131308b14c84a5ff2dbac0ba156"
+      "sha256": "026e740ff040e1d14dea13cf2b8db9d8946fe090f886ec185d03141b4ac32f02"
     },
     {
       "path": "small-loop-skill/templates/cell-contract.yaml",
@@ -271,15 +271,19 @@
     },
     {
       "path": "small-loop-skill/templates/run-contract.yaml",
-      "sha256": "496976da43c1f36709b4ad14ab98b1f64af2262440d3c9540a83a601b7bb97f7"
+      "sha256": "a23e3ee73290c865b5d74df2ee52f94ef90391dae8ce027cf9ec9c531ae69b7c"
     },
     {
       "path": "small-loop-skill/templates/run-patrol-receipt.yaml",
-      "sha256": "431d05e95b95b55534a1c62f922c8c12229bc601ff1c48d8b7d2003748dac813"
+      "sha256": "21b76899ea43ba156b4d25a03e519bd84bab892e6c6e4b3d18013755b3204ea0"
     },
     {
       "path": "small-loop-skill/templates/run-runtime-contract.yaml",
-      "sha256": "756b5c593f5bf3a2249c418abcc891107c46eb195afff4b8c7e6734b706defce"
+      "sha256": "c8e063c157fcfba3ff3d38a4f4ea50f37d53d05837d3b510babee3d27b65245e"
+    },
+    {
+      "path": "small-loop-skill/templates/run-runtime-index.yaml",
+      "sha256": "aa23b9b78eb6297bacd0abc00a92ad77108824d9ba20359fa5fdddf37eeb4b38"
     },
     {
       "path": "small-loop-skill/templates/runtime-simulation.yaml",
@@ -311,7 +315,7 @@
     },
     {
       "path": "templates/cell-capacity-gate.yaml",
-      "sha256": "4cddf768cf71d671715d8b5564d061889f453131308b14c84a5ff2dbac0ba156"
+      "sha256": "026e740ff040e1d14dea13cf2b8db9d8946fe090f886ec185d03141b4ac32f02"
     },
     {
       "path": "templates/cell-contract.yaml",
@@ -359,15 +363,19 @@
     },
     {
       "path": "templates/run-contract.yaml",
-      "sha256": "496976da43c1f36709b4ad14ab98b1f64af2262440d3c9540a83a601b7bb97f7"
+      "sha256": "a23e3ee73290c865b5d74df2ee52f94ef90391dae8ce027cf9ec9c531ae69b7c"
     },
     {
       "path": "templates/run-patrol-receipt.yaml",
-      "sha256": "431d05e95b95b55534a1c62f922c8c12229bc601ff1c48d8b7d2003748dac813"
+      "sha256": "21b76899ea43ba156b4d25a03e519bd84bab892e6c6e4b3d18013755b3204ea0"
     },
     {
       "path": "templates/run-runtime-contract.yaml",
-      "sha256": "756b5c593f5bf3a2249c418abcc891107c46eb195afff4b8c7e6734b706defce"
+      "sha256": "c8e063c157fcfba3ff3d38a4f4ea50f37d53d05837d3b510babee3d27b65245e"
+    },
+    {
+      "path": "templates/run-runtime-index.yaml",
+      "sha256": "aa23b9b78eb6297bacd0abc00a92ad77108824d9ba20359fa5fdddf37eeb4b38"
     },
     {
       "path": "templates/runtime-simulation.yaml",
@@ -395,7 +403,7 @@
     },
     {
       "path": "tests/test_contract.py",
-      "sha256": "34e9d6e692f407d937357e98f026ed7efe0f1ededc0b9cf1ab26650cd625d052"
+      "sha256": "0ac1c579cfd32434af4bd8b690f892de752892653667811ab1010f25cda6e4a4"
     },
     {
       "path": "tests/test_repository_validator.py",
@@ -403,7 +411,7 @@
     },
     {
       "path": "tests/test_runtime_control.py",
-      "sha256": "64ff2cca33e5021e760c05a63bddba44cb0df833571c2548b254394e9f2d48cc"
+      "sha256": "be42a24747cd63c03c40061966d1faa19026bef402c08e9aeff677b5d38cadb3"
     },
     {
       "path": "tests/test_serial_plan_validator.py",

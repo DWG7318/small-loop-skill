@@ -55,17 +55,31 @@ REQUIRED_SIMULATION_SCENARIOS = {
     "AGENT_PIN_ALERTED",
     "UNKNOWN_PIN_NO_AUTO_UNPIN",
     "PIN_THEN_UNPIN_RETAINS_VIOLATION",
+    "EXTRA_SLK_ROLE_REJECTED",
+    "OUTSIDE_LOOP_SUPERVISOR_WAIT_REJECTED",
+    "SUPERVISOR_WAIT_LOOP_WAIT_ALL_REJECTED",
+    "PROGRESS_TRIGGER_BOUND",
+    "PATROL_COMPLETE_CHECKLIST",
+    "RUN_RUNTIME_INDEX_COMPLETE",
+    "PATROL_DIFFICULTY_INTERVAL_BOUND",
 }
 
-METHOD_PIN_ROLES = [
+SLK_TECHNICAL_ROLES = [
     "SUPERVISOR_RESPONSIBILITY",
     "CHECKER_RESPONSIBILITY",
     "VERIFIER_RESPONSIBILITY",
     "WORKER",
-    "RUN_PATROL",
-    "ROUTER",
-    "GRAPHER",
 ]
+
+PATROL_CHECK_KINDS = {
+    "FORWARD_MOTION",
+    "PENDING_WAKE",
+    "SUBAGENT_EVIDENCE",
+    "SUPERVISOR_WAIT",
+    "PATROL_UNIQUENESS",
+    "THREAD_PIN",
+    "TERMINAL_CLOSURE",
+}
 
 
 def run_record(
@@ -114,6 +128,7 @@ def runtime_contract() -> dict:
         "record_type": "RUN_RUNTIME_CONTRACT",
         "status": "READY",
         "run_id": "RUN-001",
+        "workload_class": "MEDIUM",
         "baseline_ref": {"id": "SB-001", "version": 1, "sha256": "a" * 64},
         "formal_conversations": {
             "CONTROL": "thread-control",
@@ -164,12 +179,13 @@ def runtime_contract() -> dict:
             "worker_self_split_allowed": False,
         },
         "thread_pin_policy": {
-            "method_roles": METHOD_PIN_ROLES,
-            "default_method_pin_allowed": False,
+            "technical_roles": SLK_TECHNICAL_ROLES,
+            "technical_role_pin_allowed_by_default": False,
             "set_thread_pinned_true_capability": "DENIED",
             "owner_manual_allowed": True,
             "owner_explicit_item_authorization_allowed": True,
             "inferred_authorization_allowed": False,
+            "patrol_pin_capability": "DENIED",
             "patrol_auto_unpin_allowed": False,
             "pin_lifecycle_independent": True,
             "unauthorized_history_persists_after_unpin": True,
@@ -356,12 +372,44 @@ def pending_wake() -> dict:
     }
 
 
+def patrol_check(check_kind: str) -> dict:
+    findings = {
+        "FORWARD_MOTION": "LEGAL_FORWARD_MOTION",
+        "PENDING_WAKE": "NO_PENDING_WAKE",
+        "SUBAGENT_EVIDENCE": "NO_SUBAGENT_EVIDENCE",
+        "SUPERVISOR_WAIT": "ZERO_SNAPSHOT_OR_NONE",
+        "PATROL_UNIQUENESS": "UNIQUE_PATROL_AND_HEARTBEAT",
+        "THREAD_PIN": "UNPINNED_OR_OWNER_PROVEN",
+        "TERMINAL_CLOSURE": "RUN_NOT_TERMINAL",
+    }
+    return {
+        "check_kind": check_kind,
+        "finding": findings[check_kind],
+        "result": "NORMAL",
+        "alert_code": "",
+        "timeout_ms": 0,
+        "inside_loop": False,
+        "looped": False,
+        "wait_all": False,
+        "legitimate_reason_ref": "",
+        "evidence_refs": [f"evidence/patrol-{check_kind.lower()}.txt"],
+    }
+
+
+def patrol_item(packet: dict, check_kind: str) -> dict:
+    return next(
+        item for item in packet["checklist"] if item["check_kind"] == check_kind
+    )
+
+
 def patrol_receipt() -> dict:
     return {
         "schema_version": "2.5.0",
         "record_type": "RUN_PATROL_RECEIPT",
         "status": "OBSERVED",
         "run_id": "RUN-001",
+        "patrol_cycle_id": "PATROL-RUN-001-CYCLE-001",
+        "workload_class": "MEDIUM",
         "actor": "RUN_PATROL",
         "model": "gpt-5.6-luna",
         "reasoning_effort": "xhigh",
@@ -372,16 +420,7 @@ def patrol_receipt() -> dict:
         "heartbeat_count": 1,
         "interval_minutes": 15,
         "run_state": "RUNNING",
-        "observation": {
-            "kind": "NORMAL",
-            "evidence_kind": "LEGAL_FORWARD_MOTION",
-            "source_text": "GO-01 active",
-            "timeout_ms": 0,
-            "inside_loop": False,
-            "result": "NORMAL",
-            "alert_code": "",
-            "legitimate_reason_ref": "",
-        },
+        "checklist": [patrol_check(kind) for kind in sorted(PATROL_CHECK_KINDS)],
         "actions": [],
         "engineering_progress_reported": False,
         "terminal_cleanup": {
@@ -410,6 +449,10 @@ def progress_event(
 ) -> dict:
     return {
         "sequence": sequence,
+        "event_id": f"PE-{sequence:03d}",
+        "trigger_event_id": f"PE-{sequence - 1:03d}" if sequence > 1 else "",
+        "trigger_receipt_id": "",
+        "trigger_verdict": "NONE",
         "event": event,
         "actor": actor,
         "audience": audience,
@@ -433,6 +476,28 @@ def progress_event(
         "recomputed": False,
         "evidence_refs": [f"evidence/progress-{sequence}.txt"],
     }
+
+
+def bind_progress_events(packet: dict) -> None:
+    for index, event in enumerate(packet["events"], start=1):
+        event["sequence"] = index
+        event["event_id"] = f"PE-{index:03d}"
+        event["trigger_event_id"] = f"PE-{index - 1:03d}" if index > 1 else ""
+        event["trigger_receipt_id"] = ""
+        event["trigger_verdict"] = "NONE"
+        if event["event"] in {"D1_ACCEPTED", "GO_CANDIDATE_READY"}:
+            receipts = event["current_d1_pass_receipts"]
+            if receipts:
+                event["trigger_receipt_id"] = receipts[-1]["receipt_id"]
+                event["trigger_verdict"] = "PASS"
+        if event["event"] in {"D2_VERIFIED", "GLOBAL_PROGRESS"}:
+            receipts = event["current_d2_pass_receipts"]
+            if receipts:
+                event["trigger_receipt_id"] = receipts[-1]["receipt_id"]
+                event["trigger_verdict"] = "PASS"
+        if event["event"] == "AMENDMENT":
+            event["trigger_receipt_id"] = "AMENDMENT-001"
+            event["trigger_verdict"] = "PASS"
 
 
 def d1(receipt_id: str, cell_id: str) -> dict:
@@ -461,7 +526,7 @@ def progress_trace() -> dict:
     d1_one = d1("D1-001", "CELL-01.01")
     d1_two = d1("D1-002", "CELL-01.02")
     d2_one = d2("D2-001", "GO-01")
-    return {
+    packet = {
         "schema_version": "2.5.0",
         "record_type": "PROGRESS_TRACE",
         "status": "VALID",
@@ -563,6 +628,53 @@ def progress_trace() -> dict:
         ],
         "evidence_refs": ["evidence/progress-trace.txt"],
     }
+    bind_progress_events(packet)
+    return packet
+
+
+def progress_trace_with_run_milestones() -> dict:
+    packet = progress_trace()
+    latest = copy.deepcopy(packet["events"][-1])
+    specs = [
+        ("RUN_VERIFIED", "VERIFIER", "SUPERVISOR", "D3 PASS RUN-001"),
+        (
+            "GLOBAL_PROGRESS",
+            "SUPERVISOR",
+            "OWNER",
+            "RequiredSet v1；D3=PASS；Owner=PENDING",
+        ),
+        ("OWNER_ACCEPTED", "OWNER", "SUPERVISOR", "OWNER_ACCEPTED RUN-001"),
+        (
+            "GLOBAL_PROGRESS",
+            "SUPERVISOR",
+            "OWNER",
+            "RequiredSet v1；D3=PASS；Owner=OWNER_ACCEPTED",
+        ),
+    ]
+    for event, actor, audience, message in specs:
+        item = copy.deepcopy(latest)
+        item.update(
+            {
+                "event": event,
+                "actor": actor,
+                "audience": audience,
+                "status": event,
+                "message": message,
+                "d3_state": "PASS",
+                "owner_acceptance_state": (
+                    "OWNER_ACCEPTED"
+                    if event == "OWNER_ACCEPTED" or "Owner=OWNER_ACCEPTED" in message
+                    else "PENDING"
+                ),
+                "milestone_id": "",
+            }
+        )
+        packet["events"].append(item)
+    bind_progress_events(packet)
+    for index, receipt_id in ((8, "D3-001"), (9, "D3-001"), (10, "OWNER-001"), (11, "OWNER-001")):
+        packet["events"][index]["trigger_receipt_id"] = receipt_id
+        packet["events"][index]["trigger_verdict"] = "PASS"
+    return packet
 
 
 def device_capacity_profile() -> dict:
@@ -646,6 +758,7 @@ def capacity_gate(*, outcome: str = "PASS", load_version: int = 1) -> dict:
         "run_id": "RUN-001",
         "go_id": "GO-01",
         "cell_id": "CELL-01.01",
+        "round_id": "R01",
         "required_set_version": load_version,
         "phase": "PRE_DISPATCH",
         "device_capacity_profile_ref": {"id": "DCP-RUN-001", "version": 1},
@@ -853,7 +966,7 @@ def test_runtime_contract_rejects_duplicate_or_misbound_patrol(
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_MODEL")
     packet = runtime_contract()
     packet["patrol"]["interval_minutes"] = 20
-    assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_INTERVAL")
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL")
 
 
 def test_runtime_contract_rejects_checker_or_supervisor_wait_drift(
@@ -1034,44 +1147,48 @@ def test_blocked_and_execution_failure_keep_worker_scope(tmp_path: Path) -> None
 def test_patrol_normal_pause_and_visible_subtask_are_not_alerts(
     tmp_path: Path,
 ) -> None:
-    packet = patrol_receipt()
-    packet["run_state"] = "FORMALLY_PAUSED"
-    packet["observation"].update(
-        {
-            "kind": "NORMAL",
-            "evidence_kind": "VISIBLE_PEER_TASK",
-            "source_text": "子任务 GO-01/CELL-01.01 is paused by contract",
-            "result": "NORMAL",
-            "legitimate_reason_ref": "pause/PAUSE-001",
-        }
-    )
-    assert_pass(tmp_path, packet)
-    packet["observation"]["result"] = "ALERT"
-    packet["observation"]["alert_code"] = "SUBAGENT_MISUSE"
-    assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_FALSE_POSITIVE")
+    for run_state in ("FORMALLY_PAUSED", "LEGAL_BLOCKED", "WAITING_EXTERNAL"):
+        packet = patrol_receipt()
+        packet["run_state"] = run_state
+        forward = patrol_item(packet, "FORWARD_MOTION")
+        forward.update(
+            {
+                "finding": "LEGITIMATE_PAUSE",
+                "result": "NORMAL",
+                "legitimate_reason_ref": "pause/PAUSE-001",
+            }
+        )
+        assert_pass(tmp_path, packet)
+        forward["result"] = "ALERT"
+        forward["alert_code"] = "UNEXPLAINED_STALL"
+        assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_FALSE_POSITIVE")
 
 
 def test_patrol_detects_subagent_and_supervisor_wait_evidence(
     tmp_path: Path,
 ) -> None:
     packet = patrol_receipt()
-    packet["observation"].update(
+    subagent = patrol_item(packet, "SUBAGENT_EVIDENCE")
+    subagent.update(
         {
-            "kind": "SUBAGENT_EVIDENCE",
-            "evidence_kind": "spawn_agent",
-            "source_text": "spawn_agent called",
+            "finding": "PROHIBITED_SUBAGENT_EVIDENCE",
             "result": "ALERT",
             "alert_code": "SUBAGENT_MISUSE",
         }
     )
     packet["run_state"] = "FORMALLY_PAUSED"
+    patrol_item(packet, "FORWARD_MOTION").update(
+        {
+            "finding": "LEGITIMATE_PAUSE",
+            "legitimate_reason_ref": "pause/PAUSE-001",
+        }
+    )
     assert_pass(tmp_path, packet)
     packet = patrol_receipt()
-    packet["observation"].update(
+    wait = patrol_item(packet, "SUPERVISOR_WAIT")
+    wait.update(
         {
-            "kind": "SUPERVISOR_WAIT",
-            "evidence_kind": "wait_threads",
-            "source_text": "Supervisor wait_threads timeoutMs=120000",
+            "finding": "POSITIVE_WAIT",
             "timeout_ms": 120000,
             "inside_loop": True,
             "result": "ALERT",
@@ -1079,8 +1196,8 @@ def test_patrol_detects_subagent_and_supervisor_wait_evidence(
         }
     )
     assert_pass(tmp_path, packet)
-    packet["observation"]["result"] = "NORMAL"
-    packet["observation"]["alert_code"] = ""
+    wait["result"] = "NORMAL"
+    wait["alert_code"] = ""
     assert_reject(
         tmp_path,
         packet,
@@ -1093,24 +1210,23 @@ def test_patrol_detects_stall_pending_wake_and_duplicate_patrol(
     tmp_path: Path,
 ) -> None:
     cases = (
-        ("STALL", "NO_FORWARD_MOTION", "UNEXPLAINED_STALL"),
-        ("PENDING_WAKE", "PENDING_WAKE", "PENDING_WAKE_UNCONSUMED"),
-        ("DUPLICATE_PATROL", "PATROL_COUNT", "DUPLICATE_PATROL"),
+        ("FORWARD_MOTION", "UNEXPLAINED_STALL", "UNEXPLAINED_STALL"),
+        ("PENDING_WAKE", "UNCONSUMED_PENDING_WAKE", "PENDING_WAKE_UNCONSUMED"),
+        ("PATROL_UNIQUENESS", "DUPLICATE_PATROL", "DUPLICATE_PATROL"),
     )
-    for kind, evidence_kind, alert in cases:
+    for check_kind, finding, alert in cases:
         packet = patrol_receipt()
-        packet["observation"].update(
+        item = patrol_item(packet, check_kind)
+        item.update(
             {
-                "kind": kind,
-                "evidence_kind": evidence_kind,
-                "source_text": f"mechanical evidence: {kind}",
+                "finding": finding,
                 "result": "ALERT",
                 "alert_code": alert,
             }
         )
         assert_pass(tmp_path, packet)
-        packet["observation"]["result"] = "NORMAL"
-        packet["observation"]["alert_code"] = ""
+        item["result"] = "NORMAL"
+        item["alert_code"] = ""
         assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_MISSED_ALERT")
 
 
@@ -1136,14 +1252,8 @@ def test_patrol_terminal_sequence_deletes_heartbeat_and_archives(
 ) -> None:
     packet = patrol_receipt()
     packet.update({"status": "PATROL_CLOSED", "run_state": "LOOP_TERMINAL"})
-    packet["observation"].update(
-        {
-            "kind": "TERMINAL_CHECK",
-            "evidence_kind": "LOOP_TERMINAL",
-            "source_text": "LOOP_TERMINAL confirmed",
-            "result": "NORMAL",
-        }
-    )
+    terminal = patrol_item(packet, "TERMINAL_CLOSURE")
+    terminal.update({"finding": "PATROL_CLOSED", "result": "NORMAL"})
     packet["terminal_cleanup"] = {
         "loop_terminal_confirmed": True,
         "heartbeat_deleted": True,
@@ -1180,8 +1290,7 @@ def test_delivery_checking_and_rework_do_not_increment_accepted(
         }
     )
     packet["events"].insert(4, rework)
-    for index, event in enumerate(packet["events"], start=1):
-        event["sequence"] = index
+    bind_progress_events(packet)
     assert_pass(tmp_path, packet)
     packet = progress_trace()
     forged = d1("D1-099", "CELL-01.01")
@@ -1198,8 +1307,7 @@ def test_delivery_checking_and_rework_do_not_increment_accepted(
 def test_checker_must_ack_before_starting_inspection(tmp_path: Path) -> None:
     packet = progress_trace()
     packet["events"].pop(1)
-    for index, event in enumerate(packet["events"], start=1):
-        event["sequence"] = index
+    bind_progress_events(packet)
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PROGRESS_LAYER_CONFUSION")
 
 
@@ -1217,8 +1325,7 @@ def test_d1_pass_increments_once_and_duplicate_receipt_does_not(
         }
     )
     packet["events"].insert(4, duplicate)
-    for index, event in enumerate(packet["events"], start=1):
-        event["sequence"] = index
+    bind_progress_events(packet)
     assert_pass(tmp_path, packet)
     duplicate["accepted_cell_count"] = 2
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PROGRESS_COUNT_MISMATCH")
@@ -1241,7 +1348,7 @@ def test_checker_reports_supervisor_only_at_go_boundary(tmp_path: Path) -> None:
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PROGRESS_NOISE")
     packet = progress_trace()
     packet["events"].append(copy.deepcopy(packet["events"][5]))
-    packet["events"][-1]["sequence"] = 9
+    bind_progress_events(packet)
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PROGRESS_NOISE")
 
 
@@ -1276,6 +1383,7 @@ def test_amendment_recomputes_denominators_without_rewriting_history(
         }
     )
     packet["events"].append(amendment)
+    bind_progress_events(packet)
     assert_pass(tmp_path, packet)
     packet["events"][-1]["required_cell_total"] = 2
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PROGRESS_AMENDMENT_STALE")
@@ -1481,6 +1589,7 @@ def test_capacity_split_recomputes_progress_denominator_without_acceptance(
         }
     )
     packet["events"].append(amendment)
+    bind_progress_events(packet)
     assert_pass(tmp_path, packet)
     packet["events"][-1]["accepted_cell_count"] = 2
     assert_reject(
@@ -1510,12 +1619,14 @@ def test_pin_creation_dispatch_and_lifecycle_never_infer_authority(
         assert_pass(tmp_path, packet)
 
 
-def test_pin_all_method_roles_are_default_denied(tmp_path: Path) -> None:
+def test_pin_all_slk_technical_roles_and_patrol_are_default_denied(
+    tmp_path: Path,
+) -> None:
     packet = runtime_contract()
     assert_pass(tmp_path, packet)
-    for role in METHOD_PIN_ROLES:
-        assert role in packet["thread_pin_policy"]["method_roles"]
-    packet["thread_pin_policy"]["default_method_pin_allowed"] = True
+    assert packet["thread_pin_policy"]["technical_roles"] == SLK_TECHNICAL_ROLES
+    assert packet["thread_pin_policy"]["patrol_pin_capability"] == "DENIED"
+    packet["thread_pin_policy"]["technical_role_pin_allowed_by_default"] = True
     assert_reject(
         tmp_path,
         packet,
@@ -1525,6 +1636,9 @@ def test_pin_all_method_roles_are_default_denied(tmp_path: Path) -> None:
 
 
 def test_pin_patrol_cannot_pin_or_unpin(tmp_path: Path) -> None:
+    audit = pin_audit()
+    audit["task_role"] = "RUN_PATROL"
+    assert_pass(tmp_path, audit)
     for action in ("set_thread_pinned(true)", "set_thread_pinned(false)"):
         packet = patrol_receipt()
         packet["actions"] = [action]
@@ -1597,5 +1711,378 @@ def test_pin_then_unpin_retains_unauthorized_violation(tmp_path: Path) -> None:
         tmp_path,
         packet,
         "SLK_RUNTIME_PIN_HISTORY_REQUIRED",
+        optimized=True,
+    )
+
+
+def index_wake_trace() -> dict:
+    packet = wake_trace()
+    packet.update(
+        {
+            "go_id": "GO-01",
+            "cell_id": "CELL-01.01",
+            "cell_ordinal": 1,
+            "required_cell_total": 2,
+            "message": "GO-01 CELL 1/2 已交付，请检查",
+        }
+    )
+    first = packet["attempts"][0]
+    first["message"] = packet["message"]
+    first["ack"] = {
+        "message": "WAKE_ACK RUN-001 GO-01 CELL-01.01 R01",
+        "run_id": "RUN-001",
+        "go_id": "GO-01",
+        "cell_id": "CELL-01.01",
+        "round_id": "R01",
+    }
+    return packet
+
+
+def runtime_index() -> dict:
+    progress = progress_trace()
+    progress["events"] = progress["events"][:3]
+    return {
+        "schema_version": "2.5.0",
+        "record_type": "RUN_RUNTIME_INDEX",
+        "status": "COMPLETE",
+        "run_id": "RUN-001",
+        "index_version": 1,
+        "runtime_contract": runtime_contract(),
+        "dispatches": [
+            {
+                "dispatch_id": "DISPATCH-001",
+                "run_id": "RUN-001",
+                "go_id": "GO-01",
+                "cell_id": "CELL-01.01",
+                "cell_ordinal": 1,
+                "required_cell_total": 2,
+                "round_id": "R01",
+                "required_set_version": 1,
+            }
+        ],
+        "capacity_gates": [capacity_gate()],
+        "wake_traces": [index_wake_trace()],
+        "progress_trace": progress,
+        "patrol_receipts": [patrol_receipt()],
+        "evidence_refs": ["evidence/run-runtime-index.txt"],
+    }
+
+
+def test_redo_slk_pin_roles_exclude_glk_roles_and_reject_extras(
+    tmp_path: Path,
+) -> None:
+    packet = runtime_contract()
+    packet["thread_pin_policy"] = {
+        "technical_roles": [
+            "SUPERVISOR_RESPONSIBILITY",
+            "CHECKER_RESPONSIBILITY",
+            "VERIFIER_RESPONSIBILITY",
+            "WORKER",
+        ],
+        "technical_role_pin_allowed_by_default": False,
+        "set_thread_pinned_true_capability": "DENIED",
+        "owner_manual_allowed": True,
+        "owner_explicit_item_authorization_allowed": True,
+        "inferred_authorization_allowed": False,
+        "patrol_pin_capability": "DENIED",
+        "patrol_auto_unpin_allowed": False,
+        "pin_lifecycle_independent": True,
+        "unauthorized_history_persists_after_unpin": True,
+    }
+    assert_pass(tmp_path, packet)
+    packet["thread_pin_policy"]["technical_roles"].append("EXTRA_ROLE")
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_PIN_ROLE_INVALID",
+        optimized=True,
+    )
+    audit = pin_audit()
+    audit["task_role"] = "NON_SLK_ROLE"
+    assert_reject(
+        tmp_path,
+        audit,
+        "SLK_RUNTIME_PIN_ROLE_INVALID",
+        optimized=True,
+    )
+
+
+def test_redo_supervisor_positive_wait_is_alerted_even_outside_loop(
+    tmp_path: Path,
+) -> None:
+    packet = patrol_receipt()
+    wait = patrol_item(packet, "SUPERVISOR_WAIT")
+    wait.update(
+        {
+            "finding": "POSITIVE_WAIT",
+            "timeout_ms": 120000,
+            "inside_loop": False,
+            "result": "NORMAL",
+            "alert_code": "",
+        }
+    )
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_PATROL_MISSED_ALERT",
+        optimized=True,
+    )
+    zero = patrol_receipt()
+    assert_pass(tmp_path, zero)
+    for field, finding in (("looped", "LOOPED_WAIT"), ("wait_all", "WAIT_ALL")):
+        packet = patrol_receipt()
+        wait = patrol_item(packet, "SUPERVISOR_WAIT")
+        wait.update(
+            {
+                "finding": finding,
+                field: True,
+                "result": "ALERT",
+                "alert_code": "SUPERVISOR_WAIT_FORBIDDEN",
+            }
+        )
+        assert_pass(tmp_path, packet)
+        wait["result"] = "NORMAL"
+        wait["alert_code"] = ""
+        assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_MISSED_ALERT")
+
+
+def test_redo_d2_requires_exactly_one_bound_supervisor_progress(
+    tmp_path: Path,
+) -> None:
+    missing = progress_trace()
+    missing["events"].pop()
+    assert_reject(
+        tmp_path,
+        missing,
+        "SLK_RUNTIME_PROGRESS_MILESTONE_MISSING",
+        optimized=True,
+    )
+    duplicate = progress_trace()
+    extra = copy.deepcopy(duplicate["events"][-1])
+    extra["sequence"] = 9
+    extra["event_id"] = "PE-009"
+    duplicate["events"].append(extra)
+    assert_reject(tmp_path, duplicate, "SLK_RUNTIME_PROGRESS_MILESTONE_DUPLICATE")
+    wrong = progress_trace()
+    wrong["events"][-1]["trigger_event_id"] = "PE-006"
+    assert_reject(tmp_path, wrong, "SLK_RUNTIME_PROGRESS_TRIGGER_INVALID")
+
+
+def test_redo_go_candidate_requires_final_d1_trigger_and_is_unique(
+    tmp_path: Path,
+) -> None:
+    wrong_trigger = progress_trace()
+    wrong_trigger["events"][5]["trigger_event_id"] = "PE-004"
+    assert_reject(
+        tmp_path,
+        wrong_trigger,
+        "SLK_RUNTIME_PROGRESS_TRIGGER_INVALID",
+        optimized=True,
+    )
+
+    duplicate = progress_trace()
+    extra = copy.deepcopy(duplicate["events"][5])
+    extra["milestone_id"] = "GO-01-CANDIDATE-V1-DUPLICATE"
+    duplicate["events"].insert(6, extra)
+    bind_progress_events(duplicate)
+    duplicate["events"][6]["trigger_event_id"] = "PE-005"
+    duplicate["events"][7]["trigger_event_id"] = "PE-007"
+    duplicate["events"][8]["trigger_event_id"] = "PE-008"
+    assert_reject(
+        tmp_path,
+        duplicate,
+        "SLK_RUNTIME_PROGRESS_MILESTONE_DUPLICATE",
+    )
+
+
+def test_redo_required_set_amendment_progress_is_unique_and_ordered(
+    tmp_path: Path,
+) -> None:
+    required_v2 = {
+        "version": 2,
+        "required_go_ids": ["GO-01"],
+        "required_cells_by_go": {"GO-01": ["CELL-01.01"]},
+    }
+    missing = progress_trace()
+    missing["required_sets"].append(copy.deepcopy(required_v2))
+    assert_reject(
+        tmp_path,
+        missing,
+        "SLK_RUNTIME_PROGRESS_MILESTONE_MISSING",
+        optimized=True,
+    )
+
+    packet = progress_trace()
+    packet["required_sets"].append(copy.deepcopy(required_v2))
+    amendment = progress_event(
+        9,
+        "AMENDMENT",
+        "SUPERVISOR",
+        "OWNER",
+        "RequiredSet v2；当前GO D1 CELL 1/1；Required GO D2 1/1",
+        d1_receipts=[d1("D1-001", "CELL-01.01")],
+        d2_receipts=[d2("D2-001", "GO-01")],
+        accepted=1,
+        verified=1,
+    )
+    amendment.update(
+        {
+            "required_set_version": 2,
+            "required_cell_total": 1,
+            "required_go_total": 1,
+            "recomputed": True,
+        }
+    )
+    packet["events"].append(amendment)
+    bind_progress_events(packet)
+    assert_pass(tmp_path, packet)
+
+    duplicate = copy.deepcopy(packet)
+    duplicate["events"].append(copy.deepcopy(duplicate["events"][-1]))
+    bind_progress_events(duplicate)
+    assert_reject(
+        tmp_path,
+        duplicate,
+        "SLK_RUNTIME_PROGRESS_MILESTONE_DUPLICATE",
+    )
+
+    wrong_order = copy.deepcopy(packet)
+    premature = progress_event(
+        9,
+        "DELIVERED",
+        "WORKER",
+        "CHECKER",
+        "GO-01 CELL 1/1 已交付，请检查",
+        accepted=0,
+        verified=0,
+    )
+    premature.update(
+        {
+            "required_set_version": 2,
+            "required_cell_total": 1,
+            "required_go_total": 1,
+        }
+    )
+    wrong_order["events"].insert(-1, premature)
+    bind_progress_events(wrong_order)
+    assert_reject(
+        tmp_path,
+        wrong_order,
+        "SLK_RUNTIME_PROGRESS_TRIGGER_INVALID",
+    )
+
+
+def test_redo_run_and_owner_milestones_require_bound_supervisor_progress(
+    tmp_path: Path,
+) -> None:
+    assert_pass(tmp_path, progress_trace_with_run_milestones())
+    packet = progress_trace_with_run_milestones()
+    packet["events"] = packet["events"][:9]
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_PROGRESS_MILESTONE_MISSING",
+        optimized=True,
+    )
+    packet = progress_trace_with_run_milestones()
+    packet["events"].pop()
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_PROGRESS_MILESTONE_MISSING")
+
+
+def test_redo_patrol_cycle_requires_complete_unique_checklist(
+    tmp_path: Path,
+) -> None:
+    packet = patrol_receipt()
+    packet["checklist"] = []
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE",
+        optimized=True,
+    )
+    packet = patrol_receipt()
+    packet["checklist"].append(copy.deepcopy(packet["checklist"][0]))
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_CHECKLIST_DUPLICATE")
+    packet = patrol_receipt()
+    packet["checklist"][0]["check_kind"] = "FREE_TEXT_CHECK"
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_CHECKLIST_INCOMPLETE")
+
+
+def test_redo_runtime_index_requires_every_dispatch_artifact(
+    tmp_path: Path,
+) -> None:
+    assert_pass(tmp_path, runtime_index())
+    for field in ("wake_traces", "patrol_receipts"):
+        packet = runtime_index()
+        packet[field] = []
+        assert_reject(
+            tmp_path,
+            packet,
+            "SLK_RUNTIME_INDEX_MISSING",
+            optimized=field == "wake_traces",
+        )
+    packet = runtime_index()
+    packet["progress_trace"] = {}
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_INDEX_MISSING")
+    packet = runtime_index()
+    packet["wake_traces"][0]["cell_id"] = "CELL-OTHER"
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_INDEX_SCOPE")
+    packet = runtime_index()
+    packet["capacity_gates"].append(copy.deepcopy(packet["capacity_gates"][0]))
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_INDEX_DUPLICATE")
+    packet = runtime_index()
+    extra = copy.deepcopy(packet["wake_traces"][0])
+    extra["cell_id"] = "CELL-EXTRA"
+    packet["wake_traces"].append(extra)
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_INDEX_EXTRA")
+    packet = runtime_index()
+    packet["progress_trace"]["events"] = packet["progress_trace"]["events"][1:]
+    bind_progress_events(packet["progress_trace"])
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_INDEX_MISSING")
+    packet = runtime_index()
+    packet["runtime_contract"]["schema_version"] = "2.4.0"
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_SCHEMA_VERSION",
+        optimized=True,
+    )
+
+
+def test_redo_runtime_index_capacity_gate_binds_dispatch_round(
+    tmp_path: Path,
+) -> None:
+    packet = runtime_index()
+    packet["dispatches"][0]["round_id"] = "R02"
+    packet["wake_traces"][0]["round_id"] = "R02"
+    packet["wake_traces"][0]["attempts"][0]["ack"]["round_id"] = "R02"
+    packet["wake_traces"][0]["attempts"][0]["ack"]["message"] = (
+        "WAKE_ACK RUN-001 GO-01 CELL-01.01 R02"
+    )
+    for event in packet["progress_trace"]["events"]:
+        event["round_id"] = "R02"
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_INDEX_SCOPE",
+        optimized=True,
+    )
+
+
+def test_redo_patrol_interval_is_bound_to_frozen_workload_class(
+    tmp_path: Path,
+) -> None:
+    for workload_class, interval in (("LOW", 10), ("MEDIUM", 15), ("HIGH", 30)):
+        packet = runtime_contract()
+        packet["workload_class"] = workload_class
+        packet["patrol"]["interval_minutes"] = interval
+        assert_pass(tmp_path, packet)
+    packet = runtime_contract()
+    packet["workload_class"] = "LOW"
+    packet["patrol"]["interval_minutes"] = 30
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL",
         optimized=True,
     )

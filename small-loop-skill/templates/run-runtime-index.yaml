@@ -1,0 +1,12 @@
+schema_version: 2.5.0
+record_type: RUN_RUNTIME_INDEX
+status: PENDING
+run_id: ""
+index_version: 0
+runtime_contract: {}
+dispatches: []
+capacity_gates: []
+wake_traces: []
+progress_trace: {}
+patrol_receipts: []
+evidence_refs: []

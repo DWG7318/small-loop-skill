@@ -51,7 +51,11 @@ def test_two_formal_conversations_one_patrol_and_three_control_modes() -> None:
     assert patrol["heartbeat_count_per_run"] == 1
     assert patrol["model"] == "gpt-5.6-luna"
     assert patrol["reasoning_effort"] == "xhigh"
-    assert patrol["interval_minutes"] == [10, 15, 30]
+    assert patrol["workload_interval_minutes"] == {
+        "LOW": 10,
+        "MEDIUM": 15,
+        "HIGH": 30,
+    }
 
 
 def test_worker_wake_wait_subagent_and_progress_authority() -> None:
@@ -94,10 +98,16 @@ def test_worker_wake_wait_subagent_and_progress_authority() -> None:
     assert capacity["post_dispatch_severe_successor_minimum"] == 3
     pin = value["thread_pin"]
     assert pin["hard_rule_number"] == 7
-    assert pin["method_role_pin_allowed_by_default"] is False
+    assert pin["technical_roles"] == [
+        "SUPERVISOR_RESPONSIBILITY",
+        "CHECKER_RESPONSIBILITY",
+        "VERIFIER_RESPONSIBILITY",
+        "WORKER",
+    ]
+    assert pin["technical_role_pin_allowed_by_default"] is False
     assert pin["owner_manual_or_exact_authorization_only"] is True
     assert pin["inferred_authorization_allowed"] is False
-    assert pin["patrol_pin_or_unpin_allowed"] is False
+    assert pin["run_patrol_pin_or_unpin_allowed"] is False
     assert pin["unauthorized_history_persists_after_unpin"] is True
     assert pin["alerts"] == [
         "UNAUTHORIZED_THREAD_PIN",
@@ -136,7 +146,7 @@ def test_blank_receipts_are_fail_closed() -> None:
 
 def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
     schema = json.loads(read(ROOT / "contracts" / "slk-runtime-control.schema.json"))
-    assert len(schema["oneOf"]) == 11
+    assert len(schema["oneOf"]) == 12
     assert {
         "run_runtime_contract",
         "device_capacity_profile",
@@ -149,6 +159,7 @@ def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
         "progress_trace",
         "runtime_simulation",
         "thread_pin_audit",
+        "run_runtime_index",
     } <= set(schema["$defs"])
     assert all(
         definition.get("additionalProperties") is False
@@ -167,6 +178,7 @@ def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
         "progress-trace.yaml",
         "runtime-simulation.yaml",
         "thread-pin-audit.yaml",
+        "run-runtime-index.yaml",
     }
     for name in names:
         root_path = ROOT / "templates" / name
@@ -181,10 +193,12 @@ def test_default_prompt_contains_runtime_hard_brakes() -> None:
         "default_prompt"
     ]
     for phrase in (
-        "positive-timeout wait_threads",
+        "any positive wait_threads",
         "GO/CELL n/N",
         "gpt-5.6-luna+xhigh",
         "CELL_CAPACITY_GATE",
+        "patrol_cycle_id",
+        "RUN_RUNTIME_INDEX",
         "set_thread_pinned(true)",
         "UNAUTHORIZED_THREAD_PIN",
         "PIN_PROVENANCE_UNKNOWN",

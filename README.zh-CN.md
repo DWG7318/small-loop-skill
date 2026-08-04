@@ -58,8 +58,10 @@ Chain/Stage/Barrier 或图激活。
 SLK 2.5.0 增加 Worker 专属四级 Checker 叫醒阶梯，禁止 Supervisor 长等待循环，
 并从有效 D1/D2 receipt 推导分层进度。每个 Run 恰好一个无技术权威的巡检对话。
 Supervisor 以可验证设备事实和累计工程负载冻结 CELL 容量；只有派工前
-`CELL_CAPACITY_GATE=PASS` 才能交给 Worker。所有方法角色默认禁止置顶任务；仅
-Owner 手动操作或绑定具体任务的明确授权合法，巡检只告警未知/越权置顶，不自动
-取消。
+`CELL_CAPACITY_GATE=PASS` 才能交给 Worker。巡检工作量固定映射为
+`LOW→10`、`MEDIUM→15`、`HIGH→30` 分钟，每周期必须完成全部最低错误清单。
+Control 三种责任和 Worker 默认禁止置顶；非技术 Patrol 单独禁止 Pin/Unpin。
+每个实质 verdict 恰有一条绑定的 Supervisor 进度；轻量 `RUN_RUNTIME_INDEX`
+证明每次派工都具备容量、叫醒、进度和巡检证据，但不成为 Runtime。
 
 详见 [运行控制与进度](references/runtime-control-and-progress.md)。

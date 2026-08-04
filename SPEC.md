@@ -286,20 +286,32 @@ The following are specification invariants:
 
 1. Only Worker may use the bounded four-level wake ladder for the original Checker;
    a matching scoped ACK immediately stops escalation.
-2. Supervisor never loops or performs positive-timeout `wait_threads`.
-3. Each Run has one `gpt-5.6-luna` + `xhigh` Patrol conversation/heartbeat; Patrol
-   observes minimum runtime faults and never takes technical or Pin/Unpin action.
+2. Supervisor never performs positive-timeout `wait_threads`, even once or outside
+   a loop, never loops it, and never waits for all members; only timeout-zero
+   snapshots are allowed.
+3. Each Run has one `gpt-5.6-luna` + `xhigh` Patrol conversation/heartbeat. Frozen
+   workload maps `LOW→10`, `MEDIUM→15`, `HIGH→30` minutes, and every patrol cycle
+   proves the complete fixed minimum-error checklist. Patrol never takes technical
+   or Pin/Unpin action.
 4. Visible tasks, GO/CELL/Round, “subtask”, and “子任务” are not subagents; explicit
    spawn/delegate/hidden/background Agent evidence is prohibited.
 5. Worker reports delivery position, Checker reports current D1 acceptance, and
-   Supervisor reports D2 GO/Run milestones. Counts come only from current receipts
-   and current versioned Required sets.
+   Supervisor reports D2/Run/Owner milestones. Counts come only from current
+   receipts/Required sets. GO candidate readiness is unique per Required-set
+   version and binds the D1 event that completed its Required CELL set; every
+   Required-set versions after the initial set begin with exactly one ordered,
+   receipt-bound amendment progress event. Every material verdict has exactly one
+   later Supervisor progress event bound by trigger event and receipt.
 6. Supervisor owns measurable device/cumulative-load planning; Checker reviews the
    pre-dispatch total-cost capacity gate; only `PASS` dispatches. Worker never
    self-splits and stops on `CELL_SCOPE_EXCEEDED`.
-7. Every method role defaults to task Pin denied. Only proven Owner manual or exact
-   item authorization is legal. Unauthorized/unknown provenance remains auditable,
-   and Patrol reports without automatically Unpinning.
+7. The Control responsibilities and Worker default to task Pin denied. Patrol is a
+   separate non-technical safeguard whose Pin/Unpin denial is validated separately.
+   Only proven Owner manual or exact item authorization is legal.
+8. A versioned `RUN_RUNTIME_INDEX` embeds every formal RUN/GO/CELL/ROUND dispatch
+   and requires a capacity PASS bound to that Round, wake trace, delivery progress,
+   and complete current Patrol cycle. Missing, extra, duplicate, stale, or
+   wrong-scope records fail closed; the index is evidence, not a session Runtime.
 
 These records augment current authority and D0/D1 evidence only. They create no D4,
 new technical role, general message bus, device monitor, scheduler, Runtime method,
