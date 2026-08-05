@@ -1,4 +1,4 @@
-# Small Loop Skill Standard Specification 2.4.0
+# Small Loop Skill Standard Specification 2.5.0
 
 ## 1. Identity
 
@@ -28,7 +28,7 @@ SLK never invents missing product intent. A materially incomplete input returns
 
 ## 3. Canonical topology
 
-SLK uses exactly two visible conversations:
+SLK uses exactly two formal execution conversations and one visible Run safeguard:
 
 ```text
 Owner
@@ -39,11 +39,15 @@ Control Conversation
   └─ VERIFIER_RESPONSIBILITY
          ↕
 one persistent Worker Conversation
+
+Run Patrol Conversation (non-authoritative; one per Run)
 ```
 
 Every formal Control record declares exactly one active responsibility mode. There
-is no third visible Verification Conversation, hidden agent, background role, or
-second Worker. One Worker and one CELL may be active at a time.
+is no third formal engineering or Verification Conversation, hidden agent,
+background role, or second Worker. Run Patrol owns no technical verdict, planning,
+write, routing, acceptance, or progress authority. One Worker and one CELL may be
+active at a time.
 
 The Verifier mode validates in a clean environment against an immutable candidate.
 Because it shares the Control Conversation, SLK does not claim blind
@@ -271,7 +275,49 @@ NEW_FEATURE_REQUEST
 Owner Acceptance is not another technical test. Product-definition changes return
 to LCCoding; bounded product defects return to the persistent Worker.
 
-## 15. Completion
+## 15. Runtime safeguards and progress
+
+Every 2.5.0 Run freezes a `RUN_RUNTIME_CONTRACT` and passes the complete injected-
+clock `RUNTIME_SIMULATION` before Worker dispatch. The normative operational rules,
+record shapes, message formats, fixed alerts, and failure codes are in [runtime
+control and progress](references/runtime-control-and-progress.md).
+
+The following are specification invariants:
+
+1. Only Worker may use the bounded four-level wake ladder for the original Checker;
+   a matching scoped ACK immediately stops escalation.
+2. Supervisor never performs positive-timeout `wait_threads`, even once or outside
+   a loop, never loops it, and never waits for all members; only timeout-zero
+   snapshots are allowed.
+3. Each Run has one `gpt-5.6-luna` + `xhigh` Patrol conversation/heartbeat. Frozen
+   workload maps `LOW→10`, `MEDIUM→15`, `HIGH→30` minutes, and every patrol cycle
+   proves the complete fixed minimum-error checklist. Patrol never takes technical
+   or Pin/Unpin action.
+4. Visible tasks, GO/CELL/Round, “subtask”, and “子任务” are not subagents; explicit
+   spawn/delegate/hidden/background Agent evidence is prohibited.
+5. Worker reports delivery position, Checker reports current D1 acceptance, and
+   Supervisor reports D2/Run/Owner milestones. Counts come only from current
+   receipts/Required sets. GO candidate readiness is unique per Required-set
+   version and binds the D1 event that completed its Required CELL set; every
+   Required-set versions after the initial set begin with exactly one ordered,
+   receipt-bound amendment progress event. Every material verdict has exactly one
+   later Supervisor progress event bound by trigger event and receipt.
+6. Supervisor owns measurable device/cumulative-load planning; Checker reviews the
+   pre-dispatch total-cost capacity gate; only `PASS` dispatches. Worker never
+   self-splits and stops on `CELL_SCOPE_EXCEEDED`.
+7. The Control responsibilities and Worker default to task Pin denied. Patrol is a
+   separate non-technical safeguard whose Pin/Unpin denial is validated separately.
+   Only proven Owner manual or exact item authorization is legal.
+8. A versioned `RUN_RUNTIME_INDEX` embeds every formal RUN/GO/CELL/ROUND dispatch
+   and requires a capacity PASS bound to that Round, wake trace, delivery progress,
+   and complete current Patrol cycle. Missing, extra, duplicate, stale, or
+   wrong-scope records fail closed; the index is evidence, not a session Runtime.
+
+These records augment current authority and D0/D1 evidence only. They create no D4,
+new technical role, general message bus, device monitor, scheduler, Runtime method,
+Chain/Stage/Barrier, or graph activation.
+
+## 16. Completion
 
 SLK completion requires every current Required GO to have D2 PASS, one D3 PASS for
 the exact final candidate, synchronized non-invalidated receipts, no unresolved hard

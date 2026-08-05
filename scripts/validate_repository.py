@@ -10,12 +10,14 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
 EXCLUDED_FILES = {"MANIFEST.json"}
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 MIRRORED = [
     Path("SKILL.md"),
     Path("SPEC.md"),
     Path("contracts/slk-control-kernel.json"),
+    Path("contracts/slk-runtime-control.schema.json"),
     Path("scripts/validate_defect_repair.py"),
+    Path("scripts/validate_runtime_control.py"),
     Path("scripts/validate_serial_plan.py"),
 ]
 
@@ -85,7 +87,9 @@ def validate(root: Path) -> list[str]:
         "MANIFEST.json",
         "VALIDATION-REPORT.md",
         "contracts/slk-control-kernel.json",
+        "contracts/slk-runtime-control.schema.json",
         "scripts/validate_defect_repair.py",
+        "scripts/validate_runtime_control.py",
         "scripts/validate_serial_plan.py",
         "small-loop-skill/SKILL.md",
     ]
@@ -107,7 +111,9 @@ def validate(root: Path) -> list[str]:
     try:
         contract = json.loads(utf8_text(root / "contracts/slk-control-kernel.json", errors))
         check(contract.get("version") == VERSION, "SLK_REPO_CONTRACT_VERSION", "control contract version drift", errors)
-        check(contract.get("visible_conversations") == ["CONTROL", "WORKER"], "SLK_REPO_TOPOLOGY", "visible conversation drift", errors)
+        check(contract.get("formal_execution_conversations") == ["CONTROL", "WORKER"], "SLK_REPO_TOPOLOGY", "formal conversation drift", errors)
+        check(contract.get("visible_safeguard_conversations") == ["RUN_PATROL"], "SLK_REPO_TOPOLOGY", "safeguard conversation drift", errors)
+        check(contract.get("visible_conversations") == ["CONTROL", "WORKER", "RUN_PATROL"], "SLK_REPO_TOPOLOGY", "visible conversation drift", errors)
     except json.JSONDecodeError as exc:
         errors.append(f"SLK_REPO_CONTRACT_JSON: {exc}")
 

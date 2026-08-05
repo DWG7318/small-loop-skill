@@ -1,7 +1,7 @@
 ---
 name: small-loop-skill
 description: Use SLK for one bounded LCCoding Run whose GO outcomes form exactly one strict serial sequence executed through one visible Control Conversation and one persistent Worker Conversation. Never combine SLK with CLK or GLK in the same Run.
-version: 2.4.0
+version: 2.5.0
 ---
 
 # Small Loop Skill (SLK)
@@ -14,7 +14,7 @@ version: 2.4.0
 - Repository: `https://github.com/DWG7318/small-loop-skill`.
 - Repository ID: `1295599218`.
 - Default branch: `main`.
-- Current specification version: `2.4.0`.
+- Current specification version: `2.5.0`.
 - Version source: repository `VERSION` file and matching annotated `v*` tag.
 
 ## Trigger
@@ -25,9 +25,9 @@ unique strict serial GO sequence.
 Do not activate for incomplete product definition, fixed parallel Chains/Stages, a
 free GO graph, branches, joins, fallbacks, cycles, or multiple active Workers.
 
-## Fixed visible topology
+## Fixed execution topology
 
-Use exactly two visible Codex conversations:
+Use exactly two formal execution conversations plus one Run safeguard conversation:
 
 ```text
 Owner
@@ -38,11 +38,14 @@ Control Conversation
   └─ VERIFIER_RESPONSIBILITY
          ↕
 one persistent Worker Conversation
+
+Run Patrol Conversation (one per Run; no technical authority)
 ```
 
 Every formal Control decision starts with exactly one `RESPONSIBILITY_MODE` value.
-Modes are non-interchangeable. Never create a third Verification Conversation,
-second Worker, hidden agent, subagent, or background formal role.
+Modes are non-interchangeable. Never create a third formal engineering conversation,
+Verification Conversation, second Worker, hidden agent, subagent, or background
+formal role. Run Patrol is the sole additional visible safeguard and owns no D0-D3.
 
 Verifier independence means frozen authority, an immutable candidate, clean
 GO/Run-boundary environments, and separately signed D2/D3 receipts. It does not mean
@@ -100,6 +103,21 @@ RUN_CONTRACT
 24. SLK consumes product meaning from LCCoding and never invents it.
 25. SLK never claims centralized vulnerability closure, delivery readiness, or
     project completion.
+26. Supervisor never uses positive-timeout `wait_threads`, even once, never loops
+    it, and never waits for all members; Worker alone may perform the four bounded
+    Checker-ACK waits. `timeoutMs:0` remains a snapshot.
+27. Runtime delivery messages bind GO/CELL n/N; only current D1 PASS increments CELL
+    acceptance and only current D2 PASS increments GO verification.
+28. Every Run has exactly one non-authoritative Patrol conversation/heartbeat using
+    `gpt-5.6-luna` + `xhigh`; `LOW→10`, `MEDIUM→15`, `HIGH→30` minutes, and every
+    cycle records the complete fixed minimum-error checklist.
+29. Visible tasks and “子任务” are not subagents; explicit spawn/delegate/hidden/
+    background Agent evidence is prohibited.
+30. Supervisor freezes measurable device capacity and cumulative engineering load;
+    only a `CELL_CAPACITY_GATE` PASS permits dispatch, and Worker never self-splits.
+31. The three Control responsibilities and Worker default to task Pin denied. Patrol
+    is not a technical role and has its Pin/Unpin denial validated separately. Only
+    exact Owner manual or item-specific provenance is legal.
 
 ## Responsibility modes
 
@@ -109,18 +127,26 @@ Validate Run Contract completeness and SLK suitability; freeze the Serial Baseli
 maintain `current_go_id` and `active_go_id`; provision Worker, Checker, and Verifier
 environments; route receipts and rework; issue Baseline Amendments; escalate only
 Owner-exclusive decisions; prepare bounded Owner Acceptance; record the verdict.
+Before dispatch it freezes versioned device/load facts and total-cost CELL gates,
+ends its turn after control actions, and emits only GO/Run-level progress.
 
 ### Worker
 
 Implement only the authorized CELL in the bound mutable workspace. Return candidate
 identity, changes, D0 checks, evidence, and risks. Never accept work, revise the
 plan, contact Owner, or start another CELL.
+After delivery/BLOCKED/EXECUTION_FAILURE it wakes only the frozen Checker with the
+bounded four-level ladder and scoped GO/CELL n/N message. It stops and returns
+`CELL_SCOPE_EXCEEDED` rather than self-splitting when actual cost exceeds budget.
 
 ### Checker
 
 Validate the immutable CELL candidate against the frozen CELL Contract in a clean
 environment. Sign D1 or return bounded CELL rework. Worker evidence is input, not
 Checker evidence.
+Checker ACKs first, derives accepted count only from current D1 PASS receipts, and
+reports Supervisor only when the GO candidate boundary is ready. It reviews the
+pre-dispatch capacity gate without assuming Supervisor's planning ownership.
 
 For a defect failure, bind `DEFECT_LINEAGE`, failed Candidate, fingerprint,
 reproduction evidence, repair round, and rejection count. On repaired D1, rerun
@@ -165,6 +191,27 @@ python scripts/validate_defect_repair.py <d0-or-d1-receipt.yaml>
 ```
 
 This packet changes neither the D0-D3 layers nor the fixed visible topology.
+
+## Runtime safeguards and progress
+
+SLK 2.5.0 runtime safeguards are defined once in
+[runtime control and progress](references/runtime-control-and-progress.md). They
+cover readiness, Worker wake, Supervisor waits, Run Patrol, subagent classification,
+receipt-derived progress, device/load CELL capacity, and Owner-only task Pin
+authority. Every D2/D3/Owner material verdict requires exactly one bound Supervisor
+progress event. `RUN_RUNTIME_INDEX` proves every formal RUN/GO/CELL/ROUND dispatch
+has a capacity PASS bound to that Round, wake, progress, and Patrol-cycle evidence
+without creating a Runtime.
+Validate every runtime record or index with:
+
+```text
+python scripts/validate_runtime_control.py <record.yaml>
+```
+
+Blank runtime records are `PENDING`. Missing capability, unknown device fact,
+non-PASS capacity gate, unproven Pin provenance, or incomplete simulation blocks
+dispatch. These safeguards add no D4, third technical role, general Runtime, or
+cross-method topology.
 
 ## Current and Active control
 
@@ -236,4 +283,5 @@ See [SPEC.md](SPEC.md), [serial plan construction](references/serial-plan-constr
 de-duplication](references/verification-de-duplication.md), [amendment and
 rework](references/amendment-and-rework.md), [causal defect
 repair](references/causal-defect-repair.md), [security boundary](references/security-boundary.md),
-and [Owner Acceptance](references/owner-acceptance.md).
+and [Owner Acceptance](references/owner-acceptance.md). See also [runtime control
+and progress](references/runtime-control-and-progress.md).

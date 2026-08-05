@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.5.0
+
+- Added the Worker-only four-level wake ladder for the frozen Checker, scoped
+  GO/CELL n/N delivery messages, matching `WAKE_ACK`, deterministic temporary
+  heartbeat, and Patrol-readable `PENDING_WAKE` fallback.
+- Prohibited positive-timeout/looped Supervisor waits and added exactly one visible
+  non-authoritative Run Patrol conversation/heartbeat using
+  `gpt-5.6-luna` + `xhigh`.
+- Bound all positive Supervisor waits (including one-shot/outside-loop), loops, and
+  wait-all to fixed Patrol alerts; only timeout-zero snapshots are normal.
+- Bound frozen workload `LOW/MEDIUM/HIGH` to 10/15/30-minute Patrol intervals and
+  required the complete unique minimum-error checklist in every patrol cycle.
+- Defined visible peer tasks and planning “subtasks” separately from prohibited
+  spawned, delegated, hidden, or background agents.
+- Added receipt-derived layered progress: Worker delivery position, Checker D1
+  acceptance, and Supervisor D2 GO/Run milestones with versioned denominators.
+- Bound every D2/D3/Owner material verdict to exactly one later Supervisor progress
+  event using event/receipt/verdict identity; GO candidate readiness is unique per
+  Required-set version and binds the final D1 acceptance event.
+- Added versioned device capacity and cumulative engineering load, total-cost
+  `CELL_CAPACITY_GATE`, dynamic feedback, `CELL_SCOPE_EXCEEDED`, post-dispatch split
+  defects, and severe 3+ successor re-evaluation.
+- Added default-deny task Pin capability for the SLK Control responsibilities and
+  Worker, with non-technical Patrol denied separately; Owner-only provenance and
+  immutable Pin-then-Unpin history remain enforced.
+- Added lightweight `RUN_RUNTIME_INDEX` completeness validation for dispatch-bound
+  RUN/GO/CELL/ROUND capacity PASS, wake, progress, and current complete Patrol
+  evidence.
+- Added one closed runtime schema, explicit optimized-safe validator, fail-closed
+  templates, simulation gate, tests, mirrors, and migration/reference material.
+- Preserved Control + persistent Worker as the formal engineering topology and
+  D0-D3/Owner authority. Patrol is a safeguard, not a third technical role.
+
 ## 2.4.0
 
 - Added candidate-bound `DEFECT_LINEAGE` and repair-round records to D1 failures
