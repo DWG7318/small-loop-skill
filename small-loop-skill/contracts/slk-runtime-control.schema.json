@@ -150,6 +150,51 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "required": ["actual_model"],
+            "properties": {"actual_model": {"pattern": "^gpt-5\\.6-terra[-._]"}}
+          },
+          "then": {
+            "properties": {
+              "reference_model": {"const": "gpt-5.6-terra"},
+              "capability_class": {"const": "TERRA_CLASS"},
+              "capability_equivalence": {
+                "properties": {"status": {"const": "PROVEN_EQUIVALENT"}}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["actual_model"],
+            "properties": {"actual_model": {"pattern": "^gpt-5\\.6-luna[-._]"}}
+          },
+          "then": {
+            "properties": {
+              "reference_model": {"const": "gpt-5.6-luna"},
+              "capability_class": {"const": "LUNA_CLASS"},
+              "capability_equivalence": {
+                "properties": {"status": {"const": "PROVEN_EQUIVALENT"}}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["actual_model"],
+            "properties": {"actual_model": {"pattern": "^gpt-5\\.6-sol[-._]"}}
+          },
+          "then": {
+            "properties": {
+              "reference_model": {"const": "gpt-5.6-sol"},
+              "capability_class": {"const": "SOL_CLASS"},
+              "capability_equivalence": {
+                "properties": {"status": {"const": "PROVEN_EQUIVALENT"}}
+              }
+            }
+          }
         }
       ],
       "required": [

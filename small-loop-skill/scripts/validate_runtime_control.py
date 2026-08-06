@@ -104,6 +104,9 @@ REFERENCE_CLASSES = {
     "gpt-5.6-luna": "LUNA_CLASS",
     "gpt-5.6-sol": "SOL_CLASS",
 }
+KNOWN_GPT_FAMILY = re.compile(
+    r"^(gpt-5\.6-(terra|luna|sol))(?=$|[-._])"
+)
 HIGH_DIFFICULTY_WORK = {
     "HIGH_DIFFICULTY_CORRECTION",
     "ROOT_CAUSE_DIAGNOSIS",
@@ -285,6 +288,14 @@ def validate_model_floor(model: object) -> str:
     return value
 
 
+def classify_known_gpt_family(model: str) -> tuple[str, str] | None:
+    match = KNOWN_GPT_FAMILY.match(model)
+    if match is None:
+        return None
+    reference_model = match.group(1)
+    return reference_model, REFERENCE_CLASSES[reference_model]
+
+
 def model_scope_key(binding: dict) -> tuple[str, str, str, str, str, str]:
     return (
         str(binding.get("role")),
@@ -381,16 +392,22 @@ def validate_model_binding(binding: object, *, run_id: str) -> dict:
         equivalence.get("evidence_refs"),
         "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
     )
-    known_actual_class = REFERENCE_CLASSES.get(actual_model)
-    if known_actual_class is not None:
+    known_family = classify_known_gpt_family(actual_model)
+    if known_family is not None:
+        known_reference_model, known_actual_class = known_family
+        expected_equivalence = (
+            "EXACT_REFERENCE"
+            if actual_model == known_reference_model
+            else "PROVEN_EQUIVALENT"
+        )
         if (
-            actual_model != reference_model
+            reference_model != known_reference_model
             or capability_class != known_actual_class
-            or equivalence.get("status") != "EXACT_REFERENCE"
+            or equivalence.get("status") != expected_equivalence
         ):
             fail(
                 "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
-                "known GPT reference model requires its exact reference and class",
+                "known GPT family requires its canonical reference and real class",
             )
     elif equivalence.get("status") != "PROVEN_EQUIVALENT":
         fail("SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID", "model equivalence is not proven")

@@ -124,6 +124,8 @@ def test_worker_wake_wait_subagent_and_progress_authority() -> None:
     assert model["same_model_collapses_role_isolation"] is False
     assert model["known_reference_actual_requires_exact_reference"] is True
     assert model["gpt_identity_requires_canonical_case_and_no_outer_whitespace"] is True
+    assert model["known_family_variant_requires_same_reference_and_class"] is True
+    assert model["known_family_boundary_separators"] == ["-", ".", "_"]
     assert model["role_instance_id_stable_per_role"] is True
     assert model["role_instance_id_shared_across_roles"] is False
     assert model["worker_role_instance_count"] == 1
@@ -185,7 +187,17 @@ def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
     assert {
         guard["if"]["properties"]["actual_model"]["const"]
         for guard in known_model_guards
+        if "const" in guard["if"]["properties"]["actual_model"]
     } == {"gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol"}
+    assert {
+        guard["if"]["properties"]["actual_model"]["pattern"]
+        for guard in known_model_guards
+        if "pattern" in guard["if"]["properties"]["actual_model"]
+    } == {
+        "^gpt-5\\.6-terra[-._]",
+        "^gpt-5\\.6-luna[-._]",
+        "^gpt-5\\.6-sol[-._]",
+    }
     actual_model_schema = schema["$defs"]["model_binding"]["properties"][
         "actual_model"
     ]

@@ -2489,6 +2489,76 @@ def test_model_policy_rejects_noncanonical_known_gpt_identity(
             )
 
 
+def test_model_policy_accepts_only_same_class_known_gpt_family_variants(
+    tmp_path: Path,
+) -> None:
+    packet = model_binding_trace()
+    terra = packet["bindings"][0]
+    terra["actual_model"] = "gpt-5.6-terra.snapshot"
+    terra["capability_equivalence"] = {
+        "status": "PROVEN_EQUIVALENT",
+        "evidence_refs": ["evidence/terra-snapshot-equivalence.txt"],
+    }
+    assert_pass(tmp_path, packet)
+
+    luna = luna_worker_binding()
+    luna["actual_model"] = "gpt-5.6-luna_preview"
+    luna["capability_equivalence"] = {
+        "status": "PROVEN_EQUIVALENT",
+        "evidence_refs": ["evidence/luna-preview-equivalence.txt"],
+    }
+    assert_pass(tmp_path, model_binding_trace(worker_override=luna))
+
+    sol = sol_worker_binding()
+    sol["actual_model"] = "gpt-5.6-sol-20260806"
+    sol["capability_equivalence"] = {
+        "status": "PROVEN_EQUIVALENT",
+        "evidence_refs": ["evidence/sol-snapshot-equivalence.txt"],
+    }
+    assert_pass(tmp_path, model_binding_trace(worker_override=sol))
+
+    packet = model_binding_trace()
+    lunar = packet["bindings"][0]
+    lunar["actual_model"] = "gpt-5.6-lunar-preview"
+    lunar["capability_equivalence"] = {
+        "status": "PROVEN_EQUIVALENT",
+        "evidence_refs": ["evidence/lunar-not-luna-equivalence.txt"],
+    }
+    assert_pass(tmp_path, packet)
+
+
+def test_model_policy_rejects_cross_class_known_gpt_family_variants(
+    tmp_path: Path,
+) -> None:
+    for optimized in (False, True):
+        terra_as_luna = luna_worker_binding()
+        terra_as_luna["actual_model"] = "gpt-5.6-terra.snapshot"
+        terra_as_luna["capability_equivalence"] = {
+            "status": "PROVEN_EQUIVALENT",
+            "evidence_refs": ["evidence/cross-class-family-spoof.txt"],
+        }
+        packets = [model_binding_trace(worker_override=terra_as_luna)]
+        for actual_model in (
+            "gpt-5.6-luna-preview",
+            "gpt-5.6-sol-20260806",
+        ):
+            packet = model_binding_trace()
+            binding = packet["bindings"][0]
+            binding["actual_model"] = actual_model
+            binding["capability_equivalence"] = {
+                "status": "PROVEN_EQUIVALENT",
+                "evidence_refs": ["evidence/cross-class-family-spoof.txt"],
+            }
+            packets.append(packet)
+        for packet in packets:
+            assert_reject(
+                tmp_path,
+                packet,
+                "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+                optimized=optimized,
+            )
+
+
 def test_model_policy_rejects_second_role_instance_in_same_run(
     tmp_path: Path,
 ) -> None:

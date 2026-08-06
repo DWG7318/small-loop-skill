@@ -27,3 +27,9 @@ must match exactly. Capability-equivalence evidence may substitute only a
 non-reference provider/model and cannot relabel Terra, Luna, or Sol. A GPT model
 identity must use its lowercase canonical identifier with no leading or trailing
 whitespace; spelling variants cannot enter the external-equivalence path.
+
+A canonical GPT 5.6 Terra/Luna/Sol family variant is recognized only when the
+family name ends or is followed by `-`, `.`, or `_`. A snapshot/preview/date
+variant may use `PROVEN_EQUIVALENT` only with that family's canonical reference and
+class. Similar names without that boundary, such as `lunar`, are not Luna-family
+models.
