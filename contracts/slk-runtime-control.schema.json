@@ -105,6 +105,53 @@
     "model_binding": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": ["actual_model"],
+            "properties": {"actual_model": {"const": "gpt-5.6-terra"}}
+          },
+          "then": {
+            "properties": {
+              "reference_model": {"const": "gpt-5.6-terra"},
+              "capability_class": {"const": "TERRA_CLASS"},
+              "capability_equivalence": {
+                "properties": {"status": {"const": "EXACT_REFERENCE"}}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["actual_model"],
+            "properties": {"actual_model": {"const": "gpt-5.6-luna"}}
+          },
+          "then": {
+            "properties": {
+              "reference_model": {"const": "gpt-5.6-luna"},
+              "capability_class": {"const": "LUNA_CLASS"},
+              "capability_equivalence": {
+                "properties": {"status": {"const": "EXACT_REFERENCE"}}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["actual_model"],
+            "properties": {"actual_model": {"const": "gpt-5.6-sol"}}
+          },
+          "then": {
+            "properties": {
+              "reference_model": {"const": "gpt-5.6-sol"},
+              "capability_class": {"const": "SOL_CLASS"},
+              "capability_equivalence": {
+                "properties": {"status": {"const": "EXACT_REFERENCE"}}
+              }
+            }
+          }
+        }
+      ],
       "required": [
         "sequence", "binding_id", "binding_version", "status", "role",
         "role_instance_id", "scope_kind", "go_id", "cell_id", "round_id",

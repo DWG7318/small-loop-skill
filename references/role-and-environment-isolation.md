@@ -19,3 +19,9 @@ Checker, Verifier, Worker, and Patrol may use the same Terra-class actual model,
 they never share a binding ID or authority. A model or effort switch creates a new
 scope-bound version and reruns readiness, isolation, and verification; model
 sameness or change never substitutes for candidate/environment separation.
+
+Within one Run, each role retains exactly one stable `role_instance_id` across all
+scope bindings and version history; no two roles may share that identity. For the
+known GPT reference models, the actual model, reference model, and capability class
+must match exactly. Capability-equivalence evidence may substitute only a
+non-reference provider/model and cannot relabel Terra, Luna, or Sol.

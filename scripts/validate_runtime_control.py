@@ -87,6 +87,9 @@ REQUIRED_SCENARIOS = {
     "MODEL_SILENT_SWITCH_REJECTED",
     "MODEL_ROLE_ISOLATION_PRESERVED",
     "MODEL_PATROL_DEFAULT_TERRA",
+    "MODEL_KNOWN_REFERENCE_CLASS_SPOOF_REJECTED",
+    "MODEL_SECOND_ROLE_INSTANCE_REJECTED",
+    "MODEL_SHARED_ROLE_INSTANCE_REJECTED",
 }
 SLK_TECHNICAL_ROLES = {
     "SUPERVISOR_RESPONSIBILITY",
@@ -364,10 +367,18 @@ def validate_model_binding(binding: object, *, run_id: str) -> dict:
         equivalence.get("evidence_refs"),
         "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
     )
-    expected_equivalence = (
-        "EXACT_REFERENCE" if actual_model == reference_model else "PROVEN_EQUIVALENT"
-    )
-    if equivalence.get("status") != expected_equivalence:
+    known_actual_class = REFERENCE_CLASSES.get(actual_model)
+    if known_actual_class is not None:
+        if (
+            actual_model != reference_model
+            or capability_class != known_actual_class
+            or equivalence.get("status") != "EXACT_REFERENCE"
+        ):
+            fail(
+                "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+                "known GPT reference model requires its exact reference and class",
+            )
+    elif equivalence.get("status") != "PROVEN_EQUIVALENT":
         fail("SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID", "model equivalence is not proven")
 
     effort = item.get("reasoning_effort")
@@ -494,6 +505,22 @@ def validate_model_binding_trace(packet: dict) -> None:
     binding_ids = [item["binding_id"] for item in bindings]
     if len(binding_ids) != len(set(binding_ids)):
         fail("SLK_RUNTIME_MODEL_ROLE_ISOLATION", "binding IDs cannot be shared across roles")
+
+    role_instances: dict[str, set[str]] = {}
+    instance_roles: dict[str, set[str]] = {}
+    for item in bindings:
+        role_instances.setdefault(item["role"], set()).add(item["role_instance_id"])
+        instance_roles.setdefault(item["role_instance_id"], set()).add(item["role"])
+    if any(len(instance_ids) != 1 for instance_ids in role_instances.values()):
+        fail(
+            "SLK_RUNTIME_MODEL_ROLE_ISOLATION",
+            "each SLK role must retain one stable role instance within the Run",
+        )
+    if any(len(roles) != 1 for roles in instance_roles.values()):
+        fail(
+            "SLK_RUNTIME_MODEL_ROLE_ISOLATION",
+            "a role instance cannot be shared across SLK roles",
+        )
 
     groups: dict[tuple[str, str, str, str, str, str], list[dict]] = {}
     for item in bindings:

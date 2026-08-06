@@ -47,7 +47,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "438db5cf9d1cf45cfd19a8b28fada49357846fa554631a543ff84594f4c54ef6"
+      "sha256": "3196461b8331247fe61a64980559d170ccac2df51d9b22b7472d7a07125e5447"
     },
     {
       "path": "VERSION",
@@ -59,11 +59,11 @@
     },
     {
       "path": "contracts/slk-control-kernel.json",
-      "sha256": "ed6fba70ce57f62a1901929d39890d82888a94f81f2858c20b72b0b0bdf249e8"
+      "sha256": "71eb0f8b6360e4b150e6c105cef747dc4edb06c2489fbf7c9d5504e2133367d4"
     },
     {
       "path": "contracts/slk-runtime-control.schema.json",
-      "sha256": "08bfc04b133b87b404b3edc0792f3a71722f000bc28671a20fcfbc71bb4f922e"
+      "sha256": "bec3420d37f8fd01df376a53ed1589d9eba3b8563081aa654f7f04c9c045fb99"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -123,7 +123,7 @@
     },
     {
       "path": "references/role-and-environment-isolation.md",
-      "sha256": "c178fb713ed8ac5f778f69325b77b623854970be1d61972c737a9325c5e635d1"
+      "sha256": "59ad3abfe2bac579c5f654bb5e4f8f873fce0529ee8a2dc8ee99eccbf34af205"
     },
     {
       "path": "references/runtime-control-and-progress.md",
@@ -151,7 +151,7 @@
     },
     {
       "path": "scripts/validate_runtime_control.py",
-      "sha256": "bc31b0ece44d688fb87b2fe452ac92b64b5841c7d0786217626bcc7e8446f7f7"
+      "sha256": "086b2aa0c316f0f129ae3d37e2843c0ab7047cea695aad97b0265dfdd355f996"
     },
     {
       "path": "scripts/validate_serial_plan.py",
@@ -167,11 +167,11 @@
     },
     {
       "path": "small-loop-skill/contracts/slk-control-kernel.json",
-      "sha256": "ed6fba70ce57f62a1901929d39890d82888a94f81f2858c20b72b0b0bdf249e8"
+      "sha256": "71eb0f8b6360e4b150e6c105cef747dc4edb06c2489fbf7c9d5504e2133367d4"
     },
     {
       "path": "small-loop-skill/contracts/slk-runtime-control.schema.json",
-      "sha256": "08bfc04b133b87b404b3edc0792f3a71722f000bc28671a20fcfbc71bb4f922e"
+      "sha256": "bec3420d37f8fd01df376a53ed1589d9eba3b8563081aa654f7f04c9c045fb99"
     },
     {
       "path": "small-loop-skill/references/amendment-and-rework.md",
@@ -191,7 +191,7 @@
     },
     {
       "path": "small-loop-skill/references/role-and-environment-isolation.md",
-      "sha256": "c178fb713ed8ac5f778f69325b77b623854970be1d61972c737a9325c5e635d1"
+      "sha256": "59ad3abfe2bac579c5f654bb5e4f8f873fce0529ee8a2dc8ee99eccbf34af205"
     },
     {
       "path": "small-loop-skill/references/runtime-control-and-progress.md",
@@ -215,7 +215,7 @@
     },
     {
       "path": "small-loop-skill/scripts/validate_runtime_control.py",
-      "sha256": "bc31b0ece44d688fb87b2fe452ac92b64b5841c7d0786217626bcc7e8446f7f7"
+      "sha256": "086b2aa0c316f0f129ae3d37e2843c0ab7047cea695aad97b0265dfdd355f996"
     },
     {
       "path": "small-loop-skill/scripts/validate_serial_plan.py",
@@ -419,7 +419,7 @@
     },
     {
       "path": "tests/test_contract.py",
-      "sha256": "68f5a5e49ed7b7b5761a5ae8c76e2b28074346facf856efffd6b780a47b0ab97"
+      "sha256": "789231dfd649fc9d672688805d4218728b605655d8a9b241d594050cf8f8f710"
     },
     {
       "path": "tests/test_repository_validator.py",
@@ -427,7 +427,7 @@
     },
     {
       "path": "tests/test_runtime_control.py",
-      "sha256": "ab824ef6d3a4833c06ed6340854b10555a1b78dbcf00341a0c118f5d6824c960"
+      "sha256": "100f7ba0548355c290ed87b3b462f69bc10064749499034903124c6c21d3695a"
     },
     {
       "path": "tests/test_serial_plan_validator.py",

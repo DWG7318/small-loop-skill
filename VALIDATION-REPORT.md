@@ -9,10 +9,11 @@ Branch: `feature/slk-2.6.0-model-policy`
 - PASS: Small Loop Skill identity, 2.6.0 version alignment, unchanged
   Control+Worker formal topology, one non-authoritative Patrol, and existing D0-D3 /
   Owner authority;
-- PASS: 119 full pytest tests;
-- PASS: 82 focused runtime-control and authority-contract tests;
-- PASS: 68 runtime-control CLI behavior tests;
-- PASS: 11 focused model-policy tests under ordinary and `python -O` execution;
+- PASS: 122 full pytest tests;
+- PASS: 85 focused runtime-control and authority-contract tests;
+- PASS: 71 runtime-control CLI behavior tests under ordinary and `python -O` execution;
+- PASS: 14 focused model-policy tests, including ordinary and `python -O`
+  adversarial execution;
 - PASS: Terra + `xhigh` default bindings for Supervisor, Checker, Verifier, Worker,
   and Patrol, with distinct binding IDs and unchanged role isolation;
 - PASS: Worker Luna + `xhigh` only for an exact CELL/Round whose frozen Contract is
@@ -21,6 +22,10 @@ Branch: `feature/slk-2.6.0-model-policy`
   complex rework;
 - PASS: proven capability-equivalent non-reference substitutes with matching
   reference class and immutable equivalence evidence;
+- PASS: known Terra/Luna/Sol actual models require exact reference/class binding in
+  all six cross-class spoof directions; equivalence evidence cannot relabel them;
+- PASS: every SLK role retains exactly one stable `role_instance_id` for the Run,
+  the persistent Worker cannot be duplicated, and no role instance can be shared;
 - PASS: GPT 5.5/lower, unauthorized `ultra`,
   cost/convenience downgrade, ordinary-work Sol, Patrol Luna/Sol, unevidenced or
   misclassified substitutes, missing revalidation, and silent/no-op switch history
@@ -32,7 +37,7 @@ Branch: `feature/slk-2.6.0-model-policy`
   consistently bound without adding a router or decision layer;
 - PASS: JSON Schema draft 2020-12 structure and 13 representative valid instances
   covering all thirteen runtime record types;
-- PASS: all 60 required injected-clock simulation scenario IDs are present exactly
+- PASS: all 63 required injected-clock simulation scenario IDs are present exactly
   once with PASS/evidence;
 - PASS: existing wake, Supervisor-wait, full Patrol checklist, progress, capacity,
   task Pin, causal repair, candidate, and Run-index fail-closed tests remain green;

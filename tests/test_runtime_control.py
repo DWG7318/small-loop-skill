@@ -72,6 +72,9 @@ REQUIRED_SIMULATION_SCENARIOS = {
     "MODEL_SILENT_SWITCH_REJECTED",
     "MODEL_ROLE_ISOLATION_PRESERVED",
     "MODEL_PATROL_DEFAULT_TERRA",
+    "MODEL_KNOWN_REFERENCE_CLASS_SPOOF_REJECTED",
+    "MODEL_SECOND_ROLE_INSTANCE_REJECTED",
+    "MODEL_SHARED_ROLE_INSTANCE_REJECTED",
 }
 
 SLK_TECHNICAL_ROLES = [
@@ -2421,6 +2424,83 @@ def test_model_policy_rejects_unproven_or_misclassified_equivalence(
         packet,
         "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
     )
+
+
+def known_reference_class_spoof_packets() -> list[dict]:
+    packets: list[dict] = []
+    for actual_model in ("gpt-5.6-luna", "gpt-5.6-sol"):
+        packet = model_binding_trace()
+        binding = packet["bindings"][0]
+        binding["actual_model"] = actual_model
+        binding["capability_equivalence"] = {
+            "status": "PROVEN_EQUIVALENT",
+            "evidence_refs": ["evidence/known-reference-spoof.txt"],
+        }
+        packets.append(packet)
+    for factory, actual_models in (
+        (luna_worker_binding, ("gpt-5.6-terra", "gpt-5.6-sol")),
+        (sol_worker_binding, ("gpt-5.6-terra", "gpt-5.6-luna")),
+    ):
+        for actual_model in actual_models:
+            binding = factory()
+            binding["actual_model"] = actual_model
+            binding["capability_equivalence"] = {
+                "status": "PROVEN_EQUIVALENT",
+                "evidence_refs": ["evidence/known-reference-spoof.txt"],
+            }
+            packets.append(model_binding_trace(worker_override=binding))
+    return packets
+
+
+def test_model_policy_rejects_known_reference_class_spoof_in_all_directions(
+    tmp_path: Path,
+) -> None:
+    for optimized in (False, True):
+        for packet in known_reference_class_spoof_packets():
+            assert_reject(
+                tmp_path,
+                packet,
+                "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+                optimized=optimized,
+            )
+
+
+def test_model_policy_rejects_second_role_instance_in_same_run(
+    tmp_path: Path,
+) -> None:
+    for optimized in (False, True):
+        packet = model_binding_trace()
+        second_worker = model_binding(
+            "WORKER",
+            sequence=6,
+            binding_id="MB-worker-second",
+            scope_kind="GO",
+            go_id="GO-01",
+        )
+        second_worker["role_instance_id"] = "ROLE-worker-second"
+        packet["bindings"].append(second_worker)
+        assert_reject(
+            tmp_path,
+            packet,
+            "SLK_RUNTIME_MODEL_ROLE_ISOLATION",
+            optimized=optimized,
+        )
+
+
+def test_model_policy_rejects_role_instance_shared_across_roles(
+    tmp_path: Path,
+) -> None:
+    for optimized in (False, True):
+        packet = model_binding_trace()
+        packet["bindings"][1]["role_instance_id"] = packet["bindings"][0][
+            "role_instance_id"
+        ]
+        assert_reject(
+            tmp_path,
+            packet,
+            "SLK_RUNTIME_MODEL_ROLE_ISOLATION",
+            optimized=optimized,
+        )
 
 
 def test_model_policy_rejects_silent_switch_and_accepts_audited_switch(
