@@ -1,8 +1,8 @@
-# Validation Report — SLK 2.5.0
+# Validation Report — SLK 2.5.1
 
-Local validation date: 2026-08-04
-Local platform: Windows, Python 3.14
-Branch: `feature/slk-2.5.0-worker-wake-patrol`
+Local validation date: 2026-08-06
+Local platform: Windows, Python 3.13
+Base revision: `origin/main` at SLK 2.5.0, with the 2.5.1 causal-experiment-preflight update
 
 ## Verified locally
 
@@ -10,7 +10,13 @@ Branch: `feature/slk-2.5.0-worker-wake-patrol`
   Control+Worker formal topology, one Patrol safeguard, root/install mirrors, file
   set, and SHA-256 Manifest;
 - PASS: official minimal Serial Plan and referenced frozen GO Contract hashes;
-- PASS: 108 full pytest tests;
+- PASS: 110 full pytest tests;
+- PASS: causal-experiment preflight validates identifier format, request shape,
+  authority seed existence and uniqueness, and one-SQLite/one-repository/no-reset
+  topology before a credited experiment can begin;
+- PASS: an invalid preflight creates zero business calls and writes, consumes no
+  causal-experiment credit, and can be corrected inside the same checkpoint only
+  when the correction is fixture- or new-harness-only;
 - PASS: 71 focused runtime-control and authority-contract tests;
 - PASS: 57 runtime-control CLI behavior tests;
 - PASS: 10 targeted acceptance-REDO tests, each covering its ordinary path and at
@@ -58,19 +64,18 @@ Branch: `feature/slk-2.5.0-worker-wake-patrol`
 ## Preserved boundaries
 
 - D0-D3, immutable Candidate binding, causal defect repair, security hard brakes,
-  and Owner Acceptance remain unchanged.
+  and Owner Acceptance remain unchanged. The causal-experiment preflight is a
+  zero-credit gate before D0 causal evidence, not a new D-stage.
 - Run Patrol is not a technical role and owns no planning, product, verification,
   acceptance, progress, Pin, or Unpin action.
 - The Run index is method-completeness evidence, not a session Runtime, scheduler,
   message bus, or additional authority.
 - No D4, universal TDD, general device monitor, CLK Chain/Stage/Barrier ownership,
   or GLK graph activation was added.
-- No Docker/system dependency installation, new Codex task, subagent, push, merge,
-  tag, Release, or PR occurred.
+- No Docker/system dependency installation, new Codex task, or subagent occurred.
 
 ## Remote evidence boundary
 
-No remote operation was authorized for this implementation. GitHub Actions is
-configured to run repository and Serial Plan validation on `ubuntu-latest` and
-`windows-latest`, but this report does not claim remote CI, remote branch, tag, or
-Release evidence.
+GitHub Actions is configured to run repository and Serial Plan validation on
+`ubuntu-latest` and `windows-latest`. This local report does not claim remote CI
+results; any push, merge, tag, or Release is reported separately after it occurs.

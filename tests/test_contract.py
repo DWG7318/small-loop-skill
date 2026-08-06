@@ -20,9 +20,9 @@ def contract() -> dict:
 
 def test_version_identity_and_owner_choice() -> None:
     version = read(ROOT / "VERSION").strip()
-    assert version == "2.5.0"
+    assert version == "2.5.1"
     assert "# Small Loop Skill (SLK)" in read(ROOT / "SKILL.md")
-    assert "Current version: **2.5.0**" in read(ROOT / "README.md")
+    assert "Current version: **2.5.1**" in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.zh-CN.md")
     assert "Small Loop Skill" in read(ROOT / "SPEC.md")
@@ -31,7 +31,7 @@ def test_version_identity_and_owner_choice() -> None:
 def test_two_formal_conversations_one_patrol_and_three_control_modes() -> None:
     value = contract()
     assert value["product_name"] == "Small Loop Skill"
-    assert value["version"] == "2.5.0"
+    assert value["version"] == "2.5.1"
     assert value["formal_execution_conversations"] == ["CONTROL", "WORKER"]
     assert value["visible_safeguard_conversations"] == ["RUN_PATROL"]
     assert value["visible_conversations"] == ["CONTROL", "WORKER", "RUN_PATROL"]
@@ -231,6 +231,15 @@ def test_causal_defect_repair_is_native_and_bounded() -> None:
     assert repair["root_cause_before_product_change"] is True
     assert repair["active_hypothesis_count"] == 1
     assert repair["minimal_experiment_count"] == 1
+    assert repair["credited_experiment_requires_zero_business_call_preflight"] is True
+    assert repair["preflight_required_checks"] == [
+        "IDENTIFIER_FORMAT",
+        "REQUEST_SHAPE",
+        "AUTHORITY_SEED_EXISTENCE_AND_UNIQUENESS",
+        "ONE_SQLITE_ONE_REPOSITORY_NO_RESET_TOPOLOGY",
+    ]
+    assert repair["invalid_preflight_consumes_experiment_credit"] is False
+    assert repair["same_checkpoint_fixture_or_new_harness_correction_allowed"] is True
     assert repair["rejected_fix_candidate_threshold"] == 3
     assert repair["count_unit"] == "CHECKER_REJECTED_IMMUTABLE_REPAIR_CANDIDATE"
     assert repair["failed_hypotheses_count_as_fix_candidates"] is False
@@ -294,6 +303,8 @@ def test_runtime_install_tree_is_mirrored() -> None:
         Path("contracts/slk-control-kernel.json"),
         Path("scripts/validate_serial_plan.py"),
         Path("scripts/validate_defect_repair.py"),
+        Path("scripts/validate_causal_experiment_preflight.py"),
+        Path("templates/causal-experiment-preflight.json"),
     ]
     relative_paths.extend(path.relative_to(ROOT) for path in sorted((ROOT / "templates").glob("*.yaml")))
     relative_paths.extend(path.relative_to(ROOT) for path in sorted((ROOT / "references").glob("*.md")))

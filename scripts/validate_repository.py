@@ -10,13 +10,14 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
 EXCLUDED_FILES = {"MANIFEST.json"}
-VERSION = "2.5.0"
+VERSION = "2.5.1"
 MIRRORED = [
     Path("SKILL.md"),
     Path("SPEC.md"),
     Path("contracts/slk-control-kernel.json"),
     Path("contracts/slk-runtime-control.schema.json"),
     Path("scripts/validate_defect_repair.py"),
+    Path("scripts/validate_causal_experiment_preflight.py"),
     Path("scripts/validate_runtime_control.py"),
     Path("scripts/validate_serial_plan.py"),
 ]
@@ -89,6 +90,7 @@ def validate(root: Path) -> list[str]:
         "contracts/slk-control-kernel.json",
         "contracts/slk-runtime-control.schema.json",
         "scripts/validate_defect_repair.py",
+        "scripts/validate_causal_experiment_preflight.py",
         "scripts/validate_runtime_control.py",
         "scripts/validate_serial_plan.py",
         "small-loop-skill/SKILL.md",
@@ -119,6 +121,7 @@ def validate(root: Path) -> list[str]:
 
     mirror_paths = list(MIRRORED)
     mirror_paths.extend(path.relative_to(root) for path in sorted((root / "templates").glob("*.yaml")))
+    mirror_paths.append(Path("templates/causal-experiment-preflight.json"))
     mirror_paths.extend(path.relative_to(root) for path in sorted((root / "references").glob("*.md")))
     for relative in mirror_paths:
         source = root / relative

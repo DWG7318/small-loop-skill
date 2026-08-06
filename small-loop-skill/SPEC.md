@@ -1,4 +1,4 @@
-# Small Loop Skill Standard Specification 2.5.0
+# Small Loop Skill Standard Specification 2.5.1
 
 ## 1. Identity
 
@@ -180,6 +180,26 @@ Before product change, Worker D0 must record stable reproduction or evidence-bac
 `NOT_REPRODUCIBLE`, one scalar active root-cause hypothesis, and one minimal
 experiment that changes one variable. Product change requires a
 `CONFIRMED` root cause and is limited to the smallest root-cause repair.
+
+### Causal experiment preflight
+
+Before consuming the one credited minimal experiment, Worker validates the exact
+frozen candidate's concrete identifier format, request/envelope shape, authority
+seed existence and uniqueness, and planned one-SQLite/one-Repository/no-reset
+topology. This preflight invokes no business action and records zero product, test
+and UI writes.
+
+An invalid preflight is not a hypothesis result, counterexample, repair candidate,
+or credited experiment. Worker may correct only a fixture value or newly leased
+harness assertion in the same authorized checkpoint, then run the credited experiment
+once. A correction affecting product meaning, frozen authority, or the active
+hypothesis requires a versioned Control amendment before execution.
+
+Use `templates/causal-experiment-preflight.json` and validate it with:
+
+```text
+python scripts/validate_causal_experiment_preflight.py <preflight.json>
+```
 
 Every repair D0 carries the lineage `failed_candidate_ref`. When the defect is
 stably reproducible and reasonably automatable, D0 `fail_before_ref.candidate_ref`

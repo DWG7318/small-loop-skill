@@ -2,7 +2,7 @@
   "schema_version": "2.0",
   "method": "SLK",
   "product_name": "Small Loop Skill",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "formal_execution_conversations": [
     "CONTROL",
     "WORKER"
@@ -231,6 +231,15 @@
     "root_cause_before_product_change": true,
     "active_hypothesis_count": 1,
     "minimal_experiment_count": 1,
+    "credited_experiment_requires_zero_business_call_preflight": true,
+    "preflight_required_checks": [
+      "IDENTIFIER_FORMAT",
+      "REQUEST_SHAPE",
+      "AUTHORITY_SEED_EXISTENCE_AND_UNIQUENESS",
+      "ONE_SQLITE_ONE_REPOSITORY_NO_RESET_TOPOLOGY"
+    ],
+    "invalid_preflight_consumes_experiment_credit": false,
+    "same_checkpoint_fixture_or_new_harness_correction_allowed": true,
     "rejected_fix_candidate_threshold": 3,
     "count_unit": "CHECKER_REJECTED_IMMUTABLE_REPAIR_CANDIDATE",
     "failed_hypotheses_count_as_fix_candidates": false,

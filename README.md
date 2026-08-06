@@ -4,7 +4,7 @@ Small Loop Skill is the strict serial engineering method for one bounded LCCodin
 Run executed through one formal Control Conversation and one persistent Worker
 Conversation, with one non-authoritative Run Patrol safeguard.
 
-Current version: **2.5.0**
+Current version: **2.5.1**
 
 ```text
 Owner
@@ -48,6 +48,11 @@ failed candidate, failure fingerprint, reproduction evidence, and repair round.
 Worker establishes stable reproduction—or evidence that it cannot be reproduced—
 then tests one root-cause hypothesis with one minimal experiment before making the
 smallest root-cause repair.
+
+Before the credited experiment, SLK validates concrete IDs, request shape, authority
+seeds, and the planned one-SQLite/one-Repository/no-reset topology without invoking
+a business action. A bad fixture is corrected in the same checkpoint and consumes
+zero causal credit; it cannot create an artificial Control-Worker loop.
 
 For a stably reproducible, reasonably automatable defect, D0 carries candidate-bound
 fail-before, pass-after, and risk-scaled regression evidence. Other cases require a

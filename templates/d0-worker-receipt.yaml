@@ -28,6 +28,10 @@ defect_repair:
     hypothesis: ""
     evidence_refs: []
   minimal_experiment:
+    preflight:
+      status: PENDING
+      receipt_ref: ""
+      credited_minimal_experiments_consumed: 0
     variable: ""
     expected: ""
     observed: ""

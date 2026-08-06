@@ -2,7 +2,7 @@
 
 Small Loop Skill 是用于一个有界 LCCoding Run 的严格串行工程执行方法。
 
-当前版本：**2.5.0**
+当前版本：**2.5.1**
 
 ```text
 Owner
@@ -44,6 +44,10 @@ Contract 要求的本地安全检查，并对已知严重风险实施硬刹车�
 D1 拒绝候选后，Checker 把一个 `DEFECT_LINEAGE` 绑定到不可变失败 Candidate、
 失败指纹、复现证据与修复轮次。Worker 必须先稳定复现，或证据化说明不可复现；
 随后一次只验证一个根因假设、执行一个最小实验，再提交最小根因修复。
+
+正式计分实验前，SLK 必须在零业务调用下校验具体 ID、请求结构、authority 种子与
+一 SQLite/一 Repository/无 reset 拓扑。fixture 错误在同一 checkpoint 内修正，
+消耗零因果 credit，不能人为制造新的 Control-Worker 循环。
 
 对可稳定复现且可合理自动化的缺陷，D0 必须绑定 fail-before、pass-after 和风险
 相称的回归证据；不适用时必须由 Checker 审核 exemption 与替代证据。同一 lineage

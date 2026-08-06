@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "excludes": [
     "MANIFEST.json"
   ],
@@ -19,7 +19,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "97f6caa6e2f4a7f08e466a62736a7372c8b80e18696d45810fb2da042748d318"
+      "sha256": "412b4150e3bf1ab4a88dc938d121324f65c3c9c0118c787be8c0a56e0ddcf8ba"
     },
     {
       "path": "LICENSE",
@@ -27,31 +27,31 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "8c8d688353cecb339fd0b2c6a8b352c262cf4161fa2d153bd44a2e608c2071ac"
+      "sha256": "8df158f50f7e1bfb3ffeccc6413a6ebc9d9a10001746f67baf13de85539f839a"
     },
     {
       "path": "README.md",
-      "sha256": "f9110a8453b9341c3b171ea9ea8c883799f4518483df8b45888f307fe3473634"
+      "sha256": "a9e9df025b3886b7d068c3fe35c8cb759e9040bb943bc893122f2fbb3c3c0a17"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "b5dd338c9175a37477c6a5645bbc4e7fbb60e96f50133c68746f8328328ae15b"
+      "sha256": "03734660f4b0f9aa9edbaa4e6b4925c65b45ce95c8b2ffc39dbba2909fc80107"
     },
     {
       "path": "SKILL.md",
-      "sha256": "72cc668fa0e417fc4158af575c3c772673bf1cfa6305ae021ea9c9bba86c6ca8"
+      "sha256": "bb62084432cfb020f8601a6071ecbcd9f27612328d21a1a37059fecf14e0dea1"
     },
     {
       "path": "SPEC.md",
-      "sha256": "9bd774ba592ef79c9b6d22733e506dff9e10f1c0f4ba13a51bd2c39213ebe88d"
+      "sha256": "aa865f1f457cbe091425ea35e1c5730ed90e73dab99f0ca1be86c20dd601804c"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "e51c7f78ae01efb2cbc277c400ac6ae184b6a2357ef72fe018402f4bae648910"
+      "sha256": "115cba3fdb01aeb729744128d75634f5ab15fa881388ece82df8308ca142fd65"
     },
     {
       "path": "VERSION",
-      "sha256": "732f64d874f90788c0199b0c19bfd9b3b6436e140114e53e462832532d74c61c"
+      "sha256": "99600f6a7bfe6c33ebd1a2518f44a861a67afc40c25da42bc622595716529584"
     },
     {
       "path": "agents/openai.yaml",
@@ -59,7 +59,7 @@
     },
     {
       "path": "contracts/slk-control-kernel.json",
-      "sha256": "1a226771403d1f27933e33953bdc97ea21b1b1f44d26a9f65db03a3eb13d8165"
+      "sha256": "52dc6dd6060ec01a0884d12c89734744d99a5159e51faaff89f6651413344510"
     },
     {
       "path": "contracts/slk-runtime-control.schema.json",
@@ -103,7 +103,7 @@
     },
     {
       "path": "references/causal-defect-repair.md",
-      "sha256": "3ba6df3581c287ab202f4deb95cc19751733948636b703c5dac039cd9f3f715f"
+      "sha256": "00f1842219520603611ef2dd85fffedec4f58fa0596b09a1e3cf04eb820b0f79"
     },
     {
       "path": "references/lccoding-interface.md",
@@ -134,12 +134,16 @@
       "sha256": "00ce1eaa6bf4d8513ce8ed0034541c505d7fef4018d520db05cd1d57ab4d11d9"
     },
     {
+      "path": "scripts/validate_causal_experiment_preflight.py",
+      "sha256": "48ad171d89095ecaaa0a66a6f9a9db87fd279fa741d20218f3cf89b94ff0d5fd"
+    },
+    {
       "path": "scripts/validate_defect_repair.py",
       "sha256": "1380c2d709499d4b35b242764cf8b42c2821a708e2405bc12963e908c0492d38"
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "40cc158d003d25e109ba2aacfb80a36ff60a9961247a197388a48a8e19a5cbbe"
+      "sha256": "dc6b38b57d8475e6fc9d6403127b8f5d14613edc281b27496bee2f667d0143d9"
     },
     {
       "path": "scripts/validate_runtime_control.py",
@@ -151,15 +155,15 @@
     },
     {
       "path": "small-loop-skill/SKILL.md",
-      "sha256": "72cc668fa0e417fc4158af575c3c772673bf1cfa6305ae021ea9c9bba86c6ca8"
+      "sha256": "bb62084432cfb020f8601a6071ecbcd9f27612328d21a1a37059fecf14e0dea1"
     },
     {
       "path": "small-loop-skill/SPEC.md",
-      "sha256": "9bd774ba592ef79c9b6d22733e506dff9e10f1c0f4ba13a51bd2c39213ebe88d"
+      "sha256": "aa865f1f457cbe091425ea35e1c5730ed90e73dab99f0ca1be86c20dd601804c"
     },
     {
       "path": "small-loop-skill/contracts/slk-control-kernel.json",
-      "sha256": "1a226771403d1f27933e33953bdc97ea21b1b1f44d26a9f65db03a3eb13d8165"
+      "sha256": "52dc6dd6060ec01a0884d12c89734744d99a5159e51faaff89f6651413344510"
     },
     {
       "path": "small-loop-skill/contracts/slk-runtime-control.schema.json",
@@ -171,7 +175,7 @@
     },
     {
       "path": "small-loop-skill/references/causal-defect-repair.md",
-      "sha256": "3ba6df3581c287ab202f4deb95cc19751733948636b703c5dac039cd9f3f715f"
+      "sha256": "00f1842219520603611ef2dd85fffedec4f58fa0596b09a1e3cf04eb820b0f79"
     },
     {
       "path": "small-loop-skill/references/lccoding-interface.md",
@@ -202,6 +206,10 @@
       "sha256": "00ce1eaa6bf4d8513ce8ed0034541c505d7fef4018d520db05cd1d57ab4d11d9"
     },
     {
+      "path": "small-loop-skill/scripts/validate_causal_experiment_preflight.py",
+      "sha256": "48ad171d89095ecaaa0a66a6f9a9db87fd279fa741d20218f3cf89b94ff0d5fd"
+    },
+    {
       "path": "small-loop-skill/scripts/validate_defect_repair.py",
       "sha256": "1380c2d709499d4b35b242764cf8b42c2821a708e2405bc12963e908c0492d38"
     },
@@ -216,6 +224,10 @@
     {
       "path": "small-loop-skill/templates/baseline-amendment.yaml",
       "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
+    },
+    {
+      "path": "small-loop-skill/templates/causal-experiment-preflight.json",
+      "sha256": "3dfe08517c869fab0a902ffbc39f1de05be55c7eb4cc9b445f2aeb35c6f59233"
     },
     {
       "path": "small-loop-skill/templates/cell-capacity-event.yaml",
@@ -235,7 +247,7 @@
     },
     {
       "path": "small-loop-skill/templates/d0-worker-receipt.yaml",
-      "sha256": "564e96358aedcc034dc3e2174ccb912052833c9d7c7f8aaf1fef90fa310328e5"
+      "sha256": "7da0d113a05e9ad607bcd0b7f0041ffd394aca9adb4f620f8ef5fe552807051c"
     },
     {
       "path": "small-loop-skill/templates/d1-checker-receipt.yaml",
@@ -310,6 +322,10 @@
       "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
     },
     {
+      "path": "templates/causal-experiment-preflight.json",
+      "sha256": "3dfe08517c869fab0a902ffbc39f1de05be55c7eb4cc9b445f2aeb35c6f59233"
+    },
+    {
       "path": "templates/cell-capacity-event.yaml",
       "sha256": "c732bb958ca0ed67e281bab5a9df86e6ec5e71375ce2b3454fd7d19e09b3a34f"
     },
@@ -327,7 +343,7 @@
     },
     {
       "path": "templates/d0-worker-receipt.yaml",
-      "sha256": "564e96358aedcc034dc3e2174ccb912052833c9d7c7f8aaf1fef90fa310328e5"
+      "sha256": "7da0d113a05e9ad607bcd0b7f0041ffd394aca9adb4f620f8ef5fe552807051c"
     },
     {
       "path": "templates/d1-checker-receipt.yaml",
@@ -402,12 +418,16 @@
       "sha256": "48b22290681ba48ec86d788bc041fb639ca876e90f7be71b9a01bb150335f5e5"
     },
     {
+      "path": "tests/test_causal_experiment_preflight.py",
+      "sha256": "c668550f92406c4a893dd4081b1a1049959df1294d2add3ffe48ec6c982dd7a5"
+    },
+    {
       "path": "tests/test_contract.py",
-      "sha256": "0ac1c579cfd32434af4bd8b690f892de752892653667811ab1010f25cda6e4a4"
+      "sha256": "26d1799d7b13158305fe3e18974cd3d407088c49ca1f8759574184f97c363c77"
     },
     {
       "path": "tests/test_repository_validator.py",
-      "sha256": "16f4dd1e4ab59fc79e6ff2e3b753ac0504187c30dfedad437976798b975309de"
+      "sha256": "78d45c0cefff22a12b4909ababdd11f7164810a4430b06e4fc6ff905647ef618"
     },
     {
       "path": "tests/test_runtime_control.py",

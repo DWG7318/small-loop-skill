@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.1
+
+- Added a machine-validated, zero-business-call causal experiment preflight for
+  concrete identifier format, request shape, authority seeds, and one-SQLite/
+  one-Repository/no-reset topology.
+- Made invalid fixture or newly leased harness assertions zero-credit and
+  correctable within the same authorized checkpoint when product meaning,
+  authority, and the active hypothesis remain unchanged.
+- Added the preflight receipt template and validator, and bound the policy into the
+  D0 receipt template and control kernel.
+
 ## 2.5.0
 
 - Added the Worker-only four-level wake ladder for the frozen Checker, scoped

@@ -22,6 +22,13 @@ achieved. Investigation keeps one scalar active hypothesis and changes one varia
 in one minimal experiment. A product change is allowed only after the root cause is
 confirmed by evidence, and its scope is limited to the smallest root-cause repair.
 
+Before the credited experiment, Worker checks frozen concrete IDs, request shape,
+authority seed existence and uniqueness, and planned one-SQLite/one-Repository/no-
+reset topology without a business call. A failed preflight is zero-credit and may be
+corrected in the same authorized checkpoint only for a fixture or newly leased
+harness assertion that leaves product meaning, frozen authority and the hypothesis
+unchanged.
+
 When the defect is stably reproducible and reasonably automatable, D0 binds:
 
 - lineage `failed_candidate_ref` to the prior failed Candidate;

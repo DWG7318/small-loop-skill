@@ -1,7 +1,7 @@
 ---
 name: small-loop-skill
 description: Use SLK for one bounded LCCoding Run whose GO outcomes form exactly one strict serial sequence executed through one visible Control Conversation and one persistent Worker Conversation. Never combine SLK with CLK or GLK in the same Run.
-version: 2.5.0
+version: 2.5.1
 ---
 
 # Small Loop Skill (SLK)
@@ -14,7 +14,7 @@ version: 2.5.0
 - Repository: `https://github.com/DWG7318/small-loop-skill`.
 - Repository ID: `1295599218`.
 - Default branch: `main`.
-- Current specification version: `2.5.0`.
+- Current specification version: `2.5.1`.
 - Version source: repository `VERSION` file and matching annotated `v*` tag.
 
 ## Trigger
@@ -80,6 +80,11 @@ RUN_CONTRACT
    reproduction evidence, `DEFECT_LINEAGE`, and repair round.
 10. Worker establishes reproduction or evidenced non-reproduction, then tests one
     active root-cause hypothesis with one minimal experiment before product change.
+10a. Before a credited causal experiment, Worker performs a zero-business-call
+    preflight of frozen identifier format, request shape, authority seeds and planned
+    one-SQLite/one-Repository/no-reset topology. A failed preflight consumes no
+    experiment credit and is corrected inside the same authorized checkpoint only
+    when product meaning, frozen authority and the active hypothesis stay unchanged.
 11. A stably reproducible and reasonably automatable defect requires candidate-bound
     fail-before, pass-after, and risk-scaled regression evidence; an exemption
     requires Checker approval and alternative evidence.

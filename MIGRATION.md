@@ -1,5 +1,19 @@
 # Migration to SLK 2.5.0
 
+## From 2.5.0
+
+Active Runs remain on their frozen 2.5.0 method unless a versioned no-side-effect
+Method Amendment binds the 2.5.1 causal preflight. The amendment must prove that it
+adds only a zero-business-call input validation before a credited causal experiment;
+it cannot change GO/CELL order, topology, frozen authority, product meaning, or any
+D0-D3 receipt.
+
+For future Runs, freeze a `CAUSAL_EXPERIMENT_PREFLIGHT` before each credited D0
+experiment. It validates identifier format, request shape, authority seed existence
+and uniqueness, and planned one-SQLite/one-Repository/no-reset topology. An invalid
+preflight consumes zero causal credit and may be corrected within the same authorized
+checkpoint only for a fixture or newly leased harness assertion.
+
 ## From 2.4.0
 
 Active Runs never silently adopt 2.5.0. At a versioned boundary, preserve existing

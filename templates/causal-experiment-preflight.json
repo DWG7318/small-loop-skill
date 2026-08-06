@@ -1,0 +1,30 @@
+{
+  "schema_version": "slk.causal-experiment-preflight.v1",
+  "status": "PENDING",
+  "candidate_ref": "",
+  "purpose": "Validate deterministic experiment inputs before the one credited causal experiment.",
+  "input_contract": {
+    "visible_id_pattern": "",
+    "visible_ids": [],
+    "request_shape_checks": [],
+    "authority_seed_checks": [],
+    "topology": {
+      "planned_sqlite_authorities": 1,
+      "planned_repository_authorities": 1,
+      "table_reset_allowed": false
+    }
+  },
+  "preflight_results": {
+    "visible_ids_match_pattern": false,
+    "request_shape_valid": false,
+    "authority_seeds_valid": false,
+    "topology_valid": false,
+    "business_calls_attempted": 0,
+    "product_test_ui_writes": 0
+  },
+  "credit": {
+    "credited_minimal_experiments_consumed": 0,
+    "invalid_preflight_counts_as_experiment": false
+  },
+  "evidence_refs": []
+}
