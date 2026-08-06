@@ -6,6 +6,7 @@ baseline_ref: {}
 candidate_ref: {}
 responsibility: CHECKER_RESPONSIBILITY
 execution_context_ref: ""
+model_binding_ref: {}
 issued_at: ""
 commands_results: []
 evidence_refs: []

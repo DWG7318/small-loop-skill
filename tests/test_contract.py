@@ -20,9 +20,9 @@ def contract() -> dict:
 
 def test_version_identity_and_owner_choice() -> None:
     version = read(ROOT / "VERSION").strip()
-    assert version == "2.5.1"
+    assert version == "2.6.0"
     assert "# Small Loop Skill (SLK)" in read(ROOT / "SKILL.md")
-    assert "Current version: **2.5.1**" in read(ROOT / "README.md")
+    assert "Current version: **2.6.0**" in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.md")
     assert "Serial Loop Kit" not in read(ROOT / "README.zh-CN.md")
     assert "Small Loop Skill" in read(ROOT / "SPEC.md")
@@ -31,7 +31,7 @@ def test_version_identity_and_owner_choice() -> None:
 def test_two_formal_conversations_one_patrol_and_three_control_modes() -> None:
     value = contract()
     assert value["product_name"] == "Small Loop Skill"
-    assert value["version"] == "2.5.1"
+    assert value["version"] == "2.6.0"
     assert value["formal_execution_conversations"] == ["CONTROL", "WORKER"]
     assert value["visible_safeguard_conversations"] == ["RUN_PATROL"]
     assert value["visible_conversations"] == ["CONTROL", "WORKER", "RUN_PATROL"]
@@ -49,7 +49,7 @@ def test_two_formal_conversations_one_patrol_and_three_control_modes() -> None:
     assert patrol["formal_technical_role"] is False
     assert patrol["count_per_run"] == 1
     assert patrol["heartbeat_count_per_run"] == 1
-    assert patrol["model"] == "gpt-5.6-luna"
+    assert patrol["model_policy"] == "DEFAULT_TERRA_CLASS"
     assert patrol["reasoning_effort"] == "xhigh"
     assert patrol["workload_interval_minutes"] == {
         "LOW": 10,
@@ -113,6 +113,22 @@ def test_worker_wake_wait_subagent_and_progress_authority() -> None:
         "UNAUTHORIZED_THREAD_PIN",
         "PIN_PROVENANCE_UNKNOWN",
     ]
+    model = value["model_selection"]
+    assert model["default_reference_model"] == "gpt-5.6-terra"
+    assert model["worker_low_risk_reference_model"] == "gpt-5.6-luna"
+    assert model["high_difficulty_reference_model"] == "gpt-5.6-sol"
+    assert model["reasoning_effort_default"] == "xhigh"
+    assert model["ultra_requires_exact_owner_authorization"] is True
+    assert model["gpt_5_5_or_lower_allowed"] is False
+    assert model["patrol_policy"] == "DEFAULT_TERRA_CLASS"
+    assert model["same_model_collapses_role_isolation"] is False
+    assert model["known_reference_actual_requires_exact_reference"] is True
+    assert model["gpt_identity_requires_canonical_case_and_no_outer_whitespace"] is True
+    assert model["known_family_variant_requires_same_reference_and_class"] is True
+    assert model["known_family_boundary_separators"] == ["-", ".", "_"]
+    assert model["role_instance_id_stable_per_role"] is True
+    assert model["role_instance_id_shared_across_roles"] is False
+    assert model["worker_role_instance_count"] == 1
 
 
 def test_d0_d3_authority_is_non_interchangeable() -> None:
@@ -146,7 +162,7 @@ def test_blank_receipts_are_fail_closed() -> None:
 
 def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
     schema = json.loads(read(ROOT / "contracts" / "slk-runtime-control.schema.json"))
-    assert len(schema["oneOf"]) == 12
+    assert len(schema["oneOf"]) == 13
     assert {
         "run_runtime_contract",
         "device_capacity_profile",
@@ -160,12 +176,32 @@ def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
         "runtime_simulation",
         "thread_pin_audit",
         "run_runtime_index",
+        "model_binding_trace",
     } <= set(schema["$defs"])
     assert all(
         definition.get("additionalProperties") is False
         for definition in schema["$defs"].values()
         if definition.get("type") == "object"
     )
+    known_model_guards = schema["$defs"]["model_binding"]["allOf"]
+    assert {
+        guard["if"]["properties"]["actual_model"]["const"]
+        for guard in known_model_guards
+        if "const" in guard["if"]["properties"]["actual_model"]
+    } == {"gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol"}
+    assert {
+        guard["if"]["properties"]["actual_model"]["pattern"]
+        for guard in known_model_guards
+        if "pattern" in guard["if"]["properties"]["actual_model"]
+    } == {
+        "^gpt-5\\.6-terra[-._]",
+        "^gpt-5\\.6-luna[-._]",
+        "^gpt-5\\.6-sol[-._]",
+    }
+    actual_model_schema = schema["$defs"]["model_binding"]["properties"][
+        "actual_model"
+    ]
+    assert "pattern" in actual_model_schema
     names = {
         "run-runtime-contract.yaml",
         "device-capacity-profile.yaml",
@@ -179,6 +215,7 @@ def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
         "runtime-simulation.yaml",
         "thread-pin-audit.yaml",
         "run-runtime-index.yaml",
+        "model-binding-trace.yaml",
     }
     for name in names:
         root_path = ROOT / "templates" / name
@@ -195,7 +232,11 @@ def test_default_prompt_contains_runtime_hard_brakes() -> None:
     for phrase in (
         "any positive wait_threads",
         "GO/CELL n/N",
-        "gpt-5.6-luna+xhigh",
+        "gpt-5.6-terra+xhigh",
+        "fine-grained/low-risk",
+        "gpt-5.6-sol+xhigh",
+        "gpt-5.5 and lower",
+        "silent model switch",
         "CELL_CAPACITY_GATE",
         "patrol_cycle_id",
         "RUN_RUNTIME_INDEX",

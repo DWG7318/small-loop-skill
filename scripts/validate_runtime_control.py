@@ -8,7 +8,7 @@ from typing import Callable, Iterable
 import yaml
 
 
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 WAKE_OFFSETS = {1: 0, 2: 120, 3: 240, 4: 360}
 WAKE_ACTIONS = {
     1: "SEND_MESSAGE_TO_THREAD",
@@ -77,6 +77,19 @@ REQUIRED_SCENARIOS = {
     "PATROL_COMPLETE_CHECKLIST",
     "RUN_RUNTIME_INDEX_COMPLETE",
     "PATROL_DIFFICULTY_INTERVAL_BOUND",
+    "MODEL_TERRA_DEFAULT_ACCEPTED",
+    "MODEL_LUNA_FINE_GRAINED_LOW_RISK_ACCEPTED",
+    "MODEL_SOL_HIGH_DIFFICULTY_ACCEPTED",
+    "MODEL_EQUIVALENT_SUBSTITUTE_ACCEPTED",
+    "MODEL_GPT55_OR_LOWER_REJECTED",
+    "MODEL_ULTRA_WITHOUT_OWNER_REJECTED",
+    "MODEL_UNJUSTIFIED_DOWNGRADE_REJECTED",
+    "MODEL_SILENT_SWITCH_REJECTED",
+    "MODEL_ROLE_ISOLATION_PRESERVED",
+    "MODEL_PATROL_DEFAULT_TERRA",
+    "MODEL_KNOWN_REFERENCE_CLASS_SPOOF_REJECTED",
+    "MODEL_SECOND_ROLE_INSTANCE_REJECTED",
+    "MODEL_SHARED_ROLE_INSTANCE_REJECTED",
 }
 SLK_TECHNICAL_ROLES = {
     "SUPERVISOR_RESPONSIBILITY",
@@ -85,6 +98,28 @@ SLK_TECHNICAL_ROLES = {
     "WORKER",
 }
 PIN_SUBJECT_ROLES = SLK_TECHNICAL_ROLES | {"RUN_PATROL"}
+MODEL_ROLES = SLK_TECHNICAL_ROLES | {"RUN_PATROL"}
+REFERENCE_CLASSES = {
+    "gpt-5.6-terra": "TERRA_CLASS",
+    "gpt-5.6-luna": "LUNA_CLASS",
+    "gpt-5.6-sol": "SOL_CLASS",
+}
+KNOWN_GPT_FAMILY = re.compile(
+    r"^(gpt-5\.6-(terra|luna|sol))(?=$|[-._])"
+)
+HIGH_DIFFICULTY_WORK = {
+    "HIGH_DIFFICULTY_CORRECTION",
+    "ROOT_CAUSE_DIAGNOSIS",
+    "COMPLEX_REWORK",
+}
+MODEL_SELECTION_REASONS = {
+    "STANDARD_TECHNICAL": "DEFAULT_TECHNICAL_ROLE",
+    "NON_TECHNICAL_PATROL": "DEFAULT_NON_TECHNICAL_PATROL",
+    "FINE_GRAINED_LOW_RISK": "FINE_GRAINED_LOW_RISK_CELL",
+    "HIGH_DIFFICULTY_CORRECTION": "HIGH_DIFFICULTY_CORRECTION",
+    "ROOT_CAUSE_DIAGNOSIS": "ROOT_CAUSE_DIAGNOSIS",
+    "COMPLEX_REWORK": "COMPLEX_REWORK",
+}
 WORKLOAD_INTERVALS = {"LOW": 10, "MEDIUM": 15, "HIGH": 30}
 PATROL_REQUIRED_CHECKS = {
     "FORWARD_MOTION",
@@ -225,6 +260,342 @@ def validate_common(packet: dict) -> None:
     text(packet.get("record_type"), "SLK_RUNTIME_RECORD_TYPE", "record_type")
 
 
+def validate_model_floor(model: object) -> str:
+    value = text(model, "SLK_RUNTIME_MODEL_BINDING_INVALID", "actual_model")
+    if value != value.strip():
+        fail(
+            "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+            "model identity cannot contain leading or trailing whitespace",
+        )
+    lowered = value.lower()
+    if lowered.startswith("gpt-"):
+        if value != lowered:
+            fail(
+                "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+                "GPT model identity must use its canonical lowercase identifier",
+            )
+        match = re.fullmatch(
+            r"gpt-(\d+)(?:\.(\d+))?(?:-[a-z0-9][a-z0-9._-]*)?",
+            lowered,
+        )
+        if match is None:
+            fail("SLK_RUNTIME_MODEL_FLOOR", "unparseable GPT model claim")
+        major = int(match.group(1))
+        minor = int(match.group(2) or 0)
+        if major < 5 or (major == 5 and minor <= 5):
+            fail("SLK_RUNTIME_MODEL_FLOOR", "GPT 5.5 and lower are forbidden")
+        return lowered
+    return value
+
+
+def classify_known_gpt_family(model: str) -> tuple[str, str] | None:
+    match = KNOWN_GPT_FAMILY.match(model)
+    if match is None:
+        return None
+    reference_model = match.group(1)
+    return reference_model, REFERENCE_CLASSES[reference_model]
+
+
+def model_scope_key(binding: dict) -> tuple[str, str, str, str, str, str]:
+    return (
+        str(binding.get("role")),
+        str(binding.get("role_instance_id")),
+        str(binding.get("scope_kind")),
+        str(binding.get("go_id")),
+        str(binding.get("cell_id")),
+        str(binding.get("round_id")),
+    )
+
+
+def validate_model_binding(binding: object, *, run_id: str) -> dict:
+    item = mapping(binding, "SLK_RUNTIME_MODEL_BINDING_INVALID", "model binding")
+    expected_fields = {
+        "sequence",
+        "binding_id",
+        "binding_version",
+        "status",
+        "role",
+        "role_instance_id",
+        "scope_kind",
+        "go_id",
+        "cell_id",
+        "round_id",
+        "selection_level",
+        "work_class",
+        "selection_reason",
+        "selection_evidence_refs",
+        "reference_model",
+        "actual_model",
+        "capability_class",
+        "capability_equivalence",
+        "reasoning_effort",
+        "owner_ultra_authorization_ref",
+        "cell_contract_ref",
+        "cell_granularity",
+        "risk_level",
+        "contract_luna_allowed",
+        "readiness_gate",
+        "isolation_gate",
+        "verification_gate",
+        "model_switch",
+        "supersedes_binding_id",
+        "switch_reason",
+        "switch_evidence_refs",
+        "evidence_refs",
+    }
+    if set(item) != expected_fields:
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "model binding fields are closed")
+    integer(item.get("sequence"), "SLK_RUNTIME_MODEL_BINDING_INVALID", "sequence", minimum=1)
+    text(item.get("binding_id"), "SLK_RUNTIME_MODEL_BINDING_INVALID", "binding_id")
+    integer(
+        item.get("binding_version"),
+        "SLK_RUNTIME_MODEL_BINDING_INVALID",
+        "binding_version",
+        minimum=1,
+    )
+    if item.get("status") not in {"CURRENT", "SUPERSEDED"}:
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "binding status must be CURRENT or SUPERSEDED")
+    role = item.get("role")
+    if role not in MODEL_ROLES:
+        fail("SLK_RUNTIME_MODEL_ROLE_ISOLATION", "model binding role is outside SLK")
+    text(item.get("role_instance_id"), "SLK_RUNTIME_MODEL_ROLE_ISOLATION", "role_instance_id")
+
+    scope_kind = item.get("scope_kind")
+    if scope_kind not in {"RUN", "GO", "CELL", "ROUND"}:
+        fail("SLK_RUNTIME_MODEL_BINDING_SCOPE", "invalid model binding scope")
+    for name in ("go_id", "cell_id", "round_id"):
+        if not isinstance(item.get(name), str):
+            fail("SLK_RUNTIME_MODEL_BINDING_SCOPE", f"{name} must be text")
+    go_id, cell_id, round_id = item["go_id"], item["cell_id"], item["round_id"]
+    scope_valid = {
+        "RUN": not go_id and not cell_id and not round_id,
+        "GO": bool(go_id) and not cell_id and not round_id,
+        "CELL": bool(go_id and cell_id) and not round_id,
+        "ROUND": bool(go_id and cell_id and round_id),
+    }[scope_kind]
+    if not scope_valid:
+        fail("SLK_RUNTIME_MODEL_BINDING_SCOPE", "scope identifiers do not match scope_kind")
+
+    reference_model = item.get("reference_model")
+    capability_class = item.get("capability_class")
+    if REFERENCE_CLASSES.get(reference_model) != capability_class:
+        fail("SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID", "reference model and capability class differ")
+    actual_model = validate_model_floor(item.get("actual_model"))
+    equivalence = mapping(
+        item.get("capability_equivalence"),
+        "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+        "capability_equivalence",
+    )
+    if set(equivalence) != {"status", "evidence_refs"}:
+        fail("SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID", "equivalence fields are closed")
+    evidence(
+        equivalence.get("evidence_refs"),
+        "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+    )
+    known_family = classify_known_gpt_family(actual_model)
+    if known_family is not None:
+        known_reference_model, known_actual_class = known_family
+        expected_equivalence = (
+            "EXACT_REFERENCE"
+            if actual_model == known_reference_model
+            else "PROVEN_EQUIVALENT"
+        )
+        if (
+            reference_model != known_reference_model
+            or capability_class != known_actual_class
+            or equivalence.get("status") != expected_equivalence
+        ):
+            fail(
+                "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+                "known GPT family requires its canonical reference and real class",
+            )
+    elif equivalence.get("status") != "PROVEN_EQUIVALENT":
+        fail("SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID", "model equivalence is not proven")
+
+    effort = item.get("reasoning_effort")
+    owner_ultra_ref = item.get("owner_ultra_authorization_ref")
+    if effort not in {"xhigh", "ultra"} or not isinstance(owner_ultra_ref, str):
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "reasoning effort must be xhigh or Owner-authorized ultra")
+    if effort == "ultra":
+        owner_role = str(role).replace("_RESPONSIBILITY", "")
+        expected_ultra_ref = f"owner-auth/{run_id}/{owner_role}/ULTRA"
+        if owner_ultra_ref != expected_ultra_ref:
+            fail("SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN", "ultra requires exact Owner authorization")
+    elif owner_ultra_ref:
+        fail("SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN", "unused ultra authorization is forbidden")
+
+    selection_level = item.get("selection_level")
+    work_class = item.get("work_class")
+    if item.get("selection_reason") != MODEL_SELECTION_REASONS.get(work_class):
+        fail("SLK_RUNTIME_MODEL_SELECTION_INVALID", "selection reason does not match work class")
+    evidence(
+        item.get("selection_evidence_refs"),
+        "SLK_RUNTIME_MODEL_SELECTION_INVALID",
+    )
+    cell_ref = mapping(
+        item.get("cell_contract_ref"),
+        "SLK_RUNTIME_MODEL_SELECTION_INVALID",
+        "cell_contract_ref",
+    )
+    if scope_kind in {"CELL", "ROUND"}:
+        ref(cell_ref, "SLK_RUNTIME_MODEL_SELECTION_INVALID", "cell_contract_ref", hashed=True)
+    elif cell_ref:
+        fail("SLK_RUNTIME_MODEL_SELECTION_INVALID", "non-CELL scope cannot claim a CELL contract")
+    if item.get("cell_granularity") not in {"NOT_APPLICABLE", "FINE_GRAINED", "COARSE"}:
+        fail("SLK_RUNTIME_MODEL_SELECTION_INVALID", "invalid CELL granularity")
+    if item.get("risk_level") not in {"NOT_APPLICABLE", "LOW", "MEDIUM", "HIGH"}:
+        fail("SLK_RUNTIME_MODEL_SELECTION_INVALID", "invalid risk level")
+    boolean(
+        item.get("contract_luna_allowed"),
+        "SLK_RUNTIME_MODEL_SELECTION_INVALID",
+        "contract_luna_allowed",
+    )
+
+    if selection_level == "DEFAULT":
+        expected_work = "NON_TECHNICAL_PATROL" if role == "RUN_PATROL" else "STANDARD_TECHNICAL"
+        valid_selection = (
+            reference_model == "gpt-5.6-terra"
+            and capability_class == "TERRA_CLASS"
+            and work_class == expected_work
+            and item.get("contract_luna_allowed") is False
+        )
+    elif selection_level == "CELL_LOW_RISK_EXCEPTION":
+        valid_selection = (
+            role == "WORKER"
+            and scope_kind in {"CELL", "ROUND"}
+            and reference_model == "gpt-5.6-luna"
+            and capability_class == "LUNA_CLASS"
+            and work_class == "FINE_GRAINED_LOW_RISK"
+            and item.get("cell_granularity") == "FINE_GRAINED"
+            and item.get("risk_level") == "LOW"
+            and item.get("contract_luna_allowed") is True
+        )
+    elif selection_level == "HIGH_DIFFICULTY_ESCALATION":
+        valid_selection = (
+            role in SLK_TECHNICAL_ROLES
+            and scope_kind in {"GO", "CELL", "ROUND"}
+            and reference_model == "gpt-5.6-sol"
+            and capability_class == "SOL_CLASS"
+            and work_class in HIGH_DIFFICULTY_WORK
+            and item.get("contract_luna_allowed") is False
+        )
+    else:
+        valid_selection = False
+    if not valid_selection:
+        fail("SLK_RUNTIME_MODEL_SELECTION_INVALID", "model selection level is not authorized for this role/work")
+
+    for name in ("readiness_gate", "isolation_gate", "verification_gate"):
+        if item.get(name) != "PASS":
+            fail("SLK_RUNTIME_MODEL_REVALIDATION_REQUIRED", f"{name} must PASS")
+    boolean(item.get("model_switch"), "SLK_RUNTIME_MODEL_BINDING_INVALID", "model_switch")
+    for name in ("supersedes_binding_id", "switch_reason"):
+        if not isinstance(item.get(name), str):
+            fail("SLK_RUNTIME_MODEL_BINDING_INVALID", f"{name} must be text")
+    switch_evidence = sequence(
+        item.get("switch_evidence_refs"),
+        "SLK_RUNTIME_MODEL_BINDING_INVALID",
+        "switch_evidence_refs",
+    )
+    if any(not isinstance(value, str) or not value for value in switch_evidence):
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "switch evidence must be immutable refs")
+    evidence(item.get("evidence_refs"), "SLK_RUNTIME_MODEL_BINDING_INVALID")
+    return item
+
+
+def validate_model_binding_trace(packet: dict) -> None:
+    expected_fields = {
+        "schema_version",
+        "record_type",
+        "status",
+        "run_id",
+        "trace_id",
+        "version",
+        "trace_sha256",
+        "history_immutable",
+        "bindings",
+        "evidence_refs",
+    }
+    if set(packet) != expected_fields:
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "model trace fields are closed")
+    if packet.get("status") != "READY" or packet.get("history_immutable") is not True:
+        fail("SLK_RUNTIME_MODEL_REVALIDATION_REQUIRED", "model trace must be READY and immutable")
+    run_id = text(packet.get("run_id"), "SLK_RUNTIME_MODEL_BINDING_INVALID", "run_id")
+    text(packet.get("trace_id"), "SLK_RUNTIME_MODEL_BINDING_INVALID", "trace_id")
+    integer(packet.get("version"), "SLK_RUNTIME_MODEL_BINDING_INVALID", "version", minimum=1)
+    sha256(packet.get("trace_sha256"), "SLK_RUNTIME_MODEL_BINDING_INVALID", "trace_sha256")
+    raw_bindings = sequence(
+        packet.get("bindings"),
+        "SLK_RUNTIME_MODEL_BINDING_INVALID",
+        "bindings",
+    )
+    if not raw_bindings:
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "model trace requires bindings")
+    bindings = [validate_model_binding(value, run_id=run_id) for value in raw_bindings]
+    if [item["sequence"] for item in bindings] != list(range(1, len(bindings) + 1)):
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "binding sequence must be contiguous")
+    binding_ids = [item["binding_id"] for item in bindings]
+    if len(binding_ids) != len(set(binding_ids)):
+        fail("SLK_RUNTIME_MODEL_ROLE_ISOLATION", "binding IDs cannot be shared across roles")
+
+    role_instances: dict[str, set[str]] = {}
+    instance_roles: dict[str, set[str]] = {}
+    for item in bindings:
+        role_instances.setdefault(item["role"], set()).add(item["role_instance_id"])
+        instance_roles.setdefault(item["role_instance_id"], set()).add(item["role"])
+    if any(len(instance_ids) != 1 for instance_ids in role_instances.values()):
+        fail(
+            "SLK_RUNTIME_MODEL_ROLE_ISOLATION",
+            "each SLK role must retain one stable role instance within the Run",
+        )
+    if any(len(roles) != 1 for roles in instance_roles.values()):
+        fail(
+            "SLK_RUNTIME_MODEL_ROLE_ISOLATION",
+            "a role instance cannot be shared across SLK roles",
+        )
+
+    groups: dict[tuple[str, str, str, str, str, str], list[dict]] = {}
+    for item in bindings:
+        groups.setdefault(model_scope_key(item), []).append(item)
+    for values in groups.values():
+        values.sort(key=lambda value: value["binding_version"])
+        if [item["binding_version"] for item in values] != list(range(1, len(values) + 1)):
+            fail("SLK_RUNTIME_SILENT_MODEL_SWITCH", "binding versions must be contiguous")
+        first = values[0]
+        if (
+            first["model_switch"] is not False
+            or first["supersedes_binding_id"]
+            or first["switch_reason"]
+            or first["switch_evidence_refs"]
+        ):
+            fail("SLK_RUNTIME_SILENT_MODEL_SWITCH", "initial binding cannot claim a switch")
+        for previous, current in zip(values, values[1:]):
+            changed = (
+                previous["actual_model"] != current["actual_model"]
+                or previous["reasoning_effort"] != current["reasoning_effort"]
+            )
+            if (
+                not changed
+                or current["model_switch"] is not True
+                or current["supersedes_binding_id"] != previous["binding_id"]
+                or not current["switch_reason"]
+                or not current["switch_evidence_refs"]
+            ):
+                fail("SLK_RUNTIME_SILENT_MODEL_SWITCH", "model change requires a new evidenced binding")
+        if any(item["status"] != "SUPERSEDED" for item in values[:-1]):
+            fail("SLK_RUNTIME_SILENT_MODEL_SWITCH", "prior binding must be superseded")
+        if values[-1]["status"] != "CURRENT":
+            fail("SLK_RUNTIME_MODEL_REVALIDATION_REQUIRED", "each role/scope needs one current binding")
+
+    current_roles = {
+        item["role"]
+        for item in bindings
+        if item["status"] == "CURRENT"
+    }
+    if current_roles != MODEL_ROLES:
+        fail("SLK_RUNTIME_MODEL_ROLE_ISOLATION", "every SLK role needs a separate current binding")
+    evidence(packet.get("evidence_refs"), "SLK_RUNTIME_MODEL_BINDING_INVALID")
+
+
 def validate_run_runtime_contract(packet: dict) -> None:
     if packet.get("status") != "READY":
         fail("SLK_RUNTIME_NOT_READY", "runtime contract must be READY")
@@ -243,8 +614,23 @@ def validate_run_runtime_contract(packet: dict) -> None:
     patrol = mapping(packet.get("patrol"), "SLK_RUNTIME_PATROL_UNIQUE", "patrol")
     if patrol.get("conversation_count") != 1 or patrol.get("heartbeat_count") != 1:
         fail("SLK_RUNTIME_PATROL_UNIQUE", "exactly one Patrol and heartbeat are required")
-    if patrol.get("model") != "gpt-5.6-luna" or patrol.get("reasoning_effort") != "xhigh":
-        fail("SLK_RUNTIME_PATROL_MODEL", "Patrol requires gpt-5.6-luna + xhigh")
+    patrol_model = validate_model_floor(patrol.get("model"))
+    if patrol_model in {"gpt-5.6-luna", "gpt-5.6-sol"}:
+        fail("SLK_RUNTIME_MODEL_SELECTION_INVALID", "Patrol uses Terra class only")
+    text(
+        patrol.get("model_binding_id"),
+        "SLK_RUNTIME_MODEL_BINDING_INVALID",
+        "patrol.model_binding_id",
+    )
+    patrol_effort = patrol.get("reasoning_effort")
+    patrol_ultra_ref = patrol.get("owner_ultra_authorization_ref")
+    if patrol_effort not in {"xhigh", "ultra"} or not isinstance(patrol_ultra_ref, str):
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "Patrol effort requires a current binding")
+    expected_patrol_ultra_ref = f"owner-auth/{run_id}/RUN_PATROL/ULTRA"
+    if patrol_effort == "ultra" and patrol_ultra_ref != expected_patrol_ultra_ref:
+        fail("SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN", "Patrol ultra requires exact Owner authorization")
+    if patrol_effort == "xhigh" and patrol_ultra_ref:
+        fail("SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN", "unused Patrol ultra authorization is forbidden")
     workload_class = packet.get("workload_class")
     if workload_class not in WORKLOAD_INTERVALS:
         fail("SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL", "workload_class must be LOW, MEDIUM, or HIGH")
@@ -254,6 +640,15 @@ def validate_run_runtime_contract(packet: dict) -> None:
     expected_heartbeat = f"SLK-PATROL-{run_id}"
     if patrol.get("heartbeat_id") != expected_heartbeat:
         fail("SLK_RUNTIME_PATROL_UNIQUE", "Patrol heartbeat must be deterministic")
+
+    trace_ref = ref(
+        packet.get("model_binding_trace_ref"),
+        "SLK_RUNTIME_MODEL_BINDING_INVALID",
+        "model_binding_trace_ref",
+        hashed=True,
+    )
+    if set(trace_ref) != {"id", "version", "sha256"}:
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "model trace ref must be versioned and hashed")
 
     binding = mapping(
         packet.get("checker_binding"),
@@ -514,8 +909,23 @@ def validate_pending_wake(packet: dict) -> None:
 def validate_patrol(packet: dict) -> None:
     if packet.get("actor") != "RUN_PATROL" or packet.get("authority") != "NONE":
         fail("SLK_RUNTIME_PATROL_AUTHORITY", "Patrol has no technical authority")
-    if packet.get("model") != "gpt-5.6-luna" or packet.get("reasoning_effort") != "xhigh":
-        fail("SLK_RUNTIME_PATROL_MODEL", "Patrol requires gpt-5.6-luna + xhigh")
+    patrol_model = validate_model_floor(packet.get("model"))
+    if patrol_model in {"gpt-5.6-luna", "gpt-5.6-sol"}:
+        fail("SLK_RUNTIME_MODEL_SELECTION_INVALID", "Patrol uses Terra class only")
+    text(
+        packet.get("model_binding_id"),
+        "SLK_RUNTIME_MODEL_BINDING_INVALID",
+        "model_binding_id",
+    )
+    patrol_effort = packet.get("reasoning_effort")
+    patrol_ultra_ref = packet.get("owner_ultra_authorization_ref")
+    if patrol_effort not in {"xhigh", "ultra"} or not isinstance(patrol_ultra_ref, str):
+        fail("SLK_RUNTIME_MODEL_BINDING_INVALID", "Patrol effort requires a current binding")
+    expected_patrol_ultra_ref = f"owner-auth/{packet.get('run_id')}/RUN_PATROL/ULTRA"
+    if patrol_effort == "ultra" and patrol_ultra_ref != expected_patrol_ultra_ref:
+        fail("SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN", "Patrol ultra requires exact Owner authorization")
+    if patrol_effort == "xhigh" and patrol_ultra_ref:
+        fail("SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN", "unused Patrol ultra authorization is forbidden")
     if (
         packet.get("conversation_count") != 1
         or packet.get("heartbeat_count") != 1
@@ -1250,6 +1660,23 @@ def dispatch_scope(value: dict) -> tuple[str, str, str, str]:
     )
 
 
+def model_binding_covers_dispatch(binding: dict, dispatch: dict) -> bool:
+    if binding.get("role") != "WORKER" or binding.get("status") != "CURRENT":
+        return False
+    scope_kind = binding.get("scope_kind")
+    if scope_kind == "RUN":
+        return True
+    if binding.get("go_id") != dispatch.get("go_id"):
+        return False
+    if scope_kind == "GO":
+        return True
+    if binding.get("cell_id") != dispatch.get("cell_id"):
+        return False
+    if scope_kind == "CELL":
+        return True
+    return scope_kind == "ROUND" and binding.get("round_id") == dispatch.get("round_id")
+
+
 def validate_runtime_index(packet: dict) -> None:
     if packet.get("status") != "COMPLETE":
         fail("SLK_RUNTIME_INDEX_MISSING", "Run runtime index must be COMPLETE")
@@ -1266,6 +1693,29 @@ def validate_runtime_index(packet: dict) -> None:
     if contract.get("record_type") != "RUN_RUNTIME_CONTRACT" or contract.get("run_id") != run_id:
         fail("SLK_RUNTIME_INDEX_SCOPE", "runtime contract must bind the indexed Run")
 
+    model_trace = mapping(
+        packet.get("model_binding_trace"),
+        "SLK_RUNTIME_INDEX_MISSING",
+        "model_binding_trace",
+    )
+    if not model_trace:
+        fail("SLK_RUNTIME_INDEX_MISSING", "current model binding trace is required")
+    validate(model_trace)
+    if model_trace.get("record_type") != "MODEL_BINDING_TRACE" or model_trace.get("run_id") != run_id:
+        fail("SLK_RUNTIME_MODEL_BINDING_SCOPE", "model trace must bind the indexed Run")
+    trace_ref = contract.get("model_binding_trace_ref", {})
+    if (
+        trace_ref.get("id") != model_trace.get("trace_id")
+        or trace_ref.get("version") != model_trace.get("version")
+        or trace_ref.get("sha256") != model_trace.get("trace_sha256")
+    ):
+        fail("SLK_RUNTIME_MODEL_BINDING_SCOPE", "runtime contract references a different model trace")
+    current_model_bindings = {
+        item["binding_id"]: item
+        for item in model_trace.get("bindings", [])
+        if item.get("status") == "CURRENT"
+    }
+
     dispatches = sequence(packet.get("dispatches"), "SLK_RUNTIME_INDEX_MISSING", "dispatches")
     if not dispatches:
         fail("SLK_RUNTIME_INDEX_MISSING", "at least one formal dispatch is required")
@@ -1278,6 +1728,7 @@ def validate_runtime_index(packet: dict) -> None:
         "required_cell_total",
         "round_id",
         "required_set_version",
+        "model_binding_id",
     }
     scopes: list[tuple[str, str, str, str]] = []
     dispatch_by_scope: dict[tuple[str, str, str, str], dict] = {}
@@ -1287,6 +1738,14 @@ def validate_runtime_index(packet: dict) -> None:
         if set(item) != expected_dispatch_fields:
             fail("SLK_RUNTIME_INDEX_SCOPE", "dispatch fields are closed")
         text(item.get("dispatch_id"), "SLK_RUNTIME_INDEX_SCOPE", "dispatch_id")
+        model_binding_id = text(
+            item.get("model_binding_id"),
+            "SLK_RUNTIME_MODEL_BINDING_SCOPE",
+            "dispatch.model_binding_id",
+        )
+        model_binding = current_model_bindings.get(model_binding_id)
+        if model_binding is None or not model_binding_covers_dispatch(model_binding, item):
+            fail("SLK_RUNTIME_MODEL_BINDING_SCOPE", "dispatch model binding is not current Worker scope")
         scope = dispatch_scope(item)
         scopes.append(scope)
         if item.get("run_id") != run_id:
@@ -1392,6 +1851,22 @@ def validate_runtime_index(packet: dict) -> None:
         fail("SLK_RUNTIME_INDEX_SCOPE", "Patrol receipt must bind the indexed Run")
     if patrol.get("workload_class") != contract.get("workload_class"):
         fail("SLK_RUNTIME_INDEX_STALE", "Patrol workload class differs from runtime contract")
+    patrol_binding_id = patrol.get("model_binding_id")
+    patrol_binding = current_model_bindings.get(patrol_binding_id)
+    if (
+        patrol_binding is None
+        or patrol_binding.get("role") != "RUN_PATROL"
+        or patrol_binding.get("actual_model") != patrol.get("model")
+        or patrol_binding.get("reasoning_effort") != patrol.get("reasoning_effort")
+        or patrol_binding.get("owner_ultra_authorization_ref")
+        != patrol.get("owner_ultra_authorization_ref")
+        or contract.get("patrol", {}).get("model_binding_id") != patrol_binding_id
+        or contract.get("patrol", {}).get("model") != patrol.get("model")
+        or contract.get("patrol", {}).get("reasoning_effort") != patrol.get("reasoning_effort")
+        or contract.get("patrol", {}).get("owner_ultra_authorization_ref")
+        != patrol.get("owner_ultra_authorization_ref")
+    ):
+        fail("SLK_RUNTIME_MODEL_BINDING_SCOPE", "Patrol record is not bound to the current model trace")
     evidence(packet.get("evidence_refs"))
 
 
@@ -1408,6 +1883,7 @@ VALIDATORS: dict[str, Callable[[dict], None]] = {
     "RUNTIME_SIMULATION": validate_simulation,
     "THREAD_PIN_AUDIT": validate_thread_pin_audit,
     "RUN_RUNTIME_INDEX": validate_runtime_index,
+    "MODEL_BINDING_TRACE": validate_model_binding_trace,
 }
 
 

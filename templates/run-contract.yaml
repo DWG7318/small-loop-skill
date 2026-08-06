@@ -21,3 +21,4 @@ cumulative_engineering_load_ref: {}
 cell_capacity_gate_ref: {}
 thread_pin_policy_ref: {}
 runtime_index_ref: {}
+model_binding_trace_ref: {}

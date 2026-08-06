@@ -6,6 +6,12 @@ acceptance: []
 counter_evidence: []
 evidence_required: []
 candidate_binding: {}
+model_selection:
+  work_class: STANDARD_TECHNICAL
+  fine_grained: false
+  risk_level: MEDIUM
+  luna_allowed: false
+  model_binding_ref: {}
 defect_repair:
   applicability: PENDING
   defect_lineage_id: ""

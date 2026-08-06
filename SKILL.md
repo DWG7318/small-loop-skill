@@ -1,7 +1,7 @@
 ---
 name: small-loop-skill
 description: Use SLK for one bounded LCCoding Run whose GO outcomes form exactly one strict serial sequence executed through one visible Control Conversation and one persistent Worker Conversation. Never combine SLK with CLK or GLK in the same Run.
-version: 2.5.1
+version: 2.6.0
 ---
 
 # Small Loop Skill (SLK)
@@ -14,7 +14,7 @@ version: 2.5.1
 - Repository: `https://github.com/DWG7318/small-loop-skill`.
 - Repository ID: `1295599218`.
 - Default branch: `main`.
-- Current specification version: `2.5.1`.
+- Current specification version: `2.6.0`.
 - Version source: repository `VERSION` file and matching annotated `v*` tag.
 
 ## Trigger
@@ -114,8 +114,9 @@ RUN_CONTRACT
 27. Runtime delivery messages bind GO/CELL n/N; only current D1 PASS increments CELL
     acceptance and only current D2 PASS increments GO verification.
 28. Every Run has exactly one non-authoritative Patrol conversation/heartbeat using
-    `gpt-5.6-luna` + `xhigh`; `LOW→10`, `MEDIUM→15`, `HIGH→30` minutes, and every
-    cycle records the complete fixed minimum-error checklist.
+    the default Terra capability class with `xhigh`; `LOW→10`, `MEDIUM→15`,
+    `HIGH→30` minutes, and every cycle records the complete fixed minimum-error
+    checklist.
 29. Visible tasks and “子任务” are not subagents; explicit spawn/delegate/hidden/
     background Agent evidence is prohibited.
 30. Supervisor freezes measurable device capacity and cumulative engineering load;
@@ -123,6 +124,17 @@ RUN_CONTRACT
 31. The three Control responsibilities and Worker default to task Pin denied. Patrol
     is not a technical role and has its Pin/Unpin denial validated separately. Only
     exact Owner manual or item-specific provenance is legal.
+32. Every role action binds a current, versioned `MODEL_BINDING_TRACE` entry with
+    actual model, reference capability class, equivalence evidence, effort,
+    selection level/reason, scope, and readiness/isolation/verification PASS.
+33. Terra + `xhigh` is the default. Only a contract-marked fine-grained/LOW CELL
+    permits its Worker to use Luna + `xhigh`; cost or convenience never does.
+34. Sol + `xhigh` is limited to high-difficulty correction, root-cause diagnosis,
+    or complex rework. GPT 5.5/lower is forbidden; `ultra` requires exact Owner
+    authorization.
+35. A model/effort change creates a new evidenced binding and reruns all three
+    gates. Silent switches fail closed. Sharing an actual model never merges roles,
+    authority, candidates, environments, or receipts.
 
 ## Responsibility modes
 
@@ -193,20 +205,22 @@ Validate D0/D1 repair packets with:
 
 ```text
 python scripts/validate_defect_repair.py <d0-or-d1-receipt.yaml>
+python scripts/validate_causal_experiment_preflight.py <preflight.json>
 ```
 
 This packet changes neither the D0-D3 layers nor the fixed visible topology.
 
 ## Runtime safeguards and progress
 
-SLK 2.5.0 runtime safeguards are defined once in
+SLK 2.6.0 runtime safeguards are defined once in
 [runtime control and progress](references/runtime-control-and-progress.md). They
 cover readiness, Worker wake, Supervisor waits, Run Patrol, subagent classification,
 receipt-derived progress, device/load CELL capacity, and Owner-only task Pin
 authority. Every D2/D3/Owner material verdict requires exactly one bound Supervisor
 progress event. `RUN_RUNTIME_INDEX` proves every formal RUN/GO/CELL/ROUND dispatch
 has a capacity PASS bound to that Round, wake, progress, and Patrol-cycle evidence
-without creating a Runtime.
+without creating a Runtime. The same index binds every dispatch and Patrol cycle to
+the current `MODEL_BINDING_TRACE`.
 Validate every runtime record or index with:
 
 ```text

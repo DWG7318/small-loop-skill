@@ -1,6 +1,6 @@
-# SLK 2.5.0 Runtime Control and Progress
+# SLK 2.6.0 Runtime Control and Progress
 
-This is the canonical operational reference for SLK 2.5.0 runtime safeguards.
+This is the canonical operational reference for SLK 2.6.0 runtime safeguards.
 `SKILL.md` and `SPEC.md` define authority; this reference defines the machine-
 checkable records, sequences, messages, and fail-closed behavior. It never creates a
 new Runtime method or changes D0-D3.
@@ -19,10 +19,10 @@ activates one of `SUPERVISOR_RESPONSIBILITY`, `CHECKER_RESPONSIBILITY`, or
 `VERIFIER_RESPONSIBILITY`; the Checker receiver is that same Control task while in
 Checker mode.
 
-Patrol uses `gpt-5.6-luna` with `xhigh`. Frozen workload class maps mechanically:
-`LOW→10`, `MEDIUM→15`, and `HIGH→30` minutes. This is capacity/difficulty binding,
-not a risk-frequency reinterpretation. Duplicate Patrol tasks or heartbeats fail
-closed.
+Patrol uses the default Terra capability class with `xhigh`. It has no implicit
+Luna exception. Frozen workload class maps mechanically: `LOW→10`, `MEDIUM→15`, and
+`HIGH→30` minutes. This is capacity/difficulty binding, not a risk-frequency
+reinterpretation. Duplicate Patrol tasks or heartbeats fail closed.
 
 ## 2. Readiness
 
@@ -35,11 +35,48 @@ Before Worker dispatch, `RUN_RUNTIME_CONTRACT` must be `READY` and bind:
 - Supervisor wait prohibition;
 - current device profile, cumulative load, and CELL capacity policy;
 - default-deny Pin policy for the four SLK technical roles and, separately, Patrol;
+- current versioned/hash-bound model trace and Patrol binding;
 - frozen workload class and its exact Patrol interval.
 
 Missing, `PENDING`, unavailable, unknown, or contradictory readiness evidence blocks
 dispatch. `python scripts/validate_runtime_control.py <record.yaml>` validates one
 record and returns a stable `SLK_RUNTIME_*` error on failure.
+
+## 2A. Controllable model binding
+
+`MODEL_BINDING_TRACE` is immutable, versioned readiness evidence. Every entry binds
+one role instance and RUN/GO/CELL/ROUND scope to an actual model, GPT reference
+model, capability class/equivalence proof, reasoning effort, selection level and
+reason, and readiness/isolation/verification results.
+
+The reference policy is:
+
+| Selection | Allowed scope | Required evidence | GPT reference |
+|---|---|---|---|
+| `DEFAULT` | technical roles and non-technical Patrol | ordinary technical or Patrol work | `gpt-5.6-terra` + `xhigh` |
+| `CELL_LOW_RISK_EXCEPTION` | Worker on exact CELL/Round | frozen fine-grained, LOW-risk CELL Contract | `gpt-5.6-luna` + `xhigh` |
+| `HIGH_DIFFICULTY_ESCALATION` | technical role on bounded GO/CELL/Round | high-difficulty correction, root-cause diagnosis, or complex rework | `gpt-5.6-sol` + `xhigh` |
+
+Cost, convenience, role importance, ordinary implementation, and ordinary checking
+are not exception reasons. GPT 5.5 and lower are always forbidden. `ultra` requires
+an exact item-specific Owner authorization reference; it cannot be inferred.
+
+Another provider/model may replace the named GPT reference only with the matching
+capability class, `PROVEN_EQUIVALENT`, and immutable equivalence evidence. The
+validator never infers equivalence from free text. Run Patrol may use an explicit
+Terra-class equivalent, but cannot use Worker Luna or technical Sol exceptions.
+
+The same actual model may appear in multiple role bindings; binding IDs, authority,
+candidate, environment, and receipt identity remain separate. A model or effort
+change for one role/scope requires a contiguous new binding version that immediately
+supersedes the prior binding, records reason/evidence, and reruns readiness,
+isolation, and verification. Missing predecessor or revalidation evidence is a
+silent switch and fails closed.
+
+Every runtime-index dispatch names its current Worker binding. The index embeds the
+current trace and verifies trace ID/version/hash, dispatch scope, and Patrol
+model/effort identity. D0-D3 and Supervisor templates cite `model_binding_ref`; this
+adds evidence binding, not another decision layer.
 
 ## 3. Worker-to-Checker wake ladder
 
@@ -310,11 +347,12 @@ PIN_PROVENANCE_UNKNOWN
 ## 10. Run runtime completeness index
 
 `RUN_RUNTIME_INDEX` is a versioned, lightweight completeness package, not a session
-Runtime. It embeds the current `RUN_RUNTIME_CONTRACT`, formal dispatch scopes,
+Runtime. It embeds the current `RUN_RUNTIME_CONTRACT`, `MODEL_BINDING_TRACE`, formal dispatch scopes,
 capacity gates, wake traces, one progress trace, and the current complete Patrol
 cycle. Every RUN/GO/CELL/ROUND dispatch scope must have exactly one current capacity
 `PASS` bound to that ROUND, matching wake trace, matching Worker delivery progress,
-and the unique current Patrol cycle.
+and the unique current Patrol cycle. Each dispatch names its current Worker model
+binding; the Patrol cycle names its current Patrol binding.
 Missing, unindexed extra, duplicate, stale-version, or wrong-scope records fail
 closed.
 
@@ -325,7 +363,9 @@ closed.
 Supervisor wait, Patrol/subagent/terminal cases, layered counts/amendments, capacity
 growth/resource/split/deviation cases, and Pin authority/provenance/history cases.
 It also covers complete Patrol cycles, workload/interval mapping, event-triggered
-progress, extra-role rejection, and complete Run index packages.
+progress, extra-role rejection, complete Run index packages, Terra/Luna/Sol model
+selection, equivalent substitutes, model floor/ultra rejection, role isolation,
+and evidenced switch history.
 
 Blank templates remain `PENDING`. The validator uses explicit conditionals, not
 Python `assert`, so negative gates remain active under `python -O`.
@@ -347,7 +387,9 @@ templates/progress-trace.yaml
 templates/runtime-simulation.yaml
 templates/thread-pin-audit.yaml
 templates/run-runtime-index.yaml
+templates/model-binding-trace.yaml
 ```
 
 These records augment D0/D1 and existing Run control. They create no D4, new
-technical role, general message bus, device monitor, scheduler, or Runtime method.
+technical role, general message bus, model router, cost optimizer, device monitor,
+scheduler, or Runtime method.

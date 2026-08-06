@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.6.0
+
+- Replaced fixed model assumptions with one versioned, immutable
+  `MODEL_BINDING_TRACE` for the existing SLK roles and scopes.
+- Made Terra + `xhigh` the default for technical roles and non-authoritative Patrol.
+- Allowed Luna only for Worker execution of an explicitly fine-grained/LOW-risk
+  CELL, and Sol only for high-difficulty correction, root-cause diagnosis, or
+  complex rework.
+- Added capability-class/equivalence evidence for non-reference substitutes and
+  retained separate role bindings when roles use the same actual model.
+- Rejected GPT 5.5/lower, inferred `ultra`, cost/convenience downgrade reasons,
+  ordinary-work Sol, unevidenced substitutes, and silent model/effort switches.
+- Bound runtime readiness, dispatch index, Patrol receipts, CELL Contracts, and
+  technical receipts to current model evidence without adding a router, role,
+  conversation, or D4.
+
 ## 2.5.1
 
 - Added a machine-validated, zero-business-call causal experiment preflight for

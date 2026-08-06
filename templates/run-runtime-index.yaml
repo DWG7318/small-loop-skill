@@ -1,9 +1,10 @@
-schema_version: 2.5.0
+schema_version: 2.6.0
 record_type: RUN_RUNTIME_INDEX
 status: PENDING
 run_id: ""
 index_version: 0
 runtime_contract: {}
+model_binding_trace: {}
 dispatches: []
 capacity_gates: []
 wake_traces: []

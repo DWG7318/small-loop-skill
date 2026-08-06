@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "excludes": [
     "MANIFEST.json"
   ],
@@ -19,7 +19,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "412b4150e3bf1ab4a88dc938d121324f65c3c9c0118c787be8c0a56e0ddcf8ba"
+      "sha256": "d6d02f2359f0733d2adad67bef45ee9d1aca8bfebc3f99c66ce7bab75b75ad72"
     },
     {
       "path": "LICENSE",
@@ -27,43 +27,43 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "8df158f50f7e1bfb3ffeccc6413a6ebc9d9a10001746f67baf13de85539f839a"
+      "sha256": "d990321dcc25ef3907c27d65ae1b8df2d299a1da793dfec40cce778f1571546d"
     },
     {
       "path": "README.md",
-      "sha256": "a9e9df025b3886b7d068c3fe35c8cb759e9040bb943bc893122f2fbb3c3c0a17"
+      "sha256": "e62ea853f7f414f62a0ced285b976bfa9d58cdb7dc0b39a90defb57127427afb"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "03734660f4b0f9aa9edbaa4e6b4925c65b45ce95c8b2ffc39dbba2909fc80107"
+      "sha256": "27c9a903c965cac347cbd0844ce127ec09e0c20f7dee9025d752bd5f166ec075"
     },
     {
       "path": "SKILL.md",
-      "sha256": "bb62084432cfb020f8601a6071ecbcd9f27612328d21a1a37059fecf14e0dea1"
+      "sha256": "8ec34cfe768b1d8b2a85daff738b2f373b2502374497e90c7d394578e554eb7a"
     },
     {
       "path": "SPEC.md",
-      "sha256": "aa865f1f457cbe091425ea35e1c5730ed90e73dab99f0ca1be86c20dd601804c"
+      "sha256": "6bec7f6b0e15dbe62f0f21f3edc2a3630c88856ca504429de743a4e137574950"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "115cba3fdb01aeb729744128d75634f5ab15fa881388ece82df8308ca142fd65"
+      "sha256": "bc2115e5287a17da83bb43abfdcc5306c7855591b0804e2434af6023f820e9e5"
     },
     {
       "path": "VERSION",
-      "sha256": "99600f6a7bfe6c33ebd1a2518f44a861a67afc40c25da42bc622595716529584"
+      "sha256": "6693435eadb673dda297a0652d241e293e361200bc40db949cf2501d18dd01ee"
     },
     {
       "path": "agents/openai.yaml",
-      "sha256": "86288742a5e30c097bb95047912457f2994628f725f48edf2208606cdd5a14a3"
+      "sha256": "a06f6be4070669e79c14a5f7c7b41cb462f66fd50cdca1fa001dfff6e949120c"
     },
     {
       "path": "contracts/slk-control-kernel.json",
-      "sha256": "52dc6dd6060ec01a0884d12c89734744d99a5159e51faaff89f6651413344510"
+      "sha256": "f0a3882dd8321379aeb77694320fe904246f17a8a71287ea4ba4e2b82c87811f"
     },
     {
       "path": "contracts/slk-runtime-control.schema.json",
-      "sha256": "d8247f384bbedb716c8a6c731d804d7640a97e11a75e91f239335dff64a9ffac"
+      "sha256": "ee3978e0b408e67d69d7f78d94bd31c43d68af2a6d0c7a56966dd9ef93f412c5"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -78,8 +78,20 @@
       "sha256": "66e69e96c0348b48dcfa98cf51052b076ccc214767dc2fba7e6d7dd1c1afd582"
     },
     {
+      "path": "docs/superpowers/plans/2026-08-06-slk-2.6.0-controllable-model-policy.md",
+      "sha256": "1db17d9cc37fabf2d51c0c3169d73c8f38dc0936d3148e0c539f66d9c04f5e2e"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-07-slk-2.6.0-integration-and-structure-audit.md",
+      "sha256": "66e52fc6096e9b79a386a994017548155956c79b6be812d011f5ad2206d486fc"
+    },
+    {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
       "sha256": "d26a2d488e8ac2159750b332d8eb1bd02a1187aa9143f0e75a105ad8b601dcfd"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-06-slk-2.6.0-controllable-model-policy-design.md",
+      "sha256": "fa8a0f39b117d5ae5ee737d514101c14ecd1d39789322e6a4df879a73e039233"
     },
     {
       "path": "examples/minimal-run/README.md",
@@ -115,11 +127,11 @@
     },
     {
       "path": "references/role-and-environment-isolation.md",
-      "sha256": "28c1d82041cea152c6e91e4085da3133da344d2355fbd7fe427c8de2ad03de94"
+      "sha256": "327262c19cf9c285ad08734e9b1aa422c386e3e42f0371405f260905b842dae8"
     },
     {
       "path": "references/runtime-control-and-progress.md",
-      "sha256": "46798969ca2db5227acc10663f116a09eee03f90f7bfba896f277895d613e761"
+      "sha256": "29be5291cbc7a96e719ea32383453bf40926f9726a51600728dc02db1ed74a86"
     },
     {
       "path": "references/security-boundary.md",
@@ -143,11 +155,11 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "dc6b38b57d8475e6fc9d6403127b8f5d14613edc281b27496bee2f667d0143d9"
+      "sha256": "ca9ac671ea1b13249f7fa68b89b40d9db49bbd1a5664b3098faad77314ddbef4"
     },
     {
       "path": "scripts/validate_runtime_control.py",
-      "sha256": "d5cbad2010652ec917f293f997b2398bae77f5b9ae63b2076db9029409e9fa82"
+      "sha256": "5d706eea4f44ad565fd37df25319a87179bd57e8af2dfe88a416cb022ccc64b9"
     },
     {
       "path": "scripts/validate_serial_plan.py",
@@ -155,19 +167,19 @@
     },
     {
       "path": "small-loop-skill/SKILL.md",
-      "sha256": "bb62084432cfb020f8601a6071ecbcd9f27612328d21a1a37059fecf14e0dea1"
+      "sha256": "8ec34cfe768b1d8b2a85daff738b2f373b2502374497e90c7d394578e554eb7a"
     },
     {
       "path": "small-loop-skill/SPEC.md",
-      "sha256": "aa865f1f457cbe091425ea35e1c5730ed90e73dab99f0ca1be86c20dd601804c"
+      "sha256": "6bec7f6b0e15dbe62f0f21f3edc2a3630c88856ca504429de743a4e137574950"
     },
     {
       "path": "small-loop-skill/contracts/slk-control-kernel.json",
-      "sha256": "52dc6dd6060ec01a0884d12c89734744d99a5159e51faaff89f6651413344510"
+      "sha256": "f0a3882dd8321379aeb77694320fe904246f17a8a71287ea4ba4e2b82c87811f"
     },
     {
       "path": "small-loop-skill/contracts/slk-runtime-control.schema.json",
-      "sha256": "d8247f384bbedb716c8a6c731d804d7640a97e11a75e91f239335dff64a9ffac"
+      "sha256": "ee3978e0b408e67d69d7f78d94bd31c43d68af2a6d0c7a56966dd9ef93f412c5"
     },
     {
       "path": "small-loop-skill/references/amendment-and-rework.md",
@@ -187,11 +199,11 @@
     },
     {
       "path": "small-loop-skill/references/role-and-environment-isolation.md",
-      "sha256": "28c1d82041cea152c6e91e4085da3133da344d2355fbd7fe427c8de2ad03de94"
+      "sha256": "327262c19cf9c285ad08734e9b1aa422c386e3e42f0371405f260905b842dae8"
     },
     {
       "path": "small-loop-skill/references/runtime-control-and-progress.md",
-      "sha256": "46798969ca2db5227acc10663f116a09eee03f90f7bfba896f277895d613e761"
+      "sha256": "29be5291cbc7a96e719ea32383453bf40926f9726a51600728dc02db1ed74a86"
     },
     {
       "path": "small-loop-skill/references/security-boundary.md",
@@ -215,7 +227,7 @@
     },
     {
       "path": "small-loop-skill/scripts/validate_runtime_control.py",
-      "sha256": "d5cbad2010652ec917f293f997b2398bae77f5b9ae63b2076db9029409e9fa82"
+      "sha256": "5d706eea4f44ad565fd37df25319a87179bd57e8af2dfe88a416cb022ccc64b9"
     },
     {
       "path": "small-loop-skill/scripts/validate_serial_plan.py",
@@ -223,7 +235,7 @@
     },
     {
       "path": "small-loop-skill/templates/baseline-amendment.yaml",
-      "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
+      "sha256": "d4da48097f559e6ac46865d51beb9b44bbe6fa4859677a72e9df01daa7cb3ccc"
     },
     {
       "path": "small-loop-skill/templates/causal-experiment-preflight.json",
@@ -231,43 +243,47 @@
     },
     {
       "path": "small-loop-skill/templates/cell-capacity-event.yaml",
-      "sha256": "c732bb958ca0ed67e281bab5a9df86e6ec5e71375ce2b3454fd7d19e09b3a34f"
+      "sha256": "848fa99cfd7dabc6261bd83b4040d9e0de3bf76e43dda74c4f3107f515505e75"
     },
     {
       "path": "small-loop-skill/templates/cell-capacity-gate.yaml",
-      "sha256": "026e740ff040e1d14dea13cf2b8db9d8946fe090f886ec185d03141b4ac32f02"
+      "sha256": "7fe45b83c707ec7ca433e53cab75c9cb72dc0604f08c021829a8094e5ad93db9"
     },
     {
       "path": "small-loop-skill/templates/cell-contract.yaml",
-      "sha256": "671416ba50970059a4d29af48fd6546547f846bdbfc8ea2be31e60db241d731b"
+      "sha256": "f3efd1e40c74db28e93af0a80c5b5e2b4df3f6ab7dd945d12708be5b6ac21233"
     },
     {
       "path": "small-loop-skill/templates/cumulative-engineering-load.yaml",
-      "sha256": "59546fc1e6b3bbb8ffb04fe948a84c65e561f601bbebd104f58783598da5414b"
+      "sha256": "3aa8f1cd73bdad452eefc42848b4e76a496e49630b645f21c0add6af7f6f2e5b"
     },
     {
       "path": "small-loop-skill/templates/d0-worker-receipt.yaml",
-      "sha256": "7da0d113a05e9ad607bcd0b7f0041ffd394aca9adb4f620f8ef5fe552807051c"
+      "sha256": "2ee7ba3e3ca36382008ca73a4e011d6c8f2c5c3296ab7694344658418f6cca7f"
     },
     {
       "path": "small-loop-skill/templates/d1-checker-receipt.yaml",
-      "sha256": "3940acc8799abe44b1c6792e868c0b1b1a17f38754abf4e153d2e04f042cb320"
+      "sha256": "3359ac6aff0f85e5ef202e48fb3d4c404b4f43cf9a37921b5fbe70433fe49a28"
     },
     {
       "path": "small-loop-skill/templates/d2-go-verification-receipt.yaml",
-      "sha256": "0e9226200129abbf6bb002269ddf8e66ff3f579b853c3dfd34f6d9fb7fcdf30d"
+      "sha256": "c3ec00dbf42af3ae4909b68b35830a67d60a5585443d6e0be3f78ff955d210c6"
     },
     {
       "path": "small-loop-skill/templates/d3-run-verification-receipt.yaml",
-      "sha256": "32aae4dcf0329f3a1bf92954b02a4e09053f9ce4201c0f50ec0b8c0f6fe3b520"
+      "sha256": "d66ccb7258dc0819436b08fe9be8d1e4fd8fab970712d191b93d75721d0c8534"
     },
     {
       "path": "small-loop-skill/templates/device-capacity-profile.yaml",
-      "sha256": "213c191627ff18b418d126c74bd3851c333fcc708171904a0c70faf0b17ea9e4"
+      "sha256": "43e9923ac8f932a4e6cd2b86404147e29ba9c32b92f0c9def540b97c557dc7b2"
     },
     {
       "path": "small-loop-skill/templates/go-contract.yaml",
       "sha256": "257ac71d1b87e597c90f14e013bd4ceb867cba549d74dcdf10a8b336bd262f85"
+    },
+    {
+      "path": "small-loop-skill/templates/model-binding-trace.yaml",
+      "sha256": "d70c995001eef93492cfbaaf88e88cb29d3e6b7797b1568860efdf242fb7c29d"
     },
     {
       "path": "small-loop-skill/templates/owner-acceptance-receipt.yaml",
@@ -275,31 +291,31 @@
     },
     {
       "path": "small-loop-skill/templates/pending-wake.yaml",
-      "sha256": "ed7517f869b04d1dbee0f350c7b7bc88a9d3b1798bf5f78f9cc0e4c72eb18874"
+      "sha256": "42253e4e6cd2bc47da1b71f92cd51dcfbed098b3ac66dad33d6c003286621326"
     },
     {
       "path": "small-loop-skill/templates/progress-trace.yaml",
-      "sha256": "4174fd4c932ea94e1427cc4bc26257391cb3c1624efaedf894a1f1b8980faeeb"
+      "sha256": "125cbe89c3a2761dc2aed84b839f6c7199b958720738fcf50526bb27c2c0bc8d"
     },
     {
       "path": "small-loop-skill/templates/run-contract.yaml",
-      "sha256": "a23e3ee73290c865b5d74df2ee52f94ef90391dae8ce027cf9ec9c531ae69b7c"
+      "sha256": "57b9f50891507b579113ae015b9ac8e70a01b33c27c8e42df3e5c32d1b41265d"
     },
     {
       "path": "small-loop-skill/templates/run-patrol-receipt.yaml",
-      "sha256": "21b76899ea43ba156b4d25a03e519bd84bab892e6c6e4b3d18013755b3204ea0"
+      "sha256": "72eddee541360d32f921f6bfcc049609ac203b0fd13e4f686aa3dae878c42c94"
     },
     {
       "path": "small-loop-skill/templates/run-runtime-contract.yaml",
-      "sha256": "c8e063c157fcfba3ff3d38a4f4ea50f37d53d05837d3b510babee3d27b65245e"
+      "sha256": "a44dff74bdc3bbea0b5935f6ad480d12ee219a1e59e83a2e385324da57a176e9"
     },
     {
       "path": "small-loop-skill/templates/run-runtime-index.yaml",
-      "sha256": "aa23b9b78eb6297bacd0abc00a92ad77108824d9ba20359fa5fdddf37eeb4b38"
+      "sha256": "3d9e7f640b6bb0ad2ea168267d7c38fb41e47e098bca4aaae113603352038e73"
     },
     {
       "path": "small-loop-skill/templates/runtime-simulation.yaml",
-      "sha256": "bc93ca4c1c89e18ae471cb10d9730c591e01e594830945c98ad626602e37167d"
+      "sha256": "e01d8a8e0888a22eb9d972e684cfd2defac1a65afc8ea4eb063ad4ea128d2aa8"
     },
     {
       "path": "small-loop-skill/templates/serial-plan.yaml",
@@ -307,19 +323,19 @@
     },
     {
       "path": "small-loop-skill/templates/slk-run-receipt.yaml",
-      "sha256": "f491fffbc92bedf6ee1045206986a4189af0ead7612f665bbd301eebc167ba7f"
+      "sha256": "6f30549a1635956d1f2e37ab000ec84a463c4e26770007cc1bfe1837c536746d"
     },
     {
       "path": "small-loop-skill/templates/thread-pin-audit.yaml",
-      "sha256": "f694fbe0a73fbfaf71b93107c5ca109fdca1809540717f36be571fd8d2e5b5a5"
+      "sha256": "86c95d0905423728886e5bc4f5eed1429840fcf773f682cbfca9b1c34036befc"
     },
     {
       "path": "small-loop-skill/templates/worker-wake-trace.yaml",
-      "sha256": "3f7fa28c34f2cca42b3313474af25def2cd444fb23e79f4c654f16f2a845230a"
+      "sha256": "501eb1de843704c809342e0aeab72a935028f49ce0ad28335eb415e291d2a0bd"
     },
     {
       "path": "templates/baseline-amendment.yaml",
-      "sha256": "2f4192a6e3ae0382c530cde21bdc5028426e28a655d2894bb2fd31dc6675c636"
+      "sha256": "d4da48097f559e6ac46865d51beb9b44bbe6fa4859677a72e9df01daa7cb3ccc"
     },
     {
       "path": "templates/causal-experiment-preflight.json",
@@ -327,43 +343,47 @@
     },
     {
       "path": "templates/cell-capacity-event.yaml",
-      "sha256": "c732bb958ca0ed67e281bab5a9df86e6ec5e71375ce2b3454fd7d19e09b3a34f"
+      "sha256": "848fa99cfd7dabc6261bd83b4040d9e0de3bf76e43dda74c4f3107f515505e75"
     },
     {
       "path": "templates/cell-capacity-gate.yaml",
-      "sha256": "026e740ff040e1d14dea13cf2b8db9d8946fe090f886ec185d03141b4ac32f02"
+      "sha256": "7fe45b83c707ec7ca433e53cab75c9cb72dc0604f08c021829a8094e5ad93db9"
     },
     {
       "path": "templates/cell-contract.yaml",
-      "sha256": "671416ba50970059a4d29af48fd6546547f846bdbfc8ea2be31e60db241d731b"
+      "sha256": "f3efd1e40c74db28e93af0a80c5b5e2b4df3f6ab7dd945d12708be5b6ac21233"
     },
     {
       "path": "templates/cumulative-engineering-load.yaml",
-      "sha256": "59546fc1e6b3bbb8ffb04fe948a84c65e561f601bbebd104f58783598da5414b"
+      "sha256": "3aa8f1cd73bdad452eefc42848b4e76a496e49630b645f21c0add6af7f6f2e5b"
     },
     {
       "path": "templates/d0-worker-receipt.yaml",
-      "sha256": "7da0d113a05e9ad607bcd0b7f0041ffd394aca9adb4f620f8ef5fe552807051c"
+      "sha256": "2ee7ba3e3ca36382008ca73a4e011d6c8f2c5c3296ab7694344658418f6cca7f"
     },
     {
       "path": "templates/d1-checker-receipt.yaml",
-      "sha256": "3940acc8799abe44b1c6792e868c0b1b1a17f38754abf4e153d2e04f042cb320"
+      "sha256": "3359ac6aff0f85e5ef202e48fb3d4c404b4f43cf9a37921b5fbe70433fe49a28"
     },
     {
       "path": "templates/d2-go-verification-receipt.yaml",
-      "sha256": "0e9226200129abbf6bb002269ddf8e66ff3f579b853c3dfd34f6d9fb7fcdf30d"
+      "sha256": "c3ec00dbf42af3ae4909b68b35830a67d60a5585443d6e0be3f78ff955d210c6"
     },
     {
       "path": "templates/d3-run-verification-receipt.yaml",
-      "sha256": "32aae4dcf0329f3a1bf92954b02a4e09053f9ce4201c0f50ec0b8c0f6fe3b520"
+      "sha256": "d66ccb7258dc0819436b08fe9be8d1e4fd8fab970712d191b93d75721d0c8534"
     },
     {
       "path": "templates/device-capacity-profile.yaml",
-      "sha256": "213c191627ff18b418d126c74bd3851c333fcc708171904a0c70faf0b17ea9e4"
+      "sha256": "43e9923ac8f932a4e6cd2b86404147e29ba9c32b92f0c9def540b97c557dc7b2"
     },
     {
       "path": "templates/go-contract.yaml",
       "sha256": "257ac71d1b87e597c90f14e013bd4ceb867cba549d74dcdf10a8b336bd262f85"
+    },
+    {
+      "path": "templates/model-binding-trace.yaml",
+      "sha256": "d70c995001eef93492cfbaaf88e88cb29d3e6b7797b1568860efdf242fb7c29d"
     },
     {
       "path": "templates/owner-acceptance-receipt.yaml",
@@ -371,31 +391,31 @@
     },
     {
       "path": "templates/pending-wake.yaml",
-      "sha256": "ed7517f869b04d1dbee0f350c7b7bc88a9d3b1798bf5f78f9cc0e4c72eb18874"
+      "sha256": "42253e4e6cd2bc47da1b71f92cd51dcfbed098b3ac66dad33d6c003286621326"
     },
     {
       "path": "templates/progress-trace.yaml",
-      "sha256": "4174fd4c932ea94e1427cc4bc26257391cb3c1624efaedf894a1f1b8980faeeb"
+      "sha256": "125cbe89c3a2761dc2aed84b839f6c7199b958720738fcf50526bb27c2c0bc8d"
     },
     {
       "path": "templates/run-contract.yaml",
-      "sha256": "a23e3ee73290c865b5d74df2ee52f94ef90391dae8ce027cf9ec9c531ae69b7c"
+      "sha256": "57b9f50891507b579113ae015b9ac8e70a01b33c27c8e42df3e5c32d1b41265d"
     },
     {
       "path": "templates/run-patrol-receipt.yaml",
-      "sha256": "21b76899ea43ba156b4d25a03e519bd84bab892e6c6e4b3d18013755b3204ea0"
+      "sha256": "72eddee541360d32f921f6bfcc049609ac203b0fd13e4f686aa3dae878c42c94"
     },
     {
       "path": "templates/run-runtime-contract.yaml",
-      "sha256": "c8e063c157fcfba3ff3d38a4f4ea50f37d53d05837d3b510babee3d27b65245e"
+      "sha256": "a44dff74bdc3bbea0b5935f6ad480d12ee219a1e59e83a2e385324da57a176e9"
     },
     {
       "path": "templates/run-runtime-index.yaml",
-      "sha256": "aa23b9b78eb6297bacd0abc00a92ad77108824d9ba20359fa5fdddf37eeb4b38"
+      "sha256": "3d9e7f640b6bb0ad2ea168267d7c38fb41e47e098bca4aaae113603352038e73"
     },
     {
       "path": "templates/runtime-simulation.yaml",
-      "sha256": "bc93ca4c1c89e18ae471cb10d9730c591e01e594830945c98ad626602e37167d"
+      "sha256": "e01d8a8e0888a22eb9d972e684cfd2defac1a65afc8ea4eb063ad4ea128d2aa8"
     },
     {
       "path": "templates/serial-plan.yaml",
@@ -403,15 +423,15 @@
     },
     {
       "path": "templates/slk-run-receipt.yaml",
-      "sha256": "f491fffbc92bedf6ee1045206986a4189af0ead7612f665bbd301eebc167ba7f"
+      "sha256": "6f30549a1635956d1f2e37ab000ec84a463c4e26770007cc1bfe1837c536746d"
     },
     {
       "path": "templates/thread-pin-audit.yaml",
-      "sha256": "f694fbe0a73fbfaf71b93107c5ca109fdca1809540717f36be571fd8d2e5b5a5"
+      "sha256": "86c95d0905423728886e5bc4f5eed1429840fcf773f682cbfca9b1c34036befc"
     },
     {
       "path": "templates/worker-wake-trace.yaml",
-      "sha256": "3f7fa28c34f2cca42b3313474af25def2cd444fb23e79f4c654f16f2a845230a"
+      "sha256": "501eb1de843704c809342e0aeab72a935028f49ce0ad28335eb415e291d2a0bd"
     },
     {
       "path": "tests/test_causal_defect_repair.py",
@@ -423,15 +443,15 @@
     },
     {
       "path": "tests/test_contract.py",
-      "sha256": "26d1799d7b13158305fe3e18974cd3d407088c49ca1f8759574184f97c363c77"
+      "sha256": "de0176d3297bfff832c132a67d1fd561dd7a2bb52a072a40eacf3443e70fd0dc"
     },
     {
       "path": "tests/test_repository_validator.py",
-      "sha256": "78d45c0cefff22a12b4909ababdd11f7164810a4430b06e4fc6ff905647ef618"
+      "sha256": "3c68356d6cff477cf7146202b2c173876ac6312c60d5e5789ed9c2e676ff3cb0"
     },
     {
       "path": "tests/test_runtime_control.py",
-      "sha256": "be42a24747cd63c03c40061966d1faa19026bef402c08e9aeff677b5d38cadb3"
+      "sha256": "f2ef483c6c7c6d6ab4c46d3512fc5205aa9d90c4e8e7f06faa88526b7f5bb7e6"
     },
     {
       "path": "tests/test_serial_plan_validator.py",

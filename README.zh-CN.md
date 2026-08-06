@@ -2,7 +2,7 @@
 
 Small Loop Skill 是用于一个有界 LCCoding Run 的严格串行工程执行方法。
 
-当前版本：**2.5.1**
+当前版本：**2.6.0**
 
 ```text
 Owner
@@ -59,7 +59,7 @@ Chain/Stage/Barrier 或图激活。
 
 ## 运行保障
 
-SLK 2.5.0 增加 Worker 专属四级 Checker 叫醒阶梯，禁止 Supervisor 长等待循环，
+SLK 2.6.0 保留 Worker 专属四级 Checker 叫醒阶梯，禁止 Supervisor 长等待循环，
 并从有效 D1/D2 receipt 推导分层进度。每个 Run 恰好一个无技术权威的巡检对话。
 Supervisor 以可验证设备事实和累计工程负载冻结 CELL 容量；只有派工前
 `CELL_CAPACITY_GATE=PASS` 才能交给 Worker。巡检工作量固定映射为
@@ -67,5 +67,11 @@ Supervisor 以可验证设备事实和累计工程负载冻结 CELL 容量；只
 Control 三种责任和 Worker 默认禁止置顶；非技术 Patrol 单独禁止 Pin/Unpin。
 每个实质 verdict 恰有一条绑定的 Supervisor 进度；轻量 `RUN_RUNTIME_INDEX`
 证明每次派工都具备容量、叫醒、进度和巡检证据，但不成为 Runtime。
+
+每个角色另有独立的当前 `MODEL_BINDING_TRACE` 条目。默认使用 Terra + `xhigh`；
+只有合同明确为细粒度且低风险的 CELL，其 Worker 才可使用 Luna；只有高难度纠错、
+根因诊断或复杂返工才可使用 Sol。能力相近替代模型必须有等价证据；GPT 5.5 及更低、
+未经 Owner 逐项授权的 `ultra`、静默切模均 fail closed。Patrol 默认使用 Terra，
+没有隐含低成本例外。
 
 详见 [运行控制与进度](references/runtime-control-and-progress.md)。

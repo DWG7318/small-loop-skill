@@ -1,4 +1,4 @@
-schema_version: 2.5.0
+schema_version: 2.6.0
 record_type: RUN_RUNTIME_CONTRACT
 status: PENDING
 run_id: ""
@@ -12,9 +12,12 @@ patrol:
   conversation_count: 0
   heartbeat_id: ""
   heartbeat_count: 0
-  model: gpt-5.6-luna
+  model: gpt-5.6-terra
+  model_binding_id: ""
   reasoning_effort: xhigh
+  owner_ultra_authorization_ref: ""
   interval_minutes: 0
+model_binding_trace_ref: {}
 checker_binding:
   thread_id: ""
   host_id: ""

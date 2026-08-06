@@ -4,7 +4,7 @@ Small Loop Skill is the strict serial engineering method for one bounded LCCodin
 Run executed through one formal Control Conversation and one persistent Worker
 Conversation, with one non-authoritative Run Patrol safeguard.
 
-Current version: **2.5.1**
+Current version: **2.6.0**
 
 ```text
 Owner
@@ -65,7 +65,7 @@ conversation, Chain/Stage/Barrier, or graph activation.
 
 ## Runtime safeguards
 
-SLK 2.5.0 adds a Worker-only four-level Checker wake ladder, prohibits Supervisor
+SLK 2.6.0 retains the Worker-only four-level Checker wake ladder, prohibits Supervisor
 wait loops, derives layered progress from D1/D2 receipts, and uses exactly one
 non-authoritative Patrol. Supervisor freezes measurable device capacity and
 cumulative engineering load; only a pre-dispatch `CELL_CAPACITY_GATE` PASS permits
@@ -76,6 +76,13 @@ material verdict has one bound Supervisor progress update, and a lightweight
 `RUN_RUNTIME_INDEX` proves each dispatch has capacity, wake, progress, and Patrol
 evidence without becoming a Runtime.
 
+Every role also has a separate current `MODEL_BINDING_TRACE` entry. Terra + `xhigh`
+is default; only a frozen fine-grained/LOW-risk CELL permits its Worker to use Luna,
+and only high-difficulty correction, root-cause diagnosis, or complex rework permits
+Sol. Capability-equivalent substitutes require evidence; GPT 5.5/lower,
+unauthorized `ultra`, and silent switches fail closed. Patrol defaults to Terra and
+has no implicit low-cost exception.
+
 See [runtime control and progress](references/runtime-control-and-progress.md).
 
 ## Validation
@@ -84,6 +91,7 @@ See [runtime control and progress](references/runtime-control-and-progress.md).
 python scripts/validate_repository.py
 python scripts/validate_serial_plan.py examples/minimal-run/serial-plan.yaml
 python scripts/validate_defect_repair.py <d0-or-d1-receipt.yaml>
+python scripts/validate_causal_experiment_preflight.py <preflight.json>
 python scripts/validate_runtime_control.py <runtime-record.yaml>
 python -m pytest -q
 ```
