@@ -1,8 +1,10 @@
 schema_version: 2.6.0
-record_type: PROGRESS_TRACE
+record_type: MODEL_BINDING_TRACE
 status: PENDING
 run_id: ""
+trace_id: ""
+version: 0
+trace_sha256: ""
 history_immutable: true
-required_sets: []
-events: []
+bindings: []
 evidence_refs: []

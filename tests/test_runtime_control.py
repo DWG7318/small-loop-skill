@@ -62,6 +62,16 @@ REQUIRED_SIMULATION_SCENARIOS = {
     "PATROL_COMPLETE_CHECKLIST",
     "RUN_RUNTIME_INDEX_COMPLETE",
     "PATROL_DIFFICULTY_INTERVAL_BOUND",
+    "MODEL_TERRA_DEFAULT_ACCEPTED",
+    "MODEL_LUNA_FINE_GRAINED_LOW_RISK_ACCEPTED",
+    "MODEL_SOL_HIGH_DIFFICULTY_ACCEPTED",
+    "MODEL_EQUIVALENT_SUBSTITUTE_ACCEPTED",
+    "MODEL_GPT55_OR_LOWER_REJECTED",
+    "MODEL_ULTRA_WITHOUT_OWNER_REJECTED",
+    "MODEL_UNJUSTIFIED_DOWNGRADE_REJECTED",
+    "MODEL_SILENT_SWITCH_REJECTED",
+    "MODEL_ROLE_ISOLATION_PRESERVED",
+    "MODEL_PATROL_DEFAULT_TERRA",
 }
 
 SLK_TECHNICAL_ROLES = [
@@ -124,7 +134,7 @@ def assert_reject(
 
 def runtime_contract() -> dict:
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "RUN_RUNTIME_CONTRACT",
         "status": "READY",
         "run_id": "RUN-001",
@@ -139,9 +149,16 @@ def runtime_contract() -> dict:
             "conversation_count": 1,
             "heartbeat_id": "SLK-PATROL-RUN-001",
             "heartbeat_count": 1,
-            "model": "gpt-5.6-luna",
+            "model": "gpt-5.6-terra",
+            "model_binding_id": "MB-run_patrol-05",
             "reasoning_effort": "xhigh",
+            "owner_ultra_authorization_ref": "",
             "interval_minutes": 15,
+        },
+        "model_binding_trace_ref": {
+            "id": "MBT-RUN-001",
+            "version": 1,
+            "sha256": "9" * 64,
         },
         "checker_binding": {
             "thread_id": "thread-control",
@@ -196,7 +213,7 @@ def runtime_contract() -> dict:
 
 def simulation() -> dict:
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "RUNTIME_SIMULATION",
         "status": "SIMULATION_PASS",
         "run_id": "RUN-001",
@@ -284,7 +301,7 @@ def wake_trace(*, success_level: int = 1) -> dict:
         )
     )
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "WORKER_WAKE_TRACE",
         "status": "ACKNOWLEDGED",
         "run_id": "RUN-001",
@@ -341,7 +358,7 @@ def failed_wake_trace() -> dict:
 
 def pending_wake() -> dict:
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "PENDING_WAKE",
         "status": "PATROL_OBSERVED",
         "pending_wake_id": "SLK-PENDING-WAKE-RUN-001-GO-03-CELL-03.25-R01",
@@ -404,15 +421,17 @@ def patrol_item(packet: dict, check_kind: str) -> dict:
 
 def patrol_receipt() -> dict:
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "RUN_PATROL_RECEIPT",
         "status": "OBSERVED",
         "run_id": "RUN-001",
         "patrol_cycle_id": "PATROL-RUN-001-CYCLE-001",
         "workload_class": "MEDIUM",
         "actor": "RUN_PATROL",
-        "model": "gpt-5.6-luna",
+        "model": "gpt-5.6-terra",
+        "model_binding_id": "MB-run_patrol-05",
         "reasoning_effort": "xhigh",
+        "owner_ultra_authorization_ref": "",
         "authority": "NONE",
         "conversation_id": "thread-patrol",
         "conversation_count": 1,
@@ -527,7 +546,7 @@ def progress_trace() -> dict:
     d1_two = d1("D1-002", "CELL-01.02")
     d2_one = d2("D2-001", "GO-01")
     packet = {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "PROGRESS_TRACE",
         "status": "VALID",
         "run_id": "RUN-001",
@@ -679,7 +698,7 @@ def progress_trace_with_run_milestones() -> dict:
 
 def device_capacity_profile() -> dict:
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "DEVICE_CAPACITY_PROFILE",
         "status": "READY",
         "run_id": "RUN-001",
@@ -720,7 +739,7 @@ def device_capacity_profile() -> dict:
 
 def cumulative_engineering_load(*, version: int = 1, late: bool = False) -> dict:
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "CUMULATIVE_ENGINEERING_LOAD",
         "status": "CURRENT",
         "run_id": "RUN-001",
@@ -752,7 +771,7 @@ def cumulative_engineering_load(*, version: int = 1, late: bool = False) -> dict
 def capacity_gate(*, outcome: str = "PASS", load_version: int = 1) -> dict:
     split_required = outcome == "SPLIT_REQUIRED"
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "CELL_CAPACITY_GATE",
         "status": "DECIDED",
         "run_id": "RUN-001",
@@ -838,7 +857,7 @@ def capacity_gate(*, outcome: str = "PASS", load_version: int = 1) -> dict:
 def capacity_event(*, event: str = "CELL_SCOPE_EXCEEDED", successors: int = 0) -> dict:
     severe = event == "POST_DISPATCH_CELL_SPLIT" and successors >= 3
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "CELL_CAPACITY_EVENT",
         "status": "RECORDED",
         "run_id": "RUN-001",
@@ -862,7 +881,7 @@ def capacity_event(*, event: str = "CELL_SCOPE_EXCEEDED", successors: int = 0) -
 
 def pin_audit(*, provenance: str = "NONE") -> dict:
     packet = {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "THREAD_PIN_AUDIT",
         "status": "VALID",
         "run_id": "RUN-001",
@@ -963,7 +982,7 @@ def test_runtime_contract_rejects_duplicate_or_misbound_patrol(
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_UNIQUE")
     packet = runtime_contract()
     packet["patrol"]["model"] = "gpt-5.6-sol"
-    assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_MODEL")
+    assert_reject(tmp_path, packet, "SLK_RUNTIME_MODEL_SELECTION_INVALID")
     packet = runtime_contract()
     packet["patrol"]["interval_minutes"] = 20
     assert_reject(tmp_path, packet, "SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL")
@@ -1742,12 +1761,13 @@ def runtime_index() -> dict:
     progress = progress_trace()
     progress["events"] = progress["events"][:3]
     return {
-        "schema_version": "2.5.0",
+        "schema_version": "2.6.0",
         "record_type": "RUN_RUNTIME_INDEX",
         "status": "COMPLETE",
         "run_id": "RUN-001",
         "index_version": 1,
         "runtime_contract": runtime_contract(),
+        "model_binding_trace": model_binding_trace(),
         "dispatches": [
             {
                 "dispatch_id": "DISPATCH-001",
@@ -1758,6 +1778,7 @@ def runtime_index() -> dict:
                 "required_cell_total": 2,
                 "round_id": "R01",
                 "required_set_version": 1,
+                "model_binding_id": "MB-worker-04",
             }
         ],
         "capacity_gates": [capacity_gate()],
@@ -2084,5 +2105,400 @@ def test_redo_patrol_interval_is_bound_to_frozen_workload_class(
         tmp_path,
         packet,
         "SLK_RUNTIME_PATROL_DIFFICULTY_INTERVAL",
+        optimized=True,
+    )
+
+
+MODEL_ROLES = [
+    "SUPERVISOR_RESPONSIBILITY",
+    "CHECKER_RESPONSIBILITY",
+    "VERIFIER_RESPONSIBILITY",
+    "WORKER",
+    "RUN_PATROL",
+]
+
+
+def model_binding(
+    role: str,
+    *,
+    sequence: int,
+    binding_id: str | None = None,
+    selection_level: str = "DEFAULT",
+    work_class: str | None = None,
+    reference_model: str = "gpt-5.6-terra",
+    actual_model: str | None = None,
+    capability_class: str = "TERRA_CLASS",
+    equivalence_status: str = "EXACT_REFERENCE",
+    equivalence_evidence: list[str] | None = None,
+    reasoning_effort: str = "xhigh",
+    owner_ultra_authorization_ref: str = "",
+    scope_kind: str = "RUN",
+    go_id: str = "",
+    cell_id: str = "",
+    round_id: str = "",
+    cell_granularity: str = "NOT_APPLICABLE",
+    risk_level: str = "NOT_APPLICABLE",
+    contract_luna_allowed: bool = False,
+    binding_version: int = 1,
+    status: str = "CURRENT",
+    model_switch: bool = False,
+    supersedes_binding_id: str = "",
+    switch_reason: str = "",
+    switch_evidence_refs: list[str] | None = None,
+) -> dict:
+    patrol = role == "RUN_PATROL"
+    if work_class is None:
+        work_class = "NON_TECHNICAL_PATROL" if patrol else "STANDARD_TECHNICAL"
+    reasons = {
+        "STANDARD_TECHNICAL": "DEFAULT_TECHNICAL_ROLE",
+        "NON_TECHNICAL_PATROL": "DEFAULT_NON_TECHNICAL_PATROL",
+        "FINE_GRAINED_LOW_RISK": "FINE_GRAINED_LOW_RISK_CELL",
+        "HIGH_DIFFICULTY_CORRECTION": "HIGH_DIFFICULTY_CORRECTION",
+        "ROOT_CAUSE_DIAGNOSIS": "ROOT_CAUSE_DIAGNOSIS",
+        "COMPLEX_REWORK": "COMPLEX_REWORK",
+    }
+    role_slug = role.lower().replace("_responsibility", "")
+    return {
+        "sequence": sequence,
+        "binding_id": binding_id or f"MB-{role_slug}-{sequence:02d}",
+        "binding_version": binding_version,
+        "status": status,
+        "role": role,
+        "role_instance_id": f"ROLE-{role_slug}",
+        "scope_kind": scope_kind,
+        "go_id": go_id,
+        "cell_id": cell_id,
+        "round_id": round_id,
+        "selection_level": selection_level,
+        "work_class": work_class,
+        "selection_reason": reasons[work_class],
+        "selection_evidence_refs": [f"evidence/model-selection-{sequence}.txt"],
+        "reference_model": reference_model,
+        "actual_model": actual_model or reference_model,
+        "capability_class": capability_class,
+        "capability_equivalence": {
+            "status": equivalence_status,
+            "evidence_refs": (
+                equivalence_evidence
+                if equivalence_evidence is not None
+                else [f"evidence/model-equivalence-{sequence}.txt"]
+            ),
+        },
+        "reasoning_effort": reasoning_effort,
+        "owner_ultra_authorization_ref": owner_ultra_authorization_ref,
+        "cell_contract_ref": (
+            {"id": "CELL-CONTRACT-01", "version": 1, "sha256": "8" * 64}
+            if scope_kind in {"CELL", "ROUND"}
+            else {}
+        ),
+        "cell_granularity": cell_granularity,
+        "risk_level": risk_level,
+        "contract_luna_allowed": contract_luna_allowed,
+        "readiness_gate": "PASS",
+        "isolation_gate": "PASS",
+        "verification_gate": "PASS",
+        "model_switch": model_switch,
+        "supersedes_binding_id": supersedes_binding_id,
+        "switch_reason": switch_reason,
+        "switch_evidence_refs": switch_evidence_refs or [],
+        "evidence_refs": [f"evidence/model-binding-{sequence}.txt"],
+    }
+
+
+def model_binding_trace(*, worker_override: dict | None = None) -> dict:
+    bindings = [
+        model_binding(role, sequence=index)
+        for index, role in enumerate(MODEL_ROLES, start=1)
+    ]
+    if worker_override is not None:
+        bindings.append(worker_override)
+    return {
+        "schema_version": "2.6.0",
+        "record_type": "MODEL_BINDING_TRACE",
+        "status": "READY",
+        "run_id": "RUN-001",
+        "trace_id": "MBT-RUN-001",
+        "version": 1,
+        "trace_sha256": "9" * 64,
+        "history_immutable": True,
+        "bindings": bindings,
+        "evidence_refs": ["evidence/model-binding-trace.txt"],
+    }
+
+
+def luna_worker_binding(*, sequence: int = 6) -> dict:
+    return model_binding(
+        "WORKER",
+        sequence=sequence,
+        selection_level="CELL_LOW_RISK_EXCEPTION",
+        work_class="FINE_GRAINED_LOW_RISK",
+        reference_model="gpt-5.6-luna",
+        capability_class="LUNA_CLASS",
+        scope_kind="ROUND",
+        go_id="GO-01",
+        cell_id="CELL-01.01",
+        round_id="R01",
+        cell_granularity="FINE_GRAINED",
+        risk_level="LOW",
+        contract_luna_allowed=True,
+    )
+
+
+def sol_worker_binding(
+    *,
+    sequence: int = 6,
+    work_class: str = "ROOT_CAUSE_DIAGNOSIS",
+) -> dict:
+    return model_binding(
+        "WORKER",
+        sequence=sequence,
+        selection_level="HIGH_DIFFICULTY_ESCALATION",
+        work_class=work_class,
+        reference_model="gpt-5.6-sol",
+        capability_class="SOL_CLASS",
+        scope_kind="ROUND",
+        go_id="GO-01",
+        cell_id="CELL-01.01",
+        round_id="R01",
+        cell_granularity="FINE_GRAINED",
+        risk_level="HIGH",
+    )
+
+
+def test_model_policy_accepts_terra_defaults_and_preserves_role_isolation(
+    tmp_path: Path,
+) -> None:
+    packet = model_binding_trace()
+    assert {item["actual_model"] for item in packet["bindings"]} == {
+        "gpt-5.6-terra"
+    }
+    assert len({item["binding_id"] for item in packet["bindings"]}) == len(MODEL_ROLES)
+    assert_pass(tmp_path, packet)
+
+
+def test_model_policy_accepts_fine_grained_low_risk_worker_luna(
+    tmp_path: Path,
+) -> None:
+    assert_pass(tmp_path, model_binding_trace(worker_override=luna_worker_binding()))
+
+
+def test_model_policy_accepts_sol_only_for_high_difficulty_work(
+    tmp_path: Path,
+) -> None:
+    for work_class in (
+        "HIGH_DIFFICULTY_CORRECTION",
+        "ROOT_CAUSE_DIAGNOSIS",
+        "COMPLEX_REWORK",
+    ):
+        assert_pass(
+            tmp_path,
+            model_binding_trace(
+                worker_override=sol_worker_binding(work_class=work_class),
+            ),
+        )
+
+
+def test_model_policy_accepts_proven_capability_equivalent_substitute(
+    tmp_path: Path,
+) -> None:
+    packet = model_binding_trace()
+    patrol = packet["bindings"][-1]
+    patrol["actual_model"] = "provider-x-terra-equivalent"
+    patrol["capability_equivalence"] = {
+        "status": "PROVEN_EQUIVALENT",
+        "evidence_refs": ["evidence/provider-x-terra-equivalence.txt"],
+    }
+    assert_pass(tmp_path, packet)
+
+
+def test_model_policy_rejects_gpt55_and_lower(tmp_path: Path) -> None:
+    for model in ("gpt-5.5", "gpt-5.4-mini", "gpt-4o"):
+        packet = model_binding_trace()
+        packet["bindings"][0]["actual_model"] = model
+        packet["bindings"][0]["capability_equivalence"]["status"] = (
+            "PROVEN_EQUIVALENT"
+        )
+        assert_reject(
+            tmp_path,
+            packet,
+            "SLK_RUNTIME_MODEL_FLOOR",
+            optimized=True,
+        )
+
+
+def test_model_policy_rejects_ultra_without_exact_owner_authorization(
+    tmp_path: Path,
+) -> None:
+    packet = model_binding_trace()
+    packet["bindings"][0]["reasoning_effort"] = "ultra"
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN",
+        optimized=True,
+    )
+    packet["bindings"][0]["owner_ultra_authorization_ref"] = (
+        "owner-auth/RUN-OTHER/WORKER/ULTRA"
+    )
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_MODEL_ULTRA_FORBIDDEN",
+        optimized=True,
+    )
+    packet["bindings"][0]["owner_ultra_authorization_ref"] = (
+        "owner-auth/RUN-001/SUPERVISOR/ULTRA"
+    )
+    assert_pass(tmp_path, packet)
+
+
+def test_model_policy_rejects_unjustified_luna_downgrade(tmp_path: Path) -> None:
+    mutations = (
+        ("role", "CHECKER_RESPONSIBILITY"),
+        ("cell_granularity", "COARSE"),
+        ("risk_level", "MEDIUM"),
+        ("contract_luna_allowed", False),
+        ("selection_reason", "COST_SAVING"),
+    )
+    for field, value in mutations:
+        binding = luna_worker_binding()
+        binding[field] = value
+        assert_reject(
+            tmp_path,
+            model_binding_trace(worker_override=binding),
+            "SLK_RUNTIME_MODEL_SELECTION_INVALID",
+            optimized=field == "selection_reason",
+        )
+
+
+def test_model_policy_rejects_sol_for_ordinary_work_or_patrol(
+    tmp_path: Path,
+) -> None:
+    ordinary = sol_worker_binding()
+    ordinary["work_class"] = "STANDARD_TECHNICAL"
+    ordinary["selection_reason"] = "DEFAULT_TECHNICAL_ROLE"
+    assert_reject(
+        tmp_path,
+        model_binding_trace(worker_override=ordinary),
+        "SLK_RUNTIME_MODEL_SELECTION_INVALID",
+        optimized=True,
+    )
+    packet = model_binding_trace()
+    patrol = packet["bindings"][-1]
+    patrol.update(
+        {
+            "selection_level": "HIGH_DIFFICULTY_ESCALATION",
+            "work_class": "COMPLEX_REWORK",
+            "selection_reason": "COMPLEX_REWORK",
+            "reference_model": "gpt-5.6-sol",
+            "actual_model": "gpt-5.6-sol",
+            "capability_class": "SOL_CLASS",
+        }
+    )
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_MODEL_SELECTION_INVALID",
+    )
+
+
+def test_model_policy_rejects_unproven_or_misclassified_equivalence(
+    tmp_path: Path,
+) -> None:
+    packet = model_binding_trace()
+    binding = packet["bindings"][0]
+    binding["actual_model"] = "provider-x-unproven"
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+        optimized=True,
+    )
+    packet = model_binding_trace()
+    packet["bindings"][0]["capability_class"] = "LUNA_CLASS"
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+    )
+
+
+def test_model_policy_rejects_silent_switch_and_accepts_audited_switch(
+    tmp_path: Path,
+) -> None:
+    first = model_binding(
+        "WORKER",
+        sequence=6,
+        binding_id="MB-worker-cell-v1",
+        scope_kind="ROUND",
+        go_id="GO-01",
+        cell_id="CELL-01.01",
+        round_id="R01",
+        cell_granularity="FINE_GRAINED",
+        risk_level="LOW",
+        status="SUPERSEDED",
+    )
+    second = sol_worker_binding(sequence=7)
+    second.update(
+        {
+            "binding_id": "MB-worker-cell-v2",
+            "binding_version": 2,
+            "model_switch": False,
+            "supersedes_binding_id": "",
+        }
+    )
+    packet = model_binding_trace()
+    packet["bindings"].extend([first, second])
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_SILENT_MODEL_SWITCH",
+        optimized=True,
+    )
+    second.update(
+        {
+            "model_switch": True,
+            "supersedes_binding_id": "MB-worker-cell-v1",
+            "switch_reason": "Root cause diagnosis requires SOL_CLASS",
+            "switch_evidence_refs": ["evidence/model-switch-v2.txt"],
+        }
+    )
+    assert_pass(tmp_path, packet)
+
+
+def test_model_policy_runtime_contract_patrol_and_index_bind_current_trace(
+    tmp_path: Path,
+) -> None:
+    trace = model_binding_trace()
+    contract = runtime_contract()
+    contract["patrol"].update(
+        {
+            "model": "gpt-5.6-terra",
+            "model_binding_id": "MB-run_patrol-05",
+        }
+    )
+    contract["model_binding_trace_ref"] = {
+        "id": trace["trace_id"],
+        "version": trace["version"],
+        "sha256": trace["trace_sha256"],
+    }
+    assert_pass(tmp_path, contract)
+
+    patrol = patrol_receipt()
+    patrol["model"] = "gpt-5.6-terra"
+    patrol["model_binding_id"] = "MB-run_patrol-05"
+    assert_pass(tmp_path, patrol)
+
+    packet = runtime_index()
+    packet["runtime_contract"] = contract
+    packet["model_binding_trace"] = trace
+    packet["dispatches"][0]["model_binding_id"] = "MB-worker-04"
+    packet["patrol_receipts"][0] = patrol
+    assert_pass(tmp_path, packet)
+    packet["dispatches"][0]["model_binding_id"] = "MB-checker-02"
+    assert_reject(
+        tmp_path,
+        packet,
+        "SLK_RUNTIME_MODEL_BINDING_SCOPE",
         optimized=True,
     )

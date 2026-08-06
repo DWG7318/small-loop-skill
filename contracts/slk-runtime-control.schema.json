@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/limitless-dwg/small-loop-skill/contracts/slk-runtime-control.schema.json",
-  "title": "SLK 2.5.0 Runtime Control Records",
+  "title": "SLK 2.6.0 Runtime Control Records",
   "oneOf": [
     {"$ref": "#/$defs/run_runtime_contract"},
     {"$ref": "#/$defs/device_capacity_profile"},
@@ -14,7 +14,8 @@
     {"$ref": "#/$defs/progress_trace"},
     {"$ref": "#/$defs/runtime_simulation"},
     {"$ref": "#/$defs/thread_pin_audit"},
-    {"$ref": "#/$defs/run_runtime_index"}
+    {"$ref": "#/$defs/run_runtime_index"},
+    {"$ref": "#/$defs/model_binding_trace"}
   ],
   "$defs": {
     "text": {"type": "string", "minLength": 1},
@@ -39,6 +40,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "sha256"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/positive_integer"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "model_trace_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "sha256"],
       "properties": {
         "id": {"$ref": "#/$defs/text"},
         "version": {"$ref": "#/$defs/positive_integer"},
@@ -82,18 +93,131 @@
         "supersedes_cell_id": {"$ref": "#/$defs/text"}
       }
     },
+    "capability_equivalence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence_refs"],
+      "properties": {
+        "status": {"enum": ["EXACT_REFERENCE", "PROVEN_EQUIVALENT"]},
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "model_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence", "binding_id", "binding_version", "status", "role",
+        "role_instance_id", "scope_kind", "go_id", "cell_id", "round_id",
+        "selection_level", "work_class", "selection_reason",
+        "selection_evidence_refs", "reference_model", "actual_model",
+        "capability_class", "capability_equivalence", "reasoning_effort",
+        "owner_ultra_authorization_ref", "cell_contract_ref",
+        "cell_granularity", "risk_level", "contract_luna_allowed",
+        "readiness_gate", "isolation_gate", "verification_gate",
+        "model_switch", "supersedes_binding_id", "switch_reason",
+        "switch_evidence_refs", "evidence_refs"
+      ],
+      "properties": {
+        "sequence": {"$ref": "#/$defs/positive_integer"},
+        "binding_id": {"$ref": "#/$defs/text"},
+        "binding_version": {"$ref": "#/$defs/positive_integer"},
+        "status": {"enum": ["CURRENT", "SUPERSEDED"]},
+        "role": {
+          "enum": [
+            "SUPERVISOR_RESPONSIBILITY", "CHECKER_RESPONSIBILITY",
+            "VERIFIER_RESPONSIBILITY", "WORKER", "RUN_PATROL"
+          ]
+        },
+        "role_instance_id": {"$ref": "#/$defs/text"},
+        "scope_kind": {"enum": ["RUN", "GO", "CELL", "ROUND"]},
+        "go_id": {"type": "string"},
+        "cell_id": {"type": "string"},
+        "round_id": {"type": "string"},
+        "selection_level": {
+          "enum": ["DEFAULT", "CELL_LOW_RISK_EXCEPTION", "HIGH_DIFFICULTY_ESCALATION"]
+        },
+        "work_class": {
+          "enum": [
+            "STANDARD_TECHNICAL", "NON_TECHNICAL_PATROL",
+            "FINE_GRAINED_LOW_RISK", "HIGH_DIFFICULTY_CORRECTION",
+            "ROOT_CAUSE_DIAGNOSIS", "COMPLEX_REWORK"
+          ]
+        },
+        "selection_reason": {
+          "enum": [
+            "DEFAULT_TECHNICAL_ROLE", "DEFAULT_NON_TECHNICAL_PATROL",
+            "FINE_GRAINED_LOW_RISK_CELL", "HIGH_DIFFICULTY_CORRECTION",
+            "ROOT_CAUSE_DIAGNOSIS", "COMPLEX_REWORK"
+          ]
+        },
+        "selection_evidence_refs": {"$ref": "#/$defs/evidence_refs"},
+        "reference_model": {
+          "enum": ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol"]
+        },
+        "actual_model": {"$ref": "#/$defs/text"},
+        "capability_class": {"enum": ["TERRA_CLASS", "LUNA_CLASS", "SOL_CLASS"]},
+        "capability_equivalence": {"$ref": "#/$defs/capability_equivalence"},
+        "reasoning_effort": {"enum": ["xhigh", "ultra"]},
+        "owner_ultra_authorization_ref": {"type": "string"},
+        "cell_contract_ref": {
+          "oneOf": [
+            {"type": "object", "maxProperties": 0, "additionalProperties": false},
+            {"$ref": "#/$defs/hashed_ref"}
+          ]
+        },
+        "cell_granularity": {"enum": ["NOT_APPLICABLE", "FINE_GRAINED", "COARSE"]},
+        "risk_level": {"enum": ["NOT_APPLICABLE", "LOW", "MEDIUM", "HIGH"]},
+        "contract_luna_allowed": {"type": "boolean"},
+        "readiness_gate": {"const": "PASS"},
+        "isolation_gate": {"const": "PASS"},
+        "verification_gate": {"const": "PASS"},
+        "model_switch": {"type": "boolean"},
+        "supersedes_binding_id": {"type": "string"},
+        "switch_reason": {"type": "string"},
+        "switch_evidence_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/text"}
+        },
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
+    "model_binding_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "record_type", "status", "run_id", "trace_id",
+        "version", "trace_sha256", "history_immutable", "bindings",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": {"const": "2.6.0"},
+        "record_type": {"const": "MODEL_BINDING_TRACE"},
+        "status": {"enum": ["PENDING", "READY"]},
+        "run_id": {"$ref": "#/$defs/text"},
+        "trace_id": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/positive_integer"},
+        "trace_sha256": {"$ref": "#/$defs/sha256"},
+        "history_immutable": {"const": true},
+        "bindings": {
+          "type": "array",
+          "minItems": 5,
+          "items": {"$ref": "#/$defs/model_binding"}
+        },
+        "evidence_refs": {"$ref": "#/$defs/evidence_refs"}
+      }
+    },
     "run_runtime_contract": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "schema_version", "record_type", "status", "run_id", "workload_class", "baseline_ref",
-        "formal_conversations", "patrol", "checker_binding",
+        "formal_conversations", "patrol", "model_binding_trace_ref", "checker_binding",
         "worker_capabilities", "supervisor_wait", "required_sets",
         "device_capacity_profile_ref", "cumulative_engineering_load_ref",
         "cell_capacity_policy", "thread_pin_policy", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "RUN_RUNTIME_CONTRACT"},
         "status": {"const": "READY"},
         "run_id": {"$ref": "#/$defs/text"},
@@ -113,18 +237,22 @@
           "additionalProperties": false,
           "required": [
             "conversation_id", "conversation_count", "heartbeat_id",
-            "heartbeat_count", "model", "reasoning_effort", "interval_minutes"
+            "heartbeat_count", "model", "model_binding_id", "reasoning_effort",
+            "owner_ultra_authorization_ref", "interval_minutes"
           ],
           "properties": {
             "conversation_id": {"$ref": "#/$defs/text"},
             "conversation_count": {"const": 1},
             "heartbeat_id": {"$ref": "#/$defs/text"},
             "heartbeat_count": {"const": 1},
-            "model": {"const": "gpt-5.6-luna"},
-            "reasoning_effort": {"const": "xhigh"},
+            "model": {"$ref": "#/$defs/text"},
+            "model_binding_id": {"$ref": "#/$defs/text"},
+            "reasoning_effort": {"enum": ["xhigh", "ultra"]},
+            "owner_ultra_authorization_ref": {"type": "string"},
             "interval_minutes": {"enum": [10, 15, 30]}
           }
         },
+        "model_binding_trace_ref": {"$ref": "#/$defs/model_trace_ref"},
         "checker_binding": {"$ref": "#/$defs/checker_binding"},
         "worker_capabilities": {
           "type": "object",
@@ -226,7 +354,7 @@
         "context_evidence_budgets", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "DEVICE_CAPACITY_PROFILE"},
         "status": {"enum": ["PENDING", "READY"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -350,7 +478,7 @@
         "boundary_kind", "required_set_version", "measurements", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "CUMULATIVE_ENGINEERING_LOAD"},
         "status": {"enum": ["PENDING", "CURRENT"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -466,7 +594,7 @@
         "split_plan", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "CELL_CAPACITY_GATE"},
         "status": {"enum": ["PENDING", "DECIDED"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -512,7 +640,7 @@
         "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "CELL_CAPACITY_EVENT"},
         "status": {"enum": ["PENDING", "RECORDED"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -618,7 +746,7 @@
         "temporary_heartbeat_state", "pending_wake_ref", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "WORKER_WAKE_TRACE"},
         "status": {"enum": ["PENDING", "ACKNOWLEDGED", "PROCESSING_STARTED", "PENDING_WAKE_WRITTEN"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -655,7 +783,7 @@
         "attempt_errors", "created_at", "patrol", "checker_ack", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "PENDING_WAKE"},
         "status": {"enum": ["PENDING", "PATROL_OBSERVED", "ACKNOWLEDGED", "CONSUMED"]},
         "pending_wake_id": {"$ref": "#/$defs/text"},
@@ -756,21 +884,24 @@
       "required": [
         "schema_version", "record_type", "status", "run_id", "patrol_cycle_id",
         "workload_class", "actor",
-        "model", "reasoning_effort", "authority", "conversation_id",
+        "model", "model_binding_id", "reasoning_effort",
+        "owner_ultra_authorization_ref", "authority", "conversation_id",
         "conversation_count", "heartbeat_id", "heartbeat_count",
         "interval_minutes", "run_state", "checklist", "actions",
         "engineering_progress_reported", "terminal_cleanup", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "RUN_PATROL_RECEIPT"},
         "status": {"enum": ["PENDING", "OBSERVED", "ALERT", "PATROL_CLOSED"]},
         "run_id": {"$ref": "#/$defs/text"},
         "patrol_cycle_id": {"$ref": "#/$defs/text"},
         "workload_class": {"enum": ["LOW", "MEDIUM", "HIGH"]},
         "actor": {"const": "RUN_PATROL"},
-        "model": {"const": "gpt-5.6-luna"},
-        "reasoning_effort": {"const": "xhigh"},
+        "model": {"$ref": "#/$defs/text"},
+        "model_binding_id": {"$ref": "#/$defs/text"},
+        "reasoning_effort": {"enum": ["xhigh", "ultra"]},
+        "owner_ultra_authorization_ref": {"type": "string"},
         "authority": {"const": "NONE"},
         "conversation_id": {"$ref": "#/$defs/text"},
         "conversation_count": {"const": 1},
@@ -900,7 +1031,7 @@
         "history_immutable", "required_sets", "events", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "PROGRESS_TRACE"},
         "status": {"enum": ["PENDING", "VALID"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -936,7 +1067,7 @@
         "clock_source", "scenarios"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "RUNTIME_SIMULATION"},
         "status": {"enum": ["PENDING", "SIMULATION_PASS"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -988,7 +1119,7 @@
         "patrol", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "THREAD_PIN_AUDIT"},
         "status": {"enum": ["PENDING", "VALID"]},
         "run_id": {"$ref": "#/$defs/text"},
@@ -1029,7 +1160,8 @@
       "additionalProperties": false,
       "required": [
         "dispatch_id", "run_id", "go_id", "cell_id", "cell_ordinal",
-        "required_cell_total", "round_id", "required_set_version"
+        "required_cell_total", "round_id", "required_set_version",
+        "model_binding_id"
       ],
       "properties": {
         "dispatch_id": {"$ref": "#/$defs/text"},
@@ -1039,7 +1171,8 @@
         "cell_ordinal": {"$ref": "#/$defs/positive_integer"},
         "required_cell_total": {"$ref": "#/$defs/positive_integer"},
         "round_id": {"$ref": "#/$defs/text"},
-        "required_set_version": {"$ref": "#/$defs/positive_integer"}
+        "required_set_version": {"$ref": "#/$defs/positive_integer"},
+        "model_binding_id": {"$ref": "#/$defs/text"}
       }
     },
     "run_runtime_index": {
@@ -1047,16 +1180,17 @@
       "additionalProperties": false,
       "required": [
         "schema_version", "record_type", "status", "run_id", "index_version",
-        "runtime_contract", "dispatches", "capacity_gates", "wake_traces",
+        "runtime_contract", "model_binding_trace", "dispatches", "capacity_gates", "wake_traces",
         "progress_trace", "patrol_receipts", "evidence_refs"
       ],
       "properties": {
-        "schema_version": {"const": "2.5.0"},
+        "schema_version": {"const": "2.6.0"},
         "record_type": {"const": "RUN_RUNTIME_INDEX"},
         "status": {"enum": ["PENDING", "COMPLETE"]},
         "run_id": {"$ref": "#/$defs/text"},
         "index_version": {"$ref": "#/$defs/positive_integer"},
         "runtime_contract": {"$ref": "#/$defs/run_runtime_contract"},
+        "model_binding_trace": {"$ref": "#/$defs/model_binding_trace"},
         "dispatches": {
           "type": "array",
           "minItems": 1,

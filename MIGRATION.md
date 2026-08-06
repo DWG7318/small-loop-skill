@@ -1,4 +1,28 @@
-# Migration to SLK 2.5.0
+# Migration to SLK 2.6.0
+
+## From 2.5.0
+
+Do not reinterpret an active Run's fixed model strings. At a versioned boundary,
+create one `MODEL_BINDING_TRACE`, bind it by ID/version/hash in
+`RUN_RUNTIME_CONTRACT`, and give Supervisor, Checker, Verifier, Worker, and Patrol
+separate current bindings.
+
+- Default every role to the Terra capability class with `xhigh`.
+- Use a Worker Luna binding only when the frozen CELL Contract says
+  `fine_grained: true`, `risk_level: LOW`, and `luna_allowed: true`.
+- Use Sol only for high-difficulty correction, root-cause diagnosis, or complex
+  rework; ordinary implementation/checking remains Terra.
+- For another provider/model, bind the applicable GPT reference class,
+  `PROVEN_EQUIVALENT`, and immutable evidence.
+- Remove GPT 5.5/lower positive bindings. `ultra` requires exact Owner authorization.
+- On any model/effort change, append a contiguous superseding binding, preserve the
+  prior entry, record switch reason/evidence, and rerun readiness, isolation, and
+  verification gates.
+- Update each dispatch and Patrol/technical receipt to cite its current binding.
+
+Patrol now defaults to Terra and has no implicit Luna exception. This migration
+changes no conversation, responsibility, D0-D3 authority, wake/progress/capacity,
+or Run completion rule.
 
 ## From 2.4.0
 

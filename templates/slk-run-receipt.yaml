@@ -7,6 +7,7 @@ baseline_ref: {}
 candidate_ref: {}
 responsibility: SUPERVISOR_RESPONSIBILITY
 execution_context_ref: ""
+model_binding_ref: {}
 issued_at: ""
 d2_receipts: []
 d3_receipt: ""

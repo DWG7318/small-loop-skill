@@ -2,7 +2,7 @@
 
 SLK has exactly two formal engineering conversations: Control and Worker. Control
 contains three non-interchangeable responsibility modes. Only one mode is active for
-a formal decision. SLK 2.5.0 additionally has exactly one visible Run Patrol
+a formal decision. SLK 2.6.0 additionally has exactly one visible Run Patrol
 safeguard conversation/heartbeat; Patrol is not a technical role and owns no D0-D3,
 product, routing, acceptance, or progress authority.
 
@@ -13,3 +13,9 @@ candidates in fresh D2/D3 environments and issues separate receipts.
 Sharing the Control Conversation means these modes are not blind to conversation
 history. Independence is established by frozen authority, mode declarations,
 immutable candidates, clean environments, and independently reproduced evidence.
+
+SLK 2.6.0 binds each role instance separately in `MODEL_BINDING_TRACE`. Supervisor,
+Checker, Verifier, Worker, and Patrol may use the same Terra-class actual model, but
+they never share a binding ID or authority. A model or effort switch creates a new
+scope-bound version and reruns readiness, isolation, and verification; model
+sameness or change never substitutes for candidate/environment separation.

@@ -2,7 +2,7 @@
   "schema_version": "2.0",
   "method": "SLK",
   "product_name": "Small Loop Skill",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "formal_execution_conversations": [
     "CONTROL",
     "WORKER"
@@ -28,7 +28,8 @@
     "authority": "NONE",
     "count_per_run": 1,
     "heartbeat_count_per_run": 1,
-    "model": "gpt-5.6-luna",
+    "model_policy": "DEFAULT_TERRA_CLASS",
+    "reference_model": "gpt-5.6-terra",
     "reasoning_effort": "xhigh",
     "workload_interval_minutes": {
       "LOW": 10,
@@ -141,12 +142,41 @@
       "PIN_PROVENANCE_UNKNOWN"
     ]
   },
+  "model_selection": {
+    "record_type": "MODEL_BINDING_TRACE",
+    "default_reference_model": "gpt-5.6-terra",
+    "worker_low_risk_reference_model": "gpt-5.6-luna",
+    "high_difficulty_reference_model": "gpt-5.6-sol",
+    "reasoning_effort_default": "xhigh",
+    "ultra_requires_exact_owner_authorization": true,
+    "gpt_5_5_or_lower_allowed": false,
+    "equivalent_substitute_requires_capability_class_and_evidence": true,
+    "worker_luna_requires_fine_grained_low_risk_cell_contract": true,
+    "sol_allowed_work_classes": [
+      "HIGH_DIFFICULTY_CORRECTION",
+      "ROOT_CAUSE_DIAGNOSIS",
+      "COMPLEX_REWORK"
+    ],
+    "patrol_policy": "DEFAULT_TERRA_CLASS",
+    "silent_model_switch_allowed": false,
+    "switch_revalidates_readiness_isolation_verification": true,
+    "same_model_collapses_role_isolation": false,
+    "binding_required_receipt_types": [
+      "D0",
+      "D1",
+      "D2",
+      "D3",
+      "SLK_RUN_RECEIPT",
+      "BASELINE_AMENDMENT"
+    ]
+  },
   "runtime_index": {
     "record_type": "RUN_RUNTIME_INDEX",
     "scope": "ONE_BOUNDED_STRICTLY_SERIAL_RUN",
     "implementation_kind": "METHOD_COMPLETENESS_INDEX_NOT_RUNTIME",
     "every_dispatch_requires": [
       "CELL_CAPACITY_GATE_PASS",
+      "CURRENT_MODEL_BINDING",
       "WORKER_WAKE_TRACE",
       "PROGRESS_TRACE_DELIVERY",
       "CURRENT_COMPLETE_RUN_PATROL_RECEIPT"

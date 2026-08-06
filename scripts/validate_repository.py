@@ -10,7 +10,7 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
 EXCLUDED_FILES = {"MANIFEST.json"}
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 MIRRORED = [
     Path("SKILL.md"),
     Path("SPEC.md"),

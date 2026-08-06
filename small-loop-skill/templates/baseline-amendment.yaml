@@ -1,5 +1,6 @@
 amendment_id: BA-001
 authority: ""
+model_binding_ref: {}
 reason: ""
 evidence_refs: []
 old_required_sequence: []

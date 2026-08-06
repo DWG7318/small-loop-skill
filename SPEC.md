@@ -1,4 +1,4 @@
-# Small Loop Skill Standard Specification 2.5.0
+# Small Loop Skill Standard Specification 2.6.0
 
 ## 1. Identity
 
@@ -277,7 +277,7 @@ to LCCoding; bounded product defects return to the persistent Worker.
 
 ## 15. Runtime safeguards and progress
 
-Every 2.5.0 Run freezes a `RUN_RUNTIME_CONTRACT` and passes the complete injected-
+Every 2.6.0 Run freezes a `RUN_RUNTIME_CONTRACT` and passes the complete injected-
 clock `RUNTIME_SIMULATION` before Worker dispatch. The normative operational rules,
 record shapes, message formats, fixed alerts, and failure codes are in [runtime
 control and progress](references/runtime-control-and-progress.md).
@@ -289,10 +289,10 @@ The following are specification invariants:
 2. Supervisor never performs positive-timeout `wait_threads`, even once or outside
    a loop, never loops it, and never waits for all members; only timeout-zero
    snapshots are allowed.
-3. Each Run has one `gpt-5.6-luna` + `xhigh` Patrol conversation/heartbeat. Frozen
+3. Each Run has one Terra-class + `xhigh` Patrol conversation/heartbeat. Frozen
    workload maps `LOW→10`, `MEDIUM→15`, `HIGH→30` minutes, and every patrol cycle
    proves the complete fixed minimum-error checklist. Patrol never takes technical
-   or Pin/Unpin action.
+   or Pin/Unpin action and has no implicit Luna exception.
 4. Visible tasks, GO/CELL/Round, “subtask”, and “子任务” are not subagents; explicit
    spawn/delegate/hidden/background Agent evidence is prohibited.
 5. Worker reports delivery position, Checker reports current D1 acceptance, and
@@ -312,10 +312,16 @@ The following are specification invariants:
    and requires a capacity PASS bound to that Round, wake trace, delivery progress,
    and complete current Patrol cycle. Missing, extra, duplicate, stale, or
    wrong-scope records fail closed; the index is evidence, not a session Runtime.
+9. A versioned `MODEL_BINDING_TRACE` records a separate current binding for every
+   role. Terra + `xhigh` is default; Worker Luna requires an explicitly
+   fine-grained/LOW CELL; Sol requires high-difficulty correction, root-cause
+   diagnosis, or complex rework. Equivalent substitutes require capability-class
+   evidence. GPT 5.5/lower, unauthorized `ultra`, and silent switches fail closed.
+   Model sameness never collapses role or environment isolation.
 
 These records augment current authority and D0/D1 evidence only. They create no D4,
-new technical role, general message bus, device monitor, scheduler, Runtime method,
-Chain/Stage/Barrier, or graph activation.
+new technical role, general message bus, model router, cost optimizer, device
+monitor, scheduler, Runtime method, Chain/Stage/Barrier, or graph activation.
 
 ## 16. Completion
 
