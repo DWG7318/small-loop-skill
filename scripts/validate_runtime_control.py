@@ -259,15 +259,29 @@ def validate_common(packet: dict) -> None:
 
 def validate_model_floor(model: object) -> str:
     value = text(model, "SLK_RUNTIME_MODEL_BINDING_INVALID", "actual_model")
+    if value != value.strip():
+        fail(
+            "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+            "model identity cannot contain leading or trailing whitespace",
+        )
     lowered = value.lower()
     if lowered.startswith("gpt-"):
-        match = re.match(r"^gpt-(\d+)(?:\.(\d+))?", lowered)
+        if value != lowered:
+            fail(
+                "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+                "GPT model identity must use its canonical lowercase identifier",
+            )
+        match = re.fullmatch(
+            r"gpt-(\d+)(?:\.(\d+))?(?:-[a-z0-9][a-z0-9._-]*)?",
+            lowered,
+        )
         if match is None:
             fail("SLK_RUNTIME_MODEL_FLOOR", "unparseable GPT model claim")
         major = int(match.group(1))
         minor = int(match.group(2) or 0)
         if major < 5 or (major == 5 and minor <= 5):
             fail("SLK_RUNTIME_MODEL_FLOOR", "GPT 5.5 and lower are forbidden")
+        return lowered
     return value
 
 

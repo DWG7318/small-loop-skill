@@ -2465,6 +2465,30 @@ def test_model_policy_rejects_known_reference_class_spoof_in_all_directions(
             )
 
 
+def test_model_policy_rejects_noncanonical_known_gpt_identity(
+    tmp_path: Path,
+) -> None:
+    for optimized in (False, True):
+        for actual_model in (
+            "GPT-5.6-LUNA",
+            "gpt-5.6-Luna",
+            "gpt-5.6-luna ",
+        ):
+            packet = model_binding_trace()
+            binding = packet["bindings"][0]
+            binding["actual_model"] = actual_model
+            binding["capability_equivalence"] = {
+                "status": "PROVEN_EQUIVALENT",
+                "evidence_refs": ["evidence/noncanonical-gpt-identity.txt"],
+            }
+            assert_reject(
+                tmp_path,
+                packet,
+                "SLK_RUNTIME_MODEL_EQUIVALENCE_INVALID",
+                optimized=optimized,
+            )
+
+
 def test_model_policy_rejects_second_role_instance_in_same_run(
     tmp_path: Path,
 ) -> None:

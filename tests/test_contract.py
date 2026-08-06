@@ -123,6 +123,7 @@ def test_worker_wake_wait_subagent_and_progress_authority() -> None:
     assert model["patrol_policy"] == "DEFAULT_TERRA_CLASS"
     assert model["same_model_collapses_role_isolation"] is False
     assert model["known_reference_actual_requires_exact_reference"] is True
+    assert model["gpt_identity_requires_canonical_case_and_no_outer_whitespace"] is True
     assert model["role_instance_id_stable_per_role"] is True
     assert model["role_instance_id_shared_across_roles"] is False
     assert model["worker_role_instance_count"] == 1
@@ -185,6 +186,10 @@ def test_runtime_schema_templates_and_mirrors_are_closed_and_pending() -> None:
         guard["if"]["properties"]["actual_model"]["const"]
         for guard in known_model_guards
     } == {"gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol"}
+    actual_model_schema = schema["$defs"]["model_binding"]["properties"][
+        "actual_model"
+    ]
+    assert "pattern" in actual_model_schema
     names = {
         "run-runtime-contract.yaml",
         "device-capacity-profile.yaml",

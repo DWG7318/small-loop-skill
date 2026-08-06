@@ -201,7 +201,10 @@
         "reference_model": {
           "enum": ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol"]
         },
-        "actual_model": {"$ref": "#/$defs/text"},
+        "actual_model": {
+          "$ref": "#/$defs/text",
+          "pattern": "^(?:gpt-[a-z0-9][a-z0-9._-]*|(?![Gg][Pp][Tt]-)\\S(?:.*\\S)?)$"
+        },
         "capability_class": {"enum": ["TERRA_CLASS", "LUNA_CLASS", "SOL_CLASS"]},
         "capability_equivalence": {"$ref": "#/$defs/capability_equivalence"},
         "reasoning_effort": {"enum": ["xhigh", "ultra"]},

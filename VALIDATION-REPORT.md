@@ -9,10 +9,10 @@ Branch: `feature/slk-2.6.0-model-policy`
 - PASS: Small Loop Skill identity, 2.6.0 version alignment, unchanged
   Control+Worker formal topology, one non-authoritative Patrol, and existing D0-D3 /
   Owner authority;
-- PASS: 122 full pytest tests;
-- PASS: 85 focused runtime-control and authority-contract tests;
-- PASS: 71 runtime-control CLI behavior tests under ordinary and `python -O` execution;
-- PASS: 14 focused model-policy tests, including ordinary and `python -O`
+- PASS: 123 full pytest tests;
+- PASS: 86 focused runtime-control and authority-contract tests;
+- PASS: 72 runtime-control CLI behavior tests under ordinary and `python -O` execution;
+- PASS: 15 focused model-policy tests, including ordinary and `python -O`
   adversarial execution;
 - PASS: Terra + `xhigh` default bindings for Supervisor, Checker, Verifier, Worker,
   and Patrol, with distinct binding IDs and unchanged role isolation;
@@ -23,7 +23,9 @@ Branch: `feature/slk-2.6.0-model-policy`
 - PASS: proven capability-equivalent non-reference substitutes with matching
   reference class and immutable equivalence evidence;
 - PASS: known Terra/Luna/Sol actual models require exact reference/class binding in
-  all six cross-class spoof directions; equivalence evidence cannot relabel them;
+  all six cross-class spoof directions; equivalence evidence cannot relabel them,
+  and uppercase, mixed-case, or outer-whitespace GPT aliases fail closed before the
+  external-equivalence path;
 - PASS: every SLK role retains exactly one stable `role_instance_id` for the Run,
   the persistent Worker cannot be duplicated, and no role instance can be shared;
 - PASS: GPT 5.5/lower, unauthorized `ultra`,

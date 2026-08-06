@@ -162,6 +162,7 @@
     "switch_revalidates_readiness_isolation_verification": true,
     "same_model_collapses_role_isolation": false,
     "known_reference_actual_requires_exact_reference": true,
+    "gpt_identity_requires_canonical_case_and_no_outer_whitespace": true,
     "role_instance_id_stable_per_role": true,
     "role_instance_id_shared_across_roles": false,
     "worker_role_instance_count": 1,
