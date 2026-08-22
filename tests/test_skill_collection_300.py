@@ -126,3 +126,23 @@ def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> N
         "$slk-manage-team",
     ):
         assert marker in text
+
+
+def test_manage_team_covers_visible_creation_recovery_tests_and_archive() -> None:
+    text = read_skill("slk-manage-team")
+    for marker in (
+        "可见",
+        "任务 ID",
+        "原对话",
+        "Supervisor",
+        "Checker",
+        "Worker",
+        "双向通讯",
+        "应急通道",
+        "上一级",
+        "接管",
+        "归档 Worker",
+        "归档 Checker",
+        "状态",
+    ):
+        assert marker in text
