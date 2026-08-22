@@ -246,3 +246,22 @@ def test_record_run_preserves_role_history_failures_and_handoff_order() -> None:
         "## 归档",
     ):
         assert heading in template_text
+
+
+def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None:
+    text = read_skill("slk-rework-cell")
+    for marker in (
+        "D1 FAIL",
+        "Checker",
+        "Worker",
+        "验收目标",
+        "提高一级",
+        "两个串行 CELL",
+        "两轮",
+        "Supervisor",
+        "CELL n/N",
+        "$slk-execute-cell",
+        "$slk-check-cell",
+        "$slk-adjust-run",
+    ):
+        assert marker in text
