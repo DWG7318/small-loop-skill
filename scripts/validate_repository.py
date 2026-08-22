@@ -22,7 +22,6 @@ EXPECTED_SKILLS = (
     "slk-check-cell",
     "slk-record-run",
     "slk-rework-cell",
-    "slk-diagnose-defect",
     "slk-adjust-run",
     "slk-recover-communication",
     "slk-close-run",

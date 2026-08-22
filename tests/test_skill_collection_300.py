@@ -17,7 +17,7 @@ def test_version_is_300() -> None:
     assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.0"
 
 
-def test_collection_has_one_main_and_twelve_children() -> None:
+def test_collection_has_one_main_and_eleven_children() -> None:
     actual = tuple(sorted(path.name for path in SKILLS.iterdir() if path.is_dir()))
     assert actual == tuple(sorted(EXPECTED_SKILLS))
 
@@ -54,6 +54,8 @@ def test_main_routes_to_every_child_once() -> None:
         assert text.count(f"`${child}`") == 1, child
     assert "`$slk-plan-cell`" not in text
     assert not (SKILLS / "slk-plan-cell").exists()
+    assert "`$slk-diagnose-defect`" not in text
+    assert not (SKILLS / "slk-diagnose-defect").exists()
 
 
 def test_active_skills_do_not_restore_the_legacy_topology() -> None:
@@ -338,22 +340,8 @@ def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None
         "$slk-execute-cell",
         "$slk-check-cell",
         "$slk-adjust-run",
-    ):
-        assert marker in text
-
-
-def test_diagnose_defect_is_loaded_for_deeper_causal_work() -> None:
-    text = read_skill("slk-diagnose-defect")
-    for marker in (
-        "复现",
-        "未复现",
-        "一个假设",
-        "小实验",
-        "根因",
-        "最小修复",
-        "回归",
-        "风险相称",
-        "$slk-rework-cell",
+        "Debug Skill",
+        "$superpowers:systematic-debugging",
     ):
         assert marker in text
 

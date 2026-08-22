@@ -21,7 +21,7 @@ SLK guidance helps members decide how to continue. Rework, communication recover
 The active collection lives in [`skills/`](skills/):
 
 - [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) — lightweight identity and router;
-- 12 sibling Skills for planning, Supervisor Grill, team lifecycle, CELL work, recording, rework, diagnosis, adjustment, communication recovery, and closure.
+- 11 sibling Skills for planning, Supervisor Grill, team lifecycle, CELL work, recording, rework, adjustment, communication recovery, and closure. Rework can call an available project-appropriate Debug Skill when root-cause diagnosis is needed.
 
 Ordinary work reads the main Skill and the current situational Skill. Additional guidance is loaded when the situation changes.
 
@@ -31,7 +31,7 @@ Supervisor creates `SLK-RUN-<RUN-ID>.md` in the project root. Worker, Checker, a
 
 ## Install
 
-Place the 13 directories under `skills/` as sibling directories in the Codex Skill root. The main router and 12 focused companion Skills cover planning, execution, checking, recovery, records, and closure. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
+Place the 12 directories under `skills/` as sibling directories in the Codex Skill root. The main router and 11 focused companion Skills cover planning, execution, checking, recovery, records, and closure. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
 
 ## Validation
 

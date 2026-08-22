@@ -117,11 +117,10 @@ SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作�
 |---|---|---|
 | 8 | `slk-record-run` | 各角色完成本轮工作、准备向下一对话传输前 |
 | 9 | `slk-rework-cell` | D1 未通过，需要组织返工 |
-| 10 | `slk-diagnose-defect` | 普通返工不足以解释复杂错误 |
-| 11 | `slk-adjust-run` | CELL、模型、电脑、路线或豁免安排值得由 Supervisor 调整 |
-| 12 | `slk-recover-communication` | 消息未送达、成员未被激活或通讯状态不明确 |
+| 10 | `slk-adjust-run` | CELL、模型、电脑、路线或豁免安排值得由 Supervisor 调整 |
+| 11 | `slk-recover-communication` | 消息未送达、成员未被激活或通讯状态不明确 |
 
-这 12 个名称是实现基线。初始 CELL 规划属于 `slk-plan-run`；派发前的现实校准属于 `slk-dispatch-cell`；施工中的较大变化属于 `slk-adjust-run`，避免出现第二套规划流程。
+这 11 个名称是实现基线。初始 CELL 规划属于 `slk-plan-run`；派发前的现实校准属于 `slk-dispatch-cell`；施工中的较大变化属于 `slk-adjust-run`。普通返工遇到不明根因时调用环境中适合项目的 Debug Skill，不在 SLK 内重复实现通用诊断方法。
 
 ## 8. 子 Skill 之间的关系
 
@@ -144,10 +143,10 @@ flowchart TB
     RR -.记录.-> X
 
     K -->|返工| RW[rework-cell]
-    RW -.复杂错误.-> DF[diagnose-defect]
+    RW -.原因不明.-> DBG[环境中适合项目的 Debug Skill]
     RW -.一分为二重派.-> D
     RW -.连续未收敛或需要改路.-> RP[adjust-run]
-    DF --> RW
+    DBG --> RW
     RP --> D
 
     D -.通讯异常.-> RC[recover-communication]

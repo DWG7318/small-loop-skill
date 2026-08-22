@@ -1,7 +1,7 @@
 {
   "name": "Small Loop Skill Collection",
   "version": "3.0.0",
-  "skill_count": 13,
+  "skill_count": 12,
   "excludes": [
     "MANIFEST.json"
   ],
@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "8fc408d169287e153c154e8257ad543efdc24934d02aad751f6d865977ab6745"
+      "sha256": "7390f40b83f416588ec70006574bad2cfbac161a433e9e586266f4fe70a5333b"
     },
     {
       "path": "LICENSE",
@@ -28,19 +28,19 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "9c1b604250671e10220b3ae9c6ac91e42ed900040d3455b74a59e9670360a55d"
+      "sha256": "3f7b51f060ae87f0d5749ff3e02234b336fc2f504f80af0938fe0a849147511a"
     },
     {
       "path": "README.md",
-      "sha256": "d4f6b9c267b668ba6bff7b2c781dd41bd9d7faf6c83e684ce66ef07bcce9d1e2"
+      "sha256": "d43780e45af2006a2b67267e02aedc803c06905f9a0a073bb165098bd899db12"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "21007ef9dad6a1f11fa1748a9650824a62a394b5f69c38d85712426cf0e83928"
+      "sha256": "37d49e75e5938766d4a066effc7a27cd22d1a93774e21c422dd97de4981125a9"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "fbd71dd5fed9f01f09ff17c3947f39343d1721d2ddf35af8733ae99e8d6439a7"
+      "sha256": "a8cf908a0f9a8e4a8dedee9c567003f7f5b9846a393fe697fa97831f7661c3a7"
     },
     {
       "path": "VERSION",
@@ -68,7 +68,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-08-22-slk-3.0.0-lightweight-skill-collection.md",
-      "sha256": "6f528910d500b0fe609d2dbaa1931e197c753996692c1608e0a789404aaecc64"
+      "sha256": "69fef82f018382fdf4b214f96c7f2e385c01446ff59785db07f0878ab6ebd1de"
     },
     {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
@@ -80,7 +80,7 @@
     },
     {
       "path": "docs/superpowers/specs/2026-08-22-slk-lightweight-skill-collection-design.md",
-      "sha256": "58863f7f0c17a18a1f1ef20a2dee33e6ed28261b6cfc2de34463795eafad5284"
+      "sha256": "1942f79e91db0ca8f1d9901b8db0ce892dfb3785420057479dae9b8639d0f42c"
     },
     {
       "path": "scripts/quick_validate.py",
@@ -88,7 +88,7 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "e10fb6324dfe6b3c775e4f6290755cf440e78d3c7dfb9d00235b060c1358853f"
+      "sha256": "42a88b2562c0a513e70e201f3ea95359697939ba28cea0065ff77f4c967aadfc"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -101,10 +101,6 @@
     {
       "path": "skills/slk-close-run/SKILL.md",
       "sha256": "5ac4d43bdda9effc7dd1cd6dce5c63704062793aaf17cfd55538917a2b0283ce"
-    },
-    {
-      "path": "skills/slk-diagnose-defect/SKILL.md",
-      "sha256": "0f97cf713519db9e3f20842c8910ebd3663a607dcd4b1d9ecc9a92bff7658cab"
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
@@ -140,11 +136,11 @@
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
-      "sha256": "118318b35d811278b7a6a1ccddb8745b93136a969fff9ad2b058c06e7bccbbc8"
+      "sha256": "d529db8b2e9d74aaf4e15bfc6707e2c69800492c81478afbd91ed36d82709d75"
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "a477a168194164d4257b111915cc6dc63ac5ee0bec91a0fdb30d1159d549fa8a"
+      "sha256": "1b9df760ee7eb05f7c96c8a3e07d3f500d7435d6c1fb39d1cafeb1f84809a2fc"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -152,15 +148,15 @@
     },
     {
       "path": "tests/skill_testkit.py",
-      "sha256": "9704f6bde112ac923af43f2639308f3e33a5ba27e058b5e704f1810488c198cc"
+      "sha256": "1f6a220fd9f76e8665d0b44c7b3e9ec65b3d321f38508136543fcf71a3a2fe64"
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "a4167ec0e58b2373c43a2fe73d037108ae17cda9c11176c00f08fe0a7cac2361"
+      "sha256": "2382bd7732d3925e3ec4d58a0472d73c4bdca5c7c3233293708daeda3836f613"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "f95f6ad1be81e0c01c8606fe977b22b088b53f7abd3009408cbd1c283cf44013"
+      "sha256": "8cbf18255ee5fab66c069c9a42ade747f97fd968e9dfb9053b769173a9e1159c"
     }
   ]
 }

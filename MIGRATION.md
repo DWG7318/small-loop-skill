@@ -19,7 +19,7 @@ SLK 3.0.0 is a new method boundary. Existing Runs can remain on their bound 2.6.
 
 ## Guidance model
 
-The 2.6.0 monolith becomes one small router plus 12 sibling situational Skills. Model and computer choices move into Run/CELL planning and event-triggered Supervisor adjustment. The guidance emphasizes recovery, rework, plan adjustment and upper-level help when ordinary work deviates.
+The 2.6.0 monolith becomes one small router plus 11 sibling situational Skills. Model and computer choices move into Run/CELL planning and event-triggered Supervisor adjustment. Generic root-cause diagnosis is routed to an available project-appropriate Debug Skill rather than duplicated inside SLK.
 
 ## Records
 
