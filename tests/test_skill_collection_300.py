@@ -162,3 +162,18 @@ def test_plan_cell_uses_model_device_load_and_headroom() -> None:
         "$slk-dispatch-cell",
     ):
         assert marker in text
+
+
+def test_dispatch_cell_is_checker_owned_and_worker_facing() -> None:
+    text = read_skill("slk-dispatch-cell")
+    for marker in (
+        "Checker",
+        "Worker",
+        "目标",
+        "范围",
+        "D1",
+        "相关上下文",
+        "CELL n/N",
+        "$slk-execute-cell",
+    ):
+        assert marker in text
