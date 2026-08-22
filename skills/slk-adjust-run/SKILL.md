@@ -21,7 +21,7 @@ description: Use when repeated D1 failure, D2 findings, or changed resources cal
 Supervisor 可以按实际原因组合以下办法：
 
 1. 补充信息、资源或可验证的环境；
-2. 把相关 Worker 模型能力提高一级；
+2. 把相关 Worker 模型能力提高一级；角色能力需要重新安排时，使用 `$slk-select-models`；
 3. 更换电脑、工具、账号或测试环境；
 4. 调整后续 CELL 或技术路线，让已验证成果继续被继承；
 5. 对改变 Run 目标、验收目标或 Owner 权限的事项，向 Owner 提出一个清楚的问题；

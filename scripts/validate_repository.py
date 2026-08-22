@@ -15,6 +15,7 @@ COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
     "slk-plan-run",
+    "slk-select-models",
     "slk-grill-supervisor",
     "slk-manage-team",
     "slk-dispatch-cell",

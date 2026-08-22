@@ -26,6 +26,7 @@ Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>
 ## 按当前情境选择指导
 
 - 新 Run、GO 与初始 CELL 方案：`$slk-plan-run`
+- Supervisor、Checker、Worker 的模型能力选择：`$slk-select-models`
 - Supervisor 开工前理解确认：`$slk-grill-supervisor`
 - 建立、恢复、更换或归档成员：`$slk-manage-team`
 - Checker 派发前校准并交付既定 CELL：`$slk-dispatch-cell`

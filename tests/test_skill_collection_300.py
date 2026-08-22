@@ -17,7 +17,7 @@ def test_version_is_300() -> None:
     assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.0"
 
 
-def test_collection_has_one_main_and_eleven_children() -> None:
+def test_collection_has_one_main_and_twelve_children() -> None:
     actual = tuple(sorted(path.name for path in SKILLS.iterdir() if path.is_dir()))
     assert actual == tuple(sorted(EXPECTED_SKILLS))
 
@@ -121,6 +121,27 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
     assert "与 Owner 敲定 D0" not in text
     assert "推演" not in text
     assert "模拟" not in text
+
+
+def test_select_models_matches_capability_to_each_visible_role() -> None:
+    text = read_skill("slk-select-models")
+    for marker in (
+        "Supervisor",
+        "Checker",
+        "Worker",
+        "专业编程",
+        "独立审查",
+        "降低一级",
+        "不能太低",
+        "提高一级",
+        "CELL",
+        "电脑",
+        "可替换",
+        "记录",
+    ):
+        assert marker in text
+    assert "$slk-select-models" in read_skill("slk-plan-run")
+    assert "$slk-select-models" in read_skill("slk-adjust-run")
 
 
 def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> None:

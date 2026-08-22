@@ -2,7 +2,7 @@
 
 ## 3.0.0
 
-- Reframed SLK as one lightweight router plus 11 situational sibling Skills.
+- Reframed SLK as one lightweight router plus 12 situational sibling Skills.
 - Restored three visible conversations: Supervisor, Checker, and Worker.
 - Simplified verification to minimum Worker D0, isolated Checker D1, and combined-result Supervisor D2.
 - Replaced Control modes, Verifier, Patrol, runtime indexes, fixed model bindings, Pin policy, capacity gates, D3, and Owner acceptance receipts in the active method.
@@ -11,6 +11,7 @@
 - Kept Supervisor event-activated rather than continuously involved in the Checker/Worker CELL loop.
 - Ordered D1 and D2 evidence so Worker conclusions and detailed CELL history do not lead the independent judgment.
 - Routed generic root-cause diagnosis to existing Debug Skills instead of duplicating one inside SLK.
+- Added a situational role-model selector: stronger professional coding models for Supervisor and Checker, with a reliable Worker model that may be one capability tier lower for a suitable CELL.
 - Shifted operational language toward situational recommendations and recovery paths so ordinary deviations lead back to construction.
 
 ## 2.6.0

@@ -79,7 +79,7 @@ Worker → Supervisor → Checker
 
 正式成员采用项目中可见的 Codex 对话。创建和归档以实际任务 ID 与可观察状态为准，减少把文字声明、隐藏执行或错误对象当成正式成员的情况。消息是否送达可以结合目标对话中的内容、活动状态和回复判断，不额外制造纯确认消息。
 
-推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO/CELL 和分层检查方案，再创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。成员组就绪后，Supervisor 转为非活动状态，不在线等待或接收逐 CELL 汇报；Checker 与 Worker 直接推进日常循环，需要上级协助或 D2 时再激活 Supervisor。
+推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO/CELL 和分层检查方案，并为三个角色选择相称的模型能力，再创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。成员组就绪后，Supervisor 转为非活动状态，不在线等待或接收逐 CELL 汇报；Checker 与 Worker 直接推进日常循环，需要上级协助或 D2 时再激活 Supervisor。
 
 Worker 遇到 Checker 通讯异常时，通常可以进行三次不同方式的唤醒尝试，并结合目标对话状态判断。仍未恢复时，建议把原交付信息和通讯情况发送给 Supervisor 协助处理。
 
@@ -104,30 +104,31 @@ SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作�
 | # | Skill | 主要情境 | 推荐产出或后继 |
 |---|---|---|---|
 | 1 | `slk-plan-run` | Owner 选择 SLK 后、Supervisor 创建前 | Run/GO/初始 CELL、Agent 自行设计的克制分层检查，以及每个 CELL 的模型、电脑和余量依据 |
-| 2 | `slk-grill-supervisor` | Supervisor 正式接管后 | 对方法理解的问答确认 |
-| 3 | `slk-manage-team` | 建立、恢复、更换或归档成员时 | 可见成员、双向通讯状态或归档结果 |
-| 4 | `slk-dispatch-cell` | Checker 准备交付既定 CELL 时 | 派发前现实校准，以及清楚的 CELL 目标、范围和 D1 标准 |
-| 5 | `slk-execute-cell` | Worker 收到 CELL 后 | 候选成果、最低 D0、进度和风险 |
-| 6 | `slk-check-cell` | Worker 提交候选后 | D1 PASS 或带具体方向的返工意见 |
-| 7 | `slk-close-run` | 全部 CELL 完成后 | Supervisor 的 D2、最终记录、归档和 Owner 简报 |
+| 2 | `slk-select-models` | 创建可见成员前，或能力相关返工后 | 三个角色的能力层级、选择理由与可替换范围 |
+| 3 | `slk-grill-supervisor` | Supervisor 正式接管后 | 对方法理解的问答确认 |
+| 4 | `slk-manage-team` | 建立、恢复、更换或归档成员时 | 可见成员、双向通讯状态或归档结果 |
+| 5 | `slk-dispatch-cell` | Checker 准备交付既定 CELL 时 | 派发前现实校准，以及清楚的 CELL 目标、范围和 D1 标准 |
+| 6 | `slk-execute-cell` | Worker 收到 CELL 后 | 候选成果、最低 D0、进度和风险 |
+| 7 | `slk-check-cell` | Worker 提交候选后 | D1 PASS 或带具体方向的返工意见 |
+| 8 | `slk-close-run` | 全部 CELL 完成后 | Supervisor 的 D2、最终记录、归档和 Owner 简报 |
 
 ### 7.2 按需支持 Skill
 
 | # | Skill | 建议调用的情境 |
 |---|---|---|
-| 8 | `slk-record-run` | 各角色完成本轮工作、准备向下一对话传输前 |
-| 9 | `slk-rework-cell` | D1 未通过，需要组织返工 |
-| 10 | `slk-adjust-run` | CELL、模型、电脑、路线或豁免安排值得由 Supervisor 调整 |
-| 11 | `slk-recover-communication` | 消息未送达、成员未被激活或通讯状态不明确 |
+| 9 | `slk-record-run` | 各角色完成本轮工作、准备向下一对话传输前 |
+| 10 | `slk-rework-cell` | D1 未通过，需要组织返工 |
+| 11 | `slk-adjust-run` | CELL、模型、电脑、路线或豁免安排值得由 Supervisor 调整 |
+| 12 | `slk-recover-communication` | 消息未送达、成员未被激活或通讯状态不明确 |
 
-这 11 个名称是实现基线。初始 CELL 规划属于 `slk-plan-run`；派发前的现实校准属于 `slk-dispatch-cell`；施工中的较大变化属于 `slk-adjust-run`。普通返工遇到不明根因时调用环境中适合项目的 Debug Skill，不在 SLK 内重复实现通用诊断方法。
+这 12 个名称是实现基线。初始 CELL 规划属于 `slk-plan-run`；角色模型选择属于 `slk-select-models`；派发前的现实校准属于 `slk-dispatch-cell`；施工中的较大变化属于 `slk-adjust-run`。普通返工遇到不明根因时调用环境中适合项目的 Debug Skill，不在 SLK 内重复实现通用诊断方法。
 
 ## 8. 子 Skill 之间的关系
 
 ```mermaid
 flowchart TB
     M[small-loop-skill 路由]
-    P[plan-run: Run/GO/初始 CELL] --> S[创建 Supervisor 并交接] --> G[grill-supervisor]
+    P[plan-run: Run/GO/初始 CELL] --> MS[select-models: 三角色能力] --> S[创建 Supervisor 并交接] --> G[grill-supervisor]
     G --> I[record-run: 初始化根记录] --> B[manage-team]
     B --> H[Supervisor转为非活动; Checker接管日常CELL] --> D[dispatch-cell: 派发前校准] --> E[execute-cell] --> K[check-cell]
     K -->|下一既定 CELL| D
@@ -147,6 +148,7 @@ flowchart TB
     RW -.一分为二重派.-> D
     RW -.连续未收敛或需要改路.-> RP[adjust-run]
     DBG --> RW
+    RP -.能力变化.-> MS
     RP --> D
 
     D -.通讯异常.-> RC[recover-communication]
