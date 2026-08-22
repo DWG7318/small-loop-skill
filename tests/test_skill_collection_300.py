@@ -281,3 +281,24 @@ def test_diagnose_defect_is_loaded_for_deeper_causal_work() -> None:
         "$slk-rework-cell",
     ):
         assert marker in text
+
+
+def test_adjust_run_keeps_supervisor_options_and_exemption_visible() -> None:
+    text = read_skill("slk-adjust-run")
+    for marker in (
+        "Supervisor",
+        "连续 D1",
+        "D2",
+        "提高一级",
+        "电脑",
+        "环境",
+        "拆分",
+        "技术路线",
+        "Owner",
+        "豁免",
+        "D1 PASS",
+        "Run 目标",
+        "验收目标",
+        "$slk-plan-cell",
+    ):
+        assert marker in text
