@@ -1,8 +1,0 @@
-schema_version: 2.6.0
-record_type: PROGRESS_TRACE
-status: PENDING
-run_id: ""
-history_immutable: true
-required_sets: []
-events: []
-evidence_refs: []

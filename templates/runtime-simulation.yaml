@@ -1,6 +1,0 @@
-schema_version: 2.6.0
-record_type: RUNTIME_SIMULATION
-status: PENDING
-run_id: ""
-clock_source: INJECTED
-scenarios: []
