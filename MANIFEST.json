@@ -86,12 +86,20 @@
       "sha256": "66e52fc6096e9b79a386a994017548155956c79b6be812d011f5ad2206d486fc"
     },
     {
+      "path": "docs/superpowers/plans/2026-08-22-slk-3.0.0-lightweight-skill-collection.md",
+      "sha256": "52b9548d678d445a3af82c6057a3ffc606f078318e1c570266c2610a94eeda93"
+    },
+    {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
       "sha256": "d26a2d488e8ac2159750b332d8eb1bd02a1187aa9143f0e75a105ad8b601dcfd"
     },
     {
       "path": "docs/superpowers/specs/2026-08-06-slk-2.6.0-controllable-model-policy-design.md",
       "sha256": "fa8a0f39b117d5ae5ee737d514101c14ecd1d39789322e6a4df879a73e039233"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-22-slk-lightweight-skill-collection-design.md",
+      "sha256": "53e166fd318820207dc91f21ae56f061e577e65e63a763156b2b1020d02c7e60"
     },
     {
       "path": "examples/minimal-run/README.md",
