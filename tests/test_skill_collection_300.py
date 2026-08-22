@@ -302,3 +302,19 @@ def test_adjust_run_keeps_supervisor_options_and_exemption_visible() -> None:
         "$slk-plan-cell",
     ):
         assert marker in text
+
+
+def test_recover_communication_uses_state_retries_and_upper_level_recovery() -> None:
+    text = read_skill("slk-recover-communication")
+    for marker in (
+        "对话状态",
+        "消息可见",
+        "三次",
+        "原始交付",
+        "Worker → Supervisor → Checker",
+        "上一级",
+        "接管",
+        "双向通讯测试",
+        "$slk-manage-team",
+    ):
+        assert marker in text
