@@ -265,3 +265,19 @@ def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None
         "$slk-adjust-run",
     ):
         assert marker in text
+
+
+def test_diagnose_defect_is_loaded_for_deeper_causal_work() -> None:
+    text = read_skill("slk-diagnose-defect")
+    for marker in (
+        "复现",
+        "未复现",
+        "一个假设",
+        "小实验",
+        "根因",
+        "最小修复",
+        "回归",
+        "风险相称",
+        "$slk-rework-cell",
+    ):
+        assert marker in text
