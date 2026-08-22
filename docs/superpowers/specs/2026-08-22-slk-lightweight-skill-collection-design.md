@@ -99,39 +99,39 @@ SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作�
 
 | # | Skill | 主要情境 | 推荐产出或后继 |
 |---|---|---|---|
-| 1 | `slk-plan-run` | Owner 选择 SLK 后 | Run/GO/CELL、Agent 自行设计的克制分层检查，以及每个 CELL 的模型、电脑和余量依据 |
+| 1 | `slk-plan-run` | Owner 选择 SLK 后、Supervisor 创建前 | Run/GO/初始 CELL、Agent 自行设计的克制分层检查，以及每个 CELL 的模型、电脑和余量依据 |
 | 2 | `slk-grill-supervisor` | Supervisor 正式接管后 | 对方法理解的问答确认 |
 | 3 | `slk-manage-team` | 建立、恢复、更换或归档成员时 | 可见成员、双向通讯状态或归档结果 |
-| 4 | `slk-plan-cell` | 准备派发当前 CELL 时 | 与模型、电脑和余量相适应的 CELL |
-| 5 | `slk-dispatch-cell` | Checker 向 Worker 交付任务时 | 清楚的 CELL 目标、范围和 D1 标准 |
-| 6 | `slk-execute-cell` | Worker 收到 CELL 后 | 候选成果、最低 D0、进度和风险 |
-| 7 | `slk-check-cell` | Worker 提交候选后 | D1 PASS 或带具体方向的返工意见 |
-| 8 | `slk-close-run` | 全部 CELL 完成后 | Supervisor 的 D2、最终记录、归档和 Owner 简报 |
+| 4 | `slk-dispatch-cell` | Checker 准备交付既定 CELL 时 | 派发前现实校准，以及清楚的 CELL 目标、范围和 D1 标准 |
+| 5 | `slk-execute-cell` | Worker 收到 CELL 后 | 候选成果、最低 D0、进度和风险 |
+| 6 | `slk-check-cell` | Worker 提交候选后 | D1 PASS 或带具体方向的返工意见 |
+| 7 | `slk-close-run` | 全部 CELL 完成后 | Supervisor 的 D2、最终记录、归档和 Owner 简报 |
 
 ### 7.2 按需支持 Skill
 
 | # | Skill | 建议调用的情境 |
 |---|---|---|
-| 9 | `slk-record-run` | 各角色完成本轮工作、准备向下一对话传输前 |
-| 10 | `slk-rework-cell` | D1 未通过，需要组织返工 |
-| 11 | `slk-diagnose-defect` | 普通返工不足以解释复杂错误 |
-| 12 | `slk-adjust-run` | CELL、模型、电脑、路线或豁免安排值得由 Supervisor 调整 |
-| 13 | `slk-recover-communication` | 消息未送达、成员未被激活或通讯状态不明确 |
+| 8 | `slk-record-run` | 各角色完成本轮工作、准备向下一对话传输前 |
+| 9 | `slk-rework-cell` | D1 未通过，需要组织返工 |
+| 10 | `slk-diagnose-defect` | 普通返工不足以解释复杂错误 |
+| 11 | `slk-adjust-run` | CELL、模型、电脑、路线或豁免安排值得由 Supervisor 调整 |
+| 12 | `slk-recover-communication` | 消息未送达、成员未被激活或通讯状态不明确 |
 
-这 13 个名称是实现基线。实现测试若发现职责边界仍有重复，优先在不改变 Owner 已确认核心精神的前提下精简内部内容，而不是重新解释方法身份。
+这 12 个名称是实现基线。初始 CELL 规划属于 `slk-plan-run`；派发前的现实校准属于 `slk-dispatch-cell`；施工中的较大变化属于 `slk-adjust-run`，避免出现第二套规划流程。
 
 ## 8. 子 Skill 之间的关系
 
 ```mermaid
 flowchart TB
     M[small-loop-skill 路由]
-    P[plan-run] --> G[grill-supervisor] --> B[manage-team]
-    B --> C[plan-cell] --> D[dispatch-cell] --> E[execute-cell] --> K[check-cell]
-    K -->|下一 CELL| C
+    P[plan-run: Run/GO/初始 CELL] --> S[创建 Supervisor 并交接] --> G[grill-supervisor]
+    G --> I[record-run: 初始化根记录] --> B[manage-team]
+    B --> D[dispatch-cell: 派发前校准] --> E[execute-cell] --> K[check-cell]
+    K -->|下一既定 CELL| D
     K -->|全部完成| X[close-run: D2 与收尾]
 
     M --> P
-    M -.复工.-> C
+    M -.复工.-> D
     M -.等待 D1.-> K
     M -.等待 D2.-> X
 

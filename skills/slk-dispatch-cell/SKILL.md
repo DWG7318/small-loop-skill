@@ -7,7 +7,14 @@ description: Use when an SLK Checker is ready to hand one planned CELL to the Wo
 
 ## 当前目标
 
-由 Checker 把当前 CELL 交给 Worker，让 Worker 能直接施工，也让之后的 D1 保持同一个验收目标。
+由 Checker 对计划中的既定 CELL 做一次派发前现实校准，再把它交给 Worker，让 Worker 能直接施工，也让之后的 D1 保持同一个验收目标。
+
+## 派发前校准
+
+- 对照当前 GO、前一 CELL 结果和真实依赖，确认既定 CELL 仍处在正确位置；
+- 参考 Worker 当前模型、电脑、累积工程量和施工余量，判断范围是否仍然合适；
+- 原验收目标不变时，可以做局部拆分或澄清，并同步 `CELL n/N` 与根 Run 记录；
+- 变化会影响 Run、GO 或验收目标时，建议请 Supervisor 使用 `$slk-adjust-run` 组织调整。
 
 ## 建议交付内容
 

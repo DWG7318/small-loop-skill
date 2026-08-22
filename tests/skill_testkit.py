@@ -11,7 +11,6 @@ EXPECTED_CHILDREN = (
     "slk-plan-run",
     "slk-grill-supervisor",
     "slk-manage-team",
-    "slk-plan-cell",
     "slk-dispatch-cell",
     "slk-execute-cell",
     "slk-check-cell",

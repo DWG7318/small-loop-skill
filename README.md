@@ -31,7 +31,7 @@ Supervisor creates `SLK-RUN-<RUN-ID>.md` in the project root. Worker, Checker, a
 
 ## Install
 
-Place the 14 directories under `skills/` as sibling directories in the Codex Skill root. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
+Place the 13 directories under `skills/` as sibling directories in the Codex Skill root. The main router and 12 focused companion Skills cover planning, execution, checking, recovery, records, and closure. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
 
 ## Validation
 

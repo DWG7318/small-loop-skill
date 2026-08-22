@@ -21,7 +21,7 @@ SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢�
 当前方法位于 [`skills/`](skills/)：
 
 - [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) 保存轻量身份和路由；
-- 13 个同级 Skill 分别处理 Run 规划、Supervisor Grill、成员生命周期、CELL 工作、记录、返工、诊断、调整、通讯恢复和收尾。
+- 12 个同级子 Skill 分别处理 Run 与初始 CELL 规划、Supervisor Grill、成员生命周期、CELL 派发与施工、记录、返工、诊断、调整、通讯恢复和收尾。
 
 普通施工读取主 Skill 和当前情境对应的 Skill；情况变化时再加载相关指导。
 
@@ -31,7 +31,7 @@ Supervisor 在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。Worker、Checker、S
 
 ## 安装
 
-把 `skills/` 下 14 个目录作为同级目录放入 Codex Skill 根目录。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
+把 `skills/` 下 13 个目录作为同级目录放入 Codex Skill 根目录。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
 
 ## 验证
 

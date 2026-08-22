@@ -17,7 +17,7 @@ def test_version_is_300() -> None:
     assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.0"
 
 
-def test_collection_has_one_main_and_thirteen_children() -> None:
+def test_collection_has_one_main_and_twelve_children() -> None:
     actual = tuple(sorted(path.name for path in SKILLS.iterdir() if path.is_dir()))
     assert actual == tuple(sorted(EXPECTED_SKILLS))
 
@@ -51,6 +51,8 @@ def test_main_routes_to_every_child_once() -> None:
     text = read_skill("small-loop-skill")
     for child in EXPECTED_CHILDREN:
         assert text.count(f"`${child}`") == 1, child
+    assert "`$slk-plan-cell`" not in text
+    assert not (SKILLS / "slk-plan-cell").exists()
 
 
 def test_active_skills_do_not_restore_the_legacy_topology() -> None:
@@ -102,6 +104,8 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
         "减少重复",
         "过度检验",
         "每个 CELL",
+        "初始 CELL",
+        "创建 Supervisor 前",
         "模型",
         "电脑",
         "余量",
@@ -159,18 +163,19 @@ def test_manage_team_covers_visible_creation_recovery_tests_and_archive() -> Non
         assert marker in text
 
 
-def test_plan_cell_uses_model_device_load_and_headroom() -> None:
-    text = read_skill("slk-plan-cell")
+def test_dispatch_cell_reality_checks_the_planned_cell_before_handoff() -> None:
+    text = read_skill("slk-dispatch-cell")
     for marker in (
-        "当前 CELL",
+        "既定 CELL",
+        "派发前",
         "模型",
         "电脑",
         "累积",
         "余量",
         "验收目标",
-        "拆分",
+        "局部拆分",
         "CELL n/N",
-        "$slk-dispatch-cell",
+        "$slk-execute-cell",
     ):
         assert marker in text
 
@@ -188,6 +193,12 @@ def test_dispatch_cell_is_checker_owned_and_worker_facing() -> None:
         "$slk-execute-cell",
     ):
         assert marker in text
+
+
+def test_d1_pass_advances_to_the_next_preplanned_cell() -> None:
+    text = read_skill("slk-check-cell")
+    assert "$slk-dispatch-cell" in text
+    assert "$slk-plan-cell" not in text
 
 
 def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:
@@ -310,7 +321,8 @@ def test_adjust_run_keeps_supervisor_options_and_exemption_visible() -> None:
         "D1 PASS",
         "Run 目标",
         "验收目标",
-        "$slk-plan-cell",
+        "$slk-dispatch-cell",
+        "$slk-rework-cell",
     ):
         assert marker in text
 
