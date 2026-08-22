@@ -40,7 +40,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "0868ee6561020471c28091defdee3ed9fa48d57df8bf00dd39e523219aaa5efe"
+      "sha256": "c02b234a939b3490f12a70c272fd5cbc8303b7396715cc8ab345aa59a0521f74"
     },
     {
       "path": "VERSION",
@@ -68,7 +68,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-08-22-slk-3.0.0-lightweight-skill-collection.md",
-      "sha256": "52b9548d678d445a3af82c6057a3ffc606f078318e1c570266c2610a94eeda93"
+      "sha256": "15ae472fae96b11c55bc571ab49f8cb591ee328b9891d0ced640d1c723dac20d"
     },
     {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
@@ -80,7 +80,7 @@
     },
     {
       "path": "docs/superpowers/specs/2026-08-22-slk-lightweight-skill-collection-design.md",
-      "sha256": "53e166fd318820207dc91f21ae56f061e577e65e63a763156b2b1020d02c7e60"
+      "sha256": "f51d64c72c5f6284fe44a64fd67b076d9011dd425597df0d7a3536b52832355b"
     },
     {
       "path": "scripts/quick_validate.py",
@@ -128,7 +128,7 @@
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
-      "sha256": "4692950f9f5109416e834693548f1482b624ec58077caa4c36f9dada2e2363a8"
+      "sha256": "ec6e28e7658c949116915e2eeb62860b681e72e74aff21e37fa8171f0a7985fd"
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
@@ -148,7 +148,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "33ddfb0ec2847536addcf2b51bb5198ea6807adb20e10605550303c210e811d6"
+      "sha256": "e8bad4092b70d2305bd872cb9b4cfa437962484fac59de5ca191af2030f86ddf"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -164,7 +164,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "89104ad9ed19aece795b09543d70656b6299a3665ea884ae064adb1a0575f77d"
+      "sha256": "12966e9c959d2ae19e6dfc8bf5c5f6ae5d3c0ccbcedb820f6356041fde629f4e"
     }
   ]
 }

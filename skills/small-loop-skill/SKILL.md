@@ -19,7 +19,7 @@ SLK 帮助成员决定怎样继续推进 Run；遇到偏差时，优先寻找恢
 
 D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 判断全部成果合起来是否正确。
 
-原对话与 Owner 选择 SLK、敲定施工和验收方案并创建 Supervisor。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
+原对话与 Owner 选择 SLK，并明确 Run 目标、边界和 Owner 关心的结果。Agent 结合项目自行整理施工与分层检查方案，再创建 Supervisor。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
 
 Supervisor 在项目根目录维护 `SLK-RUN-<RUN-ID>.md`，三个成员分别写入自己的工程事实。
 

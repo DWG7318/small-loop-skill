@@ -77,7 +77,7 @@ Worker → Supervisor → Checker
 
 正式成员采用项目中可见的 Codex 对话。创建和归档以实际任务 ID 与可观察状态为准，减少把文字声明、隐藏执行或错误对象当成正式成员的情况。消息是否送达可以结合目标对话中的内容、活动状态和回复判断，不额外制造纯确认消息。
 
-推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、敲定 Run/GO/CELL 与分级验收方案、创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。
+推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO/CELL 和分层检查方案，再创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。
 
 Worker 遇到 Checker 通讯异常时，通常可以进行三次不同方式的唤醒尝试，并结合目标对话状态判断。仍未恢复时，建议把原交付信息和通讯情况发送给 Supervisor 协助处理。
 
@@ -87,7 +87,7 @@ Worker 遇到 Checker 通讯异常时，通常可以进行三次不同方式的�
 - **D1 / Checker：** 在与 Worker 隔离的对话和适当环境中，对当前 CELL 的约定目标进行正式检查。
 - **D2 / Supervisor：** 在全部 CELL 完成后，检查 GO 结果、相互衔接、端到端路径和主要风险，确认成果合起来正确。
 
-验收目标在 Run 规划时与 Owner 敲定。实际检查方式可以根据项目进展和风险调整，减少重复检验。
+Agent 在 Run 规划时根据项目目标、现有测试、可观察结果和相关检验 Skill 设计 D0、D1、D2。Owner 提供希望得到的结果和业务边界，不承担技术检查设计。实际检查方式可以根据进展和风险调整，并关注重复检验和资源消耗。
 
 CELL 规划综合考虑默认 Worker 模型、电脑配置、施工复杂度和检查成本，并为意外依赖、测试和返工保留余量。预计接近能力上限时，建议在派发前缩小或拆分。D1 未通过后，通常先安排针对性返工；模型能力可以提高一级，或者把原 CELL 分成两个串行 CELL 并保留原验收目标。连续两轮返工仍未收敛时，Checker 可以请 Supervisor 综合考虑继续诊断、调整路线、改变环境或暂时豁免。
 
@@ -99,7 +99,7 @@ SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作�
 
 | # | Skill | 主要情境 | 推荐产出或后继 |
 |---|---|---|---|
-| 1 | `slk-plan-run` | Owner 选择 SLK 后 | Run/GO/CELL、初始模型与 D0/D1/D2 方案；按风险选择轻量推演 |
+| 1 | `slk-plan-run` | Owner 选择 SLK 后 | Run/GO/CELL、Agent 自行设计的克制分层检查，以及每个 CELL 的模型、电脑和余量依据 |
 | 2 | `slk-grill-supervisor` | Supervisor 正式接管后 | 对方法理解的问答确认 |
 | 3 | `slk-manage-team` | 建立、恢复、更换或归档成员时 | 可见成员、双向通讯状态或归档结果 |
 | 4 | `slk-plan-cell` | 准备派发当前 CELL 时 | 与模型、电脑和余量相适应的 CELL |

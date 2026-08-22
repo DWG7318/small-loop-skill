@@ -87,7 +87,7 @@ def test_no_legacy_root_skill_competes_with_collection() -> None:
     assert not (ROOT / "small-loop-skill" / "SKILL.md").exists()
 
 
-def test_plan_run_covers_method_update_capacity_acceptance_and_optional_simulation() -> None:
+def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -> None:
     text = read_skill("slk-plan-run")
     for marker in (
         "更新",
@@ -97,14 +97,21 @@ def test_plan_run_covers_method_update_capacity_acceptance_and_optional_simulati
         "D0",
         "D1",
         "D2",
+        "项目",
+        "相关检验 Skill",
+        "减少重复",
+        "过度检验",
+        "每个 CELL",
         "模型",
         "电脑",
         "余量",
-        "推演",
         "Owner",
         "$slk-grill-supervisor",
     ):
         assert marker in text
+    assert "与 Owner 敲定 D0" not in text
+    assert "推演" not in text
+    assert "模拟" not in text
 
 
 def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> None:

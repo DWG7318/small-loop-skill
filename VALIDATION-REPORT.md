@@ -28,7 +28,7 @@ Fresh local verification:
 - repository inventory: 41 tracked files and 40 manifest-protected payload files;
 - `git diff --check`: PASS.
 
-Temporary installation verification copied the 14 sibling Skill directories to `D:\LCcoding\.codex\.tmp\slk-3.0.0-install-17ad91a-final`. The main router referenced each of the 13 child Skills once, and the installed Run-record template matched source bytes with SHA-256 `2327ae67f0c89cd31eb12f6ae90a64ae6044c59df400fcd29d609e67c648c6cd`.
+Temporary installation verification copied the corrected 14 sibling Skill directories to `D:\LCcoding\.codex\.tmp\slk-3.0.0-install-owner-plan-correction`. The main router referenced each of the 13 child Skills once; the planning Skill contained no added pre-work simulation and kept model/computer sizing at CELL level; the installed Run-record template matched source bytes with SHA-256 `2327ae67f0c89cd31eb12f6ae90a64ae6044c59df400fcd29d609e67c648c6cd`.
 
 The 2.x active root, mirrors, contracts, templates, runtime validators and old tests were removed from the 3.0 branch after replacement coverage passed. Git history and the `v2.6.0` tag preserve the previous files.
 
