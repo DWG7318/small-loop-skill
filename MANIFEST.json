@@ -116,7 +116,7 @@
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
-      "sha256": "eb810498ab96774f0d1c2bd6a021ef15160a40b18b59c7d173ead74dc244889c"
+      "sha256": "49e4bb800e4e7b10fcac0d90164c884cc5f35808a296752c5ffa6cea14dcecb5"
     },
     {
       "path": "skills/slk-manage-team/SKILL.md",
@@ -164,7 +164,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "12966e9c959d2ae19e6dfc8bf5c5f6ae5d3c0ccbcedb820f6356041fde629f4e"
+      "sha256": "de6e8b778a08e9b5e41bee27aa24ab710f03366b87de60dd72fd8db9d0f5f794"
     }
   ]
 }

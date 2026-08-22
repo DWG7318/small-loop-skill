@@ -130,6 +130,10 @@ def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> N
         "D2",
         "通讯",
         "恢复",
+        "允许误差",
+        "豁免不等于 D1 通过",
+        "后续 CELL",
+        "连续推进",
         "$slk-manage-team",
     ):
         assert marker in text
