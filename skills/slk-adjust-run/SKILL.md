@@ -14,7 +14,7 @@ description: Use when repeated D1 failure, D2 findings, or changed resources cal
 - 连续 D1 返工仍未收敛；
 - D2 发现 CELL 或 GO 之间的衔接问题；
 - 当前模型、电脑、环境或依赖与原计划差异较大；
-- CELL 规模、技术路线或 Owner 需求发生变化。
+- CELL 变化已经影响后续 GO、技术路线、验收目标或 Owner 需求。
 
 ## 建议选择
 
@@ -23,10 +23,9 @@ Supervisor 可以按实际原因组合以下办法：
 1. 补充信息、资源或可验证的环境；
 2. 把相关 Worker 模型能力提高一级；
 3. 更换电脑、工具、账号或测试环境；
-4. 把原 CELL 拆分为两个串行 CELL，并保留原验收目标；
-5. 调整后续 CELL 或技术路线，让已验证成果继续被继承；
-6. 对改变 Run 目标、验收目标或 Owner 权限的事项，向 Owner 提出一个清楚的问题；
-7. 对两轮修复后仍暂时无法解决、且其余 Run 仍有价值的事项，记录 Supervisor 豁免及未来恢复条件。
+4. 调整后续 CELL 或技术路线，让已验证成果继续被继承；
+5. 对改变 Run 目标、验收目标或 Owner 权限的事项，向 Owner 提出一个清楚的问题；
+6. 对两轮修复后仍暂时无法解决、且其余 Run 仍有价值的事项，记录 Supervisor 豁免及未来恢复条件。
 
 豁免作为独立结果保留，不改写为 D1 PASS。最终报告分别列出 D1 通过数和 Supervisor 豁免数。
 

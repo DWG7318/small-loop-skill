@@ -278,10 +278,11 @@ def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None
         "Worker",
         "验收目标",
         "提高一级",
-        "两个串行 CELL",
+        "一分为二",
         "两轮",
         "Supervisor",
         "CELL n/N",
+        "$slk-dispatch-cell",
         "$slk-execute-cell",
         "$slk-check-cell",
         "$slk-adjust-run",
@@ -314,7 +315,6 @@ def test_adjust_run_keeps_supervisor_options_and_exemption_visible() -> None:
         "提高一级",
         "电脑",
         "环境",
-        "拆分",
         "技术路线",
         "Owner",
         "豁免",
@@ -325,6 +325,13 @@ def test_adjust_run_keeps_supervisor_options_and_exemption_visible() -> None:
         "$slk-rework-cell",
     ):
         assert marker in text
+    assert "把原 CELL 拆分为两个串行 CELL" not in text
+
+
+def test_rework_reuses_the_dispatch_one_to_two_split() -> None:
+    text = read_skill("slk-rework-cell")
+    assert "$slk-dispatch-cell" in text
+    assert "一分为二" in text
 
 
 def test_recover_communication_uses_state_retries_and_upper_level_recovery() -> None:
