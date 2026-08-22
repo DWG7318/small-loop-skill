@@ -215,3 +215,34 @@ def test_check_cell_keeps_checker_isolation_and_d1_progress() -> None:
         "$slk-rework-cell",
     ):
         assert marker in text
+
+
+def test_record_run_preserves_role_history_failures_and_handoff_order() -> None:
+    text = read_skill("slk-record-run")
+    for marker in (
+        "SLK-RUN-<RUN-ID>.md",
+        "Supervisor",
+        "Checker",
+        "Worker",
+        "各自",
+        "错误",
+        "返工",
+        "豁免",
+        "追加",
+        "证据",
+        "倒数第二项",
+        "最后一项",
+    ):
+        assert marker in text
+    template = SKILLS / "slk-record-run" / "assets" / "SLK-RUN.template.md"
+    template_text = template.read_text(encoding="utf-8")
+    for heading in (
+        "# SLK Run",
+        "## Run 定义",
+        "## 成员",
+        "## CELL 历史",
+        "## 错误、返工与豁免",
+        "## D2 与最终结果",
+        "## 归档",
+    ):
+        assert heading in template_text
