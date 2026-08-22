@@ -146,3 +146,19 @@ def test_manage_team_covers_visible_creation_recovery_tests_and_archive() -> Non
         "状态",
     ):
         assert marker in text
+
+
+def test_plan_cell_uses_model_device_load_and_headroom() -> None:
+    text = read_skill("slk-plan-cell")
+    for marker in (
+        "当前 CELL",
+        "模型",
+        "电脑",
+        "累积",
+        "余量",
+        "验收目标",
+        "拆分",
+        "CELL n/N",
+        "$slk-dispatch-cell",
+    ):
+        assert marker in text
