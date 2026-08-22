@@ -87,4 +87,3 @@ def assert_skill_shape(name: str) -> None:
     description = values.get("description", "")
     assert description.startswith("Use when ")
     assert guidance_warnings(text) == []
-

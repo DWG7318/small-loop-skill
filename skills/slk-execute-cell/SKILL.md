@@ -25,4 +25,3 @@ Worker 完成当前 CELL，形成可检查候选，并把 Checker 需要的信�
 ## 完成后
 
 Checker 使用 `$slk-check-cell` 对同一候选执行隔离 D1。
-

@@ -2,4 +2,3 @@ interface:
   display_name: "Small Loop Skill (SLK)"
   short_description: "One bounded serial Run with Supervisor, Checker, and Worker"
   default_prompt: "Use $small-loop-skill to guide one bounded serial engineering Run and load situational SLK Skills as the work changes."
-

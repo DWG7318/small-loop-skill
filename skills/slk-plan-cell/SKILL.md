@@ -29,4 +29,3 @@ description: Use when the next serial SLK CELL needs a workable boundary before 
 ## 完成后
 
 把 CELL 方案交给 Checker，并建议使用 `$slk-dispatch-cell` 形成面向 Worker 的简洁交付。
-

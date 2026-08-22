@@ -28,4 +28,3 @@ Worker 提出合理澄清时，Checker可以补充上下文；若答案会改变
 ## 完成后
 
 Worker 使用 `$slk-execute-cell` 开始施工。Checker 保留当前 CELL 和 D1 目标，等待候选交付。
-

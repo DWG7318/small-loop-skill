@@ -29,4 +29,3 @@ Checker 读取 CELL 验收目标、候选、Worker 交付和相关工程事实�
 - D1 PASS 后，Checker 更新进度；还有 CELL 时进入 `$slk-plan-cell`，全部完成时向 Supervisor 汇报 Run 已具备 D2 条件。
 - D1 FAIL 后，Checker 使用 `$slk-rework-cell` 与 Worker 继续直接协作。
 - 需要改变 Run 方案时，请 Supervisor 使用 `$slk-adjust-run` 协助判断。
-

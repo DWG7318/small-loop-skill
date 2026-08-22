@@ -21,4 +21,3 @@ description: Use when an SLK Checker has returned D1 FAIL and the same CELL need
 ## 连续未收敛
 
 通常两轮针对性返工仍未通过时，Checker 可以把完整情况交给 Supervisor。Supervisor 使用 `$slk-adjust-run` 综合考虑继续诊断、提高能力、更换电脑或环境、拆分 CELL、调整路线或暂时豁免。
-

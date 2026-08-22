@@ -29,4 +29,3 @@ description: Use when the Owner has chosen SLK and the serial Run needs an execu
 ## 完成后
 
 原对话可以据此创建 Supervisor、完成双向通讯测试并交接。Supervisor 接着使用 `$slk-grill-supervisor` 确认自己已经理解方法和当前 Run。
-
