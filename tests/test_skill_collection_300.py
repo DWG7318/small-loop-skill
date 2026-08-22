@@ -105,3 +105,24 @@ def test_plan_run_covers_method_update_capacity_acceptance_and_optional_simulati
         "$slk-grill-supervisor",
     ):
         assert marker in text
+
+
+def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> None:
+    text = read_skill("slk-grill-supervisor")
+    for marker in (
+        "一次只问一个问题",
+        "问题数量",
+        "解释",
+        "适用范围",
+        "线性",
+        "Supervisor",
+        "Checker",
+        "Worker",
+        "D0",
+        "D1",
+        "D2",
+        "通讯",
+        "恢复",
+        "$slk-manage-team",
+    ):
+        assert marker in text
