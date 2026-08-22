@@ -177,3 +177,23 @@ def test_dispatch_cell_is_checker_owned_and_worker_facing() -> None:
         "$slk-execute-cell",
     ):
         assert marker in text
+
+
+def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:
+    text = read_skill("slk-execute-cell")
+    for marker in (
+        "当前 CELL",
+        "Worker",
+        "最低 D0",
+        "候选",
+        "风险",
+        "CELL n/N",
+        "倒数第二项",
+        "最后一项",
+        "三次",
+        "对话状态",
+        "$slk-record-run",
+        "$slk-check-cell",
+        "$slk-recover-communication",
+    ):
+        assert marker in text
