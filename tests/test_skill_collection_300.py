@@ -86,3 +86,22 @@ def test_no_legacy_root_skill_competes_with_collection() -> None:
     assert not (ROOT / "SKILL.md").exists()
     assert not (ROOT / "small-loop-skill" / "SKILL.md").exists()
 
+
+def test_plan_run_covers_method_update_capacity_acceptance_and_optional_simulation() -> None:
+    text = read_skill("slk-plan-run")
+    for marker in (
+        "更新",
+        "Run",
+        "GO",
+        "CELL",
+        "D0",
+        "D1",
+        "D2",
+        "模型",
+        "电脑",
+        "余量",
+        "推演",
+        "Owner",
+        "$slk-grill-supervisor",
+    ):
+        assert marker in text
