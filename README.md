@@ -12,7 +12,7 @@ Supervisor ↔ Checker ↔ Worker
 Worker D0 → Checker D1 → Supervisor D2
 ```
 
-Supervisor keeps the Run moving and checks the combined result at D2. Checker dispatches CELLs and reviews them independently at D1. Worker implements one current CELL and performs a minimum D0 before delivery.
+Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. Checker dispatches CELLs and reviews them independently at D1. Worker implements one current CELL and performs a minimum D0 before delivery.
 
 SLK guidance helps members decide how to continue. Rework, communication recovery, member recovery, plan adjustment, and exemption remain available as situational options.
 
@@ -21,7 +21,7 @@ SLK guidance helps members decide how to continue. Rework, communication recover
 The active collection lives in [`skills/`](skills/):
 
 - [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) — lightweight identity and router;
-- 13 sibling Skills for planning, Supervisor Grill, team lifecycle, CELL work, recording, rework, diagnosis, adjustment, communication recovery, and closure.
+- 12 sibling Skills for planning, Supervisor Grill, team lifecycle, CELL work, recording, rework, diagnosis, adjustment, communication recovery, and closure.
 
 Ordinary work reads the main Skill and the current situational Skill. Additional guidance is loaded when the situation changes.
 

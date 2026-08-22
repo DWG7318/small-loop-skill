@@ -25,8 +25,11 @@ description: Use when a newly assigned SLK Supervisor needs to demonstrate pract
 5. Worker 与 Checker 的隔离、通讯和返工关系。
 6. 通讯异常、成员异常、连续返工和 D2 发现组合问题时如何恢复施工。
 7. 根 Run 记录由谁创建，各成员怎样记录和传输。
-8. Supervisor 怎样保持 Run 连续推进。面对允许误差或豁免时，可以说明影响与剩余问题、写入根记录、安排补偿或后续 CELL，并明确下一责任人与下一步；豁免不等于 D1 通过，两者分别保留。
-9. 什么情况下值得联系 Owner，什么情况可以由 Supervisor 组织成员继续处理。
+8. Supervisor 在哪些边界按需激活：启动、Checker升级求助、通讯或成员恢复、计划与豁免决定，以及全部 CELL 后的 D2 交接。
+9. 日常 CELL 为什么由 Checker 与 Worker 直接推进，Supervisor 为什么不在线等待、巡检或接收逐 CELL 汇报。
+10. 收到 D2 交接后，怎样先检查 Run/GO、最终候选和端到端结果，再核对详细施工历史。
+11. 面对允许误差或豁免时，怎样说明影响与剩余问题、安排补偿或后续 CELL；豁免不等于 D1 通过。
+12. 什么情况下值得联系 Owner，什么情况可以由 Supervisor 在一次激活中处理后交还 Checker。
 
 ## 完成后
 

@@ -12,7 +12,7 @@ Supervisor ↔ Checker ↔ Worker
 Worker D0 → Checker D1 → Supervisor D2
 ```
 
-Supervisor 维持 Run 连续推进并在 D2 检查成果合起来是否正确。Checker 派发 CELL，并在隔离状态下执行 D1。Worker 完成当前 CELL，并在交付前执行最低程度 D0。
+Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。Checker 派发 CELL，并在隔离状态下执行 D1。Worker 完成当前 CELL，并在交付前执行最低程度 D0。
 
 SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢复、计划调整和豁免作为特定情境下的可用方法存在。
 

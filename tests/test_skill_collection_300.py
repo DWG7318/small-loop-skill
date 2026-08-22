@@ -43,6 +43,7 @@ def test_main_skill_keeps_the_owner_approved_core() -> None:
         "D2",
         "SLK-RUN-<RUN-ID>.md",
         "怎样继续",
+        "按需激活",
     ):
         assert marker in text
 
@@ -139,7 +140,9 @@ def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> N
         "允许误差",
         "豁免不等于 D1 通过",
         "后续 CELL",
-        "连续推进",
+        "按需激活",
+        "日常 CELL",
+        "D2 交接",
         "$slk-manage-team",
     ):
         assert marker in text
@@ -252,6 +255,19 @@ def test_check_cell_keeps_checker_isolation_and_d1_progress() -> None:
         assert marker in text
 
 
+def test_d1_delays_worker_d0_and_reasoning_until_independent_judgment() -> None:
+    execute = read_skill("slk-execute-cell")
+    check = read_skill("slk-check-cell")
+    record = read_skill("slk-record-run")
+    assert "不进入初始 D1 交付" in execute
+    assert "形成独立 D1 判断前" in check
+    for marker in ("D0 结果", "判断过程", "建议关注点", "延后读取"):
+        assert marker in check
+    assert "D0 是输入" not in check
+    assert "Worker 已说明的风险" not in check
+    assert "D1 前" in record and "角色分区" in record
+
+
 def test_record_run_preserves_role_history_failures_and_handoff_order() -> None:
     text = read_skill("slk-record-run")
     for marker in (
@@ -277,10 +293,33 @@ def test_record_run_preserves_role_history_failures_and_handoff_order() -> None:
         "## 成员",
         "## CELL 历史",
         "## 错误、返工与豁免",
+        "## D2 交接",
         "## D2 与最终结果",
         "## 归档",
     ):
         assert heading in template_text
+    assert template_text.index("#### 初始 D1 输入") < template_text.index(
+        "#### Worker 施工记录（Checker形成独立D1判断后读取）"
+    )
+    assert template_text.index("## D2 交接") < template_text.index("## D2 与最终结果")
+
+
+def test_supervisor_is_event_activated_not_a_daily_cell_controller() -> None:
+    main = read_skill("small-loop-skill")
+    grill = read_skill("slk-grill-supervisor")
+    record = read_skill("slk-record-run")
+    active = "\n".join(read_skill(name) for name in EXPECTED_SKILLS)
+    for stale in (
+        "Supervisor 维持 Run 连续推进",
+        "Supervisor 怎样保持 Run 连续推进",
+        "Supervisor 记录计划变化、GO 进展",
+    ):
+        assert stale not in active
+    for marker in ("按需激活", "日常 CELL", "不在线等待"):
+        assert marker in main
+    assert "Checker 记录" in record and "GO 进度" in record
+    assert "Supervisor 仅在被激活时记录" in record
+    assert "按需激活" in grill
 
 
 def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None:
@@ -384,5 +423,20 @@ def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
         "$slk-record-run",
         "$slk-manage-team",
         "$slk-adjust-run",
+    ):
+        assert marker in text
+
+
+def test_d2_checks_the_combined_candidate_before_detailed_history() -> None:
+    text = read_skill("slk-close-run")
+    for marker in (
+        "检查对象隔离",
+        "先从 Run 目标",
+        "最终候选",
+        "端到端",
+        "初步 D2 判断",
+        "随后",
+        "详细 D1 记录",
+        "D1 PASS 不作为 D2 通过证明",
     ):
         assert marker in text

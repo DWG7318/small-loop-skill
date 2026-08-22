@@ -42,12 +42,14 @@ SLK 2.6.0 已积累了角色隔离、分层检验、返工、通讯恢复、进�
 1. SLK 面向中小型工程，或大型工程中相对独立的中小范围。
 2. 一个 SLK 对应一个 Run；GO 与 CELL 按一条线性顺序推进。
 3. 可见工程成员由 Supervisor、Checker、Worker 三个独立对话组成。
-4. Supervisor 负责 Run 连续推进、规划调整和 Run 级 D2。
-5. Checker 负责 CELL 派发、与 Worker 协作以及隔离执行 D1。
+4. Supervisor 在启动、Checker升级求助、通讯或成员恢复、计划与豁免决定以及 Run 级 D2 时按需激活。
+5. Checker 负责日常 CELL 推进、派发、与 Worker 协作以及隔离执行 D1。
 6. Worker 负责当前 CELL 的施工和最低程度 D0。
 7. D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 判断全部成果合起来是否正确。
 8. 项目根目录的 `SLK-RUN-<RUN-ID>.md` 汇总可读的工程记录。
 9. 主 Skill 根据当前角色、阶段和事件，建议调用相应子 Skill。
+
+“Run保持可继续”描述的是方法结果，不表示Supervisor持续在线。Supervisor每次被激活时解决上级事项并把日常工作交还Checker；未触发升级或D2时，由Checker与Worker直接完成CELL循环。
 
 主 Skill 以识别和路由为主。模型表、长表单、固定收据、异常全集、复杂验证脚本和具体施工技巧进入按需子 Skill 或退出方法内核。
 
@@ -77,7 +79,7 @@ Worker → Supervisor → Checker
 
 正式成员采用项目中可见的 Codex 对话。创建和归档以实际任务 ID 与可观察状态为准，减少把文字声明、隐藏执行或错误对象当成正式成员的情况。消息是否送达可以结合目标对话中的内容、活动状态和回复判断，不额外制造纯确认消息。
 
-推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO/CELL 和分层检查方案，再创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。
+推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO/CELL 和分层检查方案，再创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。成员组就绪后，Supervisor 转为非活动状态，不在线等待或接收逐 CELL 汇报；Checker 与 Worker 直接推进日常循环，需要上级协助或 D2 时再激活 Supervisor。
 
 Worker 遇到 Checker 通讯异常时，通常可以进行三次不同方式的唤醒尝试，并结合目标对话状态判断。仍未恢复时，建议把原交付信息和通讯情况发送给 Supervisor 协助处理。
 
@@ -86,6 +88,8 @@ Worker 遇到 Checker 通讯异常时，通常可以进行三次不同方式的�
 - **D0 / Worker：** 施工交付前的最低程度自检，例如目标测试、构建或直接 smoke。它提供基本信心，不代替 Checker 判断。
 - **D1 / Checker：** 在与 Worker 隔离的对话和适当环境中，对当前 CELL 的约定目标进行正式检查。
 - **D2 / Supervisor：** 在全部 CELL 完成后，检查 GO 结果、相互衔接、端到端路径和主要风险，确认成果合起来正确。
+
+D1 的隔离也包含信息顺序：Worker 的 D0、判断过程和建议关注点留在 Worker 记录中；Checker 先依据原始 CELL、候选和客观工程事实形成独立判断，再核对 Worker 记录。全部 CELL 完成后，Checker用原始 Run/GO目标、最终候选、端到端入口和必要环境形成 D2 交接并激活 Supervisor。Supervisor 先检查组合结果，再核对详细 D1、返工和豁免历史；D1 PASS不作为D2通过证明。
 
 Agent 在 Run 规划时根据项目目标、现有测试、可观察结果和相关检验 Skill 设计 D0、D1、D2。Owner 提供希望得到的结果和业务边界，不承担技术检查设计。实际检查方式可以根据进展和风险调整，并关注重复检验和资源消耗。
 
@@ -126,9 +130,9 @@ flowchart TB
     M[small-loop-skill 路由]
     P[plan-run: Run/GO/初始 CELL] --> S[创建 Supervisor 并交接] --> G[grill-supervisor]
     G --> I[record-run: 初始化根记录] --> B[manage-team]
-    B --> D[dispatch-cell: 派发前校准] --> E[execute-cell] --> K[check-cell]
+    B --> H[Supervisor转为非活动; Checker接管日常CELL] --> D[dispatch-cell: 派发前校准] --> E[execute-cell] --> K[check-cell]
     K -->|下一既定 CELL| D
-    K -->|全部完成| X[close-run: D2 与收尾]
+    K -->|全部完成，D2交接激活Supervisor| X[close-run: D2 与收尾]
 
     M --> P
     M -.复工.-> D
@@ -178,9 +182,9 @@ flowchart TB
 
 ## 10. 工程记录
 
-Supervisor 在项目根目录创建一个 `SLK-RUN-<RUN-ID>.md`。Supervisor、Checker、Worker 分别记录自己的工作。每轮工作的建议顺序为：完成工作、写入记录、传输到下一对话。
+Supervisor 在项目根目录创建一个 `SLK-RUN-<RUN-ID>.md`。Worker 记录施工与D0；Checker记录日常CELL/GO进度、D1和普通返工；Supervisor只在被激活时记录调整、恢复、豁免、D2和收尾。每轮工作的建议顺序为：完成工作、写入记录、传输到下一对话。
 
-记录保持工程上足够完整，包含目标、计划、成员 ID、CELL 进度、候选、D0/D1/D2、错误、返工、豁免、方案变化、证据位置、归档和最终结论。大体积原始日志保存在合适位置，根记录引用其路径或摘要。
+记录保持工程上足够完整，包含目标、计划、成员 ID、CELL 进度、候选、D0/D1/D2、错误、返工、豁免、方案变化、证据位置、归档和最终结论。角色分区使Checker能在D1前延后读取Worker判断；单独的D2交接区使Supervisor能先看目标与最终候选。大体积原始日志保存在合适位置，根记录引用其路径或摘要。
 
 D2 通过后，Supervisor 汇总记录，建议先归档 Worker，再归档 Checker，并在记录中写入实际归档状态。Supervisor 对话继续保留，方便 Owner 后续查询；最终给 Owner 的消息聚焦完工结论、D0/D1/D2结果、豁免数量和记录路径。
 
@@ -192,7 +196,7 @@ D2 通过后，Supervisor 汇总记录，建议先归档 Worker，再归档 Chec
 - 调整模型、电脑、环境或技术路线；
 - Checker 将过大的 CELL 一分为二，并保留原验收目标；
 - 由上一级成员恢复通讯或成员；
-- 由 Supervisor 调整计划、决定豁免或联系 Owner。
+- 需要上级决定时激活 Supervisor，由其一次性调整计划、决定豁免或联系 Owner，再把日常工作交还 Checker。
 
 外部权限、安全边界或现实资源确实尚未具备时，记录真实情况和已经尝试的替代路线。方法本身不把普通偏差包装成合规性停工。
 
@@ -237,7 +241,7 @@ D2 通过后，Supervisor 汇总记录，建议先归档 Worker，再归档 Chec
 新SLK达到以下结果时，可进入发布评估：
 
 - 新Agent能用较短阅读理解SLK身份和三角色关系；
-- Supervisor通过Grill后能够建立成员组并持续推进Run；
+- Supervisor通过Grill后能够建立成员组并退出日常CELL循环，在升级事件或D2交接时正确恢复工作；
 - 正常CELL循环不加载异常处理全集；
 - 常见失败触发恢复、返工或调整建议，而不是方法生成的停工结论；
 - D0、D1、D2职责清楚且没有重复检验层；

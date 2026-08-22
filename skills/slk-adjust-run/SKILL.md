@@ -33,4 +33,4 @@ Supervisor 可以按实际原因组合以下办法：
 
 调整通常保持原 Run 目标和已约定验收目标；Owner主动改变目标时，再更新相应定义。Supervisor 把原因、选择、影响、CELL n/N变化和未决风险写入根记录。
 
-调整完成后，待施工 CELL 可以交给 Checker 使用 `$slk-dispatch-cell` 校准并派发；当前 CELL 的修复可以回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再由 Supervisor 重做相关 D2。
+调整完成后，Supervisor 把决定写入记录并交还 Checker，随后结束本次激活。待施工 CELL 可以使用 `$slk-dispatch-cell` 校准并派发；当前 CELL 的修复可以回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再激活 Supervisor 检查相关 D2。

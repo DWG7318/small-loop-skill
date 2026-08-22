@@ -12,13 +12,14 @@ SLK 3.0.0 is a new method boundary. Existing Runs can remain on their bound 2.6.
 - Supervisor, Checker, and Worker use separate visible project conversations.
 - Checker owns CELL-level D1.
 - Supervisor owns Run-level D2.
+- Supervisor is event-activated for setup, escalated help, recovery, exemptions, and D2; Checker and Worker own the daily CELL loop.
 - Worker keeps a minimum D0 before delivery.
 - The previous GO-level verification layer leaves the current method; the previous Run-level D3 becomes D2.
 - Patrol, Pin governance, runtime index, fixed model binding, capacity gate, and Owner acceptance receipts leave the active Skill surface.
 
 ## Guidance model
 
-The 2.6.0 monolith becomes one small router plus 13 sibling situational Skills. Model and computer choices move into Run/CELL planning and Supervisor adjustment. The guidance emphasizes recovery, rework, plan adjustment and upper-level help when ordinary work deviates.
+The 2.6.0 monolith becomes one small router plus 12 sibling situational Skills. Model and computer choices move into Run/CELL planning and event-triggered Supervisor adjustment. The guidance emphasizes recovery, rework, plan adjustment and upper-level help when ordinary work deviates.
 
 ## Records
 

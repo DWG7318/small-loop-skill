@@ -13,15 +13,15 @@ SLK 帮助成员决定怎样继续推进 Run；遇到偏差时，优先寻找恢
 
 ## 可见成员
 
-- Supervisor 维持 Run 连续推进，处理计划调整，并在收尾时执行 D2。
-- Checker 向 Worker 派发 CELL，与 Worker 直接协作，并在隔离状态下执行 D1。
+- Supervisor 在启动、上级协助、豁免和 D2 等边界按需激活。
+- Checker 负责日常 CELL 推进：向 Worker 派发、直接协作并在隔离状态下执行 D1。
 - Worker 完成当前 CELL，并在交付前执行最低程度 D0。
 
 D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 判断全部成果合起来是否正确。
 
 原对话与 Owner 选择 SLK，并明确 Run 目标、边界和 Owner 关心的结果。Agent 在创建 Supervisor 前结合项目整理 Run、GO、初始 CELL 与分层检查方案。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
 
-Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>.md`，再建立 Checker 与 Worker；三个成员分别写入自己的工程事实。
+Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>.md`，再建立 Checker 与 Worker。通讯测试完成后，Supervisor 通常转为非活动状态，不在线等待日常 CELL；Checker 与 Worker 继续线性循环。重复返工、成员或通讯异常、重要计划变化、豁免以及最终 D2 交接会再次激活 Supervisor。
 
 ## 按当前情境选择指导
 
