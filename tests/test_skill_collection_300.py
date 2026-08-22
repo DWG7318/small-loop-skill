@@ -105,6 +105,8 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
         "过度检验",
         "每个 CELL",
         "初始 CELL",
+        "初始估计",
+        "实际施工事实",
         "创建 Supervisor 前",
         "模型",
         "电脑",
@@ -199,6 +201,17 @@ def test_d1_pass_advances_to_the_next_preplanned_cell() -> None:
     text = read_skill("slk-check-cell")
     assert "$slk-dispatch-cell" in text
     assert "$slk-plan-cell" not in text
+
+
+def test_checker_learns_cell_capacity_from_work_without_an_extra_gate() -> None:
+    dispatch = read_skill("slk-dispatch-cell")
+    check = read_skill("slk-check-cell")
+    record = read_skill("slk-record-run")
+    assert "前序 CELL 的实际施工" in dispatch
+    assert "动态校准" in dispatch
+    assert "容量事实" in check
+    assert "不增加额外检查" in check
+    assert "容量事实" in record
 
 
 def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:

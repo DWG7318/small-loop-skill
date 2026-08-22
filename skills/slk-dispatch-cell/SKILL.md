@@ -11,10 +11,12 @@ description: Use when an SLK Checker is ready to hand one planned CELL to the Wo
 
 ## 派发前校准
 
-- 对照当前 GO、前一 CELL 结果和真实依赖，确认既定 CELL 仍处在正确位置；
+- 对照当前 GO、前序 CELL 的实际施工、D0/D1、返工表现和真实依赖，动态校准既定 CELL 是否仍处在正确位置；
 - 参考 Worker 当前模型、电脑、累积工程量和施工余量，判断范围是否仍然合适；
 - 原验收目标不变而范围明显过大时，可以做一次简单的局部拆分：把 CELL 一分为二，形成两个串行 CELL，并同步 `CELL n/N` 与根 Run 记录；
 - 变化会影响 Run、GO 或验收目标时，建议请 Supervisor 使用 `$slk-adjust-run` 组织调整。
+
+这些判断复用已经产生的施工与检验事实，不另设容量检查。
 
 ## 建议交付内容
 

@@ -40,7 +40,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "498db15e3f00ae7ad7cfcd76b0eacfac329a5e146f93b7e37c9ed3815954c22b"
+      "sha256": "e667ecc43728338097bf510e26ae0a4aee207e4bb60de80b41ee5aae08d4d7c8"
     },
     {
       "path": "VERSION",
@@ -68,7 +68,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-08-22-slk-3.0.0-lightweight-skill-collection.md",
-      "sha256": "ec06a97e4ae69e26a26225c0242bbdebd51060efb371257c863c42f40f42303c"
+      "sha256": "267e34b77648c50c70215517fc2b33ef394c8a02e83dee293b3781cd9b1b185d"
     },
     {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
@@ -80,7 +80,7 @@
     },
     {
       "path": "docs/superpowers/specs/2026-08-22-slk-lightweight-skill-collection-design.md",
-      "sha256": "57cd648a2fb3ed5d6277eb114e1cb4e06029f2dfdc71b343a2396ed02b6431b7"
+      "sha256": "d3db30557494edee36952dfa5e222a71b013a4c9cdd22be7a6ee64f1625ae86b"
     },
     {
       "path": "scripts/quick_validate.py",
@@ -96,7 +96,7 @@
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
-      "sha256": "afe596f0f7ba6a3c0d66f1e86fa876bf8eb2dec830f8cf81b3705957239498c2"
+      "sha256": "6613262df15995cf5422d00688eebfceff7c77589e936997110160d742d18737"
     },
     {
       "path": "skills/slk-close-run/SKILL.md",
@@ -108,7 +108,7 @@
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
-      "sha256": "51d02d7f50e93c83f12a213717e701f9277326858c70188633c742751a3fcee5"
+      "sha256": "4429517fe02728c0347037fa604ce50f8eea178ed7c346e8e66943c3aed25e88"
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
@@ -124,11 +124,11 @@
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
-      "sha256": "3636a740e704d93e45ea92553d3a80fce7e8ab7c865fbdaacdede3f6fb66500c"
+      "sha256": "fe93f5e94fcaea9b5ed75c83c68453b87bd0ec525a5d03f7216678299790f0a2"
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
-      "sha256": "215350f2d95c85f61ed4a12a8618e6709daa2c08966cfb5c01f8a1cd7d3ecdb5"
+      "sha256": "04bf46c176b30d5e847086762c9dac5b3d103dc71dbd343a0fbd2243d079a588"
     },
     {
       "path": "skills/slk-record-run/assets/SLK-RUN.template.md",
@@ -160,7 +160,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "0245fb3febeb3234e965b575314dd53772a4c5140b76e9ecf35a356e1052ea9f"
+      "sha256": "4794566628c6bbc4afe9555251bcd7075b8c3a6f56720c1548a27fac09d5d16e"
     }
   ]
 }
