@@ -318,3 +318,28 @@ def test_recover_communication_uses_state_retries_and_upper_level_recovery() -> 
         "$slk-manage-team",
     ):
         assert marker in text
+
+
+def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
+    text = read_skill("slk-close-run")
+    for marker in (
+        "Supervisor",
+        "D2",
+        "全部 CELL",
+        "GO",
+        "衔接",
+        "端到端",
+        "关键风险",
+        "Checker → Worker → Checker",
+        "归档 Worker",
+        "归档 Checker",
+        "保留 Supervisor",
+        "D0",
+        "D1",
+        "豁免",
+        "Owner",
+        "$slk-record-run",
+        "$slk-manage-team",
+        "$slk-adjust-run",
+    ):
+        assert marker in text
