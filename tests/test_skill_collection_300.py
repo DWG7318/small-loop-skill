@@ -166,6 +166,8 @@ def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> N
         "按需激活",
         "日常 CELL",
         "D2 交接",
+        "推荐方案",
+        "最低必要授权",
         "$slk-manage-team",
     ):
         assert marker in text
@@ -367,17 +369,20 @@ def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None
         assert marker in text
 
 
-def test_adjust_run_keeps_supervisor_options_and_exemption_visible() -> None:
+def test_adjust_run_keeps_supervisor_authority_and_d1_exemption_clear() -> None:
     text = read_skill("slk-adjust-run")
     for marker in (
         "Supervisor",
         "连续 D1",
         "D2",
         "提高一级",
-        "电脑",
-        "环境",
+        "Owner 授权",
+        "推荐方案",
+        "最低必要授权",
         "技术路线",
-        "Owner",
+        "同一 CELL",
+        "两轮 D1",
+        "后续 CELL",
         "豁免",
         "D1 PASS",
         "Run 目标",
@@ -387,6 +392,10 @@ def test_adjust_run_keeps_supervisor_options_and_exemption_visible() -> None:
     ):
         assert marker in text
     assert "把原 CELL 拆分为两个串行 CELL" not in text
+    assert "更换电脑、工具、账号或测试环境" not in text
+    assert "向 Owner 提出一个清楚的问题" not in text
+    assert "其余 Run" not in text
+    assert "Supervisor 调整模型、电脑" not in read_skill("small-loop-skill")
 
 
 def test_rework_reuses_the_dispatch_one_to_two_split() -> None:
