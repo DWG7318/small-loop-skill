@@ -197,3 +197,21 @@ def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:
         "$slk-recover-communication",
     ):
         assert marker in text
+
+
+def test_check_cell_keeps_checker_isolation_and_d1_progress() -> None:
+    text = read_skill("slk-check-cell")
+    for marker in (
+        "Checker",
+        "隔离",
+        "D1",
+        "Worker",
+        "验收目标",
+        "独立",
+        "D1 PASS：CELL n/N",
+        "D1 FAIL：CELL n/N",
+        "Supervisor",
+        "$slk-record-run",
+        "$slk-rework-cell",
+    ):
+        assert marker in text
