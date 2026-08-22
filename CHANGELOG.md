@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0
+
+- Reframed SLK as one lightweight router plus 13 situational sibling Skills.
+- Restored three visible conversations: Supervisor, Checker, and Worker.
+- Simplified verification to minimum Worker D0, isolated Checker D1, and combined-result Supervisor D2.
+- Replaced Control modes, Verifier, Patrol, runtime indexes, fixed model bindings, Pin policy, capacity gates, D3, and Owner acceptance receipts in the active method.
+- Added model/device/headroom-aware CELL planning, state-aware communication recovery, upper-level member recovery, and Supervisor Run adjustment.
+- Added one readable root Run record with per-role entries for progress, errors, rework, exemptions, evidence, D2, and archive state.
+- Shifted operational language toward situational recommendations and recovery paths so ordinary deviations lead back to construction.
+
 ## 2.6.0
 
 - Replaced fixed model assumptions with one versioned, immutable

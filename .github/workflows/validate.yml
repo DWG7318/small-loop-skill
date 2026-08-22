@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install pytest pyyaml
+      - run: python -m pip install pytest
       - run: python scripts/validate_repository.py
-      - run: python scripts/validate_serial_plan.py examples/minimal-run/serial-plan.yaml
+      - run: python scripts/quick_validate.py skills
       - run: python -m pytest -q

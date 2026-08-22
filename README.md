@@ -1,104 +1,48 @@
 # Small Loop Skill (SLK)
 
-Small Loop Skill is the strict serial engineering method for one bounded LCCoding
-Run executed through one formal Control Conversation and one persistent Worker
-Conversation, with one non-authoritative Run Patrol safeguard.
+Current version: **3.0.0**
 
-Current version: **2.6.0**
+SLK guides one bounded small or medium engineering Run, or one relatively independent small/medium scope inside a larger project. GO and CELL work follow one serial path.
 
-```text
-Owner
-  ↓
-Control Conversation
-  ├─ Supervisor responsibility
-  ├─ Checker responsibility (D1)
-  └─ Verifier responsibility (D2/D3)
-         ↕
-one persistent Worker Conversation (D0)
-
-one Run Patrol safeguard (no technical authority)
-```
-
-Only one Control responsibility mode is active for a formal decision. Only one CELL
-may be active. Verifier responsibility uses a clean validation environment and
-immutable candidate evidence; SLK does not claim blind conversation-memory
-independence and does not add a third formal engineering conversation.
-
-## Run flow
+## Core
 
 ```text
-Frozen LCCoding Run Contract
-→ strict Serial Plan
-→ GO-001 → GO-002 → … → GO-N
-→ D3 Run Verification
-→ Run Owner Acceptance
-→ LOOP_OWNER_ACCEPTED
+Supervisor ↔ Checker ↔ Worker
+
+Worker D0 → Checker D1 → Supervisor D2
 ```
 
-SLK consumes product meaning and acceptance from LCCoding. It does not own Calabash,
-centralized project security audit, packaging, delivery, or project completion.
+Supervisor keeps the Run moving and checks the combined result at D2. Checker dispatches CELLs and reviews them independently at D1. Worker implements one current CELL and performs a minimum D0 before delivery.
 
-Use CLK for fixed parallel Chains/Stages. Use GLK for branches, joins, fallbacks,
-cycles, or a free GO graph.
+SLK guidance helps members decide how to continue. Rework, communication recovery, member recovery, plan adjustment, and exemption remain available as situational options.
 
-## Causal defect repair
+## Skill collection
 
-After D1 rejects a candidate, Checker binds one `DEFECT_LINEAGE` to the immutable
-failed candidate, failure fingerprint, reproduction evidence, and repair round.
-Worker establishes stable reproduction—or evidence that it cannot be reproduced—
-then tests one root-cause hypothesis with one minimal experiment before making the
-smallest root-cause repair.
+The active collection lives in [`skills/`](skills/):
 
-Before the credited experiment, SLK validates concrete IDs, request shape, authority
-seeds, and the planned one-SQLite/one-Repository/no-reset topology without invoking
-a business action. A bad fixture is corrected in the same checkpoint and consumes
-zero causal credit; it cannot create an artificial Control-Worker loop.
+- [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) — lightweight identity and router;
+- 13 sibling Skills for planning, Supervisor Grill, team lifecycle, CELL work, recording, rework, diagnosis, adjustment, communication recovery, and closure.
 
-For a stably reproducible, reasonably automatable defect, D0 carries candidate-bound
-fail-before, pass-after, and risk-scaled regression evidence. Other cases require a
-Checker-approved exemption and alternative evidence. Three Checker-rejected repair
-candidates in the same lineage prohibit a fourth ordinary rework and route to
-architecture review, method-boundary exit, or a versioned Contract revision.
+Ordinary work reads the main Skill and the current situational Skill. Additional guidance is loaded when the situation changes.
 
-This discipline is embedded only in D0/D1 defect repair. It adds no D4, role, visible
-conversation, Chain/Stage/Barrier, or graph activation.
+## Run record
 
-## Runtime safeguards
+Supervisor creates `SLK-RUN-<RUN-ID>.md` in the project root. Worker, Checker, and Supervisor add their own engineering facts. The template is at [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md).
 
-SLK 2.6.0 retains the Worker-only four-level Checker wake ladder, prohibits Supervisor
-wait loops, derives layered progress from D1/D2 receipts, and uses exactly one
-non-authoritative Patrol. Supervisor freezes measurable device capacity and
-cumulative engineering load; only a pre-dispatch `CELL_CAPACITY_GATE` PASS permits
-work. Workload maps `LOW→10`, `MEDIUM→15`, and `HIGH→30` Patrol minutes; every cycle
-proves the full minimum-error checklist. The Control responsibilities and Worker
-default to task Pin denied, while non-technical Patrol is denied separately. Every
-material verdict has one bound Supervisor progress update, and a lightweight
-`RUN_RUNTIME_INDEX` proves each dispatch has capacity, wake, progress, and Patrol
-evidence without becoming a Runtime.
+## Install
 
-Every role also has a separate current `MODEL_BINDING_TRACE` entry. Terra + `xhigh`
-is default; only a frozen fine-grained/LOW-risk CELL permits its Worker to use Luna,
-and only high-difficulty correction, root-cause diagnosis, or complex rework permits
-Sol. Capability-equivalent substitutes require evidence; GPT 5.5/lower,
-unauthorized `ultra`, and silent switches fail closed. Patrol defaults to Terra and
-has no implicit low-cost exception.
-
-See [runtime control and progress](references/runtime-control-and-progress.md).
+Place the 14 directories under `skills/` as sibling directories in the Codex Skill root. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
 
 ## Validation
 
 ```text
 python scripts/validate_repository.py
-python scripts/validate_serial_plan.py examples/minimal-run/serial-plan.yaml
-python scripts/validate_defect_repair.py <d0-or-d1-receipt.yaml>
-python scripts/validate_causal_experiment_preflight.py <preflight.json>
-python scripts/validate_runtime_control.py <runtime-record.yaml>
 python -m pytest -q
 ```
 
-## Install
+## Previous method
 
-Install `small-loop-skill/` and invoke `$small-loop-skill`.
+SLK **v2.6.0** remains available from its Git tag and Release for existing Runs or recovery. Version 3.0.0 starts a new method boundary and does not overwrite that historical release.
 
 ## License
 

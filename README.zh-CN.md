@@ -1,77 +1,49 @@
 # Small Loop Skill（SLK）
 
-Small Loop Skill 是用于一个有界 LCCoding Run 的严格串行工程执行方法。
+当前版本：**3.0.0**
 
-当前版本：**2.6.0**
+SLK 用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。GO 与 CELL 沿一条线性路径推进。
 
-```text
-Owner
-  ↓
-一个可见 Control Conversation
-  ├─ Supervisor responsibility
-  ├─ Checker responsibility（D1）
-  └─ Verifier responsibility（D2/D3）
-         ↕
-一个长期唯一 Worker Conversation（D0）
-
-一个 Run Patrol 保障对话（无技术权威）
-```
-
-Control 在一次正式决策中只能启用一种责任模式；同一时刻只能有一个 Active
-CELL。Verifier 使用干净验证环境和不可变候选证据，但 SLK 不声称同一 Control
-Conversation 内存在盲上下文隔离，也不创建第三个正式工程 Conversation。
-
-## 执行边界
-
-SLK 消费 LCCoding 冻结的 `RUN_CONTRACT`，执行唯一严格串行 GO 序列：
+## 核心关系
 
 ```text
-RUN_CONTRACT
-→ GO-001 → GO-002 → … → GO-N
-→ D3
-→ 当前 Run 的 Owner Acceptance
-→ LOOP_OWNER_ACCEPTED
+Supervisor ↔ Checker ↔ Worker
+
+Worker D0 → Checker D1 → Supervisor D2
 ```
 
-Calabash、集中项目级安全审计、交付和项目完成属于 LCCoding。SLK 仍执行 Run
-Contract 要求的本地安全检查，并对已知严重风险实施硬刹车。
+Supervisor 维持 Run 连续推进并在 D2 检查成果合起来是否正确。Checker 派发 CELL，并在隔离状态下执行 D1。Worker 完成当前 CELL，并在交付前执行最低程度 D0。
 
-出现固定并行 Chain/Stage 时使用 CLK；出现分支、合并、回退、循环或自由 GO 图时
-使用 GLK。
+SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢复、计划调整和豁免作为特定情境下的可用方法存在。
 
-## 因果缺陷返工
+## Skill 集合
 
-D1 拒绝候选后，Checker 把一个 `DEFECT_LINEAGE` 绑定到不可变失败 Candidate、
-失败指纹、复现证据与修复轮次。Worker 必须先稳定复现，或证据化说明不可复现；
-随后一次只验证一个根因假设、执行一个最小实验，再提交最小根因修复。
+当前方法位于 [`skills/`](skills/)：
 
-正式计分实验前，SLK 必须在零业务调用下校验具体 ID、请求结构、authority 种子与
-一 SQLite/一 Repository/无 reset 拓扑。fixture 错误在同一 checkpoint 内修正，
-消耗零因果 credit，不能人为制造新的 Control-Worker 循环。
+- [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) 保存轻量身份和路由；
+- 13 个同级 Skill 分别处理 Run 规划、Supervisor Grill、成员生命周期、CELL 工作、记录、返工、诊断、调整、通讯恢复和收尾。
 
-对可稳定复现且可合理自动化的缺陷，D0 必须绑定 fail-before、pass-after 和风险
-相称的回归证据；不适用时必须由 Checker 审核 exemption 与替代证据。同一 lineage
-连续三个修复 Candidate 被 Checker 拒绝后，禁止第 4 次普通返工，转入架构复审、
-方法边界退出或版本化 Contract 修订。
+普通施工读取主 Skill 和当前情境对应的 Skill；情况变化时再加载相关指导。
 
-该纪律只嵌入 D0/D1 缺陷返工，不新增 D4、角色、可见 Conversation，也不引入
-Chain/Stage/Barrier 或图激活。
+## Run 记录
 
-## 运行保障
+Supervisor 在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。Worker、Checker、Supervisor 分别写入自己的工程事实。模板位于 [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md)。
 
-SLK 2.6.0 保留 Worker 专属四级 Checker 叫醒阶梯，禁止 Supervisor 长等待循环，
-并从有效 D1/D2 receipt 推导分层进度。每个 Run 恰好一个无技术权威的巡检对话。
-Supervisor 以可验证设备事实和累计工程负载冻结 CELL 容量；只有派工前
-`CELL_CAPACITY_GATE=PASS` 才能交给 Worker。巡检工作量固定映射为
-`LOW→10`、`MEDIUM→15`、`HIGH→30` 分钟，每周期必须完成全部最低错误清单。
-Control 三种责任和 Worker 默认禁止置顶；非技术 Patrol 单独禁止 Pin/Unpin。
-每个实质 verdict 恰有一条绑定的 Supervisor 进度；轻量 `RUN_RUNTIME_INDEX`
-证明每次派工都具备容量、叫醒、进度和巡检证据，但不成为 Runtime。
+## 安装
 
-每个角色另有独立的当前 `MODEL_BINDING_TRACE` 条目。默认使用 Terra + `xhigh`；
-只有合同明确为细粒度且低风险的 CELL，其 Worker 才可使用 Luna；只有高难度纠错、
-根因诊断或复杂返工才可使用 Sol。能力相近替代模型必须有等价证据；GPT 5.5 及更低、
-未经 Owner 逐项授权的 `ultra`、静默切模均 fail closed。Patrol 默认使用 Terra，
-没有隐含低成本例外。
+把 `skills/` 下 14 个目录作为同级目录放入 Codex Skill 根目录。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
 
-详见 [运行控制与进度](references/runtime-control-and-progress.md)。
+## 验证
+
+```text
+python scripts/validate_repository.py
+python -m pytest -q
+```
+
+## 历史版本
+
+SLK **v2.6.0** 继续通过 Git tag 和 Release 提供，方便既有 Run 或恢复使用。3.0.0 是新的方法边界，不覆盖历史发布。
+
+## 许可证
+
+MIT。

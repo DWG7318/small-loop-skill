@@ -2,25 +2,34 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILLS_ROOT = ROOT / "skills"
+VERSION = "3.0.0"
+COLLECTION_NAME = "Small Loop Skill Collection"
+EXPECTED_SKILLS = (
+    "small-loop-skill",
+    "slk-plan-run",
+    "slk-grill-supervisor",
+    "slk-manage-team",
+    "slk-plan-cell",
+    "slk-dispatch-cell",
+    "slk-execute-cell",
+    "slk-check-cell",
+    "slk-record-run",
+    "slk-rework-cell",
+    "slk-diagnose-defect",
+    "slk-adjust-run",
+    "slk-recover-communication",
+    "slk-close-run",
+)
 EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
 EXCLUDED_FILES = {"MANIFEST.json"}
-VERSION = "2.6.0"
-MIRRORED = [
-    Path("SKILL.md"),
-    Path("SPEC.md"),
-    Path("contracts/slk-control-kernel.json"),
-    Path("contracts/slk-runtime-control.schema.json"),
-    Path("scripts/validate_defect_repair.py"),
-    Path("scripts/validate_causal_experiment_preflight.py"),
-    Path("scripts/validate_runtime_control.py"),
-    Path("scripts/validate_serial_plan.py"),
-]
 
 
 def sha256(path: Path) -> str:
@@ -47,8 +56,9 @@ def release_files(root: Path) -> list[Path]:
 
 def manifest_payload(root: Path) -> dict:
     return {
-        "name": "Small Loop Skill",
+        "name": COLLECTION_NAME,
         "version": VERSION,
+        "skill_count": len(EXPECTED_SKILLS),
         "excludes": sorted(EXCLUDED_FILES),
         "files": [
             {"path": relative.as_posix(), "sha256": sha256(root / relative)}
@@ -69,82 +79,78 @@ def check(condition: bool, code: str, detail: str, errors: list[str]) -> None:
 
 def utf8_text(path: Path, errors: list[str]) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        data = path.read_bytes()
+        if b"\r\n" in data:
+            errors.append(f"SLK_REPO_LF: {path.relative_to(ROOT).as_posix()}")
+        return data.decode("utf-8")
     except (OSError, UnicodeError) as exc:
         errors.append(f"SLK_REPO_UTF8: {path}: {exc}")
         return ""
 
 
+def frontmatter_name(text: str) -> str | None:
+    if not text.startswith("---\n"):
+        return None
+    match = re.search(r"^name:\s*([a-z0-9-]+)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
-    required = [
+    required = (
         "VERSION",
         "README.md",
         "README.zh-CN.md",
-        "SPEC.md",
-        "SKILL.md",
         "MIGRATION.md",
+        "CHANGELOG.md",
         "LICENSE",
         "MANIFEST.json",
         "VALIDATION-REPORT.md",
-        "contracts/slk-control-kernel.json",
-        "contracts/slk-runtime-control.schema.json",
-        "scripts/validate_defect_repair.py",
-        "scripts/validate_causal_experiment_preflight.py",
-        "scripts/validate_runtime_control.py",
-        "scripts/validate_serial_plan.py",
-        "small-loop-skill/SKILL.md",
-    ]
+        ".github/workflows/validate.yml",
+    )
     for relative in required:
         check((root / relative).is_file(), "SLK_REPO_REQUIRED_FILE", relative, errors)
+
     if errors:
         return errors
 
     version = utf8_text(root / "VERSION", errors).strip()
-    check(version == VERSION, "SLK_REPO_VERSION", f"VERSION is {version!r}", errors)
-    readme = utf8_text(root / "README.md", errors)
-    skill = utf8_text(root / "SKILL.md", errors)
-    spec = utf8_text(root / "SPEC.md", errors)
-    check(f"Current version: **{VERSION}**" in readme, "SLK_REPO_README_VERSION", "README version drift", errors)
-    check(f"version: {VERSION}" in skill, "SLK_REPO_SKILL_VERSION", "SKILL frontmatter version drift", errors)
-    check("Small Loop Skill" in skill and "Small Loop Skill" in spec, "SLK_REPO_IDENTITY", "canonical identity missing", errors)
-    check("Serial Loop Kit" not in readme and "Serial Loop Kit" not in skill and "Serial Loop Kit" not in spec, "SLK_REPO_IDENTITY", "unapproved canonical rename", errors)
+    check(version == VERSION, "SLK_REPO_VERSION", repr(version), errors)
 
-    try:
-        contract = json.loads(utf8_text(root / "contracts/slk-control-kernel.json", errors))
-        check(contract.get("version") == VERSION, "SLK_REPO_CONTRACT_VERSION", "control contract version drift", errors)
-        check(contract.get("formal_execution_conversations") == ["CONTROL", "WORKER"], "SLK_REPO_TOPOLOGY", "formal conversation drift", errors)
-        check(contract.get("visible_safeguard_conversations") == ["RUN_PATROL"], "SLK_REPO_TOPOLOGY", "safeguard conversation drift", errors)
-        check(contract.get("visible_conversations") == ["CONTROL", "WORKER", "RUN_PATROL"], "SLK_REPO_TOPOLOGY", "visible conversation drift", errors)
-    except json.JSONDecodeError as exc:
-        errors.append(f"SLK_REPO_CONTRACT_JSON: {exc}")
+    actual_skills = tuple(sorted(path.name for path in SKILLS_ROOT.iterdir() if path.is_dir()))
+    check(actual_skills == tuple(sorted(EXPECTED_SKILLS)), "SLK_REPO_SKILL_SET", repr(actual_skills), errors)
+    for name in EXPECTED_SKILLS:
+        path = SKILLS_ROOT / name / "SKILL.md"
+        check(path.is_file(), "SLK_REPO_SKILL_FILE", name, errors)
+        if path.is_file():
+            text = utf8_text(path, errors)
+            check(frontmatter_name(text) == name, "SLK_REPO_SKILL_NAME", name, errors)
+            check("description: Use when " in text, "SLK_REPO_SKILL_DESCRIPTION", name, errors)
 
-    mirror_paths = list(MIRRORED)
-    mirror_paths.extend(path.relative_to(root) for path in sorted((root / "templates").glob("*.yaml")))
-    mirror_paths.append(Path("templates/causal-experiment-preflight.json"))
-    mirror_paths.extend(path.relative_to(root) for path in sorted((root / "references").glob("*.md")))
-    for relative in mirror_paths:
-        source = root / relative
-        installed = root / "small-loop-skill" / relative
-        check(installed.is_file(), "SLK_REPO_MIRROR_MISSING", installed.as_posix(), errors)
-        if installed.is_file():
-            check(source.read_bytes() == installed.read_bytes(), "SLK_REPO_MIRROR_DRIFT", relative.as_posix(), errors)
+    main = utf8_text(SKILLS_ROOT / "small-loop-skill" / "SKILL.md", errors)
+    for name in EXPECTED_SKILLS[1:]:
+        check(main.count(f"`${name}`") == 1, "SLK_REPO_ROUTE", name, errors)
 
     try:
         manifest = json.loads(utf8_text(root / "MANIFEST.json", errors))
     except json.JSONDecodeError as exc:
         errors.append(f"SLK_REPO_MANIFEST_JSON: {exc}")
         return errors
-    check(manifest.get("name") == "Small Loop Skill", "SLK_REPO_MANIFEST_NAME", "Manifest name drift", errors)
-    check(manifest.get("version") == VERSION, "SLK_REPO_MANIFEST_VERSION", "Manifest version drift", errors)
-    listed = {item.get("path"): item.get("sha256") for item in manifest.get("files", []) if isinstance(item, dict)}
+
+    check(manifest.get("name") == COLLECTION_NAME, "SLK_REPO_MANIFEST_NAME", repr(manifest.get("name")), errors)
+    check(manifest.get("version") == VERSION, "SLK_REPO_MANIFEST_VERSION", repr(manifest.get("version")), errors)
+    check(manifest.get("skill_count") == len(EXPECTED_SKILLS), "SLK_REPO_MANIFEST_SKILLS", repr(manifest.get("skill_count")), errors)
+    listed = {
+        item.get("path"): item.get("sha256")
+        for item in manifest.get("files", [])
+        if isinstance(item, dict)
+    }
     actual = {path.as_posix() for path in release_files(root)}
     check(set(listed) == actual, "SLK_REPO_MANIFEST_SET", f"missing={sorted(actual-set(listed))}; extra={sorted(set(listed)-actual)}", errors)
     for relative, expected in listed.items():
         path = root / relative
         if path.is_file():
             check(sha256(path) == expected, "SLK_REPO_MANIFEST_HASH", relative, errors)
-    check("VALIDATION-REPORT.md" in listed, "SLK_REPO_MANIFEST_REPORT", "Validation Report must be protected", errors)
     return errors
 
 
@@ -162,7 +168,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK repository structure, identity, mirrors, and Manifest are valid.")
+    print("PASS: SLK 3.0 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 
