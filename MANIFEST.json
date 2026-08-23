@@ -71,6 +71,10 @@
       "sha256": "555872987a14b7ac6980ac8556957821729ac1c6eb7672579dde3b2c75b3734c"
     },
     {
+      "path": "docs/superpowers/plans/2026-08-23-slk-3.0.3-cell-continuity-clarification.md",
+      "sha256": "c8f84e88bf35026086659004e839c42ab1a385d441a5605d92b60bdf91d05c50"
+    },
+    {
       "path": "docs/superpowers/plans/2026-08-23-slk-loop-engineering-identity-plan.md",
       "sha256": "cc9e61cd36f6429573ba72853ddf7f91fcaa7234d456cb766f547c91b61d93f4"
     },
