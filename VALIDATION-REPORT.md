@@ -1,12 +1,12 @@
-# Validation Report — SLK 3.0.1 Candidate
+# Validation Report — SLK 3.0.2 Candidate
 
 Date: 2026-08-23
 
-Branch: `fix/slk-3.0.1-no-wait`
+Branch: `design/slk-3.0.2-loop-engineering`
 
 ## Design baseline
 
-- one bounded Run with linear GO and CELL work;
+- the linear Loop Engineering form: one bounded Run with linear GO and CELL work;
 - visible Supervisor, Checker, and Worker conversations;
 - minimum Worker D0, isolated Checker D1, combined-result Supervisor D2;
 - event-activated Supervisor boundaries with Checker/Worker ownership of the daily CELL loop;
@@ -37,10 +37,10 @@ Fresh local verification:
 - active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
 - active advisory-language review: 0 legacy absolute or direct-stop expressions; the Owner-approved SLK-only boundary appears in 12/12 children;
 - Skill size review: no diagnostics; main and child `SKILL.md` files are 26–64 lines;
-- repository inventory: 40 tracked files and 39 manifest-protected payload files;
+- repository inventory: 42 tracked files and 41 manifest-protected payload files;
 - `git diff --check`: PASS.
 
-Temporary installation verification copied the 13 sibling Skill directories to `D:\LCcoding\.codex\.tmp\slk-3.0.0-install-role-model-selection-20260823`. All copied files matched source bytes, the main router referenced each of the 12 child Skills once, and every copied Skill passed the official validator. The installed Run-record template matched source bytes with SHA-256 `8d709c470e8c23c468e0637f277f9caa31e82b465d4c1d37dfc48bb57e345cea`.
+Temporary installation verification copied the 13 sibling Skill directories and 15 files to `D:\LCcoding\.codex\.tmp\slk-3.0.2-loop-engineering-install-20260823-a`. All copied files matched source bytes, the main router referenced each of the 12 child Skills once, and every copied Skill passed the official validator. The Run-record template retained SHA-256 `8d709c470e8c23c468e0637f277f9caa31e82b465d4c1d37dfc48bb57e345cea`.
 
 The 2.x active root, mirrors, contracts, templates, runtime validators and old tests were removed from the 3.0 branch after replacement coverage passed. Git history and the `v2.6.0` tag preserve the previous files.
 

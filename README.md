@@ -1,15 +1,15 @@
 # Small Loop Skill (SLK)
 
-Current version: **3.0.1**
+Current version: **3.0.2**
 
-SLK guides one bounded small or medium engineering Run, or one relatively independent small/medium scope inside a larger project. GO and CELL work follow one serial path.
+SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. GO and CELL work follow one serial path.
 
 ## Core
 
 ```text
 Supervisor ↔ Checker ↔ Worker
 
-Worker D0 → Checker D1 → Supervisor D2
+CELL dispatch → Worker construction + D0 → candidate → isolated Checker D1 → PASS/rework → Supervisor D2
 ```
 
 ```text
