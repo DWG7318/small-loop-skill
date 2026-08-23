@@ -26,11 +26,13 @@ description: Use when an SLK Run is establishing, recovering, replacing, or arch
 
 ## 恢复或接管
 
-成员发生问题时，通常由上一级成员先恢复原对话，或者创建一个接管成员：
+成员发生问题时，通常由上一级成员优先恢复原成员。缺少回执不等于失效；创建接管成员属于确认原成员明确失效后的极端恢复：
 
-- Worker 异常时，由 Checker 协助恢复或安排新 Worker；
-- Checker 异常时，由 Supervisor 协助恢复或安排新 Checker；
-- Supervisor 异常时，由原对话联系 Owner 并协助建立接管 Supervisor。
+- Worker 异常时，由 Checker 先恢复原 Worker，明确失效后再安排接管 Worker；
+- Checker 异常时，由 Supervisor 先恢复原 Checker，明确失效后再安排接管 Checker；
+- Supervisor 异常时，由原对话联系 Owner 并优先恢复原 Supervisor，明确失效后再协助建立接管 Supervisor。
+
+明确失效可以依据任务 ID 不存在、平台显示失败或取消且无法继续，或者真实激活操作明确返回任务不可用。暂时没有回复不作为更换成员的依据。
 
 接管成员可以先读取根 Run 记录、当前计划、候选和未完成交接，再进行双向通讯测试。接管确认后，把旧成员的实际状态写入记录。
 

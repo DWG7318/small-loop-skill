@@ -7,26 +7,32 @@ description: Use when an SLK delivery, activation, or reply between visible memb
 
 ## 当前目标
 
-判断消息处于什么状态，恢复原来的成员通道，并让 Run 回到中断前的工作节点。
+使用真实的对话激活操作恢复原成员通道，并让 Run 回到中断前的工作节点。
 
-## 先看真实状态
+## 真实激活与接收证据
 
-- 消息可见且目标对话正在活动：通常表示已经送达并开始处理。
-- 消息可见但目标对话空闲：可以发送一条简短激活消息，指向原始交付。
-- 消息未出现：重新发送完整原始交付，保留 Run、GO、CELL n/N 和候选信息。
-- 目标对话异常或长期无变化：请其上一级成员协助恢复。
+1. 确认准确的 Checker 任务 ID，并调用当前平台能够继续该对话的真实激活操作；Codex Desktop 使用 `send_message_to_thread`。读取或写入后台聊天记录只说明记录存在，不作为激活。
+2. 激活内容保留同一份完整原始交付，包括 Run、GO、`CELL n/N`、候选身份和必要入口。
+3. Checker 对当前 CELL 的明确回执，或者本次激活后新产生且对应当前 CELL 的工作状态变化，才构成接收证据。激活调用成功本身不等于已经接收。
+4. 建议使用约两分钟的有界确认窗口；没有收到接收证据时，Worker 通过同样的真实激活操作把原始交付、Checker任务ID和调用结果交给 Supervisor。
 
-Worker 向 Checker 交付后，可以结合对话状态进行三次不同方式的唤醒尝试。尝试之间保留同一原始交付，不逐步缩减任务内容。仍未恢复时，采用应急路径：
+应急路径保持为：
 
 ```text
 Worker → Supervisor → Checker
 ```
 
-Supervisor 转交原始交付并协助恢复 Checker，D1 仍由 Checker 完成。
+## Supervisor 恢复原 Checker
+
+缺少回执不等于 Checker 失效。Supervisor 核对准确任务 ID、平台状态和真实激活调用结果，优先恢复原 Checker，并再次向原任务 ID 发送完整交付。D1 仍由 Checker 完成。
+
+创建接管 Checker 属于极端恢复。只有任务 ID 不存在、平台明确显示任务失败或取消且无法继续，或者真实激活操作明确返回该任务不可用时，才把原 Checker 视为明确失效，并调用 `$slk-manage-team` 建立接管 Checker。
+
+如果平台整体缺少可用的真实激活操作，保留原 Checker 和通讯故障事实；后台聊天记录不用于假装恢复，也不凭缺少回执创建接管成员。
 
 ## 成员恢复
 
-发现成员本身异常时，建议调用 `$slk-manage-team`。上一级成员可以恢复原成员，或建立接管成员；接管后读取根记录和当前候选，再完成双向通讯测试。
+明确失效后调用 `$slk-manage-team`。接管 Checker 读取根记录和当前候选，再与 Supervisor、Worker 完成双向通讯测试。
 
 ## 完成后
 

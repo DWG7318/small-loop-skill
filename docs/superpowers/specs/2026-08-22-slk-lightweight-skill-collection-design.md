@@ -69,7 +69,7 @@ Supervisor 创建 Checker
 Checker 创建 Worker
 ```
 
-创建下一级成员后，建议立即进行一次双向通讯测试。成员状态异常时，上一级成员优先恢复原成员或创建接管成员。Worker 多次无法联系 Checker 时，可以通过 Supervisor 协助恢复，形成应急路径：
+创建下一级成员后，建议立即进行一次双向通讯测试。成员状态异常时，上一级成员优先恢复原成员；接管成员是原成员明确失效后的极端恢复。Worker 使用真实对话激活操作仍无法取得 Checker 接收证据时，可以通过 Supervisor 协助恢复，形成应急路径：
 
 ```text
 Worker → Supervisor → Checker
@@ -77,11 +77,11 @@ Worker → Supervisor → Checker
 
 原对话在 Supervisor 接管后退出工程工作，保留 Owner 联系和 Supervisor 异常恢复入口。
 
-正式成员采用项目中可见的 Codex 对话。创建和归档以实际任务 ID 与可观察状态为准，减少把文字声明、隐藏执行或错误对象当成正式成员的情况。消息是否送达可以结合目标对话中的内容、活动状态和回复判断，不额外制造纯确认消息。
+正式成员采用项目中可见的 Codex 对话。创建和归档以实际任务 ID 与可观察状态为准，减少把文字声明、隐藏执行或错误对象当成正式成员的情况。后台聊天记录中的文字不作为激活证据；真实对话激活操作之后的新回复或对应当前 CELL 的工作状态变化才说明目标成员已经接收。
 
 推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO/CELL 和分层检查方案，并为三个角色选择相称的模型能力，再创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。成员组就绪后，Supervisor 转为非活动状态，不在线等待或接收逐 CELL 汇报；Checker 与 Worker 直接推进日常循环，需要上级协助或 D2 时再激活 Supervisor。
 
-Worker 遇到 Checker 通讯异常时，通常可以进行三次不同方式的唤醒尝试，并结合目标对话状态判断。仍未恢复时，建议把原交付信息和通讯情况发送给 Supervisor 协助处理。
+Worker 遇到 Checker 通讯异常时，先通过当前平台的真实对话激活操作发送完整原始交付，并在有界窗口内等待明确回执。没有接收证据时，把原交付、Checker任务ID和调用结果发送给 Supervisor；Supervisor优先恢复原Checker。缺少回执本身不证明失效，只有任务不存在、平台明确失败且无法继续或真实激活操作明确拒绝该任务时，才考虑接管Checker。
 
 ## 6. 检验关系
 
@@ -154,7 +154,7 @@ flowchart TB
     D -.通讯异常.-> RC[recover-communication]
     E -.通讯异常.-> RC
     K -.通讯异常.-> RC
-    RC -.恢复、接管或重测通讯.-> B
+    RC -.优先恢复原成员; 明确失效后接管.-> B
     X -->|D2 发现组合问题| RP
     X -.归档成员.-> B
 ```

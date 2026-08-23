@@ -185,6 +185,10 @@ def test_manage_team_covers_visible_creation_recovery_tests_and_archive() -> Non
         "双向通讯",
         "应急通道",
         "上一级",
+        "优先恢复原成员",
+        "缺少回执不等于失效",
+        "明确失效",
+        "极端",
         "接管",
         "归档 Worker",
         "归档 Checker",
@@ -253,8 +257,9 @@ def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:
         "CELL n/N",
         "倒数第二项",
         "最后一项",
-        "三次",
-        "对话状态",
+        "真实激活",
+        "明确回执",
+        "Supervisor",
         "$slk-record-run",
         "$slk-check-cell",
         "$slk-recover-communication",
@@ -404,20 +409,28 @@ def test_rework_reuses_the_dispatch_one_to_two_split() -> None:
     assert "一分为二" in text
 
 
-def test_recover_communication_uses_state_retries_and_upper_level_recovery() -> None:
+def test_recover_communication_requires_real_activation_and_preserves_checker() -> None:
     text = read_skill("slk-recover-communication")
     for marker in (
-        "对话状态",
-        "消息可见",
-        "三次",
+        "send_message_to_thread",
+        "后台聊天记录",
+        "状态变化",
+        "明确回执",
         "原始交付",
         "Worker → Supervisor → Checker",
-        "上一级",
-        "接管",
+        "优先恢复原 Checker",
+        "缺少回执不等于",
+        "明确失效",
+        "极端",
+        "接管 Checker",
         "双向通讯测试",
         "$slk-manage-team",
     ):
         assert marker in text
+    assert "消息可见且目标对话正在活动" not in text
+    assert "三次不同方式" not in text
+    assert "Owner" not in text
+    assert "原对话" not in text
 
 
 def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
