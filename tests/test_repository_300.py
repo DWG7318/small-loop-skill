@@ -30,7 +30,7 @@ def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "3.0.2"
+    assert manifest["version"] == "3.0.3"
     assert manifest["skill_count"] == 13
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -42,7 +42,7 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "3.0.2" in text
+        assert "3.0.3" in text
         assert "12" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
@@ -62,7 +62,8 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "one complete CELL" in changelog
 
 
 def test_current_design_uses_the_same_startup_d2_and_recovery_routes() -> None:

@@ -1,8 +1,8 @@
-# Validation Report — SLK 3.0.2 Candidate
+# Validation Report — SLK 3.0.3 Candidate
 
 Date: 2026-08-23
 
-Branch: `design/slk-3.0.2-loop-engineering`
+Branch: `feature/slk-3.0.3-cell-continuity`
 
 ## Design baseline
 
@@ -24,6 +24,8 @@ Branch: `design/slk-3.0.2-loop-engineering`
 - D2 readiness based on D1 PASS or separately recorded Supervisor exemption, never a bare D1 FAIL;
 - Checker capacity calibration reuses execution and D1 facts instead of adding a separate capacity gate;
 - guidance oriented toward recovery and continued construction.
+- one Checker dispatch carries the complete CELL rather than a command queue;
+- Worker commands, tool results, and intermediate progress remain inside that CELL until complete candidate delivery, a real blocker, or necessary clarification.
 
 ## Verification status
 
@@ -40,7 +42,7 @@ Fresh local verification:
 - repository inventory: 42 tracked files and 41 manifest-protected payload files;
 - `git diff --check`: PASS.
 
-Temporary installation verification copied the 13 sibling Skill directories and 15 files to `D:\LCcoding\.codex\.tmp\slk-3.0.2-loop-engineering-install-20260823-a`. All copied files matched source bytes, the main router referenced each of the 12 child Skills once, and every copied Skill passed the official validator. The Run-record template retained SHA-256 `8d709c470e8c23c468e0637f277f9caa31e82b465d4c1d37dfc48bb57e345cea`.
+The 3.0.3 candidate preserves the same 13-Skill collection and Run-record template; its release Manifest is regenerated from the exact repository bytes after the continuity clarification.
 
 The 2.x active root, mirrors, contracts, templates, runtime validators and old tests were removed from the 3.0 branch after replacement coverage passed. Git history and the `v2.6.0` tag preserve the previous files.
 

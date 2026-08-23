@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill Collection",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "skill_count": 13,
   "excludes": [
     "MANIFEST.json"
@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "71e29e34dbece878ad10343845ac3d24853c311812d3710fb27257162d2e6658"
+      "sha256": "88732535c7205cd9fa8ef2b808e67b153da29cfe6457f4d14481074ebd8499fe"
     },
     {
       "path": "LICENSE",
@@ -32,19 +32,19 @@
     },
     {
       "path": "README.md",
-      "sha256": "f054a77b6bdaded68a00cf7296cf3ee428ed388e6e15171464bc91a84f2b52ce"
+      "sha256": "429034e6248d03d01f1949f516459d57d84d88b64d139ae5fee3a963bd5fafae"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "f00b86a03369d98e2c4f2ae2971c3b3105c279af2e30bc8f5885269be87ff525"
+      "sha256": "12fc3fc24178ddb032f43d140fcf92d387d45b48e3015b826f6521dc8d1aed47"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "fbcffd014e825700ec7d35eca905b1797df85d1b93ccc2e121b4299b04c4e49f"
+      "sha256": "07c2a47a9dfc0010770826195fb376feebb9aa0e6b45ac9d17ca7caa4d6ccc0a"
     },
     {
       "path": "VERSION",
-      "sha256": "3fc0bf8d7ddbfe77eb4074c0b03d6567d7874a25ea4144aadea6686fcd5f6feb"
+      "sha256": "db65b7b653f7c33a2c1f9fd381f5fbe089a389f063567831785baf4b2e1497e9"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -100,7 +100,7 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "80f8d97b0aa6555fb45ce45519500ddd93f8768b803cff1847026bd48c3f7f19"
+      "sha256": "80163cdb774416191ec110ffd06f55cc1b532a05505d0c741857c096148e6259"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -116,11 +116,11 @@
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
-      "sha256": "4d1f17881a7297992e312aaeaaff209f830e7b07ff4b47680e0a8e312b97ddc5"
+      "sha256": "7ee8553383d95a1da824ccfe8b0de51ba8518b46576b4c0c9f3de54cd6784932"
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
-      "sha256": "dd612aa42cd1b12b6b8549e50775d173d7113405bcbc90c93f3546feb8c863ae"
+      "sha256": "a386448ff20e6f4fb4d06741c226de0f0ef1363782f41d047e380402a07eda27"
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
@@ -168,11 +168,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "e0ee6c73d4500d0d5613ad0fb900113dd2e0b1e7dbc031545dd044a1e803cab4"
+      "sha256": "f3b4c37feb6f13a6a4a67fbf110cb6240f0ea7aeef2e9d72ca579f8544a2aae9"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "67ac5e468012f7cf1a15ca639b87ff9f4d0bd226ac668047e5a4ceeeefa891d0"
+      "sha256": "865a094a067d699fffe658308b3e90c934d11b31aba2541930d78a34ab7fe4ee"
     }
   ]
 }

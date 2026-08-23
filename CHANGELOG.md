@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.3
+
+- Clarified that one Checker dispatch carries one complete CELL and is not a command queue.
+- Clarified that Worker commands, tool results, and intermediate progress do not end the CELL; the Worker continues until a complete candidate, real blocker, or necessary clarification.
+
 ## 3.0.2
 
 - Defined SLK first as the linear form of Loop Engineering, with repeated CELL dispatch, construction/D0, candidate, isolated D1, PASS-or-rework, and final D2 closure.
