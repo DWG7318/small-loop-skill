@@ -14,7 +14,13 @@ Branch: `feature/slk-3.0.0-lightweight`
 - one root `SLK-RUN-<RUN-ID>.md` with per-role records;
 - one main router and 12 situational sibling Skills;
 - role-based model selection with stronger professional coding capability for Supervisor and Checker and a reliable, optionally one-tier-lower Worker;
-- initial CELL planning before Supervisor creation, followed by dispatch-time reality checks rather than a second planning flow;
+- role-model selection before initial CELL sizing, followed by dispatch-time reality checks rather than a second planning flow;
+- exact startup authority: Original creates Supervisor, Supervisor creates Checker, Checker passes role readiness and creates Worker;
+- root-record initialization after Supervisor Grill and before Checker/Worker creation;
+- visible conversations rather than subagents as formal members, with recorded communication tests reused when unchanged;
+- a narrow Worker-to-Checker receipt recovery route, while other member recovery stays with the upper-level member;
+- Owner-specified role models preserved across rework unless Owner changes the choice;
+- D2 readiness based on D1 PASS or separately recorded Supervisor exemption, never a bare D1 FAIL;
 - Checker capacity calibration reuses execution and D1 facts instead of adding a separate capacity gate;
 - guidance oriented toward recovery and continued construction.
 
@@ -25,8 +31,8 @@ Fresh local verification:
 - `python scripts/validate_repository.py`: PASS;
 - repository `scripts/quick_validate.py`: 13/13 Skill directories PASS;
 - official Skill Creator `quick_validate.py`: 13/13 PASS under UTF-8 mode;
-- `python -m pytest -q`: 34/34 PASS;
-- `python -O -m pytest -q`: 34/34 PASS with the expected pytest assertion-optimization warning;
+- `python -m pytest -q`: 40/40 PASS;
+- `python -O -m pytest -q`: 40/40 PASS with the expected pytest assertion-optimization warning;
 - active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
 - active advisory-language review: 0 flagged absolute or direct-stop expressions;
 - Skill size review: no diagnostics; main and child `SKILL.md` files are 23–61 lines;

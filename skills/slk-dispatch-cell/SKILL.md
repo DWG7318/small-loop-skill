@@ -30,7 +30,9 @@ description: Use when an SLK Checker is ready to hand one planned CELL to the Wo
 
 ## 交付方式
 
-Checker 可以用一条结构清楚的消息发送完整 CELL，确认内容已经出现在 Worker 对话并观察其活动状态。这里传递施工目标，不把 Checker 的 D1 判断提前交给 Worker。
+Checker 使用能够继续 Worker 对话的真实激活操作发送完整 CELL。Worker 对当前 CELL 的明确回执，或者本次激活后新出现的施工状态，才说明交付已经接收；文字只出现在后台记录中不构成接收证据。这里传递施工目标，不把 Checker 的 D1 判断提前交给 Worker。
+
+Worker 没有出现当前 CELL 的接收或工作证据时，Checker 可以使用 `$slk-manage-team` 优先恢复原 Worker；缺少回复本身不表示需要更换 Worker。
 
 Worker 提出合理澄清时，Checker可以补充上下文；若答案会改变 Run 目标或验收目标，建议请 Supervisor 协助判断。
 

@@ -12,6 +12,13 @@ Supervisor ↔ Checker ↔ Worker
 Worker D0 → Checker D1 → Supervisor D2
 ```
 
+```text
+Plan Run/GO/checks → select role models → size initial CELLs
+→ Original creates Supervisor and hands off → Supervisor Grill → root record
+→ Supervisor creates Checker → Checker readiness → Checker creates Worker
+→ communication tests → first CELL
+```
+
 Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. Checker dispatches CELLs and reviews them independently at D1. Worker implements one current CELL and performs a minimum D0 before delivery.
 
 SLK guidance helps members decide how to continue. Rework, communication recovery, member recovery, plan adjustment, and exemption remain available as situational options.

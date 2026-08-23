@@ -1,6 +1,6 @@
 ---
 name: slk-record-run
-description: Use when an SLK member is finishing a work action and needs to preserve progress, evidence, errors, rework, or handoff facts.
+description: Use when an SLK Run needs its root record initialized or a member is preserving work and handoff facts.
 ---
 
 # Record an SLK Run
@@ -9,7 +9,7 @@ description: Use when an SLK member is finishing a work action and needs to pres
 
 在项目根目录维护一份可读、可追查的 `SLK-RUN-<RUN-ID>.md`，让接管成员和 Owner 理解已经做了什么、检查了什么、出现过什么问题以及下一步在哪里。
 
-Supervisor 可以从 `assets/SLK-RUN.template.md` 创建记录。即使成员在其他 worktree 施工，三个角色仍指向同一个根记录绝对路径。
+通过 Grill 后，Supervisor 可以从 `assets/SLK-RUN.template.md` 创建记录，写入 Run 定义、计划、方法版本和自己的任务 ID，再使用 `$slk-manage-team` 建立后续成员。即使成员在其他 worktree 施工，三个角色仍指向同一个根记录绝对路径。
 
 ## 各角色写自己的事实
 

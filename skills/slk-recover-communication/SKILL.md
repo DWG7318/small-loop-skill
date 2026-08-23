@@ -1,13 +1,13 @@
 ---
 name: slk-recover-communication
-description: Use when an SLK delivery, activation, or reply between visible members is missing or unclear.
+description: Use when an SLK Worker delivered a CELL candidate but the Checker has not shown current-CELL receiving evidence.
 ---
 
 # Recover SLK Communication
 
 ## 当前目标
 
-使用真实的对话激活操作恢复原成员通道，并让 Run 回到中断前的工作节点。
+使用真实的对话激活操作恢复 Worker → Checker 交付通道，并让同一 CELL 回到 D1。
 
 ## 真实激活与接收证据
 
@@ -58,4 +58,4 @@ Checker 回复 `已收到，开始检查：CELL n/N` 后，通讯恢复即完成
 
 ## 完成后
 
-在根记录追加通讯情况、尝试方式、恢复成员和实际结果。通道恢复后回到原来的派发、施工、D1或D2节点；若本次激活了 Supervisor，恢复完成后由其交还 Checker并结束本次激活。
+在根记录追加通讯情况、尝试方式、恢复成员和实际结果。通道恢复后回到同一 CELL 的 D1；若本次激活了 Supervisor，恢复完成后由其交还 Checker并结束本次激活。

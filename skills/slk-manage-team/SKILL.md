@@ -11,16 +11,20 @@ description: Use when an SLK Run is establishing, recovering, replacing, or arch
 
 ## 建立成员组
 
-推荐的创建关系是：原对话创建 Supervisor，Supervisor 创建 Checker，Checker 创建 Worker。
+推荐的创建关系是一条向下交接链。原对话创建 Supervisor；Supervisor 接管后的后续顺序如下。
 
-每创建下一级成员，建议立即做一次不含工程工作的双向通讯测试，并记录任务 ID 和实际状态：
+`$slk-plan-run` 已完成原对话 ↔ Supervisor 通讯测试时，任务 ID 与通道没有变化就复用已记录结果，不重复测试。接着建议按顺序进行：
 
-1. 原对话 ↔ Supervisor；
-2. Supervisor ↔ Checker；
-3. Checker ↔ Worker；
-4. Supervisor ↔ Worker 的应急通道。
+1. Supervisor 创建 Checker，并确认它是项目任务列表中的可见对话；
+2. 完成 Supervisor ↔ Checker 的双向通讯测试；
+3. 做一次 Checker 理解确认，让 Checker 用当前 Run 说明日常 CELL 派发、D1 隔离、CELL 一分为二、返工和激活 Supervisor 的边界；回答模糊时先解释再确认；
+4. Checker 创建 Worker，并确认它是项目任务列表中的可见对话；
+5. 完成 Checker ↔ Worker 的双向通讯测试；
+6. 完成 Supervisor ↔ Worker 的应急通道测试。
 
-前三条服务于正常工作，第四条在 Checker 通讯异常时协助恢复。成员创建以项目任务列表中的可见对象、准确任务 ID 和真实回复为依据。
+相邻通道服务于正常工作，Supervisor ↔ Worker 在 Checker 通讯异常时协助恢复。成员创建以项目任务列表中的可见对象、准确任务 ID 和真实回复为依据。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
+
+正式成员对应项目任务列表中的可见对话，Owner 能够看到并联系。内部 subagent、隐藏执行或文字中的角色声明不作为正式成员，也不替代上述创建关系与通讯测试。
 
 成员组与通讯通道建立后，Supervisor 把日常 CELL 循环交给 Checker，通常转为非活动状态，不在线等待或接收逐 CELL 汇报。需要上级协助或最终 D2 时，再由 Checker 或应急路径激活。
 

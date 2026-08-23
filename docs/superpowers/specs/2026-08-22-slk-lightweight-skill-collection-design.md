@@ -79,7 +79,7 @@ Worker → Supervisor → Checker
 
 正式成员采用项目中可见的 Codex 对话。创建和归档以实际任务 ID 与可观察状态为准，减少把文字声明、隐藏执行或错误对象当成正式成员的情况。后台聊天记录中的文字不作为激活证据；真实对话激活操作之后的新回复或对应当前 CELL 的工作状态变化才说明目标成员已经接收。
 
-推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO/CELL 和分层检查方案，并为三个角色选择相称的模型能力，再创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录和 Checker；Checker 接着创建 Worker。创建每一级成员后进行相邻成员双向通讯测试，随后补充 Supervisor 与 Worker 的应急通道测试。成员组就绪后，Supervisor 转为非活动状态，不在线等待或接收逐 CELL 汇报；Checker 与 Worker 直接推进日常循环，需要上级协助或 D2 时再激活 Supervisor。
+推荐启动顺序为：Owner 与原对话选择 SLK、更新到适用的新版本、明确 Run 目标与边界；Agent 结合项目形成 Run/GO 和分层检查方案，选择三个角色的模型能力，再据此划分初始 CELL；然后创建 Supervisor 并测试通讯、由 Supervisor 接管。Supervisor 读取方法并通过 Grill 后创建根记录，再创建 Checker 并测试通讯。原对话与 Supervisor 的任务 ID 和通道未变时复用已记录测试，不重复执行。Supervisor 随后做一次只覆盖 Checker 职责的 Checker 理解确认；Checker 能解释日常派发、D1 隔离、局部拆分、返工和上级激活边界后，再由 Checker 创建 Worker 并测试通讯。Worker 只接收施工、最低 D0、记录和回传所需规则，不重复完整方法问答。最后补充 Supervisor 与 Worker 的应急通道测试。成员组就绪后，Supervisor 转为非活动状态，不在线等待或接收逐 CELL 汇报；Checker 与 Worker 直接推进日常循环，需要上级协助或 D2 时再激活 Supervisor。
 
 Worker 遇到 Checker 通讯异常时，先通过当前平台的真实对话激活操作发送完整原始交付，并在有界窗口内等待明确回执。没有接收证据时，把原交付、Checker任务ID和调用结果发送给 Supervisor；Supervisor优先恢复原Checker。缺少回执本身不证明失效，只有任务不存在、平台明确失败且无法继续或真实激活操作明确拒绝该任务时，才考虑接管Checker。
 
@@ -89,9 +89,9 @@ Supervisor 恢复原 Checker 时发送干净的 D1 恢复信封：说明这是�
 
 - **D0 / Worker：** 施工交付前的最低程度自检，例如目标测试、构建或直接 smoke。它提供基本信心，不代替 Checker 判断。
 - **D1 / Checker：** 在与 Worker 隔离的对话和适当环境中，对当前 CELL 的约定目标进行正式检查。
-- **D2 / Supervisor：** 在所有计划 CELL 都有 D1 结果或 Supervisor 豁免后，检查 GO 结果、相互衔接、端到端路径和主要风险，确认成果合起来正确。
+- **D2 / Supervisor：** 在所有计划 CELL 都有 D1 PASS 或 Supervisor 豁免后，检查 GO 结果、相互衔接、端到端路径和主要风险，确认成果合起来正确。
 
-D1 的隔离也包含信息顺序：Worker 的 D0、判断过程和建议关注点留在 Worker 记录中；Checker 先依据原始 CELL、候选和客观工程事实形成独立判断，再核对 Worker 记录。所有计划 CELL 都有明确处理结果后，Checker用原始 Run/GO目标、最终候选、端到端入口和必要环境形成 D2 交接并激活 Supervisor。D1结果和Supervisor豁免分别记录，不把豁免改写为完成。Supervisor 先检查组合结果，再核对详细 D1、返工和豁免历史；D1 PASS不作为D2通过证明。
+D1 的隔离也包含信息顺序：Worker 的 D0、判断过程和建议关注点留在 Worker 记录中；Checker 先依据原始 CELL、候选和客观工程事实形成独立判断，再核对 Worker 记录。所有计划 CELL 都有 D1 PASS 或 Supervisor 豁免后，Checker用原始 Run/GO目标、最终候选、端到端入口和必要环境形成 D2 交接并激活 Supervisor。D1 PASS和Supervisor豁免分别记录，不把豁免改写为完成。Supervisor 先检查组合结果，再核对详细 D1、返工和豁免历史；D1 PASS不作为D2通过证明。
 
 Agent 在 Run 规划时根据项目目标、现有测试、可观察结果和相关检验 Skill 设计 D0、D1、D2。Owner 提供希望得到的结果和业务边界，不承担技术检查设计。实际检查方式可以根据进展和风险调整，并关注重复检验和资源消耗。
 
@@ -123,7 +123,7 @@ SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作�
 | 9 | `slk-record-run` | 各角色完成本轮工作、准备向下一对话传输前 |
 | 10 | `slk-rework-cell` | D1 未通过，需要组织返工 |
 | 11 | `slk-adjust-run` | CELL、模型能力、技术路线、Owner 资源授权建议或豁免值得由 Supervisor 处理 |
-| 12 | `slk-recover-communication` | 消息未送达、成员未被激活或通讯状态不明确 |
+| 12 | `slk-recover-communication` | Worker 交付候选后缺少当前 CELL 的接收证据 |
 
 这 12 个名称是实现基线。初始 CELL 规划属于 `slk-plan-run`；角色模型选择属于 `slk-select-models`；派发前的现实校准属于 `slk-dispatch-cell`；施工中的较大变化属于 `slk-adjust-run`。普通返工遇到不明根因时调用环境中适合项目的 Debug Skill，不在 SLK 内重复实现通用诊断方法。
 
@@ -132,11 +132,11 @@ SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作�
 ```mermaid
 flowchart TB
     M[small-loop-skill 路由]
-    P[plan-run: Run/GO/初始 CELL] --> MS[select-models: 三角色能力] --> S[创建 Supervisor 并交接] --> G[grill-supervisor]
+    P[plan-run: Run/GO/分层检查] --> MS[select-models: 三角色能力] --> C[plan-run: 初始 CELL] --> S[创建 Supervisor 并交接] --> G[grill-supervisor]
     G --> I[record-run: 初始化根记录] --> B[manage-team]
     B --> H[Supervisor转为非活动; Checker接管日常CELL] --> D[dispatch-cell: 派发前校准] --> E[execute-cell] --> K[check-cell]
     K -->|下一既定 CELL| D
-    K -->|全部完成，D2交接激活Supervisor| X[close-run: D2 与收尾]
+    K -->|全部计划 CELL 已 D1 PASS 或豁免| X[close-run: D2 与收尾]
 
     M --> P
     M -.复工.-> D
@@ -155,9 +155,7 @@ flowchart TB
     RP -.能力变化.-> MS
     RP --> D
 
-    D -.通讯异常.-> RC[recover-communication]
     E -.通讯异常.-> RC
-    K -.通讯异常.-> RC
     RC -.优先恢复原成员; 明确失效后接管.-> B
     X -->|D2 发现组合问题| RP
     X -.归档成员.-> B

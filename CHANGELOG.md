@@ -12,6 +12,7 @@
 - Ordered D1 and D2 evidence so Worker conclusions and detailed CELL history do not lead the independent judgment.
 - Routed generic root-cause diagnosis to existing Debug Skills instead of duplicating one inside SLK.
 - Added a situational role-model selector: stronger professional coding models for Supervisor and Checker, with a reliable Worker model that may be one capability tier lower for a suitable CELL.
+- Completed the final consistency audit: role models now precede initial CELL sizing; root-record creation and Checker readiness sit in their real startup positions; visible creation authority, Owner model choice, Worker-to-Checker recovery, and D2 readiness agree across the collection.
 - Shifted operational language toward situational recommendations and recovery paths so ordinary deviations lead back to construction.
 
 ## 2.6.0

@@ -28,6 +28,6 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 ## 后继
 
-- D1 PASS 后，Checker 更新进度；还有 CELL 时使用 `$slk-dispatch-cell` 校准并派发下一个既定 CELL。所有计划 CELL 都已经获得 D1 结果或 Supervisor 豁免时，Checker 向 Supervisor 汇报 Run 已具备 D2 条件。
+- D1 PASS 后，Checker 更新进度；还有 CELL 时使用 `$slk-dispatch-cell` 校准并派发下一个既定 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，Checker 向 Supervisor 汇报 Run 已具备 D2 条件。
 - D1 FAIL 后，Checker 使用 `$slk-rework-cell` 与 Worker 继续直接协作。
 - 需要改变 Run 方案时，请 Supervisor 使用 `$slk-adjust-run` 协助判断。

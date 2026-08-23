@@ -33,4 +33,4 @@ description: Use when a newly assigned SLK Supervisor needs to demonstrate pract
 
 ## 完成后
 
-当 Supervisor 能稳定解释这些关系并给出当前 Run 的可行处理方式时，建议进入 `$slk-manage-team` 建立 Checker 与 Worker。
+当 Supervisor 能稳定解释这些关系并给出当前 Run 的可行处理方式时，先使用 `$slk-record-run` 在项目根目录初始化本 Run 的共享记录，再使用 `$slk-manage-team`：Supervisor 创建 Checker，Checker 创建 Worker。

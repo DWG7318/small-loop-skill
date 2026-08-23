@@ -143,10 +143,82 @@ def test_select_models_matches_capability_to_each_visible_role() -> None:
         "不因偏离建议层级",
         "相应调整 CELL",
         "不擅自替换",
+        "规划阶段",
+        "施工中",
     ):
         assert marker in text
     assert "$slk-select-models" in read_skill("slk-plan-run")
     assert "$slk-select-models" in read_skill("slk-adjust-run")
+
+
+def test_startup_order_and_creation_authority_are_unambiguous() -> None:
+    main = read_skill("small-loop-skill")
+    plan = read_skill("slk-plan-run")
+    grill = read_skill("slk-grill-supervisor")
+    record = read_skill("slk-record-run")
+    manage = read_skill("slk-manage-team")
+
+    assert plan.index("$slk-select-models") < plan.index("划分为初始 CELL")
+    assert "原对话 ↔ Supervisor" in plan
+    assert "Supervisor 创建 Checker，Checker 创建 Worker" in main
+    assert "Checker 职责理解确认" in main
+    assert grill.index("$slk-record-run") < grill.index("$slk-manage-team")
+    assert "通过 Grill 后" in record
+    assert "$slk-manage-team" in record
+    assert "复用" in manage and "不重复" in manage
+    assert manage.index("Supervisor 创建 Checker") < manage.index(
+        "Checker 理解确认"
+    ) < manage.index("Checker 创建 Worker")
+    assert "Worker 不重复完整方法问答" in manage
+
+
+def test_owner_specified_models_are_not_overridden_during_rework() -> None:
+    select = read_skill("slk-select-models")
+    rework = read_skill("slk-rework-cell")
+    adjust = read_skill("slk-adjust-run")
+
+    assert "Owner 已指定" in select
+    for text in (rework, adjust):
+        assert "Owner 已指定" in text
+        assert "由 Owner 决定" in text
+    assert "返回当前调整" in select
+
+
+def test_d2_readiness_requires_d1_pass_or_supervisor_exemption() -> None:
+    check = read_skill("slk-check-cell")
+    close = read_skill("slk-close-run")
+
+    for text in (check, close):
+        assert "D1 PASS" in text
+        assert "Supervisor 豁免" in text
+    assert "获得 D1 结果或 Supervisor 豁免" not in check
+    assert "当前 D1 结果或单独列出的 Supervisor 豁免" not in close
+    assert "D1 PASS or Supervisor exemption" in close.split("---", 2)[1]
+
+
+def test_communication_recovery_routes_only_the_worker_checker_handoff() -> None:
+    main = read_skill("small-loop-skill")
+    dispatch = read_skill("slk-dispatch-cell")
+    recover = read_skill("slk-recover-communication")
+    manage = read_skill("slk-manage-team")
+
+    assert "Worker 向 Checker" in main
+    assert "$slk-manage-team" in dispatch and "恢复原 Worker" in dispatch
+    assert "真实激活" in dispatch and "后台" in dispatch
+    assert "Worker" in recover.split("---", 2)[1]
+    assert "Checker" in recover.split("---", 2)[1]
+    assert "派发、施工、D1或D2节点" not in recover
+    assert "subagent" in manage
+    assert "不作为正式成员" in manage
+
+
+def test_every_internal_skill_reference_resolves_to_the_collection() -> None:
+    import re
+
+    known = set(EXPECTED_CHILDREN)
+    for name in EXPECTED_SKILLS:
+        references = set(re.findall(r"\$((?:slk-)[a-z-]+)", read_skill(name)))
+        assert references <= known, f"{name}: {sorted(references - known)}"
 
 
 def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> None:

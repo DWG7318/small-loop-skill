@@ -11,7 +11,7 @@ description: Use when an SLK Run needs role-specific model capability choices be
 
 ## 建议依据
 
-- 先看角色职责，再看当前 CELL 难度、累积工程量、电脑配置和可用环境。
+- 先看角色职责；规划阶段参考拟施工工作的难度与范围，施工中再看当前 CELL、累积工程量、电脑配置和可用环境。
 - 以能力层级描述选择；不同平台中能力相近的模型可以替换。
 - 记录三个角色的选择、理由和可替换范围，不把一次选择冻结为整个 Run 的固定型号。
 
@@ -27,8 +27,10 @@ description: Use when an SLK Run needs role-specific model capability choices be
 
 Owner 可以直接指定 Supervisor、Checker 或 Worker 使用的模型；这种选择不违反本 Skill，也不因偏离建议层级而被判定为错误。Agent 记录 Owner 指定及其对施工能力、电脑和 CELL 大小的影响，必要时相应调整 CELL，但不擅自替换 Owner 指定的模型。
 
+Owner 已指定某个角色模型时，后续“提高一级”不自动覆盖该指定；确实值得变更时，由 Supervisor 先说明理由、影响和 CELL 调整方案，再由 Owner 决定是否改变自己的指定。
+
 ## 施工中的调整
 
 - CELL 的大小与 Worker 能力、电脑和累积工程量相互匹配，并保留余量。
-- D1 返工显示当前能力不足时，可以让 Worker 提高一级，再继续同一 CELL。
-- 角色或环境发生较大变化时，使用 `$slk-adjust-run` 重新选择并写入 Run 记录。
+- D1 返工显示当前能力不足、且 Worker 模型未由 Owner 直接指定时，可以让 Worker 提高一级，再继续同一 CELL。
+- 本 Skill 由 `$slk-adjust-run` 调用时，完成模型选择后返回当前调整，由 Supervisor 统一记录和交还施工；这样不另起一轮重复调整。

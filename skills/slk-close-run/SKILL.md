@@ -1,6 +1,6 @@
 ---
 name: slk-close-run
-description: Use when all planned SLK CELLs are accounted for and the Supervisor is ready for D2 and Run closure.
+description: Use when every planned SLK CELL has D1 PASS or Supervisor exemption and the Supervisor is ready for D2.
 ---
 
 # Close an SLK Run
@@ -22,7 +22,7 @@ description: Use when all planned SLK CELLs are accounted for and the Supervisor
 
 建议最终核对：
 
-1. 所有计划 CELL 都有明确处理结果：当前 D1 结果或单独列出的 Supervisor 豁免；
+1. 所有计划 CELL 都有明确处理结果：`D1 PASS` 或单独列出的 `Supervisor 豁免`；
 2. 每个 GO 产生了约定结果；
 3. GO 与 CELL 之间的衔接符合实际工作流；
 4. 主要端到端路径可以运行或得到足够证明；

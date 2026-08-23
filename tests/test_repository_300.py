@@ -47,6 +47,12 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text
+    assert "select role models → size initial CELLs" in english
+    assert "Supervisor creates Checker → Checker readiness" in english
+    assert "Checker creates Worker" in english
+    assert "选择角色模型 → 划分初始 CELL" in chinese
+    assert "Supervisor 创建 Checker → Checker 职责确认" in chinese
+    assert "Checker 创建 Worker" in chinese
 
 
 def test_migration_and_changelog_state_the_major_boundary() -> None:
@@ -55,6 +61,21 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
     assert "## 3.0.0" in changelog
+
+
+def test_current_design_uses_the_same_startup_d2_and_recovery_routes() -> None:
+    design = read(
+        "docs/superpowers/specs/2026-08-22-slk-lightweight-skill-collection-design.md"
+    )
+    assert design.index("plan-run: Run/GO/分层检查") < design.index(
+        "select-models: 三角色能力"
+    ) < design.index("plan-run: 初始 CELL")
+    assert "D1 PASS 或 Supervisor 豁免" in design
+    assert "全部计划 CELL 已 D1 PASS 或豁免" in design
+    assert design.count("-.通讯异常.-> RC") == 1
+    assert "Worker 交付候选后缺少当前 CELL 的接收证据" in design
+    assert "Checker 理解确认" in design
+    assert "复用已记录" in design
 
 
 def test_ci_validates_repository_tests_and_each_skill_on_windows_and_ubuntu() -> None:

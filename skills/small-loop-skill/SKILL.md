@@ -21,7 +21,7 @@ D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 �
 
 原对话与 Owner 选择 SLK，并明确 Run 目标、边界和 Owner 关心的结果。Agent 在创建 Supervisor 前结合项目整理 Run、GO、初始 CELL 与分层检查方案。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
 
-Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>.md`，再建立 Checker 与 Worker。通讯测试完成后，Supervisor 通常转为非活动状态，不在线等待日常 CELL；Checker 与 Worker 继续线性循环。重复返工、成员或通讯异常、重要计划变化、豁免以及最终 D2 交接会再次激活 Supervisor。
+Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。随后按 Supervisor 创建 Checker，Checker 创建 Worker 的关系建立成员；在 Worker 创建前完成 Checker 职责理解确认。通讯测试完成后，Supervisor 通常转为非活动状态，不在线等待日常 CELL；Checker 与 Worker 继续线性循环。重复返工、成员或通讯异常、重要计划变化、豁免以及最终 D2 交接会再次激活 Supervisor。
 
 ## 按当前情境选择指导
 
@@ -35,7 +35,7 @@ Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>
 - 各成员写入共享 Run 记录：`$slk-record-run`
 - D1 未通过后的普通返工：`$slk-rework-cell`
 - Supervisor 处理升级决策、返工路线、能力安排、Owner 授权建议或豁免：`$slk-adjust-run`
-- 消息或成员激活状态不清楚：`$slk-recover-communication`
+- Worker 向 Checker 交付后缺少当前 CELL 的接收证据：`$slk-recover-communication`
 - 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
 
 通常读取当前情境对应的指导即可；新的情况出现时，再补充相关 Skill。
