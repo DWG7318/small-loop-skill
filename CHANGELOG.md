@@ -13,6 +13,7 @@
 - Routed generic root-cause diagnosis to existing Debug Skills instead of duplicating one inside SLK.
 - Added a situational role-model selector: stronger professional coding models for Supervisor and Checker, with a reliable Worker model that may be one capability tier lower for a suitable CELL.
 - Completed the final consistency audit: role models now precede initial CELL sizing; root-record creation and Checker readiness sit in their real startup positions; visible creation authority, Owner model choice, Worker-to-Checker recovery, and D2 readiness agree across the collection.
+- Marked every companion Skill as SLK-only in both discovery metadata and its opening guidance so it is not mistaken for a standalone engineering method.
 - Shifted operational language toward situational recommendations and recovery paths so ordinary deviations lead back to construction.
 
 ## 2.6.0

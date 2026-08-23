@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "c834a6737521b3b9cd765e6509ed390759270acbcd056b0a9d7d8267c11774b6"
+      "sha256": "d8f9cbfc9cab0b2d84597ec13a92b53bcafc8048f817aaaf8972fddf59f0a088"
     },
     {
       "path": "LICENSE",
@@ -32,15 +32,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "617619aac881971839b4ad81de639aedafcd9d30919a80eda3578d4d91a6b839"
+      "sha256": "b0f8ce2bf030ffc38d02ad51420a6bd895fe830e27e9a6637d1a30ec220ecdc3"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "ce1f8e16f57b706896f0705311c5e20bc35fe8eea4a9fcb1573501e6409b512f"
+      "sha256": "c1518b4f4983b65b328a8bff9dd517bb5ccc593409a9bc766d0b4c342165b373"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "5763ca8413849ef8224252f5f8e90d52a23fd6dfb47e7d2be5c2476607538b4f"
+      "sha256": "19dd32a7c7f6291358af38393710f04780d4fec663af775c1aab930bbc27726c"
     },
     {
       "path": "VERSION",
@@ -68,7 +68,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-08-22-slk-3.0.0-lightweight-skill-collection.md",
-      "sha256": "413d6e4d122b6edac87eac7a971e3462776db4dbae1023c4205e70cf44062b49"
+      "sha256": "555872987a14b7ac6980ac8556957821729ac1c6eb7672579dde3b2c75b3734c"
     },
     {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
@@ -80,7 +80,7 @@
     },
     {
       "path": "docs/superpowers/specs/2026-08-22-slk-lightweight-skill-collection-design.md",
-      "sha256": "b29dda6ff55903fbb055ab1cb90f3e97b0673483e0a54d936d28cae806fcda38"
+      "sha256": "d6236b5abe622bf6b812942db76db625df80b75df9b65337319d5d6d5da98718"
     },
     {
       "path": "scripts/quick_validate.py",
@@ -92,39 +92,39 @@
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
-      "sha256": "7afac8ad1706402436441716f86748b57b44929e8127e5718812e5b94b8ee7d4"
+      "sha256": "4c01f368db762e002292cbee5164e06251dc06c3788239ad0c821af28be6cc0f"
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
-      "sha256": "e2477857a68d46ff95a2187691387e4492f8036970549d20c624ba56c4f6627a"
+      "sha256": "db9bca6676cfa736bd1bd7ef65bf5392ae6c1936d04f624e2e9354d5345cfc4c"
     },
     {
       "path": "skills/slk-close-run/SKILL.md",
-      "sha256": "d04d274fc330a6e9cec00f0418e282328ac752c70604b9ce125f1ac363858c1b"
+      "sha256": "744b89b7d0f65a1e52436c4a708a0761cfeab3f206e2bce24b82810ffb02fb57"
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
-      "sha256": "3bc8002f4942159c3211cdaaf60108ca4b9c257ef4000262e682ad3605e2ffb1"
+      "sha256": "891f2a35bc7d0d3a8edd3c2a2d341f9d3edbd2e73621fdd926f3a7f7e223976a"
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
-      "sha256": "3f92934c99ade5938317a97a72ed4f7a7c8f5ab55eab844ee8768bb263e922b4"
+      "sha256": "b2ebeade8ac9792b1357a3110ab3476b90f0bd2c5ef03431a8c6a3f886bb6f57"
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
-      "sha256": "380649a2e6d3c529102ca0e565f55c2edc3d01f71658a5d8a894ceb61dc0906c"
+      "sha256": "4046cb4ab14d1ca31486680ef52e63277b81a430a7eef665379fef7e82170ca5"
     },
     {
       "path": "skills/slk-manage-team/SKILL.md",
-      "sha256": "e86fe0190625be43c9fcb885f0084838bd28014fa1df0922f8723eb5711d0571"
+      "sha256": "19ad820a02d194d522cd3fd7400d689b345b82f8e549bcaa0c435d649f12f147"
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
-      "sha256": "741309053e96751e16ec3584715bf0a66a1d88c93c34b03f87cfb73bbfdbb69a"
+      "sha256": "b93737369767700950f7c043db10fa46511d939bc7486ce1d5b56a7bdceac279"
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
-      "sha256": "5dd184b5a54b7437ba2af215995aa140ab5340e8d2125a42c8b64af975f8491d"
+      "sha256": "ea5ac5d109ac1117a782430827c053803dfaf00ed35011d77dfbf61d52db5949"
     },
     {
       "path": "skills/slk-record-run/assets/SLK-RUN.template.md",
@@ -132,15 +132,15 @@
     },
     {
       "path": "skills/slk-recover-communication/SKILL.md",
-      "sha256": "fbe5cad3f8ba0ebe0c99ba83039d48fe0d73a2b9ee34d0b9a115d2ea46642c3a"
+      "sha256": "f4772aa59a5bbed76dd5768de16e29ccb38f7b11b4b1de05539844e1bd7401f3"
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
-      "sha256": "7453dc1847035bbf494e6091cdc2314feb69a8e9e77d4d003ebc49f07ba18c89"
+      "sha256": "cf5799b19b851694db736939d95126aaf0a8c30f6921bcb1862a5b8073d7d51a"
     },
     {
       "path": "skills/slk-select-models/SKILL.md",
-      "sha256": "779a450d6dc8b016b4f399d997a558a83001d4a0ff57148100a0d1866595b312"
+      "sha256": "1dbb79a78356131c75b63143228a8f25a21c3424bf1236b402b58071e4ab6793"
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
@@ -156,11 +156,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "f7b53c8807b815c45114d684f0c452fbd56d74b8fecdb4bc878a3b2ff174c7b3"
+      "sha256": "60b6775f4dc87426d8b29fdbd6bd06685e416337779a173924e1f18ed18eb5d5"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "6a9ee15fbd8f3e9697071ade666a33dced76dffe6333e21549a03e87c3680afe"
+      "sha256": "f5d3db2b716465610bf0e80ec95460ccb4ada1dfaa3a891c149815424d3d9c6c"
     }
   ]
 }

@@ -30,6 +30,8 @@ The active collection lives in [`skills/`](skills/):
 - [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) — lightweight identity and router;
 - 12 sibling Skills for planning, role-based model selection, Supervisor Grill, team lifecycle, CELL work, recording, rework, adjustment, communication recovery, and closure. Rework can call an available project-appropriate Debug Skill when root-cause diagnosis is needed.
 
+The 12 companion Skills are not standalone methods. Each applies only inside a Run that has selected Small Loop Skill (SLK) and has been routed to that situation by the main Skill or the same collection flow.
+
 Ordinary work reads the main Skill and the current situational Skill. Additional guidance is loaded when the situation changes.
 
 ## Run record

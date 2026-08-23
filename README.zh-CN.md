@@ -30,6 +30,8 @@ SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢�
 - [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) 保存轻量身份和路由；
 - 12 个同级子 Skill 分别处理 Run 与初始 CELL 规划、角色模型选择、Supervisor Grill、成员生命周期、CELL 派发与施工、记录、返工、调整、通讯恢复和收尾。返工需要根因诊断时，可以调用当前环境中适合项目的 Debug Skill。
 
+这 12 个子 Skill 不是独立工程方法，不可脱离 SLK Run 单独使用。当前 Run 已选择 Small Loop Skill（SLK），并由主 Skill 或同集合流程路由到对应情境后，才使用相应子 Skill。
+
 普通施工读取主 Skill 和当前情境对应的 Skill；情况变化时再加载相关指导。
 
 ## Run 记录

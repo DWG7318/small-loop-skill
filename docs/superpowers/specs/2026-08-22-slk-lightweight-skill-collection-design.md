@@ -103,6 +103,8 @@ CELL 规划综合考虑默认 Worker 模型、电脑配置、施工复杂度和�
 
 SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作为同级可发现 Skill 存在；“子 Skill”表示方法关系，不依赖嵌套目录自动调用。
 
+12 个子 Skill 不作为独立工程方法。每个子 Skill 的 description 先把触发范围限定为已选择 SLK 的 Run，正文标题后统一声明：本 Skill 是 Small Loop Skill（SLK）的子 Skill，不可脱离 SLK Run 单独使用；当前 Run 已选择 `$small-loop-skill`，并由 SLK 主 Skill 或同集合流程路由到当前情境，才进入该子 Skill。主 Skill 自身不添加这段子 Skill 声明。
+
 ### 7.1 正常流程 Skill
 
 | # | Skill | 主要情境 | 推荐产出或后继 |

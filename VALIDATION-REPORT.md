@@ -13,6 +13,7 @@ Branch: `feature/slk-3.0.0-lightweight`
 - D1 and D2 evidence ordering that delays lower-level conclusions until an independent judgment exists;
 - one root `SLK-RUN-<RUN-ID>.md` with per-role records;
 - one main router and 12 situational sibling Skills;
+- every companion Skill identifies itself as Small Loop Skill (SLK)-only in both discovery metadata and its opening guidance;
 - role-based model selection with stronger professional coding capability for Supervisor and Checker and a reliable, optionally one-tier-lower Worker;
 - role-model selection before initial CELL sizing, followed by dispatch-time reality checks rather than a second planning flow;
 - exact startup authority: Original creates Supervisor, Supervisor creates Checker, Checker passes role readiness and creates Worker;
@@ -31,11 +32,11 @@ Fresh local verification:
 - `python scripts/validate_repository.py`: PASS;
 - repository `scripts/quick_validate.py`: 13/13 Skill directories PASS;
 - official Skill Creator `quick_validate.py`: 13/13 PASS under UTF-8 mode;
-- `python -m pytest -q`: 40/40 PASS;
-- `python -O -m pytest -q`: 40/40 PASS with the expected pytest assertion-optimization warning;
+- `python -m pytest -q`: 41/41 PASS;
+- `python -O -m pytest -q`: 41/41 PASS with the expected pytest assertion-optimization warning;
 - active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
-- active advisory-language review: 0 flagged absolute or direct-stop expressions;
-- Skill size review: no diagnostics; main and child `SKILL.md` files are 23–61 lines;
+- active advisory-language review: 0 legacy absolute or direct-stop expressions; the Owner-approved SLK-only boundary appears in 12/12 children;
+- Skill size review: no diagnostics; main and child `SKILL.md` files are 26–64 lines;
 - repository inventory: 40 tracked files and 39 manifest-protected payload files;
 - `git diff --check`: PASS.
 

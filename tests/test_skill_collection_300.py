@@ -58,6 +58,33 @@ def test_main_routes_to_every_child_once() -> None:
     assert not (SKILLS / "slk-diagnose-defect").exists()
 
 
+def test_every_child_declares_its_slk_only_usage_boundary() -> None:
+    boundary = (
+        "> **使用边界：** 本 Skill 是 Small Loop Skill（SLK）的子 Skill，"
+        "不可脱离 SLK Run 单独使用。\n"
+        "> 适用前提是当前 Run 已选择 `$small-loop-skill`，并由 SLK 主 Skill "
+        "或同集合流程路由到本情境。"
+    )
+    for child in EXPECTED_CHILDREN:
+        text = read_skill(child)
+        frontmatter, body = text[4:].split("\n---\n", 1)
+        assert "Small Loop Skill (SLK) Run" in frontmatter, child
+        assert boundary in body, child
+        assert body.index(boundary) < body.index("## "), child
+
+    assert boundary not in read_skill("small-loop-skill")
+    design = (
+        ROOT
+        / "docs/superpowers/specs/2026-08-22-slk-lightweight-skill-collection-design.md"
+    ).read_text(encoding="utf-8")
+    plan = (
+        ROOT
+        / "docs/superpowers/plans/2026-08-22-slk-3.0.0-lightweight-skill-collection.md"
+    ).read_text(encoding="utf-8")
+    assert "不可脱离 SLK Run 单独使用" in design
+    assert "不可脱离 SLK Run 单独使用" in plan
+
+
 def test_active_skills_do_not_restore_the_legacy_topology() -> None:
     legacy = (
         "Control Conversation",

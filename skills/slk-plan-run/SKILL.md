@@ -1,9 +1,12 @@
 ---
 name: slk-plan-run
-description: Use when the Owner has chosen SLK and the serial Run needs an executable plan before Supervisor takeover.
+description: Use when an active Small Loop Skill (SLK) Run needs executable serial planning before Supervisor takeover.
 ---
 
 # Plan an SLK Run
+
+> **使用边界：** 本 Skill 是 Small Loop Skill（SLK）的子 Skill，不可脱离 SLK Run 单独使用。
+> 适用前提是当前 Run 已选择 `$small-loop-skill`，并由 SLK 主 Skill 或同集合流程路由到本情境。
 
 ## 当前目标
 

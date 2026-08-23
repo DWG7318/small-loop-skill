@@ -53,6 +53,8 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     assert "选择角色模型 → 划分初始 CELL" in chinese
     assert "Supervisor 创建 Checker → Checker 职责确认" in chinese
     assert "Checker 创建 Worker" in chinese
+    assert "not standalone methods" in english
+    assert "不可脱离 SLK Run 单独使用" in chinese
 
 
 def test_migration_and_changelog_state_the_major_boundary() -> None:
