@@ -83,6 +83,8 @@ Worker → Supervisor → Checker
 
 Worker 遇到 Checker 通讯异常时，先通过当前平台的真实对话激活操作发送完整原始交付，并在有界窗口内等待明确回执。没有接收证据时，把原交付、Checker任务ID和调用结果发送给 Supervisor；Supervisor优先恢复原Checker。缺少回执本身不证明失效，只有任务不存在、平台明确失败且无法继续或真实激活操作明确拒绝该任务时，才考虑接管Checker。
 
+Supervisor 恢复原 Checker 时发送干净的 D1 恢复信封：说明这是原任务而非新 CELL，给出 Run/GO/CELL、Worker任务ID、根记录路径，并原样附上 Worker 最初的干净 D1 交付。信封不加入 D0、Worker判断、建议关注点、返工历史、通讯故障过程或Supervisor结论。Checker先回复当前 `CELL n/N` 的接收回执，再独立执行D1并直接把结果发给Worker；Supervisor在回执出现后结束本次激活。
+
 ## 6. 检验关系
 
 - **D0 / Worker：** 施工交付前的最低程度自检，例如目标测试、构建或直接 smoke。它提供基本信心，不代替 Checker 判断。

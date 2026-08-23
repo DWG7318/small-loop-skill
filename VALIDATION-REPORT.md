@@ -29,7 +29,7 @@ Fresh local verification:
 - `python -O -m pytest -q`: 34/34 PASS with the expected pytest assertion-optimization warning;
 - active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
 - active advisory-language review: 0 flagged absolute or direct-stop expressions;
-- Skill size review: no diagnostics; main and child `SKILL.md` files are 23–50 lines;
+- Skill size review: no diagnostics; main and child `SKILL.md` files are 23–61 lines;
 - repository inventory: 40 tracked files and 39 manifest-protected payload files;
 - `git diff --check`: PASS.
 

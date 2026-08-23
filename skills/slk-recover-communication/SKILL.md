@@ -26,6 +26,28 @@ Worker → Supervisor → Checker
 
 缺少回执不等于 Checker 失效。Supervisor 核对准确任务 ID、平台状态和真实激活调用结果，优先恢复原 Checker，并再次向原任务 ID 发送完整交付。D1 仍由 Checker 完成。
 
+Supervisor 发送一份干净的 D1 恢复信封，不重新解释工程内容：
+
+```text
+恢复原 Checker 任务，不是新 CELL，也不改变原 D1 目标。
+
+收到后请先回复：
+已收到，开始检查：CELL n/N
+
+Run：<RUN-ID>
+GO：<GO-ID>
+CELL：n/N
+Worker 任务 ID：<WORKER-THREAD-ID>
+根记录：<SLK-RUN文件绝对路径>
+
+以下是 Worker 原始 D1 交付原文，请按原内容继续：
+<Worker 原始 D1 交付原文>
+```
+
+Worker 原始 D1 交付沿用 `$slk-execute-cell` 的干净输入：CELL与D1目标、候选身份和位置、客观变更范围、运行候选所需事实及回复目标。Supervisor 不加入 D0 结果、Worker 判断过程、建议关注点、返工历史或 Supervisor 自己的结论。通讯故障过程写入根记录，不进入恢复信封。
+
+Checker 回复 `已收到，开始检查：CELL n/N` 后，通讯恢复即完成。Checker 独立执行 D1，再按 `Checker → Worker` 返回 D1 结果；Supervisor 结束本次激活，不等待或参与 D1。
+
 创建接管 Checker 属于极端恢复。只有任务 ID 不存在、平台明确显示任务失败或取消且无法继续，或者真实激活操作明确返回该任务不可用时，才把原 Checker 视为明确失效，并调用 `$slk-manage-team` 建立接管 Checker。
 
 如果平台整体缺少可用的真实激活操作，保留原 Checker 和通讯故障事实；后台聊天记录不用于假装恢复，也不凭缺少回执创建接管成员。
