@@ -635,6 +635,11 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "D1 FAIL" in main and "D1 PASS" in main and "D2" in main
     assert "回执只确认交付已接收，不结束 Worker 当前 CELL 的施工" in dispatch
     assert "接收回执不结束当前 CELL 施工" in execute
+    assert "一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发" in dispatch
+    assert "命令、工具结果或中间进展不构成 CELL 交付边界" in execute
+    assert "完成整个 CELL 候选" in execute
+    for stale in ("每完成一条命令就结束", "一条命令一次激活", "把下一条命令交给 Worker"):
+        assert stale not in active
     assert "完成自己当前 Loop 节点" in manage
 
 
