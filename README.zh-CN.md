@@ -1,15 +1,15 @@
 # Small Loop Skill（SLK）
 
-当前版本：**3.0.1**
+当前版本：**3.0.2**
 
-SLK 用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。GO 与 CELL 沿一条线性路径推进。
+SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。GO 与 CELL 沿一条线性路径推进。
 
 ## 核心关系
 
 ```text
 Supervisor ↔ Checker ↔ Worker
 
-Worker D0 → Checker D1 → Supervisor D2
+CELL 派发 → Worker 施工与 D0 → 候选 → Checker 隔离 D1 → 通过/返工 → Supervisor D2
 ```
 
 ```text

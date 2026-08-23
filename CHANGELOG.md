@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.2
+
+- Defined SLK first as the linear form of Loop Engineering, with repeated CELL dispatch, construction/D0, candidate, isolated D1, PASS-or-rework, and final D2 closure.
+- Clarified that a receipt confirms delivery but does not finish the recipient's assigned Loop node, without adding roles, controls, or Skill lines.
+
 ## 3.0.1
 
 - Clarified that every role ends its current activity after dispatch, delivery, or boundary work and is reactivated only by a real message.

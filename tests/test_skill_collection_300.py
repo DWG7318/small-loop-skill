@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.1"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.2"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -630,6 +630,12 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "不读取Checker的D1过程" in recover
     assert "不读取其他成员内部状态" in manage
     assert "不跟踪下一对话" in record
+    assert "Loop Engineering 的线性形态" in main
+    assert "派发、施工与 D0、候选交付、隔离 D1" in main
+    assert "D1 FAIL" in main and "D1 PASS" in main and "D2" in main
+    assert "回执只确认交付已接收，不结束 Worker 当前 CELL 的施工" in dispatch
+    assert "接收回执不结束当前 CELL 施工" in execute
+    assert "完成自己当前 Loop 节点" in manage
 
 
 def test_wait_clarification_does_not_add_skill_lines() -> None:
