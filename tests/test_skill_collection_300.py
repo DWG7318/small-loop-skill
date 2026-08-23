@@ -138,6 +138,11 @@ def test_select_models_matches_capability_to_each_visible_role() -> None:
         "电脑",
         "可替换",
         "记录",
+        "Owner 可以直接指定",
+        "不违反本 Skill",
+        "不因偏离建议层级",
+        "相应调整 CELL",
+        "不擅自替换",
     ):
         assert marker in text
     assert "$slk-select-models" in read_skill("slk-plan-run")

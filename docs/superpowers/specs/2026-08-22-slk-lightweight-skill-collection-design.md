@@ -97,6 +97,8 @@ Agent 在 Run 规划时根据项目目标、现有测试、可观察结果和相
 
 CELL 规划综合考虑默认 Worker 模型、电脑配置、施工复杂度和检查成本，并为意外依赖、测试和返工保留余量；开工前得到的是初始估计。Checker 在每次派发和 D1 中复用实际施工、检验、返工和设备表现，持续校准后续 CELL，不另设容量检查。发现 CELL 明显过大、而原验收目标不变时，Checker 可以采用同一个简单办法：把 CELL 一分为二，形成两个串行 CELL并更新进度。同一 CELL 连续两轮 D1 返工仍未收敛时，Checker 可以请 Supervisor 综合考虑继续诊断、调整路线、在现有权限内调整能力，或把该 CELL 记录为独立豁免后继续后续施工。需要 Owner 掌握的资源时，Supervisor 先形成推荐方案和最低必要授权请求。
 
+角色模型层级是默认建议，不限制 Owner 直接指定 Supervisor、Checker 或 Worker 的实际模型。Owner 指定本身符合 SLK；Agent 记录其影响并相应调整 CELL，不擅自换回推荐型号。
+
 ## 7. Skill 集合
 
 SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作为同级可发现 Skill 存在；“子 Skill”表示方法关系，不依赖嵌套目录自动调用。
