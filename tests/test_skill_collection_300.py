@@ -453,7 +453,11 @@ def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
     for marker in (
         "Supervisor",
         "D2",
-        "全部 CELL",
+        "所有计划 CELL",
+        "明确处理结果",
+        "D1 PASS",
+        "Supervisor 豁免",
+        "不把豁免改写为完成",
         "GO",
         "衔接",
         "端到端",
@@ -471,6 +475,9 @@ def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
         "$slk-adjust-run",
     ):
         assert marker in text
+    assert "全部 CELL 完成后" not in text
+    assert "全部 CELL 完成后" not in read_skill("small-loop-skill")
+    assert "全部完成时" not in read_skill("slk-check-cell")
 
 
 def test_d2_checks_the_combined_candidate_before_detailed_history() -> None:

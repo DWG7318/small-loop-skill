@@ -7,11 +7,11 @@ description: Use when all planned SLK CELLs are accounted for and the Supervisor
 
 ## 当前目标
 
-Supervisor 判断全部成果合起来是否正确。通过后完成记录、成员归档和 Owner 结论；发现组合问题时，把工作送回最近的正常节点。
+所有计划 CELL 都有明确处理结果后，Supervisor 判断全部成果合起来是否正确。通过后完成记录、成员归档和 Owner 结论；发现组合问题时，把工作送回最近的正常节点。
 
 ## 激活与 D2 交接
 
-全部 CELL 完成后，Checker 用一条 D2 交接激活 Supervisor。初始交接聚焦原始 Run/GO 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
+所有计划 CELL 都有明确处理结果后，Checker 用一条 D2 交接激活 Supervisor。每个 CELL 的结果是 `D1 PASS` 或 `Supervisor 豁免`；两者分别记录，不把豁免改写为完成。初始交接聚焦原始 Run/GO 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
 
 ## 检查对象隔离
 
@@ -22,7 +22,7 @@ Supervisor 判断全部成果合起来是否正确。通过后完成记录、成
 
 建议最终核对：
 
-1. 全部 CELL 都有当前 D1 结果，豁免项目单独列出；
+1. 所有计划 CELL 都有明确处理结果：当前 D1 结果或单独列出的 Supervisor 豁免；
 2. 每个 GO 产生了约定结果；
 3. GO 与 CELL 之间的衔接符合实际工作流；
 4. 主要端到端路径可以运行或得到足够证明；

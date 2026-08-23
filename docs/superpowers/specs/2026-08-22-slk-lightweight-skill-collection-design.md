@@ -89,9 +89,9 @@ Supervisor 恢复原 Checker 时发送干净的 D1 恢复信封：说明这是�
 
 - **D0 / Worker：** 施工交付前的最低程度自检，例如目标测试、构建或直接 smoke。它提供基本信心，不代替 Checker 判断。
 - **D1 / Checker：** 在与 Worker 隔离的对话和适当环境中，对当前 CELL 的约定目标进行正式检查。
-- **D2 / Supervisor：** 在全部 CELL 完成后，检查 GO 结果、相互衔接、端到端路径和主要风险，确认成果合起来正确。
+- **D2 / Supervisor：** 在所有计划 CELL 都有 D1 结果或 Supervisor 豁免后，检查 GO 结果、相互衔接、端到端路径和主要风险，确认成果合起来正确。
 
-D1 的隔离也包含信息顺序：Worker 的 D0、判断过程和建议关注点留在 Worker 记录中；Checker 先依据原始 CELL、候选和客观工程事实形成独立判断，再核对 Worker 记录。全部 CELL 完成后，Checker用原始 Run/GO目标、最终候选、端到端入口和必要环境形成 D2 交接并激活 Supervisor。Supervisor 先检查组合结果，再核对详细 D1、返工和豁免历史；D1 PASS不作为D2通过证明。
+D1 的隔离也包含信息顺序：Worker 的 D0、判断过程和建议关注点留在 Worker 记录中；Checker 先依据原始 CELL、候选和客观工程事实形成独立判断，再核对 Worker 记录。所有计划 CELL 都有明确处理结果后，Checker用原始 Run/GO目标、最终候选、端到端入口和必要环境形成 D2 交接并激活 Supervisor。D1结果和Supervisor豁免分别记录，不把豁免改写为完成。Supervisor 先检查组合结果，再核对详细 D1、返工和豁免历史；D1 PASS不作为D2通过证明。
 
 Agent 在 Run 规划时根据项目目标、现有测试、可观察结果和相关检验 Skill 设计 D0、D1、D2。Owner 提供希望得到的结果和业务边界，不承担技术检查设计。实际检查方式可以根据进展和风险调整，并关注重复检验和资源消耗。
 
@@ -112,7 +112,7 @@ SLK 作为一组可组合 Skill 分发。主 Skill 与子 Skill 在安装后作�
 | 5 | `slk-dispatch-cell` | Checker 准备交付既定 CELL 时 | 派发前现实校准，以及清楚的 CELL 目标、范围和 D1 标准 |
 | 6 | `slk-execute-cell` | Worker 收到 CELL 后 | 候选成果、最低 D0、进度和风险 |
 | 7 | `slk-check-cell` | Worker 提交候选后 | D1 PASS 或带具体方向的返工意见 |
-| 8 | `slk-close-run` | 全部 CELL 完成后 | Supervisor 的 D2、最终记录、归档和 Owner 简报 |
+| 8 | `slk-close-run` | 所有计划 CELL 都有 D1 结果或 Supervisor 豁免后 | Supervisor 的 D2、最终记录、归档和 Owner 简报 |
 
 ### 7.2 按需支持 Skill
 

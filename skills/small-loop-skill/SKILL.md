@@ -36,6 +36,6 @@ Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>
 - D1 未通过后的普通返工：`$slk-rework-cell`
 - Supervisor 处理升级决策、返工路线、能力安排、Owner 授权建议或豁免：`$slk-adjust-run`
 - 消息或成员激活状态不清楚：`$slk-recover-communication`
-- 全部 CELL 完成后的 D2、归档和 Owner 结论：`$slk-close-run`
+- 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
 
 通常读取当前情境对应的指导即可；新的情况出现时，再补充相关 Skill。
