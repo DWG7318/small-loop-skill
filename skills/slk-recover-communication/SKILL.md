@@ -16,8 +16,8 @@ description: Use when an active Small Loop Skill (SLK) Run has a Worker candidat
 
 1. 确认准确的 Checker 任务 ID，并调用当前平台能够继续该对话的真实激活操作；Codex Desktop 使用 `send_message_to_thread`。读取或写入后台聊天记录只说明记录存在，不作为激活。
 2. 激活内容保留同一份完整原始交付，包括 Run、GO、`CELL n/N`、候选身份和必要入口。
-3. Checker 对当前 CELL 的明确回执，或者本次激活后新产生且对应当前 CELL 的工作状态变化，才构成接收证据。激活调用成功本身不等于已经接收。
-4. 建议使用约两分钟的有界确认窗口；没有收到接收证据时，Worker 通过同样的真实激活操作把原始交付、Checker任务ID和调用结果交给 Supervisor。
+3. Checker 对当前 CELL 的明确回执才构成接收证据；任务状态变化和激活调用成功本身都不等于已经接收。
+4. Worker 发送后结束当前活动，由 Checker 回执异步重新激活；平台明确返回不可用，或 Worker 后来被其他真实消息重新激活仍未见当前 CELL 回执时，再用真实激活操作把原始交付、Checker任务ID和调用结果交给 Supervisor。
 
 应急路径保持为：
 
@@ -49,7 +49,7 @@ Worker 任务 ID：<WORKER-THREAD-ID>
 
 Worker 原始 D1 交付沿用 `$slk-execute-cell` 的干净输入：CELL与D1目标、候选身份和位置、客观变更范围、运行候选所需事实及回复目标。Supervisor 不加入 D0 结果、Worker 判断过程、建议关注点、返工历史或 Supervisor 自己的结论。通讯故障过程写入根记录，不进入恢复信封。
 
-Checker 回复 `已收到，开始检查：CELL n/N` 后，通讯恢复即完成。Checker 独立执行 D1，再按 `Checker → Worker` 返回 D1 结果；Supervisor 结束本次激活，不等待或参与 D1。
+Checker 回复 `已收到，开始检查：CELL n/N` 后，通讯恢复即完成。Checker 独立执行 D1，再按 `Checker → Worker` 返回 D1 结果；Supervisor 结束本次激活，不读取Checker的D1过程。
 
 创建接管 Checker 属于极端恢复。只有任务 ID 不存在、平台明确显示任务失败或取消且无法继续，或者真实激活操作明确返回该任务不可用时，才把原 Checker 视为明确失效，并调用 `$slk-manage-team` 建立接管 Checker。
 

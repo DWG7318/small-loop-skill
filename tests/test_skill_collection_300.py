@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.1"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -449,7 +449,7 @@ def test_supervisor_is_event_activated_not_a_daily_cell_controller() -> None:
         "Supervisor 记录计划变化、GO 进展",
     ):
         assert stale not in active
-    for marker in ("按需激活", "日常 CELL", "不在线等待"):
+    for marker in ("按需激活", "日常 CELL", "结束当前活动", "wait_threads"):
         assert marker in main
     assert "Checker 记录" in record and "GO 进度" in record
     assert "Supervisor 仅在被激活时记录" in record
@@ -597,3 +597,56 @@ def test_d2_checks_the_combined_candidate_before_detailed_history() -> None:
         "D1 PASS 不作为 D2 通过证明",
     ):
         assert marker in text
+
+
+def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
+    main = read_skill("small-loop-skill")
+    dispatch = read_skill("slk-dispatch-cell")
+    execute = read_skill("slk-execute-cell")
+    recover = read_skill("slk-recover-communication")
+    manage = read_skill("slk-manage-team")
+    record = read_skill("slk-record-run")
+    active = "\n".join(read_skill(name) for name in EXPECTED_SKILLS)
+
+    for stale in (
+        "等待候选交付",
+        "本次激活后新出现的施工状态",
+        "工作状态变化，才构成接收证据",
+        "有界确认窗口",
+        "不在线等待",
+    ):
+        assert stale not in active
+
+    for marker in ("不使用`wait_threads`", "结束当前活动", "真实消息重新激活"):
+        assert marker in main
+    assert "明确回执说明交付已接收" in dispatch
+    assert "不读取Worker施工状态" in dispatch
+    assert "候选交付重新激活Checker" in dispatch
+    assert "发送后结束本轮Worker工作" in execute
+    assert "不读取Checker状态" in execute
+    assert "异步重新激活Worker" in execute
+    assert "发送后结束当前活动" in recover
+    assert "平台明确返回不可用" in recover
+    assert "不读取Checker的D1过程" in recover
+    assert "不读取其他成员内部状态" in manage
+    assert "不跟踪下一对话" in record
+
+
+def test_wait_clarification_does_not_add_skill_lines() -> None:
+    expected = {
+        "slk-adjust-run": 40,
+        "slk-check-cell": 36,
+        "slk-close-run": 53,
+        "slk-dispatch-cell": 44,
+        "slk-execute-cell": 30,
+        "slk-grill-supervisor": 39,
+        "slk-manage-team": 52,
+        "slk-plan-run": 35,
+        "slk-record-run": 36,
+        "slk-recover-communication": 64,
+        "slk-rework-cell": 26,
+        "slk-select-models": 39,
+        "small-loop-skill": 41,
+    }
+    actual = {name: len(read_skill(name).splitlines()) for name in EXPECTED_SKILLS}
+    assert actual == expected

@@ -1,8 +1,8 @@
-# Validation Report — SLK 3.0.0 Candidate
+# Validation Report — SLK 3.0.1 Candidate
 
 Date: 2026-08-23
 
-Branch: `feature/slk-3.0.0-lightweight`
+Branch: `fix/slk-3.0.1-no-wait`
 
 ## Design baseline
 
@@ -32,8 +32,8 @@ Fresh local verification:
 - `python scripts/validate_repository.py`: PASS;
 - repository `scripts/quick_validate.py`: 13/13 Skill directories PASS;
 - official Skill Creator `quick_validate.py`: 13/13 PASS under UTF-8 mode;
-- `python -m pytest -q`: 41/41 PASS;
-- `python -O -m pytest -q`: 41/41 PASS with the expected pytest assertion-optimization warning;
+- `python -m pytest -q`: 43/43 PASS;
+- `python -O -m pytest -q`: 43/43 PASS with the expected pytest assertion-optimization warning;
 - active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
 - active advisory-language review: 0 legacy absolute or direct-stop expressions; the Owner-approved SLK-only boundary appears in 12/12 children;
 - Skill size review: no diagnostics; main and child `SKILL.md` files are 26–64 lines;

@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **3.0.0**
+Current version: **3.0.1**
 
 SLK guides one bounded small or medium engineering Run, or one relatively independent small/medium scope inside a larger project. GO and CELL work follow one serial path.
 

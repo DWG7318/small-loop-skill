@@ -29,7 +29,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 正式成员对应项目任务列表中的可见对话，Owner 能够看到并联系。内部 subagent、隐藏执行或文字中的角色声明不作为正式成员，也不替代上述创建关系与通讯测试。
 
-成员组与通讯通道建立后，Supervisor 把日常 CELL 循环交给 Checker，通常转为非活动状态，不在线等待或接收逐 CELL 汇报。需要上级协助或最终 D2 时，再由 Checker 或应急路径激活。
+成员组与通讯通道建立后，Supervisor 把日常 CELL 循环交给 Checker。任何角色完成派发、交付或边界处理后结束当前活动，不使用`wait_threads`也不读取其他成员内部状态；下一条真实消息按需激活。Supervisor 不接收逐 CELL 汇报，需要上级协助或最终 D2 时再由 Checker 或应急路径激活。
 
 ## 恢复或接管
 

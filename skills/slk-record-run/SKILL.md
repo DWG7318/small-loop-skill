@@ -33,4 +33,4 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 ## 工作顺序
 
-每次角色行动的倒数第二项建议写入自己的记录，最后一项把结果传输给下一对话。完成传输后结束本轮工作。
+每次角色行动的倒数第二项建议写入自己的记录，最后一项把结果传输给下一对话。完成传输后结束本轮工作，不跟踪下一对话；后续由真实消息按需重新激活。

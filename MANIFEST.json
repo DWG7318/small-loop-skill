@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill Collection",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "skill_count": 13,
   "excludes": [
     "MANIFEST.json"
@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "d8f9cbfc9cab0b2d84597ec13a92b53bcafc8048f817aaaf8972fddf59f0a088"
+      "sha256": "449c67d3d41428a4787d2b0f83b5a18e8369e3e069be2d67c69a26edfdd324ea"
     },
     {
       "path": "LICENSE",
@@ -32,19 +32,19 @@
     },
     {
       "path": "README.md",
-      "sha256": "b0f8ce2bf030ffc38d02ad51420a6bd895fe830e27e9a6637d1a30ec220ecdc3"
+      "sha256": "fdc4a921c559c0d579e4558ac49fb9c48a1381acb5345ee3692c22b4db502d3d"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "c1518b4f4983b65b328a8bff9dd517bb5ccc593409a9bc766d0b4c342165b373"
+      "sha256": "2c0799b09e366845588c82b0afdb674dc36ab72f3229f10406d0a396de5f4049"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "19dd32a7c7f6291358af38393710f04780d4fec663af775c1aab930bbc27726c"
+      "sha256": "9382060980d3863c85d2e94614337948692b8a3796cd27a1f5e219882280c17a"
     },
     {
       "path": "VERSION",
-      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
+      "sha256": "06e3fe4a7a1884d20d81cc7065ca8cfd4c394ec602c4d180ddc39bbd4f7da521"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -88,7 +88,7 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "9545a500be88d4f49b2c41ac5ac7d15d9a79b7567ed4e88c06ea63ef6159aad0"
+      "sha256": "4e572ab80224a9de057938bfd4229b4166540efba53059581ff9fe548cdac745"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -104,19 +104,19 @@
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
-      "sha256": "891f2a35bc7d0d3a8edd3c2a2d341f9d3edbd2e73621fdd926f3a7f7e223976a"
+      "sha256": "ccda668beeb71687da26e9fb2d16c95fede29f1522f43b1bfc9382c44305a389"
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
-      "sha256": "b2ebeade8ac9792b1357a3110ab3476b90f0bd2c5ef03431a8c6a3f886bb6f57"
+      "sha256": "bea8dda50aed3190e3c2cc8e88d45fa04254712644d9a9ed24f2f2f4d1ef88c0"
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
-      "sha256": "4046cb4ab14d1ca31486680ef52e63277b81a430a7eef665379fef7e82170ca5"
+      "sha256": "b20387f97bb42705489dc06b11edee855358ac2ef4b00c3a2029adbdbb9f80b8"
     },
     {
       "path": "skills/slk-manage-team/SKILL.md",
-      "sha256": "19ad820a02d194d522cd3fd7400d689b345b82f8e549bcaa0c435d649f12f147"
+      "sha256": "518bb985c4c49292096d7a9fbbc918b8e7cc718166a13219cb5311253fbfea3f"
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
@@ -124,7 +124,7 @@
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
-      "sha256": "ea5ac5d109ac1117a782430827c053803dfaf00ed35011d77dfbf61d52db5949"
+      "sha256": "ebb9fa416b86a2520f5ea5e2b2dd4422a820e72c6454bcd764210a151df72dd8"
     },
     {
       "path": "skills/slk-record-run/assets/SLK-RUN.template.md",
@@ -132,7 +132,7 @@
     },
     {
       "path": "skills/slk-recover-communication/SKILL.md",
-      "sha256": "f4772aa59a5bbed76dd5768de16e29ccb38f7b11b4b1de05539844e1bd7401f3"
+      "sha256": "9a9b69e3285c203801105a167d722f45711f9018b29310fed6050fb8d42ac23c"
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
@@ -144,7 +144,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "900c1050aaf9e912e526e4c3e1ecb1fc7492b465df8d1f486554628cfdf260ef"
+      "sha256": "3a459f3eb86de3ca4c23aa34e9f94b7d975998c4408a6562f8f18c7d91dcfda7"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -156,11 +156,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "60b6775f4dc87426d8b29fdbd6bd06685e416337779a173924e1f18ed18eb5d5"
+      "sha256": "dc93732f7d929f6c69bcc27468f391d30008d95b964bbfbfc3d8242b4ed5beac"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "f5d3db2b716465610bf0e80ec95460ccb4ada1dfaa3a891c149815424d3d9c6c"
+      "sha256": "bf43b145e0fa110e26bdf718ecceda2ed2533ff07ee9ff491740dba93bcff78d"
     }
   ]
 }

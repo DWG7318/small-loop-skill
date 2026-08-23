@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.1
+
+- Clarified that every role ends its current activity after dispatch, delivery, or boundary work and is reactivated only by a real message.
+- Removed ambiguous progress-state and bounded-wait wording that could encourage `wait_threads` monitoring and contaminate later D1 or D2 judgment.
+
 ## 3.0.0
 
 - Reframed SLK as one lightweight router plus 12 situational sibling Skills.
