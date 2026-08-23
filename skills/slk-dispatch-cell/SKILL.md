@@ -33,7 +33,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 ## 交付方式
 
-Checker 使用能够继续 Worker 对话的真实激活操作发送完整 CELL。Worker 对当前 CELL 的明确回执说明交付已接收；回执只确认交付已接收，不结束 Worker 当前 CELL 的施工。文字只出现在后台记录中不构成接收证据。Checker 收到回执后结束当前活动，不使用`wait_threads`也不读取Worker施工状态，随后由候选交付重新激活Checker。这里传递施工目标，不把 Checker 的 D1 判断提前交给 Worker。
+Checker 使用能够继续 Worker 对话的真实激活操作一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发；交付的是完整目标、边界和验收事实，不是让 Worker 每完成局部动作就结束。Worker 对当前 CELL 的明确回执说明交付已接收；回执只确认交付已接收，不结束 Worker 当前 CELL 的施工。文字只出现在后台记录中不构成接收证据。Checker 收到回执后结束当前活动，不使用`wait_threads`也不读取Worker施工状态，随后由候选交付重新激活Checker。这里传递施工目标，不把 Checker 的 D1 判断提前交给 Worker。
 
 真实激活操作明确报告 Worker 任务不可用时，Checker 可以使用 `$slk-manage-team` 优先恢复原 Worker；缺少回复本身不表示需要更换 Worker。
 
