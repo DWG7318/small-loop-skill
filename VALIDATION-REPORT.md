@@ -1,8 +1,8 @@
-# Validation Report — SLK 3.0.3 Candidate
+# Validation Report — SLK 3.0.4 Candidate
 
-Date: 2026-08-23
+Date: 2026-09-10
 
-Branch: `feature/slk-3.0.3-cell-continuity`
+Branch: `release/slk-3.0.4-cell-sizing`
 
 ## Design baseline
 
@@ -26,6 +26,7 @@ Branch: `feature/slk-3.0.3-cell-continuity`
 - guidance oriented toward recovery and continued construction.
 - one Checker dispatch carries the complete CELL rather than a command queue;
 - Worker commands, tool results, and intermediate progress remain inside that CELL until complete candidate delivery, a real blocker, or necessary clarification.
+- later CELLs, especially those that join or fuse earlier work, retain more planning headroom and are split smaller when practical.
 
 ## Verification status
 
@@ -42,7 +43,7 @@ Fresh local verification:
 - repository inventory: 42 tracked files and 41 manifest-protected payload files;
 - `git diff --check`: PASS.
 
-The 3.0.3 candidate preserves the same 13-Skill collection and Run-record template; its release Manifest is regenerated from the exact repository bytes after the continuity clarification.
+The 3.0.4 candidate preserves the same 13-Skill collection and Run-record template; its release Manifest is regenerated from the exact repository bytes after the CELL-sizing clarification.
 
 The 2.x active root, mirrors, contracts, templates, runtime validators and old tests were removed from the 3.0 branch after replacement coverage passed. Git history and the `v2.6.0` tag preserve the previous files.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.4
+
+- Clarified CELL sizing so later CELLs, especially those that join or fuse earlier work, normally retain more headroom and are split smaller when practical.
+
 ## 3.0.3
 
 - Clarified that one Checker dispatch carries one complete CELL and is not a command queue.

@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.3"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.4"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -148,6 +148,9 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
     assert "与 Owner 敲定 D0" not in text
     assert "推演" not in text
     assert "模拟" not in text
+    assert "越靠后的 CELL" in text
+    assert "衔接或融合工作的 CELL" in text
+    assert "在可行时拆得更小" in text
 
 
 def test_select_models_matches_capability_to_each_visible_role() -> None:
