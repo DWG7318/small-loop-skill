@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.4"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.5"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -151,6 +151,35 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
     assert "越靠后的 CELL" in text
     assert "衔接或融合工作的 CELL" in text
     assert "在可行时拆得更小" in text
+
+
+def test_plan_run_keeps_inspection_out_of_the_cell_construction_plan() -> None:
+    step = next(
+        line for line in read_skill("slk-plan-run").splitlines() if line.startswith("4. ")
+    )
+    for marker in ("D0", "D1", "D2", "检查本身", "独立 CELL", "检查发现", "工程工作"):
+        assert marker in step
+    assert step.index("D0") < step.index("D1") < step.index("D2") < step.index("检查本身")
+
+
+def test_plan_run_reuses_existing_work_before_sizing_minimum_construction() -> None:
+    text = read_skill("slk-plan-run")
+    step = next(line for line in text.splitlines() if line.startswith("3. "))
+    for marker in (
+        "已完成或部分完成项目",
+        "识别",
+        "保留",
+        "复用",
+        "合理最小施工",
+        "当前目标",
+        "代码改动",
+        "重复施工",
+        "无关工作",
+        "全局重构",
+    ):
+        assert marker in step
+    assert "所有项目" not in step
+    assert text.index("合理最小施工") < text.index("划分为初始 CELL")
 
 
 def test_select_models_matches_capability_to_each_visible_role() -> None:

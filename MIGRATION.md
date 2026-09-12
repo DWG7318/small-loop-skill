@@ -28,3 +28,7 @@ Create `SLK-RUN-<RUN-ID>.md` in the project root from the 3.0 template. Each rol
 ## Recovery
 
 The `v2.6.0` tag and Release preserve the previous repository and install tree. Choosing 3.0.0 installs the Skill collection as sibling directories and leaves the historical release available.
+
+## 3.0.5 planning clarification
+
+Runs adopting 3.0.5 keep D0, D1, and D2 as inspection layers rather than adding inspection-only CELLs. For midstream adoption into completed or partly completed work, re-plan only the still-needed construction: preserve and reuse completed results, and size the route, scope, and engineering activities needed to reach the current target reliably. Findings enter the CELL plan only when they require implementation work.

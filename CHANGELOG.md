@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.5
+
+- Kept D0, D1, and D2 as layered inspection and excluded inspection-only CELLs from the construction plan; only implementation work required by findings becomes CELL construction.
+- Added midstream adoption guidance that preserves and reuses completed work, then plans the reasonable minimum construction needed to reach the current target without duplicate work, premature unrelated work, or unnecessary global refactoring.
+
 ## 3.0.4
 
 - Clarified CELL sizing so later CELLs, especially those that join or fuse earlier work, normally retain more headroom and are split smaller when practical.
