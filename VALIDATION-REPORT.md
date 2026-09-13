@@ -1,8 +1,8 @@
-# Validation Report — SLK 3.0.5 Candidate
+# Validation Report — SLK 3.0.6 Candidate
 
-Date: 2026-09-13
+Date: 2026-09-14
 
-Branch: `feature/slk-3.0.5-minimal-construction`
+Branch: `feature/slk-3.0.6-prompt-repair`
 
 ## Design baseline
 
@@ -33,6 +33,11 @@ Branch: `feature/slk-3.0.5-minimal-construction`
 - checking-tool/environment failures are distinct from product defects; insufficient evidence remains unproved rather than PASS;
 - rework and D2 reuse objective evidence only while applicable to the candidate, environment and risks, without inheriting lower-level PASS conclusions;
 - root history preserves failures, rework and exemptions as concise facts and evidence references; the duplicate D2 checklist is removed.
+- nine affected Skills pair corrected primary guidance with one compact, independent negative-prompt section, without another workflow or universal stop gate;
+- important Supervisor activation failures, decisions and unexecuted operations are recorded before further adjustment can overwrite necessary evidence; this is not daily progress monitoring;
+- local D0 draft attempts remain distinct from Worker rework after Checker D1 FAIL;
+- complete CELL dispatch ends its activation; asynchronous receipt confirms delivery and ends that receipt node, while candidate delivery separately activates isolated D1;
+- unaffected, still-valid completed work is retained during rework, without obstructing necessary repairs to affected work.
 
 ## Verification status
 
@@ -41,20 +46,20 @@ Fresh local verification:
 - `python scripts/validate_repository.py`: PASS;
 - repository `scripts/quick_validate.py`: 13/13 Skill directories PASS;
 - official Skill Creator `quick_validate.py`: 13/13 PASS under UTF-8 mode;
-- focused planning semantics: 2/2 tests failed against the 3.0.4 planning text, then 3/3 plan-run tests PASS after the patch;
-- focused detection wording regressions: 5/5 failed before the substitutions and 5/5 PASS after them; these check guidance, not agent-runtime behavior;
-- isolated decision scenarios: 4/4 before and 4/4 after the patch. The baseline agent already chose proportionate actions but identified missing explicit guidance; the revised agent cited the new guidance, rejected false PASS with missing evidence, and retained real authentication-defect rework. This bounded sample does not guarantee future agent compliance;
-- `python -m pytest -q`: 50/50 PASS;
+- current-version and three new prompt/record regressions: four expected failures before the 3.0.6 changes, then PASS; these check repository guidance, not runtime compliance;
+- isolated decision scenarios: seven cases against published 3.0.5 guidance and seven against revised guidance. The baseline agent already chose largely proportionate actions; it was not an observed seven-case behavioral failure. The revised agent explicitly distinguished receipt/candidate, D0/D1, unexecuted work, missing evidence and real defects. A separate revised dispatch scenario confirmed send-and-end, asynchronous receipt-and-end, and candidate-activated D1. This bounded sample does not guarantee future agent compliance;
+- independent review identified one overbroad rework reminder; primary and negative text were narrowed to unaffected, still-valid completed work, preserving necessary repairs;
+- `python -m pytest -q`: 53/53 PASS;
 - active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
-- active advisory-language review: 0 legacy absolute or direct-stop expressions; the Owner-approved SLK-only boundary appears in 12/12 children;
-- Skill size review: no diagnostics; main and child `SKILL.md` files are 26–64 lines, 526 combined versus 535 before this detection patch;
+- active language review: the independent negative sections deliberately use direct “不要…” reminders requested by Owner; they clarify known misuse, not a second workflow, new approval or stop policy. The SLK-only boundary remains in 12/12 children;
+- Skill size review: main and child `SKILL.md` files are 30–64 lines, 558 combined versus 526 in published 3.0.5. The recording Skill remains 36 lines (no increase); nine affected Skills have one negative chapter each, and the other four Skills are unchanged;
 - repository inventory: 43 tracked files and 42 manifest-protected payload files;
 - `git diff --check`: PASS.
 
-The 3.0.5 candidate preserves the same 13-Skill collection and Run-record template; its release Manifest is regenerated from the exact repository bytes after the planning and detection clarifications. No runtime, eval framework, project checking system or LCgpu product changes are included.
+The 3.0.6 candidate preserves the same 13-Skill collection and Run-record template; its Manifest is regenerated from the exact final repository bytes. The 3.0.5 inspection-load reduction remains intact. No runtime, eval framework, Temporal dependency, project checking system, additional role/inspection layer or LCgpu product change is included.
 
 The 2.x active root, mirrors, contracts, templates, runtime validators and old tests were removed from the 3.0 branch after replacement coverage passed. Git history and the `v2.6.0` tag preserve the previous files.
 
 ## Historical boundary
 
-The `v2.6.0` tag resolves to `fa75bcf1c0819c8499d3b6c4ee9ec251dae62ae5` and remains the recovery source for the previous topology and contracts. This candidate has not changed remote branches, tags, Releases, or global installation.
+The previously recorded `v2.6.0` recovery commit is `fa75bcf1c0819c8499d3b6c4ee9ec251dae62ae5`; this Cell did not re-query or change that historical release. The baseline is published 3.0.5 at `6375d72d07fd1e5f817aa97b2f446996e706c0cc`. This candidate has not merged main, changed remote branches/tags/Releases, run current 3.0.6 CI, or updated global installation. Local validation is not a release claim.

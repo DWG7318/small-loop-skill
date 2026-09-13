@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.5"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.6"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -222,6 +222,46 @@ def test_recording_keeps_failure_history_without_recursive_proof_materials() -> 
     record = read_skill("slk-record-run")
     for marker in ("错误", "返工", "豁免", "摘要", "路径", "当前节点", "证明材料"):
         assert marker in record
+
+
+def test_known_misreadings_have_independent_negative_only_chapters() -> None:
+    affected = (
+        "small-loop-skill", "slk-plan-run", "slk-manage-team",
+        "slk-dispatch-cell", "slk-execute-cell", "slk-check-cell",
+        "slk-record-run", "slk-rework-cell", "slk-close-run",
+    )
+    for name in affected:
+        text = read_skill(name)
+        assert text.count("\n## 负面提示词\n\n") == 1, name
+        section = text.split("\n## 负面提示词\n\n", 1)[1].split("\n## ", 1)[0]
+        reminders = [line for line in section.splitlines() if line.strip()]
+        assert 1 <= len(reminders) <= 2, name
+        assert all(line.startswith("- 不要") for line in reminders), name
+        assert "释义：" not in section and "不要误解为" not in section, name
+        assert "建议" not in section and "这里指" not in section, name
+
+
+def test_supervisor_records_before_evidence_is_overwritten_without_becoming_patrol() -> None:
+    record = read_skill("slk-record-run")
+    positive = record.split("\n## 负面提示词\n\n", 1)[0]
+    assert "继续调整前及时追加" in positive
+    assert "关键失败" in positive and "未执行事项" in positive
+    assert "保留可能被后续操作覆盖的必要证据" in positive
+    assert "释义：" not in record
+    assert "不要等到最后交接才补写" in record
+    assert "不要把简要记录扩成逐命令审计" in record
+    assert "不要为了记录而全程盯着成员" in record
+    assert len(record.splitlines()) <= 37
+
+
+def test_local_d0_attempts_are_distinct_from_checker_d1_rework() -> None:
+    record = read_skill("slk-record-run")
+    rework = read_skill("slk-rework-cell")
+    assert "本地 D0 尝试" in record
+    assert "Checker 的 D1 FAIL" in rework
+    assert "不要把 D0 草稿自修或 Checker 自建检查器故障计入 Worker 的 D1 返工次数" in rework
+    assert "保留未受影响且仍有效的已完成工作" in rework
+    assert "重复施工未受影响且仍有效的已完成工作" in rework
 
 
 def test_select_models_matches_capability_to_each_visible_role() -> None:
@@ -526,7 +566,7 @@ def test_supervisor_is_event_activated_not_a_daily_cell_controller() -> None:
     for marker in ("按需激活", "日常 CELL", "结束当前活动", "wait_threads"):
         assert marker in main
     assert "Checker 记录" in record and "GO 进度" in record
-    assert "Supervisor 仅在被激活时记录" in record
+    assert "Supervisor 仅在被激活时记录" in record and "继续调整前及时追加" in record
     assert "按需激活" in grill
 
 
@@ -693,7 +733,7 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
 
     for marker in ("不使用`wait_threads`", "结束当前活动", "真实消息重新激活"):
         assert marker in main
-    assert "明确回执说明交付已接收" in dispatch
+    assert "明确回执说明交付已接收" in dispatch and "发出完整 CELL 后结束本次激活" in dispatch
     assert "不读取Worker施工状态" in dispatch
     assert "候选交付重新激活Checker" in dispatch
     assert "发送后结束本轮Worker工作" in execute
@@ -720,18 +760,18 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
 def test_wait_clarification_does_not_add_skill_lines() -> None:
     expected = {
         "slk-adjust-run": 40,
-        "slk-check-cell": 36,
-        "slk-close-run": 44,
-        "slk-dispatch-cell": 44,
-        "slk-execute-cell": 30,
+        "slk-check-cell": 40,
+        "slk-close-run": 48,
+        "slk-dispatch-cell": 48,
+        "slk-execute-cell": 34,
         "slk-grill-supervisor": 39,
-        "slk-manage-team": 52,
-        "slk-plan-run": 35,
+        "slk-manage-team": 56,
+        "slk-plan-run": 39,
         "slk-record-run": 36,
         "slk-recover-communication": 64,
-        "slk-rework-cell": 26,
+        "slk-rework-cell": 30,
         "slk-select-models": 39,
-        "small-loop-skill": 41,
+        "small-loop-skill": 45,
     }
     actual = {name: len(read_skill(name).splitlines()) for name in EXPECTED_SKILLS}
     assert actual == expected

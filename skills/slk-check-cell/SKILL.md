@@ -34,3 +34,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 - D1 PASS 后，Checker 更新进度；还有 CELL 时使用 `$slk-dispatch-cell` 校准并派发下一个既定 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，Checker 向 Supervisor 汇报 Run 已具备 D2 条件。
 - D1 FAIL 后，Checker 使用 `$slk-rework-cell` 与 Worker 继续直接协作。
 - 需要改变 Run 方案时，请 Supervisor 使用 `$slk-adjust-run` 协助判断。
+
+## 负面提示词
+
+- 不要让 D0 结论或 Worker 判断引导初始 D1，也不要把对话隔离扩成每个 CELL 都新建验证环境；不要为检查器误报递归扩建证明材料，不要把工具故障直接判成产品失败，也不要以一般测试通过掩盖真实缺陷或把证据不足写成 PASS。

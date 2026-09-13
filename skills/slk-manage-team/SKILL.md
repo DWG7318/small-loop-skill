@@ -45,8 +45,12 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 ## 收尾归档
 
-D2 通过且最终记录完整后，建议先归档 Worker，再归档 Checker。归档结果结合准确任务 ID 和任务状态确认。Supervisor 继续保留，方便 Owner 后续查询。
+D2 通过且最终记录完整后，建议按准确任务 ID 先真实归档 Worker、再真实归档 Checker，以返回结果和归档状态确认；失败或未确认如实记录。Supervisor 继续保留，方便 Owner 后续查询。
 
 ## 完成后
 
 建立或恢复完成后，日常工作回到 Checker 与 Worker 的中断前节点，Supervisor 结束本次激活；收尾归档完成后，把结果交还 `$slk-close-run`。
+
+## 负面提示词
+
+- 不要把内部 subagent 或文字中的角色当成项目可见成员；不要只凭发出操作便声称创建、恢复或归档已完成；不要凭暂时无回复更换成员，也不要为防遗漏让 Supervisor 全程盯成员施工。

@@ -33,3 +33,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs executable seri
 ## 完成后
 
 原对话可以据此创建 Supervisor，完成原对话 ↔ Supervisor 的双向通讯测试并交接。Supervisor 接着使用 `$slk-grill-supervisor` 确认自己已经理解方法和当前 Run。
+
+## 负面提示词
+
+- 不要把检查本身列成施工 CELL，或先搭大型检测体系才开工；不要借接手已完成或部分完成项目默认展开无关全局重构，也不要把“合理最小施工”缩成最小代码 diff；不要把初始 CELL 容量估计冻结成后续不能校准的定额。

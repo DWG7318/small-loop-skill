@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.6
+
+- Added one compact, independent negative-prompt section to each of nine Skills with demonstrated misreadings, using direct “Do not…” reminders rather than inline explanatory notes or a second workflow.
+- Paired prompt maintenance corrections with corresponding negative reminders, while preserving the complete-CELL Loop, role ownership, isolation, proportionate inspection and minimum-construction guidance from 3.0.5.
+- Corrected Supervisor recording timing: preserve important activation facts and volatile failure evidence before further adjustment, then finish the record before handoff; no daily member monitoring or per-command audit is added.
+- Distinguished local D0 draft attempts from Worker D1 rework, and real creation/archive results from declarations or submitted operations; unexecuted work remains unexecuted, not failed or proved absent.
+- Retained all 13 Skills and the existing root-record template. The recording Skill remains 36 lines, unchanged from released 3.0.5; no eval platform, Temporal runtime, extra role, inspection layer or authorization gate is introduced.
+
 ## 3.0.5
 
 - Focused D0, D1 and D2 on proportionate product evidence through existing entrances or direct operation rather than building a checking system before work; genuine uncovered risks still require checks and insufficient evidence is not PASS.

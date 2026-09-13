@@ -39,3 +39,7 @@ Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>
 - 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
 
 通常读取当前情境对应的指导即可；新的情况出现时，再补充相关 Skill。
+
+## 负面提示词
+
+- 不要把 SLK 当成逐条命令队列或常驻盯工流程；不要把 Checker 的 D1 交给 Supervisor；不要把接收回执或局部结果当成 CELL 完工，不要把豁免写成 D1 PASS，也不要用 `wait_threads` 或读取成员施工状态代替真实交接。
