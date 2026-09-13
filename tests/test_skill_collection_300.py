@@ -182,6 +182,48 @@ def test_plan_run_reuses_existing_work_before_sizing_minimum_construction() -> N
     assert text.index("合理最小施工") < text.index("划分为初始 CELL")
 
 
+def test_check_planning_prefers_product_evidence_not_a_checking_project() -> None:
+    plan = read_skill("slk-plan-run")
+    check = read_skill("slk-check-cell")
+    for text in (plan, check):
+        assert "现有" in text and "直接" in text
+        assert "检查体系" in text
+    assert "隔离不等于" in check
+    assert "真实未覆盖风险" in check
+
+
+def test_checker_separates_product_failure_from_checking_failures() -> None:
+    check = read_skill("slk-check-cell")
+    assert "检查工具或环境故障" in check
+    assert "产品缺陷" in check
+    assert "未证明" in check
+    assert "不写为 PASS" in check
+    assert "Supervisor" in check
+    assert "D1 FAIL：CELL n/N" in check
+
+
+def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
+    execute = read_skill("slk-execute-cell")
+    rework = read_skill("slk-rework-cell")
+    assert "不提前重复 D1/D2" in execute
+    assert "相关回归" in rework and "未受影响" in rework
+    assert "有效" in rework
+
+
+def test_d2_reuses_valid_facts_without_repeating_every_cell_or_building_a_framework() -> None:
+    close = read_skill("slk-close-run")
+    for marker in ("最终候选", "环境", "风险", "有效", "逐项重复 D1", "检查体系"):
+        assert marker in close
+    assert "建议最终核对：" not in close
+    assert "D1 PASS 不作为 D2 通过证明" in close
+
+
+def test_recording_keeps_failure_history_without_recursive_proof_materials() -> None:
+    record = read_skill("slk-record-run")
+    for marker in ("错误", "返工", "豁免", "摘要", "路径", "当前节点", "证明材料"):
+        assert marker in record
+
+
 def test_select_models_matches_capability_to_each_visible_role() -> None:
     text = read_skill("slk-select-models")
     for marker in (
@@ -679,7 +721,7 @@ def test_wait_clarification_does_not_add_skill_lines() -> None:
     expected = {
         "slk-adjust-run": 40,
         "slk-check-cell": 36,
-        "slk-close-run": 53,
+        "slk-close-run": 44,
         "slk-dispatch-cell": 44,
         "slk-execute-cell": 30,
         "slk-grill-supervisor": 39,

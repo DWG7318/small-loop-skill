@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "7db7aec617238746bfbb330ab0e5928ddb1cb40a6a93d70762a03c1a6ef03d94"
+      "sha256": "8996e874a4592ad95d74b56b60b19c918dbd2a436dff310833dc5d2b21d0f160"
     },
     {
       "path": "LICENSE",
@@ -32,15 +32,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "ec577c0d00de04d9796923db0e29162e1bcff0eded5effc284512ae3d008d7d3"
+      "sha256": "5664c03ec06b561eaa334321ed0239830b434239e5d43af7a2cdfc95343e0079"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "83e5ed745ee1471b24acd8d2e9aae38c609e9005719f12e8d647410034b78ffe"
+      "sha256": "68e951313967946540aa39a0f5ca2c5092e9161b1a52bf8a306b177babb86b2c"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "b359307d7d1a846e3def2eae5dc3a1f9227c3d3c8e8c5fbb04e560342dc40763"
+      "sha256": "d9e35cad25c8154982dcdc9379b506244ead423dccb2c90785675a7f5c13c8fd"
     },
     {
       "path": "VERSION",
@@ -108,11 +108,11 @@
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
-      "sha256": "db9bca6676cfa736bd1bd7ef65bf5392ae6c1936d04f624e2e9354d5345cfc4c"
+      "sha256": "e321b421024189e01ee5722e267d2bf4f803574d58011d145acf88c5c1023785"
     },
     {
       "path": "skills/slk-close-run/SKILL.md",
-      "sha256": "744b89b7d0f65a1e52436c4a708a0761cfeab3f206e2bce24b82810ffb02fb57"
+      "sha256": "3cc4ed385dd7cd27e788f5e6eea00839b198601f346c483fb933ae4f17389ffc"
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
@@ -120,11 +120,11 @@
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
-      "sha256": "a386448ff20e6f4fb4d06741c226de0f0ef1363782f41d047e380402a07eda27"
+      "sha256": "373fc5ce3647862390534cdd4d1ae2496a2028da1b1c9ca568b78158a0200a3d"
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
-      "sha256": "b20387f97bb42705489dc06b11edee855358ac2ef4b00c3a2029adbdbb9f80b8"
+      "sha256": "9a65493cf655f2732e809afd3386f2e25953c83afab47f6c07fe646149e5027b"
     },
     {
       "path": "skills/slk-manage-team/SKILL.md",
@@ -132,11 +132,11 @@
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
-      "sha256": "3b806959aeb513d6db5dacbe0729d724a55f6572f60d8333be5105a35e67fe40"
+      "sha256": "134a52893825f9decd3a5a627da0f49a74c5f09e1231f166ffe3f04e4cfd175e"
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
-      "sha256": "ebb9fa416b86a2520f5ea5e2b2dd4422a820e72c6454bcd764210a151df72dd8"
+      "sha256": "8221f5148198d81690f0bd9a8411f764d71f0048809d20921d04e5a940696342"
     },
     {
       "path": "skills/slk-record-run/assets/SLK-RUN.template.md",
@@ -148,7 +148,7 @@
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
-      "sha256": "cf5799b19b851694db736939d95126aaf0a8c30f6921bcb1862a5b8073d7d51a"
+      "sha256": "0977385e0c0d92caf795c41afe9b8a592b61c8568e7bba83103674005bf2f8e5"
     },
     {
       "path": "skills/slk-select-models/SKILL.md",
@@ -172,7 +172,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "7b3094f36e574b74ff53931396a92fc10eac7c80b3679ed7de3f904c274d95d3"
+      "sha256": "6017769fc98607b4e84ff8646bc39714ae08eeafa9d1c3f10acbc8c7ceaff784"
     }
   ]
 }

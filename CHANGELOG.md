@@ -2,6 +2,9 @@
 
 ## 3.0.5
 
+- Focused D0, D1 and D2 on proportionate product evidence through existing entrances or direct operation rather than building a checking system before work; genuine uncovered risks still require checks and insufficient evidence is not PASS.
+- Distinguished checking-tool/environment failures from product defects, removed the duplicate D2 checklist, and scoped rework checks to the fix and affected regressions while reusing still-valid objective evidence rather than prior PASS conclusions.
+- Kept complete failure, rework and exemption history as concise facts and evidence references, without recursive checker-proof materials or bulk log copies; retained all 13 Skills and reduced their combined length from 535 to 526 lines.
 - Kept D0, D1, and D2 as layered inspection and excluded inspection-only CELLs from the construction plan; only implementation work required by findings becomes CELL construction.
 - Added midstream adoption guidance that preserves and reuses completed work, then plans the reasonable minimum construction needed to reach the current target without duplicate work, premature unrelated work, or unnecessary global refactoring.
 
