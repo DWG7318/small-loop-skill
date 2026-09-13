@@ -27,12 +27,12 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
    - `D1 FAIL：CELL n/N，进入返工`
 6. D1 FAIL 时说明具体差距、复现方式和期望结果，让 Worker 能针对性修复。
 7. 在执行 D1 的同时，顺手记录本 CELL 的容量事实，例如工作量是否合适、是否接近当前能力或是否因过大带来返工；这复用已有事实，不增加额外检查。
-8. 把本次 D1、错误、返工或容量事实写入根记录，建议调用 `$slk-record-run`，随后再把结论传给下一成员。
+8. 把本次 D1、错误、返工或容量事实写入根记录，建议调用 `$slk-record-run`，随后以递增编号的同一 `SLK TOKEN` 把结论传给下一成员。
 
 ## 后继
 
-- D1 PASS 后，Checker 更新进度；还有 CELL 时使用 `$slk-dispatch-cell` 校准并派发下一个既定 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，Checker 向 Supervisor 汇报 Run 已具备 D2 条件。
-- D1 FAIL 后，Checker 使用 `$slk-rework-cell` 与 Worker 继续直接协作。
+- D1 PASS 后，Checker 更新进度；还有 CELL 时沿 `Checker → Worker` 使用 `$slk-dispatch-cell` 校准并派发下一个既定 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，沿 `Checker → Supervisor` 交付最终令牌和 D2 条件。
+- D1 FAIL 后，Checker 沿 `Checker → Worker` 交还令牌，并使用 `$slk-rework-cell` 与 Worker 继续直接协作。
 - 需要改变 Run 方案时，请 Supervisor 使用 `$slk-adjust-run` 协助判断。
 
 ## 负面提示词

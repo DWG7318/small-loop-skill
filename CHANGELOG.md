@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.7
+
+- Defined the existing visible cross-thread handoff message as the Run's one current `SLK TOKEN`, with a compact monotonically increasing identity and the state needed by the next existing Loop node.
+- Clarified that a real token transfer activates the recipient directly without a token-specific acknowledgement round; backend text, old running indicators, token ownership and stale progress do not prove live execution.
+- Made stale or duplicate token identities non-operative, kept communication recovery on the original token identity, and retained the single root Run record as the full engineering history.
+- Preserved all 13 Skills and their existing line counts. No role, approval layer, database, service, state file, dashboard, runtime monitor or external workflow engine is added.
+
 ## 3.0.6
 
 - Added one compact, independent negative-prompt section to each of nine Skills with demonstrated misreadings, using direct “Do not…” reminders rather than inline explanatory notes or a second workflow.

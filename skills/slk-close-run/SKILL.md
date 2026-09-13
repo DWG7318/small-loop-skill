@@ -14,7 +14,7 @@ description: Use when an active Small Loop Skill (SLK) Run has D1 PASS or Superv
 
 ## 激活与 D2 交接
 
-所有计划 CELL 都有明确处理结果后，Checker 用一条 D2 交接激活 Supervisor。每个 CELL 的结果是 `D1 PASS` 或 `Supervisor 豁免`；两者分别记录，不把豁免改写为完成。初始交接聚焦原始 Run/GO 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
+所有计划 CELL 都有明确处理结果后，Checker 沿 `Checker → Supervisor` 用最终令牌激活 Supervisor。每个 CELL 的结果是 `D1 PASS` 或 `Supervisor 豁免`；两者分别记录，不把豁免改写为完成。初始交接聚焦原始 Run/GO 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
 
 ## 检查对象隔离
 
@@ -37,7 +37,7 @@ Checker → Worker → Checker
 
 ## D2 通过后的收尾
 
-1. 调用 `$slk-record-run` 汇总最终 CELL 数、D0结果、D1通过数、Supervisor豁免数、D2结论、限制和证据位置。
+1. 调用 `$slk-record-run` 汇总最终 CELL 数、D0结果、D1通过数、Supervisor豁免数、D2结论、限制和证据位置，并把最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。
 2. 调用 `$slk-manage-team`，建议依次归档 Worker、归档 Checker，并保留 Supervisor 对话。
 3. 向 Owner 发送一个简洁结论，例如：Run 已完工，D0/D1/D2结果、豁免数量、已知限制和根记录路径。
 

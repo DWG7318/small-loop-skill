@@ -29,7 +29,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 正式成员对应项目任务列表中的可见对话，Owner 能够看到并联系。内部 subagent、隐藏执行或文字中的角色声明不作为正式成员，也不替代上述创建关系与通讯测试。
 
-成员组与通讯通道建立后，Supervisor 把日常 CELL 循环交给 Checker。成员完成自己当前 Loop 节点和必要交接后结束当前活动，接收回执本身不结束受领工作；不使用`wait_threads`也不读取其他成员内部状态，下一条真实消息按需激活。Supervisor 不接收逐 CELL 汇报，需要上级协助或最终 D2 时再由 Checker 或应急路径激活。
+成员组与通讯通道建立后，Supervisor 用首枚 `SLK TOKEN T001` 把第一个待派发 CELL 和日常循环交给 Checker。成员完成自己当前 Loop 节点和必要交接后结束当前活动，接收令牌本身不结束受领工作，也不另增回执轮次；不使用`wait_threads`也不读取其他成员内部状态，下一条真实消息按需激活。Supervisor 不接收逐 CELL 汇报，需要上级协助或最终 D2 时再由 Checker 或应急路径激活。
 
 ## 恢复或接管
 
@@ -41,7 +41,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 明确失效可以依据任务 ID 不存在、平台显示失败或取消且无法继续，或者真实激活操作明确返回任务不可用。暂时没有回复不作为更换成员的依据。
 
-接管成员可以先读取根 Run 记录、当前计划、候选和未完成交接，再进行双向通讯测试。接管确认后，把旧成员的实际状态写入记录。
+接管成员可以先读取根 Run 记录、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号；接管新成员确认后，上一级用递增编号把当前节点交给新任务 ID，使旧令牌失效，并把旧成员的实际状态写入记录。
 
 ## 收尾归档
 

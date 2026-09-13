@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.6"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.7"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -476,7 +476,7 @@ def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:
         "倒数第二项",
         "最后一项",
         "真实激活",
-        "明确回执",
+        "不增加接收回执轮次",
         "Supervisor",
         "$slk-record-run",
         "$slk-check-cell",
@@ -632,19 +632,19 @@ def test_recover_communication_requires_real_activation_and_preserves_checker() 
     for marker in (
         "send_message_to_thread",
         "后台聊天记录",
-        "状态变化",
-        "明确回执",
-        "原始交付",
+        "消息未创建",
+        "原令牌编号",
+        "完整原始令牌",
         "Worker → Supervisor → Checker",
         "优先恢复原 Checker",
-        "缺少回执不等于",
+        "令牌未真实投递不等于 Checker 失效",
         "明确失效",
         "极端",
         "接管 Checker",
         "干净的 D1 恢复信封",
         "恢复原 Checker 任务",
         "不是新 CELL",
-        "已收到，开始检查：CELL n/N",
+        "收到该令牌后",
         "Worker 任务 ID",
         "根记录",
         "Worker 原始 D1 交付原文",
@@ -658,8 +658,14 @@ def test_recover_communication_requires_real_activation_and_preserves_checker() 
         "结束本次激活",
         "双向通讯测试",
         "$slk-manage-team",
+        "恢复信封不是令牌所有权转移",
+        "Supervisor 不登记为当前持有者",
+        "向原任务 ID 重发同号的未投递令牌",
+        "成功后由 Checker 登记流转",
     ):
         assert marker in text
+    assert "已收到，开始检查：CELL n/N" not in text
+    assert "新编号" not in text
     assert "消息可见且目标对话正在活动" not in text
     assert "三次不同方式" not in text
     assert "Owner" not in text
@@ -733,12 +739,12 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
 
     for marker in ("不使用`wait_threads`", "结束当前活动", "真实消息重新激活"):
         assert marker in main
-    assert "明确回执说明交付已接收" in dispatch and "发出完整 CELL 后结束本次激活" in dispatch
+    assert "不增加令牌专用回执" in dispatch and "发出完整 CELL 后结束本次激活" in dispatch
     assert "不读取Worker施工状态" in dispatch
     assert "候选交付重新激活Checker" in dispatch
     assert "发送后结束本轮Worker工作" in execute
     assert "不读取Checker状态" in execute
-    assert "异步重新激活Worker" in execute
+    assert "令牌到达即开始 D1" in execute
     assert "发送后结束当前活动" in recover
     assert "平台明确返回不可用" in recover
     assert "不读取Checker的D1过程" in recover
@@ -747,14 +753,99 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "Loop Engineering 的线性形态" in main
     assert "派发、施工与 D0、候选交付、隔离 D1" in main
     assert "D1 FAIL" in main and "D1 PASS" in main and "D2" in main
-    assert "回执只确认交付已接收，不结束 Worker 当前 CELL 的施工" in dispatch
-    assert "接收回执不结束当前 CELL 施工" in execute
+    assert "接收令牌不是 CELL 完工" in dispatch
+    assert "接收令牌不结束当前 CELL 施工" in execute
     assert "一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发" in dispatch
     assert "命令、工具结果或中间进展不构成 CELL 交付边界" in execute
     assert "完成整个 CELL 候选" in execute
     for stale in ("每完成一条命令就结束", "一条命令一次激活", "把下一条命令交给 Worker"):
         assert stale not in active
     assert "完成自己当前 Loop 节点" in manage
+
+
+def test_linear_loop_uses_one_visible_relay_token_without_a_new_subsystem() -> None:
+    main = read_skill("small-loop-skill")
+    for marker in (
+        "进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`",
+        "真实激活操作",
+        "可见目标对话",
+        "令牌在可见目标对话出现才证明该次流转",
+        "同一 Run 全部成功流转中编号最大且身份匹配的令牌才是当前事实",
+        "不是新文件、角色、审批或外部状态系统",
+        "只在既有 Loop 节点边界流转",
+        "不增加令牌专用回执",
+        "令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径",
+    ):
+        assert marker in main
+    assert len(EXPECTED_SKILLS) == 13
+    assert not any(path.name.startswith("slk-token") for path in SKILLS.iterdir())
+
+
+def test_token_reports_responsibility_without_claiming_live_execution() -> None:
+    main = read_skill("small-loop-skill")
+    record = read_skill("slk-record-run")
+    template = (SKILLS / "slk-record-run" / "assets" / "SLK-RUN.template.md").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "当前令牌",
+        "只证明当前责任与最后已确认边界",
+        "不证明接收者正在实时施工",
+        "旧 running 标记",
+        "后续执行未确认",
+    ):
+        assert marker in main
+    assert "当前有效令牌" in record and "最后真实流转" in record
+    assert "接收者在令牌激活本轮后的第一步" in record
+    assert "先比较编号与身份" in record
+    assert "同号或旧号不改指针" in record
+    assert "不预写尚未发生的流转" in record
+    assert "当前有效令牌" in template and "最后真实流转" in template
+
+
+def test_existing_handoffs_move_the_same_token_between_existing_roles() -> None:
+    main = read_skill("small-loop-skill")
+    manage = read_skill("slk-manage-team")
+    dispatch = read_skill("slk-dispatch-cell")
+    execute = read_skill("slk-execute-cell")
+    check = read_skill("slk-check-cell")
+    adjust = read_skill("slk-adjust-run")
+    close = read_skill("slk-close-run")
+    recover = read_skill("slk-recover-communication")
+    assert "Supervisor 用 `T001`" in main
+    assert "SLK TOKEN T001" in manage
+    assert "恢复原成员时重发原令牌编号" in manage
+    assert "接管新成员确认后" in manage and "使旧令牌失效" in manage
+    assert "Checker → Worker" in dispatch and "SLK TOKEN" in dispatch
+    assert "Worker → Checker" in execute and "SLK TOKEN" in execute
+    assert "Checker → Worker" in check and "Checker → Supervisor" in check
+    assert "Supervisor → Checker" in adjust and "SLK TOKEN" in adjust
+    assert "最终令牌" in close and "CLOSED" in close
+    assert "原令牌编号" in recover and "新编号" not in recover
+
+
+def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
+    main = read_skill("small-loop-skill")
+    dispatch = read_skill("slk-dispatch-cell")
+    execute = read_skill("slk-execute-cell")
+    record = read_skill("slk-record-run")
+    for marker in (
+        "令牌编号",
+        "Run",
+        "CELL",
+        "当前节点",
+        "接收者",
+        "候选（如有）",
+        "下一动作",
+        "根记录路径",
+    ):
+        assert marker in dispatch
+    assert "单调递增" in dispatch
+    assert "相同或更旧的令牌编号" in execute and "不重开 CELL" in execute
+    assert "只有真实投递成功才结束当前活动" in main
+    assert "同一拟发送编号、内容和接收者重试" in main
+    assert "当前同号未完成节点只从已记录边界续做" in main
+    assert "完整工程历史" in record and "不复制整段令牌历史" in record
 
 
 def test_wait_clarification_does_not_add_skill_lines() -> None:
