@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill Collection",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "skill_count": 13,
   "excludes": [
     "MANIFEST.json"
@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "623b5f82e14ff479bcdbe2d4ec7919325d21a3fcc38e5c8385009e04f008e5a6"
+      "sha256": "3f01a01c8401279a20fa07ef361bb0042d277513a690d3b2a87fec3a0a33fac2"
     },
     {
       "path": "LICENSE",
@@ -32,19 +32,19 @@
     },
     {
       "path": "README.md",
-      "sha256": "ec7c06fda9fab75e8df073de1fd8a77dc4755a05cee616dd94f49a5764de18a1"
+      "sha256": "a679c5990fd4555cfd0b8d1e4943d27846e52710ba3d25840b21d8ee9824d0dd"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "d6ee5813bf9328d33806ba3c4a6cfdcc41eb91c8c7d74af27a7f3de82a72d909"
+      "sha256": "46dfd8559f5fa2cc943dfaf508e6988a061df25724ae9050031e52165822f19e"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "4b9e70fe401445044023f000b5645a3f588e3fcbae70ebc608276b1af29e8e4b"
+      "sha256": "8d50ba225fda1b9da5c5eaf28b78f519362850b984f10bad18a9ac850aa5a457"
     },
     {
       "path": "VERSION",
-      "sha256": "7bb9bbd2e2162e7c4db854f8740421fd7f8e6a2113a09dc1ef4711aec644536a"
+      "sha256": "2a612f3f9494fa52305039d3474f9448e4eadcdbca3517a767df080009a393e9"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -100,15 +100,15 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "f8231b4cd67af9f97f186f34bf74aafd58304e5a1c52c5bf16689b85ca8c0327"
+      "sha256": "84475b1dcf72293725e96837f14a71eb787fcecb9b482ecd2a215848d361940a"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
-      "sha256": "b8290e00400b22f9ad845759af5c5d55e39087c93d03fbb4d09abf08060bbc72"
+      "sha256": "c353d06ec75e35c0e12a3081f032e579ea3656f9faef45d64405de5ad7c06035"
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
-      "sha256": "e0d52cb63bf1118f88942797b04ab0c797aa703613d3495573940dce4e3d41af"
+      "sha256": "983c01da046554d7195751e5260072ec27fe8d9d994f9da422aae2f8f69f49b8"
     },
     {
       "path": "skills/slk-close-run/SKILL.md",
@@ -120,7 +120,7 @@
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
-      "sha256": "e9e58169f06e7b8dd871163147f47282dd12c26745234931d835e5fa00e6a846"
+      "sha256": "7c91d1ac2c54faa44b6091f9e2e208a77849692ee727b2a1fe3c3d8e3ba92316"
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
@@ -132,7 +132,7 @@
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
-      "sha256": "1ef32028da8bc03384fdc36232a467e42639848f70af0b305a814c2b834da084"
+      "sha256": "a2ef767b42a5f9dec9187491436b6df5a67e483b0dee155e5835a8fa5556525e"
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
@@ -148,15 +148,15 @@
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
-      "sha256": "d02d9b6da3d849ed4c5352073e2fbeac7dc4b058d041a1b40c9ae52e58d63797"
+      "sha256": "537b4bc5fba2cfd727c7ea7b1e4270c01d13f6adbdbdef053f69ce4b6a7a7c2f"
     },
     {
       "path": "skills/slk-select-models/SKILL.md",
-      "sha256": "1dbb79a78356131c75b63143228a8f25a21c3424bf1236b402b58071e4ab6793"
+      "sha256": "c3c54a10de98f52b761638edf2ea76e47b60055e42fb9e13a1495b401f3b1930"
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "ee85e864c525d7dd5cb59e9cc06287cc05ccbd7c538482c8a48638cc1166bfb2"
+      "sha256": "ce5756abc9d6067923439649548ae18623768ca5cc49f2bce2c2a2b5811f516f"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -168,11 +168,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "76ee04380c0c88a2d64ce2e43bd8d77eb23ef5df0f75d990b0bebc14d2b480de"
+      "sha256": "0509ccba165f302ac6b5ad4bb4376fbfebb0ad9d9801b900473a2c77bdafa954"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "2185b16fbc56f4a25817f014b3c4a7708fb6aea4079bc632c37d80f56758ad54"
+      "sha256": "b7d52cd2a14d2d3a7903c4b47cfcae2feb4586dfd95d07cc1db375e46a7669da"
     }
   ]
 }

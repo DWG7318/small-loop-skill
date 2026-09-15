@@ -1,8 +1,8 @@
-# Validation Report — SLK 3.0.7 Candidate
+# Validation Report — SLK 3.0.8 Candidate
 
-Date: 2026-09-14
+Date: 2026-09-15
 
-Branch: `feature/slk-3.0.7-loop-token`
+Branch: `feature/slk-3.0.8-no-goal`
 
 ## Design baseline
 
@@ -14,7 +14,9 @@ Branch: `feature/slk-3.0.7-loop-token`
 - one root `SLK-RUN-<RUN-ID>.md` with per-role records;
 - one main router and 12 situational sibling Skills;
 - every companion Skill identifies itself as Small Loop Skill (SLK)-only in both discovery metadata and its opening guidance;
-- role-based model selection with stronger professional coding capability for Supervisor and Checker and a reliable, optionally one-tier-lower Worker;
+- ordered role-model selection that preserves Owner choices, uses Sol xhigh for Supervisor, Sol medium for Checker, Terra high for ordinary Worker CELLs, and Luna xhigh only for clearly small CELLs;
+- concrete small-CELL signals and a conservative ordinary-CELL fallback when the classification is uncertain;
+- current-CELL-only Worker escalation across repeated D1 or D2 repair, followed by CELL replanning rather than automatic Checker or Supervisor escalation;
 - role-model selection before initial CELL sizing, followed by dispatch-time reality checks rather than a second planning flow;
 - exact startup authority: Original creates Supervisor, Supervisor creates Checker, Checker passes role readiness and creates Worker;
 - root-record initialization after Supervisor Grill and before Checker/Worker creation;
@@ -41,6 +43,8 @@ Branch: `feature/slk-3.0.7-loop-token`
 - the latest successful token transfer identifies the current responsibility and last confirmed boundary without claiming live execution;
 - monotonically increasing token identity prevents stale or duplicate deliveries from reopening a CELL, while recovery retries retain the original identity;
 - the root Run record stores the current token pointer, last real transfer and full engineering history without a second state system.
+- direct negative guidance against one-conversation Goal continuation and one-size-fits-all numeric CELL quotas;
+- optional RTK, Probe CLI and Ponytail use by Worker and Checker, with one reusable global installation, per-Run Owner choice, explicit invocation, raw-evidence preservation and native fallback;
 
 ## Verification status
 
@@ -49,20 +53,20 @@ Fresh local verification:
 - `python scripts/validate_repository.py`: PASS;
 - repository `scripts/quick_validate.py`: 13/13 Skill directories PASS;
 - official Skill Creator `quick_validate.py`: 13/13 PASS under UTF-8 mode;
-- current-version and four token/record regressions: expected failures before the 3.0.7 changes, then PASS; these check repository guidance, not runtime compliance;
+- current-version, model-choice, efficiency-tool and negative-prompt regressions: expected failures before the 3.0.8 changes, then PASS; these check repository guidance, not runtime compliance;
 - one isolated before/after decision scenario: published 3.0.6 correctly refused to infer live work from a stale running indicator, but lacked an authoritative transfer identity and duplicate handling. Revised guidance identifies the exact current responsibility, reports unconfirmed execution honestly and prevents stale/duplicate delivery from reopening the CELL. This bounded sample does not guarantee future agent compliance;
 - independent review found and closed token-record timing, initial-token ownership, stale-ordering, transfer-failure and recovery-envelope ambiguities. Prompt-contract tests cannot simulate the platform transport runtime; the bounded behavioral pressure test therefore remains supporting evidence rather than a runtime guarantee;
-- `python -m pytest -q`: 57/57 PASS;
+- `python -m pytest -q`: 61/61 PASS;
 - active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
 - active language review: the independent negative sections deliberately use direct “不要…” reminders requested by Owner; they clarify known misuse, not a second workflow, new approval or stop policy. The SLK-only boundary remains in 12/12 children;
-- Skill size review: main and child `SKILL.md` files remain 30–64 lines and 558 lines combined, unchanged from published 3.0.6;
+- Skill size review: main and child `SKILL.md` files remain 30–64 lines and 579 lines combined;
 - repository inventory: 43 tracked files and 42 manifest-protected payload files;
 - `git diff --check`: PASS.
 
-The 3.0.7 candidate preserves the same 13-Skill collection and extends the existing Run-record template only with the current-token pointer and last-real-transfer fields; its Manifest is regenerated from the exact final repository bytes. The 3.0.5 inspection-load reduction and 3.0.6 prompt repairs remain intact. No workflow engine, runtime, eval framework, Temporal dependency, project checking system, additional role/inspection layer or product change is included.
+The 3.0.8 candidate preserves the same 13-Skill collection and existing role, CELL, inspection, token and record topology. It adds clearer model decisions and optional external efficiency-tool guidance without bundling binaries, enabling automatic hooks, adding an MCP/Agent, or making any tool a dependency. Its Manifest is regenerated from the exact final repository bytes.
 
 The 2.x active root, mirrors, contracts, templates, runtime validators and old tests were removed from the 3.0 branch after replacement coverage passed. Git history and the `v2.6.0` tag preserve the previous files.
 
 ## Historical boundary
 
-The previously recorded `v2.6.0` recovery commit is `fa75bcf1c0819c8499d3b6c4ee9ec251dae62ae5`; this Cell does not change that historical release. The baseline is published 3.0.6 at `2560b7a1d5577be4893deded8e7169028e7c1eb2`. Before formal release, this candidate has not changed main, remote tags/Releases or global installation. Local validation is not a release claim.
+The previously recorded `v2.6.0` recovery commit is `fa75bcf1c0819c8499d3b6c4ee9ec251dae62ae5`; this Cell does not change that historical release. The baseline is published 3.0.7 at `2a5e6e3`. Before formal release, this candidate has not changed main or remote tags/Releases. RTK, Probe CLI and explicit-only Ponytail were prepared on the current Codex host independently of repository payloads; availability is not project authorization. Local validation is not a release claim.

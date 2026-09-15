@@ -17,13 +17,13 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 1. Checker 汇总失败现象、复现方式、期望结果和本轮最值得修复的差距。
 2. Worker 继续处理同一 `CELL n/N`，先确认自己理解 D1 意见，再进行针对性修改。
 3. 普通返工优先聚焦已知差距。错误原因仍不清楚时，可以调用当前环境中适合项目的 Debug Skill，例如 `$superpowers:systematic-debugging`；诊断完成后仍回到同一 CELL 和原 D1 目标。
-4. 当前 Worker 能力不足、且模型未由 Owner 直接指定时，建议把能力提高一级；Owner 已指定时先保留该模型，Checker 可以校准 CELL，确实值得换模型时交给 Supervisor 形成建议并由 Owner 决定。D1 表明任务本身过大时，Checker 可以调用 `$slk-dispatch-cell`，按一分为二的方法重新派发，并共同保留原验收目标。
+4. 第一次 D1 FAIL 使用当前 Worker 模型做针对性返工；同一 CELL 第二次 D1 返工时，调用 `$slk-select-models` 为当前 CELL 做第一次升级。第三次 D1 FAIL 时执行第二次升级，并由 Checker 重新规划当前 CELL，可以调用 `$slk-dispatch-cell` 一分为二或另选施工方案，同时保留原验收目标。Owner 已指定模型时先保留该模型，确实值得变更时交给 Supervisor 形成建议并由 Owner 决定。
 5. Worker 完成修改和最低 D0 后，使用 `$slk-execute-cell` 的记录与交付方式重新提交。
 6. Checker 使用 `$slk-check-cell` 针对修复目标、受影响范围和相关回归重新执行 D1，保留未受影响且仍有效的已完成工作，仍有效的客观证据可以复用，不复用通过结论；记录本轮错误、变化和结果。
 
 ## 连续未收敛
 
-通常两轮针对性返工仍未通过时，Checker 可以把完整情况交给 Supervisor。Supervisor 使用 `$slk-adjust-run` 综合考虑继续诊断、提高能力、形成电脑或环境变更建议、调整路线或暂时豁免。
+第三次 D1 FAIL 后先重新规划当前 CELL；调整超出当前 CELL、影响 GO 或 Run 时，Checker 再把完整情况交给 Supervisor。Supervisor 使用 `$slk-adjust-run` 综合考虑继续诊断、形成电脑或环境变更建议、调整路线或暂时豁免。
 
 ## 负面提示词
 

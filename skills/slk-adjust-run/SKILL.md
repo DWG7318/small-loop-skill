@@ -26,10 +26,10 @@ Supervisor 在现有工程权限和资源范围内给出能继续施工的具体
 Supervisor 可以按实际原因组合以下办法：
 
 1. 在现有权限内补充信息、可用资源或验证方式；
-2. 相关模型未由 Owner 直接指定时，可以把 Worker 能力提高一级；Owner 已指定时保留该选择，使用 `$slk-select-models` 说明变更理由和影响，再由 Owner 决定是否改变指定；
+2. 同一 GO 第一次 D2 返工时，使用 `$slk-select-models` 为当前修复 CELL 的 Worker 做第一次升级；同一 GO 第二次 D2 FAIL 时执行第二次升级，并由 Supervisor 重新规划当前修复 CELL。Owner 已指定模型时保留该选择，说明变更理由和影响，再由 Owner 决定是否改变指定；
 3. 调整当前或后续 CELL、施工顺序或技术路线，让已验证成果继续被继承；
 4. 解决方案需要 Owner 掌握的电脑、工具、账号、测试环境或业务权限时，提交推荐方案、预期影响、可行替代和最低必要授权；
-5. 同一 CELL 经过两轮 D1 返工仍未收敛时，Supervisor 可以记录本 CELL 的豁免、实际影响和未来恢复条件，再把当前 Run 的后续 CELL 交还 Checker 继续推进。
+5. 同一 CELL 按升级阶梯重新规划后仍未收敛时，Supervisor 可以记录本 CELL 的豁免、实际影响和未来恢复条件，再把当前 Run 的后续 CELL 交还 Checker 继续推进。
 
 这类豁免发生在 D1 返工边界，不是 D2。豁免作为独立结果保留，不改写为 D1 PASS。最终报告分别列出 D1 通过数和 Supervisor 豁免数。
 

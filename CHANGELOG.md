@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.8
+
+- Clarified model selection as an ordered decision across Owner choices, role baselines, each current CELL's concrete difficulty, and observed rework signals; defined when a CELL is clearly small and retained the normal Worker baseline whenever that judgment is uncertain.
+- Scoped Worker model escalation to the current CELL, aligned repeated D1 and D2 repair thresholds with CELL replanning, and kept Checker and Supervisor capability stable unless the Owner chooses otherwise.
+- Added focused negative guidance against binding an SLK Run to one-conversation Goal continuation or imposing one-size-fits-all numeric CELL quotas.
+- Added optional RTK, Probe CLI, and Ponytail guidance for both Worker and Checker: install once in the Codex-wide environment, obtain an Owner decision per Run, use explicit non-hook/non-MCP operation, preserve raw evidence, and fall back to native tools without stopping SLK.
+- Retained all 13 Skills and the existing Supervisor, Checker, Worker, CELL, D0, D1, D2, rework, token, communication, and record structure.
+
 ## 3.0.7
 
 - Defined the existing visible cross-thread handoff message as the Run's one current `SLK TOKEN`, with a compact monotonically increasing identity and the state needed by the next existing Loop node.

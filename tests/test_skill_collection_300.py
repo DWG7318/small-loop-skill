@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.7"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.8"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -235,8 +235,9 @@ def test_known_misreadings_have_independent_negative_only_chapters() -> None:
         assert text.count("\n## 负面提示词\n\n") == 1, name
         section = text.split("\n## 负面提示词\n\n", 1)[1].split("\n## ", 1)[0]
         reminders = [line for line in section.splitlines() if line.strip()]
-        assert 1 <= len(reminders) <= 2, name
+        assert reminders, name
         assert all(line.startswith("- 不要") for line in reminders), name
+        assert len(reminders) == len(set(reminders)), name
         assert "释义：" not in section and "不要误解为" not in section, name
         assert "建议" not in section and "这里指" not in section, name
 
@@ -267,14 +268,22 @@ def test_local_d0_attempts_are_distinct_from_checker_d1_rework() -> None:
 def test_select_models_matches_capability_to_each_visible_role() -> None:
     text = read_skill("slk-select-models")
     for marker in (
-        "Supervisor",
-        "Checker",
-        "Worker",
-        "专业编程",
-        "独立审查",
-        "降低一级",
-        "不能太低",
-        "提高一级",
+        "`gpt-5.6-sol` + `xhigh`",
+        "`gpt-5.6-sol` + `medium`",
+        "`gpt-5.6-terra` + `high`",
+        "`gpt-5.6-luna` + `xhigh`",
+        "只有明显小的 CELL",
+        "同一 CELL 第二次 D1 返工",
+        "同一 GO 第一次 D2 返工",
+        "Luna xhigh → Terra high",
+        "Terra high → Sol medium",
+        "Terra high → Sol medium；Sol medium → Sol high",
+        "第三次 D1",
+        "同一 GO 第二次 D2",
+        "重新规划当前 CELL",
+        "升级只跟随当前 CELL",
+        "下一个 CELL 重新从基准线选择",
+        "Checker 与 Supervisor 不因 D1 或 D2 FAIL 自动升级",
         "CELL",
         "电脑",
         "可替换",
@@ -286,10 +295,56 @@ def test_select_models_matches_capability_to_each_visible_role() -> None:
         "不擅自替换",
         "规划阶段",
         "施工中",
+        "按 Owner 指定、角色基准、当前 CELL 难度、返工信号的顺序判断",
+        "边界清楚",
+        "已有实现路径",
+        "直接验证入口",
+        "跨模块联动",
+        "如果不能明确判断为小 CELL",
+        "按常规 CELL",
+        "初始选择覆盖三个角色",
+        "不是让三个角色共同投票",
     ):
         assert marker in text
+    assert "Astra" not in text
     assert "$slk-select-models" in read_skill("slk-plan-run")
     assert "$slk-select-models" in read_skill("slk-adjust-run")
+
+
+def test_optional_efficiency_tools_are_global_reusable_and_run_scoped() -> None:
+    plan = read_skill("slk-plan-run")
+    execute = read_skill("slk-execute-cell")
+    check = read_skill("slk-check-cell")
+
+    for marker in (
+        "RTK",
+        "Probe CLI",
+        "Ponytail",
+        "Codex 全域",
+        "只安装一次",
+        "安装不等于启用",
+        "本次 Run",
+        "Owner",
+        "官方来源",
+        "缺失或失败不阻止 SLK",
+    ):
+        assert marker in plan
+    assert "自动 hook" in plan and "MCP" in plan and "额外 Agent" in plan
+    assert "原始输出" in execute and "RTK" in execute and "Probe CLI" in execute
+    assert "核心 diff" in check and "关键错误原文" in check
+    assert "Probe CLI" in check and "RTK" in check
+
+
+def test_efficiency_tools_do_not_replace_native_evidence_or_method_roles() -> None:
+    plan = read_skill("slk-plan-run")
+    execute = read_skill("slk-execute-cell")
+    check = read_skill("slk-check-cell")
+
+    assert "原生命令" in execute and "回退" in execute
+    assert "原生命令" in check and "回退" in check
+    assert "CELL 目标" in plan and "D0、D1、D2" in plan
+    assert "不增加角色" in plan and "不增加流程层" in plan
+    assert "Headroom" not in plan
 
 
 def test_startup_order_and_creation_authority_are_unambiguous() -> None:
@@ -577,9 +632,12 @@ def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None
         "Checker",
         "Worker",
         "验收目标",
-        "提高一级",
+        "第一次 D1 FAIL",
+        "第二次 D1 返工",
+        "第三次 D1 FAIL",
+        "$slk-select-models",
+        "重新规划当前 CELL",
         "一分为二",
-        "两轮",
         "Supervisor",
         "CELL n/N",
         "$slk-dispatch-cell",
@@ -598,13 +656,15 @@ def test_adjust_run_keeps_supervisor_authority_and_d1_exemption_clear() -> None:
         "Supervisor",
         "连续 D1",
         "D2",
-        "提高一级",
+        "同一 GO 第一次 D2 返工",
+        "同一 GO 第二次 D2 FAIL",
+        "$slk-select-models",
+        "重新规划当前修复 CELL",
         "Owner 授权",
         "推荐方案",
         "最低必要授权",
         "技术路线",
         "同一 CELL",
-        "两轮 D1",
         "后续 CELL",
         "豁免",
         "D1 PASS",
@@ -848,21 +908,53 @@ def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
     assert "完整工程历史" in record and "不复制整段令牌历史" in record
 
 
+def test_slk_rejects_goal_that_binds_one_conversation_as_the_run_driver() -> None:
+    main = read_skill("small-loop-skill")
+    negative = main.split("\n## 负面提示词\n\n", 1)[1]
+    for marker in (
+        "不要把 SLK Run 绑定到任何由单个对话持续工作到底的 Goal 模式",
+        "不要让这类 Goal 驱动或续作 Run",
+        "不限制目标定义",
+        "固定对话",
+        "Supervisor、Checker、Worker",
+        "逐节点流转",
+        "天然冲突",
+    ):
+        assert marker in negative
+    assert "Codex Goal" not in negative
+    for tool_name in ("create_goal", "get_goal", "update_goal"):
+        assert tool_name not in negative
+
+
+def test_cell_capacity_never_becomes_a_one_size_fits_all_rule() -> None:
+    main = read_skill("small-loop-skill")
+    negative = main.split("\n## 负面提示词\n\n", 1)[1]
+    for marker in (
+        "不要把针对某个 CELL、某类工作或一次经验形成的容量估计、数字边界或经验规则",
+        "泛化为所有 CELL、整个 Run 或其他项目共同遵守的一刀切定额",
+        "不要为了平均、整齐或便于管理",
+        "要求每个 CELL 满足相同指标",
+        "不排除根据具体 CELL 的目标、难度、依赖、模型、电脑和余量",
+        "形成只适用于该 CELL 的、有事实依据的容量边界",
+    ):
+        assert marker in negative
+
+
 def test_wait_clarification_does_not_add_skill_lines() -> None:
     expected = {
         "slk-adjust-run": 40,
-        "slk-check-cell": 40,
+        "slk-check-cell": 41,
         "slk-close-run": 48,
         "slk-dispatch-cell": 48,
-        "slk-execute-cell": 34,
+        "slk-execute-cell": 35,
         "slk-grill-supervisor": 39,
         "slk-manage-team": 56,
-        "slk-plan-run": 39,
+        "slk-plan-run": 45,
         "slk-record-run": 36,
         "slk-recover-communication": 64,
         "slk-rework-cell": 30,
-        "slk-select-models": 39,
-        "small-loop-skill": 45,
+        "slk-select-models": 50,
+        "small-loop-skill": 47,
     }
     actual = {name: len(read_skill(name).splitlines()) for name in EXPECTED_SKILLS}
     assert actual == expected
