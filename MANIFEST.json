@@ -31,12 +31,20 @@
       "sha256": "d5dbb3d534ed44d531ebfecd4f6796794449962c4adb0bcbefd8c6201c325841"
     },
     {
+      "path": "DESIGN.md",
+      "sha256": "9fa901b01c75ba3bb1142d5215bc100d8ab38ba6e5a011a68d005917fed51a8f"
+    },
+    {
       "path": "LICENSE",
       "sha256": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7"
     },
     {
       "path": "MIGRATION.md",
       "sha256": "cbe448832cfb329b44f324208f9c69e6c79fa2e329876ab4263f0a355538d291"
+    },
+    {
+      "path": "PRODUCT.md",
+      "sha256": "28c8e2d73074f3789400a33b3c282147742a8d860bc8dfbe300d1f04abe2ceea"
     },
     {
       "path": "README.md",
@@ -209,6 +217,10 @@
     {
       "path": "docs/superpowers/specs/2026-08-23-slk-loop-engineering-identity-design.md",
       "sha256": "cb0a26cce5f834c73db8940dd1e2e045bdf3fd8198e3e479fd2551486ff23db2"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-20-slk-4.0-read-only-bi-design.md",
+      "sha256": "bfae71e7dfe6114954bef10940a63c8dd22fc50932f680ecaea68abe1a70c3a8"
     },
     {
       "path": "docs/superpowers/specs/2026-09-20-slk-4.0-state-bi-design.md",
