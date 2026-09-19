@@ -11,7 +11,8 @@ use rusqlite::{
 use sha2::{Digest, Sha256};
 
 use crate::auth::{
-    authorize_event, issue_credential, revoke_credential, Credential, IssuedCredential, StateError,
+    authorize_event, issue_credential, revoke_credential, AuthorizedActor, Credential,
+    IssuedCredential, StateError,
 };
 use crate::model::{
     EventType, InitRunRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
@@ -557,6 +558,15 @@ impl StateStore {
     pub fn current_token(&self, run_id: &str) -> Result<CurrentToken, StateError> {
         let connection = open_database(&self.data_root)?;
         current_token_from(&connection, run_id)
+    }
+
+    pub fn authenticate_active_role(
+        &self,
+        run_id: &str,
+        credential: &Credential,
+    ) -> Result<AuthorizedActor, StateError> {
+        let connection = open_database(&self.data_root)?;
+        authorize_event(&connection, run_id, credential, EventType::TokenHandedOff)
     }
 
     pub fn current_cell_state(&self, run_id: &str, cell_id: &str) -> Result<String, StateError> {

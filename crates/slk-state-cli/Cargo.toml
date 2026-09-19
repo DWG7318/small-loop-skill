@@ -1,0 +1,14 @@
+[package]
+name = "slk-state-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "slk-state"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+slk-state-core = { path = "../slk-state-core" }
