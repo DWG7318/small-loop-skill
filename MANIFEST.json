@@ -116,7 +116,7 @@
     },
     {
       "path": "scripts/run_transport_drill.py",
-      "sha256": "8f5c13282fcfae96d412c5bf95e71cc4ee88ec8be58428544e93e8b7a6f59c65"
+      "sha256": "04f5a7bc68df398d9b0aefb5f0fb236d2dd96552595a50234cab593ec6dcc95f"
     },
     {
       "path": "scripts/validate_repository.py",

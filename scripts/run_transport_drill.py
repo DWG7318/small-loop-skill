@@ -186,7 +186,7 @@ def _create_supervisor_thread(
     run_id: str,
     repository: Path,
     evidence_root: Path,
-) -> str:
+) -> tuple[str, JsonRpcProcess]:
     timeout = _seconds(config)
     model = config.get("codex_model")
     effort = config.get("codex_effort")
@@ -220,10 +220,11 @@ def _create_supervisor_thread(
         thread_id = thread.get("id") if isinstance(thread, Mapping) else None
         if not isinstance(thread_id, str) or not thread_id:
             raise RuntimeError("Codex thread/start returned no exact thread identity")
-        return thread_id
-    finally:
+        return thread_id, client
+    except Exception:
         client.close()
         _save_rpc_evidence(evidence_root / run_id / "_supervisor", "thread-start", client)
+        raise
 
 
 def _supervisor_starts_first_send(
@@ -235,6 +236,7 @@ def _supervisor_starts_first_send(
     envelope_path: Path,
     evidence_root: Path,
     message_id: str,
+    client: JsonRpcProcess | None = None,
 ) -> DeliveryResult:
     artifact_value = config.get("transport_artifact")
     if not isinstance(artifact_value, str):
@@ -262,27 +264,32 @@ def _supervisor_starts_first_send(
         f"<slk-supervisor-command>{json.dumps(command, ensure_ascii=False)}</slk-supervisor-command>"
     )
     timeout = _seconds(config)
-    client = JsonRpcProcess(_command(config, "codex_command"), repository)
+    existing_client = client is not None
+    if client is None:
+        client = JsonRpcProcess(_command(config, "codex_command"), repository)
     try:
-        client.request(
-            1,
-            "initialize",
-            {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.0.0"}},
-            timeout,
-        )
-        client.notify("initialized", {})
-        resumed = client.request(2, "thread/resume", {"threadId": thread_id, "cwd": str(repository)}, timeout)
-        thread = resumed.get("thread")
-        if not isinstance(thread, Mapping) or thread.get("id") != thread_id:
-            raise RuntimeError("Supervisor thread resume identity mismatch")
-        read = client.request(3, "thread/read", {"threadId": thread_id, "includeTurns": False}, timeout)
-        read_thread = read.get("thread")
-        status = read_thread.get("status") if isinstance(read_thread, Mapping) else None
-        if not isinstance(status, Mapping) or status.get("type") != "idle":
-            raise RuntimeError("Supervisor thread is not idle before first send")
+        request_id = 3
+        if not existing_client:
+            client.request(
+                1,
+                "initialize",
+                {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.0.0"}},
+                timeout,
+            )
+            client.notify("initialized", {})
+            resumed = client.request(2, "thread/resume", {"threadId": thread_id, "cwd": str(repository)}, timeout)
+            thread = resumed.get("thread")
+            if not isinstance(thread, Mapping) or thread.get("id") != thread_id:
+                raise RuntimeError("Supervisor thread resume identity mismatch")
+            read = client.request(3, "thread/read", {"threadId": thread_id, "includeTurns": False}, timeout)
+            read_thread = read.get("thread")
+            status = read_thread.get("status") if isinstance(read_thread, Mapping) else None
+            if not isinstance(status, Mapping) or status.get("type") != "idle":
+                raise RuntimeError("Supervisor thread is not idle before first send")
+            request_id = 4
         notification_start = len(client.messages)
         started_response = client.request(
-            4,
+            request_id,
             "turn/start",
             {
                 "threadId": thread_id,
@@ -322,7 +329,11 @@ def _supervisor_starts_first_send(
             raise RuntimeError(f"Supervisor first-send turn ended with {terminal.get('status')}")
     finally:
         client.close()
-        _save_rpc_evidence(evidence_root / run_id / "_supervisor", "first-send", client)
+        _save_rpc_evidence(
+            evidence_root / run_id / "_supervisor",
+            "thread-start-and-first-send" if existing_client else "first-send",
+            client,
+        )
     attempt = evidence_root / run_id / message_id
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -358,8 +369,11 @@ def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str,
     nonce = f"{run_id}-NONCE"
     base_commit = _initialize_disposable_repository(repository, run_id) if live else None
 
+    supervisor_client: JsonRpcProcess | None = None
     if live:
-        thread_id = _create_supervisor_thread(config, run_id, repository, evidence_root)
+        thread_id, supervisor_client = _create_supervisor_thread(
+            config, run_id, repository, evidence_root
+        )
     else:
         thread_id = f"thread-{run_id}"
     supervisor = Endpoint.from_dict(
@@ -450,6 +464,7 @@ def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str,
             envelope_path,
             evidence_root,
             initial.message_id,
+            supervisor_client,
         )
     else:
         first = dispatch_once(
