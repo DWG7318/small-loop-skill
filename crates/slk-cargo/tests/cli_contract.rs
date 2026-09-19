@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
-use slk_cargo::{CargoInvocation, RunPaths};
+use slk_cargo::{parse_cli, CargoInvocation, CliCommand, RunPaths};
 use tempfile::tempdir;
 
 fn values(items: &[&str]) -> Vec<OsString> {
@@ -37,14 +37,7 @@ fn project_and_run_ids_must_be_safe_single_path_segments() {
 
 #[test]
 fn cargo_invocation_preserves_program_and_arguments_in_order() {
-    let arguments = values(&[
-        "test",
-        "-p",
-        "demo",
-        "--release",
-        "--",
-        "--nocapture",
-    ]);
+    let arguments = values(&["test", "-p", "demo", "--release", "--", "--nocapture"]);
     let invocation = CargoInvocation::new("cargo", arguments.clone(), None).unwrap();
 
     assert_eq!(invocation.program(), OsStr::new("cargo"));
@@ -81,5 +74,75 @@ fn cleanup_scope_is_the_exact_run_subtree() {
         data_root.join("runtime/cargo/project-a/run-001")
     );
     assert!(!sibling.run_root().starts_with(current.cleanup_root()));
-    assert!(!current.cleanup_root().starts_with(data_root.join("cargo-home")));
+    assert!(!current
+        .cleanup_root()
+        .starts_with(data_root.join("cargo-home")));
+}
+
+#[test]
+fn cli_parses_run_and_cleanup_without_consuming_cargo_arguments() {
+    let run = parse_cli(values(&[
+        "run",
+        "--data-root",
+        r"D:\SLK-DATA",
+        "--project-id",
+        "project-a",
+        "--run-id",
+        "run-001",
+        "--cargo-program",
+        "cargo-nextest",
+        "--",
+        "test",
+        "--workspace",
+        "--",
+        "--nocapture",
+    ]))
+    .unwrap();
+    match run {
+        CliCommand::Run(command) => {
+            assert_eq!(command.data_root(), Some(Path::new(r"D:\SLK-DATA")));
+            assert_eq!(command.project_id(), "project-a");
+            assert_eq!(command.run_id(), "run-001");
+            assert_eq!(command.cargo_program(), OsStr::new("cargo-nextest"));
+            assert_eq!(
+                command.cargo_arguments(),
+                values(&["test", "--workspace", "--", "--nocapture"])
+            );
+        }
+        CliCommand::Cleanup(_) => panic!("expected run command"),
+    }
+
+    let cleanup = parse_cli(values(&[
+        "cleanup",
+        "--project-id",
+        "project-a",
+        "--run-id",
+        "run-001",
+    ]))
+    .unwrap();
+    assert!(matches!(cleanup, CliCommand::Cleanup(_)));
+}
+
+#[test]
+fn cli_rejects_missing_delimiter_or_missing_cargo_command() {
+    for arguments in [
+        values(&[
+            "run",
+            "--project-id",
+            "project-a",
+            "--run-id",
+            "run-001",
+            "test",
+        ]),
+        values(&[
+            "run",
+            "--project-id",
+            "project-a",
+            "--run-id",
+            "run-001",
+            "--",
+        ]),
+    ] {
+        assert_eq!(parse_cli(arguments).unwrap_err().code(), "SLK_CARGO_USAGE");
+    }
 }

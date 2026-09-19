@@ -2826,6 +2826,7 @@ dependencies = [
 name = "slk-cargo"
 version = "4.0.0"
 dependencies = [
+ "slk-state-core",
  "tempfile",
 ]
 

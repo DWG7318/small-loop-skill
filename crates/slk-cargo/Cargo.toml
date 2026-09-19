@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[dependencies]
+slk-state-core = { path = "../slk-state-core" }
+
 [[bin]]
 name = "slk-cargo"
 path = "src/main.rs"
