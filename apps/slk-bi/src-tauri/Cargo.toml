@@ -1,0 +1,17 @@
+[package]
+name = "slk-bi-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Read-only desktop BI for Small Loop Skill"
+
+[lib]
+name = "slk_bi_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+slk-state-core = { path = "../../../crates/slk-state-core" }
+tauri = { version = "2", features = [] }

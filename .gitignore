@@ -8,3 +8,6 @@ __pycache__/
 .worktrees/
 .codex/
 target/
+node_modules/
+dist/
+*.tsbuildinfo
