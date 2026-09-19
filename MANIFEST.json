@@ -79,6 +79,10 @@
       "sha256": "cc9e61cd36f6429573ba72853ddf7f91fcaa7234d456cb766f547c91b61d93f4"
     },
     {
+      "path": "docs/superpowers/plans/2026-09-20-slk-4.0-cross-agent-transport.md",
+      "sha256": "7f5b9295f75e32e8f0a96ec19ee39350d92158d7945bfd0db0d1d32c993c9357"
+    },
+    {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
       "sha256": "d26a2d488e8ac2159750b332d8eb1bd02a1187aa9143f0e75a105ad8b601dcfd"
     },
