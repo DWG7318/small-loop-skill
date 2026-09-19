@@ -16,7 +16,7 @@
     },
     {
       "path": ".gitignore",
-      "sha256": "bd4ca5e9ce5aef1abee0fc45532d9ab05b7ac07b7db2daa2c57d1d27e5b4a28a"
+      "sha256": "25980f6ed27a78a522f989dcb37d3bd9f15c41c283194c3c469d65a5ddc126cc"
     },
     {
       "path": "CHANGELOG.md",
@@ -187,6 +187,10 @@
       "sha256": "9e0773330b15e7d261e8e47fb38fbe21a080a0cef9755fd39d6738e4bf0336f5"
     },
     {
+      "path": "src/slk_transport/adapters/codex.py",
+      "sha256": "b500f62d271aab88eb46be058d93afcb92de50e757d3b2fce37573d3bd57f91f"
+    },
+    {
       "path": "src/slk_transport/contracts.py",
       "sha256": "204f72dc75c27f9f14afb9799b8e6c0d26ff2de67c3edac5a83296d416e9839d"
     },
@@ -199,6 +203,10 @@
       "sha256": "4cf4292521e7cdcf7a7634273f7b162cd42fbd8b3534d8da1c79c5aea46eaa69"
     },
     {
+      "path": "src/slk_transport/jsonrpc.py",
+      "sha256": "7cb27b8a40ae848565d10f507b805d66698422d5a30a58a32666f4f3e6ffbb04"
+    },
+    {
       "path": "tests/skill_testkit.py",
       "sha256": "3334d4d00b034ff87c62b14f31035303bd3b30d68895e0ba9dd6a6afc2eda104"
     },
@@ -209,6 +217,14 @@
     {
       "path": "tests/test_skill_collection_300.py",
       "sha256": "b7d52cd2a14d2d3a7903c4b47cfcae2feb4586dfd95d07cc1db375e46a7669da"
+    },
+    {
+      "path": "tests/transport/fake_app_server.py",
+      "sha256": "59b018b9c8e298267baedf9b1f5fcefe59977ff8942e2a1c1c192bcaac90c361"
+    },
+    {
+      "path": "tests/transport/test_codex_adapter.py",
+      "sha256": "e4eba4c389e667603a953ad4ea5abb6724d2942e8c2e46cc8b36ea584aa02128"
     },
     {
       "path": "tests/transport/test_contracts.py",
