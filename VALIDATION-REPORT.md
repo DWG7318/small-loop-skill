@@ -25,18 +25,18 @@ The state core does not create, wake, watch, replace, or infer live Agents. Nati
 
 Repository and Python:
 
-- `python -m pytest -q` with externally built `slk-state` and `slk-bi-query`: **121 passed**, 0 failed, 0 skipped;
-- `python scripts/quick_validate.py`: **13/13 Skill directories PASS**;
+- `python -m pytest -q` with externally built `slk-state` and `slk-bi-query`: **122 passed**, 0 failed, 0 skipped;
+- `python scripts/quick_validate.py`: **14/14 Skill directories PASS**;
 - `python scripts/validate_repository.py`: PASS;
 - manifest discovery regression: tracked and non-ignored new release files are included, while ignored local build output is excluded;
 - `git diff --check`: PASS.
 
-Rust workspace, using Rust/Cargo 1.94.0 and an external `CARGO_TARGET_DIR`:
+Rust workspace, using Rust/Cargo 1.94.0:
 
 - `cargo fmt --all -- --check`: PASS;
-- `cargo clippy --workspace --all-targets --offline -- -D warnings`: PASS;
-- `cargo test --workspace --all-targets --offline`: **28 passed**, 0 failed;
-- the 28 tests cover configuration, authorization, role replacement and session rebinding, concurrency, schema immutability and migration backup, TOKEN/write flow, transport failure, resource recovery, evidence, deterministic export, eight shared BI projections, and the desktop's read-only command surface.
+- `cargo clippy --workspace --all-targets -- -D warnings`: PASS;
+- `cargo test --workspace --all-targets`: **46 passed**, 0 failed;
+- the 46 tests cover configuration, authorization, role replacement and session rebinding, concurrency, schema immutability and migration backup, TOKEN/write flow, transport failure, evidence, deterministic export, eight shared BI projections, the desktop's read-only command surface, and `slk-cargo` Run isolation, explicit contention classification, one bounded recovery attempt, advisory state-write failure, and exact Run cleanup.
 
 SLK BI frontend:
 
@@ -52,6 +52,8 @@ SLK BI frontend:
 The state-core acceptance executed two independent Runs concurrently against one configured temporary data root. Each Run registered a distinct Supervisor, Checker, and Worker and completed the four-leg TOKEN route, D0, D1, D2, and `RUN_CLOSED`. The exercise also proved Checker replacement, session rebinding, correction without history rewrite, evidence hash verification, cross-Run credential rejection, deterministic export, and resource contention/recovery without TOKEN movement or false rework.
 
 The BI acceptance queried all eight projections from the accepted two-Run database without changing its SHA-256. A combined 14-query projection set had SHA-256 `a0840473a44aa9ac4c2e5cbd3cc2384d9359eddb513a8da3b8e4e147f47bd115` and contained no credential value.
+
+The Cargo resource-continuity acceptance launched two real `slk-cargo run` processes concurrently against one fixture project. Both exited 0 and used different targets under `runtime/cargo/<project-id>/<run-id>/primary`. Exact cleanup removed Run A while preserving Run B. The helper did not create a daemon, role, CELL, patrol, global installation, or shared Cargo-home cleanup.
 
 Human-readable evidence:
 

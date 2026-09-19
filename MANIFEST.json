@@ -24,11 +24,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "01c8e3939b51b6b337d00350c8882b54d7df1dffe53ec7058c67ff32c1a18b2e"
+      "sha256": "5cba9b654ed20f490a45c8ba4f25e8954aa75944cf5ded2dab16caac37587ce2"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "b1ccd4e3e452d573d466adfe111406109e766f24c9ddc09d3065ff48245c6d95"
+      "sha256": "349aeef7cb8f622f6cc8b68aa75f3c38cc001ae205bf3421e49d7f9b7b142bba"
     },
     {
       "path": "DESIGN.md",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "a9a92db18fb6286cc60b68b1a568902325da77ed055b26a1dca96f08d885bcfa"
+      "sha256": "b868410a2d9605700979d7a2968d0eb9fffc511fa4e6fa7104efc02c1c1bb7f0"
     },
     {
       "path": "VERSION",
@@ -433,6 +433,50 @@
     {
       "path": "crates/slk-bi-query/src/main.rs",
       "sha256": "89a16f9a393658a7bf62ec772559ce8374167d4019ef6a7b142c073341ec5c7b"
+    },
+    {
+      "path": "crates/slk-cargo/Cargo.toml",
+      "sha256": "3ace95478c3a99554d8734ce5c709cdc10700fcbba9c21a3169b3b2364879cf3"
+    },
+    {
+      "path": "crates/slk-cargo/src/args.rs",
+      "sha256": "abe878ce5acba0ae784dee3021ca6fec04414f88eaf42903db00527c2b41a4b2"
+    },
+    {
+      "path": "crates/slk-cargo/src/classify.rs",
+      "sha256": "e70b9ff9ddce087f9f08b40c8f79ee5d6e663e3091eb21b580affac8f1caf969"
+    },
+    {
+      "path": "crates/slk-cargo/src/lib.rs",
+      "sha256": "f91c96bfc65c0188fd28153b7c276fe6dcf7a3d64798d7d49467f99ce43f134a"
+    },
+    {
+      "path": "crates/slk-cargo/src/main.rs",
+      "sha256": "506b33d753e9fc6b357bd143774e428f8acf47c5d8c5c7fdf57a8f0fc7924858"
+    },
+    {
+      "path": "crates/slk-cargo/src/paths.rs",
+      "sha256": "5461faec8e63e12e4fceb57e6c2221a770ae8e98966c051795ccfa6c15467fc3"
+    },
+    {
+      "path": "crates/slk-cargo/src/runner.rs",
+      "sha256": "de841ccf3e3576d3d1eac40831fc162c49f6e3e2d6f7a242da127f92e6c62921"
+    },
+    {
+      "path": "crates/slk-cargo/src/state.rs",
+      "sha256": "cfc8600466bd089489dca9aa46d2d3dc379b2077d9206898ee3a82e3dfdae775"
+    },
+    {
+      "path": "crates/slk-cargo/tests/cli_contract.rs",
+      "sha256": "b0d530988fa05386e520a5564b7d507d5f260a4ead8e01d47d21e51217ee3f3e"
+    },
+    {
+      "path": "crates/slk-cargo/tests/runner_contract.rs",
+      "sha256": "5a38a497d372a192b0617e7fecde5e2753e317ccd22c8c731cd97e1279ddcce0"
+    },
+    {
+      "path": "crates/slk-cargo/tests/state_and_cleanup.rs",
+      "sha256": "06051b4a843bb460c542e4ed0e641a624dcf0a2ca0378ea70f399409fe0f22eb"
     },
     {
       "path": "crates/slk-state-cli/Cargo.toml",
