@@ -116,6 +116,83 @@ fn resource_contention_does_not_advance_token_or_count_as_rework() {
 }
 
 #[test]
+fn current_checker_or_supervisor_can_record_resource_recovery_without_moving_the_token() {
+    let supervisor_fixture = Fixture::new();
+    let mut supervisor_event = event(
+        "supervisor-resource-contended",
+        EventType::ResourceContended,
+        json!({"resource":"release-port","owner":"live-process"}),
+    );
+    supervisor_event.role_instance_id = "supervisor-a".into();
+    supervisor_fixture
+        .store
+        .write_event(&supervisor_fixture.supervisor, supervisor_event)
+        .unwrap();
+    assert_eq!(
+        supervisor_fixture
+            .store
+            .current_token("run-a")
+            .unwrap()
+            .sequence,
+        1
+    );
+
+    let checker_fixture = Fixture::new();
+    checker_fixture
+        .store
+        .handoff_token(
+            &checker_fixture.supervisor,
+            handoff(2, "supervisor-a", "checker-a"),
+        )
+        .unwrap();
+    let mut checker_event = event(
+        "checker-resource-recovered",
+        EventType::ResourceRecovered,
+        json!({"resource":"cargo-target","recovery":"isolated-target-dir"}),
+    );
+    checker_event.role_instance_id = "checker-a".into();
+    checker_fixture
+        .store
+        .write_event(&checker_fixture.checker, checker_event)
+        .unwrap();
+    assert_eq!(
+        checker_fixture
+            .store
+            .current_token("run-a")
+            .unwrap()
+            .sequence,
+        2
+    );
+}
+
+#[test]
+fn run_closed_updates_the_read_projection_without_moving_the_token() {
+    let fixture = Fixture::new();
+    let mut closed = event(
+        "run-closed",
+        EventType::RunClosed,
+        json!({"outcome":"passed"}),
+    );
+    closed.role_instance_id = "supervisor-a".into();
+    closed.go_id = None;
+    closed.cell_id = None;
+    closed.attempt = None;
+    fixture
+        .store
+        .write_event(&fixture.supervisor, closed)
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.summary.state, "closed");
+    assert_eq!(projection.summary.closure_state, "closed");
+    assert_eq!(
+        projection.summary.closed_at.as_deref(),
+        Some("2026-09-20T00:00:03Z")
+    );
+    assert_eq!(fixture.store.current_token("run-a").unwrap().sequence, 1);
+}
+
+#[test]
 fn plan_revision_and_role_replacement_preserve_current_authority() {
     let fixture = Fixture::new();
     let revision = fixture

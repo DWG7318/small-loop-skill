@@ -18,7 +18,7 @@ description: Use when an active Small Loop Skill (SLK) Run has D1 PASS or Superv
 
 ## 检查对象隔离
 
-1. Supervisor 先从 Run 目标、GO 结果、最终候选和端到端入口开始，检查真实组合结果。
+1. Supervisor 先用 `slk-state write` 记录 `D2_STARTED`，然后先从 Run 目标、GO 结果、最终候选和端到端入口开始检查真实组合结果。
 2. 优先用现有入口直接检查 GO 与 CELL 的衔接、主要端到端路径、关键风险、相关回归、副作用和剩余限制；按 Run 风险选择必要检查，不以新建检查体系替代真实组合验证。检查工具或环境故障先定位，不直接算作组合缺陷；证据不足记录未证明，交回可行验证路线，不写为 PASS。
 3. 形成初步 D2 判断后，随后读取详细 D1 记录、D0、返工、豁免和证据位置，核对 CELL 是否完整、是否出现遗漏事实以及记录是否与候选一致。
 4. D1 PASS 不作为 D2 通过证明；它只说明单个 CELL 的 D1 结果。D2 结论仍由组合、衔接和端到端证据支持。
@@ -37,7 +37,7 @@ Checker → Worker → Checker
 
 ## D2 通过后的收尾
 
-1. 调用 `$slk-record-run` 汇总最终 CELL 数、D0结果、D1通过数、Supervisor豁免数、D2结论、限制和证据位置，并把最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。
+1. 用 `slk-state write` 依次记录 D2 结论与 `RUN_CLOSED`，调用 `$slk-record-run` 自动导出最终 CELL 数、D0、D1通过数、Supervisor豁免数、限制和证据位置；最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。
 2. 调用 `$slk-manage-team`，建议依次归档 Worker、归档 Checker，并保留 Supervisor 对话。
 3. 向 Owner 发送一个简洁结论，例如：Run 已完工，D0/D1/D2结果、豁免数量、已知限制和根记录路径。
 

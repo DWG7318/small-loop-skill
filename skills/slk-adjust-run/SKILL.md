@@ -16,7 +16,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor de
 
 - 连续 D1 返工仍未收敛；
 - D2 发现 CELL 或 GO 之间的衔接问题；
-- 当前模型、电脑、环境或依赖与原计划差异较大；
+- 当前模型、电脑、环境、依赖或独占资源与原计划差异较大；资源占用先按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md) 恢复同一节点；
 - CELL 变化已经影响后续 GO、技术路线、验收目标或 Owner 需求。
 
 ## 建议选择
@@ -37,4 +37,4 @@ Supervisor 可以按实际原因组合以下办法：
 
 调整通常保持原 Run 目标和已约定验收目标；Owner主动改变目标时，再更新相应定义。Supervisor 把原因、选择、影响、CELL n/N变化和未决风险写入根记录。
 
-调整完成后，Supervisor 把决定写入记录，沿 `Supervisor → Checker` 以递增编号的同一 `SLK TOKEN` 交还当前责任，随后结束本次激活。待施工 CELL 可以使用 `$slk-dispatch-cell` 校准并派发；当前 CELL 的修复可以回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再激活 Supervisor 检查相关 D2。
+调整完成后，Supervisor 用 `slk-state revise-plan` 或 `write` 追加决定，沿 `Supervisor → Checker` 完成真实投递，以递增编号的同一 `SLK TOKEN` 用 `slk-state handoff` 交还当前责任，随后结束本次激活。待施工 CELL 使用 `$slk-dispatch-cell`；当前 CELL 修复回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再激活 Supervisor。

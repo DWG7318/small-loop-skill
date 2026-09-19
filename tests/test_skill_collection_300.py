@@ -970,3 +970,36 @@ def test_wait_clarification_does_not_add_skill_lines() -> None:
     }
     actual = {name: len(read_skill(name).splitlines()) for name in EXPECTED_SKILLS}
     assert actual == expected
+
+
+def test_state_authority_is_bound_to_existing_roles_without_becoming_a_new_loop_layer() -> None:
+    main = read_skill("small-loop-skill")
+    record = read_skill("slk-record-run")
+    execute = read_skill("slk-execute-cell")
+    check = read_skill("slk-check-cell")
+    adjust = read_skill("slk-adjust-run")
+    close = read_skill("slk-close-run")
+    resource = (
+        SKILLS / "slk-execute-cell" / "references" / "resource-contention.md"
+    )
+
+    for marker in ("SQLite", "`slk-state`", "`slk-bi-query`", "只读", "三个角色"):
+        assert marker in main
+    for marker in ("中央 SLK 数据根", "自动导出", "SQLite", "三个角色", "Owner"):
+        assert marker in record
+    for text in (execute, check, adjust):
+        assert "resource-contention.md" in text
+    assert resource.is_file()
+    resource_text = resource.read_text(encoding="utf-8")
+    for marker in (
+        "Cargo",
+        "CARGO_TARGET_DIR",
+        "不计入 D1 返工",
+        "不推进 `SLK TOKEN`",
+        "数据库",
+        "端口",
+        "GPU",
+    ):
+        assert marker in resource_text
+    assert "D2" in close and "slk-state" in close
+    assert "新角色" not in resource_text and "后台巡检" not in resource_text

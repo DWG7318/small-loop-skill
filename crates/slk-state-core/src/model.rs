@@ -74,8 +74,9 @@ impl EventType {
             CellDispatched | D1Started | D1Passed | D1Failed | ReworkRequested | CellSplit
             | CandidateForwarded => role == Role::Checker,
             WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
-            | CandidateSubmitted | ResourceContended | ResourceRecovered => role == Role::Worker,
-            TokenHandedOff | TransportFailed | EvidenceRegistered => true,
+            | CandidateSubmitted => role == Role::Worker,
+            ResourceContended | ResourceRecovered | TokenHandedOff | TransportFailed
+            | EvidenceRegistered => true,
         }
     }
 

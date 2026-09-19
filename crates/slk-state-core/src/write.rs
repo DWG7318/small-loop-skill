@@ -551,6 +551,13 @@ impl StateStore {
                     params![request.run_id, cell_id, state],
                 )?;
             }
+            if request.event_type == EventType::RunClosed {
+                transaction.execute(
+                    "UPDATE runs SET state='closed', closure_state='closed', closed_at=?2
+                     WHERE run_id=?1",
+                    params![request.run_id, request.occurred_at],
+                )?;
+            }
             Ok(())
         })
     }

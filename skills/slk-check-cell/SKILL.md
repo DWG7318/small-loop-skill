@@ -20,7 +20,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 1. 确认候选对应当前 `CELL n/N`，验收目标仍是规划时的目标。
 2. 检查目标结果、相关回归、明显副作用和候选中客观可观察的风险。
-3. 优先使用现有测试、构建入口或直接操作，验证目标和真实未覆盖风险，先形成独立 D1 判断；证据已足够时收敛检查，额外工具按具体缺口选择，不为自建检查器递归补证明材料。
+3. 用 `slk-state write` 记录 `D1_STARTED`，优先使用现有测试、构建入口或直接操作，验证目标和真实未覆盖风险，形成独立判断；证据足够时收敛。检查命令遇到独占资源阻塞时按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md)，不把占用误判为 D1 FAIL。
    Owner 已为本次 Run 启用效率工具时，Checker 可用 Probe CLI 独立定位影响范围，用 RTK 压缩高噪声测试或构建输出；核心 diff、关键错误原文和决定 D1 的证据仍直接检查，出现失败、截断或疑义时回退原生命令，不能让压缩摘要替代独立判断。
 4. 随后读取 Worker 的 D0 与施工记录，核对是否出现新的客观事实或遗漏风险；D0 结论不替代 Checker 的独立证据。
 5. 由 Checker 给出 D1 结论；检查工具或环境故障先定位，不直接算作产品缺陷。证据不足时记录未证明（不写为 PASS），优先换用现有可行验证方式，确需改变方案时交 Supervisor 协助：
@@ -28,7 +28,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
    - `D1 FAIL：CELL n/N，进入返工`
 6. D1 FAIL 时说明具体差距、复现方式和期望结果，让 Worker 能针对性修复。
 7. 在执行 D1 的同时，顺手记录本 CELL 的容量事实，例如工作量是否合适、是否接近当前能力或是否因过大带来返工；这复用已有事实，不增加额外检查。
-8. 把本次 D1、错误、返工或容量事实写入根记录，建议调用 `$slk-record-run`，随后按下一成员的精确角色端点调用 `slk-transport send`，以递增编号的同一 `SLK TOKEN` 通过原生 Agent 入口传递结论；启动失败时仍由 Checker 持有责任。
+8. 把 D1 PASS/FAIL、错误、返工与容量事实通过 `slk-state write` 记录，建议调用 `$slk-record-run`；随后按精确端点调用 `slk-transport send`，原生启动成功后用 `slk-state handoff` 传递结论，失败时记录 `TRANSPORT_FAILED` 且仍由 Checker 持有责任。
 
 ## 后继
 

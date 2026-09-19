@@ -19,7 +19,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 3. 普通返工优先聚焦已知差距。错误原因仍不清楚时，可以调用当前环境中适合项目的 Debug Skill，例如 `$superpowers:systematic-debugging`；诊断完成后仍回到同一 CELL 和原 D1 目标。
 4. 第一次 D1 FAIL 使用当前 Worker 模型做针对性返工；同一 CELL 第二次 D1 返工时，调用 `$slk-select-models` 为当前 CELL 做第一次升级。第三次 D1 FAIL 时执行第二次升级，并由 Checker 重新规划当前 CELL，可以调用 `$slk-dispatch-cell` 一分为二或另选施工方案，同时保留原验收目标。Owner 已指定模型时先保留该模型，确实值得变更时交给 Supervisor 形成建议并由 Owner 决定。
 5. Worker 完成修改和最低 D0 后，使用 `$slk-execute-cell` 的记录与交付方式重新提交。
-6. Checker 使用 `$slk-check-cell` 针对修复目标、受影响范围和相关回归重新执行 D1，保留未受影响且仍有效的已完成工作，仍有效的客观证据可以复用，不复用通过结论；记录本轮错误、变化和结果。
+6. Checker 使用 `$slk-check-cell` 针对修复目标、受影响范围和相关回归重新执行 D1，保留未受影响且仍有效的已完成工作与客观证据，不复用通过结论；本轮错误、变化和结果由各自通过 `slk-state` 追加，不覆盖前轮事实，不重复施工未受影响且仍有效的已完成工作。
 
 ## 连续未收敛
 

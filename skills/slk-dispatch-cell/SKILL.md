@@ -33,9 +33,9 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 ## 交付方式
 
-Checker 使用能够继续 Worker 对话的真实激活操作一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发；它按已登记的 Worker 精确角色端点调用 `slk-transport send` 进入原生 Agent 入口，并在同一封闭信封中写入 `SLK TOKEN Tnnn`、令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；编号在 Run 内单调递增。文字只出现在数据库或后台记录中不构成投递；出现目标原生启动证据才完成交接。Worker 在令牌到达的该次激活中直接开始 CELL，不增加令牌专用回执；接收令牌不是 CELL 完工。Checker 发出完整 CELL 后结束本次激活，不使用`wait_threads`也不读取Worker施工状态；候选交付重新激活Checker。这里一次传递完整目标、边界和验收事实，也不把 Checker 的 D1 判断提前交给 Worker。
+Checker 先用 `slk-state write` 记录 `CELL_DISPATCHED`，再按 Worker 精确端点调用 `slk-transport send` 一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发；同一封闭信封写入 `SLK TOKEN Tnnn`、令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径，编号单调递增。文字只出现在数据库或后台不构成投递；出现真实激活的原生启动证据后才用 `slk-state handoff` 原子推进。Worker 直接开始 CELL，不增加令牌专用回执；Checker 发出完整 CELL 后结束本次激活，不使用`wait_threads`也不读取Worker施工状态，候选交付重新激活Checker。
 
-`slk-transport` 明确报告未启动、投递失败或 Worker 端点不可用时，Checker 保留当前令牌与责任，并沿用同一消息、信封、端点版本和拟发送编号重试；任务不可用时可以使用 `$slk-manage-team` 优先恢复原 Worker，缺少回复本身不表示需要更换 Worker。
+`slk-transport` 明确报告未启动、投递失败或 Worker 端点不可用时，Checker 用 `slk-state write` 记录 `TRANSPORT_FAILED`，保留当前令牌与责任，沿用同一消息、信封、端点版本和拟发送编号重试；任务不可用时可使用 `$slk-manage-team` 优先恢复原 Worker，缺少回复本身不表示需要更换 Worker。
 
 Worker 提出合理澄清时，Checker可以补充上下文；若答案会改变 Run 目标或验收目标，建议请 Supervisor 协助判断。
 
@@ -45,4 +45,4 @@ Worker 使用 `$slk-execute-cell` 开始并继续施工。Checker 保留当前 C
 
 ## 负面提示词
 
-- 不要为令牌增加接收回执或轮询，把一个 CELL 拆成逐条命令派发，或把接收令牌当成候选交付；不要提前把 D1 判断给 Worker，也不要在派工后等待或读取 Worker 内部施工过程。
+- 不要为令牌增加接收回执或轮询，把一个 CELL 拆成逐条命令派发，或把接收令牌当成候选交付；接收令牌不是 CELL 完工。不要提前把 D1 判断给 Worker，也不要在派工后等待或读取 Worker 内部施工过程。
