@@ -63,44 +63,28 @@ fn run() -> Result<Value, QueryError> {
     }
     let store = configured_store()?;
     match command {
-        "projects" => Ok(json!({
-            "schema_version":"slk.bi.projects/v1",
-            "projects":store.list_projects().map_err(QueryError::command)?
-        })),
+        "projects" => store.projects_view().map_err(QueryError::command),
         "runs" => {
             let project = optional_value(&arguments[1..], "--project-id");
-            Ok(json!({
-                "schema_version":"slk.bi.runs/v1",
-                "runs":store.list_runs(project.as_deref()).map_err(QueryError::command)?
-            }))
+            store
+                .runs_view(project.as_deref())
+                .map_err(QueryError::command)
         }
         "run" => {
             let run_id = required_value(&arguments[1..], "--run-id")?;
-            let projection = store.query_run(&run_id).map_err(QueryError::command)?;
-            let mut value = serde_json::to_value(projection).map_err(QueryError::command)?;
-            let object = value
-                .as_object_mut()
-                .expect("Run projection serializes as an object");
-            object.insert("schema_version".into(), json!("slk.bi.run/v1"));
-            object.insert("run_id".into(), json!(run_id));
-            Ok(value)
+            store.run_view(&run_id).map_err(QueryError::command)
         }
         "graph" | "roles" | "plans" | "events" | "evidence" => {
             let run_id = required_value(&arguments[1..], "--run-id")?;
-            let projection = store.query_run(&run_id).map_err(QueryError::command)?;
-            let (schema, key, value) = match command {
-                "graph" => ("slk.bi.graph/v1", "go_nodes", json!(projection.go_nodes)),
-                "roles" => ("slk.bi.roles/v1", "roles", json!(projection.roles)),
-                "plans" => (
-                    "slk.bi.plans/v1",
-                    "plan_revisions",
-                    json!(projection.plan_revisions),
-                ),
-                "events" => ("slk.bi.events/v1", "events", json!(projection.events)),
-                "evidence" => ("slk.bi.evidence/v1", "evidence", json!(projection.evidence)),
+            let result = match command {
+                "graph" => store.graph_view(&run_id),
+                "roles" => store.roles_view(&run_id),
+                "plans" => store.plans_view(&run_id),
+                "events" => store.events_view(&run_id),
+                "evidence" => store.evidence_view(&run_id),
                 _ => unreachable!(),
             };
-            Ok(json!({"schema_version":schema,"run_id":run_id,key:value}))
+            result.map_err(QueryError::command)
         }
         _ => Err(QueryError::usage(format!(
             "unknown command {command}\n{}",

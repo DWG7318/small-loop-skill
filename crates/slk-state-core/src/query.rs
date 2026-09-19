@@ -2,6 +2,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::auth::StateError;
 use crate::schema::{open_database_read_only, SCHEMA_VERSION};
@@ -61,7 +62,25 @@ pub struct RoleProjection {
     pub session_id: String,
     pub lifecycle: String,
     pub predecessor_role_instance_id: Option<String>,
+    pub successor_role_instance_id: Option<String>,
+    pub current_go_id: Option<String>,
+    pub current_cell_id: Option<String>,
+    pub created_at: String,
+    pub takeover_at: Option<String>,
+    pub exited_at: Option<String>,
+    pub endpoints: Vec<EndpointProjection>,
     pub display_state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EndpointProjection {
+    pub endpoint_version: u32,
+    pub transport_adapter: String,
+    pub host_identity: String,
+    pub session_id: String,
+    pub state: String,
+    pub created_at: String,
+    pub retired_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -126,7 +145,9 @@ pub struct RunProjection {
 
 impl RunProjection {
     pub fn role(&self, role: &str) -> Option<&RoleProjection> {
-        self.roles.iter().find(|item| item.role == role)
+        self.roles
+            .iter()
+            .find(|item| item.role == role && item.lifecycle == "active")
     }
 }
 
@@ -229,6 +250,62 @@ impl StateStore {
             evidence: load_evidence(&connection, run_id)?,
         })
     }
+
+    pub fn projects_view(&self) -> Result<Value, StateError> {
+        Ok(json!({
+            "schema_version": "slk.bi.projects/v1",
+            "projects": self.list_projects()?
+        }))
+    }
+
+    pub fn runs_view(&self, project_id: Option<&str>) -> Result<Value, StateError> {
+        Ok(json!({
+            "schema_version": "slk.bi.runs/v1",
+            "runs": self.list_runs(project_id)?
+        }))
+    }
+
+    pub fn run_view(&self, run_id: &str) -> Result<Value, StateError> {
+        let projection = self.query_run(run_id)?;
+        let mut value = serde_json::to_value(projection)?;
+        let object = value
+            .as_object_mut()
+            .expect("RunProjection serializes as an object");
+        object.insert("schema_version".into(), json!("slk.bi.run/v1"));
+        object.insert("run_id".into(), json!(run_id));
+        Ok(value)
+    }
+
+    pub fn graph_view(&self, run_id: &str) -> Result<Value, StateError> {
+        let projection = self.query_run(run_id)?;
+        Ok(
+            json!({"schema_version":"slk.bi.graph/v1","run_id":run_id,"go_nodes":projection.go_nodes}),
+        )
+    }
+
+    pub fn roles_view(&self, run_id: &str) -> Result<Value, StateError> {
+        let projection = self.query_run(run_id)?;
+        Ok(json!({"schema_version":"slk.bi.roles/v1","run_id":run_id,"roles":projection.roles}))
+    }
+
+    pub fn plans_view(&self, run_id: &str) -> Result<Value, StateError> {
+        let projection = self.query_run(run_id)?;
+        Ok(
+            json!({"schema_version":"slk.bi.plans/v1","run_id":run_id,"plan_revisions":projection.plan_revisions}),
+        )
+    }
+
+    pub fn events_view(&self, run_id: &str) -> Result<Value, StateError> {
+        let projection = self.query_run(run_id)?;
+        Ok(json!({"schema_version":"slk.bi.events/v1","run_id":run_id,"events":projection.events}))
+    }
+
+    pub fn evidence_view(&self, run_id: &str) -> Result<Value, StateError> {
+        let projection = self.query_run(run_id)?;
+        Ok(
+            json!({"schema_version":"slk.bi.evidence/v1","run_id":run_id,"evidence":projection.evidence}),
+        )
+    }
 }
 
 fn load_go_nodes(connection: &Connection, run_id: &str) -> Result<Vec<GoProjection>, StateError> {
@@ -288,12 +365,15 @@ fn load_cell_nodes(
 fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjection>, StateError> {
     let mut statement = connection.prepare(
         "SELECT role, role_instance_id, agent_runtime, provider, model, reasoning, session_id,
-                lifecycle, predecessor_role_instance_id
-         FROM role_instances WHERE run_id=?1 AND lifecycle='active'
-         ORDER BY CASE role WHEN 'supervisor' THEN 1 WHEN 'checker' THEN 2 ELSE 3 END",
+                lifecycle, predecessor_role_instance_id, successor_role_instance_id,
+                current_go_id, current_cell_id, created_at, takeover_at, exited_at
+         FROM role_instances WHERE run_id=?1
+         ORDER BY CASE role WHEN 'supervisor' THEN 1 WHEN 'checker' THEN 2 ELSE 3 END,
+                  created_at, role_instance_id",
     )?;
     let rows = statement.query_map([run_id], |row| {
         let role_instance_id: String = row.get(1)?;
+        let endpoints = load_endpoints(connection, &role_instance_id)?;
         Ok(RoleProjection {
             role: row.get(0)?,
             display_state: role_display_state(connection, &role_instance_id)?,
@@ -305,9 +385,39 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
             session_id: row.get(6)?,
             lifecycle: row.get(7)?,
             predecessor_role_instance_id: row.get(8)?,
+            successor_role_instance_id: row.get(9)?,
+            current_go_id: row.get(10)?,
+            current_cell_id: row.get(11)?,
+            created_at: row.get(12)?,
+            takeover_at: row.get(13)?,
+            exited_at: row.get(14)?,
+            endpoints,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+fn load_endpoints(
+    connection: &Connection,
+    role_instance_id: &str,
+) -> rusqlite::Result<Vec<EndpointProjection>> {
+    let mut statement = connection.prepare(
+        "SELECT endpoint_version, transport_adapter, host_identity, session_id, state,
+                created_at, retired_at
+         FROM role_endpoints WHERE role_instance_id=?1 ORDER BY endpoint_version",
+    )?;
+    let rows = statement.query_map([role_instance_id], |row| {
+        Ok(EndpointProjection {
+            endpoint_version: row.get(0)?,
+            transport_adapter: row.get(1)?,
+            host_identity: row.get(2)?,
+            session_id: row.get(3)?,
+            state: row.get(4)?,
+            created_at: row.get(5)?,
+            retired_at: row.get(6)?,
+        })
+    })?;
+    rows.collect()
 }
 
 fn role_display_state(connection: &Connection, role_instance_id: &str) -> rusqlite::Result<String> {

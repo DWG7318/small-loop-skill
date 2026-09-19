@@ -3,7 +3,8 @@ use serde_json::json;
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
     CellDefinition, EndpointIdentity, EventType, GoDefinition, InitRunRequest, ProjectIdentity,
-    RegisterRoleRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
+    RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest, Role, RoleIdentity,
+    TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -66,6 +67,75 @@ fn working_is_only_the_latest_authored_unfinished_state() {
             .display_state,
         "completed"
     );
+}
+
+#[test]
+fn shared_bi_views_have_stable_schemas_and_do_not_expose_credentials() {
+    let fixture = Fixture::new();
+    let projects = fixture.store.projects_view().unwrap();
+    let runs = fixture.store.runs_view(Some("project-a")).unwrap();
+    let run = fixture.store.run_view("run-a").unwrap();
+
+    assert_eq!(projects["schema_version"], "slk.bi.projects/v1");
+    assert_eq!(runs["schema_version"], "slk.bi.runs/v1");
+    assert_eq!(run["schema_version"], "slk.bi.run/v1");
+    assert_eq!(run["run_id"], "run-a");
+    let serialized = serde_json::to_string(&(projects, runs, run)).unwrap();
+    assert!(!serialized.contains("credential"));
+    assert!(!serialized.contains("native_address"));
+}
+
+#[test]
+fn role_view_preserves_replacement_and_session_endpoint_history() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .rebind_session(
+            &fixture.supervisor,
+            RebindSessionRequest {
+                event_id: "rebind-checker".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "checker-a".into(),
+                endpoint: endpoint_v("checker-a-rebound", 2),
+                reason: "resume elsewhere".into(),
+                occurred_at: "2026-09-20T00:00:02Z".into(),
+            },
+        )
+        .unwrap();
+    fixture
+        .store
+        .replace_role(
+            &fixture.supervisor,
+            ReplaceRoleRequest {
+                event_id: "replace-checker".into(),
+                run_id: "run-a".into(),
+                old_role_instance_id: "checker-a".into(),
+                replacement: identity("checker-b", Role::Checker),
+                endpoint: endpoint("checker-b"),
+                reason: "checker unavailable".into(),
+                occurred_at: "2026-09-20T00:00:03Z".into(),
+            },
+        )
+        .unwrap();
+
+    let roles = fixture.store.roles_view("run-a").unwrap();
+    let checkers = roles["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|role| role["role"] == "checker")
+        .collect::<Vec<_>>();
+    assert_eq!(checkers.len(), 2);
+    assert_eq!(checkers[0]["lifecycle"], "replaced");
+    assert_eq!(checkers[0]["successor_role_instance_id"], "checker-b");
+    assert_eq!(checkers[0]["endpoints"].as_array().unwrap().len(), 2);
+    assert_eq!(checkers[0]["endpoints"][0]["state"], "retired");
+    assert_eq!(
+        checkers[0]["endpoints"][1]["session_id"],
+        "session-checker-a-rebound"
+    );
+    assert_eq!(checkers[1]["lifecycle"], "active");
+    assert_eq!(checkers[1]["predecessor_role_instance_id"], "checker-a");
 }
 
 struct Fixture {
@@ -183,8 +253,12 @@ fn identity(id: &str, role: Role) -> RoleIdentity {
 }
 
 fn endpoint(id: &str) -> EndpointIdentity {
+    endpoint_v(id, 1)
+}
+
+fn endpoint_v(id: &str, endpoint_version: u32) -> EndpointIdentity {
     EndpointIdentity {
-        endpoint_version: 1,
+        endpoint_version,
         transport_adapter: "native".into(),
         host_identity: "host-a".into(),
         session_id: format!("session-{id}"),
