@@ -68,7 +68,7 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
         assert "4.0.0" in text
-        assert "12" in text
+        assert "13" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text

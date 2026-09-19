@@ -38,7 +38,7 @@ Checker → Worker → Checker
 ## D2 通过后的收尾
 
 1. 用 `slk-state write` 依次记录 D2 结论与 `RUN_CLOSED`，调用 `$slk-record-run` 自动导出最终 CELL 数、D0、D1通过数、Supervisor豁免数、限制和证据位置；最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。
-2. 调用 `$slk-manage-team`，建议依次归档 Worker、归档 Checker，并保留 Supervisor 对话。
+2. 调用 `$slk-manage-team`，建议依次归档 Worker、归档 Checker，并保留 Supervisor 对话；本 Run 使用过 Cargo 隔离目录时，在相关命令全部结束后执行 `slk-cargo cleanup` 清理其精确 Run runtime。
 3. 向 Owner 发送一个简洁结论，例如：Run 已完工，D0/D1/D2结果、豁免数量、已知限制和根记录路径。
 
 Owner 可以根据结论继续查询；Supervisor 保留最终交接、D2结论和根记录路径，需要时再查阅详细工程历史。

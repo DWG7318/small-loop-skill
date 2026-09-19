@@ -1,7 +1,7 @@
 {
   "name": "Small Loop Skill Collection",
   "version": "4.0.0",
-  "skill_count": 13,
+  "skill_count": 14,
   "excludes": [
     "MANIFEST.json"
   ],
@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "e2165af052fe2003b6451b011a6bb523f051f43dd78efb00d1060879e35790f2"
+      "sha256": "729aa02f5b5413385f586501543f1808a2dabd73e65599c91ac72922c2d55e25"
     },
     {
       "path": "Cargo.lock",
@@ -40,7 +40,7 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "30595c520af336876560dc71daa9d3d66eb0b6713bd5a5c70b224e95e40cb857"
+      "sha256": "9fbdb0658def34376682069a6e8b02f2e34dca84daff4a6339431cf635e2b5b3"
     },
     {
       "path": "PRODUCT.md",
@@ -48,15 +48,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "64ca7e8042ec7050d4f5f38e93a26567721aacb1cb65f6701723e60525930ce3"
+      "sha256": "7a5b3797d7d56a7fa845d3dd6f01ea17ee11fbc91163a5b133114ecf9a143313"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "82913056856f9d5771b88bda4354e5dac949cf1323d502f4bc03d6de021bf15d"
+      "sha256": "716b1d7a4dad9396ec7f10f14c2f58b93f3779f019d19baa85b0b93046fd1889"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "945bf510d2424ee1fa43dfa15dd2cfbbe7d0d1a342bcde7d96d26047f98703e4"
+      "sha256": "a9a92db18fb6286cc60b68b1a568902325da77ed055b26a1dca96f08d885bcfa"
     },
     {
       "path": "VERSION",
@@ -636,7 +636,7 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "cf36707ced2985e33bd964274ef2fd46773cbe0335a93913e7b39084d662c0c4"
+      "sha256": "a17d3eb4149fd690fa45cb8bbf7f47eb734c5a1302e4dcda705588cd5d9053e2"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -648,7 +648,7 @@
     },
     {
       "path": "skills/slk-close-run/SKILL.md",
-      "sha256": "532d4783e7632eeccc763d8821567a240f0e9c02519f777eb21d0831dafac079"
+      "sha256": "c42fd151f2575ab716345b5055fe393f7347069a21f6d3ba1bba95c0e017ae85"
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
@@ -660,11 +660,15 @@
     },
     {
       "path": "skills/slk-execute-cell/references/resource-contention.md",
-      "sha256": "2767e8a35f3da826364da1bff90eddbf2016969669ce843808c2198638b92c13"
+      "sha256": "07872bf9d852666d4d107340f024216d87aefc63cce04904b06f772e06a0dc62"
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
-      "sha256": "9a65493cf655f2732e809afd3386f2e25953c83afab47f6c07fe646149e5027b"
+      "sha256": "3b739858e32dfc6241d39450b3bd5665aec1f409a19c319239d33d26973970af"
+    },
+    {
+      "path": "skills/slk-guard-resources/SKILL.md",
+      "sha256": "4c9abe685356e541066efe37081e3bf1c1a57ffdf5ea5a15c9cf5c2c5454f767"
     },
     {
       "path": "skills/slk-manage-team/SKILL.md",
@@ -672,7 +676,7 @@
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
-      "sha256": "23d66e5859d18ad994631d1601c4ff089a1f8bbf66359ab6048bae7b127d0b79"
+      "sha256": "00e322b313185da6184de1c856995296de8bdc5e65a2e5d3478ad9029c75f336"
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
@@ -696,7 +700,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "857680c7e30f509584ccb6bd3dd93bc32a34570f50170c46b14a624a9f7611ed"
+      "sha256": "88deaaa6978d5063b5df3bdf2bca97c91347a2370e36ef43fdd9522b38ac3f3d"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -752,7 +756,7 @@
     },
     {
       "path": "tests/skill_testkit.py",
-      "sha256": "3334d4d00b034ff87c62b14f31035303bd3b30d68895e0ba9dd6a6afc2eda104"
+      "sha256": "39f7cfe843ccb215812c04cfc299a93eade7dd1653cf81be81c15068a74b41e5"
     },
     {
       "path": "tests/state/test_bi_desktop_contract.py",
@@ -768,11 +772,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "a9c58b181b1504c32aaec3d099f0c205e95aeaa570dc91e8ee63e9518c799b8a"
+      "sha256": "68a24c71813620175bf5c5d004f22a7b23baf8a08064ef1d49a36e413484b41d"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "899a742b24659cdb951c74a9da317693938a953d963f22d2aebc351d991f9b34"
+      "sha256": "31443471f909e15833351f506b7b2a9e6934cde5de0c692ff21d33ebf8361d04"
     },
     {
       "path": "tests/transport/fake_app_server.py",

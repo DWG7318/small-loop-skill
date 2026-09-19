@@ -40,9 +40,9 @@ BI 只显示已经记录的事实，不确认消息是否真正投递，不凭�
 当前方法位于 [`skills/`](skills/)：
 
 - [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) 保存轻量身份和路由；
-- 12 个同级子 Skill 分别处理 Run 与初始 CELL 规划、角色模型选择、Supervisor Grill、成员生命周期、CELL 派发与施工、记录、返工、调整、通讯恢复和收尾。返工需要根因诊断时，可以调用当前环境中适合项目的 Debug Skill。
+- 13 个同级子 Skill 分别处理 Run 与初始 CELL 规划、资源连续性、角色模型选择、Supervisor Grill、成员生命周期、CELL 派发与施工、记录、返工、调整、通讯恢复和收尾。返工需要根因诊断时，可以调用当前环境中适合项目的 Debug Skill。
 
-这 12 个子 Skill 不是独立工程方法，不可脱离 SLK Run 单独使用。当前 Run 已选择 Small Loop Skill（SLK），并由主 Skill 或同集合流程路由到对应情境后，才使用相应子 Skill。
+这 13 个子 Skill 不是独立工程方法，不可脱离 SLK Run 单独使用。当前 Run 已选择 Small Loop Skill（SLK），并由主 Skill 或同集合流程路由到对应情境后，才使用相应子 Skill。
 
 普通施工读取主 Skill 和当前情境对应的 Skill；情况变化时再加载相关指导。维护 SLK 提示词时，对已发现的误用同时修正主体正确做法，并在独立“负面提示词”章节写对应的“不要……”；已有提醒优先修改，不反复堆叠。负面章节补充同一方法，不另立工作体系或审批、停工清单。
 
@@ -52,7 +52,7 @@ Supervisor 初始化 Run 及第一版施工方案。Worker、Checker、Superviso
 
 ## 安装
 
-把 `skills/` 下 13 个目录作为同级目录放入 Codex Skill 根目录。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
+把 `skills/` 下 14 个目录作为同级目录放入 Codex Skill 根目录。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
 
 ## 验证
 

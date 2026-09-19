@@ -6,7 +6,7 @@ Branch: `feature/slk-4.0-cross-agent-transport`
 
 ## Accepted scope
 
-SLK 4.0.0 keeps the 3.0.8 Small Loop Skill method: one bounded Run, one serial GO/CELL path, Supervisor, Checker, Worker, minimum Worker D0, isolated Checker D1, combined-result Supervisor D2, rework, exemption, communication recovery, and the existing 13-Skill collection.
+SLK 4.0.0 keeps the 3.0.8 Small Loop Skill method: one bounded Run, one serial GO/CELL path, Supervisor, Checker, Worker, minimum Worker D0, isolated Checker D1, combined-result Supervisor D2, rework, exemption, communication recovery, and a 14-Skill collection with one compact resource-continuity guard.
 
 The major-version addition is an executable state and observation layer:
 

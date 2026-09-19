@@ -7,6 +7,7 @@
 - Added the read-only `slk-bi-query` Agent API and a standalone Tauri/React desktop BI over the same eight versioned projections, with no credential, mutation, dispatch, acknowledgement, repair, exemption, shell, network-service, updater, or telemetry surface.
 - Accepted two concurrent Runs with six distinct role instances, full TOKEN paths, D0/D1/D2 closure, replacement, rebound, correction, evidence, and resource recovery without state crossover or repository writes.
 - Accepted light, dark, and compact BI views with conservative status language: stored facts never claim current process liveness or native delivery by themselves.
+- Added one compact resource-continuity Skill and the `slk-cargo` route for per-Run Cargo isolation, bounded explicit-lock recovery, and exact Run-runtime cleanup without changing the three-role Loop.
 
 ## 3.0.8
 

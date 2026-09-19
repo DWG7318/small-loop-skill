@@ -24,7 +24,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 1. SLK 的适用范围，以及一个 Run、线性 GO、线性 CELL 的含义。
 2. Supervisor、Checker、Worker 的职责和创建关系。
 3. D0、D1、D2分别解决什么问题，怎样优先复用现有入口和有效客观证据、减少重复，以及检查工具故障为什么不等于产品缺陷。
-4. CELL 大小怎样参考模型、电脑、累积工程量和余量。
+4. CELL 大小怎样参考模型、电脑、累积工程量和余量；本 Run 涉及 Cargo 或其他明显独占资源时采用什么隔离、恢复与清理安排。
 5. Worker 与 Checker 的隔离、通讯和返工关系。
 6. 通讯异常、成员异常、连续返工和 D2 发现组合问题时如何恢复施工。
 7. 根 Run 记录由谁创建，各成员怎样记录和传输。

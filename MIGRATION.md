@@ -35,7 +35,7 @@ Runs adopting 3.0.5 keep D0, D1, and D2 as inspection layers rather than adding 
 
 ## Migration from 3.0.8 to 4.0.0
 
-SLK 4.0 keeps the 3.0.8 three-role method and 13-Skill collection. It does not introduce another construction role, inspection layer, scheduler, watcher, acknowledgement loop, or Owner write path.
+SLK 4.0 keeps the 3.0.8 three-role method and extends the collection to 14 Skills with one compact resource-continuity guard. It does not introduce another construction role, inspection layer, scheduler, watcher, acknowledgement loop, or Owner write path.
 
 For a new 4.0 Run, configure one machine-wide SLK data root and initialize the Run through `slk-state`. Supervisor, Checker, and Worker then append only the facts at their existing boundaries. Native transport remains responsible for real Agent activation; the state row is written after accepted delivery evidence and never substitutes for it. Existing 3.0.8 Markdown records remain historical records rather than being silently imported as live state.
 

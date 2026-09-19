@@ -26,6 +26,7 @@ Supervisor 通过理解确认后，用 `slk-state init-run` 初始化中央状�
 ## 按当前情境选择指导
 
 - 新 Run、GO 与初始 CELL 方案：`$slk-plan-run`
+- Cargo 或其他明显独占资源的隔离与恢复安排：`$slk-guard-resources`
 - Supervisor、Checker、Worker 的模型能力选择：`$slk-select-models`
 - Supervisor 开工前理解确认：`$slk-grill-supervisor`
 - 建立、恢复、更换或归档成员：`$slk-manage-team`

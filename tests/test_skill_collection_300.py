@@ -155,7 +155,9 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
 
 def test_plan_run_keeps_inspection_out_of_the_cell_construction_plan() -> None:
     step = next(
-        line for line in read_skill("slk-plan-run").splitlines() if line.startswith("4. ")
+        line
+        for line in read_skill("slk-plan-run").splitlines()
+        if line[:3].rstrip(". ").isdigit() and "D0" in line
     )
     for marker in ("D0", "D1", "D2", "检查本身", "独立 CELL", "检查发现", "工程工作"):
         assert marker in step
