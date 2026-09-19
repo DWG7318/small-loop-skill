@@ -110,7 +110,7 @@ pub fn resolve_data_root_at(config_path: &Path) -> Result<PathBuf, ConfigError> 
 }
 
 #[cfg(windows)]
-fn replace_file(source: &Path, destination: &Path) -> Result<(), ConfigError> {
+pub(crate) fn replace_file(source: &Path, destination: &Path) -> Result<(), ConfigError> {
     use std::os::windows::ffi::OsStrExt;
 
     const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
@@ -145,7 +145,7 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), ConfigError> {
 }
 
 #[cfg(not(windows))]
-fn replace_file(source: &Path, destination: &Path) -> Result<(), ConfigError> {
+pub(crate) fn replace_file(source: &Path, destination: &Path) -> Result<(), ConfigError> {
     fs::rename(source, destination)?;
     Ok(())
 }

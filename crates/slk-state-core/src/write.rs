@@ -17,13 +17,13 @@ use crate::model::{
     EventType, InitRunRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
     TokenHandoffRequest, WriteRequest,
 };
-use crate::schema::open_database;
+use crate::schema::{open_database, SchemaError};
 
 const TRANSACTION_ATTEMPTS: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct StateStore {
-    data_root: PathBuf,
+    pub(crate) data_root: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -588,13 +588,21 @@ impl StateStore {
         Ok(count as u64)
     }
 
-    fn with_immediate_transaction<T, F>(&self, mut operation: F) -> Result<T, StateError>
+    pub(crate) fn with_immediate_transaction<T, F>(&self, mut operation: F) -> Result<T, StateError>
     where
         F: FnMut(&Transaction<'_>) -> Result<T, StateError>,
     {
         let mut last_busy = None;
         for attempt in 0..TRANSACTION_ATTEMPTS {
-            let mut connection = open_database(&self.data_root)?;
+            let mut connection = match open_database(&self.data_root) {
+                Ok(connection) => connection,
+                Err(SchemaError::Sqlite(error)) if is_busy(&error) => {
+                    last_busy = Some(error);
+                    thread::sleep(Duration::from_millis(25 * (attempt as u64 + 1)));
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
             let transaction =
                 match connection.transaction_with_behavior(TransactionBehavior::Immediate) {
                     Ok(transaction) => transaction,
@@ -620,6 +628,14 @@ impl StateStore {
 }
 
 fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {
+    if !valid_identifier(&request.project.project_id)
+        || !valid_identifier(&request.run_id)
+        || !valid_identifier(&request.supervisor.role_instance_id)
+    {
+        return Err(StateError::InvalidPlan(
+            "project, Run, and role identities must be safe path segments".into(),
+        ));
+    }
     if request.go_nodes.is_empty() || request.cell_nodes.is_empty() {
         return Err(StateError::InvalidPlan(
             "at least one GO and one CELL are required".into(),
@@ -627,7 +643,10 @@ fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {
     }
     let mut go_ids = BTreeSet::new();
     for (index, go) in request.go_nodes.iter().enumerate() {
-        if go.ordinal as usize != index + 1 || !go_ids.insert(go.go_id.as_str()) {
+        if !valid_identifier(&go.go_id)
+            || go.ordinal as usize != index + 1
+            || !go_ids.insert(go.go_id.as_str())
+        {
             return Err(StateError::InvalidPlan(
                 "GO identities and ordinals must be unique and contiguous".into(),
             ));
@@ -636,7 +655,10 @@ fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {
     let mut next_cell_ordinal = BTreeMap::<&str, u32>::new();
     let mut cell_ids = BTreeSet::new();
     for cell in &request.cell_nodes {
-        if !go_ids.contains(cell.go_id.as_str()) || !cell_ids.insert(cell.cell_id.as_str()) {
+        if !valid_identifier(&cell.cell_id)
+            || !go_ids.contains(cell.go_id.as_str())
+            || !cell_ids.insert(cell.cell_id.as_str())
+        {
             return Err(StateError::InvalidPlan(
                 "every CELL must have a unique identity and reference one GO".into(),
             ));
@@ -714,7 +736,10 @@ fn current_plan_revision(connection: &Connection, run_id: &str) -> Result<u32, S
         .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))
 }
 
-fn current_token_from(connection: &Connection, run_id: &str) -> Result<CurrentToken, StateError> {
+pub(crate) fn current_token_from(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<CurrentToken, StateError> {
     connection
         .query_row(
             "SELECT token_sequence, to_role_instance_id, go_id, cell_id
@@ -753,6 +778,14 @@ fn valid_token_route(from: Role, to: Role) -> bool {
             | (Role::Worker, Role::Checker)
             | (Role::Checker, Role::Supervisor)
     )
+}
+
+pub(crate) fn valid_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

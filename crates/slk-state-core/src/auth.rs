@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::config::ConfigError;
 use crate::model::{EventType, Role};
 use crate::schema::SchemaError;
 
@@ -80,6 +81,14 @@ pub enum StateError {
     RunNotFound(String),
     #[error("CELL was not found: {0}")]
     CellNotFound(String),
+    #[error("evidence source or identity is invalid: {0}")]
+    EvidenceInvalid(String),
+    #[error("evidence was not found: {0}")]
+    EvidenceNotFound(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
     #[error(transparent)]
     Schema(#[from] SchemaError),
     #[error(transparent)]

@@ -59,6 +59,7 @@ pub enum EventType {
     CandidateSubmitted,
     ResourceContended,
     ResourceRecovered,
+    EvidenceRegistered,
     TokenHandedOff,
     TransportFailed,
 }
@@ -74,7 +75,7 @@ impl EventType {
             | CandidateForwarded => role == Role::Checker,
             WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
             | CandidateSubmitted | ResourceContended | ResourceRecovered => role == Role::Worker,
-            TokenHandedOff | TransportFailed => true,
+            TokenHandedOff | TransportFailed | EvidenceRegistered => true,
         }
     }
 
@@ -107,6 +108,7 @@ impl EventType {
             CandidateSubmitted => "CANDIDATE_SUBMITTED",
             ResourceContended => "RESOURCE_CONTENDED",
             ResourceRecovered => "RESOURCE_RECOVERED",
+            EvidenceRegistered => "EVIDENCE_REGISTERED",
             TokenHandedOff => "TOKEN_HANDED_OFF",
             TransportFailed => "TRANSPORT_FAILED",
         }
