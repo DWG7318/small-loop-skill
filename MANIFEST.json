@@ -575,6 +575,10 @@
       "sha256": "dc8f67cd5fe0a31642dad64e1440c6757d2a50a5e5e90c2952d52f918eb23dbf"
     },
     {
+      "path": "docs/superpowers/plans/2026-09-20-slk-4.0-resource-continuity.md",
+      "sha256": "2e04a8969eb613366d6ed84d52a094d8c8ca01de208b26407306d678539a2d74"
+    },
+    {
       "path": "docs/superpowers/plans/2026-09-20-slk-4.0-state-core-read-api.md",
       "sha256": "15128b4ce576b8af7ec3b2a9040da80224311f14079cc2a3fd8568958cd7cc79"
     },
@@ -597,6 +601,10 @@
     {
       "path": "docs/superpowers/specs/2026-09-20-slk-4.0-read-only-bi-design.md",
       "sha256": "bfae71e7dfe6114954bef10940a63c8dd22fc50932f680ecaea68abe1a70c3a8"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-20-slk-4.0-resource-continuity-design.md",
+      "sha256": "99d793db8d91aaf040045a8a9d3c313e3d01e784c5c7ebe334d8927c99c23f1b"
     },
     {
       "path": "docs/superpowers/specs/2026-09-20-slk-4.0-state-bi-design.md",
