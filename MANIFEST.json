@@ -208,7 +208,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "da883d2d79766541433c4cbb237b02058437b872d669b4c1a558922bc0578304"
+      "sha256": "84f2b10156dd18bc87c46c986380ce0c8b3dfc8c9fd90ed4212e535dfa1f893b"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -249,6 +249,10 @@
     {
       "path": "tests/transport/fake_ocrv.py",
       "sha256": "8cba8b7453449c8e05da2970d584472fd6cd49000302a11388f93f34ae2de6c4"
+    },
+    {
+      "path": "tests/transport/test_cli.py",
+      "sha256": "9c664202ac1d988851b097a736cd8759ddfbadaf681b86a77c10db494c8319f0"
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
