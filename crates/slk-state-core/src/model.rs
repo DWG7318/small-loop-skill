@@ -1,0 +1,194 @@
+//! Closed request and identity types shared by state writers and readers.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Supervisor,
+    Checker,
+    Worker,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Supervisor => "supervisor",
+            Self::Checker => "checker",
+            Self::Worker => "worker",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "supervisor" => Some(Self::Supervisor),
+            "checker" => Some(Self::Checker),
+            "worker" => Some(Self::Worker),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EventType {
+    RunInitialized,
+    PlanRevised,
+    RoleRegistered,
+    RoleReplaced,
+    ModelChanged,
+    SessionRebound,
+    ExemptionGranted,
+    D2Started,
+    D2Passed,
+    D2Failed,
+    RunClosed,
+    CellDispatched,
+    D1Started,
+    D1Passed,
+    D1Failed,
+    ReworkRequested,
+    CellSplit,
+    CandidateForwarded,
+    WorkStarted,
+    WorkProgress,
+    BlockerReported,
+    ChangeRecorded,
+    D0Completed,
+    CandidateSubmitted,
+    ResourceContended,
+    ResourceRecovered,
+    TokenHandedOff,
+    TransportFailed,
+}
+
+impl EventType {
+    pub fn is_owned_by(self, role: Role) -> bool {
+        use EventType::*;
+        match self {
+            RunInitialized | PlanRevised | RoleRegistered | RoleReplaced | ModelChanged
+            | SessionRebound | ExemptionGranted | D2Started | D2Passed | D2Failed | RunClosed => {
+                role == Role::Supervisor
+            }
+            CellDispatched | D1Started | D1Passed | D1Failed | ReworkRequested | CellSplit
+            | CandidateForwarded => role == Role::Checker,
+            WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
+            | CandidateSubmitted | ResourceContended | ResourceRecovered => role == Role::Worker,
+            TokenHandedOff | TransportFailed => true,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        use EventType::*;
+        match self {
+            RunInitialized => "RUN_INITIALIZED",
+            PlanRevised => "PLAN_REVISED",
+            RoleRegistered => "ROLE_REGISTERED",
+            RoleReplaced => "ROLE_REPLACED",
+            ModelChanged => "MODEL_CHANGED",
+            SessionRebound => "SESSION_REBOUND",
+            ExemptionGranted => "EXEMPTION_GRANTED",
+            D2Started => "D2_STARTED",
+            D2Passed => "D2_PASSED",
+            D2Failed => "D2_FAILED",
+            RunClosed => "RUN_CLOSED",
+            CellDispatched => "CELL_DISPATCHED",
+            D1Started => "D1_STARTED",
+            D1Passed => "D1_PASSED",
+            D1Failed => "D1_FAILED",
+            ReworkRequested => "REWORK_REQUESTED",
+            CellSplit => "CELL_SPLIT",
+            CandidateForwarded => "CANDIDATE_FORWARDED",
+            WorkStarted => "WORK_STARTED",
+            WorkProgress => "WORK_PROGRESS",
+            BlockerReported => "BLOCKER_REPORTED",
+            ChangeRecorded => "CHANGE_RECORDED",
+            D0Completed => "D0_COMPLETED",
+            CandidateSubmitted => "CANDIDATE_SUBMITTED",
+            ResourceContended => "RESOURCE_CONTENDED",
+            ResourceRecovered => "RESOURCE_RECOVERED",
+            TokenHandedOff => "TOKEN_HANDED_OFF",
+            TransportFailed => "TRANSPORT_FAILED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIdentity {
+    pub project_id: String,
+    pub name: String,
+    pub repository_url: Option<String>,
+    pub last_known_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GoDefinition {
+    pub go_id: String,
+    pub ordinal: u32,
+    pub title: String,
+    pub objective: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CellDefinition {
+    pub go_id: String,
+    pub cell_id: String,
+    pub ordinal: u32,
+    pub title: String,
+    pub objective: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleIdentity {
+    pub role_instance_id: String,
+    pub role: Role,
+    pub agent_runtime: String,
+    pub provider: String,
+    pub model: String,
+    pub reasoning: String,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EndpointIdentity {
+    pub endpoint_version: u32,
+    pub transport_adapter: String,
+    pub host_identity: String,
+    pub session_id: String,
+    pub native_address: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitRunRequest {
+    pub project: ProjectIdentity,
+    pub run_id: String,
+    pub goal: String,
+    pub boundaries: Value,
+    pub go_nodes: Vec<GoDefinition>,
+    pub cell_nodes: Vec<CellDefinition>,
+    pub supervisor: RoleIdentity,
+    pub supervisor_endpoint: EndpointIdentity,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WriteRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub go_id: Option<String>,
+    pub cell_id: Option<String>,
+    pub attempt: Option<u32>,
+    pub plan_revision: u32,
+    pub role_instance_id: String,
+    pub event_type: EventType,
+    pub details: Value,
+    pub occurred_at: String,
+}
