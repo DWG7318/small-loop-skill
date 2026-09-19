@@ -19,7 +19,7 @@ Plan Run/GO/checks → select role models → size initial CELLs
 → communication tests → first CELL
 ```
 
-Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. One current `SLK TOKEN` is carried by the existing visible handoff message: it identifies the last confirmed responsibility boundary but never proves live execution, and it adds no role, service, state file, or acknowledgement round. Checker dispatches CELLs and reviews them independently at D1. Worker implements one current CELL and performs a minimum D0 before delivery.
+Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. One current `SLK TOKEN` records the last confirmed responsibility boundary in the 4.0 state core. A sender advances it only after accepted native delivery, and the receiver records `WORK_STARTED` when real work begins; neither fact alone is used to pretend that a member is still working. Checker dispatches CELLs and reviews them independently at D1. Worker implements one current CELL and performs a minimum D0 before delivery.
 
 Run planning keeps D0, D1, and D2 as the existing inspection layers instead of creating inspection-only CELLs. Checks prefer existing entrances and direct product evidence, distinguish checking-tool/environment failures from product defects, and reuse still-valid objective evidence without repeating whole lower-level reviews or building a checking system first; insufficient evidence stays unproved, not PASS. When SLK joins an already completed or partly completed project, the plan preserves and reuses completed work, then chooses the reasonable minimum construction route, scope, and engineering activity needed to reach the current target reliably—not merely the smallest code diff.
 
@@ -28,6 +28,12 @@ SLK guidance helps members decide how to continue. Rework, communication recover
 RTK, Probe CLI, and Ponytail are optional external efficiency aids. They may be installed once in the Codex-wide environment, but installation does not authorize use in a project: the Owner chooses them per Run. SLK uses them explicitly without automatic hooks, MCP, or extra agents; native commands and raw evidence remain the fallback and authority.
 
 Cross-Agent handoffs use the accepted `slk-transport` artifact with exact role endpoints and native Agent activation. A database row, background message, or conversation-title match is not delivery; the current sender hands off only after exact native-start evidence and otherwise keeps responsibility. See [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md).
+
+## 4.0 state core
+
+The 4.0 development line adds one configurable machine-wide data root, a versioned SQLite authority, durable evidence, and deterministic Markdown exports. Supervisor, Checker, and Worker write only their own existing facts through the authenticated `slk-state` CLI; the database does not schedule work or add a fourth role. `slk-bi-query` exposes stable read-only JSON for Agents and the future BI, with no credential or mutation surface. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and the independent [`state-core acceptance`](docs/state/SLK-STATE-ACCEPTANCE.md).
+
+The standalone desktop BI is the next serial 4.0 subsystem. Until it is accepted, the query CLI and deterministic Markdown export remain the authoritative presentation surfaces.
 
 ## Skill collection
 
@@ -42,7 +48,7 @@ Ordinary work reads the main Skill and the current situational Skill. Additional
 
 ## Run record
 
-Supervisor creates `SLK-RUN-<RUN-ID>.md` in the project root. Worker, Checker, and Supervisor add their own engineering facts, including the current token pointer and last real transfer; the full history stays in this record. The template is at [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md).
+Supervisor initializes the Run and its first plan revision. Worker, Checker, and Supervisor append their own engineering facts to the configured SLK data root; deterministic `SLK-RUN-<RUN-ID>.md` exports are generated from that authority, outside the product repository. The template remains at [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md) for readable structure and compatibility.
 
 ## Install
 
