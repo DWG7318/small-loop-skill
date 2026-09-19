@@ -56,6 +56,8 @@ pub enum StateError {
     StoredRoleInvalid(String),
     #[error("role {actor:?} cannot create role {target:?}")]
     RoleCreationNotAuthorized { actor: Role, target: Role },
+    #[error("role {actor:?} cannot rebind session for role {target:?}")]
+    SessionReboundNotAuthorized { actor: Role, target: Role },
     #[error("request role instance does not match authenticated role instance")]
     RoleInstanceMismatch,
     #[error("Run already exists: {0}")]
@@ -83,6 +85,8 @@ pub enum StateError {
     RunIdRequired,
     #[error("CELL was not found: {0}")]
     CellNotFound(String),
+    #[error("correction target is not an authored event in this Run: {0}")]
+    CorrectionTargetInvalid(String),
     #[error("evidence source or identity is invalid: {0}")]
     EvidenceInvalid(String),
     #[error("evidence was not found: {0}")]

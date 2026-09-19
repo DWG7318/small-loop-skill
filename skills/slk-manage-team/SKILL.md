@@ -41,7 +41,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 明确失效可以依据任务 ID 不存在、平台显示失败或取消且无法继续，或者真实激活操作明确返回任务不可用。暂时没有回复不作为更换成员的依据。
 
-接管成员可以先用 `slk-bi-query` 读取 Run、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号并复用原消息身份；接管新成员确认后或会话 rebound 后，上一级用 `slk-state replace-role` 退役旧凭证与端点，再把当前节点交给新任务 ID，使旧令牌失效并保留身份历史。
+接管成员可以先用 `slk-bi-query` 读取 Run、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号并复用原消息身份；只有同一角色实例的会话 rebound 时用 `slk-state rebind-session` 退役旧端点并保留凭证，接管新成员确认后则用 `replace-role` 退役旧凭证与端点，再把当前节点交给新任务 ID，使旧令牌失效并保留身份历史。
 
 ## 收尾归档
 

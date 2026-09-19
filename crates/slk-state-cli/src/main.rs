@@ -9,8 +9,8 @@ use slk_state_core::auth::Credential;
 use slk_state_core::config::{configure_at, default_config_path, resolve_data_root_at};
 use slk_state_core::evidence::{EvidenceRequest, EvidenceState};
 use slk_state_core::model::{
-    InitRunRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest,
-    TokenHandoffRequest, WriteRequest,
+    InitRunRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    RevisePlanRequest, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -77,6 +77,7 @@ fn run() -> Result<Value, CliError> {
         "write" => write_event(&arguments[1..]),
         "revise-plan" => revise_plan(&arguments[1..]),
         "replace-role" => replace_role(&arguments[1..]),
+        "rebind-session" => rebind_session(&arguments[1..]),
         "register-evidence" => register_evidence(&arguments[1..]),
         "export" => export(&arguments[1..]),
         "verify-evidence" => verify_evidence(&arguments[1..]),
@@ -172,6 +173,24 @@ fn replace_role(arguments: &[String]) -> Result<Value, CliError> {
         "run_id":run_id,
         "replacement_credential":issued.credential.expose_secret(),
         "credential_id":issued.credential_id,
+        "export":refresh_export(&store, &run_id)
+    }))
+}
+
+fn rebind_session(arguments: &[String]) -> Result<Value, CliError> {
+    let request: RebindSessionRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let role_instance_id = request.role_instance_id.clone();
+    let endpoint_version = request.endpoint.endpoint_version;
+    let store = configured_store()?;
+    store
+        .rebind_session(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"rebound",
+        "run_id":run_id,
+        "role_instance_id":role_instance_id,
+        "endpoint_version":endpoint_version,
         "export":refresh_export(&store, &run_id)
     }))
 }
@@ -275,5 +294,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|register-role|handoff|write|revise-plan|replace-role|register-evidence|export|verify-evidence> [options]\nCredentials are read only from SLK_ROLE_CREDENTIAL."
+    "slk-state <configure|init-run|register-role|handoff|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nCredentials are read only from SLK_ROLE_CREDENTIAL."
 }

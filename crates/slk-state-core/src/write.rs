@@ -15,8 +15,8 @@ use crate::auth::{
     IssuedCredential, StateError,
 };
 use crate::model::{
-    EventType, InitRunRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
-    TokenHandoffRequest, WriteRequest,
+    EventType, InitRunRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    RevisePlanRequest, Role, TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
 
@@ -487,6 +487,102 @@ impl StateStore {
         })
     }
 
+    pub fn rebind_session(
+        &self,
+        credential: &Credential,
+        request: RebindSessionRequest,
+    ) -> Result<(), StateError> {
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_event(
+                transaction,
+                &request.run_id,
+                credential,
+                EventType::TokenHandedOff,
+            )?;
+            let target_role_text: String = transaction
+                .query_row(
+                    "SELECT role FROM role_instances
+                     WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                    params![request.run_id, request.role_instance_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| {
+                    StateError::RoleInstanceNotCurrent(request.role_instance_id.clone())
+                })?;
+            let target_role = Role::parse(&target_role_text)
+                .ok_or_else(|| StateError::StoredRoleInvalid(target_role_text.clone()))?;
+            let authorized = matches!(
+                (actor.role, target_role),
+                (Role::Supervisor, Role::Checker) | (Role::Checker, Role::Worker)
+            ) || (actor.role == Role::Supervisor
+                && target_role == Role::Supervisor
+                && actor.role_instance_id == request.role_instance_id);
+            if !authorized {
+                return Err(StateError::SessionReboundNotAuthorized {
+                    actor: actor.role,
+                    target: target_role,
+                });
+            }
+
+            let current_version: u32 = transaction.query_row(
+                "SELECT endpoint_version FROM role_endpoints
+                 WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                params![request.run_id, request.role_instance_id],
+                |row| row.get(0),
+            )?;
+            if request.endpoint.endpoint_version != current_version + 1 {
+                return Err(StateError::EndpointNotCurrent);
+            }
+            transaction.execute(
+                "UPDATE role_endpoints SET state='retired', retired_at=?3
+                 WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                params![
+                    request.run_id,
+                    request.role_instance_id,
+                    request.occurred_at
+                ],
+            )?;
+            insert_endpoint(
+                transaction,
+                &request.run_id,
+                &request.role_instance_id,
+                &request.endpoint,
+                &request.occurred_at,
+            )?;
+            transaction.execute(
+                "UPDATE role_instances SET session_id=?3
+                 WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                params![
+                    request.run_id,
+                    request.role_instance_id,
+                    request.endpoint.session_id
+                ],
+            )?;
+            let revision = current_plan_revision(transaction, &request.run_id)?;
+            transaction.execute(
+                "INSERT INTO work_events
+                 (event_id, run_id, plan_revision, author_role_instance_id, event_type,
+                  details_json, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, 'SESSION_REBOUND', ?5, ?6)",
+                params![
+                    request.event_id,
+                    request.run_id,
+                    revision,
+                    actor.role_instance_id,
+                    serde_json::to_string(&serde_json::json!({
+                        "role_instance_id": request.role_instance_id,
+                        "endpoint_version": request.endpoint.endpoint_version,
+                        "session_id": request.endpoint.session_id,
+                        "reason": request.reason
+                    }))?,
+                    request.occurred_at
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn write_event(
         &self,
         credential: &Credential,
@@ -524,11 +620,26 @@ impl StateStore {
                     return Err(StateError::CellNotFound(cell_id.to_string()));
                 }
             }
+            if let Some(corrects_event_id) = request.corrects_event_id.as_deref() {
+                let target_author: Option<String> = transaction
+                    .query_row(
+                        "SELECT author_role_instance_id FROM work_events
+                         WHERE run_id=?1 AND event_id=?2",
+                        params![request.run_id, corrects_event_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if target_author.as_deref() != Some(actor.role_instance_id.as_str()) {
+                    return Err(StateError::CorrectionTargetInvalid(
+                        corrects_event_id.to_string(),
+                    ));
+                }
+            }
             transaction.execute(
                 "INSERT INTO work_events
                  (event_id, run_id, go_id, cell_id, attempt, plan_revision,
-                  author_role_instance_id, event_type, details_json, occurred_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                  author_role_instance_id, event_type, details_json, corrects_event_id, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     request.event_id,
                     request.run_id,
@@ -539,6 +650,7 @@ impl StateStore {
                     actor.role_instance_id,
                     request.event_type.as_str(),
                     serde_json::to_string(&request.details)?,
+                    request.corrects_event_id,
                     request.occurred_at
                 ],
             )?;

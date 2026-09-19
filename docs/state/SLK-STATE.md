@@ -6,7 +6,7 @@ SLK 4.0 uses one configured machine-wide data root for structured Run state, evi
 
 - `slk-state configure --data-root <absolute>` selects the one data root.
 - `slk-state init-run --request <json>` initializes a Run and returns the Supervisor write credential once.
-- `slk-state register-role`, `replace-role`, `revise-plan`, `write`, `register-evidence`, and `handoff` are authenticated mutations. The credential is supplied only through `SLK_ROLE_CREDENTIAL`.
+- `slk-state register-role`, `replace-role`, `rebind-session`, `revise-plan`, `write`, `register-evidence`, and `handoff` are authenticated mutations. `rebind-session` preserves the role instance and credential while retiring the previous endpoint; `replace-role` revokes the replaced identity. The credential is supplied only through `SLK_ROLE_CREDENTIAL`.
 - `slk-state export --run-id <id>` and `verify-evidence --run-id <id>` require an active role credential.
 - `slk-bi-query projects|runs|run|graph|roles|plans|events|evidence` opens SQLite read-only for one invocation. It has no mutation or credential surface.
 
@@ -14,7 +14,7 @@ Supervisor, Checker, and Worker write only the facts owned by their existing SLK
 
 ## State behavior
 
-Every Run has one monotonic token history, one current plan revision, ordered GO/CELL definitions, complete role-instance history, append-only work events, and hashed evidence identities. Role replacement revokes the old credential and endpoint without rewriting history. A changed engineering scheme appends a plan revision.
+Every Run has one monotonic token history, one current plan revision, ordered GO/CELL definitions, complete role-instance history, append-only work events, and hashed evidence identities. Role replacement revokes the old credential and endpoint without rewriting history. A session rebound appends a new endpoint version. A changed engineering scheme appends a plan revision. A factual correction is a new authored event whose `corrects_event_id` points to the same role instance's earlier event; the original fact remains intact.
 
 `working` is derived only from the latest authored unfinished event, not from a stale chat status, a token owner, or a BI process. Resource contention leaves the same role, TOKEN, CELL, and rework count in place; see the on-demand SLK resource-continuity reference.
 

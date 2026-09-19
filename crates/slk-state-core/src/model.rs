@@ -192,6 +192,7 @@ pub struct WriteRequest {
     pub role_instance_id: String,
     pub event_type: EventType,
     pub details: Value,
+    pub corrects_event_id: Option<String>,
     pub occurred_at: String,
 }
 
@@ -240,6 +241,17 @@ pub struct ReplaceRoleRequest {
     pub run_id: String,
     pub old_role_instance_id: String,
     pub replacement: RoleIdentity,
+    pub endpoint: EndpointIdentity,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RebindSessionRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub role_instance_id: String,
     pub endpoint: EndpointIdentity,
     pub reason: String,
     pub occurred_at: String,

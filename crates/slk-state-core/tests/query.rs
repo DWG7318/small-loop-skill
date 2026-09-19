@@ -221,6 +221,7 @@ fn worker_event(event_id: &str, event_type: EventType) -> WriteRequest {
         role_instance_id: "worker-a".into(),
         event_type,
         details: json!({}),
+        corrects_event_id: None,
         occurred_at: "2026-09-20T00:00:03Z".into(),
     }
 }

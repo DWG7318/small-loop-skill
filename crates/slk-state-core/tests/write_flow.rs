@@ -3,8 +3,8 @@ use serde_json::json;
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
     CellDefinition, EndpointIdentity, EventType, GoDefinition, InitRunRequest, ProjectIdentity,
-    RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role, RoleIdentity,
-    TokenHandoffRequest, WriteRequest,
+    RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
+    RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -193,6 +193,81 @@ fn run_closed_updates_the_read_projection_without_moving_the_token() {
 }
 
 #[test]
+fn session_rebound_retires_the_old_endpoint_and_preserves_the_role_credential() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .rebind_session(
+            &fixture.supervisor,
+            RebindSessionRequest {
+                event_id: "rebind-checker".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "checker-a".into(),
+                endpoint: endpoint_v("session-checker-rebound", 2),
+                reason: "native session resumed elsewhere".into(),
+                occurred_at: "2026-09-20T00:00:03Z".into(),
+            },
+        )
+        .unwrap();
+
+    let checker = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .role("checker")
+        .unwrap()
+        .clone();
+    assert_eq!(checker.role_instance_id, "checker-a");
+    assert_eq!(checker.session_id, "session-checker-rebound");
+    assert!(matches!(
+        fixture
+            .store
+            .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a")),
+        Err(StateError::EndpointNotCurrent)
+    ));
+    let mut rebound_handoff = handoff(2, "supervisor-a", "checker-a");
+    rebound_handoff.endpoint_version = 2;
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, rebound_handoff)
+        .unwrap();
+}
+
+#[test]
+fn a_correction_appends_to_the_original_authored_fact() {
+    let fixture = Fixture::worker_active();
+    fixture
+        .store
+        .write_event(
+            &fixture.worker,
+            event(
+                "work-started",
+                EventType::WorkStarted,
+                json!({"path":"old"}),
+            ),
+        )
+        .unwrap();
+    let mut correction = event(
+        "work-started-correction",
+        EventType::WorkProgress,
+        json!({"path":"correct"}),
+    );
+    correction.corrects_event_id = Some("work-started".into());
+    fixture
+        .store
+        .write_event(&fixture.worker, correction)
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    let corrected = projection
+        .events
+        .iter()
+        .find(|item| item.event_id == "work-started-correction")
+        .unwrap();
+    assert_eq!(corrected.corrects_event_id.as_deref(), Some("work-started"));
+}
+
+#[test]
 fn plan_revision_and_role_replacement_preserve_current_authority() {
     let fixture = Fixture::new();
     let revision = fixture
@@ -365,8 +440,12 @@ fn role(role_instance_id: &str, role: Role) -> RoleIdentity {
 }
 
 fn endpoint(session_id: &str) -> EndpointIdentity {
+    endpoint_v(session_id, 1)
+}
+
+fn endpoint_v(session_id: &str, endpoint_version: u32) -> EndpointIdentity {
     EndpointIdentity {
-        endpoint_version: 1,
+        endpoint_version,
         transport_adapter: "native-cli".into(),
         host_identity: "host-a".into(),
         session_id: session_id.into(),
@@ -403,6 +482,7 @@ fn event(event_id: &str, event_type: EventType, details: serde_json::Value) -> W
         role_instance_id: "worker-a".into(),
         event_type,
         details,
+        corrects_event_id: None,
         occurred_at: "2026-09-20T00:00:03Z".into(),
     }
 }
