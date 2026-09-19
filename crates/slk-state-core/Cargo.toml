@@ -1,0 +1,15 @@
+[package]
+name = "slk-state-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+directories.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+

@@ -1,0 +1,15 @@
+[workspace]
+members = ["crates/slk-state-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "4.0.0"
+
+[workspace.dependencies]
+directories = "6.0.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.19"
+
