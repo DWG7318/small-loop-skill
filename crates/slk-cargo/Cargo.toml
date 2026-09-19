@@ -1,0 +1,12 @@
+[package]
+name = "slk-cargo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "slk-cargo"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3.27.0"

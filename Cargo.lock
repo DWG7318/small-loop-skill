@@ -2823,6 +2823,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "slk-cargo"
+version = "4.0.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "slk-state-cli"
 version = "4.0.0"
 dependencies = [
