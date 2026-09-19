@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from scripts.build_transport_zipapp import build_zipapp
+from scripts.run_transport_drill import run_drill
 
 from test_contracts import endpoint_value, envelope_value, payload_hash
 
@@ -137,3 +138,26 @@ def test_validate_rejects_unknown_address_field_before_attempt_creation(tmp_path
     output = json.loads(result.stdout)
     assert output["status"] == "rejected"
     assert output["error_code"] == "OCRV_ADDRESS_INVALID"
+
+
+def test_drill_verify_cli_independently_accepts_two_complete_runs(tmp_path: Path) -> None:
+    values = {
+        "evidence_root": str(tmp_path / "evidence"),
+        "workspace_root": str(tmp_path / "workspaces"),
+        "codex_command": [sys.executable, str(TESTS / "fake_app_server.py"), "normal"],
+        "ocrv_command": [sys.executable, str(TESTS / "fake_ocrv.py"), "normal"],
+        "dsh_command": [sys.executable, str(TESTS / "fake_dsh.py"), "normal"],
+        "timeout_seconds": 5,
+    }
+    run_drill(values, live=False, run_ids=("RUN-A", "RUN-B"))
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+
+    result = run_cli(
+        artifact,
+        "drill-verify",
+        "--evidence-root",
+        str(values["evidence_root"]),
+    )
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["status"] == "TRANSPORT_DRILL_PASS"

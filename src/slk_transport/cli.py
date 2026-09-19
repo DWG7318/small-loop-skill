@@ -18,6 +18,7 @@ from .adapters.dsh import DshAdapter
 from .adapters.ocrv import OcrvAdapter
 from .contracts import ContractError, Endpoint, Envelope, parse_delivery
 from .dispatcher import dispatch_once
+from .drill_verify import DrillVerificationError, verify_drill
 
 
 VERSION = "4.0.0"
@@ -169,6 +170,11 @@ def _send(args: argparse.Namespace) -> int:
     return 4
 
 
+def _drill_verify(args: argparse.Namespace) -> int:
+    _emit(verify_drill(args.evidence_root))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="slk-transport")
     parser.add_argument("--version", action="version", version=f"slk-transport {VERSION}")
@@ -181,6 +187,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             command.add_argument("--attempt-root", required=True, type=Path)
         if name == "send":
             command.add_argument("--startup-timeout-seconds", type=float, default=30.0)
+    drill_verify = subparsers.add_parser("drill-verify")
+    drill_verify.add_argument("--evidence-root", required=True, type=Path)
     args = parser.parse_args(argv)
     if getattr(args, "startup_timeout_seconds", 1) <= 0:
         return _rejected("CLI_ARGUMENT_INVALID", "startup timeout must be positive")
@@ -191,11 +199,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _job(args)
         if args.command == "send":
             return _send(args)
+        if args.command == "drill-verify":
+            return _drill_verify(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")
     except AdapterError as exc:
         return _rejected(exc.error_code, str(exc))
     except ContractError as exc:
         return _rejected("CONTRACT_INVALID", str(exc))
+    except DrillVerificationError as exc:
+        return _rejected("DRILL_EVIDENCE_INVALID", str(exc))
     except (OSError, ValueError) as exc:
         return _rejected("INPUT_INVALID", str(exc))
 
