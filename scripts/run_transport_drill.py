@@ -343,8 +343,16 @@ def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str,
     timeout = _seconds(config)
     workspace = workspace_root / run_id
     repository = workspace / "repository"
-    ocrv_runtime = workspace / "ocrv-runtime"
-    dsh_runtime = workspace / "dsh-runtime"
+    ocrv_runtime = (
+        Path(str(config["ocrv_runtime_root"])).resolve()
+        if live and "ocrv_runtime_root" in config
+        else workspace / "ocrv-runtime"
+    )
+    dsh_runtime = (
+        Path(str(config["dsh_runtime_root"])).resolve()
+        if live and "dsh_runtime_root" in config
+        else workspace / "dsh-runtime"
+    )
     for path in (repository, ocrv_runtime, dsh_runtime):
         path.mkdir(parents=True, exist_ok=True)
     nonce = f"{run_id}-NONCE"
