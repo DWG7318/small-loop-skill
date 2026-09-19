@@ -103,6 +103,10 @@
       "sha256": "f5e1023c4a91b51a0b748ec4b14d9f187ec7fc9948ac83c692693f14339e5e4b"
     },
     {
+      "path": "pyproject.toml",
+      "sha256": "544dee3c024dcc9a5a2d3032127a868fdd249d6c686c5b1abf931c1a128a5bc5"
+    },
+    {
       "path": "scripts/quick_validate.py",
       "sha256": "c22f679ce269ca9a95b7597daed882c982a0145007bb4472c33a09f8c355354b"
     },
@@ -171,6 +175,14 @@
       "sha256": "3c6d283199d035ba45cf5b4cc82e972d571539b49ccf966b4c38673c8cf47c88"
     },
     {
+      "path": "src/slk_transport/__init__.py",
+      "sha256": "722d81358b61e32794757e6f72a50d4bf0d4bf3ed8326af589f078d6ed21bc34"
+    },
+    {
+      "path": "src/slk_transport/contracts.py",
+      "sha256": "b7aee2815693795e8a252bcc1b849c084e2448277312ff9c7142949200901900"
+    },
+    {
       "path": "tests/skill_testkit.py",
       "sha256": "3334d4d00b034ff87c62b14f31035303bd3b30d68895e0ba9dd6a6afc2eda104"
     },
@@ -181,6 +193,10 @@
     {
       "path": "tests/test_skill_collection_300.py",
       "sha256": "b7d52cd2a14d2d3a7903c4b47cfcae2feb4586dfd95d07cc1db375e46a7669da"
+    },
+    {
+      "path": "tests/transport/test_contracts.py",
+      "sha256": "e1cedf9814af6d3aeaccd81bbbffe001e423254b2cb69b21d8102f0b437f9731"
     }
   ]
 }
