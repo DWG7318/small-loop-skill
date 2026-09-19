@@ -33,10 +33,11 @@ def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
     assert manifest["version"] == "4.0.0"
-    assert manifest["skill_count"] == 13
+    assert manifest["skill_count"] == 14
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
     assert "skills/slk-close-run/SKILL.md" in paths
+    assert "skills/slk-guard-resources/SKILL.md" in paths
     assert "skills/slk-record-run/assets/SLK-RUN.template.md" in paths
 
 

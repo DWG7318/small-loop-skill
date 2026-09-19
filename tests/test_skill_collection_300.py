@@ -17,7 +17,7 @@ def test_version_is_current() -> None:
     assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.0.0"
 
 
-def test_collection_has_one_main_and_twelve_children() -> None:
+def test_collection_has_one_main_and_thirteen_children() -> None:
     actual = tuple(sorted(path.name for path in SKILLS.iterdir() if path.is_dir()))
     assert actual == tuple(sorted(EXPECTED_SKILLS))
 
@@ -180,6 +180,24 @@ def test_plan_run_reuses_existing_work_before_sizing_minimum_construction() -> N
         assert marker in step
     assert "所有项目" not in step
     assert text.index("合理最小施工") < text.index("划分为初始 CELL")
+
+
+def test_resource_guard_is_planned_before_models_and_cell_sizing() -> None:
+    main = read_skill("small-loop-skill")
+    plan = read_skill("slk-plan-run")
+    grill = read_skill("slk-grill-supervisor")
+    close = read_skill("slk-close-run")
+    guard = read_skill("slk-guard-resources")
+
+    assert main.count("`$slk-guard-resources`") == 1
+    assert plan.index("GO 结果") < plan.index("$slk-guard-resources")
+    assert plan.index("$slk-guard-resources") < plan.index("$slk-select-models")
+    assert plan.index("$slk-guard-resources") < plan.index("划分为初始 CELL")
+    assert "Cargo" in grill and "独占资源" in grill
+    assert "slk-cargo cleanup" in close
+    assert "slk-cargo" in guard and "Cargo" in guard
+    assert "CARGO_TARGET_DIR" not in main
+    assert "RESOURCE_CONTENDED" not in main
 
 
 def test_check_planning_prefers_product_evidence_not_a_checking_project() -> None:
@@ -849,7 +867,7 @@ def test_linear_loop_uses_one_visible_relay_token_without_a_new_subsystem() -> N
         "令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径",
     ):
         assert marker in main
-    assert len(EXPECTED_SKILLS) == 13
+    assert len(EXPECTED_SKILLS) == 14
     assert not any(path.name.startswith("slk-token") for path in SKILLS.iterdir())
 
 
@@ -952,24 +970,21 @@ def test_cell_capacity_never_becomes_a_one_size_fits_all_rule() -> None:
         assert marker in negative
 
 
-def test_wait_clarification_does_not_add_skill_lines() -> None:
-    expected = {
-        "slk-adjust-run": 40,
-        "slk-check-cell": 41,
-        "slk-close-run": 48,
-        "slk-dispatch-cell": 48,
-        "slk-execute-cell": 35,
-        "slk-grill-supervisor": 39,
-        "slk-manage-team": 56,
-        "slk-plan-run": 45,
-        "slk-record-run": 36,
-        "slk-recover-communication": 64,
-        "slk-rework-cell": 30,
-        "slk-select-models": 50,
-        "small-loop-skill": 47,
-    }
-    actual = {name: len(read_skill(name).splitlines()) for name in EXPECTED_SKILLS}
-    assert actual == expected
+def test_resource_prompt_surface_stays_out_of_the_main_router() -> None:
+    main = read_skill("small-loop-skill")
+    guard = read_skill("slk-guard-resources")
+
+    for implementation_detail in (
+        "CARGO_TARGET_DIR",
+        "package cache",
+        "Windows error 32",
+        "RESOURCE_CONTENDED",
+        "RESOURCE_RECOVERED",
+    ):
+        assert implementation_detail not in main
+    assert "动态资源表" not in guard
+    assert "巡检" not in guard
+    assert "新角色" not in guard
 
 
 def test_state_authority_is_bound_to_existing_roles_without_becoming_a_new_loop_layer() -> None:

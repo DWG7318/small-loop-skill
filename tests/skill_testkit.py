@@ -9,6 +9,7 @@ SKILLS = ROOT / "skills"
 MAIN_SKILL = "small-loop-skill"
 EXPECTED_CHILDREN = (
     "slk-plan-run",
+    "slk-guard-resources",
     "slk-select-models",
     "slk-grill-supervisor",
     "slk-manage-team",
