@@ -7,7 +7,7 @@ import json
 import math
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Literal, Mapping, TypeAlias
 
 
@@ -246,6 +246,70 @@ class Envelope:
 class ParsedDelivery:
     endpoint: Endpoint
     envelope: Envelope
+
+
+@dataclass(frozen=True)
+class DeliveryResult:
+    schema_version: str
+    message_id: str
+    run_id: str
+    adapter: str
+    status: Literal["accepted", "started", "completed", "failed"]
+    native_identity: Mapping[str, JsonValue]
+    error_code: str | None
+    evidence: tuple[str, ...]
+
+    FIELDS = frozenset(
+        {
+            "schema_version",
+            "message_id",
+            "run_id",
+            "adapter",
+            "status",
+            "native_identity",
+            "error_code",
+            "evidence",
+        }
+    )
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "DeliveryResult":
+        value = _mapping(raw, "delivery result")
+        _closed(value, cls.FIELDS, "delivery result")
+        if value["schema_version"] != RESULT_SCHEMA:
+            raise ContractError(f"schema_version must be {RESULT_SCHEMA}")
+        message_id = _text(value["message_id"], "message_id")
+        try:
+            parsed_message_id = uuid.UUID(message_id)
+        except (ValueError, AttributeError) as exc:
+            raise ContractError("message_id must be a canonical UUID") from exc
+        if str(parsed_message_id) != message_id:
+            raise ContractError("message_id must be a canonical UUID")
+        error_code = value["error_code"]
+        if error_code is not None:
+            error_code = _identifier(error_code, "error_code")
+        evidence = value["evidence"]
+        if not isinstance(evidence, list) or not all(isinstance(item, str) and item for item in evidence):
+            raise ContractError("evidence must be an array of non-empty strings")
+        native_identity = _json(
+            _mapping(value["native_identity"], "native_identity"),
+            "native_identity",
+        )
+        return cls(
+            schema_version=RESULT_SCHEMA,
+            message_id=message_id,
+            run_id=_identifier(value["run_id"], "run_id"),
+            adapter=_choice(value["adapter"], ADAPTERS, "adapter"),
+            status=_choice(value["status"], DELIVERY_STATUSES, "status"),  # type: ignore[arg-type]
+            native_identity=native_identity,
+            error_code=error_code,
+            evidence=tuple(evidence),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["evidence"] = list(self.evidence)
+        return value
 
 
 def parse_delivery(endpoint_raw: Mapping[str, Any], envelope_raw: Mapping[str, Any]) -> ParsedDelivery:
