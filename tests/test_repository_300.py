@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts import validate_repository
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,7 +15,7 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_repository_validator_passes_for_the_300_collection() -> None:
+def test_repository_validator_passes_for_the_current_collection() -> None:
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "validate_repository.py")],
         cwd=ROOT,
@@ -23,14 +25,14 @@ def test_repository_validator_passes_for_the_300_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 3.0 skill collection" in result.stdout
+    assert "PASS: SLK 4.0 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "3.0.8"
+    assert manifest["version"] == "4.0.0"
     assert manifest["skill_count"] == 13
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -38,11 +40,33 @@ def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     assert "skills/slk-record-run/assets/SLK-RUN.template.md" in paths
 
 
+def test_release_file_discovery_follows_git_and_ignores_local_build_outputs(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("node_modules/\ndist/\n", encoding="utf-8")
+    (tmp_path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    (tmp_path / "new-doc.md").write_text("new\n", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "dependency.js").write_text(
+        "ignored\n", encoding="utf-8"
+    )
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "bundle.js").write_text("ignored\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", ".gitignore", "tracked.txt"], cwd=tmp_path, check=True
+    )
+
+    paths = {path.as_posix() for path in validate_repository.release_files(tmp_path)}
+
+    assert paths == {".gitignore", "new-doc.md", "tracked.txt"}
+
+
 def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> None:
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "3.0.8" in text
+        assert "4.0.0" in text
         assert "12" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
@@ -64,7 +88,7 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog

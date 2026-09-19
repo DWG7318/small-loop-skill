@@ -1,72 +1,68 @@
-# Validation Report — SLK 3.0.8 Candidate
+# Validation Report — SLK 4.0.0 Candidate
 
-Date: 2026-09-15
+Date: 2026-09-20
 
-Branch: `feature/slk-3.0.8-no-goal`
+Branch: `feature/slk-4.0-cross-agent-transport`
 
-## Design baseline
+## Accepted scope
 
-- the linear Loop Engineering form: one bounded Run with linear GO and CELL work;
-- visible Supervisor, Checker, and Worker conversations;
-- minimum Worker D0, isolated Checker D1, combined-result Supervisor D2;
-- event-activated Supervisor boundaries with Checker/Worker ownership of the daily CELL loop;
-- D1 and D2 evidence ordering that delays lower-level conclusions until an independent judgment exists;
-- one root `SLK-RUN-<RUN-ID>.md` with per-role records;
-- one main router and 12 situational sibling Skills;
-- every companion Skill identifies itself as Small Loop Skill (SLK)-only in both discovery metadata and its opening guidance;
-- ordered role-model selection that preserves Owner choices, uses Sol xhigh for Supervisor, Sol medium for Checker, Terra high for ordinary Worker CELLs, and Luna xhigh only for clearly small CELLs;
-- concrete small-CELL signals and a conservative ordinary-CELL fallback when the classification is uncertain;
-- current-CELL-only Worker escalation across repeated D1 or D2 repair, followed by CELL replanning rather than automatic Checker or Supervisor escalation;
-- role-model selection before initial CELL sizing, followed by dispatch-time reality checks rather than a second planning flow;
-- exact startup authority: Original creates Supervisor, Supervisor creates Checker, Checker passes role readiness and creates Worker;
-- root-record initialization after Supervisor Grill and before Checker/Worker creation;
-- visible conversations rather than subagents as formal members, with recorded communication tests reused when unchanged;
-- one current visible `SLK TOKEN` that follows the existing handoff route, while other member recovery stays with the upper-level member;
-- Owner-specified role models preserved across rework unless Owner changes the choice;
-- D2 readiness based on D1 PASS or separately recorded Supervisor exemption, never a bare D1 FAIL;
-- Checker capacity calibration reuses execution and D1 facts instead of adding a separate capacity gate;
-- guidance oriented toward recovery and continued construction.
-- one Checker dispatch carries the complete CELL rather than a command queue;
-- Worker commands, tool results, and intermediate progress remain inside that CELL until complete candidate delivery, a real blocker, or necessary clarification.
-- later CELLs, especially those that join or fuse earlier work, retain more planning headroom and are split smaller when practical.
-- D0, D1, and D2 remain inspection layers and are not planned again as inspection-only construction CELLs;
-- midstream adoption preserves and reuses completed work before selecting the reasonable minimum construction needed to reach the current target reliably.
-- checks prefer existing product entrances, use extra tools for concrete evidence gaps, and avoid recursive checker-proof engineering;
-- checking-tool/environment failures are distinct from product defects; insufficient evidence remains unproved rather than PASS;
-- rework and D2 reuse objective evidence only while applicable to the candidate, environment and risks, without inheriting lower-level PASS conclusions;
-- root history preserves failures, rework and exemptions as concise facts and evidence references; the duplicate D2 checklist is removed.
-- nine affected Skills pair corrected primary guidance with one compact, independent negative-prompt section, without another workflow or universal stop gate;
-- important Supervisor activation failures, decisions and unexecuted operations are recorded before further adjustment can overwrite necessary evidence; this is not daily progress monitoring;
-- local D0 draft attempts remain distinct from Worker rework after Checker D1 FAIL;
-- complete CELL dispatch transfers the token and ends its activation; the recipient acts in that activation without an extra token-specific receipt, while candidate delivery separately activates isolated D1;
-- unaffected, still-valid completed work is retained during rework, without obstructing necessary repairs to affected work.
-- the latest successful token transfer identifies the current responsibility and last confirmed boundary without claiming live execution;
-- monotonically increasing token identity prevents stale or duplicate deliveries from reopening a CELL, while recovery retries retain the original identity;
-- the root Run record stores the current token pointer, last real transfer and full engineering history without a second state system.
-- direct negative guidance against one-conversation Goal continuation and one-size-fits-all numeric CELL quotas;
-- optional RTK, Probe CLI and Ponytail use by Worker and Checker, with one reusable global installation, per-Run Owner choice, explicit invocation, raw-evidence preservation and native fallback;
+SLK 4.0.0 keeps the 3.0.8 Small Loop Skill method: one bounded Run, one serial GO/CELL path, Supervisor, Checker, Worker, minimum Worker D0, isolated Checker D1, combined-result Supervisor D2, rework, exemption, communication recovery, and the existing 13-Skill collection.
 
-## Verification status
+The major-version addition is an executable state and observation layer:
 
-Fresh local verification:
+- one configurable machine-wide data root and one versioned SQLite authority;
+- one monotonic `SLK TOKEN` per Run, preserving the existing handoff route rather than scheduling work;
+- Run, GO, CELL, plan-revision, role/session/endpoint, transport, inspection, correction, exemption, evidence, resource-contention, recovery, and closure facts;
+- authenticated, Run-scoped writes limited to Supervisor, Checker, and Worker;
+- append-only history, copied and hashed evidence, deterministic Markdown export, and exact correction links;
+- explicit resource contention and recovery that retain responsibility and do not misclassify an occupied tool as D1 rework;
+- stable read-only Agent projections through `slk-bi-query`;
+- a standalone Tauri/React BI that uses the same Rust projections and exposes no write, acknowledgement, scheduling, transport, or control surface.
 
+The state core does not create, wake, watch, replace, or infer live Agents. Native transport remains responsible for real activation and accepted-delivery evidence. BI displays recorded facts only. It does not prove that a process is currently working and does not add Owner or Overwatcher write authority.
+
+## Fresh verification
+
+Repository and Python:
+
+- `python -m pytest -q` with externally built `slk-state` and `slk-bi-query`: **121 passed**, 0 failed, 0 skipped;
+- `python scripts/quick_validate.py`: **13/13 Skill directories PASS**;
 - `python scripts/validate_repository.py`: PASS;
-- repository `scripts/quick_validate.py`: 13/13 Skill directories PASS;
-- official Skill Creator `quick_validate.py`: 13/13 PASS under UTF-8 mode;
-- current-version, model-choice, efficiency-tool and negative-prompt regressions: expected failures before the 3.0.8 changes, then PASS; these check repository guidance, not runtime compliance;
-- one isolated before/after decision scenario: published 3.0.6 correctly refused to infer live work from a stale running indicator, but lacked an authoritative transfer identity and duplicate handling. Revised guidance identifies the exact current responsibility, reports unconfirmed execution honestly and prevents stale/duplicate delivery from reopening the CELL. This bounded sample does not guarantee future agent compliance;
-- independent review found and closed token-record timing, initial-token ownership, stale-ordering, transfer-failure and recovery-envelope ambiguities. Prompt-contract tests cannot simulate the platform transport runtime; the bounded behavioral pressure test therefore remains supporting evidence rather than a runtime guarantee;
-- `python -m pytest -q`: 61/61 PASS;
-- active legacy-topology scan: 0 Control/Verifier/Patrol/D3/Owner-acceptance matches;
-- active language review: the independent negative sections deliberately use direct “不要…” reminders requested by Owner; they clarify known misuse, not a second workflow, new approval or stop policy. The SLK-only boundary remains in 12/12 children;
-- Skill size review: main and child `SKILL.md` files remain 30–64 lines and 579 lines combined;
-- repository inventory: 43 tracked files and 42 manifest-protected payload files;
+- manifest discovery regression: tracked and non-ignored new release files are included, while ignored local build output is excluded;
 - `git diff --check`: PASS.
 
-The 3.0.8 candidate preserves the same 13-Skill collection and existing role, CELL, inspection, token and record topology. It adds clearer model decisions and optional external efficiency-tool guidance without bundling binaries, enabling automatic hooks, adding an MCP/Agent, or making any tool a dependency. Its Manifest is regenerated from the exact final repository bytes.
+Rust workspace, using Rust/Cargo 1.94.0 and an external `CARGO_TARGET_DIR`:
 
-The 2.x active root, mirrors, contracts, templates, runtime validators and old tests were removed from the 3.0 branch after replacement coverage passed. Git history and the `v2.6.0` tag preserve the previous files.
+- `cargo fmt --all -- --check`: PASS;
+- `cargo clippy --workspace --all-targets --offline -- -D warnings`: PASS;
+- `cargo test --workspace --all-targets --offline`: **28 passed**, 0 failed;
+- the 28 tests cover configuration, authorization, role replacement and session rebinding, concurrency, schema immutability and migration backup, TOKEN/write flow, transport failure, resource recovery, evidence, deterministic export, eight shared BI projections, and the desktop's read-only command surface.
 
-## Historical boundary
+SLK BI frontend:
 
-The previously recorded `v2.6.0` recovery commit is `fa75bcf1c0819c8499d3b6c4ee9ec251dae62ae5`; this Cell does not change that historical release. The baseline is published 3.0.7 at `2a5e6e3`. Before formal release, this candidate has not changed main or remote tags/Releases. RTK, Probe CLI and explicit-only Ponytail were prepared on the current Codex host independently of repository payloads; availability is not project authorization. Local validation is not a release claim.
+- `pnpm --dir apps/slk-bi test`: **7 files / 11 tests passed**;
+- `pnpm --dir apps/slk-bi typecheck`: PASS;
+- `pnpm --dir apps/slk-bi build:ui`: PASS;
+- production build excludes the development-only acceptance fixture;
+- visual acceptance in the Codex in-app browser: default light, default dark, 980×700 constrained viewport, and collapsed Inspector all PASS;
+- the accepted release-mode desktop executable was 10,627,072 bytes with SHA-256 `a83c56b77ebf01f777c69a8a8b393aca192734780493667ffa566c4b2d8536cb`.
+
+## Cross-Agent and multi-Run acceptance
+
+The state-core acceptance executed two independent Runs concurrently against one configured temporary data root. Each Run registered a distinct Supervisor, Checker, and Worker and completed the four-leg TOKEN route, D0, D1, D2, and `RUN_CLOSED`. The exercise also proved Checker replacement, session rebinding, correction without history rewrite, evidence hash verification, cross-Run credential rejection, deterministic export, and resource contention/recovery without TOKEN movement or false rework.
+
+The BI acceptance queried all eight projections from the accepted two-Run database without changing its SHA-256. A combined 14-query projection set had SHA-256 `a0840473a44aa9ac4c2e5cbd3cc2384d9359eddb513a8da3b8e4e147f47bd115` and contained no credential value.
+
+Human-readable evidence:
+
+- [`docs/state/SLK-STATE-ACCEPTANCE.md`](docs/state/SLK-STATE-ACCEPTANCE.md)
+- [`docs/state/SLK-BI-ACCEPTANCE.md`](docs/state/SLK-BI-ACCEPTANCE.md)
+
+Machine-readable evidence remains outside the release payload:
+
+- `D:\SLK\.codex\.tmp\slk-4-state-acceptance\acceptance-result.json`
+- `D:\SLK\.codex\.tmp\slk-4-bi-acceptance\acceptance-result.json`
+
+## Release boundary
+
+This report establishes a locally verified 4.0.0 candidate. It does not claim a merge, push, tag, GitHub Release, global Skill deployment, or LCaS integration. The standalone BI is complete and independently usable; possible embedding in LCaS rc.08 or rc.09 remains future work and must preserve the read-only boundary.

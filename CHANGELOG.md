@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.0
+
+- Preserved the SLK 3.x Supervisor, Checker, Worker, Run, GO, CELL, D0, D1, D2, rework, exemption, communication, and model-selection method while adding durable cross-Agent execution state.
+- Added the authenticated `slk-state` CLI, one configurable machine-wide SQLite authority, append-only authored history, SLK TOKEN transitions, role replacement and session rebound history, plan revisions, resource contention/recovery facts, durable evidence, and deterministic Markdown export.
+- Added the read-only `slk-bi-query` Agent API and a standalone Tauri/React desktop BI over the same eight versioned projections, with no credential, mutation, dispatch, acknowledgement, repair, exemption, shell, network-service, updater, or telemetry surface.
+- Accepted two concurrent Runs with six distinct role instances, full TOKEN paths, D0/D1/D2 closure, replacement, rebound, correction, evidence, and resource recovery without state crossover or repository writes.
+- Accepted light, dark, and compact BI views with conservative status language: stored facts never claim current process liveness or native delivery by themselves.
+
 ## 3.0.8
 
 - Clarified model selection as an ordered decision across Owner choices, role baselines, each current CELL's concrete difficulty, and observed rework signals; defined when a CELL is clearly small and retained the normal Worker baseline whenever that judgment is uncertain.

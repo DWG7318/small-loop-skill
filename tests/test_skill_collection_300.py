@@ -13,8 +13,8 @@ from skill_testkit import (
 )
 
 
-def test_version_is_300() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.8"
+def test_version_is_current() -> None:
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.0.0"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:

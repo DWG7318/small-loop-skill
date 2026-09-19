@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill Collection",
-  "version": "3.0.8",
+  "version": "4.0.0",
   "skill_count": 13,
   "excludes": [
     "MANIFEST.json"
@@ -16,19 +16,19 @@
     },
     {
       "path": ".gitignore",
-      "sha256": "3738f1dd16ee2240b2de620e677c7ff8c8019b395bcd5c43cd9f67f066d967b2"
+      "sha256": "03fe800a3604857cb2418d5c05096ab0638c7620e38d8ca1ff5370996426af2b"
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "3f01a01c8401279a20fa07ef361bb0042d277513a690d3b2a87fec3a0a33fac2"
+      "sha256": "e2165af052fe2003b6451b011a6bb523f051f43dd78efb00d1060879e35790f2"
     },
     {
       "path": "Cargo.lock",
-      "sha256": "e57276a0969f22db89ad6e39051f58ab6f1124043275af3f3d2d33983fd0f908"
+      "sha256": "01c8e3939b51b6b337d00350c8882b54d7df1dffe53ec7058c67ff32c1a18b2e"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "d5dbb3d534ed44d531ebfecd4f6796794449962c4adb0bcbefd8c6201c325841"
+      "sha256": "b1ccd4e3e452d573d466adfe111406109e766f24c9ddc09d3065ff48245c6d95"
     },
     {
       "path": "DESIGN.md",
@@ -40,7 +40,7 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "cbe448832cfb329b44f324208f9c69e6c79fa2e329876ab4263f0a355538d291"
+      "sha256": "30595c520af336876560dc71daa9d3d66eb0b6713bd5a5c70b224e95e40cb857"
     },
     {
       "path": "PRODUCT.md",
@@ -48,19 +48,383 @@
     },
     {
       "path": "README.md",
-      "sha256": "870050ab59bcc0748512bda2633c575ebfb953a22d65ec14ed367bd216e79215"
+      "sha256": "64ca7e8042ec7050d4f5f38e93a26567721aacb1cb65f6701723e60525930ce3"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "fdbb13d9f0601b4896bd2f95319d56af0c2ec7100b0bc4107883e8388c64bbe6"
+      "sha256": "82913056856f9d5771b88bda4354e5dac949cf1323d502f4bc03d6de021bf15d"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "8d50ba225fda1b9da5c5eaf28b78f519362850b984f10bad18a9ac850aa5a457"
+      "sha256": "945bf510d2424ee1fa43dfa15dd2cfbbe7d0d1a342bcde7d96d26047f98703e4"
     },
     {
       "path": "VERSION",
-      "sha256": "2a612f3f9494fa52305039d3474f9448e4eadcdbca3517a767df080009a393e9"
+      "sha256": "e1d49c569ae09b2ede16e2d83820a3809b35eb6c44c13ba9b5330598d6b8f43c"
+    },
+    {
+      "path": "apps/slk-bi/index.html",
+      "sha256": "0c5624adb03c582a91eaa763148e996eb1d0f06c033e9fb5fef85087b3e8e4d6"
+    },
+    {
+      "path": "apps/slk-bi/package.json",
+      "sha256": "f2202041f2bbc85afbe4fdd3829a201e0ab3f28245df899d9b07b31ef55356f9"
+    },
+    {
+      "path": "apps/slk-bi/pnpm-lock.yaml",
+      "sha256": "2fbd3aa4ebe718ad7181ccfb409203ff530116cb7384fa7051642592e46f2ce7"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/Cargo.toml",
+      "sha256": "34595f7fe5c6bfc5ac3f354c635f331194026b8d6a67e9c87a24b8f837d5e2cd"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/build.rs",
+      "sha256": "6aeeab41bc35efde4e3c2b644a6248f7fc06d24ae30b75c0d33491cbb0c1fa31"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/capabilities/default.json",
+      "sha256": "398d1132872280d43ef9577aa1088bc330ce467d57868b95edfc0463f7bd4336"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/gen/schemas/acl-manifests.json",
+      "sha256": "b8665c2471bd4c59d570c77e226f37410ce396da52525383a15b5cbbff9d786e"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/gen/schemas/capabilities.json",
+      "sha256": "4693618f8178c8ac92d5489c4c6d8f36dc486fbb2e6825e96add3b32ede80eb0"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/gen/schemas/desktop-schema.json",
+      "sha256": "f68a9c570ecff07ac6826145d33b966d6fc02f7d680967f44437268b08a6ba78"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/gen/schemas/windows-schema.json",
+      "sha256": "f68a9c570ecff07ac6826145d33b966d6fc02f7d680967f44437268b08a6ba78"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/128x128.png",
+      "sha256": "c117ef683be81278c0d49bfbf09741209ea586cb7931d4b32ac1fa448e9b218a"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/128x128@2x.png",
+      "sha256": "561b1b619945c75fe8542bbff97cb0d70229f68efe252c1f3343f1351bce8d11"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/32x32.png",
+      "sha256": "55a5de2e33076c269a61386139c7c9bf5afe9c9fb6fc8a1cbee2bde0d565710c"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/64x64.png",
+      "sha256": "7676c237f0d70ede7b3392a936fa3d96e2b7d63a575b5f2b53beefa6715b38d3"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square107x107Logo.png",
+      "sha256": "d7b9e919a1c144cf2ebb9050a8ad1613335a688f76b12d8094de879f2621e213"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square142x142Logo.png",
+      "sha256": "3537242eda2568230c1f546f919a5755ebc96c0b05a92c07cd720a71212c351c"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square150x150Logo.png",
+      "sha256": "a4eb1ac76f4eb9a9790556be6cd0a396e1946ed14d571e360f2bf345da3be9a6"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square284x284Logo.png",
+      "sha256": "e146adfb1ef34308ff1e6da35c9200d1a27aa37b116bdd80b82cd0f23c522d70"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square30x30Logo.png",
+      "sha256": "c2be6a61984b724fc65c96f206ea44750ebebffdd8d04dba6f8cd75900acd970"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square310x310Logo.png",
+      "sha256": "1f711e5cf55894314bec667eefd4582dd44e53be7571d17e89cfc1cc29620cd9"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square44x44Logo.png",
+      "sha256": "faf863c293c76e9054300809fcc6df97ddeacad87b72b1b5af485d3d973fdb90"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square71x71Logo.png",
+      "sha256": "26081a94b0aef21448ea1f32f729b90980e5cee80c1b1e498f90fe7ab84ed48d"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/Square89x89Logo.png",
+      "sha256": "3ad6f5688fac9514171950c326675b98f3fd4f2f38a771cef033e52c39d762ae"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/StoreLogo.png",
+      "sha256": "7eaaa9d6685f7bbc9de13dd6a400d261be74ab1076bb49b5b6cbe3aeb6872d93"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml",
+      "sha256": "760d4b8a06bf7163dd010c33ad2cac9e4a75fa0177afaba042f83e311eef0c3e"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-hdpi/ic_launcher.png",
+      "sha256": "217d9cd8078c72f8bbc3780cd139560a777fb1d0080ddf783032c17bc396e099"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png",
+      "sha256": "fb2cb64fe8fbe19592f8b85dd53418aa77bcf672fa06900033ca4d26fb52ccda"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-hdpi/ic_launcher_round.png",
+      "sha256": "61cff939bba85154e3079f612442ea131a19208b45bd8d6544c23425d1512701"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-mdpi/ic_launcher.png",
+      "sha256": "78b126b5ae41804bea9f7bb7d7cac5709a0ae64d9531857b0223bf3118e6f74f"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-mdpi/ic_launcher_foreground.png",
+      "sha256": "e584e50bf772bab0268a039e12466bf9fae2b8890afd2c33f27610fb2fbeca84"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-mdpi/ic_launcher_round.png",
+      "sha256": "a1bf6ee2e10472a26ece206eacbacde42cd323c0b1b29648826fd9bf0d160178"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xhdpi/ic_launcher.png",
+      "sha256": "c773502c171e1712a27995d4d5d852df4c1c421e9681c2cbb0a44b15cfc376c2"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_foreground.png",
+      "sha256": "2dcc5429c010c384d5d613aef9f1be8157d9c19810a89a00590962fd82ef6eb0"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_round.png",
+      "sha256": "3e3e822a0088c58343f1e417bb52ae62a1cfb0ebce2927a1911204a017d0254a"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher.png",
+      "sha256": "4566daed272439693a3af584933029579d1978649b3dc689af3b8e319246a148"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_foreground.png",
+      "sha256": "cf053a7e23637d46f3a0a0cdbf681f72441bf5195a1d0c2951e6cec7d9b4abc5"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_round.png",
+      "sha256": "efd1f8c34c47ce4e49564e2a7a092bd76b5e95883fc84d7d518d242aa29f6878"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png",
+      "sha256": "8d10201c99b93f0c4248f953a3576471eda8e8b85db5218961799577dbb7c427"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "sha256": "8b4d16e7109dd60519cc29c1498124a19d39e06ea4b671c742a5eb6af6687677"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_round.png",
+      "sha256": "a6b4d09ce5d53e0f87a182cf559e47f5ea6ee330c8baab47a4c224d66abeb7d1"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/android/values/ic_launcher_background.xml",
+      "sha256": "0687336f0ccc6f7ee09c7c95110667c63b75931238df779a21af401fb864cd34"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/icon.icns",
+      "sha256": "b872e391ea64a7cff96d39cc208e5a04be4f4e7bac3aaaa531a11c45b616dd49"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/icon.ico",
+      "sha256": "06dd24384af64790c5c48cb49a3d67567489a9512ef44699811c45bbe14602d4"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/icon.png",
+      "sha256": "dedb871533c334953bd2605d332c749143e34e5e532c66c93bd35fffa980edc2"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-20x20@1x.png",
+      "sha256": "3ffab4cc64a76ae59a6c9881a92b6ea5e69ed80b0adf859089bc08ff47547a28"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-20x20@2x-1.png",
+      "sha256": "a407aa52746651ff49649b53cb1cdd2dfbc12926bacc7c6a690b2cac54c1ab1e"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-20x20@2x.png",
+      "sha256": "a407aa52746651ff49649b53cb1cdd2dfbc12926bacc7c6a690b2cac54c1ab1e"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-20x20@3x.png",
+      "sha256": "086cbfec360f74868d4a0a571b425413f47576d37e058aae2f87675fba6ba936"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-29x29@1x.png",
+      "sha256": "7a36aefb5bba48f82e0aa92c0ede3dc5b643d7eb6a467550e0d0a3d56fe3a35d"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-29x29@2x-1.png",
+      "sha256": "78b26aef359a04360c92ff38a9b99f517ce8d2ebbce70fc450cf9b1a7d509b0f"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-29x29@2x.png",
+      "sha256": "78b26aef359a04360c92ff38a9b99f517ce8d2ebbce70fc450cf9b1a7d509b0f"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-29x29@3x.png",
+      "sha256": "ebaacebe9394f0ab5cd23f4f287a2db8f2d8f31ee5b79a2f7b54608f6a5aaecf"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-40x40@1x.png",
+      "sha256": "a407aa52746651ff49649b53cb1cdd2dfbc12926bacc7c6a690b2cac54c1ab1e"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-40x40@2x-1.png",
+      "sha256": "1fe5ed0957734043dcb9c8f77e8ed26e730b1a4d55490cffe1a7c32defca7fdf"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-40x40@2x.png",
+      "sha256": "1fe5ed0957734043dcb9c8f77e8ed26e730b1a4d55490cffe1a7c32defca7fdf"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-40x40@3x.png",
+      "sha256": "e7b70f0922360a2af9b8a797d7e48818373d3e4b0564b7c9766fbdede0a11aab"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-512@2x.png",
+      "sha256": "eaa76e6b1e3d6270f2e41664071d7b7913f507e6c5871b7b304631cfce79f537"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-60x60@2x.png",
+      "sha256": "e7b70f0922360a2af9b8a797d7e48818373d3e4b0564b7c9766fbdede0a11aab"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-60x60@3x.png",
+      "sha256": "2053983ac3cd36712a858912950e18b7498d2fc470e61e6a46f4a393f1d47838"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-76x76@1x.png",
+      "sha256": "91b16f47df0d235162c9fa14f332a977eed29ac3557f02b95ae349d3c58ab671"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-76x76@2x.png",
+      "sha256": "32d16616581fad9ddbb5e2874a331845740eb4d7d7d73a9c9b325bdef4dc1bdf"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png",
+      "sha256": "42dc1ea931dddbc23f2ced70bba1018236ec03c35cd48699c35a29275848b010"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/icons/slk-source.svg",
+      "sha256": "9e3aa8daa6f4c9ccd7a2d5270220704998bb5b25a0c0f13b497d5d7e6f2c81ad"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/src/commands.rs",
+      "sha256": "cfe057b0297d366654415c8e05c7cea5a7f50ee257b03e800728a2c6a4dfae06"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/src/lib.rs",
+      "sha256": "4982265c6f16224604865553879577226a19e222303cffa83db3ffd0c701ef03"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/src/main.rs",
+      "sha256": "5bb541ce69905fda239ee48e676430726f131c22d73cfd2a3ec83d65c05b4048"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/tauri.conf.json",
+      "sha256": "565fc11525f02b57dc496843c3c646b8b1a5eb9685711240e5974324a3f12d48"
+    },
+    {
+      "path": "apps/slk-bi/src-tauri/tests/read_commands.rs",
+      "sha256": "ad3464ee63b8dfa89f13d0dc4235dd7fbfa470466f68380d21da3e715e471b60"
+    },
+    {
+      "path": "apps/slk-bi/src/App.test.tsx",
+      "sha256": "feeb789d8ca72f85fe93a612edbeb2f8c45974c754a5dee268f288ca38650a80"
+    },
+    {
+      "path": "apps/slk-bi/src/App.tsx",
+      "sha256": "db2c938f1e007705373b3c030a0c281f6ff5ae9681c5e18464f94ae0e3a83b6f"
+    },
+    {
+      "path": "apps/slk-bi/src/a11y.test.tsx",
+      "sha256": "abe3e0fb7ade145b4a2dcfe2a75609ac740755de4dd7f548d9c4e36ed3add53d"
+    },
+    {
+      "path": "apps/slk-bi/src/api.ts",
+      "sha256": "fe6f900a0edaebd9b9bc9bbe8cae1162ec0858c2c52a889fb83b9f1ea31609cb"
+    },
+    {
+      "path": "apps/slk-bi/src/components/AppState.test.tsx",
+      "sha256": "c9acd2333bcb3183e0c3cbd2898c98e3fd9f0c343269629b1d2cf01603937166"
+    },
+    {
+      "path": "apps/slk-bi/src/components/AppState.tsx",
+      "sha256": "a759128647325dc53ada09b3113d679f7273605e31bb3aa673929829a991b44b"
+    },
+    {
+      "path": "apps/slk-bi/src/components/Inspector.test.tsx",
+      "sha256": "06d7265bb0df743ef679343e2a13bb87f9f75c93687648e9d34711933b342b90"
+    },
+    {
+      "path": "apps/slk-bi/src/components/Inspector.tsx",
+      "sha256": "584cd1ed50ffbad4da8669e3d31087311da74e20b7e4971197c1438e41f4f32a"
+    },
+    {
+      "path": "apps/slk-bi/src/components/ProjectRail.tsx",
+      "sha256": "43beaf33827f81588c8fafb3927159ee0b37fa6b56393ec64964f925cafd517c"
+    },
+    {
+      "path": "apps/slk-bi/src/components/RunOverview.tsx",
+      "sha256": "a545b26df8fabf4ebd3c908e35b85ffcac5a7e130249289c4922dc72951c6d0a"
+    },
+    {
+      "path": "apps/slk-bi/src/components/Timeline.test.tsx",
+      "sha256": "8be5ca751cffd87b915b104fe59248947a202c7587ce2abe1fb21aacb1b87514"
+    },
+    {
+      "path": "apps/slk-bi/src/components/Timeline.tsx",
+      "sha256": "d6297793b3459ca715267b69a183eccd92c0f38b88ade9a83ce29f3cca1250c1"
+    },
+    {
+      "path": "apps/slk-bi/src/contracts.test.ts",
+      "sha256": "6847bdab315c23614aab5d6bd02756b466422a79a46309bbeb6a2b2d13621a41"
+    },
+    {
+      "path": "apps/slk-bi/src/contracts.ts",
+      "sha256": "39111977a68ad797e8e5abf844890fd424ffe39c6ae5e385b97e19fa15c35afc"
+    },
+    {
+      "path": "apps/slk-bi/src/main.tsx",
+      "sha256": "344fa9a39334a04196b570fd22c220ba4884400c513834801a27eef389943ae3"
+    },
+    {
+      "path": "apps/slk-bi/src/styles/app.css",
+      "sha256": "b417a584d554f701ac0996f11d90483b0ecbb96ac28e3988d106131b25bf2ec1"
+    },
+    {
+      "path": "apps/slk-bi/src/styles/tokens.css",
+      "sha256": "d08cd1be5be37a4073a30d3a7a1db8c37546fd83cef0e8dad775fa926bf85b99"
+    },
+    {
+      "path": "apps/slk-bi/src/test/fixtures.ts",
+      "sha256": "d2c34fcafb0eb7c2e26dd8a252ada7c0a64eac3a291d8d515d604c8cfed6b9b4"
+    },
+    {
+      "path": "apps/slk-bi/src/test/setup.ts",
+      "sha256": "9b328c4843431fa76d8de00008fc159e95f99a840211085ff3b8f25e53d14409"
+    },
+    {
+      "path": "apps/slk-bi/src/useSlkData.test.tsx",
+      "sha256": "b16462057dcafbce3d1fb354d2658e08dd9099cbdec54496e07eb461d1e66b32"
+    },
+    {
+      "path": "apps/slk-bi/src/useSlkData.ts",
+      "sha256": "57a1cf145f8a54de8b31ec0b58c84bb30612bad2de5f07219fe52f2fc8a164ca"
+    },
+    {
+      "path": "apps/slk-bi/tsconfig.json",
+      "sha256": "b77482fd85cb6efcab104272b267a8992ba309d6438a7ab87fe3b0b3f2597a24"
+    },
+    {
+      "path": "apps/slk-bi/vite.config.ts",
+      "sha256": "5e7a978cece480e1fec2b350d0e24fb2c1c8f5eebb2faddb910a3c4ed350bbec"
     },
     {
       "path": "crates/slk-bi-query/Cargo.toml",
@@ -68,7 +432,7 @@
     },
     {
       "path": "crates/slk-bi-query/src/main.rs",
-      "sha256": "efc2c04764501723cde194311bd5f2c0c92f27e40888c5437aa18d9b530110eb"
+      "sha256": "89a16f9a393658a7bf62ec772559ce8374167d4019ef6a7b142c073341ec5c7b"
     },
     {
       "path": "crates/slk-state-cli/Cargo.toml",
@@ -112,7 +476,7 @@
     },
     {
       "path": "crates/slk-state-core/src/query.rs",
-      "sha256": "767d544d1a838d7b8b0cd38085b2fb7a6497d12f8ddf069b06a56a6da8fb864c"
+      "sha256": "bdff3ba68fc80706133b6dcad3707677bdcf6d6155cadc71765fa702ae540072"
     },
     {
       "path": "crates/slk-state-core/src/schema.rs",
@@ -144,7 +508,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/query.rs",
-      "sha256": "59d6106156a24afdb60b9e84f544c7401738f6d9cd00955f731a0101f685173e"
+      "sha256": "99aae974eda377f28fa9aa893e987fca9880c77da2c0a90ccdb38a5e0144336f"
     },
     {
       "path": "crates/slk-state-core/tests/schema.rs",
@@ -155,8 +519,16 @@
       "sha256": "9db77b87c8565f3d1d7d6ef477befe40d6db78c0f95ba0d799865c243de52c15"
     },
     {
+      "path": "docs/state/SLK-BI-ACCEPTANCE.md",
+      "sha256": "de084ee25ebffe984ef2a2214a2706e0241eb1e4195e86cb1b5922115cbc4393"
+    },
+    {
+      "path": "docs/state/SLK-BI.md",
+      "sha256": "09bfc4d480e051fddf99c045dd90d2acdb5e5eb6f4363866cd5956be919f2680"
+    },
+    {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",
-      "sha256": "85a83a674611e855a83443dae1cc7cd4af209d7ecc5e61e790c56caf4a0e385f"
+      "sha256": "04bd53b2dba352e5d099d875d23f92a758d415f21966067a3e68679d69ed8539"
     },
     {
       "path": "docs/state/SLK-STATE.md",
@@ -256,7 +628,7 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "84475b1dcf72293725e96837f14a71eb787fcecb9b482ecd2a215848d361940a"
+      "sha256": "cf36707ced2985e33bd964274ef2fd46773cbe0335a93913e7b39084d662c0c4"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -375,6 +747,10 @@
       "sha256": "3334d4d00b034ff87c62b14f31035303bd3b30d68895e0ba9dd6a6afc2eda104"
     },
     {
+      "path": "tests/state/test_bi_desktop_contract.py",
+      "sha256": "f5c917c76b70f29964400a35ad0ab086fbd4b67501bd309fb8d05571425e0525"
+    },
+    {
       "path": "tests/state/test_query_cli.py",
       "sha256": "eb36da60a68275f1aa53f4f2b3687ea556c7e9f25d12d55d219310574d67208a"
     },
@@ -384,11 +760,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "0509ccba165f302ac6b5ad4bb4376fbfebb0ad9d9801b900473a2c77bdafa954"
+      "sha256": "a9c58b181b1504c32aaec3d099f0c205e95aeaa570dc91e8ee63e9518c799b8a"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "20ceb2f8c320469f8f467714ff4e6f387913bde2c77a271268595107fa574a57"
+      "sha256": "899a742b24659cdb951c74a9da317693938a953d963f22d2aebc351d991f9b34"
     },
     {
       "path": "tests/transport/fake_app_server.py",

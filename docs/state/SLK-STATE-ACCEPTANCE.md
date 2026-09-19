@@ -51,4 +51,4 @@ The acceptance wrote only beneath `D:\SLK\.codex\.tmp\slk-4-state-acceptance`; t
 
 `D:\SLK\.codex\.tmp\slk-4-state-acceptance\acceptance-result.json`
 
-This accepts the state core and read API. It does not accept the standalone desktop BI, which remains the next serial subsystem.
+This acceptance covers only the state core and read API at source commit `f163a12`. The standalone desktop BI was implemented and accepted later under its own evidence in [`SLK-BI-ACCEPTANCE.md`](SLK-BI-ACCEPTANCE.md); that later result does not retroactively expand this acceptance boundary.

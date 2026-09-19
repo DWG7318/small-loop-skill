@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**3.0.8**
+当前版本：**4.0.0**
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。GO 与 CELL 沿一条线性路径推进。
 
@@ -29,11 +29,11 @@ RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Co
 
 跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。数据库行、后台消息或按对话标题匹配都不等于投递；只有精确原生启动证据成立后，当前发送者才完成交接，否则继续持有责任。操作说明见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
 
-## 4.0 状态核心
+## 4.0 状态与 BI
 
-4.0 开发线加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据与确定性 Markdown 导出。Supervisor、Checker、Worker 只通过经过身份验证的 `slk-state` CLI 写入各自原有事实；数据库不调度施工，也不增加第四个角色。`slk-bi-query` 为其他 Agent 和未来 BI 提供稳定、只读的 JSON，不暴露凭据或写入入口。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与独立的 [`状态核心验收记录`](docs/state/SLK-STATE-ACCEPTANCE.md)。
+SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 BI。Supervisor、Checker、Worker 只通过经过身份验证的 `slk-state` CLI 写入各自原有事实；数据库不调度施工，也不增加第四个角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，BI 则显示同一组投影，不暴露凭据或写入入口。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md)、[`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)、独立的 [`状态核心验收记录`](docs/state/SLK-STATE-ACCEPTANCE.md) 与 [`BI 验收记录`](docs/state/SLK-BI-ACCEPTANCE.md)。
 
-独立桌面 BI 是 4.0 下一项串行子系统；在其完成验收前，只读查询 CLI 与确定性 Markdown 导出是权威展示入口。
+BI 只显示已经记录的事实，不确认消息是否真正投递，不凭旧事件推断当前进程存活，不恢复通讯，也不修改 Run。未来 LCaS rc.08/rc.09 可以嵌入这些读取组件；SLK 4.0 的当前运行不依赖该集成。
 
 ## Skill 集合
 
@@ -63,7 +63,7 @@ python -m pytest -q
 
 ## 历史版本
 
-SLK **v2.6.0** 继续通过 Git tag 和 Release 提供，方便既有 Run 或恢复使用。3.0.0 是新的方法边界，不覆盖历史发布。
+SLK **v3.0.8** 保留为最后一个纯提示词轻量版本，**v2.6.0** 保留为上一代单体恢复版本。SLK 4.0 保持 3.x 方法语义，只增加跨 Agent 的耐久状态和只读展示，不替换三角色 Loop。
 
 ## 许可证
 

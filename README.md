@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **3.0.8**
+Current version: **4.0.0**
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. GO and CELL work follow one serial path.
 
@@ -29,11 +29,11 @@ RTK, Probe CLI, and Ponytail are optional external efficiency aids. They may be 
 
 Cross-Agent handoffs use the accepted `slk-transport` artifact with exact role endpoints and native Agent activation. A database row, background message, or conversation-title match is not delivery; the current sender hands off only after exact native-start evidence and otherwise keeps responsibility. See [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md).
 
-## 4.0 state core
+## 4.0 state and BI
 
-The 4.0 development line adds one configurable machine-wide data root, a versioned SQLite authority, durable evidence, and deterministic Markdown exports. Supervisor, Checker, and Worker write only their own existing facts through the authenticated `slk-state` CLI; the database does not schedule work or add a fourth role. `slk-bi-query` exposes stable read-only JSON for Agents and the future BI, with no credential or mutation surface. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and the independent [`state-core acceptance`](docs/state/SLK-STATE-ACCEPTANCE.md).
+SLK 4.0 adds one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and a standalone read-only desktop BI. Supervisor, Checker, and Worker write only their own existing facts through the authenticated `slk-state` CLI; the database does not schedule work or add a fourth role. `slk-bi-query` exposes stable read-only JSON for Agents, while BI presents the same projections without credentials or mutation commands. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md), [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md), the independent [`state-core acceptance`](docs/state/SLK-STATE-ACCEPTANCE.md), and [`BI acceptance`](docs/state/SLK-BI-ACCEPTANCE.md).
 
-The standalone desktop BI is the next serial 4.0 subsystem. Until it is accepted, the query CLI and deterministic Markdown export remain the authoritative presentation surfaces.
+BI displays recorded facts only. It does not confirm message delivery, infer current process liveness, repair communication, or modify the Run. Future LCaS rc.08/rc.09 may embed these read components; that integration is not required to operate SLK 4.0.
 
 ## Skill collection
 
@@ -63,7 +63,7 @@ python -m pytest -q
 
 ## Previous method
 
-SLK **v2.6.0** remains available from its Git tag and Release for existing Runs or recovery. Version 3.0.0 starts a new method boundary and does not overwrite that historical release.
+SLK **v3.0.8** remains the last lightweight prompt-only release, and **v2.6.0** remains the previous monolithic recovery release. SLK 4.0 keeps the 3.x method semantics and adds durable cross-Agent state and read-only presentation rather than replacing the three-role Loop.
 
 ## License
 

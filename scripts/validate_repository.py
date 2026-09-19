@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -10,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "3.0.8"
+VERSION = "4.0.0"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -27,7 +28,16 @@ EXPECTED_SKILLS = (
     "slk-recover-communication",
     "slk-close-run",
 )
-EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
+EXCLUDED_DIRS = {
+    ".git",
+    ".codex",
+    ".worktrees",
+    "__pycache__",
+    ".pytest_cache",
+    "dist",
+    "node_modules",
+    "target",
+}
 EXCLUDED_FILES = {"MANIFEST.json"}
 
 
@@ -40,6 +50,36 @@ def sha256(path: Path) -> str:
 
 
 def release_files(root: Path) -> list[Path]:
+    git_files = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if git_files.returncode == 0:
+        values = [
+            Path(raw.decode("utf-8"))
+            for raw in git_files.stdout.split(b"\0")
+            if raw
+        ]
+        return sorted(
+            (
+                relative
+                for relative in values
+                if relative.as_posix() not in EXCLUDED_FILES
+                and (root / relative).is_file()
+            ),
+            key=lambda item: item.as_posix(),
+        )
+
     values: list[Path] = []
     for path in root.rglob("*"):
         if not path.is_file():
@@ -47,7 +87,11 @@ def release_files(root: Path) -> list[Path]:
         relative = path.relative_to(root)
         if any(part in EXCLUDED_DIRS for part in relative.parts):
             continue
-        if relative.as_posix() in EXCLUDED_FILES or path.suffix == ".pyc":
+        if (
+            relative.as_posix() in EXCLUDED_FILES
+            or path.name in {".DS_Store", "Thumbs.db"}
+            or path.suffix in {".log", ".pyc", ".tmp", ".tsbuildinfo"}
+        ):
             continue
         values.append(relative)
     return sorted(values, key=lambda item: item.as_posix())
@@ -167,7 +211,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 3.0 skill collection structure, identity, and Manifest are valid.")
+    print("PASS: SLK 4.0 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 
