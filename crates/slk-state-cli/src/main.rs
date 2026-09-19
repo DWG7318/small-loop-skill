@@ -12,6 +12,7 @@ use slk_state_core::model::{
     InitRunRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
     RevisePlanRequest, TokenHandoffRequest, WriteRequest,
 };
+use slk_state_core::schema::open_database;
 use slk_state_core::write::StateStore;
 
 fn main() -> ExitCode {
@@ -91,6 +92,7 @@ fn run() -> Result<Value, CliError> {
 fn configure(arguments: &[String]) -> Result<Value, CliError> {
     let data_root = required_path(arguments, "--data-root")?;
     let configured = configure_at(&config_path()?, &data_root).map_err(CliError::command)?;
+    open_database(&configured).map_err(CliError::command)?;
     Ok(json!({"status":"configured","data_root":configured}))
 }
 

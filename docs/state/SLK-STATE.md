@@ -4,7 +4,7 @@ SLK 4.0 uses one configured machine-wide data root for structured Run state, evi
 
 ## Interfaces
 
-- `slk-state configure --data-root <absolute>` selects the one data root.
+- `slk-state configure --data-root <absolute>` selects the one data root and initializes its empty versioned database.
 - `slk-state init-run --request <json>` initializes a Run and returns the Supervisor write credential once.
 - `slk-state register-role`, `replace-role`, `rebind-session`, `revise-plan`, `write`, `register-evidence`, and `handoff` are authenticated mutations. `rebind-session` preserves the role instance and credential while retiring the previous endpoint; `replace-role` revokes the replaced identity. The credential is supplied only through `SLK_ROLE_CREDENTIAL`.
 - `slk-state export --run-id <id>` and `verify-evidence --run-id <id>` require an active role credential.

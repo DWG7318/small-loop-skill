@@ -52,6 +52,15 @@ def test_query_works_while_no_bi_process_exists(tmp_path):
     assert result["summary"]["run_id"] == "run-a"
 
 
+def test_configure_creates_an_empty_readable_state(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke_state(["configure", "--data-root", tmp_path / "state"], environment)
+
+    result = json.loads(invoke_query(["projects"], environment).stdout)
+
+    assert result == {"schema_version": "slk.bi.projects/v1", "projects": []}
+
+
 def test_query_surface_has_no_mutation_or_secret_path(tmp_path):
     environment = configured_environment(tmp_path)
     help_text = invoke_query(["--help"], environment).stdout.lower()

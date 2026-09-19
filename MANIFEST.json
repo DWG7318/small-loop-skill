@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "b868410a2d9605700979d7a2968d0eb9fffc511fa4e6fa7104efc02c1c1bb7f0"
+      "sha256": "9c1fae7e4d06b3e119998aa5cb3bef721c26fd543b57a00588860d40c2ebc555"
     },
     {
       "path": "VERSION",
@@ -484,7 +484,7 @@
     },
     {
       "path": "crates/slk-state-cli/src/main.rs",
-      "sha256": "72f5f2ce774b27f224919a2e5b15a5745e3f0e231b98edb79ac6d6f5d705ab98"
+      "sha256": "bc628dbe65c4b6c2d6acbc950cab0cd31693feab0987934d67a9c4975dc84647"
     },
     {
       "path": "crates/slk-state-core/Cargo.toml",
@@ -576,7 +576,7 @@
     },
     {
       "path": "docs/state/SLK-STATE.md",
-      "sha256": "20c162f6b3809a1ecf5ce724dd5e77dc80810c356b41aa25a75699374fff99f6"
+      "sha256": "e0f9836b7ca621009d970acd17b74d70976a776a515555d0bbef3936ed350ec2"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -808,7 +808,7 @@
     },
     {
       "path": "tests/state/test_query_cli.py",
-      "sha256": "eb36da60a68275f1aa53f4f2b3687ea556c7e9f25d12d55d219310574d67208a"
+      "sha256": "d1b8b815eca71f04519b27d2005bed1e966ef4896d7f52def72e5b7a0344114f"
     },
     {
       "path": "tests/state/test_state_cli.py",

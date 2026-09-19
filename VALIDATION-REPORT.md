@@ -25,7 +25,7 @@ The state core does not create, wake, watch, replace, or infer live Agents. Nati
 
 Repository and Python:
 
-- `python -m pytest -q` with externally built `slk-state` and `slk-bi-query`: **122 passed**, 0 failed, 0 skipped;
+- `python -m pytest -q` with externally built `slk-state` and `slk-bi-query`: **123 passed**, 0 failed, 0 skipped;
 - `python scripts/quick_validate.py`: **14/14 Skill directories PASS**;
 - `python scripts/validate_repository.py`: PASS;
 - manifest discovery regression: tracked and non-ignored new release files are included, while ignored local build output is excluded;
