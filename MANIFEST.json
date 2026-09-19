@@ -111,6 +111,10 @@
       "sha256": "c22f679ce269ca9a95b7597daed882c982a0145007bb4472c33a09f8c355354b"
     },
     {
+      "path": "scripts/run_transport_drill.py",
+      "sha256": "7f4b877e5db891e7e9a9b5d85590f72ca26d9927812913f385bf768479bc6a67"
+    },
+    {
       "path": "scripts/validate_repository.py",
       "sha256": "84475b1dcf72293725e96837f14a71eb787fcecb9b482ecd2a215848d361940a"
     },
@@ -249,6 +253,10 @@
     {
       "path": "tests/transport/test_dispatcher.py",
       "sha256": "7fcebb55b0408796fd82391984a2904639c5423b88a8ad6e89804707557faea6"
+    },
+    {
+      "path": "tests/transport/test_drill.py",
+      "sha256": "243c40a720fb34e73547a40f7ff7de3bb2484e6d97ed0485412994a1d3c92852"
     },
     {
       "path": "tests/transport/test_dsh_adapter.py",
