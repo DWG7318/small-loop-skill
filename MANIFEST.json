@@ -107,6 +107,10 @@
       "sha256": "544dee3c024dcc9a5a2d3032127a868fdd249d6c686c5b1abf931c1a128a5bc5"
     },
     {
+      "path": "scripts/build_transport_zipapp.py",
+      "sha256": "c43ed3d8d73f31661ade7a16e7a96386c1c86482a1f14c5209c80a9ef67121a3"
+    },
+    {
       "path": "scripts/quick_validate.py",
       "sha256": "c22f679ce269ca9a95b7597daed882c982a0145007bb4472c33a09f8c355354b"
     },
@@ -203,6 +207,10 @@
       "sha256": "e66ff9a3b9aa4a09fb00f6110a2ec75d6c43f726811168955b3fef162d289aac"
     },
     {
+      "path": "src/slk_transport/cli.py",
+      "sha256": "da883d2d79766541433c4cbb237b02058437b872d669b4c1a558922bc0578304"
+    },
+    {
       "path": "src/slk_transport/contracts.py",
       "sha256": "204f72dc75c27f9f14afb9799b8e6c0d26ff2de67c3edac5a83296d416e9839d"
     },
@@ -269,6 +277,10 @@
     {
       "path": "tests/transport/test_ocrv_adapter.py",
       "sha256": "632cad4ab404f1053496eaf5c5441eed303a0aef32eac6b3f7f31202249db9e4"
+    },
+    {
+      "path": "tests/transport/test_zipapp.py",
+      "sha256": "9f7a137c00120d8a15a56f97487e31d66625d65bd6a2026c5f0a24986b648c34"
     }
   ]
 }
