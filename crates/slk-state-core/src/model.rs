@@ -67,10 +67,9 @@ impl EventType {
     pub fn is_owned_by(self, role: Role) -> bool {
         use EventType::*;
         match self {
-            RunInitialized | PlanRevised | RoleRegistered | RoleReplaced | ModelChanged
-            | SessionRebound | ExemptionGranted | D2Started | D2Passed | D2Failed | RunClosed => {
-                role == Role::Supervisor
-            }
+            RunInitialized | PlanRevised | ModelChanged | SessionRebound | ExemptionGranted
+            | D2Started | D2Passed | D2Failed | RunClosed => role == Role::Supervisor,
+            RoleRegistered | RoleReplaced => role == Role::Supervisor || role == Role::Checker,
             CellDispatched | D1Started | D1Passed | D1Failed | ReworkRequested | CellSplit
             | CandidateForwarded => role == Role::Checker,
             WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
@@ -190,5 +189,55 @@ pub struct WriteRequest {
     pub role_instance_id: String,
     pub event_type: EventType,
     pub details: Value,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegisterRoleRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub identity: RoleIdentity,
+    pub endpoint: EndpointIdentity,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TokenHandoffRequest {
+    pub event_id: String,
+    pub message_id: String,
+    pub run_id: String,
+    pub go_id: String,
+    pub cell_id: String,
+    pub token_sequence: u64,
+    pub from_role_instance_id: String,
+    pub to_role_instance_id: String,
+    pub endpoint_version: u32,
+    pub payload_type: String,
+    pub payload_sha256: String,
+    pub payload_location: Option<String>,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RevisePlanRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub snapshot: Value,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceRoleRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub old_role_instance_id: String,
+    pub replacement: RoleIdentity,
+    pub endpoint: EndpointIdentity,
+    pub reason: String,
     pub occurred_at: String,
 }

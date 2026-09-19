@@ -8,6 +8,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::model::{EventType, Role};
+use crate::schema::SchemaError;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Credential(String);
@@ -52,6 +53,37 @@ pub enum StateError {
     RoleNotAuthorized { role: Role, event: EventType },
     #[error("stored role value is invalid: {0}")]
     StoredRoleInvalid(String),
+    #[error("role {actor:?} cannot create role {target:?}")]
+    RoleCreationNotAuthorized { actor: Role, target: Role },
+    #[error("request role instance does not match authenticated role instance")]
+    RoleInstanceMismatch,
+    #[error("Run already exists: {0}")]
+    RunAlreadyExists(String),
+    #[error("invalid linear plan: {0}")]
+    InvalidPlan(String),
+    #[error("plan revision {requested} is not current revision {current}")]
+    PlanRevisionMismatch { requested: u32, current: u32 },
+    #[error("SLK TOKEN sequence {requested} already exists; current sequence is {current}")]
+    TokenSequenceConflict { requested: u64, current: u64 },
+    #[error("SLK TOKEN sequence must be {expected}, not {requested}")]
+    TokenSequenceGap { requested: u64, expected: u64 },
+    #[error("SLK TOKEN is owned by {current_owner}, not {requested_owner}")]
+    TokenOwnerMismatch {
+        requested_owner: String,
+        current_owner: String,
+    },
+    #[error("role endpoint is not active at requested version")]
+    EndpointNotCurrent,
+    #[error("SLK TOKEN route {from:?} -> {to:?} is not part of the SLK loop")]
+    InvalidTokenRoute { from: Role, to: Role },
+    #[error("Run was not found: {0}")]
+    RunNotFound(String),
+    #[error("CELL was not found: {0}")]
+    CellNotFound(String),
+    #[error(transparent)]
+    Schema(#[from] SchemaError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
 }

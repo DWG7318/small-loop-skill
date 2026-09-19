@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{Connection, OpenFlags, MAIN_DB};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior, MAIN_DB};
 use thiserror::Error;
 
 use crate::config::{validate_data_root, ConfigError};
@@ -83,7 +83,18 @@ pub fn create_migration_backup(
 }
 
 fn apply_v1(connection: &mut Connection) -> Result<(), SchemaError> {
-    let transaction = connection.transaction()?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version == SCHEMA_VERSION {
+        transaction.commit()?;
+        return Ok(());
+    }
+    if version != 0 {
+        return Err(SchemaError::UnsupportedVersion {
+            found: version,
+            supported: SCHEMA_VERSION,
+        });
+    }
     transaction.execute_batch(MIGRATION_V1)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
