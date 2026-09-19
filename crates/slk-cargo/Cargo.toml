@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+serde_json.workspace = true
 slk-state-core = { path = "../slk-state-core" }
+time.workspace = true
+uuid.workspace = true
 
 [[bin]]
 name = "slk-cargo"

@@ -46,6 +46,9 @@ pub struct RunCommand {
     run_id: String,
     cargo_program: OsString,
     cargo_arguments: Vec<OsString>,
+    go_id: Option<String>,
+    cell_id: Option<String>,
+    attempt: Option<u32>,
 }
 
 impl RunCommand {
@@ -67,6 +70,18 @@ impl RunCommand {
 
     pub fn cargo_arguments(&self) -> &[OsString] {
         &self.cargo_arguments
+    }
+
+    pub fn go_id(&self) -> Option<&str> {
+        self.go_id.as_deref()
+    }
+
+    pub fn cell_id(&self) -> Option<&str> {
+        self.cell_id.as_deref()
+    }
+
+    pub fn attempt(&self) -> Option<u32> {
+        self.attempt
     }
 }
 
@@ -130,6 +145,9 @@ fn parse_run(arguments: &[OsString]) -> Result<RunCommand, CargoGuardError> {
             .cargo_program
             .unwrap_or_else(|| OsString::from("cargo")),
         cargo_arguments,
+        go_id: parsed.go_id,
+        cell_id: parsed.cell_id,
+        attempt: parsed.attempt,
     })
 }
 
@@ -147,6 +165,9 @@ struct ParsedOptions {
     project_id: String,
     run_id: String,
     cargo_program: Option<OsString>,
+    go_id: Option<String>,
+    cell_id: Option<String>,
+    attempt: Option<u32>,
 }
 
 fn parse_options(
@@ -157,6 +178,9 @@ fn parse_options(
     let mut project_id = None;
     let mut run_id = None;
     let mut cargo_program = None;
+    let mut go_id = None;
+    let mut cell_id = None;
+    let mut attempt = None;
     let mut index = 0;
     while index < arguments.len() {
         let option = arguments[index]
@@ -171,6 +195,16 @@ fn parse_options(
             "--project-id" => project_id = value.into_string().ok(),
             "--run-id" => run_id = value.into_string().ok(),
             "--cargo-program" if allow_cargo_program => cargo_program = Some(value),
+            "--go-id" if allow_cargo_program => go_id = value.into_string().ok(),
+            "--cell-id" if allow_cargo_program => cell_id = value.into_string().ok(),
+            "--attempt" if allow_cargo_program => {
+                attempt = Some(
+                    value
+                        .to_string_lossy()
+                        .parse::<u32>()
+                        .map_err(|_| CargoGuardError::usage("--attempt must be an integer"))?,
+                )
+            }
             _ => return Err(CargoGuardError::usage(format!("unknown option {option}"))),
         }
         index += 2;
@@ -179,11 +213,20 @@ fn parse_options(
     let run_id = run_id.ok_or_else(|| CargoGuardError::usage("missing --run-id"))?;
     validate_segment("project-id", &project_id)?;
     validate_segment("run-id", &run_id)?;
+    if let Some(value) = go_id.as_deref() {
+        validate_segment("go-id", value)?;
+    }
+    if let Some(value) = cell_id.as_deref() {
+        validate_segment("cell-id", value)?;
+    }
     Ok(ParsedOptions {
         data_root,
         project_id,
         run_id,
         cargo_program,
+        go_id,
+        cell_id,
+        attempt,
     })
 }
 
@@ -195,5 +238,5 @@ fn contains_target_override(arguments: &[OsString]) -> bool {
 }
 
 pub fn help() -> &'static str {
-    "slk-cargo run [--data-root PATH] --project-id ID --run-id ID [--cargo-program PATH] -- <cargo arguments>\nslk-cargo cleanup [--data-root PATH] --project-id ID --run-id ID"
+    "slk-cargo run [--data-root PATH] --project-id ID --run-id ID [--go-id ID --cell-id ID --attempt N] [--cargo-program PATH] -- <cargo arguments>\nslk-cargo cleanup [--data-root PATH] --project-id ID --run-id ID\nState events are attempted only when SLK_ROLE_CREDENTIAL is present."
 }

@@ -2826,8 +2826,11 @@ dependencies = [
 name = "slk-cargo"
 version = "4.0.0"
 dependencies = [
+ "serde_json",
  "slk-state-core",
  "tempfile",
+ "time",
+ "uuid",
 ]
 
 [[package]]

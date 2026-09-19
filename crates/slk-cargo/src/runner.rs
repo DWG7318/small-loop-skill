@@ -6,7 +6,10 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::{classify_contention, CargoGuardError, CargoInvocation, ContentionKind, RunPaths};
+use crate::{
+    acquire_run_lease, classify_contention, CargoGuardError, CargoInvocation, ContentionKind,
+    RunPaths, StateContext,
+};
 
 pub trait OutputSink {
     fn stdout(&mut self, bytes: &[u8]);
@@ -35,6 +38,7 @@ pub struct CargoRunResult {
     recovered: bool,
     contention: Option<ContentionKind>,
     final_target: PathBuf,
+    state_warnings: Vec<String>,
 }
 
 impl CargoRunResult {
@@ -61,6 +65,10 @@ impl CargoRunResult {
     pub fn success(&self) -> bool {
         self.exit_code == Some(0)
     }
+
+    pub fn state_warnings(&self) -> &[String] {
+        &self.state_warnings
+    }
 }
 
 pub fn run_cargo(
@@ -69,8 +77,21 @@ pub fn run_cargo(
     config: &RunnerConfig,
     sink: &mut dyn OutputSink,
 ) -> Result<CargoRunResult, CargoGuardError> {
+    run_cargo_with_state(invocation, paths, config, sink, None)
+}
+
+pub fn run_cargo_with_state(
+    invocation: &CargoInvocation,
+    paths: &RunPaths,
+    config: &RunnerConfig,
+    sink: &mut dyn OutputSink,
+    state: Option<&StateContext>,
+) -> Result<CargoRunResult, CargoGuardError> {
+    let _lease = acquire_run_lease(paths)?;
     let mut target = paths.primary_target();
     let mut observed_contention = None;
+    let mut state_warnings = Vec::new();
+    let mut contention_recorded = false;
 
     for attempt in 1..=2 {
         fs::create_dir_all(&target).map_err(|error| {
@@ -83,13 +104,27 @@ pub fn run_cargo(
         if observed_contention.is_none() {
             observed_contention = outcome.contention;
         }
+        if let Some(kind) = outcome.contention {
+            if !contention_recorded {
+                record_state(state, sink, &mut state_warnings, |context| {
+                    context.record_contended(kind, &target, attempt)
+                });
+                contention_recorded = true;
+            }
+        }
         if outcome.status.as_ref().is_some_and(ExitStatus::success) {
+            if let Some(kind) = observed_contention {
+                record_state(state, sink, &mut state_warnings, |context| {
+                    context.record_recovered(kind, &target, attempt)
+                });
+            }
             return Ok(CargoRunResult {
                 exit_code: Some(0),
                 attempts: attempt,
                 recovered: observed_contention.is_some(),
                 contention: observed_contention,
                 final_target: target,
+                state_warnings,
             });
         }
 
@@ -100,6 +135,7 @@ pub fn run_cargo(
                 recovered: false,
                 contention: observed_contention,
                 final_target: target,
+                state_warnings,
             });
         };
         observed_contention.get_or_insert(kind);
@@ -110,6 +146,7 @@ pub fn run_cargo(
                 recovered: false,
                 contention: observed_contention,
                 final_target: target,
+                state_warnings,
             });
         }
 
@@ -129,6 +166,22 @@ pub fn run_cargo(
         );
     }
     unreachable!("attempt loop has a fixed non-empty range")
+}
+
+fn record_state(
+    state: Option<&StateContext>,
+    sink: &mut dyn OutputSink,
+    warnings: &mut Vec<String>,
+    operation: impl FnOnce(&StateContext) -> Result<(), String>,
+) {
+    let Some(context) = state else {
+        return;
+    };
+    if let Err(error) = operation(context) {
+        let warning = format!("SLK_CARGO_STATE_WARNING: {error}");
+        sink.stderr(format!("{warning}\n").as_bytes());
+        warnings.push(warning);
+    }
 }
 
 struct AttemptOutcome {
