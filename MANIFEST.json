@@ -103,6 +103,10 @@
       "sha256": "f5e1023c4a91b51a0b748ec4b14d9f187ec7fc9948ac83c692693f14339e5e4b"
     },
     {
+      "path": "docs/transport/SLK-TRANSPORT-LIVE-ACCEPTANCE.md",
+      "sha256": "6da05ea19ad6416998d88376914a1aeaccc49709bb1f372e832f4520c9848ade"
+    },
+    {
       "path": "pyproject.toml",
       "sha256": "544dee3c024dcc9a5a2d3032127a868fdd249d6c686c5b1abf931c1a128a5bc5"
     },
