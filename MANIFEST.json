@@ -95,6 +95,10 @@
       "sha256": "cb0a26cce5f834c73db8940dd1e2e045bdf3fd8198e3e479fd2551486ff23db2"
     },
     {
+      "path": "docs/superpowers/specs/2026-09-20-slk-4.0-state-bi-design.md",
+      "sha256": "ee16c37ab42064202f70e72c969f5def346f6b176366ea4ff089fff956eff24a"
+    },
+    {
       "path": "scripts/quick_validate.py",
       "sha256": "c22f679ce269ca9a95b7597daed882c982a0145007bb4472c33a09f8c355354b"
     },
