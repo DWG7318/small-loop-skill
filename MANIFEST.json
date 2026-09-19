@@ -183,6 +183,10 @@
       "sha256": "b7aee2815693795e8a252bcc1b849c084e2448277312ff9c7142949200901900"
     },
     {
+      "path": "src/slk_transport/evidence.py",
+      "sha256": "4cf4292521e7cdcf7a7634273f7b162cd42fbd8b3534d8da1c79c5aea46eaa69"
+    },
+    {
       "path": "tests/skill_testkit.py",
       "sha256": "3334d4d00b034ff87c62b14f31035303bd3b30d68895e0ba9dd6a6afc2eda104"
     },
@@ -197,6 +201,10 @@
     {
       "path": "tests/transport/test_contracts.py",
       "sha256": "e1cedf9814af6d3aeaccd81bbbffe001e423254b2cb69b21d8102f0b437f9731"
+    },
+    {
+      "path": "tests/transport/test_evidence.py",
+      "sha256": "99e9aa9ae477adbb0b04e3c6b2715f6cfa92ce5bd68dc37079b04314f0ee21a9"
     }
   ]
 }
