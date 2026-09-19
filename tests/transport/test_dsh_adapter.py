@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -64,6 +65,9 @@ def test_dsh_first_turn_uses_run_scoped_instance_and_records_session(tmp_path: P
     assert str(result.native_identity["session_id"]).startswith("session-")
     assert (attempt.root / "worker-result.json").is_file()
     assert (attempt.root / "started.json").is_file()
+    native = json.loads((attempt.root / "native.stdout.txt").read_text(encoding="utf-8"))
+    assert Path(native["result_path"]).is_relative_to(Path(str(endpoint.address["cwd"])))
+    assert not (Path(str(endpoint.address["cwd"])) / ".slk-transport").exists()
 
 
 def test_dsh_prompt_defines_the_closed_worker_result_without_d0_conclusions(tmp_path: Path) -> None:

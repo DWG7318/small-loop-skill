@@ -29,9 +29,9 @@ envelope_match = re.search(r"<slk-transport-envelope>(.*?)</slk-transport-envelo
 if not match or not envelope_match:
     sys.exit(6)
 
+result_path = Path(json.loads(match.group(1)))
 if MODE != "missing-result":
     envelope = json.loads(envelope_match.group(1))
-    result_path = Path(json.loads(match.group(1)))
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result = {
         "schema_version": "slk.worker-result/v1",
@@ -46,5 +46,5 @@ if MODE != "missing-result":
     temporary.write_text(json.dumps(result), encoding="utf-8")
     os.replace(temporary, result_path)
 
-print(json.dumps({"session_id": session_id}))
+print(json.dumps({"session_id": session_id, "result_path": str(result_path)}))
 sys.exit(0)

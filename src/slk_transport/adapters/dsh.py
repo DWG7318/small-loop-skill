@@ -176,62 +176,91 @@ class DshAdapter:
 
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
         self.validate_address(endpoint)
-        result_path = attempt.root / "worker-result.json"
+        workspace = Path(str(endpoint.address["cwd"]))
+        drop_parent = workspace / ".slk-transport"
+        drop_root = drop_parent / envelope.message_id
+        parent_existed = drop_parent.exists()
+        try:
+            drop_root.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as exc:
+            raise AdapterError("DSH_RESULT_DROP_COLLISION", "Worker result drop already exists") from exc
+        result_path = drop_root / "worker-result.json"
         session_root = self._session_root(endpoint)
         before = self._sessions(session_root)
         environment = os.environ.copy()
         environment["DSH_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
         command = self.command(endpoint, envelope, result_path)
         try:
-            completed = subprocess.run(
-                command,
-                cwd=str(endpoint.address["cwd"]),
-                env=environment,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
-                timeout=_positive_seconds(endpoint.address["timeout_seconds"]),
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-            attempt.write_text_once("native.stdout.txt", stdout)
-            attempt.write_text_once("native.stderr.txt", stderr)
-            raise AdapterError("DSH_TIMEOUT", "DSH Worker did not complete in time") from exc
-        attempt.write_text_once("native.stdout.txt", completed.stdout)
-        attempt.write_text_once("native.stderr.txt", completed.stderr)
-        if completed.returncode != 0:
-            raise AdapterError("DSH_EXIT_NONZERO", f"DSH Worker exited with {completed.returncode}")
-        session_id = self._resolve_session(endpoint, before, self._sessions(session_root))
-        attempt.write_json_once(
-            "started.json",
-            {
-                "message_id": envelope.message_id,
-                "run_id": envelope.run_id,
-                "status": "started",
-                "instance_id": endpoint.address["instance_id"],
-                "session_id": session_id,
-            },
-        )
-        self._read_result(result_path, endpoint, envelope)
-        return DeliveryResult(
-            schema_version=RESULT_SCHEMA,
-            message_id=envelope.message_id,
-            run_id=envelope.run_id,
-            adapter=endpoint.adapter,
-            status="completed",
-            native_identity={
-                "instance_id": str(endpoint.address["instance_id"]),
-                "session_id": session_id,
-                "exit_code": completed.returncode,
-            },
-            error_code=None,
-            evidence=(
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=workspace,
+                    env=environment,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    capture_output=True,
+                    timeout=_positive_seconds(endpoint.address["timeout_seconds"]),
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+                stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+                attempt.write_text_once("native.stdout.txt", stdout)
+                attempt.write_text_once("native.stderr.txt", stderr)
+                raise AdapterError("DSH_TIMEOUT", "DSH Worker did not complete in time") from exc
+            attempt.write_text_once("native.stdout.txt", completed.stdout)
+            attempt.write_text_once("native.stderr.txt", completed.stderr)
+            if completed.returncode != 0:
+                raise AdapterError("DSH_EXIT_NONZERO", f"DSH Worker exited with {completed.returncode}")
+            session_id = self._resolve_session(endpoint, before, self._sessions(session_root))
+            attempt.write_json_once(
                 "started.json",
-                "worker-result.json",
-                "native.stdout.txt",
-                "native.stderr.txt",
-            ),
-        )
+                {
+                    "message_id": envelope.message_id,
+                    "run_id": envelope.run_id,
+                    "status": "started",
+                    "instance_id": endpoint.address["instance_id"],
+                    "session_id": session_id,
+                },
+            )
+            try:
+                worker_result = self._read_result(result_path, endpoint, envelope)
+            except AdapterError:
+                if result_path.is_file():
+                    attempt.write_text_once(
+                        "worker-result.invalid.txt",
+                        result_path.read_text(encoding="utf-8-sig", errors="replace"),
+                    )
+                raise
+            attempt.write_json_once("worker-result.json", worker_result)
+            return DeliveryResult(
+                schema_version=RESULT_SCHEMA,
+                message_id=envelope.message_id,
+                run_id=envelope.run_id,
+                adapter=endpoint.adapter,
+                status="completed",
+                native_identity={
+                    "instance_id": str(endpoint.address["instance_id"]),
+                    "session_id": session_id,
+                    "exit_code": completed.returncode,
+                },
+                error_code=None,
+                evidence=(
+                    "started.json",
+                    "worker-result.json",
+                    "native.stdout.txt",
+                    "native.stderr.txt",
+                ),
+            )
+        finally:
+            result_path.unlink(missing_ok=True)
+            try:
+                drop_root.rmdir()
+            except OSError:
+                pass
+            if not parent_existed:
+                try:
+                    drop_parent.rmdir()
+                except OSError:
+                    pass

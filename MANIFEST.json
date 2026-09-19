@@ -200,7 +200,7 @@
     },
     {
       "path": "src/slk_transport/adapters/dsh.py",
-      "sha256": "046178f86c8ca1f7c272b646966feeb7ebb9c331cb0600725f9d1156ab1b5138"
+      "sha256": "8fc671277f91ddf8a6382686a215815a70b61c60f5eaae53f9354b925996e0cb"
     },
     {
       "path": "src/slk_transport/adapters/ocrv.py",
@@ -244,7 +244,7 @@
     },
     {
       "path": "tests/transport/fake_dsh.py",
-      "sha256": "e51e8b960da8107f3caca04a6b2d1568382f2c14806c39d599dd40d1375257da"
+      "sha256": "332490e30b90786291ac0c8488592eba26c3171772e7cc263c58e275ddddaf94"
     },
     {
       "path": "tests/transport/fake_ocrv.py",
@@ -272,7 +272,7 @@
     },
     {
       "path": "tests/transport/test_dsh_adapter.py",
-      "sha256": "f4f53791cdfc852552ab6b422308b4aaa86793dc1b926f99aada5743aaea87d6"
+      "sha256": "f583771602a0b897fb56ab0ac20c7396c7cc9ff44fa5b30a2e98ca8d0a1ff773"
     },
     {
       "path": "tests/transport/test_evidence.py",
