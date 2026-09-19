@@ -2,6 +2,7 @@ import { IconLayoutSidebarRight, IconRefresh } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
 import { type SlkApi, tauriApi } from "./api";
+import { Inspector, type InspectorSelection } from "./components/Inspector";
 import { ProjectRail } from "./components/ProjectRail";
 import { RunOverview } from "./components/RunOverview";
 import { useSlkData } from "./useSlkData";
@@ -13,6 +14,7 @@ interface AppProps {
 export function App({ api = tauriApi }: AppProps) {
   const [selectedRunId, setSelectedRunId] = useState<string>();
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [selection, setSelection] = useState<InspectorSelection>();
   const { snapshot, staleReason, lastUpdatedAt, loading, refresh } = useSlkData(api, selectedRunId);
 
   useEffect(() => {
@@ -20,6 +22,11 @@ export function App({ api = tauriApi }: AppProps) {
       setSelectedRunId(snapshot.runs.runs[0].run_id);
     }
   }, [selectedRunId, snapshot]);
+
+  useEffect(() => {
+    const activeRole = snapshot?.run?.roles.find((role) => role.lifecycle === "active");
+    if (activeRole) setSelection({ kind: "role", value: activeRole });
+  }, [snapshot?.run?.run_id]);
 
   return (
     <div className="app-shell">
@@ -54,19 +61,19 @@ export function App({ api = tauriApi }: AppProps) {
         </header>
         <div className={`content-grid${inspectorOpen ? " inspector-visible" : ""}`}>
           {snapshot?.run ? (
-            <RunOverview run={snapshot.run} />
+            <RunOverview
+              run={snapshot.run}
+              onSelectEvent={(event) => {
+                setSelection({ kind: "event", value: event });
+                setInspectorOpen(true);
+              }}
+            />
           ) : (
             <main className="run-overview empty-workspace" aria-live="polite">
               {loading ? "Loading SLK state…" : "Select a Run"}
             </main>
           )}
-          {inspectorOpen ? (
-            <aside className="inspector-placeholder" aria-label="Inspector">
-              <p className="eyebrow">Inspector</p>
-              <h2>Recorded facts</h2>
-              <p>Select a role, event, correction, or evidence record to inspect its provenance.</p>
-            </aside>
-          ) : null}
+          {inspectorOpen ? <Inspector selection={selection} /> : null}
         </div>
       </div>
     </div>

@@ -1,7 +1,9 @@
 import type { EventProjection, RunView } from "../contracts";
+import { Timeline } from "./Timeline";
 
 interface RunOverviewProps {
   run: RunView;
+  onSelectEvent: (event: EventProjection) => void;
 }
 
 function titleCase(value: string) {
@@ -17,7 +19,7 @@ function latestFact(events: EventProjection[]) {
   return latest ? latest.replaceAll("_", " ").toLowerCase() : "No authored work fact";
 }
 
-export function RunOverview({ run }: RunOverviewProps) {
+export function RunOverview({ run, onSelectEvent }: RunOverviewProps) {
   const token = run.token_history.at(-1);
   const responsible = run.roles.find(
     (role) => role.role_instance_id === token?.to_role_instance_id,
@@ -83,6 +85,7 @@ export function RunOverview({ run }: RunOverviewProps) {
             ))}
         </ol>
       </section>
+      <Timeline events={run.events} onSelect={onSelectEvent} />
     </main>
   );
 }
