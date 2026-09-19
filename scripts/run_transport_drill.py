@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
@@ -17,11 +20,13 @@ from slk_transport.contracts import (
     ENDPOINT_SCHEMA,
     ENVELOPE_SCHEMA,
     ContractError,
+    DeliveryResult,
     Endpoint,
     Envelope,
     canonical_json_sha256,
 )
 from slk_transport.dispatcher import dispatch_once
+from slk_transport.jsonrpc import JsonRpcProcess
 
 
 ADAPTERS = {
@@ -119,7 +124,220 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _one_offline_run(config: Mapping[str, object], run_id: str) -> dict[str, Any]:
+def _write_json(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8", newline="\n") as stream:
+        json.dump(value, stream, ensure_ascii=False, sort_keys=True, indent=2)
+        stream.write("\n")
+
+
+def _save_rpc_evidence(root: Path, name: str, client: JsonRpcProcess) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / f"{name}.stdout.txt").write_text(
+        "\n".join(client.transcript) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (root / f"{name}.stderr.txt").write_text(
+        "\n".join(client.stderr_lines) + ("\n" if client.stderr_lines else ""),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _initialize_disposable_repository(repository: Path, run_id: str) -> str:
+    (repository / "README.md").write_text(
+        f"# Disposable SLK transport drill\n\nRun: `{run_id}`\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    commands = (
+        ["git", "init", "-b", "main"],
+        ["git", "config", "user.name", "SLK Transport Drill"],
+        ["git", "config", "user.email", "slk-transport@example.invalid"],
+        ["git", "add", "README.md"],
+        ["git", "commit", "-m", "chore: initialize transport drill"],
+    )
+    for command in commands:
+        completed = subprocess.run(
+            command,
+            cwd=repository,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(f"disposable repository command failed: {' '.join(command)}")
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=True,
+    ).stdout.strip()
+    return head
+
+
+def _create_supervisor_thread(
+    config: Mapping[str, object],
+    run_id: str,
+    repository: Path,
+    evidence_root: Path,
+) -> str:
+    timeout = _seconds(config)
+    model = config.get("codex_model")
+    effort = config.get("codex_effort")
+    if not isinstance(model, str) or not model or not isinstance(effort, str) or not effort:
+        raise ValueError("live drill requires explicit codex_model and codex_effort")
+    client = JsonRpcProcess(_command(config, "codex_command"), repository)
+    try:
+        client.request(
+            1,
+            "initialize",
+            {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.0.0"}},
+            timeout,
+        )
+        client.notify("initialized", {})
+        response = client.request(
+            2,
+            "thread/start",
+            {
+                "cwd": str(repository),
+                "model": model,
+                "approvalPolicy": "never",
+                "sandbox": "danger-full-access",
+                "baseInstructions": (
+                    f"You are the disposable SLK Supervisor Agent for {run_id}. "
+                    "Perform only the exact transport-drill assignment sent in the next turn."
+                ),
+            },
+            timeout,
+        )
+        thread = response.get("thread")
+        thread_id = thread.get("id") if isinstance(thread, Mapping) else None
+        if not isinstance(thread_id, str) or not thread_id:
+            raise RuntimeError("Codex thread/start returned no exact thread identity")
+        return thread_id
+    finally:
+        client.close()
+        _save_rpc_evidence(evidence_root / run_id / "_supervisor", "thread-start", client)
+
+
+def _supervisor_starts_first_send(
+    config: Mapping[str, object],
+    run_id: str,
+    thread_id: str,
+    repository: Path,
+    endpoint_path: Path,
+    envelope_path: Path,
+    evidence_root: Path,
+    message_id: str,
+) -> DeliveryResult:
+    artifact_value = config.get("transport_artifact")
+    if not isinstance(artifact_value, str):
+        raise ValueError("live drill requires transport_artifact")
+    artifact = Path(artifact_value).resolve()
+    if not artifact.is_file():
+        raise ValueError("transport_artifact must be an existing file")
+    command = [
+        sys.executable,
+        str(artifact),
+        "send",
+        "--endpoint",
+        str(endpoint_path),
+        "--envelope",
+        str(envelope_path),
+        "--attempt-root",
+        str(evidence_root),
+        "--startup-timeout-seconds",
+        str(_seconds(config)),
+    ]
+    prompt = (
+        f"Start the real first SLK transport handoff for {run_id}. Execute exactly the JSON-array "
+        "command below with the shell now. Do not merely quote it, explain it, or substitute another "
+        "command. Make no project changes. Report the command exit status after it returns.\n"
+        f"<slk-supervisor-command>{json.dumps(command, ensure_ascii=False)}</slk-supervisor-command>"
+    )
+    timeout = _seconds(config)
+    client = JsonRpcProcess(_command(config, "codex_command"), repository)
+    try:
+        client.request(
+            1,
+            "initialize",
+            {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.0.0"}},
+            timeout,
+        )
+        client.notify("initialized", {})
+        resumed = client.request(2, "thread/resume", {"threadId": thread_id, "cwd": str(repository)}, timeout)
+        thread = resumed.get("thread")
+        if not isinstance(thread, Mapping) or thread.get("id") != thread_id:
+            raise RuntimeError("Supervisor thread resume identity mismatch")
+        read = client.request(3, "thread/read", {"threadId": thread_id, "includeTurns": False}, timeout)
+        read_thread = read.get("thread")
+        status = read_thread.get("status") if isinstance(read_thread, Mapping) else None
+        if not isinstance(status, Mapping) or status.get("type") != "idle":
+            raise RuntimeError("Supervisor thread is not idle before first send")
+        notification_start = len(client.messages)
+        started_response = client.request(
+            4,
+            "turn/start",
+            {
+                "threadId": thread_id,
+                "input": [{"type": "text", "text": prompt}],
+                "cwd": str(repository),
+                "model": config["codex_model"],
+                "effort": config["codex_effort"],
+                "approvalPolicy": "never",
+                "sandboxPolicy": {"type": "dangerFullAccess"},
+                "clientUserMessageId": str(uuid.uuid4()),
+                "turnTrigger": "slk-transport-drill",
+            },
+            timeout,
+        )
+        turn = started_response.get("turn")
+        turn_id = turn.get("id") if isinstance(turn, Mapping) else None
+        if not isinstance(turn_id, str) or not turn_id:
+            raise RuntimeError("Supervisor turn/start returned no turn identity")
+        client.wait_for(
+            "turn/started",
+            lambda params: params.get("threadId") == thread_id
+            and isinstance(params.get("turn"), Mapping)
+            and params["turn"].get("id") == turn_id,
+            timeout,
+            after=notification_start,
+        )
+        completed = client.wait_for(
+            "turn/completed",
+            lambda params: params.get("threadId") == thread_id
+            and isinstance(params.get("turn"), Mapping)
+            and params["turn"].get("id") == turn_id,
+            timeout,
+            after=notification_start,
+        )
+        terminal = completed["turn"]
+        if terminal.get("status") != "completed":
+            raise RuntimeError(f"Supervisor first-send turn ended with {terminal.get('status')}")
+    finally:
+        client.close()
+        _save_rpc_evidence(evidence_root / run_id / "_supervisor", "first-send", client)
+    attempt = evidence_root / run_id / message_id
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        completed_path = attempt / "completed.json"
+        failed_path = attempt / "failed.json"
+        if completed_path.is_file():
+            return DeliveryResult.from_dict(_read_json(completed_path))
+        if failed_path.is_file():
+            result = DeliveryResult.from_dict(_read_json(failed_path))
+            raise RuntimeError(f"Supervisor first send failed: {result.error_code}")
+        time.sleep(0.05)
+    raise RuntimeError("Supervisor turn completed without terminal first-send evidence")
+
+
+def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str, Any]:
     evidence_root = _root(config, "evidence_root")
     workspace_root = _root(config, "workspace_root")
     timeout = _seconds(config)
@@ -130,7 +348,12 @@ def _one_offline_run(config: Mapping[str, object], run_id: str) -> dict[str, Any
     for path in (repository, ocrv_runtime, dsh_runtime):
         path.mkdir(parents=True, exist_ok=True)
     nonce = f"{run_id}-NONCE"
+    base_commit = _initialize_disposable_repository(repository, run_id) if live else None
 
+    if live:
+        thread_id = _create_supervisor_thread(config, run_id, repository, evidence_root)
+    else:
+        thread_id = f"thread-{run_id}"
     supervisor = Endpoint.from_dict(
         _endpoint(
             run_id=run_id,
@@ -140,7 +363,7 @@ def _one_offline_run(config: Mapping[str, object], run_id: str) -> dict[str, Any
             version=1,
             address={
                 "command": _command(config, "codex_command"),
-                "thread_id": f"thread-{run_id}",
+                "thread_id": thread_id,
                 "cwd": str(repository),
                 "startup_timeout_seconds": timeout,
                 "turn_timeout_seconds": timeout,
@@ -179,11 +402,19 @@ def _one_offline_run(config: Mapping[str, object], run_id: str) -> dict[str, Any
         )
     )
 
+    worker_task = (
+        "This is a disposable Git repository. Create transport-probe.txt as UTF-8 with exactly "
+        f"{nonce} followed by one newline. Commit only that file with message "
+        f"'test: record {nonce}'. In the required Worker result, use the exact new HEAD as a commit "
+        f"candidate and set next_payload to exactly {{\"probe_nonce\":\"{nonce}\"}}."
+        if live
+        else "Complete the no-project-change transport probe and return the nonce."
+    )
     initial_payload = {
         "worker_endpoint": asdict(worker),
         "worker_payload": {
             "probe_nonce": nonce,
-            "task": "Complete the no-project-change transport probe and return the nonce.",
+            "task": worker_task,
         },
     }
     initial = Envelope.from_dict(
@@ -196,12 +427,29 @@ def _one_offline_run(config: Mapping[str, object], run_id: str) -> dict[str, Any
             payload=initial_payload,
         )
     )
-    first = dispatch_once(
-        asdict(checker),
-        asdict(initial),
-        evidence_root,
-        adapters=ADAPTERS,
-    )
+    if live:
+        input_root = evidence_root / run_id / "_inputs"
+        endpoint_path = input_root / "checker-endpoint.json"
+        envelope_path = input_root / "initial-envelope.json"
+        _write_json(endpoint_path, asdict(checker))
+        _write_json(envelope_path, asdict(initial))
+        first = _supervisor_starts_first_send(
+            config,
+            run_id,
+            thread_id,
+            repository,
+            endpoint_path,
+            envelope_path,
+            evidence_root,
+            initial.message_id,
+        )
+    else:
+        first = dispatch_once(
+            asdict(checker),
+            asdict(initial),
+            evidence_root,
+            adapters=ADAPTERS,
+        )
     _require_completed(first, "S-C")
     first_attempt = evidence_root / run_id / initial.message_id
     checker_result = _read_json(first_attempt / "checker-result.json")
@@ -247,9 +495,10 @@ def _one_offline_run(config: Mapping[str, object], run_id: str) -> dict[str, Any
     if worker_result.get("next_payload", {}).get("probe_nonce") != nonce:
         raise RuntimeError("Worker returned a different Run nonce")
 
+    candidate_value = worker_result["candidate"] if live else {"kind": "workspace"}
     candidate_payload = {
         "repository": str(repository),
-        "candidate": {"kind": "workspace"},
+        "candidate": candidate_value,
         "cell_goal": f"Verify the no-project-change probe for {nonce}.",
         "d1_criteria": [f"The result remains bound to {nonce}."],
         "evidence_files": [],
@@ -317,6 +566,8 @@ def _one_offline_run(config: Mapping[str, object], run_id: str) -> dict[str, Any
             "active_version": worker_endpoint.endpoint_version,
             "active_version_completed": second.status == "completed",
         },
+        "supervisor_started_first_send": live,
+        "disposable_base_commit": base_commit,
     }
 
 
@@ -350,11 +601,9 @@ def run_drill(
         raise ValueError("run_ids must be unique and non-empty")
     if live and "live_endpoints" not in config:
         raise ValueError("live drill requires explicit real runtime endpoints")
-    if live:
-        raise NotImplementedError("real runtime bootstrap is completed by the live acceptance Cell")
     with ThreadPoolExecutor(max_workers=len(run_ids)) as executor:
         futures = {
-            run_id: executor.submit(_one_offline_run, config, run_id)
+            run_id: executor.submit(_one_run, config, run_id, live)
             for run_id in run_ids
         }
         summary = {run_id: future.result() for run_id, future in futures.items()}

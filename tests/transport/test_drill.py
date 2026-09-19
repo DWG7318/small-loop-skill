@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from scripts.build_transport_zipapp import build_zipapp
 from scripts.run_transport_drill import run_drill
 
 
@@ -61,3 +62,20 @@ def test_drill_rejects_live_mode_until_real_runtime_bootstrap_is_supplied(tmp_pa
         assert str(exc) == "live drill requires explicit real runtime endpoints"
     else:
         raise AssertionError("live mode silently used fake endpoints")
+
+
+def test_live_drill_first_leg_is_started_by_exact_supervisor_agent(tmp_path: Path) -> None:
+    config = fake_config(tmp_path)
+    config["codex_command"] = [sys.executable, str(TESTS / "fake_app_server.py"), "execute-command"]
+    config["transport_artifact"] = str(build_zipapp(tmp_path / "slk-transport.pyz"))
+    config["live_endpoints"] = True
+    config["codex_model"] = "gpt-5.6-sol"
+    config["codex_effort"] = "xhigh"
+
+    summary = run_drill(config, live=True, run_ids=("RUN-A", "RUN-B"))
+
+    assert summary["RUN-A"]["supervisor_started_first_send"] is True
+    assert summary["RUN-B"]["supervisor_started_first_send"] is True
+    assert summary["RUN-A"]["legs"] == ["S-C", "C-W", "W-C", "C-S"]
+    assert summary["RUN-B"]["legs"] == ["S-C", "C-W", "W-C", "C-S"]
+    assert summary["crossovers"] == []

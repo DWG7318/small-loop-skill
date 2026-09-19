@@ -66,6 +66,20 @@ def test_dsh_first_turn_uses_run_scoped_instance_and_records_session(tmp_path: P
     assert (attempt.root / "started.json").is_file()
 
 
+def test_dsh_prompt_defines_the_closed_worker_result_without_d0_conclusions(tmp_path: Path) -> None:
+    endpoint = worker_endpoint(tmp_path)
+    envelope = worker_envelope()
+    result_path = tmp_path / "worker-result.json"
+
+    prompt = DshAdapter().command(endpoint, envelope, result_path)[-1]
+
+    assert '"schema_version":"slk.worker-result/v1"' in prompt
+    assert f'"message_id":"{envelope.message_id}"' in prompt
+    assert '"candidate"' in prompt
+    assert '"next_payload"' in prompt
+    assert "D0 conclusion" not in prompt
+
+
 def test_dsh_resume_uses_only_the_recorded_session(tmp_path: Path) -> None:
     session_id = "session-11111111-1111-4111-8111-111111111111"
     endpoint = worker_endpoint(tmp_path, session_id=session_id)

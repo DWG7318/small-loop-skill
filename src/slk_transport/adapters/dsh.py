@@ -77,12 +77,29 @@ class DshAdapter:
             separators=(",", ":"),
         )
         result_path_json = json.dumps(str(result_path), ensure_ascii=False)
+        result_contract = json.dumps(
+            {
+                "schema_version": "slk.worker-result/v1",
+                "message_id": envelope.message_id,
+                "run_id": envelope.run_id,
+                "role_instance_id": envelope.receiver_role_instance_id,
+                "status": "completed",
+                "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
+                "next_payload": {},
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return (
             "SLK Worker delivery. Execute only the closed envelope below in the current CELL. "
             "When the assigned work is complete, atomically write the exact slk.worker-result/v1 object "
-            "to the supplied absolute result path. A successful outer process exit without that result "
-            "does not count as delivery.\n"
+            "to the supplied absolute result path. Preserve every fixed identity below, replace the "
+            "candidate with the actual candidate required by the task, and put only the factual handoff "
+            "payload in next_payload. A successful outer process exit without that result does not count "
+            "as delivery.\n"
             f"<slk-worker-result-path>{result_path_json}</slk-worker-result-path>\n"
+            f"<slk-worker-result-contract>{result_contract}</slk-worker-result-contract>\n"
             f"<slk-transport-envelope>{envelope_json}</slk-transport-envelope>"
         )
 

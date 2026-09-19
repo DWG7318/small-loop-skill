@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import sys
+from pathlib import Path
 
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else "normal"
@@ -20,6 +23,10 @@ for line in sys.stdin:
         emit({"id": request_id, "result": {"serverInfo": {"name": "fake", "version": "1"}}})
     elif method == "initialized":
         continue
+    elif method == "thread/start":
+        cwd = Path(message["params"].get("cwd") or ".")
+        run_id = cwd.parent.name
+        emit({"id": request_id, "result": {"thread": {"id": f"thread-{run_id}"}}})
     elif method == "thread/resume":
         thread_id = message["params"]["threadId"]
         if MODE == "wrong-thread":
@@ -40,6 +47,19 @@ for line in sys.stdin:
         if MODE != "no-start":
             emit({"method": "turn/started", "params": {"threadId": thread_id, "turn": turn}})
             terminal_status = "failed" if MODE == "failed-turn" else "completed"
+            if MODE == "execute-command":
+                text = message["params"]["input"][0]["text"]
+                match = re.search(r"<slk-supervisor-command>(.*?)</slk-supervisor-command>", text)
+                if match:
+                    command = json.loads(match.group(1))
+                    completed = subprocess.run(
+                        command,
+                        cwd=message["params"].get("cwd"),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=False,
+                    )
+                    terminal_status = "completed" if completed.returncode == 0 else "failed"
             emit(
                 {
                     "method": "turn/completed",
