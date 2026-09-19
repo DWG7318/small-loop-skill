@@ -116,7 +116,7 @@
     },
     {
       "path": "scripts/run_transport_drill.py",
-      "sha256": "04f5a7bc68df398d9b0aefb5f0fb236d2dd96552595a50234cab593ec6dcc95f"
+      "sha256": "3f360dd3b8e328ce7a244d0b57a66d6d0e7b637cdac33c6be50d4cd2d4adaf2f"
     },
     {
       "path": "scripts/validate_repository.py",
@@ -204,7 +204,7 @@
     },
     {
       "path": "src/slk_transport/adapters/ocrv.py",
-      "sha256": "e66ff9a3b9aa4a09fb00f6110a2ec75d6c43f726811168955b3fef162d289aac"
+      "sha256": "3d4d9ca2ec73ac70cf049692c4455dee388ed848889cfff9b3e2ce06a0fe2426"
     },
     {
       "path": "src/slk_transport/cli.py",
@@ -248,7 +248,7 @@
     },
     {
       "path": "tests/transport/fake_ocrv.py",
-      "sha256": "8cba8b7453449c8e05da2970d584472fd6cd49000302a11388f93f34ae2de6c4"
+      "sha256": "411d0751bc7d3deaa5af496f64b001c5c5ef677208a6f8a08161862ca4e10a74"
     },
     {
       "path": "tests/transport/test_cli.py",
@@ -280,7 +280,7 @@
     },
     {
       "path": "tests/transport/test_ocrv_adapter.py",
-      "sha256": "632cad4ab404f1053496eaf5c5441eed303a0aef32eac6b3f7f31202249db9e4"
+      "sha256": "7e711cac1a4b6e40e8df9a77176848ade2124801b857bbc380136a229d4ca3d8"
     },
     {
       "path": "tests/transport/test_zipapp.py",

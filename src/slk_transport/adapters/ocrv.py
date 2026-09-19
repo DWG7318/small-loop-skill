@@ -227,8 +227,8 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV provider or model mismatch")
         if not isinstance(review["session_id"], str) or not review["session_id"]:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV session identity is missing")
-        if review["exit_code"] != process_exit_code:
-            raise AdapterError("OCRV_RESULT_INVALID", "OCRV nested exit code mismatch")
+        if isinstance(review["exit_code"], bool) or not isinstance(review["exit_code"], int):
+            raise AdapterError("OCRV_RESULT_INVALID", "OCRV nested review exit code is invalid")
         return value
 
     def _review(

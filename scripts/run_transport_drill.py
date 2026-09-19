@@ -425,8 +425,8 @@ def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str,
     )
 
     worker_task = (
-        "This is a disposable Git repository. Create transport-probe.txt as UTF-8 with exactly "
-        f"{nonce} followed by one newline. Commit only that file with message "
+        "This is a disposable Git repository. Create transport_probe.py as UTF-8 with exactly "
+        f"PROBE_NONCE = \"{nonce}\" followed by one newline. Commit only that file with message "
         f"'test: record {nonce}'. In the required Worker result, use the exact new HEAD as a commit "
         f"candidate and set next_payload to exactly {{\"probe_nonce\":\"{nonce}\"}}."
         if live
@@ -523,7 +523,10 @@ def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str,
         "repository": str(repository),
         "candidate": candidate_value,
         "cell_goal": f"Verify the no-project-change probe for {nonce}.",
-        "d1_criteria": [f"The result remains bound to {nonce}."],
+        "d1_criteria": [
+            "The candidate adds only transport_probe.py to the disposable repository.",
+            f"PROBE_NONCE is exactly {nonce} and does not reference another Run.",
+        ],
         "evidence_files": [],
     }
     candidate = Envelope.from_dict(

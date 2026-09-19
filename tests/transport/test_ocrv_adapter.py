@@ -77,6 +77,19 @@ def test_ocrv_fails_closed_when_session_identity_is_missing(tmp_path: Path) -> N
     assert not (attempt.root / "started.json").exists()
 
 
+def test_ocrv_preserves_a_valid_incomplete_review_without_calling_it_pass(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path, "incomplete")
+    envelope = candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    assert result.native_identity["verdict"] == "INCOMPLETE"
+    assert result.native_identity["exit_code"] == 3
+    assert (attempt.root / "started.json").is_file()
+
+
 def test_checker_dispatch_creates_exact_worker_delivery_without_running_d1(tmp_path: Path) -> None:
     checker = checker_endpoint(tmp_path)
     worker_raw = endpoint_value(role="worker", version=1)
