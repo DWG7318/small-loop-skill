@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/slk-state-cli", "crates/slk-state-core"]
+members = ["crates/slk-bi-query", "crates/slk-state-cli", "crates/slk-state-core"]
 resolver = "2"
 
 [workspace.package]

@@ -1,0 +1,13 @@
+[package]
+name = "slk-bi-query"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "slk-bi-query"
+path = "src/main.rs"
+
+[dependencies]
+serde_json.workspace = true
+slk-state-core = { path = "../slk-state-core" }
