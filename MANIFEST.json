@@ -32,11 +32,11 @@
     },
     {
       "path": "README.md",
-      "sha256": "a679c5990fd4555cfd0b8d1e4943d27846e52710ba3d25840b21d8ee9824d0dd"
+      "sha256": "00e69e1c5583b658d9bed5d4374905d320c8311da7643986545e3b21cc1be95c"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "46dfd8559f5fa2cc943dfaf508e6988a061df25724ae9050031e52165822f19e"
+      "sha256": "b5c5cf66c57cd7eb3073482deb683f2ac4a0bc59f19b8675ec02f9a2db6a5198"
     },
     {
       "path": "VALIDATION-REPORT.md",
@@ -107,6 +107,10 @@
       "sha256": "6da05ea19ad6416998d88376914a1aeaccc49709bb1f372e832f4520c9848ade"
     },
     {
+      "path": "docs/transport/SLK-TRANSPORT.md",
+      "sha256": "2a23c5bf5008c95d9f6d5a98d309fe5aeac37391cca2bfa185e703e196415e03"
+    },
+    {
       "path": "pyproject.toml",
       "sha256": "544dee3c024dcc9a5a2d3032127a868fdd249d6c686c5b1abf931c1a128a5bc5"
     },
@@ -132,7 +136,7 @@
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
-      "sha256": "983c01da046554d7195751e5260072ec27fe8d9d994f9da422aae2f8f69f49b8"
+      "sha256": "c93d61d711e8b793250e9ba9ea792ed80de36fa366666790eedd9a770731ebe1"
     },
     {
       "path": "skills/slk-close-run/SKILL.md",
@@ -140,11 +144,11 @@
     },
     {
       "path": "skills/slk-dispatch-cell/SKILL.md",
-      "sha256": "9642d63217371dee28e8c726ce3fde9c2c4c80835dc0bf68faa928e3c895759f"
+      "sha256": "04af05a1ea5d218883deccfb20316961b9b2ae213c644eb464acaa213870eccd"
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
-      "sha256": "7c91d1ac2c54faa44b6091f9e2e208a77849692ee727b2a1fe3c3d8e3ba92316"
+      "sha256": "a962546d65e26e2cedeb38911aa6cc7172c8f7a8083a58363e4bbc55439f592c"
     },
     {
       "path": "skills/slk-grill-supervisor/SKILL.md",
@@ -152,7 +156,7 @@
     },
     {
       "path": "skills/slk-manage-team/SKILL.md",
-      "sha256": "eaedd552d8b8ce69885e2bf162300a8858dd2867dc706904730f6f29933e4db1"
+      "sha256": "a97815c9dd724df447177ea0474b748dada73c467bf0b869a1ee4d3a4e4fa656"
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
@@ -168,7 +172,7 @@
     },
     {
       "path": "skills/slk-recover-communication/SKILL.md",
-      "sha256": "6c01e10ee1d83d00b2cb53c0e6768348f56b0c05bc475ef8b23196a747590a28"
+      "sha256": "0067b2056ef140d4ec85bdf249bd69f3ceaefc9e90e8860a19bc7d2243f6bd0d"
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
@@ -180,7 +184,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "ce5756abc9d6067923439649548ae18623768ca5cc49f2bce2c2a2b5811f516f"
+      "sha256": "e1a3f9f88e4084a7d77bdaf929c3d614744f9ad51e5d138b3553f981bdba2f4d"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -244,7 +248,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "b7d52cd2a14d2d3a7903c4b47cfcae2feb4586dfd95d07cc1db375e46a7669da"
+      "sha256": "50e5a6ee469ac2af569adf0dd67ce4e8ea46f6458c5fcbc05845a78b5ec933c3"
     },
     {
       "path": "tests/transport/fake_app_server.py",

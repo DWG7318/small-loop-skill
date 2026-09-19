@@ -408,6 +408,18 @@ def test_communication_recovery_routes_only_the_worker_checker_handoff() -> None
     assert "不作为正式成员" in manage
 
 
+def test_cross_agent_delivery_requires_native_activation() -> None:
+    main = read_skill("small-loop-skill")
+    for marker in (
+        "精确角色端点",
+        "原生 Agent 入口",
+        "数据库记录不等于投递",
+        "不按对话标题猜测",
+        "不增加确认专用回合",
+    ):
+        assert marker in main
+
+
 def test_every_internal_skill_reference_resolves_to_the_collection() -> None:
     import re
 

@@ -25,7 +25,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 5. 完成 Checker ↔ Worker 的双向通讯测试；
 6. 完成 Supervisor ↔ Worker 的应急通道测试。
 
-相邻通道服务于正常工作，Supervisor ↔ Worker 在 Checker 通讯异常时协助恢复。成员创建以项目任务列表中的可见对象、准确任务 ID 和真实回复为依据。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
+相邻通道服务于正常工作，Supervisor ↔ Worker 在 Checker 通讯异常时协助恢复。成员创建以项目任务列表中的可见对象、准确任务 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
 
 正式成员对应项目任务列表中的可见对话，Owner 能够看到并联系。内部 subagent、隐藏执行或文字中的角色声明不作为正式成员，也不替代上述创建关系与通讯测试。
 
@@ -41,7 +41,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 明确失效可以依据任务 ID 不存在、平台显示失败或取消且无法继续，或者真实激活操作明确返回任务不可用。暂时没有回复不作为更换成员的依据。
 
-接管成员可以先读取根 Run 记录、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号；接管新成员确认后，上一级用递增编号把当前节点交给新任务 ID，使旧令牌失效，并把旧成员的实际状态写入记录。
+接管成员可以先读取根 Run 记录、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号，并复用原消息身份；接管新成员确认后或会话 rebound 后，上一级使用新版精确端点和递增编号把当前节点交给新任务 ID，使旧端点失效并使旧令牌失效，再把旧成员的实际状态写入记录。
 
 ## 收尾归档
 

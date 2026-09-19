@@ -27,6 +27,8 @@ SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢�
 
 RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Codex 全域只安装一次，但安装不等于获得项目使用授权；每个 Run 仍由 Owner 决定是否启用。SLK 只显式调用，不启用自动 hook、MCP 或额外 Agent；原生命令与原始证据始终可以回退并作为事实依据。
 
+跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。数据库行、后台消息或按对话标题匹配都不等于投递；只有精确原生启动证据成立后，当前发送者才完成交接，否则继续持有责任。操作说明见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
+
 ## Skill 集合
 
 当前方法位于 [`skills/`](skills/)：

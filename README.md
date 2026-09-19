@@ -27,6 +27,8 @@ SLK guidance helps members decide how to continue. Rework, communication recover
 
 RTK, Probe CLI, and Ponytail are optional external efficiency aids. They may be installed once in the Codex-wide environment, but installation does not authorize use in a project: the Owner chooses them per Run. SLK uses them explicitly without automatic hooks, MCP, or extra agents; native commands and raw evidence remain the fallback and authority.
 
+Cross-Agent handoffs use the accepted `slk-transport` artifact with exact role endpoints and native Agent activation. A database row, background message, or conversation-title match is not delivery; the current sender hands off only after exact native-start evidence and otherwise keeps responsibility. See [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md).
+
 ## Skill collection
 
 The active collection lives in [`skills/`](skills/):

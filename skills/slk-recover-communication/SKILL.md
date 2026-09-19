@@ -14,9 +14,9 @@ description: Use when an active Small Loop Skill (SLK) Run has a Worker candidat
 
 ## 真实激活与接收证据
 
-1. 确认准确的目标任务 ID 与原令牌编号，并调用当前平台能够继续该对话的真实激活操作；Codex Desktop 使用 `send_message_to_thread`。读取或写入后台聊天记录只说明记录存在，不作为激活。
-2. 重发同一份完整原始令牌，包括 Run、GO、`CELL n/N`、当前节点、接收者、候选身份、下一动作和根记录路径；恢复投递沿用原令牌编号，避免把重试变成新工作。
-3. 可见目标对话中出现该令牌消息才构成流转证据；任务状态、旧 running 标记或后台记录都不证明投递，也不追加令牌专用回执。
+1. 确认准确的目标任务 ID、精确角色端点与原令牌编号，并用 `slk-transport send` 调用对应原生 Agent 入口；Codex Desktop 的原生入口使用 `send_message_to_thread` 所对应的精确任务激活能力。读取或写入数据库、后台聊天记录只说明记录存在，不作为激活。
+2. 重发同一份完整原始令牌，包括 Run、GO、`CELL n/N`、当前节点、接收者、候选身份、下一动作和根记录路径；同一端点重试沿用原 `message_id`、信封、端点版本和原令牌编号，避免把重试变成新工作。
+3. `started.json` 中匹配目标原生身份的启动证据才构成流转证据；任务状态、旧 running 标记或后台记录都不证明投递，也不追加令牌专用回执。
 4. 发送后结束当前活动；平台明确返回不可用、消息未创建或投递失败时，再用真实激活操作把当前持有令牌、未投递的完整下一令牌、目标任务ID和调用结果装入通讯异常信封交给 Supervisor。恢复信封不是令牌所有权转移，Supervisor 不登记为当前持有者。
 
 恢复消息路径保持为，令牌在 Checker 收到前仍由原成员持有：
@@ -27,7 +27,7 @@ Worker → Supervisor → Checker
 
 ## Supervisor 恢复原 Checker
 
-令牌未真实投递不等于 Checker 失效。Supervisor 核对准确任务 ID、平台状态和真实激活调用结果，优先恢复原 Checker，并向原任务 ID 重发同号的未投递令牌；成功后由 Checker 登记流转，D1 仍由 Checker 完成。
+令牌未真实投递不等于 Checker 失效。Supervisor 核对准确任务 ID、精确角色端点和原生激活结果，优先恢复原 Checker，并向原任务 ID 重发同号的未投递令牌；会话确需 rebound 时登记递增版本的新端点并退役旧版。成功后由 Checker 登记流转，D1 仍由 Checker 完成。
 
 Supervisor 发送一份干净的 D1 恢复信封，不重新解释工程内容：
 
