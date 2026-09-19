@@ -22,6 +22,25 @@
   color: var(--text);
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-canvas: #f5f6f8;
+  --bg-rail: #eceff3;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f7f8fa;
+  --border: #d8dde6;
+  --border-strong: #aeb8c8;
+  --text: #181c24;
+  --text-muted: #626d7e;
+  --accent: #4d62d6;
+  --accent-surface: #e8ecff;
+  --success: #157654;
+  --warning: #936316;
+  --danger: #b83e52;
+  --focus: #334bc4;
+  --shadow-panel: 0 12px 34px rgb(34 42 58 / 9%);
+}
+
 * {
   box-sizing: border-box;
 }
