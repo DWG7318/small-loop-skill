@@ -54,6 +54,24 @@ pub fn open_database(data_root: &Path) -> Result<Connection, SchemaError> {
     Ok(connection)
 }
 
+pub fn open_database_read_only(data_root: &Path) -> Result<Connection, SchemaError> {
+    validate_data_root(data_root)?;
+    let connection = Connection::open_with_flags(
+        database_path(data_root),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    connection.busy_timeout(Duration::from_secs(5))?;
+    connection.pragma_update(None, "foreign_keys", true)?;
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version != SCHEMA_VERSION {
+        return Err(SchemaError::UnsupportedVersion {
+            found: version,
+            supported: SCHEMA_VERSION,
+        });
+    }
+    Ok(connection)
+}
+
 pub fn create_migration_backup(
     connection: &Connection,
     data_root: &Path,

@@ -79,6 +79,8 @@ pub enum StateError {
     InvalidTokenRoute { from: Role, to: Role },
     #[error("Run was not found: {0}")]
     RunNotFound(String),
+    #[error("an explicit Run ID is required")]
+    RunIdRequired,
     #[error("CELL was not found: {0}")]
     CellNotFound(String),
     #[error("evidence source or identity is invalid: {0}")]

@@ -266,7 +266,7 @@ fn load_work_events(
                 w.author_role_instance_id, w.go_id, w.cell_id, w.corrects_event_id
          FROM work_events w
          JOIN role_instances r ON r.role_instance_id=w.author_role_instance_id
-         WHERE w.run_id=?1 ORDER BY w.occurred_at, w.event_id",
+         WHERE w.run_id=?1 ORDER BY w.rowid",
     )?;
     let rows = statement.query_map([run_id], |row| {
         Ok(WorkRow {
