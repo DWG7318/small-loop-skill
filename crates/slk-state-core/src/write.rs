@@ -697,7 +697,11 @@ impl StateStore {
                     .and_then(serde_json::Value::as_str)
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
-                    .ok_or_else(|| StateError::InvalidPlan("RUN_SUPERSEDED requires superseded_by_run_id".into()))?;
+                    .ok_or_else(|| {
+                        StateError::InvalidPlan(
+                            "RUN_SUPERSEDED requires superseded_by_run_id".into(),
+                        )
+                    })?;
                 transaction.execute(
                     "UPDATE runs
                      SET state='archived', closure_state='superseded', closed_at=?2,

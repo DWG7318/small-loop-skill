@@ -2805,7 +2805,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slk-bi-desktop"
-version = "4.1.0"
+version = "4.1.1"
 dependencies = [
  "serde_json",
  "slk-state-core",
@@ -2816,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "slk-bi-query"
-version = "4.1.0"
+version = "4.1.1"
 dependencies = [
  "serde_json",
  "slk-state-core",
@@ -2824,7 +2824,7 @@ dependencies = [
 
 [[package]]
 name = "slk-cargo"
-version = "4.1.0"
+version = "4.1.1"
 dependencies = [
  "serde_json",
  "slk-state-core",
@@ -2835,7 +2835,7 @@ dependencies = [
 
 [[package]]
 name = "slk-state-cli"
-version = "4.1.0"
+version = "4.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2844,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "slk-state-core"
-version = "4.1.0"
+version = "4.1.1"
 dependencies = [
  "directories",
  "rusqlite",

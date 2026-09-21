@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, MAIN_DB};
 use thiserror::Error;
@@ -44,16 +44,17 @@ pub fn open_database(data_root: &Path) -> Result<Connection, SchemaError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     match version {
         SCHEMA_VERSION => {}
-        0 => {
-            apply_v1(&mut connection)?;
-            apply_v2(&mut connection)?;
-            apply_v3(&mut connection)?;
+        0 => migrate_database(&mut connection, version)?,
+        1 | 2 => {
+            create_migration_backup(
+                &connection,
+                data_root,
+                version,
+                SCHEMA_VERSION,
+                &migration_timestamp(),
+            )?;
+            migrate_database(&mut connection, version)?;
         }
-        1 => {
-            apply_v2(&mut connection)?;
-            apply_v3(&mut connection)?;
-        }
-        2 => apply_v3(&mut connection)?,
         found => {
             return Err(SchemaError::UnsupportedVersion {
                 found,
@@ -111,58 +112,31 @@ pub fn create_migration_backup(
     Ok(backup_path)
 }
 
-fn apply_v1(connection: &mut Connection) -> Result<(), SchemaError> {
-    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version >= 1 {
-        transaction.commit()?;
-        return Ok(());
-    }
-    if version != 0 {
-        return Err(SchemaError::UnsupportedVersion {
-            found: version,
-            supported: SCHEMA_VERSION,
-        });
-    }
-    transaction.execute_batch(MIGRATION_V1)?;
-    transaction.pragma_update(None, "user_version", 1)?;
-    transaction.commit()?;
-    Ok(())
+fn migration_timestamp() -> String {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("{}-{:09}", elapsed.as_secs(), elapsed.subsec_nanos())
 }
 
-fn apply_v2(connection: &mut Connection) -> Result<(), SchemaError> {
+fn migrate_database(connection: &mut Connection, from: i64) -> Result<(), SchemaError> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version >= 2 {
-        transaction.commit()?;
-        return Ok(());
-    }
-    if version != 1 {
-        return Err(SchemaError::InvalidMigrationRange {
-            from: version,
-            to: 2,
-        });
-    }
-    transaction.execute_batch(MIGRATION_V2)?;
-    transaction.pragma_update(None, "user_version", 2)?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn apply_v3(connection: &mut Connection) -> Result<(), SchemaError> {
-    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version == SCHEMA_VERSION {
-        transaction.commit()?;
-        return Ok(());
-    }
-    if version != 2 {
+    if version != from || !(0..SCHEMA_VERSION).contains(&from) {
         return Err(SchemaError::InvalidMigrationRange {
             from: version,
             to: SCHEMA_VERSION,
         });
     }
-    transaction.execute_batch(MIGRATION_V3)?;
+    if from == 0 {
+        transaction.execute_batch(MIGRATION_V1)?;
+    }
+    if from <= 1 {
+        transaction.execute_batch(MIGRATION_V2)?;
+    }
+    if from <= 2 {
+        transaction.execute_batch(MIGRATION_V3)?;
+    }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     Ok(())

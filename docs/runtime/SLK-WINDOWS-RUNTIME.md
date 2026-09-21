@@ -12,14 +12,14 @@
 
 ## 已验收基线
 
-SLK 4.1.0 验收时使用：
+SLK 4.1.1 验收时使用：
 
 - Windows、PowerShell 7、Git、Python 3.10 或更高版本、Node.js/npm 与 Rust/Cargo；
 - `@deepseek-ai/dsh@0.1.5-rc.2`；
 - `@alibaba-group/open-code-review@1.12.7`；
 - DSH：`deepseek-official / deepseek-flash`；
 - OCRV：`dashscope-tokenplan / qwen3.8-max / medium`；
-- SLK 4.1.0 源码，用于构建无第三方依赖的 `slk-transport.pyz` 和状态 CLI。
+- SLK 4.1.1 源码，用于构建无第三方依赖的 `slk-transport.pyz` 和状态 CLI。
 
 升级这些版本应重新验证，不把“能够启动”直接当作与上述基线兼容。
 
@@ -147,7 +147,7 @@ OCRV 是 D1 Checker，不是附加证据工具。`PASS`、`FAIL`、`INCOMPLETE` 
 
 ## 4. 构建 SLK 传输和状态工具
 
-从受信的 SLK 4.1.0 源码构建机器级工具：
+从受信的 SLK 4.1.1 源码构建机器级工具：
 
 ```powershell
 Set-Location D:\SLK
@@ -173,11 +173,18 @@ D:\SLK-RUNTIME\bin\slk-bi-query.exe --help
 D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root F:\SLK\data
 ```
 
+升级已有电脑时，在启动只读查询或 LE BI 前，用配置文件里的现有根目录显式触发一次可写迁移；迁移会先在该根目录的 `backups` 下建立并验证备份：
+
+```powershell
+$dataRoot = (Get-Content "$env:LOCALAPPDATA\SLK\config.json" | ConvertFrom-Json).data_root
+D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
+```
+
 `slk-state` 保存权威状态，`slk-bi-query` 只读查询。桌面 BI 是可选展示组件，不是启动 SLK Run 的前提。
 
 ## 5. 部署一个项目
 
-把 SLK 4.1.0 `skills\` 下的 14 个目录复制到该项目所使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
+把 SLK 4.1.1 `skills\` 下的 14 个目录复制到该项目所使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
 
 首次启动 Run 时：
 
@@ -213,4 +220,4 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root F:\SLK\data
 - DSH 外层退出码不能单独证明 Worker 完成；应检查闭合 Worker 结果和命令证据。
 - OCRV 返回 `INCOMPLETE` 时保留事实并修复运行环境，不把它改写成 PASS。
 - 传输未出现原生启动证据时，发送者仍持有原 TOKEN；恢复沿用同一消息身份，不额外创建确认回合。
-- 当前 SLK 4.1.0 源码发布不把 DSH/OCRV 的机器启动配置混入 14 个 Skill。新电脑应从受信的内部配置包或已验收电脑复制上述配置文件，排除 `node_modules`、临时目录、运行状态、日志和任何凭据后，再执行本指引的锁定安装与验收。
+- 当前 SLK 4.1.1 源码发布不把 DSH/OCRV 的机器启动配置混入 14 个 Skill。新电脑应从受信的内部配置包或已验收电脑复制上述配置文件，排除 `node_modules`、临时目录、运行状态、日志和任何凭据后，再执行本指引的锁定安装与验收。

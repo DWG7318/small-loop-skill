@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**4.1.0**
+当前版本：**4.1.1**
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。一个 SLK 就是一个 Run，Run 直接包含一条线性 CELL 路径。
 

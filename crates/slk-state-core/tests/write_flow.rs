@@ -229,8 +229,14 @@ fn supervisor_can_explicitly_supersede_a_run_and_archive_it() {
     let projection = fixture.store.query_run("run-a").unwrap();
     assert_eq!(projection.summary.state, "archived");
     assert_eq!(projection.summary.closure_state, "superseded");
-    assert_eq!(projection.summary.archive_reason.as_deref(), Some("superseded"));
-    assert_eq!(projection.summary.superseded_by_run_id.as_deref(), Some("run-b"));
+    assert_eq!(
+        projection.summary.archive_reason.as_deref(),
+        Some("superseded")
+    );
+    assert_eq!(
+        projection.summary.superseded_by_run_id.as_deref(),
+        Some("run-b")
+    );
 }
 
 #[test]
@@ -254,8 +260,14 @@ fn supervisor_can_abandon_an_open_run_without_deleting_its_history() {
     let projection = fixture.store.query_run("run-a").unwrap();
     assert_eq!(projection.summary.state, "archived");
     assert_eq!(projection.summary.closure_state, "abandoned");
-    assert_eq!(projection.summary.archive_reason.as_deref(), Some("abandoned"));
-    assert_eq!(projection.events.last().unwrap().event_type, "RUN_ABANDONED");
+    assert_eq!(
+        projection.summary.archive_reason.as_deref(),
+        Some("abandoned")
+    );
+    assert_eq!(
+        projection.events.last().unwrap().event_type,
+        "RUN_ABANDONED"
+    );
 }
 
 #[test]

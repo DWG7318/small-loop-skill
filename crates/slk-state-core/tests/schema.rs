@@ -1,4 +1,6 @@
-use rusqlite::{params, Connection};
+use std::fs;
+
+use rusqlite::{params, Connection, OpenFlags};
 
 use slk_state_core::schema::{create_migration_backup, open_database};
 
@@ -102,12 +104,28 @@ fn v1_database_migrates_run_identity_and_archive_fields_without_losing_rows() {
     drop(database);
 
     let migrated = open_database(root.path()).unwrap();
-    let values: (String, String, Option<String>, String, Option<String>, String) = migrated
+    let values: (
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        String,
+    ) = migrated
         .query_row(
             "SELECT run_name, slk_version, archived_at, source_kind, source_project_name,
                     run_description FROM runs WHERE run_id='run-a'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
         )
         .unwrap();
     assert_eq!(values.0, "Concise Run");
@@ -116,6 +134,63 @@ fn v1_database_migrates_run_identity_and_archive_fields_without_losing_rows() {
     assert_eq!(values.3, "solo");
     assert_eq!(values.4, None);
     assert_eq!(values.5, "");
+
+    let backups = fs::read_dir(root.path().join("backups"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "db"))
+        .collect::<Vec<_>>();
+    assert_eq!(backups.len(), 1);
+    let backup =
+        Connection::open_with_flags(&backups[0], OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let backup_version: i64 = backup
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    let backup_runs: i64 = backup
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(backup_version, 1);
+    assert_eq!(backup_runs, 1);
+}
+
+#[test]
+fn failed_multi_step_migration_keeps_the_original_database_version() {
+    let root = tempfile::tempdir().expect("temporary data root");
+    let database_path = root.path().join("slk.db");
+    let database = Connection::open(&database_path).unwrap();
+    database
+        .execute_batch(include_str!("../migrations/0001.sql"))
+        .unwrap();
+    database.pragma_update(None, "user_version", 1).unwrap();
+    database
+        .execute("ALTER TABLE runs ADD COLUMN run_name TEXT", [])
+        .unwrap();
+    drop(database);
+
+    assert!(open_database(root.path()).is_err());
+
+    let unchanged =
+        Connection::open_with_flags(&database_path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let version: i64 = unchanged
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    let added_columns: i64 = unchanged
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('runs') WHERE name IN ('slk_version', 'run_description')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(version, 1);
+    assert_eq!(added_columns, 0);
+    assert_eq!(
+        fs::read_dir(root.path().join("backups"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "db"))
+            .count(),
+        1
+    );
 }
 
 fn seed_history(database: &Connection) {

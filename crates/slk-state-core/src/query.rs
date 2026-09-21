@@ -184,7 +184,7 @@ impl StateStore {
         let connection = open_database_read_only(&self.data_root)?;
         let (sql, value) = if let Some(project_id) = project_id {
             (
-            "SELECT run_id, project_id, run_name, run_description, slk_version,
+                "SELECT run_id, project_id, run_name, run_description, slk_version,
                         source_kind, source_project_name, goal, state,
                         current_plan_revision, closure_state, created_at, closed_at,
                         archive_reason, archived_at, superseded_by_run_id

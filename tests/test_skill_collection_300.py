@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.1.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.1.1"
 
 
 def test_collection_has_one_main_and_thirteen_children() -> None:

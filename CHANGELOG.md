@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.1.1
+
+- Made existing v1/v2 state-store upgrades create and validate a database backup before migration.
+- Made every required schema step run in one immediate transaction so a failed upgrade leaves the original database version and contents intact.
+- Documented the explicit writable migration step that precedes read-only Agent queries and LE BI after a machine-level upgrade.
+
 ## 4.1.0
 
 - Simplified the public SLK hierarchy to `Run → CELL`; retained the original state grouping fields only as a backward-compatible storage detail.
