@@ -11,11 +11,13 @@ use rusqlite::{
 use sha2::{Digest, Sha256};
 
 use crate::auth::{
-    authorize_event, issue_credential, revoke_credential, AuthorizedActor, Credential,
-    IssuedCredential, StateError,
+    authorize_event, authorize_overwatcher, authorize_role, issue_credential,
+    new_credential_material, revoke_credential, AuthorizedActor, Credential, IssuedCredential,
+    StateError,
 };
 use crate::model::{
-    EventType, InitRunRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    BindOverwatcherRequest, CloseOverwatcherRequest, EventType, InitRunRequest,
+    OperationalObservationRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
     RevisePlanRequest, Role, TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
@@ -61,6 +63,23 @@ impl StateStore {
                 .optional()?;
             if exists.is_some() {
                 return Err(StateError::RunAlreadyExists(request.run_id.clone()));
+            }
+
+            if let Some(predecessor_run_id) = request.predecessor_run_id.as_deref() {
+                let predecessor: Option<(String, String)> = transaction
+                    .query_row(
+                        "SELECT project_id, closure_state FROM runs WHERE run_id=?1",
+                        [predecessor_run_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?;
+                if predecessor.as_ref()
+                    != Some(&(request.project.project_id.clone(), "open".to_string()))
+                {
+                    return Err(StateError::InvalidPlan(
+                        "predecessor must be an open Run in the same project".into(),
+                    ));
+                }
             }
 
             transaction.execute(
@@ -198,8 +217,145 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
+            if let Some(predecessor_run_id) = request.predecessor_run_id.as_deref() {
+                transaction.execute(
+                    "UPDATE runs SET state='archived', closure_state='superseded',
+                         closed_at=?2, archive_reason='superseded', archived_at=?2,
+                         superseded_by_run_id=?3
+                     WHERE run_id=?1 AND closure_state='open'",
+                    params![predecessor_run_id, request.occurred_at, request.run_id],
+                )?;
+                transaction.execute(
+                    "INSERT INTO run_lineage
+                     (successor_run_id, predecessor_run_id, created_at)
+                     VALUES (?1, ?2, ?3)",
+                    params![request.run_id, predecessor_run_id, request.occurred_at],
+                )?;
+            }
             Ok(InitializedRun {
                 supervisor_credential: issued.credential,
+            })
+        })
+    }
+
+    pub fn bind_overwatcher(
+        &self,
+        credential: &Credential,
+        request: BindOverwatcherRequest,
+    ) -> Result<IssuedCredential, StateError> {
+        if request.identity.role != Role::Overwatcher {
+            return Err(StateError::OverwatcherBindingInvalid(
+                "the bound identity must have role=overwatcher".into(),
+            ));
+        }
+        if !valid_identifier(&request.event_id)
+            || !valid_identifier(&request.identity.role_instance_id)
+            || request.endpoint.endpoint_version == 0
+            || request.reason.trim().is_empty()
+            || request.occurred_at.trim().is_empty()
+            || request.identity.agent_runtime.trim().is_empty()
+            || request.identity.provider.trim().is_empty()
+            || request.identity.model.trim().is_empty()
+            || request.identity.reasoning.trim().is_empty()
+            || request.identity.session_id.trim().is_empty()
+            || request.identity.session_id != request.endpoint.session_id
+            || request.endpoint.host_identity.trim().is_empty()
+            || request.endpoint.transport_adapter.trim().is_empty()
+        {
+            return Err(StateError::OverwatcherBindingInvalid(
+                "identity, exact endpoint, and Supervisor reason are required".into(),
+            ));
+        }
+
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_role(transaction, &request.run_id, credential)?;
+            if actor.role != Role::Supervisor {
+                return Err(StateError::OverwatcherBindingNotAuthorized);
+            }
+            let already_bound: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM overwatcher_bindings WHERE run_id=?1",
+                    [&request.run_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if already_bound.is_some() {
+                return Err(StateError::OverwatcherAlreadyBound);
+            }
+            let reused_session: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM overwatcher_bindings WHERE session_id=?1",
+                    [&request.identity.session_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if reused_session.is_some() {
+                return Err(StateError::OverwatcherSessionReused);
+            }
+            let identity_collision: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM role_instances WHERE role_instance_id=?1",
+                    [&request.identity.role_instance_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if identity_collision.is_some() {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "Overwatcher role_instance_id must be independent".into(),
+                ));
+            }
+
+            let material = new_credential_material();
+            transaction.execute(
+                "INSERT INTO overwatcher_bindings
+                 (run_id, role_instance_id, agent_runtime, provider, model, reasoning,
+                  session_id, endpoint_version, transport_adapter, host_identity,
+                  native_address_json, bound_by_role_instance_id, binding_reason,
+                  credential_id, credential_sha256, credential_state,
+                  lifecycle_state, bound_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                         ?13, ?14, ?15, 'active', 'active', ?16)",
+                params![
+                    request.run_id,
+                    request.identity.role_instance_id,
+                    request.identity.agent_runtime,
+                    request.identity.provider,
+                    request.identity.model,
+                    request.identity.reasoning,
+                    request.identity.session_id,
+                    request.endpoint.endpoint_version,
+                    request.endpoint.transport_adapter,
+                    request.endpoint.host_identity,
+                    serde_json::to_string(&request.endpoint.native_address)?,
+                    actor.role_instance_id,
+                    request.reason,
+                    material.credential_id,
+                    material.credential_sha256,
+                    request.occurred_at,
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO work_events
+                 (event_id, run_id, plan_revision, author_role_instance_id, event_type,
+                  details_json, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, 'OVERWATCHER_BOUND', ?5, ?6)",
+                params![
+                    request.event_id,
+                    request.run_id,
+                    current_plan_revision(transaction, &request.run_id)?,
+                    actor.role_instance_id,
+                    serde_json::to_string(&serde_json::json!({
+                        "overwatcher_role_instance_id": request.identity.role_instance_id,
+                        "endpoint_version": request.endpoint.endpoint_version,
+                        "session_id": request.endpoint.session_id,
+                        "reason": request.reason,
+                    }))?,
+                    request.occurred_at,
+                ],
+            )?;
+            Ok(IssuedCredential {
+                credential_id: material.credential_id,
+                credential: material.credential,
             })
         })
     }
@@ -732,6 +888,178 @@ impl StateStore {
         })
     }
 
+    pub fn record_observation(
+        &self,
+        credential: &Credential,
+        request: OperationalObservationRequest,
+    ) -> Result<(), StateError> {
+        if !valid_identifier(&request.observation_id)
+            || request.plan_revision == 0
+            || request.attempt == Some(0)
+            || request.evidence_refs.is_empty()
+            || request
+                .evidence_refs
+                .iter()
+                .any(|item| item.trim().is_empty())
+            || request
+                .message_id
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            || request
+                .related_event_id
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+            || (request.cell_id.is_some() && request.go_id.is_none())
+            || (request.cell_id.is_none() && request.attempt.is_some())
+        {
+            return Err(StateError::OverwatcherObservationInvalid(
+                "closed identity, scope, and evidence are required".into(),
+            ));
+        }
+        let payload_json = serde_json::to_string(&request)?;
+        let payload_sha256 = sha256_hex(payload_json.as_bytes());
+        self.with_immediate_transaction(|transaction| {
+            let overwatcher_role_instance_id =
+                authorize_overwatcher(transaction, &request.run_id, credential)?;
+            if overwatcher_role_instance_id != request.role_instance_id {
+                return Err(StateError::OverwatcherObservationInvalid(
+                    "only the bound Overwatcher may author observations".into(),
+                ));
+            }
+            let active_binding: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM overwatcher_bindings
+                     WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle_state='active'",
+                    params![request.run_id, overwatcher_role_instance_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if active_binding.is_none() {
+                return Err(StateError::OverwatcherObservationInvalid(
+                    "the Overwatcher binding is not active".into(),
+                ));
+            }
+            let revision = current_plan_revision(transaction, &request.run_id)?;
+            if request.plan_revision != revision {
+                return Err(StateError::PlanRevisionMismatch {
+                    requested: request.plan_revision,
+                    current: revision,
+                });
+            }
+            if let (Some(go_id), Some(cell_id)) =
+                (request.go_id.as_deref(), request.cell_id.as_deref())
+            {
+                let cell_exists: Option<i64> = transaction
+                    .query_row(
+                        "SELECT 1 FROM cell_nodes
+                         WHERE run_id=?1 AND go_id=?2 AND cell_id=?3",
+                        params![request.run_id, go_id, cell_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if cell_exists.is_none() {
+                    return Err(StateError::OverwatcherObservationInvalid(
+                        "observation CELL scope is not in the current plan".into(),
+                    ));
+                }
+            }
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT payload_sha256 FROM operational_observations
+                     WHERE observation_id=?1",
+                    [&request.observation_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing) = existing {
+                return if existing == payload_sha256 {
+                    Ok(())
+                } else {
+                    Err(StateError::OverwatcherObservationConflict)
+                };
+            }
+            transaction.execute(
+                "INSERT INTO operational_observations
+                 (observation_id, run_id, overwatcher_role_instance_id, go_id, cell_id,
+                  attempt, plan_revision, kind, related_event_id, message_id,
+                  evidence_refs_json, details_json, payload_sha256, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    request.observation_id,
+                    request.run_id,
+                    overwatcher_role_instance_id,
+                    request.go_id,
+                    request.cell_id,
+                    request.attempt,
+                    request.plan_revision,
+                    request.kind.as_str(),
+                    request.related_event_id,
+                    request.message_id,
+                    serde_json::to_string(&request.evidence_refs)?,
+                    serde_json::to_string(&request.details)?,
+                    payload_sha256,
+                    request.occurred_at,
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn close_overwatcher(
+        &self,
+        credential: &Credential,
+        request: CloseOverwatcherRequest,
+    ) -> Result<(), StateError> {
+        if !valid_identifier(&request.event_id) || request.archive_evidence_ref.trim().is_empty() {
+            return Err(StateError::OverwatcherObservationInvalid(
+                "closure event and archive evidence are required".into(),
+            ));
+        }
+        self.with_immediate_transaction(|transaction| {
+            let overwatcher_role_instance_id =
+                authorize_overwatcher(transaction, &request.run_id, credential)?;
+            let revision = current_plan_revision(transaction, &request.run_id)?;
+            let details = serde_json::json!({
+                "archive_evidence_ref": request.archive_evidence_ref.clone(),
+            });
+            let details_json = serde_json::to_string(&details)?;
+            let payload_sha256 = sha256_hex(details_json.as_bytes());
+            transaction.execute(
+                "INSERT INTO operational_observations
+                 (observation_id, run_id, overwatcher_role_instance_id, plan_revision,
+                  kind, evidence_refs_json, details_json, payload_sha256, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, 'OVERWATCHER_CLOSED', ?5, ?6, ?7, ?8)",
+                params![
+                    request.event_id,
+                    request.run_id,
+                    overwatcher_role_instance_id,
+                    revision,
+                    serde_json::to_string(&vec![request.archive_evidence_ref.clone()])?,
+                    details_json,
+                    payload_sha256,
+                    request.occurred_at,
+                ],
+            )?;
+            transaction.execute(
+                "UPDATE overwatcher_bindings
+                 SET lifecycle_state='archived', closed_at=?2, archive_evidence_ref=?3
+                 WHERE run_id=?1 AND role_instance_id=?4",
+                params![
+                    request.run_id,
+                    request.occurred_at,
+                    request.archive_evidence_ref,
+                    overwatcher_role_instance_id,
+                ],
+            )?;
+            transaction.execute(
+                "UPDATE overwatcher_bindings SET credential_state='revoked'
+                 WHERE run_id=?1 AND role_instance_id=?2",
+                params![request.run_id, overwatcher_role_instance_id],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn current_token(&self, run_id: &str) -> Result<CurrentToken, StateError> {
         let connection = open_database(&self.data_root)?;
         current_token_from(&connection, run_id)
@@ -821,6 +1149,16 @@ fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {
     {
         return Err(StateError::InvalidPlan(
             "project, Run, and role identities must be safe path segments".into(),
+        ));
+    }
+    if request.predecessor_run_id.as_deref() == Some(request.run_id.as_str())
+        || request
+            .predecessor_run_id
+            .as_deref()
+            .is_some_and(|value| !valid_identifier(value))
+    {
+        return Err(StateError::InvalidPlan(
+            "predecessor_run_id must identify a different Run".into(),
         ));
     }
     if request.go_nodes.is_empty() || request.cell_nodes.is_empty() {

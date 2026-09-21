@@ -1,8 +1,8 @@
 use serde_json::json;
 
 use slk_state_core::model::{
-    CellDefinition, EndpointIdentity, GoDefinition, InitRunRequest, ProjectIdentity, Role,
-    RoleIdentity,
+    BindOverwatcherRequest, CellDefinition, EndpointIdentity, GoDefinition, InitRunRequest,
+    ObservationKind, OperationalObservationRequest, ProjectIdentity, Role, RoleIdentity,
 };
 use slk_state_core::write::StateStore;
 
@@ -10,7 +10,54 @@ use slk_state_core::write::StateStore;
 fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
-    store.init_run(init_request()).unwrap();
+    let initialized = store.init_run(init_request()).unwrap();
+    let overwatcher = store
+        .bind_overwatcher(
+            &initialized.supervisor_credential,
+            BindOverwatcherRequest {
+                event_id: "bind-overwatcher-a".into(),
+                run_id: "run-a".into(),
+                identity: RoleIdentity {
+                    role_instance_id: "overwatcher-a".into(),
+                    role: Role::Overwatcher,
+                    agent_runtime: "codex".into(),
+                    provider: "openai".into(),
+                    model: "sol".into(),
+                    reasoning: "xhigh".into(),
+                    session_id: "thread-overwatcher-a".into(),
+                },
+                endpoint: EndpointIdentity {
+                    endpoint_version: 1,
+                    transport_adapter: "codex-app-server".into(),
+                    host_identity: "host-a".into(),
+                    session_id: "thread-overwatcher-a".into(),
+                    native_address: json!({"thread_id":"thread-overwatcher-a"}),
+                },
+                reason: "one dedicated optional observer".into(),
+                occurred_at: "2026-09-22T00:00:01Z".into(),
+            },
+        )
+        .unwrap();
+    store
+        .record_observation(
+            &overwatcher.credential,
+            OperationalObservationRequest {
+                observation_id: "observation-a".into(),
+                run_id: "run-a".into(),
+                go_id: Some("GO-001".into()),
+                cell_id: Some("CELL-001".into()),
+                attempt: Some(1),
+                plan_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                kind: ObservationKind::ActivityUnproven,
+                related_event_id: None,
+                message_id: Some("message-a".into()),
+                evidence_refs: vec!["transport/message-a/attempt.json".into()],
+                details: json!({"reason":"no fresh native execution evidence"}),
+                occurred_at: "2026-09-22T00:00:02Z".into(),
+            },
+        )
+        .unwrap();
 
     let first = store.export_run("run-a").unwrap();
     let first_bytes = std::fs::read(&first).unwrap();
@@ -27,6 +74,10 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
         "D2 / Supervisor",
         "Corrections and exemptions",
         "SLK TOKEN history",
+        "Overwatcher binding",
+        "Operational observations / Overwatcher",
+        "ACTIVITY_UNPROVEN",
+        "transport/message-a/attempt.json",
         "Evidence",
     ] {
         assert!(text.contains(marker), "missing {marker}");
@@ -42,6 +93,7 @@ fn init_request() -> InitRunRequest {
             last_known_path: "D:/ProjectA".into(),
         },
         run_id: "run-a".into(),
+        predecessor_run_id: None,
         run_name: None,
         run_description: None,
         source_kind: None,

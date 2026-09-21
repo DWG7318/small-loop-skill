@@ -6,6 +6,7 @@
 - 边界：
 - SLK版本：
 - 开始时间：
+- 前序Run（无则留空）：
 - 当前状态：
 - 当前有效令牌：
 - 最后真实流转：
@@ -27,6 +28,7 @@
 | Supervisor |  |  |  |
 | Checker |  |  |  |
 | Worker |  |  |  |
+| Overwatcher（可选） |  |  |  |
 
 ## CELL 历史
 
@@ -73,6 +75,13 @@
 - 变化原因：
 - 新方案与影响：
 
+## Overwatcher 运行观察（可选）
+
+- 观察类型/时间：
+- Run/CELL/attempt/message范围：
+- 不可变证据引用：
+- 恢复或升级结果：
+
 ## D2 交接
 
 - 原始Run目标：
@@ -96,6 +105,7 @@
 
 - Worker归档状态：
 - Checker归档状态：
+- Overwatcher归档状态（若启用）：
 - Supervisor保留状态：
 
 ## Owner 简报

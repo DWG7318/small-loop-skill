@@ -1,70 +1,47 @@
-# Validation Report — SLK 4.0.0 Candidate
+# Validation Report — SLK 4.2.0 Candidate
 
-Date: 2026-09-20
+Date: 2026-09-22
 
-Branch: `feature/slk-4.0-cross-agent-transport`
+Branch: `feature/slk-4.2.0-overwatcher`
 
 ## Accepted scope
 
-SLK 4.0.0 keeps the 3.0.8 Small Loop Skill method: one bounded Run, one serial GO/CELL path, Supervisor, Checker, Worker, minimum Worker D0, isolated Checker D1, combined-result Supervisor D2, rework, exemption, communication recovery, and a 14-Skill collection with one compact resource-continuity guard.
+SLK 4.2.0 preserves the bounded serial Run, direct Supervisor↔Checker↔Worker communication, `SLK TOKEN`, D0/D1/D2, rework, and acceptance authority. It adds one optional, Supervisor-selected Overwatcher Agent Session per Run. The Overwatcher can append operational observations, inspect immutable transport evidence, request one exact replay, and escalate semantic decisions; it cannot relay normal work, hold TOKEN, write engineering facts, alter BI, or become required for progress.
 
-The major-version addition is an executable state and observation layer:
-
-- one configurable machine-wide data root and one versioned SQLite authority;
-- one monotonic `SLK TOKEN` per Run, preserving the existing handoff route rather than scheduling work;
-- Run, GO, CELL, plan-revision, role/session/endpoint, transport, inspection, correction, exemption, evidence, resource-contention, recovery, and closure facts;
-- authenticated, Run-scoped writes limited to Supervisor, Checker, and Worker;
-- append-only history, copied and hashed evidence, deterministic Markdown export, and exact correction links;
-- explicit resource contention and recovery that retain responsibility and do not misclassify an occupied tool as D1 rework;
-- stable read-only Agent projections through `slk-bi-query`;
-- a standalone Tauri/React BI that uses the same Rust projections and exposes no write, acknowledgement, scheduling, transport, or control surface.
-
-The state core does not create, wake, watch, replace, or infer live Agents. Native transport remains responsible for real activation and accepted-delivery evidence. BI displays recorded facts only. It does not prove that a process is currently working and does not add Owner or Overwatcher write authority.
+The candidate also adds explicit Run lineage, truthful stale-activity and duplicate-identity projections, a closed 40-case role Eval, and shared Windows headless process flags for OCRV and related helpers. It does not add Temporal, a daemon, broker, MCP server, background Agent, or new engineering approval layer.
 
 ## Fresh verification
 
 Repository and Python:
 
-- `python -m pytest -q` with externally built `slk-state` and `slk-bi-query`: **123 passed**, 0 failed, 0 skipped;
-- `python scripts/quick_validate.py`: **14/14 Skill directories PASS**;
-- `python scripts/validate_repository.py`: PASS;
-- manifest discovery regression: tracked and non-ignored new release files are included, while ignored local build output is excluded;
+- `python -m pytest -q`: **175 passed**, 0 failed, 0 skipped after final Manifest generation;
+- `python -O -m pytest` on role-Eval mutations and exact-recovery negatives: **25 passed**;
+- `python scripts/validate_role_eval.py --check-pack`: **40 cases PASS**, SHA-256 `349ed0359750be64b809525bf75d13fc6a5b014dab690a3194a524353041aa6a`;
+- `python scripts/quick_validate.py`: **15/15 Skill directories PASS**;
+- `python scripts/validate_repository.py`: PASS after final Manifest generation;
 - `git diff --check`: PASS.
 
-Rust workspace, using Rust/Cargo 1.94.0:
+Rust workspace:
 
 - `cargo fmt --all -- --check`: PASS;
 - `cargo clippy --workspace --all-targets -- -D warnings`: PASS;
-- `cargo test --workspace --all-targets`: **46 passed**, 0 failed;
-- the 46 tests cover configuration, authorization, role replacement and session rebinding, concurrency, schema immutability and migration backup, TOKEN/write flow, transport failure, evidence, deterministic export, eight shared BI projections, the desktop's read-only command surface, and `slk-cargo` Run isolation, explicit contention classification, one bounded recovery attempt, advisory state-write failure, and exact Run cleanup.
+- `cargo test --workspace --all-targets`: **62 passed**, 0 failed.
 
 SLK BI frontend:
 
-- `pnpm --dir apps/slk-bi test`: **7 files / 11 tests passed**;
-- `pnpm --dir apps/slk-bi typecheck`: PASS;
-- `pnpm --dir apps/slk-bi build:ui`: PASS;
-- production build excludes the development-only acceptance fixture;
-- visual acceptance in the Codex in-app browser: default light, default dark, 980×700 constrained viewport, and collapsed Inspector all PASS;
-- the accepted release-mode desktop executable was 10,627,072 bytes with SHA-256 `a83c56b77ebf01f777c69a8a8b393aca192734780493667ffa566c4b2d8536cb`.
+- `pnpm test`: **7 files / 17 tests passed**;
+- `pnpm run typecheck`: PASS;
+- `pnpm run build:ui`: PASS.
 
-## Cross-Agent and multi-Run acceptance
+## Critical negative evidence
 
-The state-core acceptance executed two independent Runs concurrently against one configured temporary data root. Each Run registered a distinct Supervisor, Checker, and Worker and completed the four-leg TOKEN route, D0, D1, D2, and `RUN_CLOSED`. The exercise also proved Checker replacement, session rebinding, correction without history rewrite, evidence hash verification, cross-Run credential rejection, deterministic export, and resource contention/recovery without TOKEN movement or false rework.
-
-The BI acceptance queried all eight projections from the accepted two-Run database without changing its SHA-256. A combined 14-query projection set had SHA-256 `a0840473a44aa9ac4c2e5cbd3cc2384d9359eddb513a8da3b8e4e147f47bd115` and contained no credential value.
-
-The Cargo resource-continuity acceptance launched two real `slk-cargo run` processes concurrently against one fixture project. Both exited 0 and used different targets under `runtime/cargo/<project-id>/<run-id>/primary`. Exact cleanup removed Run A while preserving Run B. The helper did not create a daemon, role, CELL, patrol, global installation, or shared Cargo-home cleanup.
-
-Human-readable evidence:
-
-- [`docs/state/SLK-STATE-ACCEPTANCE.md`](docs/state/SLK-STATE-ACCEPTANCE.md)
-- [`docs/state/SLK-BI-ACCEPTANCE.md`](docs/state/SLK-BI-ACCEPTANCE.md)
-
-Machine-readable evidence remains outside the release payload:
-
-- `D:\SLK\.codex\.tmp\slk-4-state-acceptance\acceptance-result.json`
-- `D:\SLK\.codex\.tmp\slk-4-bi-acceptance\acceptance-result.json`
+- zero Overwatcher remains valid; a second binding, cross-Run Session reuse, incomplete identity, wrong authority, or engineering-fact write fails closed;
+- transport recovery rejects changed message, endpoint, scope, token sequence, or payload, stops after one exact retry, and cannot claim success without native start evidence;
+- stale activity cannot display as current work, while legal pause/block/external wait is preserved;
+- an actual Run continuation cannot silently invent a successor identity, and explicit lineage conflicts remain visible instead of being title-merged;
+- role-Eval omissions, extras, duplicates, stale plan identity, casing/whitespace variants, and wrong answers fail closed, including under Python optimization mode;
+- Windows helper call sites use hidden/no-window process policy by default, with bounded activation and no positive-duration `wait_threads` loop.
 
 ## Release boundary
 
-This report establishes a locally verified 4.0.0 candidate. It does not claim a merge, push, tag, GitHub Release, global Skill deployment, or LCaS integration. The standalone BI is complete and independently usable; possible embedding in LCaS rc.08 or rc.09 remains future work and must preserve the read-only boundary.
+This report establishes a locally verified 4.2.0 candidate. It does not claim a merge, push, tag, GitHub Release, global Skill deployment, LCaS integration, or modification of the protected source checkout. Publication remains a separate Owner-authorized action.

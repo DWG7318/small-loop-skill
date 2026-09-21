@@ -10,7 +10,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 ## 当前目标
 
-让 Supervisor、Checker、Worker 以登记的原生 Agent 端点存在，并在建立、接管和归档时保持清楚的运行时身份、任务或会话 ID、关系和状态；只有运行时本身是 Codex 时才要求对应可见对话。
+让 Supervisor、Checker、Worker 以登记的原生 Agent 端点存在；需要额外运行观察时，由 Supervisor 选择一个专属 Agent Session 作为可选 Overwatcher，并保持清楚的身份、端点、权限和归档状态。
 
 ## 建立成员组
 
@@ -25,15 +25,17 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 5. 完成 Checker ↔ Worker 的双向通讯测试；
 6. 完成 Supervisor ↔ Worker 的应急通道测试。
 
+每个角色绑定前先通过 `SLK-ROLE-EVAL.v1` 中本角色的 8 个 runtime-critical 场景。若启用 Overwatcher，Supervisor 用 `slk-state bind-overwatcher` 绑定精确 Session 与端点：每 Run 最多一个、同一 Session 不跨 Run 复用，可以是 Codex 或其他可持续工作的 Agent；它不是第四个工程角色，也不改变上述三角色直连。未启用 Overwatcher 时 Run 正常开工。
+
 相邻通道服务于正常工作，Supervisor ↔ Worker 在 Checker 通讯异常时协助恢复。成员建立以运行时返回的真实身份、准确任务 ID 或会话 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
 
-正式成员对应已登记、可精确寻址并通过通讯测试的原生 Agent 端点；Codex 角色对应 Owner 可见并可联系的项目对话，DSH、OCRV 等原生角色不因此额外创建 Codex 对话。未登记端点的内部 subagent、隐藏执行或文字角色声明不作为正式成员。
+正式工程成员对应已登记、可精确寻址并通过通讯测试的原生 Agent 端点；未登记端点的内部 subagent、隐藏执行或文字角色声明不作为正式成员。Overwatcher 使用单独 binding 与独立凭证，不要伪装 Supervisor、Checker 或 Worker。
 
 成员创建或更换时，上一级用 `slk-state register-role` 或 `replace-role` 登记真实 Agent、模型、reasoning、session 与端点并领取该角色一次性返回的写凭证。成员组与通讯通道建立后，Supervisor 用首枚 `SLK TOKEN T001` 把第一个待派发 CELL 和日常循环交给 Checker；成员完成自己当前 Loop 节点和必要交接后结束当前活动，不使用`wait_threads`也不读取其他成员内部状态。Supervisor 不接收逐 CELL 汇报，需要上级协助或最终 D2 时再激活。
 
 ## 恢复或接管
 
-成员发生问题时，通常由上一级成员优先恢复原成员。缺少回执不等于失效；创建接管成员属于确认原成员明确失效后的极端恢复：
+成员发生问题时，通常由现有直连和上一级成员优先恢复原成员；绑定的 Overwatcher 可旁路检查证据、协助一次 exact retry 或唤醒 Supervisor，但不自动接管。缺少回执不等于失效；创建接管成员属于确认原成员明确失效后的极端恢复：
 
 - Worker 异常时，由 Checker 先恢复原 Worker，明确失效后再安排接管 Worker；
 - Checker 异常时，由 Supervisor 先恢复原 Checker，明确失效后再安排接管 Checker；
@@ -45,7 +47,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 ## 收尾归档
 
-D2 通过且最终记录完整后，建议按准确身份先归档 Worker、再归档 Checker：Codex 任务真实归档，其他原生端点退役，并以返回结果和状态确认；失败或未确认如实记录。Supervisor 继续保留，方便 Owner 后续查询。
+D2 通过且最终记录完整后，按准确身份归档 Worker、Checker 与本 Run 的 Overwatcher；Overwatcher 先记录关闭和归档证据，再归档自身 Session，绝不转给下一 Run。Supervisor 继续保留，方便 Owner 后续查询。
 
 ## 完成后
 
@@ -55,3 +57,4 @@ D2 通过且最终记录完整后，建议按准确身份先归档 Worker、再�
 
 - 不要把内部 subagent 或文字中的角色当成项目可见成员；不要只凭发出操作便声称创建、恢复或归档已完成；不要凭暂时无回复更换成员，也不要为防遗漏让 Supervisor 全程盯成员施工。
 - 不要为了角色可见而额外创建 Codex Checker 或 Worker，也不要把已登记的 DSH、OCRV 等原生端点误写成隐藏成员；不要用标题、角色名称或一次启动命令代替精确身份与真实激活证据。
+- 不要强制创建、重复创建或跨 Run 复用 Overwatcher，不要让它成为通讯中继、TOKEN 持有者、工程裁决者或 BI 写入者；不要用正时长 `wait_threads` 维持任何成员在线。

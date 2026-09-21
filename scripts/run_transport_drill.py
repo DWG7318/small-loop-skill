@@ -27,6 +27,7 @@ from slk_transport.contracts import (
 )
 from slk_transport.dispatcher import dispatch_once
 from slk_transport.jsonrpc import JsonRpcProcess
+from slk_transport.process import windows_no_window_kwargs
 
 
 ADAPTERS = {
@@ -167,6 +168,7 @@ def _initialize_disposable_repository(repository: Path, run_id: str) -> str:
             errors="replace",
             capture_output=True,
             check=False,
+            **windows_no_window_kwargs(),
         )
         if completed.returncode != 0:
             raise RuntimeError(f"disposable repository command failed: {' '.join(command)}")
@@ -177,6 +179,7 @@ def _initialize_disposable_repository(repository: Path, run_id: str) -> str:
         encoding="utf-8",
         capture_output=True,
         check=True,
+        **windows_no_window_kwargs(),
     ).stdout.strip()
     return head
 
@@ -197,7 +200,7 @@ def _create_supervisor_thread(
         client.request(
             1,
             "initialize",
-            {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.1.1"}},
+            {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.2.0"}},
             timeout,
         )
         client.notify("initialized", {})
@@ -273,7 +276,7 @@ def _supervisor_starts_first_send(
             client.request(
                 1,
                 "initialize",
-                {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.1.1"}},
+                {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.2.0"}},
                 timeout,
             )
             client.notify("initialized", {})

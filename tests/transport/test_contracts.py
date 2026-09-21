@@ -85,6 +85,38 @@ def test_envelope_requires_exact_role_edge_and_payload_hash() -> None:
         parse_delivery(endpoint, drifted)
 
 
+@pytest.mark.parametrize(
+    ("sender_role", "receiver_role"),
+    [
+        ("supervisor", "checker"),
+        ("checker", "worker"),
+        ("worker", "checker"),
+        ("checker", "supervisor"),
+    ],
+)
+def test_existing_roles_keep_their_direct_transport_edges(
+    sender_role: str, receiver_role: str
+) -> None:
+    endpoint = endpoint_value(role=receiver_role)
+    envelope = envelope_value(
+        sender_role=sender_role,
+        receiver_role=receiver_role,
+    )
+
+    parsed = parse_delivery(endpoint, envelope)
+    assert parsed.envelope.sender_role == sender_role
+    assert parsed.endpoint.role == receiver_role
+
+
+@pytest.mark.parametrize("extra_role", ["router", "overwatcher"])
+def test_observation_roles_are_not_transport_relays(extra_role: str) -> None:
+    endpoint = endpoint_value(role="checker")
+    envelope = envelope_value(sender_role=extra_role, receiver_role="checker")
+
+    with pytest.raises(ContractError, match="sender_role"):
+        parse_delivery(endpoint, envelope)
+
+
 def test_endpoint_rejects_title_matching_and_unknown_fields() -> None:
     value = endpoint_value()
     value["conversation_title"] = "SLK Checker"

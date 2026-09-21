@@ -9,8 +9,9 @@ use slk_state_core::auth::Credential;
 use slk_state_core::config::{configure_at, default_config_path, resolve_data_root_at};
 use slk_state_core::evidence::{EvidenceRequest, EvidenceState};
 use slk_state_core::model::{
-    InitRunRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
-    RevisePlanRequest, TokenHandoffRequest, WriteRequest,
+    BindOverwatcherRequest, CloseOverwatcherRequest, InitRunRequest, OperationalObservationRequest,
+    RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest,
+    TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::schema::open_database;
 use slk_state_core::write::StateStore;
@@ -73,6 +74,9 @@ fn run() -> Result<Value, CliError> {
     match command {
         "configure" => configure(&arguments[1..]),
         "init-run" => init_run(&arguments[1..]),
+        "bind-overwatcher" => bind_overwatcher(&arguments[1..]),
+        "record-observation" => record_observation(&arguments[1..]),
+        "close-overwatcher" => close_overwatcher(&arguments[1..]),
         "register-role" => register_role(&arguments[1..]),
         "handoff" => handoff(&arguments[1..]),
         "write" => write_event(&arguments[1..]),
@@ -124,6 +128,49 @@ fn register_role(arguments: &[String]) -> Result<Value, CliError> {
         "credential_id":issued.credential_id,
         "export":refresh_export(&store, &run_id)
     }))
+}
+
+fn bind_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
+    let request: BindOverwatcherRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let role_instance_id = request.identity.role_instance_id.clone();
+    let store = configured_store()?;
+    let issued = store
+        .bind_overwatcher(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"overwatcher_bound",
+        "run_id":run_id,
+        "overwatcher_role_instance_id":role_instance_id,
+        "overwatcher_credential":issued.credential.expose_secret(),
+        "credential_id":issued.credential_id,
+        "export":refresh_export(&store, &run_id)
+    }))
+}
+
+fn record_observation(arguments: &[String]) -> Result<Value, CliError> {
+    let request: OperationalObservationRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let observation_id = request.observation_id.clone();
+    let store = configured_store()?;
+    store
+        .record_observation(&overwatcher_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"observation_recorded",
+        "run_id":run_id,
+        "observation_id":observation_id
+    }))
+}
+
+fn close_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
+    let request: CloseOverwatcherRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let store = configured_store()?;
+    store
+        .close_overwatcher(&overwatcher_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({"status":"overwatcher_closed","run_id":run_id}))
 }
 
 fn handoff(arguments: &[String]) -> Result<Value, CliError> {
@@ -288,6 +335,14 @@ fn role_credential() -> Result<Credential, CliError> {
     Ok(Credential::from_secret(secret))
 }
 
+fn overwatcher_credential() -> Result<Credential, CliError> {
+    let secret = env::var("SLK_OVERWATCHER_CREDENTIAL").map_err(|_| CliError {
+        code: "SLK_OVERWATCHER_CREDENTIAL_REQUIRED",
+        message: "SLK_OVERWATCHER_CREDENTIAL must be supplied through the environment".into(),
+    })?;
+    Ok(Credential::from_secret(secret))
+}
+
 fn refresh_export(store: &StateStore, run_id: &str) -> Value {
     match store.export_run(run_id) {
         Ok(path) => json!({"path":path}),
@@ -296,5 +351,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|register-role|handoff|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nCredentials are read only from SLK_ROLE_CREDENTIAL."
+    "slk-state <configure|init-run|bind-overwatcher|record-observation|close-overwatcher|register-role|handoff|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

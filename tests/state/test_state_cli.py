@@ -36,6 +36,7 @@ def configured_environment(tmp_path):
     environment = os.environ.copy()
     environment["SLK_CONFIG_PATH"] = str(tmp_path / "config" / "config.json")
     environment.pop("SLK_ROLE_CREDENTIAL", None)
+    environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
     return environment
 
 
@@ -107,6 +108,49 @@ def supervisor_event():
     }
 
 
+def overwatcher_binding():
+    return {
+        "event_id": "bind-overwatcher-a",
+        "run_id": "run-a",
+        "identity": {
+            "role_instance_id": "overwatcher-a",
+            "role": "overwatcher",
+            "agent_runtime": "codex",
+            "provider": "openai",
+            "model": "sol",
+            "reasoning": "xhigh",
+            "session_id": "thread-overwatcher-a",
+        },
+        "endpoint": {
+            "endpoint_version": 1,
+            "transport_adapter": "codex-app-server",
+            "host_identity": "host-a",
+            "session_id": "thread-overwatcher-a",
+            "native_address": {"thread_id": "thread-overwatcher-a"},
+        },
+        "reason": "one optional dedicated observer",
+        "occurred_at": "2026-09-20T00:00:01Z",
+    }
+
+
+def observation():
+    return {
+        "observation_id": "observation-a",
+        "run_id": "run-a",
+        "go_id": "GO-001",
+        "cell_id": "CELL-001",
+        "attempt": 1,
+        "plan_revision": 1,
+        "role_instance_id": "overwatcher-a",
+        "kind": "ACTIVITY_UNPROVEN",
+        "related_event_id": None,
+        "message_id": "message-a",
+        "evidence_refs": ["transport/message-a/attempt.json"],
+        "details": {"reason": "no fresh native execution evidence"},
+        "occurred_at": "2026-09-20T00:00:02Z",
+    }
+
+
 def test_writer_configures_initializes_and_applies_one_role_event(tmp_path):
     environment = configured_environment(tmp_path)
     data_root = tmp_path / "state"
@@ -142,3 +186,55 @@ def test_writer_has_no_owner_or_anonymous_write_mode(tmp_path):
     error = json.loads(result.stderr)
     assert error["code"] == "SLK_ROLE_CREDENTIAL_REQUIRED"
     assert "SLK_ROLE_CREDENTIAL" in error["message"]
+
+
+def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke(["configure", "--data-root", tmp_path / "state"], environment)
+    initialized = json.loads(
+        invoke(
+            ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+            environment,
+        ).stdout
+    )
+    supervisor_environment = environment.copy()
+    supervisor_environment["SLK_ROLE_CREDENTIAL"] = initialized["supervisor_credential"]
+    bound = json.loads(
+        invoke(
+            [
+                "bind-overwatcher",
+                "--request",
+                write_json(tmp_path / "overwatcher.json", overwatcher_binding()),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    assert bound["status"] == "overwatcher_bound"
+
+    observer_environment = environment.copy()
+    observer_environment["SLK_OVERWATCHER_CREDENTIAL"] = bound[
+        "overwatcher_credential"
+    ]
+    recorded = json.loads(
+        invoke(
+            [
+                "record-observation",
+                "--request",
+                write_json(tmp_path / "observation.json", observation()),
+            ],
+            observer_environment,
+        ).stdout
+    )
+    assert recorded == {
+        "observation_id": "observation-a",
+        "run_id": "run-a",
+        "status": "observation_recorded",
+    }
+
+    rejected = invoke(
+        ["write", "--request", write_json(tmp_path / "event.json", supervisor_event())],
+        observer_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
+    assert json.loads(rejected.stderr)["code"] == "SLK_ROLE_CREDENTIAL_REQUIRED"

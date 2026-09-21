@@ -1,10 +1,10 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.0.0` carries one closed SLK handoff into one exact native Agent endpoint. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, TOKEN ownership beyond a proven handoff, or future BI state.
+`slk-transport 4.2.0` carries one closed SLK handoff into one exact native Agent endpoint and can inspect or replay that exact identity once. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, TOKEN ownership beyond a proven handoff, or BI state.
 
 ## Role edges
 
-The accepted edges are `Supervisor → Checker → Worker → Checker → Supervisor`. The transport adds no role, relay Agent, resident service, acknowledgement-only turn, peer watcher, or database queue.
+The normal direct edges remain `Supervisor ↔ Checker` and `Checker ↔ Worker`, with the registered `Supervisor ↔ Worker` emergency path. An optional Overwatcher may inspect immutable evidence and request one exact replay, but it is not a receiver role, relay, TOKEN holder, resident service, acknowledgement turn, or database queue; a Run without it uses the same direct edges.
 
 ## Closed contracts
 
@@ -46,10 +46,12 @@ Addresses are selected by identity, never by conversation title. Secrets stay in
 ```text
 python path\to\slk-transport.pyz validate --endpoint ENDPOINT.json --envelope ENVELOPE.json
 python path\to\slk-transport.pyz send --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+python path\to\slk-transport.pyz inspect --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+python path\to\slk-transport.pyz retry-exact --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 python path\to\slk-transport.pyz drill-verify --evidence-root EVIDENCE_ROOT
 ```
 
-`validate` checks closed identities without delivery. `send` starts one short-lived native delivery job and returns after it observes `started.json`, a terminal result, or a bounded startup failure. `job` is the internal foreground form used by `send`.
+`validate` checks closed identities without delivery. `send` starts one short-lived native delivery job and returns after it observes `started.json`, a terminal result, or a bounded startup failure. `inspect` reports the immutable attempt without creating work. `retry-exact` stops when start already exists, otherwise creates at most one deterministic recovery attempt only when endpoint, envelope, message, payload, and scope still match; changed or exhausted recovery returns `SUPERVISOR_DECISION_REQUIRED`. `job` is the internal foreground form used by `send`.
 
 Exit codes are:
 
@@ -72,11 +74,13 @@ The common files are `endpoint.json`, `envelope.json`, `accepted.json`, `started
 
 ## Retry and session rebound
 
-An exact retry reuses the same endpoint, envelope, `message_id`, endpoint version, TOKEN number, and payload. The immutable terminal result is returned again; different content under the same identity is rejected as a collision.
+An exact retry reuses the same endpoint, envelope, `message_id`, endpoint version, TOKEN number, Run/CELL/attempt scope, and payload. Recovery evidence has one deterministic `recovery/exact-1` identity. Existing start proof stops recovery; changed content or identity and any second retry are rejected rather than becoming a new message.
 
 When a native task or session is replaced, register a higher endpoint version, mark the old endpoint `retired`, and create the next handoff for the new endpoint identity. A retired endpoint rejects delivery. Session rebound is an identity change, not an excuse to guess by title or reuse an unverified session.
 
 If an adapter explicitly fails, reports an active writer, or lacks start evidence, the sender keeps the TOKEN and follows the existing SLK communication-recovery route; it does not claim the receiver or D2 started. Recovery does not create a receipt-only turn and does not move D0, D1, D2, exemption, or planning authority into the transport.
+
+On Windows, Codex App Server, DSH, OCRV, detached transport jobs, and drill helper processes use the shared hidden-start flags by default. No helper may flash a PowerShell/console window; a visible interactive window is an explicit Owner choice, not a recovery fallback.
 
 ## Acceptance
 

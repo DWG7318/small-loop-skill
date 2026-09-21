@@ -38,3 +38,5 @@ Supervisor 可以按实际原因组合以下办法：
 调整通常保持原 Run 目标和已约定验收目标；Owner主动改变目标时，再更新相应定义。Supervisor 把原因、选择、影响、CELL n/N变化和未决风险写入根记录。
 
 调整完成后，Supervisor 用 `slk-state revise-plan` 或 `write` 追加决定，沿 `Supervisor → Checker` 完成真实投递，以递增编号的同一 `SLK TOKEN` 用 `slk-state handoff` 交还当前责任，随后结束本次激活。待施工 CELL 使用 `$slk-dispatch-cell`；当前 CELL 修复回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再激活 Supervisor。
+
+不要在线等待或持续介入普通 CELL；可选 Overwatcher 只提供运行证据和通讯告警，不能替 Supervisor 决定路线、修改计划、TOKEN 或 BI。

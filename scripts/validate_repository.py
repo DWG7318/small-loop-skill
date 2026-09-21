@@ -11,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "4.1.1"
+VERSION = "4.2.0"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -20,6 +20,7 @@ EXPECTED_SKILLS = (
     "slk-select-models",
     "slk-grill-supervisor",
     "slk-manage-team",
+    "slk-overwatch-run",
     "slk-dispatch-cell",
     "slk-execute-cell",
     "slk-check-cell",
@@ -212,7 +213,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 4.1 skill collection structure, identity, and Manifest are valid.")
+    print("PASS: SLK 4.2 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 

@@ -40,3 +40,11 @@ SLK 4.0 keeps the 3.0.8 three-role method and extends the collection to 14 Skill
 For a new 4.0 Run, configure one machine-wide SLK data root and initialize the Run through `slk-state`. Supervisor, Checker, and Worker then append only the facts at their existing boundaries. Native transport remains responsible for real Agent activation; the state row is written after accepted delivery evidence and never substitutes for it. Existing 3.0.8 Markdown records remain historical records rather than being silently imported as live state.
 
 Other Agents and BI read through `slk-bi-query` or the same core projections. The standalone BI is optional for construction and read-only by design. Existing prompt-only Runs may finish on 3.0.8; adopting 4.0 requires an explicit new 4.0 Run identity and configured state root rather than partially mixing both state models.
+
+## Migration from 4.1.1 to 4.2.0
+
+Existing 4.1.1 Runs remain valid and may finish without an Overwatcher. Before a 4.2 writer or BI opens an older state root, run the normal writable `slk-state configure` migration so the verified backup and schema-v4 tables are created atomically. Do not reinterpret an old Run as having an Overwatcher or infer lineage from its title.
+
+New 4.2 Runs keep the same Supervisor ↔ Checker ↔ Worker direct routes, TOKEN flow, CELL, D0, D1, and D2 semantics. They use the versioned closed role Eval before binding and may optionally bind one dedicated Overwatcher Agent Session. The Overwatcher has a separate observation credential, cannot write engineering facts or BI/TOKEN, cannot become a mandatory relay, and is closed and archived with its Run. Successor Runs name `predecessor_run_id` explicitly; independent Runs leave it empty.
+
+Communication recovery now inspects the original immutable attempt first and permits at most one exact retry with the same message, endpoint, payload, and scope. A semantic change returns `SUPERVISOR_DECISION_REQUIRED`. Windows helper processes default to hidden/no-window operation. No Temporal service, daemon, broker, MCP, additional engineering role, or hard optional-tool dependency is introduced.

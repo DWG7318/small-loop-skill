@@ -24,7 +24,7 @@ Worker 完成当前 CELL，形成可检查候选，并把 Checker 需要的信�
 
 ## Checker 未被激活时
 
-跨 Agent 交付由 `slk-transport` 进入 Checker 的原生 Agent 入口，而不是只把文字写入后台聊天记录或按标题寻找对话。Worker 在启动证据成立后结束当前活动，不继续停留或读取 Checker 状态；平台明确返回未启动、目标不可用或投递失败时，调用 `$slk-recover-communication`，通过 Supervisor 优先恢复原 Checker。
+跨 Agent 交付由 `slk-transport` 进入 Checker 的原生 Agent 入口，而不是只把文字写入后台聊天记录或按标题寻找对话。Worker 在启动证据成立后结束当前活动，不继续停留或读取 Checker 状态；平台明确返回未启动、目标不可用或投递失败时，调用 `$slk-recover-communication`。可选 Overwatcher 可协助证据检查和 exact retry，但不替 Worker 交付、handoff 或等待 D1。
 
 ## 完成后
 

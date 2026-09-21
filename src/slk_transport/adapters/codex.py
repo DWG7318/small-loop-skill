@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .base import AdapterError
 from ..contracts import RESULT_SCHEMA, DeliveryResult, Endpoint, Envelope
@@ -34,6 +35,37 @@ def _positive_seconds(value: Any, label: str) -> float:
 def _turn_hash(turn: Mapping[str, Any]) -> str:
     encoded = json.dumps(turn, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def wait_for_exact_thread_idle(
+    probe: Callable[[], Mapping[str, Any]],
+    thread_id: str,
+    timeout: float,
+    *,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    poll_interval: float = 0.1,
+) -> Mapping[str, Any]:
+    """Bound one exact target activation without using task-level wait_threads."""
+
+    deadline = monotonic() + timeout
+    while True:
+        read = probe()
+        thread = read.get("thread")
+        if not isinstance(thread, Mapping) or thread.get("id") != thread_id:
+            raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex read a different thread")
+        status = thread.get("status")
+        status_type = status.get("type") if isinstance(status, Mapping) else None
+        if status_type == "idle":
+            return thread
+        if status_type != "active":
+            raise AdapterError(
+                "CODEX_THREAD_TERMINAL", f"Codex target thread has terminal state {status_type}"
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise AdapterError("CODEX_THREAD_BUSY", "Codex target thread stayed busy past deadline")
+        sleep(min(poll_interval, remaining))
 
 
 class CodexAdapter:
@@ -79,7 +111,7 @@ class CodexAdapter:
                     "clientInfo": {
                         "name": "slk_transport",
                         "title": "SLK Transport",
-                        "version": "4.1.1",
+                        "version": "4.2.0",
                     }
                 },
                 startup_timeout,
@@ -94,20 +126,24 @@ class CodexAdapter:
             resumed_thread = resumed.get("thread")
             if not isinstance(resumed_thread, Mapping) or resumed_thread.get("id") != thread_id:
                 raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex resumed a different thread")
-            read = client.request(
-                3,
-                "thread/read",
-                {"threadId": thread_id, "includeTurns": False},
-                startup_timeout,
-            )
-            read_thread = read.get("thread")
-            status = read_thread.get("status") if isinstance(read_thread, Mapping) else None
-            if not isinstance(status, Mapping) or status.get("type") != "idle":
-                raise AdapterError("CODEX_THREAD_BUSY", "Codex target thread is not idle")
+            request_id = 3
+
+            def read_thread() -> Mapping[str, Any]:
+                nonlocal request_id
+                result = client.request(
+                    request_id,
+                    "thread/read",
+                    {"threadId": thread_id, "includeTurns": False},
+                    startup_timeout,
+                )
+                request_id += 1
+                return result
+
+            wait_for_exact_thread_idle(read_thread, thread_id, startup_timeout)
 
             notification_start = len(client.messages)
             started_response = client.request(
-                4,
+                request_id,
                 "turn/start",
                 {
                     "threadId": thread_id,

@@ -71,6 +71,7 @@ fn init_request() -> InitRunRequest {
             last_known_path: "D:/ProjectA".into(),
         },
         run_id: "run-a".into(),
+        predecessor_run_id: None,
         run_name: None,
         run_description: None,
         source_kind: None,

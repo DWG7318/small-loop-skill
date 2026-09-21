@@ -37,6 +37,18 @@ struct RunExportHeader {
     closed_at: Option<String>,
 }
 
+struct OverwatcherExportRow {
+    role_instance_id: String,
+    agent_runtime: String,
+    provider: String,
+    model: String,
+    reasoning: String,
+    session_id: String,
+    lifecycle_state: String,
+    binding_reason: String,
+    bound_at: String,
+}
+
 impl StateStore {
     pub fn export_run(&self, run_id: &str) -> Result<PathBuf, StateError> {
         let connection = open_database(&self.data_root)?;
@@ -94,6 +106,7 @@ impl StateStore {
         render_role_events(&events, "supervisor", "D2 / Supervisor", &mut markdown);
         render_corrections(&events, &mut markdown);
         render_tokens(&connection, run_id, &mut markdown)?;
+        render_operational_observations(&connection, run_id, &mut markdown)?;
         render_evidence(&connection, run_id, &mut markdown)?;
 
         let export_directory = self
@@ -254,6 +267,34 @@ fn render_roles(
         writeln!(output, "- `{role}` `{id}` — `{runtime}` / `{provider}` / `{model}` / `{reasoning}` — session `{session}` — `{lifecycle}` — predecessor `{}` — successor `{}`",
             predecessor.as_deref().unwrap_or("none"), successor.as_deref().unwrap_or("none")).unwrap();
     }
+    let overwatcher: Option<OverwatcherExportRow> = connection
+        .query_row(
+            "SELECT role_instance_id, agent_runtime, provider, model, reasoning, session_id,
+                        lifecycle_state, binding_reason, bound_at
+                 FROM overwatcher_bindings WHERE run_id=?1",
+            [run_id],
+            |row| {
+                Ok(OverwatcherExportRow {
+                    role_instance_id: row.get(0)?,
+                    agent_runtime: row.get(1)?,
+                    provider: row.get(2)?,
+                    model: row.get(3)?,
+                    reasoning: row.get(4)?,
+                    session_id: row.get(5)?,
+                    lifecycle_state: row.get(6)?,
+                    binding_reason: row.get(7)?,
+                    bound_at: row.get(8)?,
+                })
+            },
+        )
+        .optional()?;
+    if let Some(overwatcher) = overwatcher {
+        writeln!(output, "- Overwatcher binding `{}` — `{}` / `{}` / `{}` / `{}` — session `{}` — `{}` — selected at `{}` — {}",
+            overwatcher.role_instance_id, overwatcher.agent_runtime, overwatcher.provider,
+            overwatcher.model, overwatcher.reasoning, overwatcher.session_id,
+            overwatcher.lifecycle_state, overwatcher.bound_at,
+            single_line(&overwatcher.binding_reason)).unwrap();
+    }
     Ok(())
 }
 
@@ -403,6 +444,50 @@ fn render_evidence(
         let (id, kind, path, hash, bytes, role, go, cell, occurred_at) = row?;
         writeln!(output, "- `{id}` `{kind}` — `{path}` — SHA-256 `{hash}` — {bytes} bytes — by `{role}` — GO `{}` / CELL `{}` — `{occurred_at}`",
             go.as_deref().unwrap_or("none"), cell.as_deref().unwrap_or("none")).unwrap();
+    }
+    if count == 0 {
+        writeln!(output, "- None recorded.").unwrap();
+    }
+    Ok(())
+}
+
+fn render_operational_observations(
+    connection: &rusqlite::Connection,
+    run_id: &str,
+    output: &mut String,
+) -> Result<(), StateError> {
+    writeln!(output).unwrap();
+    writeln!(output, "## Operational observations / Overwatcher").unwrap();
+    writeln!(output).unwrap();
+    let mut statement = connection.prepare(
+        "SELECT observation_id, overwatcher_role_instance_id, kind, go_id, cell_id,
+                attempt, plan_revision, message_id, evidence_refs_json, details_json, occurred_at
+         FROM operational_observations
+         WHERE run_id=?1 ORDER BY occurred_at, observation_id",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<i64>>(5)?,
+            row.get::<_, i64>(6)?,
+            row.get::<_, Option<String>>(7)?,
+            row.get::<_, String>(8)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, String>(10)?,
+        ))
+    })?;
+    let mut count = 0;
+    for row in rows {
+        count += 1;
+        let (id, role, kind, go, cell, attempt, revision, message, evidence, details, at) = row?;
+        writeln!(output, "- `{kind}` `{id}` by `{role}` at `{at}` — plan v{revision} / GO `{}` / CELL `{}` / attempt `{}` / message `{}` — evidence {} — {}",
+            go.as_deref().unwrap_or("none"), cell.as_deref().unwrap_or("none"),
+            attempt.map(|value| value.to_string()).as_deref().unwrap_or("none"),
+            message.as_deref().unwrap_or("none"), single_line(&evidence), single_line(&details)).unwrap();
     }
     if count == 0 {
         writeln!(output, "- None recorded.").unwrap();

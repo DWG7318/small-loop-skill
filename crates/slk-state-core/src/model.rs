@@ -7,6 +7,7 @@ use serde_json::Value;
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Supervisor,
+    Overwatcher,
     Checker,
     Worker,
 }
@@ -15,6 +16,7 @@ impl Role {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Supervisor => "supervisor",
+            Self::Overwatcher => "overwatcher",
             Self::Checker => "checker",
             Self::Worker => "worker",
         }
@@ -23,6 +25,7 @@ impl Role {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "supervisor" => Some(Self::Supervisor),
+            "overwatcher" => Some(Self::Overwatcher),
             "checker" => Some(Self::Checker),
             "worker" => Some(Self::Worker),
             _ => None,
@@ -32,8 +35,36 @@ impl Role {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ObservationKind {
+    DeliveryUnconfirmed,
+    DeliveryRetrying,
+    ActivityUnproven,
+    RecordConflict,
+    RecoveryEscalated,
+    ProjectionRefreshRequested,
+    OverwatcherClosed,
+}
+
+impl ObservationKind {
+    pub fn as_str(self) -> &'static str {
+        use ObservationKind::*;
+        match self {
+            DeliveryUnconfirmed => "DELIVERY_UNCONFIRMED",
+            DeliveryRetrying => "DELIVERY_RETRYING",
+            ActivityUnproven => "ACTIVITY_UNPROVEN",
+            RecordConflict => "RECORD_CONFLICT",
+            RecoveryEscalated => "RECOVERY_ESCALATED",
+            ProjectionRefreshRequested => "PROJECTION_REFRESH_REQUESTED",
+            OverwatcherClosed => "OVERWATCHER_CLOSED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EventType {
     RunInitialized,
+    OverwatcherBound,
     PlanRevised,
     RoleRegistered,
     RoleReplaced,
@@ -70,17 +101,18 @@ impl EventType {
     pub fn is_owned_by(self, role: Role) -> bool {
         use EventType::*;
         match self {
-            RunInitialized | PlanRevised | ModelChanged | SessionRebound | ExemptionGranted
-            | D2Started | D2Passed | D2Failed | RunSuperseded | RunAbandoned | RunClosed => {
-                role == Role::Supervisor
-            }
+            RunInitialized | OverwatcherBound | PlanRevised | ModelChanged | SessionRebound
+            | ExemptionGranted | D2Started | D2Passed | D2Failed | RunSuperseded | RunAbandoned
+            | RunClosed => role == Role::Supervisor,
             RoleRegistered | RoleReplaced => role == Role::Supervisor || role == Role::Checker,
             CellDispatched | D1Started | D1Passed | D1Failed | ReworkRequested | CellSplit
             | CandidateForwarded => role == Role::Checker,
             WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
             | CandidateSubmitted => role == Role::Worker,
-            ResourceContended | ResourceRecovered | TokenHandedOff | TransportFailed
-            | EvidenceRegistered => true,
+            ResourceContended | ResourceRecovered | TokenHandedOff | TransportFailed => {
+                role != Role::Overwatcher
+            }
+            EvidenceRegistered => true,
         }
     }
 
@@ -88,6 +120,7 @@ impl EventType {
         use EventType::*;
         match self {
             RunInitialized => "RUN_INITIALIZED",
+            OverwatcherBound => "OVERWATCHER_BOUND",
             PlanRevised => "PLAN_REVISED",
             RoleRegistered => "ROLE_REGISTERED",
             RoleReplaced => "ROLE_REPLACED",
@@ -178,6 +211,8 @@ pub struct InitRunRequest {
     pub project: ProjectIdentity,
     pub run_id: String,
     #[serde(default)]
+    pub predecessor_run_id: Option<String>,
+    #[serde(default)]
     pub run_name: Option<String>,
     #[serde(default)]
     pub run_description: Option<String>,
@@ -220,6 +255,17 @@ pub struct RegisterRoleRequest {
     pub occurred_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BindOverwatcherRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub identity: RoleIdentity,
+    pub endpoint: EndpointIdentity,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TokenHandoffRequest {
@@ -235,6 +281,33 @@ pub struct TokenHandoffRequest {
     pub payload_type: String,
     pub payload_sha256: String,
     pub payload_location: Option<String>,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationalObservationRequest {
+    pub observation_id: String,
+    pub run_id: String,
+    pub go_id: Option<String>,
+    pub cell_id: Option<String>,
+    pub attempt: Option<u32>,
+    pub plan_revision: u32,
+    pub role_instance_id: String,
+    pub kind: ObservationKind,
+    pub related_event_id: Option<String>,
+    pub message_id: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub details: Value,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloseOverwatcherRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub archive_evidence_ref: String,
     pub occurred_at: String,
 }
 

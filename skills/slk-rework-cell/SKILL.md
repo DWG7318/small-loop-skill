@@ -28,3 +28,4 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 ## 负面提示词
 
 - 不要把 D0 草稿自修或 Checker 自建检查器故障计入 Worker 的 D1 返工次数；不要为局部修复重跑未受影响的全部有效检查，也不要借返工擅改原验收目标、重复施工未受影响且仍有效的已完成工作或覆盖 Owner 指定模型。
+- 不要让 Overwatcher 提出修复假设、执行返工或判定回归；它只观察通讯与运行证据，第三次 D1 FAIL 后的路线仍由 Checker/Supervisor 按既有权威处理。

@@ -21,6 +21,9 @@ export const runFixture: RunView = {
     archive_reason: null,
     archived_at: null,
     superseded_by_run_id: null,
+    predecessor_run_id: null,
+    lineage_root_run_id: "run-a",
+    identity_state: "CURRENT",
   },
   boundaries_json: "{}",
   go_nodes: [
@@ -63,6 +66,7 @@ export const runFixture: RunView = {
       exited_at: null,
       endpoints: [],
       display_state: "ready",
+      binding_mode: null,
     },
     {
       role: "checker",
@@ -82,6 +86,7 @@ export const runFixture: RunView = {
       exited_at: null,
       endpoints: [],
       display_state: "ready",
+      binding_mode: null,
     },
     {
       role: "worker",
@@ -111,6 +116,7 @@ export const runFixture: RunView = {
         },
       ],
       display_state: "working",
+      binding_mode: null,
     },
   ],
   plan_revisions: [],
@@ -140,6 +146,7 @@ export const runFixture: RunView = {
     },
   ],
   evidence: [],
+  operational_observations: [],
 };
 
 export const twoRunFixture: { projects: ProjectsView; runs: RunsView; runDetails: RunView[] } = {
@@ -170,6 +177,9 @@ export const twoRunFixture: { projects: ProjectsView; runs: RunsView; runDetails
         archive_reason: "superseded",
         archived_at: "2026-09-20T00:10:00Z",
         superseded_by_run_id: "run-a",
+        predecessor_run_id: null,
+        lineage_root_run_id: "run-b",
+        identity_state: "HISTORY",
       },
     ],
   },
@@ -189,6 +199,9 @@ export const twoRunFixture: { projects: ProjectsView; runs: RunsView; runDetails
         archive_reason: "superseded",
         archived_at: "2026-09-20T00:10:00Z",
         superseded_by_run_id: "run-a",
+        predecessor_run_id: null,
+        lineage_root_run_id: "run-b",
+        identity_state: "HISTORY",
       },
     },
   ],

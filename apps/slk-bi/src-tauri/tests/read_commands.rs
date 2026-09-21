@@ -32,6 +32,7 @@ fn desktop_registers_only_the_eight_read_commands() {
 
 fn init_request() -> InitRunRequest {
     InitRunRequest {
+        predecessor_run_id: None,
         project: ProjectIdentity {
             project_id: "project-a".into(),
             name: "Project A".into(),

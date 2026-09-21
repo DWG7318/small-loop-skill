@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OpenFlags};
 
 use slk_state_core::schema::{create_migration_backup, open_database};
 
-const TABLES: [&str; 11] = [
+const TABLES: [&str; 14] = [
     "projects",
     "runs",
     "go_nodes",
@@ -16,6 +16,9 @@ const TABLES: [&str; 11] = [
     "token_events",
     "work_events",
     "evidence",
+    "overwatcher_bindings",
+    "operational_observations",
+    "run_lineage",
 ];
 
 fn scalar_text(connection: &Connection, sql: &str) -> String {
@@ -38,7 +41,7 @@ fn database_enables_wal_foreign_keys_and_all_current_tables() {
         database
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap(),
-        3
+        4
     );
 
     for table in TABLES {
@@ -70,12 +73,53 @@ fn append_only_history_rejects_update_and_delete() {
 }
 
 #[test]
+fn operational_observations_are_append_only_at_the_database_boundary() {
+    let root = tempfile::tempdir().expect("temporary data root");
+    let database = open_database(root.path()).expect("open state database");
+    seed_history(&database);
+    database
+        .execute(
+            "INSERT INTO overwatcher_bindings
+         (run_id, role_instance_id, agent_runtime, provider, model, reasoning, session_id,
+          endpoint_version, transport_adapter, host_identity, native_address_json,
+          bound_by_role_instance_id, binding_reason, credential_id, credential_sha256,
+          credential_state, lifecycle_state, bound_at)
+         VALUES ('run-a','overwatcher-a','codex','openai','gpt-5.6-sol','xhigh',
+                 'session-overwatcher-a',1,'native','host-a','{}','role-a','test binding',
+                 'credential-a','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                 'active','active','2026-09-20T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+    database
+        .execute(
+            "INSERT INTO operational_observations
+         (observation_id, run_id, overwatcher_role_instance_id, plan_revision, kind,
+          evidence_refs_json, details_json, payload_sha256, occurred_at)
+         VALUES ('observation-a','run-a','overwatcher-a',1,'ACTIVITY_UNPROVEN',
+                 '[\"evidence-a\"]','{}','hash','2026-09-20T00:00:01Z')",
+            [],
+        )
+        .unwrap();
+
+    assert!(database
+        .execute(
+            "UPDATE operational_observations SET details_json='{\"forged\":true}'",
+            [],
+        )
+        .is_err());
+    assert!(database
+        .execute("DELETE FROM operational_observations", [])
+        .is_err());
+}
+
+#[test]
 fn future_nonzero_migration_can_create_and_validate_a_backup() {
     let root = tempfile::tempdir().expect("temporary data root");
     let database = open_database(root.path()).expect("open state database");
     seed_history(&database);
 
-    let backup = create_migration_backup(&database, root.path(), 3, 4, "20260920T000000Z")
+    let backup = create_migration_backup(&database, root.path(), 4, 5, "20260920T000000Z")
         .expect("migration backup");
     let copy = Connection::open_with_flags(backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open backup");

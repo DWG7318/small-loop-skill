@@ -1,5 +1,7 @@
 //! Stable read-only projections for Agents, the query CLI, and future BI.
 
+use std::collections::{HashMap, HashSet};
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -35,6 +37,9 @@ pub struct RunSummary {
     pub archive_reason: Option<String>,
     pub archived_at: Option<String>,
     pub superseded_by_run_id: Option<String>,
+    pub predecessor_run_id: Option<String>,
+    pub lineage_root_run_id: String,
+    pub identity_state: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -78,6 +83,7 @@ pub struct RoleProjection {
     pub exited_at: Option<String>,
     pub endpoints: Vec<EndpointProjection>,
     pub display_state: String,
+    pub binding_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -139,6 +145,37 @@ pub struct EvidenceProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OperationalObservationProjection {
+    pub observation_id: String,
+    pub overwatcher_role_instance_id: String,
+    pub go_id: Option<String>,
+    pub cell_id: Option<String>,
+    pub attempt: Option<u32>,
+    pub plan_revision: u32,
+    pub kind: String,
+    pub related_event_id: Option<String>,
+    pub message_id: Option<String>,
+    pub evidence_refs_json: String,
+    pub details_json: String,
+    pub occurred_at: String,
+}
+
+struct OverwatcherBindingRow {
+    role_instance_id: String,
+    agent_runtime: String,
+    provider: String,
+    model: String,
+    reasoning: String,
+    session_id: String,
+    endpoint_version: u32,
+    transport_adapter: String,
+    host_identity: String,
+    lifecycle_state: String,
+    bound_at: String,
+    closed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RunProjection {
     pub schema_version: u32,
     pub summary: RunSummary,
@@ -149,6 +186,7 @@ pub struct RunProjection {
     pub events: Vec<EventProjection>,
     pub token_history: Vec<TokenProjection>,
     pub evidence: Vec<EvidenceProjection>,
+    pub operational_observations: Vec<OperationalObservationProjection>,
 }
 
 impl RunProjection {
@@ -182,52 +220,7 @@ impl StateStore {
 
     pub fn list_runs(&self, project_id: Option<&str>) -> Result<Vec<RunSummary>, StateError> {
         let connection = open_database_read_only(&self.data_root)?;
-        let (sql, value) = if let Some(project_id) = project_id {
-            (
-                "SELECT run_id, project_id, run_name, run_description, slk_version,
-                        source_kind, source_project_name, goal, state,
-                        current_plan_revision, closure_state, created_at, closed_at,
-                        archive_reason, archived_at, superseded_by_run_id
-                 FROM runs WHERE project_id=?1
-                 ORDER BY created_at DESC, run_id",
-                Some(project_id),
-            )
-        } else {
-            (
-                "SELECT run_id, project_id, run_name, run_description, slk_version,
-                        source_kind, source_project_name, goal, state,
-                        current_plan_revision, closure_state, created_at, closed_at,
-                        archive_reason, archived_at, superseded_by_run_id FROM runs
-                 ORDER BY created_at DESC, run_id",
-                None,
-            )
-        };
-        let mut statement = connection.prepare(sql)?;
-        let mapper = |row: &rusqlite::Row<'_>| {
-            Ok(RunSummary {
-                run_id: row.get(0)?,
-                project_id: row.get(1)?,
-                run_name: row.get(2)?,
-                run_description: row.get(3)?,
-                slk_version: row.get(4)?,
-                source_kind: row.get(5)?,
-                source_project_name: row.get(6)?,
-                goal: row.get(7)?,
-                state: row.get(8)?,
-                current_plan_revision: row.get(9)?,
-                closure_state: row.get(10)?,
-                created_at: row.get(11)?,
-                closed_at: row.get(12)?,
-                archive_reason: row.get(13)?,
-                archived_at: row.get(14)?,
-                superseded_by_run_id: row.get(15)?,
-            })
-        };
-        let rows = match value {
-            Some(project_id) => statement.query_map([project_id], mapper)?,
-            None => statement.query_map([], mapper)?,
-        };
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        load_run_summaries(&connection, project_id)
     }
 
     pub fn query_run(&self, run_id: &str) -> Result<RunProjection, StateError> {
@@ -235,41 +228,19 @@ impl StateStore {
             return Err(StateError::RunIdRequired);
         }
         let connection = open_database_read_only(&self.data_root)?;
-        let row: Option<(RunSummary, String)> = connection
+        let row: Option<(String, String)> = connection
             .query_row(
-                "SELECT run_id, project_id, run_name, run_description, slk_version,
-                        source_kind, source_project_name, goal, state,
-                        current_plan_revision, closure_state, created_at, closed_at,
-                        archive_reason, archived_at, superseded_by_run_id, boundaries_json
-                 FROM runs WHERE run_id=?1",
+                "SELECT project_id, boundaries_json FROM runs WHERE run_id=?1",
                 [run_id],
-                |row| {
-                    Ok((
-                        RunSummary {
-                            run_id: row.get(0)?,
-                            project_id: row.get(1)?,
-                            run_name: row.get(2)?,
-                            run_description: row.get(3)?,
-                            slk_version: row.get(4)?,
-                            source_kind: row.get(5)?,
-                            source_project_name: row.get(6)?,
-                            goal: row.get(7)?,
-                            state: row.get(8)?,
-                            current_plan_revision: row.get(9)?,
-                            closure_state: row.get(10)?,
-                            created_at: row.get(11)?,
-                            closed_at: row.get(12)?,
-                            archive_reason: row.get(13)?,
-                            archived_at: row.get(14)?,
-                            superseded_by_run_id: row.get(15)?,
-                        },
-                        row.get(16)?,
-                    ))
-                },
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
-        let (summary, boundaries_json) =
+        let (project_id, boundaries_json) =
             row.ok_or_else(|| StateError::RunNotFound(run_id.to_string()))?;
+        let summary = load_run_summaries(&connection, Some(&project_id))?
+            .into_iter()
+            .find(|summary| summary.run_id == run_id)
+            .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))?;
         Ok(RunProjection {
             schema_version: SCHEMA_VERSION as u32,
             summary,
@@ -280,6 +251,7 @@ impl StateStore {
             events: load_events(&connection, run_id)?,
             token_history: load_tokens(&connection, run_id)?,
             evidence: load_evidence(&connection, run_id)?,
+            operational_observations: load_operational_observations(&connection, run_id)?,
         })
     }
 
@@ -338,6 +310,154 @@ impl StateStore {
             json!({"schema_version":"slk.bi.evidence/v1","run_id":run_id,"evidence":projection.evidence}),
         )
     }
+}
+
+fn load_run_summaries(
+    connection: &Connection,
+    project_id: Option<&str>,
+) -> Result<Vec<RunSummary>, StateError> {
+    let (sql, value) = if let Some(project_id) = project_id {
+        (
+            "SELECT r.run_id, r.project_id, r.run_name, r.run_description, r.slk_version,
+                        r.source_kind, r.source_project_name, r.goal, r.state,
+                        r.current_plan_revision, r.closure_state, r.created_at, r.closed_at,
+                        r.archive_reason, r.archived_at, r.superseded_by_run_id,
+                        l.predecessor_run_id
+                 FROM runs r LEFT JOIN run_lineage l ON l.successor_run_id=r.run_id
+                 WHERE r.project_id=?1 ORDER BY r.created_at DESC, r.run_id",
+            Some(project_id),
+        )
+    } else {
+        (
+            "SELECT r.run_id, r.project_id, r.run_name, r.run_description, r.slk_version,
+                        r.source_kind, r.source_project_name, r.goal, r.state,
+                        r.current_plan_revision, r.closure_state, r.created_at, r.closed_at,
+                        r.archive_reason, r.archived_at, r.superseded_by_run_id,
+                        l.predecessor_run_id
+                 FROM runs r LEFT JOIN run_lineage l ON l.successor_run_id=r.run_id
+                 ORDER BY r.created_at DESC, r.run_id",
+            None,
+        )
+    };
+    let mut statement = connection.prepare(sql)?;
+    let mapper = |row: &rusqlite::Row<'_>| {
+        Ok(RunSummary {
+            run_id: row.get(0)?,
+            project_id: row.get(1)?,
+            run_name: row.get(2)?,
+            run_description: row.get(3)?,
+            slk_version: row.get(4)?,
+            source_kind: row.get(5)?,
+            source_project_name: row.get(6)?,
+            goal: row.get(7)?,
+            state: row.get(8)?,
+            current_plan_revision: row.get(9)?,
+            closure_state: row.get(10)?,
+            created_at: row.get(11)?,
+            closed_at: row.get(12)?,
+            archive_reason: row.get(13)?,
+            archived_at: row.get(14)?,
+            superseded_by_run_id: row.get(15)?,
+            predecessor_run_id: row.get(16)?,
+            lineage_root_run_id: row.get(0)?,
+            identity_state: String::new(),
+        })
+    };
+    let rows = match value {
+        Some(project_id) => statement.query_map([project_id], mapper)?,
+        None => statement.query_map([], mapper)?,
+    };
+    let runs = rows.collect::<Result<Vec<_>, _>>()?;
+    Ok(annotate_run_identities(runs))
+}
+
+fn annotate_run_identities(mut runs: Vec<RunSummary>) -> Vec<RunSummary> {
+    let predecessors = runs
+        .iter()
+        .map(|run| (run.run_id.clone(), run.predecessor_run_id.clone()))
+        .collect::<HashMap<_, _>>();
+    let advertised_successors = runs
+        .iter()
+        .filter_map(|run| {
+            run.superseded_by_run_id
+                .as_ref()
+                .map(|successor| (successor.clone(), run.run_id.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let successors = runs
+        .iter()
+        .filter_map(|run| {
+            run.predecessor_run_id
+                .as_ref()
+                .map(|predecessor| (predecessor.clone(), run.run_id.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut orphaned = HashSet::new();
+
+    for run in &mut runs {
+        let mut current = run.run_id.clone();
+        let mut seen = HashSet::new();
+        while let Some(Some(predecessor)) = predecessors.get(&current) {
+            if !seen.insert(current.clone()) || !predecessors.contains_key(predecessor) {
+                orphaned.extend(seen.iter().cloned());
+                orphaned.insert(run.run_id.clone());
+                break;
+            }
+            let linked = successors.get(predecessor) == Some(&current)
+                && advertised_successors.get(&current) == Some(predecessor);
+            if !linked {
+                orphaned.insert(predecessor.clone());
+                orphaned.insert(current.clone());
+            }
+            current = predecessor.clone();
+        }
+        run.lineage_root_run_id = current;
+    }
+
+    for run in &runs {
+        if let Some(successor) = &run.superseded_by_run_id {
+            if successors.get(&run.run_id) != Some(successor) {
+                orphaned.insert(run.run_id.clone());
+                orphaned.insert(successor.clone());
+            }
+        }
+        if run.predecessor_run_id.is_none() && advertised_successors.contains_key(&run.run_id) {
+            orphaned.insert(run.run_id.clone());
+            if let Some(predecessor) = advertised_successors.get(&run.run_id) {
+                orphaned.insert(predecessor.clone());
+            }
+        }
+    }
+
+    let mut open_by_root: HashMap<String, usize> = HashMap::new();
+    for run in &runs {
+        if run.closure_state == "open" && run.state != "archived" && run.archived_at.is_none() {
+            *open_by_root
+                .entry(run.lineage_root_run_id.clone())
+                .or_default() += 1;
+        }
+    }
+    for run in &mut runs {
+        run.identity_state = if orphaned.contains(&run.run_id) {
+            "ORPHANED_IDENTITY"
+        } else if open_by_root
+            .get(&run.lineage_root_run_id)
+            .copied()
+            .unwrap_or(0)
+            > 1
+        {
+            "DUPLICATE_ACTIVE_RUN"
+        } else if run.closure_state == "open"
+            && run.state != "archived"
+            && run.archived_at.is_none()
+        {
+            "CURRENT"
+        } else {
+            "HISTORY"
+        }
+        .into();
+    }
+    runs
 }
 
 fn load_go_nodes(connection: &Connection, run_id: &str) -> Result<Vec<GoProjection>, StateError> {
@@ -400,7 +520,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
                 lifecycle, predecessor_role_instance_id, successor_role_instance_id,
                 current_go_id, current_cell_id, created_at, takeover_at, exited_at
          FROM role_instances WHERE run_id=?1
-         ORDER BY CASE role WHEN 'supervisor' THEN 1 WHEN 'checker' THEN 2 ELSE 3 END,
+         ORDER BY CASE role WHEN 'supervisor' THEN 1 WHEN 'checker' THEN 3 ELSE 4 END,
                   created_at, role_instance_id",
     )?;
     let rows = statement.query_map([run_id], |row| {
@@ -424,9 +544,86 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
             takeover_at: row.get(13)?,
             exited_at: row.get(14)?,
             endpoints,
+            binding_mode: None,
         })
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut output = rows.collect::<Result<Vec<_>, _>>()?;
+    let overwatcher: Option<OverwatcherBindingRow> = connection
+        .query_row(
+            "SELECT role_instance_id, agent_runtime, provider, model, reasoning, session_id,
+                    endpoint_version, transport_adapter, host_identity, lifecycle_state,
+                    bound_at, closed_at
+             FROM overwatcher_bindings WHERE run_id=?1",
+            [run_id],
+            |row| {
+                Ok(OverwatcherBindingRow {
+                    role_instance_id: row.get(0)?,
+                    agent_runtime: row.get(1)?,
+                    provider: row.get(2)?,
+                    model: row.get(3)?,
+                    reasoning: row.get(4)?,
+                    session_id: row.get(5)?,
+                    endpoint_version: row.get(6)?,
+                    transport_adapter: row.get(7)?,
+                    host_identity: row.get(8)?,
+                    lifecycle_state: row.get(9)?,
+                    bound_at: row.get(10)?,
+                    closed_at: row.get(11)?,
+                })
+            },
+        )
+        .optional()?;
+    if let Some(overwatcher) = overwatcher {
+        let active = overwatcher.lifecycle_state == "active";
+        output.push(RoleProjection {
+            role: "overwatcher".into(),
+            role_instance_id: overwatcher.role_instance_id,
+            agent_runtime: overwatcher.agent_runtime,
+            provider: overwatcher.provider,
+            model: overwatcher.model,
+            reasoning: overwatcher.reasoning,
+            session_id: overwatcher.session_id.clone(),
+            lifecycle: if active {
+                "active".into()
+            } else {
+                "exited".into()
+            },
+            predecessor_role_instance_id: None,
+            successor_role_instance_id: None,
+            current_go_id: None,
+            current_cell_id: None,
+            created_at: overwatcher.bound_at.clone(),
+            takeover_at: None,
+            exited_at: overwatcher.closed_at.clone(),
+            endpoints: vec![EndpointProjection {
+                endpoint_version: overwatcher.endpoint_version,
+                transport_adapter: overwatcher.transport_adapter,
+                host_identity: overwatcher.host_identity,
+                session_id: overwatcher.session_id,
+                state: if active {
+                    "active".into()
+                } else {
+                    "retired".into()
+                },
+                created_at: overwatcher.bound_at,
+                retired_at: overwatcher.closed_at,
+            }],
+            display_state: if active {
+                "observing".into()
+            } else {
+                overwatcher.lifecycle_state
+            },
+            binding_mode: Some("supervisor_selected".into()),
+        });
+    }
+    output.sort_by_key(|item| match item.role.as_str() {
+        "supervisor" => 1,
+        "overwatcher" => 2,
+        "checker" => 3,
+        "worker" => 4,
+        _ => 5,
+    });
+    Ok(output)
 }
 
 fn load_endpoints(
@@ -566,6 +763,36 @@ fn load_evidence(
             go_id: row.get(6)?,
             cell_id: row.get(7)?,
             created_at: row.get(8)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+fn load_operational_observations(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Vec<OperationalObservationProjection>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT observation_id, overwatcher_role_instance_id, go_id, cell_id, attempt,
+                plan_revision, kind, related_event_id, message_id, evidence_refs_json,
+                details_json, occurred_at
+         FROM operational_observations
+         WHERE run_id=?1 ORDER BY occurred_at, observation_id",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok(OperationalObservationProjection {
+            observation_id: row.get(0)?,
+            overwatcher_role_instance_id: row.get(1)?,
+            go_id: row.get(2)?,
+            cell_id: row.get(3)?,
+            attempt: row.get(4)?,
+            plan_revision: row.get(5)?,
+            kind: row.get(6)?,
+            related_event_id: row.get(7)?,
+            message_id: row.get(8)?,
+            evidence_refs_json: row.get(9)?,
+            details_json: row.get(10)?,
+            occurred_at: row.get(11)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

@@ -25,6 +25,9 @@ export interface RunSummary {
   archive_reason: string | null;
   archived_at: string | null;
   superseded_by_run_id: string | null;
+  predecessor_run_id: string | null;
+  lineage_root_run_id: string;
+  identity_state: "CURRENT" | "HISTORY" | "DUPLICATE_ACTIVE_RUN" | "ORPHANED_IDENTITY";
 }
 
 export interface CellProjection {
@@ -58,7 +61,7 @@ export interface EndpointProjection {
 }
 
 export interface RoleProjection {
-  role: "supervisor" | "checker" | "worker";
+  role: "supervisor" | "overwatcher" | "checker" | "worker";
   role_instance_id: string;
   agent_runtime: string;
   provider: string;
@@ -75,6 +78,7 @@ export interface RoleProjection {
   exited_at: string | null;
   endpoints: EndpointProjection[];
   display_state: string;
+  binding_mode: string | null;
 }
 
 export interface PlanRevisionProjection {
@@ -120,6 +124,21 @@ export interface EvidenceProjection {
   created_at: string;
 }
 
+export interface OperationalObservationProjection {
+  observation_id: string;
+  overwatcher_role_instance_id: string;
+  go_id: string | null;
+  cell_id: string | null;
+  attempt: number | null;
+  plan_revision: number;
+  kind: string;
+  related_event_id: string | null;
+  message_id: string | null;
+  evidence_refs_json: string;
+  details_json: string;
+  occurred_at: string;
+}
+
 export interface ProjectsView {
   schema_version: "slk.bi.projects/v1";
   projects: ProjectSummary[];
@@ -141,6 +160,7 @@ export interface RunView {
   events: EventProjection[];
   token_history: TokenProjection[];
   evidence: EvidenceProjection[];
+  operational_observations: OperationalObservationProjection[];
 }
 
 export interface GraphView {
@@ -207,7 +227,7 @@ export function parseRunsProjection(value: unknown): RunsView {
 export function parseRunProjection(value: unknown): RunView {
   const projection = schema(value, "slk.bi.run/v1");
   object(projection.summary);
-  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence"]) {
+  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "operational_observations"]) {
     collection(projection, key);
   }
   return projection as unknown as RunView;

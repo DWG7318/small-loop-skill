@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from slk_transport.adapters.base import AdapterError
-from slk_transport.adapters.codex import CodexAdapter
+from slk_transport.adapters.codex import CodexAdapter, wait_for_exact_thread_idle
 from slk_transport.contracts import Endpoint, Envelope
 from slk_transport.evidence import AttemptStore
 
@@ -111,3 +111,68 @@ def test_codex_address_is_closed_and_never_accepts_a_title(tmp_path: Path) -> No
         CodexAdapter().validate_address(invalid)
 
     assert error.value.error_code == "CODEX_ADDRESS_INVALID"
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def monotonic(self) -> float:
+        return self.value
+
+    def sleep(self, seconds: float) -> None:
+        self.value += seconds
+
+
+def test_bounded_activation_accepts_busy_then_idle_without_real_sleep() -> None:
+    clock = FakeClock()
+    states = iter(["active", "active", "idle"])
+
+    result = wait_for_exact_thread_idle(
+        lambda: {"thread": {"id": "thr_exact", "status": {"type": next(states)}}},
+        "thr_exact",
+        timeout=1,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+        poll_interval=0.1,
+    )
+
+    assert result["status"]["type"] == "idle"
+    assert clock.value == pytest.approx(0.2)
+
+
+def test_bounded_activation_rejects_permanent_busy_at_deadline() -> None:
+    clock = FakeClock()
+    with pytest.raises(AdapterError) as error:
+        wait_for_exact_thread_idle(
+            lambda: {"thread": {"id": "thr_exact", "status": {"type": "active"}}},
+            "thr_exact",
+            timeout=0.2,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            poll_interval=0.1,
+        )
+    assert error.value.error_code == "CODEX_THREAD_BUSY"
+    assert clock.value == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    ("thread", "error_code"),
+    [
+        ({"id": "wrong", "status": {"type": "idle"}}, "CODEX_THREAD_ID_MISMATCH"),
+        ({"id": "thr_exact", "status": {"type": "failed"}}, "CODEX_THREAD_TERMINAL"),
+    ],
+)
+def test_bounded_activation_rejects_wrong_target_and_terminal_state(
+    thread: dict[str, object], error_code: str
+) -> None:
+    clock = FakeClock()
+    with pytest.raises(AdapterError) as error:
+        wait_for_exact_thread_idle(
+            lambda: {"thread": thread},
+            "thr_exact",
+            timeout=1,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+    assert error.value.error_code == error_code

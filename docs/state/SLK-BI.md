@@ -1,6 +1,6 @@
-# LE BI — SLK 4.0 Read-Only View
+# LE BI — SLK 4.2 Read-Only View
 
-LE BI presents the machine-wide state written by the existing Supervisor, Checker, and Worker. It is a read-only desktop application and does not participate in construction, inspection, transport, recovery, exemption, or closure.
+LE BI presents machine-wide role-authored state plus accepted operational observations. It is a read-only desktop application and does not participate in construction, inspection, transport, recovery, exemption, or closure.
 
 ## Data source
 
@@ -27,7 +27,7 @@ Agents use `slk-bi-query`. The desktop uses the same `slk-state-core` functions 
 
 BI refreshes on window focus and a three-second interval while the window is visible. Hidden windows pause polling. A transient read failure keeps the last successful snapshot visible and labels it stale with the exact error. Missing configuration, an empty data root, an unsupported projection schema, and a read failure have distinct presentation states.
 
-The active surface contains only SLK rows. `source_kind` and `source_project_name` identify independent, CLK-owned, or GLK-owned SLKs for labeling and quiet color grouping. Expansion contains roles/models and CELL facts only; upper-level Chain and Node logic stays outside BI. Closed, abandoned, and superseded SLKs appear only in the archive.
+The active surface contains one row per explicit SLK Run identity. `source_kind` and `source_project_name` identify independent, CLK-owned, or GLK-owned SLKs for labeling and quiet color grouping. Explicit predecessor lineage—not title/project/timestamp similarity—marks `CURRENT`, `HISTORY`, `DUPLICATE_ACTIVE_RUN`, or `ORPHANED_IDENTITY`; conflicts remain visible rather than being merged or deleted. Expansion contains roles/models, CELL facts, and operational observations only; upper-level Chain and Node logic stays outside BI. Closed, abandoned, and superseded SLKs appear only in the archive.
 
 Refresh is observation only. It does not wake an Agent, acknowledge a token, retry transport, change a Run, or write a heartbeat.
 
@@ -37,6 +37,8 @@ Refresh is observation only. It does not wake an Agent, acknowledge a token, ret
 - `Started, not delivered` means the latest authored work fact is unfinished.
 - `Candidate delivered` means candidate submission is recorded.
 - `Awaiting D2` means D1 PASS is recorded and Run closure remains pending.
+- `Run identity conflict` and `Run identity unconfirmed` report duplicate-active or orphaned lineage without guessing a winner.
+- `Activity unproved` means an accepted operational observation invalidated a stale activity claim; it does not reduce or increase D1/D2 progress.
 - `Closed` means `RUN_CLOSED` is recorded.
 
 These labels describe durable facts. They do not prove that a process is currently running, a person is watching, or a native message was delivered. Exact Agent reality is confirmed through the existing role communication path, not by BI inference.
@@ -45,7 +47,7 @@ These labels describe durable facts. They do not prove that a process is current
 
 The Tauri application registers only eight read commands plus the minimal native window capabilities required for drag, pin, minimize, close, and dynamic size. It has no role credential input, state write command, shell plugin, HTTP plugin, updater, telemetry, network listener, or remote content. Role endpoint history exposes runtime, provider, model, reasoning, host, session, adapter, version, and lifecycle, but not credentials or native address payloads.
 
-Only Supervisor, Checker, and Worker can author state through their Run-scoped credentials. Owner, Overwatcher, BI, and other Agents are read-only.
+Supervisor, Checker, and Worker author engineering state through their Run-scoped credentials. A bound Overwatcher has a separate credential for append-only operational observations only. No role, including Overwatcher, receives a BI mutation command; Owner, BI, and other Agents remain read-only.
 
 ## Build and operation
 
@@ -73,7 +75,7 @@ Use an external `CARGO_TARGET_DIR` when source-tree build output is undesirable.
 - **Unsupported schema:** update BI and do not interpret newer fields using an older frontend.
 - **Transient database read:** keep the stale snapshot visible and retry through normal refresh.
 - **Missing evidence file:** retain the evidence record and investigate through the owning SLK role; BI does not repair or remove it.
-- **A role appears active but may not be working:** treat the lifecycle and latest authored fact as records, then use normal Agent communication for reality confirmation.
+- **A role appears active but may not be working:** treat lifecycle and old work facts as records, inspect native activity evidence, and record `ACTIVITY_UNPROVEN` when appropriate; never infer current work from a heartbeat or visible task alone.
 
 ## Future LCaS integration
 

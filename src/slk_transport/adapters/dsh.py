@@ -12,6 +12,7 @@ from typing import Any, Mapping
 from .base import AdapterError
 from ..contracts import RESULT_SCHEMA, DeliveryResult, Endpoint, Envelope
 from ..evidence import Attempt
+from ..process import windows_no_window_kwargs
 
 
 ADDRESS_FIELDS = frozenset(
@@ -202,6 +203,7 @@ class DshAdapter:
                     capture_output=True,
                     timeout=_positive_seconds(endpoint.address["timeout_seconds"]),
                     check=False,
+                    **windows_no_window_kwargs(),
                 )
             except subprocess.TimeoutExpired as exc:
                 stdout = exc.stdout if isinstance(exc.stdout, str) else ""

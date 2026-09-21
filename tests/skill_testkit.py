@@ -13,6 +13,7 @@ EXPECTED_CHILDREN = (
     "slk-select-models",
     "slk-grill-supervisor",
     "slk-manage-team",
+    "slk-overwatch-run",
     "slk-dispatch-cell",
     "slk-execute-cell",
     "slk-check-cell",

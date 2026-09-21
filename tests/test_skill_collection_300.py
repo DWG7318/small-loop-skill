@@ -15,10 +15,10 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.1.1"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.0"
 
 
-def test_collection_has_one_main_and_thirteen_children() -> None:
+def test_collection_has_one_main_and_fourteen_children() -> None:
     actual = tuple(sorted(path.name for path in SKILLS.iterdir() if path.is_dir()))
     assert actual == tuple(sorted(EXPECTED_SKILLS))
 
@@ -245,7 +245,7 @@ def test_d2_reuses_valid_facts_without_repeating_every_cell_or_building_a_framew
 
 def test_recording_keeps_failure_history_without_recursive_proof_materials() -> None:
     record = read_skill("slk-record-run")
-    for marker in ("错误", "返工", "豁免", "摘要", "路径", "当前节点", "证明材料", "实际执行", "推断"):
+    for marker in ("错误", "返工", "豁免", "摘要", "路径", "当前节点", "原始证据", "实际执行", "推断"):
         assert marker in record
 
 
@@ -276,8 +276,8 @@ def test_supervisor_records_before_evidence_is_overwritten_without_becoming_patr
     assert "释义：" not in record
     assert "不要等到最后交接才补写" in record
     assert "不要把简要记录扩成逐命令审计" in record
-    assert "不要为了记录而全程盯着成员" in record
-    assert len(record.splitlines()) <= 37
+    assert "Overwatcher 只写自己的运行观察" in record
+    assert len(record.splitlines()) <= 42
 
 
 def test_local_d0_attempts_are_distinct_from_checker_d1_rework() -> None:
@@ -382,9 +382,9 @@ def test_startup_order_and_creation_authority_are_unambiguous() -> None:
     assert plan.index("$slk-select-models") < plan.index("划分为初始 CELL")
     assert "原对话 ↔ Supervisor" in plan
     assert "Supervisor 创建 Checker，Checker 创建 Worker" in main
-    assert "Checker 职责理解确认" in main
+    assert "结构化角色 Eval" in main
     assert grill.index("$slk-record-run") < grill.index("$slk-manage-team")
-    assert "通过 Grill 后" in record
+    assert "通过 Eval 后" in record
     assert "$slk-manage-team" in record
     assert "复用" in manage and "不重复" in manage
     assert manage.index("Supervisor 创建 Checker") < manage.index(
@@ -417,18 +417,18 @@ def test_d2_readiness_requires_d1_pass_or_supervisor_exemption() -> None:
     assert "D1 PASS or Supervisor exemption" in close.split("---", 2)[1]
 
 
-def test_communication_recovery_routes_only_the_worker_checker_handoff() -> None:
+def test_communication_recovery_preserves_all_original_direct_routes() -> None:
     main = read_skill("small-loop-skill")
     dispatch = read_skill("slk-dispatch-cell")
     recover = read_skill("slk-recover-communication")
     manage = read_skill("slk-manage-team")
 
     assert "Worker 向 Checker" in main
-    assert "$slk-manage-team" in dispatch and "恢复原 Worker" in dispatch
+    assert "$slk-recover-communication" in dispatch
     assert "真实激活" in dispatch and "后台" in dispatch
-    assert "Worker" in recover.split("---", 2)[1]
-    assert "Checker" in recover.split("---", 2)[1]
-    assert "派发、施工、D1或D2节点" not in recover
+    assert "原发送者" in recover and "原有直连" in recover
+    assert "Overwatcher" in recover and "必经 relay" in recover
+    assert "handoff" in recover and "SUPERVISOR_DECISION_REQUIRED" in recover
     assert "subagent" in manage
     assert "不作为正式成员" in manage
 
@@ -437,11 +437,11 @@ def test_cross_agent_delivery_requires_native_activation() -> None:
     main = read_skill("small-loop-skill")
     transport = (ROOT / "docs/transport/SLK-TRANSPORT.md").read_text(encoding="utf-8")
     for marker in (
-        "精确角色端点",
+        "已登记的目标原生 Agent 入口",
         "原生 Agent 入口",
-        "数据库记录不等于投递",
-        "不按对话标题猜测",
-        "不增加确认专用回合",
+        "与消息匹配的原生启动证据",
+        "不增加令牌专用回执",
+        "旧 running、旧 TOKEN、可见消息或 heartbeat 都不证明正在工作",
     ):
         assert marker in main
     for marker in ("active writer", "not activation evidence", "does not claim the receiver or D2 started"):
@@ -457,11 +457,15 @@ def test_every_internal_skill_reference_resolves_to_the_collection() -> None:
         assert references <= known, f"{name}: {sorted(references - known)}"
 
 
-def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> None:
+def test_supervisor_eval_is_closed_versioned_and_runtime_bounded() -> None:
     text = read_skill("slk-grill-supervisor")
     for marker in (
-        "一次只问一个问题",
-        "问题数量",
+        "SLK-ROLE-EVAL.v1.json",
+        "8 个 runtime-critical 场景",
+        "case-pack SHA-256",
+        "validate_role_eval.py",
+        "缺题",
+        "重复题",
         "解释",
         "适用范围",
         "线性",
@@ -473,7 +477,6 @@ def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> N
         "D2",
         "通讯",
         "恢复",
-        "允许误差",
         "豁免不等于 D1 通过",
         "后续 CELL",
         "按需激活",
@@ -484,6 +487,8 @@ def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> N
         "$slk-manage-team",
     ):
         assert marker in text
+    assert "开放式长问答" in text
+    assert "完整 40-case pack" in text
 
 
 def test_manage_team_covers_native_role_creation_recovery_tests_and_archive() -> None:
@@ -504,10 +509,11 @@ def test_manage_team_covers_native_role_creation_recovery_tests_and_archive() ->
         "极端",
         "接管",
         "归档 Worker",
-        "归档 Checker",
+        "Worker、Checker",
         "状态",
         "原生 Agent 端点",
-        "运行时本身是 Codex",
+        "Codex Checker",
+        "Codex Worker",
     ):
         assert marker in text
     assert "不要为了角色可见而额外创建 Codex Checker 或 Worker" in text
@@ -575,7 +581,6 @@ def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:
         "最后一项",
         "真实激活",
         "不增加接收回执轮次",
-        "Supervisor",
         "$slk-record-run",
         "$slk-check-cell",
         "$slk-recover-communication",
@@ -611,7 +616,8 @@ def test_d1_delays_worker_d0_and_reasoning_until_independent_judgment() -> None:
         assert marker in check
     assert "D0 是输入" not in check
     assert "Worker 已说明的风险" not in check
-    assert "D1 前" in record and "角色分区" in record
+    assert "三个工程角色各写自己的事实" in record
+    assert "Checker 的 D1 隔离" in record
 
 
 def test_record_run_preserves_role_history_failures_and_handoff_order() -> None:
@@ -621,7 +627,7 @@ def test_record_run_preserves_role_history_failures_and_handoff_order() -> None:
         "Supervisor",
         "Checker",
         "Worker",
-        "各自",
+        "各写自己的事实",
         "错误",
         "返工",
         "豁免",
@@ -662,7 +668,7 @@ def test_supervisor_is_event_activated_not_a_daily_cell_controller() -> None:
     ):
         assert stale not in active
     for marker in ("按需激活", "日常 CELL", "结束当前活动", "wait_threads"):
-        assert marker in main
+        assert marker in "\n".join((main, read_skill("slk-manage-team")))
     assert "Checker 记录" in record and "Run 进度" in record
     assert "Supervisor 仅在被激活时记录" in record and "继续调整前及时追加" in record
     assert "按需激活" in grill
@@ -733,44 +739,25 @@ def test_rework_reuses_the_dispatch_one_to_two_split() -> None:
 def test_recover_communication_requires_real_activation_and_preserves_checker() -> None:
     text = read_skill("slk-recover-communication")
     for marker in (
-        "send_message_to_thread",
-        "后台聊天记录",
-        "消息未创建",
-        "原令牌编号",
-        "完整原始令牌",
-        "Worker → Supervisor → Checker",
-        "优先恢复原 Checker",
-        "令牌未真实投递不等于 Checker 失效",
+        "slk-transport inspect",
+        "message_id",
+        "endpoint version",
+        "payload SHA-256",
+        "started.json",
+        "retry-exact",
+        "同一 `message_id`",
+        "原发送者",
+        "原有直连",
+        "SUPERVISOR_DECISION_REQUIRED",
         "明确失效",
-        "极端",
-        "接管 Checker",
-        "干净的 D1 恢复信封",
-        "恢复原 Checker 任务",
-        "不是新 CELL",
-        "收到该令牌后",
-        "Worker 任务 ID",
-        "根记录",
-        "Worker 原始 D1 交付原文",
-        "Supervisor 不加入",
-        "D0 结果",
-        "判断过程",
-        "建议关注点",
-        "Supervisor 自己的结论",
-        "通讯故障过程",
-        "Checker → Worker",
-        "结束本次激活",
-        "双向通讯测试",
         "$slk-manage-team",
-        "恢复信封不是令牌所有权转移",
-        "Supervisor 不登记为当前持有者",
-        "向原任务 ID 重发同号的未投递令牌",
-        "成功后由 Checker 登记流转",
+        "Overwatcher",
+        "不 handoff",
+        "最多原样重试一次",
     ):
         assert marker in text
-    assert "已收到，开始检查：CELL n/N" not in text
-    assert "新编号" not in text
-    assert "消息可见且目标对话正在活动" not in text
-    assert "三次不同方式" not in text
+    for forbidden in ("新消息", "更换 receiver", "轮询循环", "daemon", "无限 retry"):
+        assert forbidden in text
     assert "Owner" not in text
     assert "原对话" not in text
 
@@ -790,9 +777,9 @@ def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
         "端到端",
         "关键风险",
         "Checker → Worker → Checker",
-        "归档 Worker",
-        "归档 Checker",
-        "保留 Supervisor",
+        "归档 Worker、Checker",
+        "保留 Supervisor 对话",
+        "Overwatcher",
         "D0",
         "D1",
         "豁免",
@@ -840,7 +827,7 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     ):
         assert stale not in active
 
-    for marker in ("不使用`wait_threads`", "结束当前活动", "真实消息重新激活"):
+    for marker in ("不使用正时长 `wait_threads`", "真实激活操作", "原生启动证据"):
         assert marker in main
     assert "不增加令牌专用回执" in dispatch and "发出完整 CELL 后结束本次激活" in dispatch
     assert "不读取Worker施工状态" in dispatch
@@ -848,9 +835,9 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "发送后结束本轮Worker工作" in execute
     assert "不读取Checker状态" in execute
     assert "令牌到达即开始 D1" in execute
-    assert "发送后结束当前活动" in recover
-    assert "平台明确返回不可用" in recover
-    assert "不读取Checker的D1过程" in recover
+    assert "每次操作结束当前 turn" in recover
+    assert "真实激活返回端点不可用" in recover
+    assert "不重复激活" in recover
     assert "不读取其他成员内部状态" in manage
     assert "不跟踪下一对话" in record
     assert "Loop Engineering 的线性形态" in main
@@ -866,21 +853,50 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "完成自己当前 Loop 节点" in manage
 
 
+def test_optional_overwatcher_never_becomes_authority_or_a_required_relay() -> None:
+    main = read_skill("small-loop-skill")
+    manage = read_skill("slk-manage-team")
+    watch = read_skill("slk-overwatch-run")
+    recover = read_skill("slk-recover-communication")
+
+    for marker in ("可选", "每 Run 最多一个", "不接管三角色通讯", "缺席不阻断工作"):
+        assert marker in main
+    for marker in ("同一 Session 不跨 Run 复用", "独立凭证", "不改变上述三角色直连"):
+        assert marker in manage
+    for marker in (
+        "不直接改 BI",
+        "不使用正时长 `wait_threads`",
+        "exact retry",
+        "归档本 Session",
+        "不要成为第四个工程角色",
+        "不要写 D0/D1/D2",
+    ):
+        assert marker in watch
+    assert "必经 relay" in recover
+
+
+def test_run_identity_is_explicit_and_one_continuation_reuses_its_run_id() -> None:
+    main = read_skill("small-loop-skill")
+    negative = main.split("\n## 负面提示词\n\n", 1)[1]
+    assert "按标题合并 Run" in negative
+    assert "同一实际 Run 的继续过程中另造 run_id" in negative
+
+
 def test_linear_loop_uses_one_registered_native_relay_token_without_a_new_subsystem() -> None:
     main = read_skill("small-loop-skill")
     for marker in (
         "进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`",
         "真实激活操作",
         "已登记的目标原生 Agent 入口",
-        "与消息匹配的原生启动证据才证明该次流转",
-        "同一 Run 全部成功流转中编号最大且身份匹配的令牌才是当前事实",
+        "与消息匹配的原生启动证据才证明流转",
+        "同一 Run 最大且身份匹配的成功令牌才是当前事实",
         "不是新文件、角色、审批或外部状态系统",
         "只在既有 Loop 节点边界流转",
         "不增加令牌专用回执",
         "令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径",
     ):
         assert marker in main
-    assert len(EXPECTED_SKILLS) == 14
+    assert len(EXPECTED_SKILLS) == 15
     assert not any(path.name.startswith("slk-token") for path in SKILLS.iterdir())
 
 
@@ -891,13 +907,13 @@ def test_token_reports_responsibility_without_claiming_live_execution() -> None:
         encoding="utf-8"
     )
     for marker in (
-        "当前令牌",
-        "只证明当前责任与最后已确认边界",
-        "不证明接收者正在实时施工",
-        "旧 running 标记",
-        "后续执行未确认",
+        "当前有效的 `SLK TOKEN`",
+        "当前事实",
+        "不证明正在工作",
+        "旧 running",
+        "活动无法证明",
     ):
-        assert marker in main
+        assert marker in "\n".join((main, read_skill("slk-overwatch-run")))
     assert "当前有效令牌" in record and "最后真实流转" in record
     assert "接收者在令牌激活本轮后的第一步" in record
     assert "先比较编号与身份" in record
@@ -924,7 +940,7 @@ def test_existing_handoffs_move_the_same_token_between_existing_roles() -> None:
     assert "Checker → Worker" in check and "Checker → Supervisor" in check
     assert "Supervisor → Checker" in adjust and "SLK TOKEN" in adjust
     assert "最终令牌" in close and "CLOSED" in close
-    assert "原令牌编号" in recover and "新编号" not in recover
+    assert "同一 `message_id`" in recover and "新消息" in recover
 
 
 def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
@@ -945,9 +961,9 @@ def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
         assert marker in dispatch
     assert "单调递增" in dispatch
     assert "相同或更旧的令牌编号" in execute and "不重开 CELL" in execute
-    assert "只有真实投递成功才结束当前活动" in main
-    assert "同一拟发送编号、内容和接收者重试" in main
-    assert "当前同号未完成节点只从已记录边界续做" in main
+    assert "真实激活操作" in main
+    assert "同一 message、信封、端点和 scope 一次" in main
+    assert "同号或旧号不改指针" in record
     assert "完整工程历史" in record and "不复制整段令牌历史" in record
 
 
@@ -1013,7 +1029,7 @@ def test_state_authority_is_bound_to_existing_roles_without_becoming_a_new_loop_
 
     for marker in ("SQLite", "`slk-state`", "`slk-bi-query`", "只读", "三个角色"):
         assert marker in main
-    for marker in ("中央 SLK 数据根", "自动导出", "SQLite", "三个角色", "Owner"):
+    for marker in ("中央 SLK 数据根", "自动导出", "SQLite", "三个工程角色", "Owner"):
         assert marker in record
     for text in (execute, check, adjust):
         assert "resource-contention.md" in text

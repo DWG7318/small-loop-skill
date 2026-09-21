@@ -9,10 +9,11 @@ use thiserror::Error;
 
 use crate::config::{validate_data_root, ConfigError};
 
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 const MIGRATION_V1: &str = include_str!("../migrations/0001.sql");
 const MIGRATION_V2: &str = include_str!("../migrations/0002.sql");
 const MIGRATION_V3: &str = include_str!("../migrations/0003.sql");
+const MIGRATION_V4: &str = include_str!("../migrations/0004.sql");
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -45,7 +46,7 @@ pub fn open_database(data_root: &Path) -> Result<Connection, SchemaError> {
     match version {
         SCHEMA_VERSION => {}
         0 => migrate_database(&mut connection, version)?,
-        1 | 2 => {
+        1..=3 => {
             create_migration_backup(
                 &connection,
                 data_root,
@@ -122,6 +123,10 @@ fn migration_timestamp() -> String {
 fn migrate_database(connection: &mut Connection, from: i64) -> Result<(), SchemaError> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version == SCHEMA_VERSION {
+        transaction.commit()?;
+        return Ok(());
+    }
     if version != from || !(0..SCHEMA_VERSION).contains(&from) {
         return Err(SchemaError::InvalidMigrationRange {
             from: version,
@@ -136,6 +141,9 @@ fn migrate_database(connection: &mut Connection, from: i64) -> Result<(), Schema
     }
     if from <= 2 {
         transaction.execute_batch(MIGRATION_V3)?;
+    }
+    if from <= 3 {
+        transaction.execute_batch(MIGRATION_V4)?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;

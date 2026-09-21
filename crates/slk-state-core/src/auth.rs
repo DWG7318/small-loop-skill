@@ -60,6 +60,18 @@ pub enum StateError {
     SessionReboundNotAuthorized { actor: Role, target: Role },
     #[error("request role instance does not match authenticated role instance")]
     RoleInstanceMismatch,
+    #[error("Overwatcher binding requires the current Supervisor authority")]
+    OverwatcherBindingNotAuthorized,
+    #[error("Overwatcher binding is invalid: {0}")]
+    OverwatcherBindingInvalid(String),
+    #[error("this Run already has a bound Overwatcher")]
+    OverwatcherAlreadyBound,
+    #[error("this Agent Session is already bound as an Overwatcher")]
+    OverwatcherSessionReused,
+    #[error("Overwatcher observation is invalid: {0}")]
+    OverwatcherObservationInvalid(String),
+    #[error("Overwatcher observation identity was reused with different content")]
+    OverwatcherObservationConflict,
     #[error("Run already exists: {0}")]
     RunAlreadyExists(String),
     #[error("invalid linear plan: {0}")]
@@ -156,6 +168,21 @@ pub fn authorize_event(
     credential: &Credential,
     event: EventType,
 ) -> Result<AuthorizedActor, StateError> {
+    let actor = authorize_role(connection, run_id, credential)?;
+    if !event.is_owned_by(actor.role) {
+        return Err(StateError::RoleNotAuthorized {
+            role: actor.role,
+            event,
+        });
+    }
+    Ok(actor)
+}
+
+pub fn authorize_role(
+    connection: &Connection,
+    run_id: &str,
+    credential: &Credential,
+) -> Result<AuthorizedActor, StateError> {
     let candidate = hash_secret(credential.expose_secret());
     let mut statement = connection.prepare(
         "SELECT c.credential_sha256, c.state, r.role_instance_id, r.role, r.lifecycle
@@ -182,15 +209,65 @@ pub fn authorize_event(
         }
         let role = Role::parse(&role_text)
             .ok_or_else(|| StateError::StoredRoleInvalid(role_text.clone()))?;
-        if !event.is_owned_by(role) {
-            return Err(StateError::RoleNotAuthorized { role, event });
-        }
         return Ok(AuthorizedActor {
             role_instance_id,
             role,
         });
     }
+    drop(rows);
+    drop(statement);
+    if let Ok(role_instance_id) = authorize_overwatcher(connection, run_id, credential) {
+        return Ok(AuthorizedActor {
+            role_instance_id,
+            role: Role::Overwatcher,
+        });
+    }
     Err(StateError::CredentialInvalid)
+}
+
+pub(crate) struct CredentialMaterial {
+    pub credential_id: String,
+    pub credential: Credential,
+    pub credential_sha256: String,
+}
+
+pub(crate) fn new_credential_material() -> CredentialMaterial {
+    let credential_id = format!("credential-{}", Uuid::new_v4().simple());
+    let secret = format!("slk_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    CredentialMaterial {
+        credential_id,
+        credential_sha256: encode_hex(&hash_secret(&secret)),
+        credential: Credential::from_secret(secret),
+    }
+}
+
+pub(crate) fn authorize_overwatcher(
+    connection: &Connection,
+    run_id: &str,
+    credential: &Credential,
+) -> Result<String, StateError> {
+    let candidate = hash_secret(credential.expose_secret());
+    let stored: Option<(String, String, String, String)> = connection
+        .query_row(
+            "SELECT credential_sha256, credential_state, lifecycle_state, role_instance_id
+             FROM overwatcher_bindings WHERE run_id=?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    let Some((stored_text, credential_state, lifecycle_state, role_instance_id)) = stored else {
+        return Err(StateError::CredentialInvalid);
+    };
+    let Some(stored_hash) = decode_hash(&stored_text) else {
+        return Err(StateError::CredentialInvalid);
+    };
+    if !constant_shape_equal(&candidate, &stored_hash) {
+        return Err(StateError::CredentialInvalid);
+    }
+    if credential_state != "active" || lifecycle_state != "active" {
+        return Err(StateError::CredentialRevoked);
+    }
+    Ok(role_instance_id)
 }
 
 fn hash_secret(secret: &str) -> [u8; 32] {

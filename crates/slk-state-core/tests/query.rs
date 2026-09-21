@@ -86,6 +86,80 @@ fn shared_bi_views_have_stable_schemas_and_do_not_expose_credentials() {
 }
 
 #[test]
+fn explicit_run_lineage_projects_one_current_head_and_keeps_independent_runs() {
+    let fixture = Fixture::new();
+    let mut successor = run_request("run-b", "supervisor-b");
+    successor.predecessor_run_id = Some("run-a".into());
+    successor.occurred_at = "2026-09-20T01:00:00Z".into();
+    fixture.store.init_run(successor).unwrap();
+    let mut independent = run_request("run-c", "supervisor-c");
+    independent.occurred_at = "2026-09-20T02:00:00Z".into();
+    fixture.store.init_run(independent).unwrap();
+
+    let runs = fixture.store.list_runs(Some("project-a")).unwrap();
+    let by_id = |id: &str| runs.iter().find(|run| run.run_id == id).unwrap();
+    assert_eq!(by_id("run-a").lineage_root_run_id, "run-a");
+    assert_eq!(by_id("run-a").identity_state, "HISTORY");
+    assert_eq!(by_id("run-b").predecessor_run_id.as_deref(), Some("run-a"));
+    assert_eq!(by_id("run-b").lineage_root_run_id, "run-a");
+    assert_eq!(by_id("run-b").identity_state, "CURRENT");
+    assert_eq!(by_id("run-c").lineage_root_run_id, "run-c");
+    assert_eq!(by_id("run-c").identity_state, "CURRENT");
+}
+
+#[test]
+fn duplicate_active_heads_and_broken_legacy_lineage_are_not_silently_merged() {
+    let fixture = Fixture::new();
+    let mut successor = run_request("run-b", "supervisor-b");
+    successor.predecessor_run_id = Some("run-a".into());
+    successor.occurred_at = "2026-09-20T01:00:00Z".into();
+    fixture.store.init_run(successor).unwrap();
+    let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE runs SET state='active', closure_state='open', closed_at=NULL,
+                    archive_reason=NULL, archived_at=NULL
+             WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+
+    let duplicate = fixture.store.list_runs(Some("project-a")).unwrap();
+    for run_id in ["run-a", "run-b"] {
+        assert_eq!(
+            duplicate
+                .iter()
+                .find(|run| run.run_id == run_id)
+                .unwrap()
+                .identity_state,
+            "DUPLICATE_ACTIVE_RUN"
+        );
+    }
+
+    connection
+        .execute("DELETE FROM run_lineage WHERE successor_run_id='run-b'", [])
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE runs SET state='archived', closure_state='superseded',
+                    superseded_by_run_id='run-b' WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+    let orphaned = fixture.store.list_runs(Some("project-a")).unwrap();
+    for run_id in ["run-a", "run-b"] {
+        assert_eq!(
+            orphaned
+                .iter()
+                .find(|run| run.run_id == run_id)
+                .unwrap()
+                .identity_state,
+            "ORPHANED_IDENTITY"
+        );
+    }
+}
+
+#[test]
 fn role_view_preserves_replacement_and_session_endpoint_history() {
     let fixture = Fixture::new();
     fixture
@@ -151,6 +225,13 @@ impl Fixture {
         let root = tempfile::tempdir().unwrap();
         let store = StateStore::new(root.path());
         let initialized = store.init_run(init_request()).unwrap();
+        let connection = slk_state_core::schema::open_database(root.path()).unwrap();
+        connection
+            .execute(
+                "UPDATE runs SET slk_version='4.2.0' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
         let checker = store
             .register_role(
                 &initialized.supervisor_credential,
@@ -192,6 +273,7 @@ fn init_request() -> InitRunRequest {
             last_known_path: "D:/ProjectA".into(),
         },
         run_id: "run-a".into(),
+        predecessor_run_id: None,
         run_name: None,
         run_description: None,
         source_kind: None,
@@ -232,6 +314,14 @@ fn init_request() -> InitRunRequest {
         supervisor_endpoint: endpoint("supervisor-a"),
         occurred_at: "2026-09-20T00:00:00Z".into(),
     }
+}
+
+fn run_request(run_id: &str, supervisor_id: &str) -> InitRunRequest {
+    let mut request = init_request();
+    request.run_id = run_id.into();
+    request.supervisor = identity(supervisor_id, Role::Supervisor);
+    request.supervisor_endpoint = endpoint(supervisor_id);
+    request
 }
 
 fn register(id: &str, role: Role) -> RegisterRoleRequest {

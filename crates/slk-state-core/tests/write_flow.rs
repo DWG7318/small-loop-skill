@@ -209,6 +209,37 @@ fn multiple_open_slks_may_share_one_project_without_superseding_each_other() {
 }
 
 #[test]
+fn explicit_successor_archives_only_its_predecessor_atomically() {
+    let fixture = Fixture::new();
+    let mut successor = init_request("run-b");
+    successor.predecessor_run_id = Some("run-a".into());
+    successor.supervisor = role("supervisor-b", Role::Supervisor);
+    successor.supervisor_endpoint = endpoint("thread-supervisor-b");
+    successor.occurred_at = "2026-09-20T01:00:00Z".into();
+
+    fixture.store.init_run(successor).unwrap();
+
+    let predecessor = fixture.store.query_run("run-a").unwrap();
+    let current = fixture.store.query_run("run-b").unwrap();
+    assert_eq!(predecessor.summary.closure_state, "superseded");
+    assert_eq!(
+        predecessor.summary.superseded_by_run_id.as_deref(),
+        Some("run-b")
+    );
+    assert_eq!(current.summary.closure_state, "open");
+    assert_eq!(
+        fixture
+            .store
+            .list_runs(Some("project-a"))
+            .unwrap()
+            .iter()
+            .filter(|run| run.closure_state == "open")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn supervisor_can_explicitly_supersede_a_run_and_archive_it() {
     let fixture = Fixture::new();
     let mut superseded = event(
@@ -425,6 +456,13 @@ impl Fixture {
         let root = tempfile::tempdir().unwrap();
         let store = StateStore::new(root.path());
         let initialized = store.init_run(init_request("run-a")).unwrap();
+        let connection = slk_state_core::schema::open_database(root.path()).unwrap();
+        connection
+            .execute(
+                "UPDATE runs SET slk_version='4.2.0' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
         let checker = store
             .register_role(
                 &initialized.supervisor_credential,
@@ -469,6 +507,7 @@ fn init_request(run_id: &str) -> InitRunRequest {
             last_known_path: "D:/ProjectA".into(),
         },
         run_id: run_id.into(),
+        predecessor_run_id: None,
         run_name: Some("Concise Run".into()),
         run_description: Some("One bounded implementation outcome".into()),
         source_kind: Some("clk".into()),
@@ -510,6 +549,7 @@ fn role(role_instance_id: &str, role: Role) -> RoleIdentity {
         role,
         agent_runtime: match role {
             Role::Supervisor => "codex",
+            Role::Overwatcher => "codex",
             Role::Checker => "ocrv",
             Role::Worker => "dsh",
         }

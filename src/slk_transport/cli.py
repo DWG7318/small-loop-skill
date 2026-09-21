@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
@@ -19,9 +18,11 @@ from .adapters.ocrv import OcrvAdapter
 from .contracts import ContractError, Endpoint, Envelope, parse_delivery
 from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
+from .process import windows_no_window_kwargs
+from .recovery import inspect_delivery, retry_exact
 
 
-VERSION = "4.1.1"
+VERSION = "4.2.0"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -113,11 +114,9 @@ def _send(args: argparse.Namespace) -> int:
         "--attempt-root",
         str(attempt_root),
     ]
-    flags = 0
     start_new_session = False
-    if os.name == "nt":
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    else:
+    process_kwargs = windows_no_window_kwargs(detached=True)
+    if not process_kwargs:
         start_new_session = True
     with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
         process = subprocess.Popen(
@@ -126,8 +125,8 @@ def _send(args: argparse.Namespace) -> int:
             stdout=stdout,
             stderr=stderr,
             close_fds=True,
-            creationflags=flags,
             start_new_session=start_new_session,
+            **process_kwargs,
         )
     deadline = time.monotonic() + args.startup_timeout_seconds
     while time.monotonic() < deadline:
@@ -175,15 +174,37 @@ def _drill_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _inspect(args: argparse.Namespace) -> int:
+    endpoint = _read_object(args.endpoint, "endpoint")
+    envelope = _read_object(args.envelope, "envelope")
+    _load_delivery(args.endpoint, args.envelope)
+    _emit(inspect_delivery(args.attempt_root, endpoint, envelope))
+    return 0
+
+
+def _retry_exact(args: argparse.Namespace) -> int:
+    endpoint = _read_object(args.endpoint, "endpoint")
+    envelope = _read_object(args.envelope, "envelope")
+    _load_delivery(args.endpoint, args.envelope)
+    result = retry_exact(
+        args.attempt_root,
+        endpoint,
+        envelope,
+        adapters=ADAPTERS,
+    )
+    _emit(result)
+    return 0 if result["status"] in {"ALREADY_STARTED", "RETRY_COMPLETED"} else 3
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="slk-transport")
     parser.add_argument("--version", action="version", version=f"slk-transport {VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("validate", "job", "send"):
+    for name in ("validate", "job", "send", "inspect", "retry-exact"):
         command = subparsers.add_parser(name)
         command.add_argument("--endpoint", required=True, type=Path)
         command.add_argument("--envelope", required=True, type=Path)
-        if name in {"job", "send"}:
+        if name in {"job", "send", "inspect", "retry-exact"}:
             command.add_argument("--attempt-root", required=True, type=Path)
         if name == "send":
             command.add_argument("--startup-timeout-seconds", type=float, default=30.0)
@@ -201,6 +222,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _send(args)
         if args.command == "drill-verify":
             return _drill_verify(args)
+        if args.command == "inspect":
+            return _inspect(args)
+        if args.command == "retry-exact":
+            return _retry_exact(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")
     except AdapterError as exc:
         return _rejected(exc.error_code, str(exc))

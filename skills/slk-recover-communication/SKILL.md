@@ -1,6 +1,6 @@
 ---
 name: slk-recover-communication
-description: Use when an active Small Loop Skill (SLK) Run has a Worker candidate token that was not truly delivered to its Checker.
+description: Use when an active Small Loop Skill (SLK) Run has an exact delivery without matching native start evidence.
 ---
 
 # Recover SLK Communication
@@ -10,54 +10,21 @@ description: Use when an active Small Loop Skill (SLK) Run has a Worker candidat
 
 ## 当前目标
 
-使用真实的对话激活操作恢复当前 `SLK TOKEN` 的交付通道，并让同一 CELL 回到原定节点。
+用不可变投递证据判断“已经启动”“未确认”或“需要 Supervisor 决策”，在不改变工程语义的前提下最多原样重试一次。没有 Overwatcher 时，原发送者仍按同一规则恢复，Run 不因此停止。
 
-## 真实激活与接收证据
+## 恢复顺序
 
-1. 用 `slk-bi-query` 确认准确目标任务 ID、精确角色端点与原令牌编号，再用 `slk-transport send` 调用对应原生 Agent 入口；Codex Desktop 使用 `send_message_to_thread` 对应的精确任务激活能力。读写数据库或后台聊天记录只说明记录存在，不作为激活。
-2. 重发同一份完整原始令牌，包括 Run、`CELL n/N`、当前节点、接收者、候选身份、下一动作和根记录路径；同一端点重试沿用原 `message_id`、信封、端点版本和原令牌编号，避免把重试变成新工作。
-3. `started.json` 中匹配目标原生身份的启动证据才构成流转证据；成功后用 `slk-state handoff` 推进令牌，失败用 `slk-state write` 追加 `TRANSPORT_FAILED`，旧 running 标记不证明投递。
-4. 发送后结束当前活动；平台明确返回不可用、消息未创建或投递失败时，再用真实激活操作把当前持有令牌、未投递的完整下一令牌、目标任务ID和调用结果装入通讯异常信封交给 Supervisor。恢复信封不是令牌所有权转移，Supervisor 不登记为当前持有者。
+1. 用 `slk-bi-query` 与 `slk-transport inspect` 核对准确 Run/CELL/TOKEN、原 `message_id`、sender/receiver、endpoint version、payload SHA-256 和原生启动证据；旧 running、旧 TOKEN、可见文字或 heartbeat 不证明已启动。
+2. 已有匹配 `started.json` 或完成证据时立即停止，不重复激活、不重做工程工作。
+3. 只有原投递身份完整且没有 native start 证据时，才可调用 `slk-transport retry-exact`；同一 `message_id`、端点、payload 与 scope 最多一次，结果写入确定性 recovery evidence。
+4. 原发送者在匹配 native start 后才用自己的凭证执行 `slk-state handoff`。Overwatcher 若已绑定，可执行检查/原样重试并用 `record-observation` 记录，但不 handoff、不改 TOKEN，也不替发送者写工程事实。
+5. 重试耗尽、证据冲突、身份缺失，或需要改接收者、端点、内容、route、CELL/attempt 时，返回 `SUPERVISOR_DECISION_REQUIRED`；可由 Overwatcher 唤醒 Supervisor，也可沿原有直连上报。不要猜 ID 或创建替代角色。
+6. 每次操作结束当前 turn；不要使用正时长 `wait_threads`、轮询循环、daemon 或无限 retry。
 
-恢复消息路径保持为，令牌在 Checker 收到前仍由原成员持有：
+## 明确失效
 
-```text
-Worker → Supervisor → Checker
-```
+任务 ID 不存在、平台明确失败/取消且无法继续，或真实激活返回端点不可用，才调用 `$slk-manage-team` 做 rebound/replacement。暂时没有回复不等于成员失效。
 
-## Supervisor 恢复原 Checker
+## 负面提示词
 
-令牌未真实投递不等于 Checker 失效。Supervisor 核对准确任务 ID、精确角色端点和原生激活结果，优先恢复原 Checker，并向原任务 ID 重发同号的未投递令牌；会话确需 rebound 时登记递增版本的新端点并退役旧版。成功后由 Checker 登记流转，D1 仍由 Checker 完成。
-
-Supervisor 发送一份干净的 D1 恢复信封，不重新解释工程内容：
-
-```text
-恢复原 Checker 任务，不是新 CELL，也不改变原 D1 目标。
-
-收到该令牌后，请在本次激活中直接开始：
-检查 CELL n/N
-
-Run：<RUN-ID>；当前持有令牌：<Tnnn>；未投递令牌：<Tnnn+1>
-CELL：n/N
-Worker 任务 ID：<WORKER-THREAD-ID>
-根记录：<SLK-RUN文件绝对路径>
-
-以下是 Worker 原始 D1 交付原文，请按原内容继续：
-<Worker 原始 D1 交付原文>
-```
-
-Worker 原始 D1 交付沿用 `$slk-execute-cell` 的干净输入：CELL与D1目标、候选身份和位置、客观变更范围、运行候选所需事实及回复目标。Supervisor 不加入 D0 结果、Worker 判断过程、建议关注点、返工历史或 Supervisor 自己的结论。通讯故障过程写入根记录，不进入恢复信封。
-
-原令牌在可见 Checker 对话真实出现后，通讯恢复即完成。Checker 在该次激活中独立执行 D1，再按 `Checker → Worker` 返回 D1 结果；Supervisor 结束本次激活，不读取Checker的D1过程。
-
-创建接管 Checker 属于极端恢复。只有任务 ID 不存在、平台明确显示任务失败或取消且无法继续，或者真实激活操作明确返回该任务不可用时，才把原 Checker 视为明确失效，并调用 `$slk-manage-team` 建立接管 Checker。
-
-如果平台整体缺少可用的真实激活操作，保留原 Checker 和通讯故障事实；后台聊天记录不用于假装恢复，也不凭投递失败创建接管成员。
-
-## 成员恢复
-
-明确失效后调用 `$slk-manage-team`。接管 Checker 读取根记录和当前候选，再与 Supervisor、Worker 完成双向通讯测试。
-
-## 完成后
-
-在根记录追加原令牌编号、通讯情况、尝试方式、恢复成员和实际结果。通道恢复后回到同一 CELL 的原定节点；若本次激活了 Supervisor，恢复完成后由其交还 Checker并结束本次激活。
+- 不要把 exact retry 变成新消息，不要更换 receiver、endpoint、payload、scope 或 token sequence；不要凭发送成功声称已启动，也不要让 Overwatcher 成为必经 relay、推进 TOKEN、修改 BI、判 D1/D2 或接管 Supervisor。

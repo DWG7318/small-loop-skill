@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .adapters.base import AdapterError
+from .process import windows_no_window_kwargs
 
 
 class JsonRpcProcess:
@@ -25,6 +26,7 @@ class JsonRpcProcess:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            **windows_no_window_kwargs(),
         )
         if self._process.stdin is None or self._process.stdout is None or self._process.stderr is None:
             self._process.kill()

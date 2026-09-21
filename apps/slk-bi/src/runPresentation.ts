@@ -125,7 +125,19 @@ function workIntervals(run: RunView, now: Date): Interval[] {
     }
   }
 
+  const activityUnproven = [...run.operational_observations]
+    .filter((observation) => observation.kind === "ACTIVITY_UNPROVEN")
+    .sort((left, right) => Date.parse(left.occurred_at) - Date.parse(right.occurred_at));
   for (const started of open.values()) {
+    const stopped = activityUnproven.find((observation) => {
+      const time = Date.parse(observation.occurred_at);
+      return Number.isFinite(time) && time >= started.start &&
+        (observation.cell_id === null || observation.cell_id === started.cellId);
+    });
+    if (stopped) {
+      intervals.push({ start: started.start, end: Date.parse(stopped.occurred_at), cellId: started.cellId });
+      continue;
+    }
     const role = run.roles.find(
       (candidate) =>
         candidate.role_instance_id === started.author &&
@@ -175,14 +187,34 @@ function currentCellId(run: RunView) {
 }
 
 function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
+  if (run.summary.identity_state === "DUPLICATE_ACTIVE_RUN") return ["Run 身份冲突", "blocked"];
+  if (run.summary.identity_state === "ORPHANED_IDENTITY") return ["Run 身份待确认", "blocked"];
   if (run.summary.closure_state === "closed") return ["已完成", "done"];
   if (run.summary.closure_state === "abandoned") return ["已废弃", "exempt"];
   if (run.summary.closure_state === "superseded") return ["已替代", "exempt"];
-  const event = effectiveEvents(run.events).at(-1)?.event_type;
+  const latestEvent = effectiveEvents(run.events).at(-1);
+  const latestObservation = [...run.operational_observations]
+    .sort((left, right) => Date.parse(left.occurred_at) - Date.parse(right.occurred_at))
+    .at(-1);
+  if (
+    latestObservation &&
+    (!latestEvent || Date.parse(latestObservation.occurred_at) >= Date.parse(latestEvent.occurred_at))
+  ) {
+    if (latestObservation.kind === "ACTIVITY_UNPROVEN") return ["活动无法证明", "blocked"];
+    if (latestObservation.kind === "DELIVERY_UNCONFIRMED") return ["通讯待确认", "blocked"];
+    if (latestObservation.kind === "DELIVERY_RETRYING") return ["通讯恢复中", "active"];
+    if (latestObservation.kind === "RECORD_CONFLICT") return ["记录冲突", "blocked"];
+    if (latestObservation.kind === "RECOVERY_ESCALATED") return ["等待 Supervisor 决策", "blocked"];
+  }
+  const event = latestEvent?.event_type;
   if (event === "WORK_STARTED" || event === "WORK_PROGRESS") return ["Worker 工作中", "active"];
   if (event === "CANDIDATE_SUBMITTED") return ["等待 Checker", "wait"];
   if (event === "D1_STARTED") return ["Checker 检验中", "active"];
-  if (event === "D1_PASSED") return ["等待 D2", "wait"];
+  if (event === "D1_PASSED") {
+    const allCells = cells(run);
+    const allPassed = allCells.length > 0 && allCells.every((cell) => cell.state === "d1_passed");
+    return allPassed ? ["等待 D2", "wait"] : ["等待下一 CELL", "wait"];
+  }
   if (event === "D1_FAILED" || event === "REWORK_REQUESTED") return ["Worker 返工中", "rework"];
   if (event === "D2_STARTED") return ["D2 检验中", "active"];
   if (event === "D2_PASSED" || event === "RUN_CLOSED") return ["已完成", "done"];
@@ -194,6 +226,7 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
     return ["需要处理", "blocked"];
   }
   if (!responsible) return ["等待分配", "wait"];
+  if (responsible.role === "overwatcher") return ["TOKEN 归属异常", "blocked"];
   return [`等待 ${ROLE_LABELS[responsible.role]}`, "wait"];
 }
 

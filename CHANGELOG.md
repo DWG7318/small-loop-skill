@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.2.0
+
+- Added one optional, Supervisor-selected Overwatcher Agent Session per Run for sparse operational observation, exact-message recovery, and semantic escalation; it is dedicated to that Run, archived at closure, and has no engineering, TOKEN, or BI authority.
+- Preserved the original Supervisor ↔ Checker ↔ Worker direct communication and event-driven TOKEN path; absence of Overwatcher does not block dispatch, inspection, recovery, or closure.
+- Added immutable inspect/one-shot exact-retry recovery, explicit Run predecessor lineage and conservative duplicate/orphan identity projection, without a daemon, broker, message bus, or workflow engine.
+- Added a closed 40-case role Eval with 8 runtime-critical cases per role and fail-closed normal/optimized validation for missing, extra, stale, mutated, or falsely claimed answers.
+- Applied hidden/no-window Windows process launch to transport, Codex App Server, DSH, OCRV, and drill helpers; retained bounded fake-clock activation instead of long sleeps or positive-duration `wait_threads`.
+- Corrected LE BI so delivery never increases D1 acceptance, D1 PASS waits for the next CELL until the required set is complete, and operational observations can invalidate stale activity without changing engineering progress.
+
 ## 4.1.1
 
 - Made existing v1/v2 state-store upgrades create and validate a database backup before migration.

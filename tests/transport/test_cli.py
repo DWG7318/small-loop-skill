@@ -119,6 +119,84 @@ def test_send_starts_one_detached_job_and_reports_native_start(tmp_path: Path) -
     assert terminal.is_file()
 
 
+def test_inspect_reports_existing_native_start_without_dispatch(tmp_path: Path) -> None:
+    artifact, endpoint, envelope, _message_id = cli_delivery(tmp_path)
+    attempts = tmp_path / "attempts"
+    delivered = run_cli(
+        artifact,
+        "job",
+        "--endpoint",
+        str(endpoint),
+        "--envelope",
+        str(envelope),
+        "--attempt-root",
+        str(attempts),
+    )
+    assert delivered.returncode == 0
+
+    inspected = run_cli(
+        artifact,
+        "inspect",
+        "--endpoint",
+        str(endpoint),
+        "--envelope",
+        str(envelope),
+        "--attempt-root",
+        str(attempts),
+    )
+
+    assert inspected.returncode == 0
+    assert json.loads(inspected.stdout)["status"] == "ALREADY_STARTED"
+
+
+def test_retry_exact_uses_persisted_identity_and_stops_after_one_attempt(
+    tmp_path: Path,
+) -> None:
+    artifact, endpoint_path, envelope_path, message_id = cli_delivery(tmp_path)
+    attempts = tmp_path / "attempts"
+    endpoint = json.loads(endpoint_path.read_text(encoding="utf-8"))
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    attempt = attempts / "RUN-A" / message_id
+    attempt.mkdir(parents=True)
+    write_json(attempt / "endpoint.json", endpoint)
+    write_json(attempt / "envelope.json", envelope)
+    write_json(
+        attempt / "failed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": message_id,
+            "run_id": "RUN-A",
+            "adapter": "ocrv-checker",
+            "status": "failed",
+            "native_identity": {},
+            "error_code": "DELIVERY_UNCONFIRMED",
+            "evidence": [],
+        },
+    )
+
+    retried = run_cli(
+        artifact,
+        "retry-exact",
+        "--endpoint",
+        str(endpoint_path),
+        "--envelope",
+        str(envelope_path),
+        "--attempt-root",
+        str(attempts),
+    )
+
+    assert retried.returncode == 0
+    assert json.loads(retried.stdout)["status"] == "RETRY_COMPLETED"
+    assert (
+        attempt
+        / "recovery"
+        / "exact-1"
+        / "RUN-A"
+        / message_id
+        / "started.json"
+    ).is_file()
+
+
 def test_validate_rejects_unknown_address_field_before_attempt_creation(tmp_path: Path) -> None:
     artifact, endpoint_path, envelope, _ = cli_delivery(tmp_path)
     endpoint = json.loads(endpoint_path.read_text(encoding="utf-8"))
