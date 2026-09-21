@@ -5,13 +5,12 @@ import { App } from "./App";
 import { fixtureApi } from "./test/fixtures";
 
 describe("SLK BI accessibility boundaries", () => {
-  it("has named navigation, main, inspector, and utility controls", async () => {
+  it("has a named main status surface and native window controls", async () => {
     render(<App api={fixtureApi} />);
-    expect(await screen.findByText("Responsibility: Worker")).toBeVisible();
-    expect(await screen.findByRole("navigation", { name: "Projects and Runs" })).toBeVisible();
-    expect(await screen.findByRole("main")).toBeVisible();
-    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Refresh state" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Toggle theme" })).toBeVisible();
+    expect(await screen.findByRole("main", { name: "SLK Runs" })).toBeVisible();
+    expect(screen.getByRole("list", { name: "进行中的 SLK Runs" })).toBeVisible();
+    for (const name of ["归档箱", "置顶", "最小化", "关闭"]) {
+      expect(screen.getByRole("button", { name })).toBeVisible();
+    }
   });
 });

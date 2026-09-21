@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from skill_testkit import (
@@ -14,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.0.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.1.0"
 
 
 def test_collection_has_one_main_and_thirteen_children() -> None:
@@ -124,7 +125,6 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
     for marker in (
         "更新",
         "Run",
-        "GO",
         "CELL",
         "D0",
         "D1",
@@ -192,7 +192,7 @@ def test_resource_guard_is_planned_before_models_and_cell_sizing() -> None:
     guard = read_skill("slk-guard-resources")
 
     assert main.count("`$slk-guard-resources`") == 1
-    assert plan.index("GO 结果") < plan.index("$slk-guard-resources")
+    assert plan.index("CELL 结果") < plan.index("$slk-guard-resources")
     assert plan.index("$slk-guard-resources") < plan.index("$slk-select-models")
     assert plan.index("$slk-guard-resources") < plan.index("划分为初始 CELL")
     assert "Cargo" in grill and "独占资源" in grill
@@ -220,6 +220,10 @@ def test_checker_separates_product_failure_from_checking_failures() -> None:
     assert "不写为 PASS" in check
     assert "Supervisor" in check
     assert "D1 FAIL：CELL n/N" in check
+    assert "D1 INCOMPLETE：CELL n/N" in check
+    assert "零 finding" in check
+    assert "只有 PASS 或 FAIL 闭合 D1" in check
+    assert "不写 `D1_PASSED` 或 `D1_FAILED`" in check
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -236,11 +240,12 @@ def test_d2_reuses_valid_facts_without_repeating_every_cell_or_building_a_framew
         assert marker in close
     assert "建议最终核对：" not in close
     assert "D1 PASS 不作为 D2 通过证明" in close
+    assert "Supervisor 后补证据不能替代 Checker 的 D1" in close
 
 
 def test_recording_keeps_failure_history_without_recursive_proof_materials() -> None:
     record = read_skill("slk-record-run")
-    for marker in ("错误", "返工", "豁免", "摘要", "路径", "当前节点", "证明材料"):
+    for marker in ("错误", "返工", "豁免", "摘要", "路径", "当前节点", "证明材料", "实际执行", "推断"):
         assert marker in record
 
 
@@ -294,12 +299,12 @@ def test_select_models_matches_capability_to_each_visible_role() -> None:
         "`gpt-5.6-luna` + `xhigh`",
         "只有明显小的 CELL",
         "同一 CELL 第二次 D1 返工",
-        "同一 GO 第一次 D2 返工",
+        "同一 Run 第一次 D2 返工",
         "Luna xhigh → Terra high",
         "Terra high → Sol medium",
         "Terra high → Sol medium；Sol medium → Sol high",
         "第三次 D1",
-        "同一 GO 第二次 D2",
+        "同一 Run 第二次 D2",
         "重新规划当前 CELL",
         "升级只跟随当前 CELL",
         "下一个 CELL 重新从基准线选择",
@@ -430,6 +435,7 @@ def test_communication_recovery_routes_only_the_worker_checker_handoff() -> None
 
 def test_cross_agent_delivery_requires_native_activation() -> None:
     main = read_skill("small-loop-skill")
+    transport = (ROOT / "docs/transport/SLK-TRANSPORT.md").read_text(encoding="utf-8")
     for marker in (
         "精确角色端点",
         "原生 Agent 入口",
@@ -438,6 +444,8 @@ def test_cross_agent_delivery_requires_native_activation() -> None:
         "不增加确认专用回合",
     ):
         assert marker in main
+    for marker in ("active writer", "not activation evidence", "does not claim the receiver or D2 started"):
+        assert marker in transport
 
 
 def test_every_internal_skill_reference_resolves_to_the_collection() -> None:
@@ -478,7 +486,7 @@ def test_supervisor_grill_checks_understanding_without_fixed_exam_or_stop() -> N
         assert marker in text
 
 
-def test_manage_team_covers_visible_creation_recovery_tests_and_archive() -> None:
+def test_manage_team_covers_native_role_creation_recovery_tests_and_archive() -> None:
     text = read_skill("slk-manage-team")
     for marker in (
         "可见",
@@ -498,8 +506,11 @@ def test_manage_team_covers_visible_creation_recovery_tests_and_archive() -> Non
         "归档 Worker",
         "归档 Checker",
         "状态",
+        "原生 Agent 端点",
+        "运行时本身是 Codex",
     ):
         assert marker in text
+    assert "不要为了角色可见而额外创建 Codex Checker 或 Worker" in text
 
 
 def test_dispatch_cell_reality_checks_the_planned_cell_before_handoff() -> None:
@@ -647,12 +658,12 @@ def test_supervisor_is_event_activated_not_a_daily_cell_controller() -> None:
     for stale in (
         "Supervisor 维持 Run 连续推进",
         "Supervisor 怎样保持 Run 连续推进",
-        "Supervisor 记录计划变化、GO 进展",
+        "Supervisor 记录计划变化、Run 进展",
     ):
         assert stale not in active
     for marker in ("按需激活", "日常 CELL", "结束当前活动", "wait_threads"):
         assert marker in main
-    assert "Checker 记录" in record and "GO 进度" in record
+    assert "Checker 记录" in record and "Run 进度" in record
     assert "Supervisor 仅在被激活时记录" in record and "继续调整前及时追加" in record
     assert "按需激活" in grill
 
@@ -688,8 +699,8 @@ def test_adjust_run_keeps_supervisor_authority_and_d1_exemption_clear() -> None:
         "Supervisor",
         "连续 D1",
         "D2",
-        "同一 GO 第一次 D2 返工",
-        "同一 GO 第二次 D2 FAIL",
+        "同一 Run 第一次 D2 返工",
+        "同一 Run 第二次 D2 FAIL",
         "$slk-select-models",
         "重新规划当前修复 CELL",
         "Owner 授权",
@@ -774,7 +785,7 @@ def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
         "D1 PASS",
         "Supervisor 豁免",
         "不把豁免改写为完成",
-        "GO",
+        "各 CELL 结果",
         "衔接",
         "端到端",
         "关键风险",
@@ -855,13 +866,13 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "完成自己当前 Loop 节点" in manage
 
 
-def test_linear_loop_uses_one_visible_relay_token_without_a_new_subsystem() -> None:
+def test_linear_loop_uses_one_registered_native_relay_token_without_a_new_subsystem() -> None:
     main = read_skill("small-loop-skill")
     for marker in (
         "进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`",
         "真实激活操作",
-        "可见目标对话",
-        "令牌在可见目标对话出现才证明该次流转",
+        "已登记的目标原生 Agent 入口",
+        "与消息匹配的原生启动证据才证明该次流转",
         "同一 Run 全部成功流转中编号最大且身份匹配的令牌才是当前事实",
         "不是新文件、角色、审批或外部状态系统",
         "只在既有 Loop 节点边界流转",
@@ -1020,3 +1031,14 @@ def test_state_authority_is_bound_to_existing_roles_without_becoming_a_new_loop_
         assert marker in resource_text
     assert "D2" in close and "slk-state" in close
     assert "新角色" not in resource_text and "后台巡检" not in resource_text
+
+
+def test_slk_public_method_is_run_then_cells_without_go() -> None:
+    active = "\n".join(read_skill(name) for name in EXPECTED_SKILLS)
+    template = (SKILLS / "slk-record-run" / "assets" / "SLK-RUN.template.md").read_text(
+        encoding="utf-8"
+    )
+    assert "一个 SLK 对应一个 Run，Run 直接包含线性 CELL" in read_skill("small-loop-skill")
+    assert "Run → CELL" in read_skill("slk-plan-run")
+    assert re.search(r"\bGO\b", active) is None
+    assert re.search(r"\bGO\b", template) is None

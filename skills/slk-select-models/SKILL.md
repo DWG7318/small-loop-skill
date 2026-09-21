@@ -31,9 +31,9 @@ description: Use when an active Small Loop Skill (SLK) Run needs role-specific m
 
 ## 当前 CELL 的升级阶梯
 
-第一次 D1 FAIL 先用原模型做针对性返工。同一 CELL 第二次 D1 返工，或同一 GO 第一次 D2 返工时，只升级负责当前返工 CELL 的 Worker：小 CELL 路径为 `Luna xhigh → Terra high`，常规路径为 `Terra high → Sol medium`。
+第一次 D1 FAIL 先用原模型做针对性返工。同一 CELL 第二次 D1 返工，或同一 Run 第一次 D2 返工时，只升级负责当前返工 CELL 的 Worker：小 CELL 路径为 `Luna xhigh → Terra high`，常规路径为 `Terra high → Sol medium`。
 
-升级后再次 FAIL，即第三次 D1 或同一 GO 第二次 D2 时，再升级当前 Worker：`Terra high → Sol medium；Sol medium → Sol high`。同时由 Checker 重新规划当前 CELL；D2 情境由 Supervisor 重新规划当前修复 CELL。可以把 CELL 一分为二或另选施工方案，不只依靠继续提高模型。
+升级后再次 FAIL，即第三次 D1 或同一 Run 第二次 D2 时，再升级当前 Worker：`Terra high → Sol medium；Sol medium → Sol high`。同时由 Checker 重新规划当前 CELL；D2 情境由 Supervisor 重新规划当前修复 CELL。可以把 CELL 一分为二或另选施工方案，不只依靠继续提高模型。
 
 升级只跟随当前 CELL。该 CELL 完成或被重新划分后，下一个 CELL 重新从基准线选择；拆出的新 CELL 也按各自实际范围重新选择。Checker 与 Supervisor 不因 D1 或 D2 FAIL 自动升级。
 

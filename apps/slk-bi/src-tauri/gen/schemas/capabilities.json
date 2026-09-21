@@ -1,1 +1,1 @@
-{"main-capability":{"identifier":"main-capability","description":"Minimal read-only capability for the SLK BI main window","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"main-capability":{"identifier":"main-capability","description":"Read-only LE BI window controls; no state mutation capability","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-start-dragging","core:window:allow-minimize","core:window:allow-close","core:window:allow-set-always-on-top","core:window:allow-set-size"]}}

@@ -9,8 +9,10 @@ use thiserror::Error;
 
 use crate::config::{validate_data_root, ConfigError};
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 3;
 const MIGRATION_V1: &str = include_str!("../migrations/0001.sql");
+const MIGRATION_V2: &str = include_str!("../migrations/0002.sql");
+const MIGRATION_V3: &str = include_str!("../migrations/0003.sql");
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -42,7 +44,16 @@ pub fn open_database(data_root: &Path) -> Result<Connection, SchemaError> {
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     match version {
         SCHEMA_VERSION => {}
-        0 => apply_v1(&mut connection)?,
+        0 => {
+            apply_v1(&mut connection)?;
+            apply_v2(&mut connection)?;
+            apply_v3(&mut connection)?;
+        }
+        1 => {
+            apply_v2(&mut connection)?;
+            apply_v3(&mut connection)?;
+        }
+        2 => apply_v3(&mut connection)?,
         found => {
             return Err(SchemaError::UnsupportedVersion {
                 found,
@@ -103,7 +114,7 @@ pub fn create_migration_backup(
 fn apply_v1(connection: &mut Connection) -> Result<(), SchemaError> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version == SCHEMA_VERSION {
+    if version >= 1 {
         transaction.commit()?;
         return Ok(());
     }
@@ -114,6 +125,44 @@ fn apply_v1(connection: &mut Connection) -> Result<(), SchemaError> {
         });
     }
     transaction.execute_batch(MIGRATION_V1)?;
+    transaction.pragma_update(None, "user_version", 1)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn apply_v2(connection: &mut Connection) -> Result<(), SchemaError> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version >= 2 {
+        transaction.commit()?;
+        return Ok(());
+    }
+    if version != 1 {
+        return Err(SchemaError::InvalidMigrationRange {
+            from: version,
+            to: 2,
+        });
+    }
+    transaction.execute_batch(MIGRATION_V2)?;
+    transaction.pragma_update(None, "user_version", 2)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn apply_v3(connection: &mut Connection) -> Result<(), SchemaError> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version == SCHEMA_VERSION {
+        transaction.commit()?;
+        return Ok(());
+    }
+    if version != 2 {
+        return Err(SchemaError::InvalidMigrationRange {
+            from: version,
+            to: SCHEMA_VERSION,
+        });
+    }
+    transaction.execute_batch(MIGRATION_V3)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;
     Ok(())

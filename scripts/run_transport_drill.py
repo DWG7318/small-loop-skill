@@ -197,7 +197,7 @@ def _create_supervisor_thread(
         client.request(
             1,
             "initialize",
-            {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.0.0"}},
+            {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.1.0"}},
             timeout,
         )
         client.notify("initialized", {})
@@ -273,7 +273,7 @@ def _supervisor_starts_first_send(
             client.request(
                 1,
                 "initialize",
-                {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.0.0"}},
+                {"clientInfo": {"name": "slk_transport_drill", "title": "SLK Transport Drill", "version": "4.1.0"}},
                 timeout,
             )
             client.notify("initialized", {})

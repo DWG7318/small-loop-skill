@@ -193,6 +193,72 @@ fn run_closed_updates_the_read_projection_without_moving_the_token() {
 }
 
 #[test]
+fn multiple_open_slks_may_share_one_project_without_superseding_each_other() {
+    let fixture = Fixture::new();
+    let mut replacement = init_request("run-b");
+    replacement.supervisor = role("supervisor-b", Role::Supervisor);
+    replacement.supervisor_endpoint = endpoint("thread-supervisor-b");
+    replacement.occurred_at = "2026-09-20T01:00:00Z".into();
+
+    fixture.store.init_run(replacement).unwrap();
+
+    let previous = fixture.store.query_run("run-a").unwrap();
+    let current = fixture.store.query_run("run-b").unwrap();
+    assert_eq!(previous.summary.closure_state, "open");
+    assert_eq!(current.summary.closure_state, "open");
+}
+
+#[test]
+fn supervisor_can_explicitly_supersede_a_run_and_archive_it() {
+    let fixture = Fixture::new();
+    let mut superseded = event(
+        "run-superseded",
+        EventType::RunSuperseded,
+        json!({"superseded_by_run_id":"run-b"}),
+    );
+    superseded.role_instance_id = "supervisor-a".into();
+    superseded.go_id = None;
+    superseded.cell_id = None;
+    superseded.attempt = None;
+
+    fixture
+        .store
+        .write_event(&fixture.supervisor, superseded)
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.summary.state, "archived");
+    assert_eq!(projection.summary.closure_state, "superseded");
+    assert_eq!(projection.summary.archive_reason.as_deref(), Some("superseded"));
+    assert_eq!(projection.summary.superseded_by_run_id.as_deref(), Some("run-b"));
+}
+
+#[test]
+fn supervisor_can_abandon_an_open_run_without_deleting_its_history() {
+    let fixture = Fixture::new();
+    let mut abandoned = event(
+        "run-abandoned",
+        EventType::RunAbandoned,
+        json!({"reason":"Owner replaced the engineering scheme"}),
+    );
+    abandoned.role_instance_id = "supervisor-a".into();
+    abandoned.go_id = None;
+    abandoned.cell_id = None;
+    abandoned.attempt = None;
+
+    fixture
+        .store
+        .write_event(&fixture.supervisor, abandoned)
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.summary.state, "archived");
+    assert_eq!(projection.summary.closure_state, "abandoned");
+    assert_eq!(projection.summary.archive_reason.as_deref(), Some("abandoned"));
+    assert_eq!(projection.events.last().unwrap().event_type, "RUN_ABANDONED");
+}
+
+#[test]
 fn session_rebound_retires_the_old_endpoint_and_preserves_the_role_credential() {
     let fixture = Fixture::new();
     fixture
@@ -391,6 +457,10 @@ fn init_request(run_id: &str) -> InitRunRequest {
             last_known_path: "D:/ProjectA".into(),
         },
         run_id: run_id.into(),
+        run_name: Some("Concise Run".into()),
+        run_description: Some("One bounded implementation outcome".into()),
+        source_kind: Some("clk".into()),
+        source_project_name: Some("LCapi 多模型接入".into()),
         goal: "Complete one bounded Run".into(),
         boundaries: json!({"write_scope":["src/"]}),
         go_nodes: vec![GoDefinition {

@@ -23,7 +23,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 
 ## 连续未收敛
 
-第三次 D1 FAIL 后先重新规划当前 CELL；调整超出当前 CELL、影响 GO 或 Run 时，Checker 再把完整情况交给 Supervisor。Supervisor 使用 `$slk-adjust-run` 综合考虑继续诊断、形成电脑或环境变更建议、调整路线或暂时豁免。
+第三次 D1 FAIL 后先重新规划当前 CELL；调整超出当前 CELL、影响后续 CELL 或 Run 时，Checker 再把完整情况交给 Supervisor。Supervisor 使用 `$slk-adjust-run` 综合考虑继续诊断、形成电脑或环境变更建议、调整路线或暂时豁免。
 
 ## 负面提示词
 

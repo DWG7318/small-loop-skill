@@ -23,7 +23,7 @@ fn scalar_text(connection: &Connection, sql: &str) -> String {
 }
 
 #[test]
-fn database_enables_wal_foreign_keys_and_all_v1_tables() {
+fn database_enables_wal_foreign_keys_and_all_current_tables() {
     let root = tempfile::tempdir().expect("temporary data root");
     let database = open_database(root.path()).expect("open state database");
 
@@ -36,7 +36,7 @@ fn database_enables_wal_foreign_keys_and_all_v1_tables() {
         database
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap(),
-        1
+        3
     );
 
     for table in TABLES {
@@ -73,7 +73,7 @@ fn future_nonzero_migration_can_create_and_validate_a_backup() {
     let database = open_database(root.path()).expect("open state database");
     seed_history(&database);
 
-    let backup = create_migration_backup(&database, root.path(), 1, 2, "20260920T000000Z")
+    let backup = create_migration_backup(&database, root.path(), 3, 4, "20260920T000000Z")
         .expect("migration backup");
     let copy = Connection::open_with_flags(backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open backup");
@@ -81,6 +81,41 @@ fn future_nonzero_migration_can_create_and_validate_a_backup() {
         .query_row("SELECT COUNT(*) FROM work_events", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[test]
+fn v1_database_migrates_run_identity_and_archive_fields_without_losing_rows() {
+    let root = tempfile::tempdir().expect("temporary data root");
+    let database_path = root.path().join("slk.db");
+    let database = Connection::open(&database_path).unwrap();
+    database
+        .execute_batch(include_str!("../migrations/0001.sql"))
+        .unwrap();
+    database.pragma_update(None, "user_version", 1).unwrap();
+    seed_history(&database);
+    database
+        .execute(
+            "INSERT INTO go_nodes (run_id, go_id, ordinal, title, objective, state) VALUES ('run-a', 'GO-001', 1, 'Concise Run', 'objective', 'planned')",
+            [],
+        )
+        .unwrap();
+    drop(database);
+
+    let migrated = open_database(root.path()).unwrap();
+    let values: (String, String, Option<String>, String, Option<String>, String) = migrated
+        .query_row(
+            "SELECT run_name, slk_version, archived_at, source_kind, source_project_name,
+                    run_description FROM runs WHERE run_id='run-a'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .unwrap();
+    assert_eq!(values.0, "Concise Run");
+    assert_eq!(values.1, "4.0.0");
+    assert_eq!(values.2, None);
+    assert_eq!(values.3, "solo");
+    assert_eq!(values.4, None);
+    assert_eq!(values.5, "");
 }
 
 fn seed_history(database: &Connection) {

@@ -6,10 +6,10 @@ import type { ProjectsView, RunsView, RunView } from "./contracts";
 export interface SlkSnapshot {
   projects: ProjectsView;
   runs: RunsView;
-  run?: RunView;
+  runDetails: RunView[];
 }
 
-export function useSlkData(api: SlkApi, selectedRunId?: string) {
+export function useSlkData(api: SlkApi) {
   const [snapshot, setSnapshot] = useState<SlkSnapshot>();
   const [staleReason, setStaleReason] = useState<string>();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string>();
@@ -18,13 +18,15 @@ export function useSlkData(api: SlkApi, selectedRunId?: string) {
 
   const refresh = useCallback(async () => {
     try {
-      const [projects, runs, run] = await Promise.all([
+      const [projects, runs] = await Promise.all([
         api.projects(),
         api.runs(),
-        selectedRunId ? api.run(selectedRunId) : Promise.resolve(undefined),
       ]);
+      const runDetails = await Promise.all(
+        runs.runs.map((run) => api.run(run.run_id)),
+      );
       if (!mounted.current) return;
-      setSnapshot({ projects, runs, ...(run ? { run } : {}) });
+      setSnapshot({ projects, runs, runDetails });
       setStaleReason(undefined);
       setLastUpdatedAt(new Date().toISOString());
     } catch (error) {
@@ -34,7 +36,7 @@ export function useSlkData(api: SlkApi, selectedRunId?: string) {
     } finally {
       if (mounted.current) setLoading(false);
     }
-  }, [api, selectedRunId]);
+  }, [api]);
 
   useEffect(() => {
     mounted.current = true;

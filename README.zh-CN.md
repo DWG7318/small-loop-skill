@@ -1,8 +1,8 @@
 # Small Loop Skill（SLK）
 
-当前版本：**4.0.0**
+当前版本：**4.1.0**
 
-SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。GO 与 CELL 沿一条线性路径推进。
+SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。一个 SLK 就是一个 Run，Run 直接包含一条线性 CELL 路径。
 
 ## 核心关系
 
@@ -13,7 +13,7 @@ CELL 派发 → Worker 施工与 D0 → 候选 → Checker 隔离 D1 → 通过/
 ```
 
 ```text
-规划 Run/GO/检查 → 选择角色模型 → 划分初始 CELL
+规划 Run/检查 → 选择角色模型 → 划分初始 CELL
 → 原对话创建 Supervisor 并交接 → Supervisor Grill → 根记录
 → Supervisor 创建 Checker → Checker 职责确认 → Checker 创建 Worker
 → 通讯测试 → 第一个 CELL
@@ -29,11 +29,11 @@ RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Co
 
 跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。数据库行、后台消息或按对话标题匹配都不等于投递；只有精确原生启动证据成立后，当前发送者才完成交接，否则继续持有责任。操作说明见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
 
-## 4.0 状态与 BI
+## 4.0 状态与 LE BI
 
-SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 BI。Supervisor、Checker、Worker 只通过经过身份验证的 `slk-state` CLI 写入各自原有事实；数据库不调度施工，也不增加第四个角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，BI 则显示同一组投影，不暴露凭据或写入入口。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md)、[`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)、独立的 [`状态核心验收记录`](docs/state/SLK-STATE-ACCEPTANCE.md) 与 [`BI 验收记录`](docs/state/SLK-BI-ACCEPTANCE.md)。
+SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。Supervisor、Checker、Worker 只通过经过身份验证的 `slk-state` CLI 写入各自原有事实；数据库不调度施工，也不增加第四个角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，LE BI 则显示同一组投影，不暴露凭据或写入入口。公开方法结构为 `Run → CELL`；4.0 数据库只为历史数据兼容保留原分组字段，LE BI 不展示该层。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md)、[`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)、独立的 [`状态核心验收记录`](docs/state/SLK-STATE-ACCEPTANCE.md) 与 [`BI 验收记录`](docs/state/SLK-BI-ACCEPTANCE.md)。
 
-BI 只显示已经记录的事实，不确认消息是否真正投递，不凭旧事件推断当前进程存活，不恢复通讯，也不修改 Run。未来 LCaS rc.08/rc.09 可以嵌入这些读取组件；SLK 4.0 的当前运行不依赖该集成。
+LE BI 把所有活动 SLK 作为精简横条显示，不论其为独立 SLK，还是属于某个 CLK/GLK 项目。展开后只显示该 SLK 的三角色、模型与 CELL 记录；完成、废弃或被替代的 SLK 立即进入归档箱。BI 不确认消息是否真正投递，不凭旧事件推断当前进程存活，不恢复通讯，也不修改 Run。未来 LCaS rc.08/rc.09 可以嵌入这些读取组件；SLK 4.0 的当前运行不依赖该集成。
 
 ## Skill 集合
 
@@ -53,6 +53,8 @@ Supervisor 初始化 Run 及第一版施工方案。Worker、Checker、Superviso
 ## 安装
 
 把 `skills/` 下 14 个目录作为同级目录放入 Codex Skill 根目录。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
+
+新电脑还需一次性配置 DSH、OCRV、跨 Agent 传输与状态工具；完整步骤见 [`SLK 4.0 Windows 运行环境配置指引`](docs/runtime/SLK-WINDOWS-RUNTIME.md)。这些机器级组件由多个项目复用，不随每个项目重复安装。
 
 ## 验证
 

@@ -1,6 +1,6 @@
-# SLK 4.0 Read-Only BI
+# LE BI — SLK 4.0 Read-Only View
 
-SLK BI presents the machine-wide state written by the existing Supervisor, Checker, and Worker. It is a read-only desktop application and does not participate in construction, inspection, transport, recovery, exemption, or closure.
+LE BI presents the machine-wide state written by the existing Supervisor, Checker, and Worker. It is a read-only desktop application and does not participate in construction, inspection, transport, recovery, exemption, or closure.
 
 ## Data source
 
@@ -25,7 +25,9 @@ Agents use `slk-bi-query`. The desktop uses the same `slk-state-core` functions 
 
 ## Refresh and stale data
 
-BI refreshes on an explicit refresh request, window focus, and a three-second interval while the window is visible. Hidden windows pause polling. A transient read failure keeps the last successful snapshot visible and labels it stale with the exact error. Missing configuration, an empty data root, an unsupported projection schema, and a read failure have distinct presentation states.
+BI refreshes on window focus and a three-second interval while the window is visible. Hidden windows pause polling. A transient read failure keeps the last successful snapshot visible and labels it stale with the exact error. Missing configuration, an empty data root, an unsupported projection schema, and a read failure have distinct presentation states.
+
+The active surface contains only SLK rows. `source_kind` and `source_project_name` identify independent, CLK-owned, or GLK-owned SLKs for labeling and quiet color grouping. Expansion contains roles/models and CELL facts only; upper-level Chain and Node logic stays outside BI. Closed, abandoned, and superseded SLKs appear only in the archive.
 
 Refresh is observation only. It does not wake an Agent, acknowledge a token, retry transport, change a Run, or write a heartbeat.
 
@@ -41,7 +43,7 @@ These labels describe durable facts. They do not prove that a process is current
 
 ## Security boundary
 
-The Tauri application registers only eight read commands and the default core capability. It has no role credential input, write command, shell plugin, HTTP plugin, updater, telemetry, network listener, or remote content. Role endpoint history exposes runtime, provider, model, reasoning, host, session, adapter, version, and lifecycle, but not credentials or native address payloads.
+The Tauri application registers only eight read commands plus the minimal native window capabilities required for drag, pin, minimize, close, and dynamic size. It has no role credential input, state write command, shell plugin, HTTP plugin, updater, telemetry, network listener, or remote content. Role endpoint history exposes runtime, provider, model, reasoning, host, session, adapter, version, and lifecycle, but not credentials or native address payloads.
 
 Only Supervisor, Checker, and Worker can author state through their Run-scoped credentials. Owner, Overwatcher, BI, and other Agents are read-only.
 

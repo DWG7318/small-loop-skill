@@ -11,12 +11,20 @@ export interface ProjectSummary {
 export interface RunSummary {
   run_id: string;
   project_id: string;
+  run_name: string;
+  run_description: string;
+  slk_version: string;
+  source_kind: "solo" | "clk" | "glk";
+  source_project_name: string | null;
   goal: string;
   state: string;
   current_plan_revision: number;
   closure_state: string;
   created_at: string;
   closed_at: string | null;
+  archive_reason: string | null;
+  archived_at: string | null;
+  superseded_by_run_id: string | null;
 }
 
 export interface CellProjection {

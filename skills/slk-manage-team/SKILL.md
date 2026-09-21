@@ -1,6 +1,6 @@
 ---
 name: slk-manage-team
-description: Use when an active Small Loop Skill (SLK) Run is establishing, recovering, replacing, or archiving its visible project conversations.
+description: Use when an active Small Loop Skill (SLK) Run is establishing, recovering, replacing, or retiring its registered role endpoints.
 ---
 
 # Manage the SLK Team
@@ -10,7 +10,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 ## 当前目标
 
-让 Supervisor、Checker、Worker 以项目中的可见对话存在，并在建立、接管和归档时保持清楚的任务 ID、关系和状态。
+让 Supervisor、Checker、Worker 以登记的原生 Agent 端点存在，并在建立、接管和归档时保持清楚的运行时身份、任务或会话 ID、关系和状态；只有运行时本身是 Codex 时才要求对应可见对话。
 
 ## 建立成员组
 
@@ -18,16 +18,16 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 `$slk-plan-run` 已完成原对话 ↔ Supervisor 通讯测试时，任务 ID 与通道没有变化就复用已记录结果，不重复测试。接着建议按顺序进行：
 
-1. Supervisor 创建 Checker，并确认它是项目任务列表中的可见对话；
+1. Supervisor 创建 Checker（外部运行时为创建或启动），并确认其登记端点可真实激活；Codex Checker 还要确认是项目任务列表中的可见对话；
 2. 完成 Supervisor ↔ Checker 的双向通讯测试；
 3. 做一次 Checker 理解确认，让 Checker 用当前 Run 说明日常 CELL 派发、D1 隔离、CELL 一分为二、返工和激活 Supervisor 的边界；回答模糊时先解释再确认；
-4. Checker 创建 Worker，并确认它是项目任务列表中的可见对话；
+4. Checker 创建 Worker（外部运行时为创建或启动），并确认其登记端点可真实激活；Codex Worker 还要确认是项目任务列表中的可见对话；
 5. 完成 Checker ↔ Worker 的双向通讯测试；
 6. 完成 Supervisor ↔ Worker 的应急通道测试。
 
-相邻通道服务于正常工作，Supervisor ↔ Worker 在 Checker 通讯异常时协助恢复。成员创建以项目任务列表中的可见对象、准确任务 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
+相邻通道服务于正常工作，Supervisor ↔ Worker 在 Checker 通讯异常时协助恢复。成员建立以运行时返回的真实身份、准确任务 ID 或会话 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
 
-正式成员对应项目任务列表中的可见对话，Owner 能够看到并联系。内部 subagent、隐藏执行或文字中的角色声明不作为正式成员，也不替代上述创建关系与通讯测试。
+正式成员对应已登记、可精确寻址并通过通讯测试的原生 Agent 端点；Codex 角色对应 Owner 可见并可联系的项目对话，DSH、OCRV 等原生角色不因此额外创建 Codex 对话。未登记端点的内部 subagent、隐藏执行或文字角色声明不作为正式成员。
 
 成员创建或更换时，上一级用 `slk-state register-role` 或 `replace-role` 登记真实 Agent、模型、reasoning、session 与端点并领取该角色一次性返回的写凭证。成员组与通讯通道建立后，Supervisor 用首枚 `SLK TOKEN T001` 把第一个待派发 CELL 和日常循环交给 Checker；成员完成自己当前 Loop 节点和必要交接后结束当前活动，不使用`wait_threads`也不读取其他成员内部状态。Supervisor 不接收逐 CELL 汇报，需要上级协助或最终 D2 时再激活。
 
@@ -45,7 +45,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 ## 收尾归档
 
-D2 通过且最终记录完整后，建议按准确任务 ID 先真实归档 Worker、再真实归档 Checker，以返回结果和归档状态确认；失败或未确认如实记录。Supervisor 继续保留，方便 Owner 后续查询。
+D2 通过且最终记录完整后，建议按准确身份先归档 Worker、再归档 Checker：Codex 任务真实归档，其他原生端点退役，并以返回结果和状态确认；失败或未确认如实记录。Supervisor 继续保留，方便 Owner 后续查询。
 
 ## 完成后
 
@@ -54,3 +54,4 @@ D2 通过且最终记录完整后，建议按准确任务 ID 先真实归档 Wor
 ## 负面提示词
 
 - 不要把内部 subagent 或文字中的角色当成项目可见成员；不要只凭发出操作便声称创建、恢复或归档已完成；不要凭暂时无回复更换成员，也不要为防遗漏让 Supervisor 全程盯成员施工。
+- 不要为了角色可见而额外创建 Codex Checker 或 Worker，也不要把已登记的 DSH、OCRV 等原生端点误写成隐藏成员；不要用标题、角色名称或一次启动命令代替精确身份与真实激活证据。

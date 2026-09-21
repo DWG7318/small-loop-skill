@@ -21,12 +21,20 @@ pub struct ProjectSummary {
 pub struct RunSummary {
     pub run_id: String,
     pub project_id: String,
+    pub run_name: String,
+    pub run_description: String,
+    pub slk_version: String,
+    pub source_kind: String,
+    pub source_project_name: Option<String>,
     pub goal: String,
     pub state: String,
     pub current_plan_revision: u32,
     pub closure_state: String,
     pub created_at: String,
     pub closed_at: Option<String>,
+    pub archive_reason: Option<String>,
+    pub archived_at: Option<String>,
+    pub superseded_by_run_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -176,15 +184,20 @@ impl StateStore {
         let connection = open_database_read_only(&self.data_root)?;
         let (sql, value) = if let Some(project_id) = project_id {
             (
-                "SELECT run_id, project_id, goal, state, current_plan_revision, closure_state,
-                        created_at, closed_at FROM runs WHERE project_id=?1
+            "SELECT run_id, project_id, run_name, run_description, slk_version,
+                        source_kind, source_project_name, goal, state,
+                        current_plan_revision, closure_state, created_at, closed_at,
+                        archive_reason, archived_at, superseded_by_run_id
+                 FROM runs WHERE project_id=?1
                  ORDER BY created_at DESC, run_id",
                 Some(project_id),
             )
         } else {
             (
-                "SELECT run_id, project_id, goal, state, current_plan_revision, closure_state,
-                        created_at, closed_at FROM runs
+                "SELECT run_id, project_id, run_name, run_description, slk_version,
+                        source_kind, source_project_name, goal, state,
+                        current_plan_revision, closure_state, created_at, closed_at,
+                        archive_reason, archived_at, superseded_by_run_id FROM runs
                  ORDER BY created_at DESC, run_id",
                 None,
             )
@@ -194,12 +207,20 @@ impl StateStore {
             Ok(RunSummary {
                 run_id: row.get(0)?,
                 project_id: row.get(1)?,
-                goal: row.get(2)?,
-                state: row.get(3)?,
-                current_plan_revision: row.get(4)?,
-                closure_state: row.get(5)?,
-                created_at: row.get(6)?,
-                closed_at: row.get(7)?,
+                run_name: row.get(2)?,
+                run_description: row.get(3)?,
+                slk_version: row.get(4)?,
+                source_kind: row.get(5)?,
+                source_project_name: row.get(6)?,
+                goal: row.get(7)?,
+                state: row.get(8)?,
+                current_plan_revision: row.get(9)?,
+                closure_state: row.get(10)?,
+                created_at: row.get(11)?,
+                closed_at: row.get(12)?,
+                archive_reason: row.get(13)?,
+                archived_at: row.get(14)?,
+                superseded_by_run_id: row.get(15)?,
             })
         };
         let rows = match value {
@@ -216,22 +237,33 @@ impl StateStore {
         let connection = open_database_read_only(&self.data_root)?;
         let row: Option<(RunSummary, String)> = connection
             .query_row(
-                "SELECT run_id, project_id, goal, state, current_plan_revision, closure_state,
-                        created_at, closed_at, boundaries_json FROM runs WHERE run_id=?1",
+                "SELECT run_id, project_id, run_name, run_description, slk_version,
+                        source_kind, source_project_name, goal, state,
+                        current_plan_revision, closure_state, created_at, closed_at,
+                        archive_reason, archived_at, superseded_by_run_id, boundaries_json
+                 FROM runs WHERE run_id=?1",
                 [run_id],
                 |row| {
                     Ok((
                         RunSummary {
                             run_id: row.get(0)?,
                             project_id: row.get(1)?,
-                            goal: row.get(2)?,
-                            state: row.get(3)?,
-                            current_plan_revision: row.get(4)?,
-                            closure_state: row.get(5)?,
-                            created_at: row.get(6)?,
-                            closed_at: row.get(7)?,
+                            run_name: row.get(2)?,
+                            run_description: row.get(3)?,
+                            slk_version: row.get(4)?,
+                            source_kind: row.get(5)?,
+                            source_project_name: row.get(6)?,
+                            goal: row.get(7)?,
+                            state: row.get(8)?,
+                            current_plan_revision: row.get(9)?,
+                            closure_state: row.get(10)?,
+                            created_at: row.get(11)?,
+                            closed_at: row.get(12)?,
+                            archive_reason: row.get(13)?,
+                            archived_at: row.get(14)?,
+                            superseded_by_run_id: row.get(15)?,
                         },
-                        row.get(8)?,
+                        row.get(16)?,
                     ))
                 },
             )
@@ -442,6 +474,8 @@ fn role_display_state(connection: &Connection, role_instance_id: &str) -> rusqli
             | "D1_FAILED"
             | "D2_PASSED"
             | "D2_FAILED"
+            | "RUN_SUPERSEDED"
+            | "RUN_ABANDONED"
             | "RUN_CLOSED",
         ) => "completed",
         _ => "ready",

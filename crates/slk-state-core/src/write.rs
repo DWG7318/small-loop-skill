@@ -78,12 +78,39 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
+            let fallback_name = request
+                .go_nodes
+                .first()
+                .map(|go| go.title.trim())
+                .filter(|title| !title.is_empty())
+                .unwrap_or(request.goal.as_str());
+            let run_name = request
+                .run_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(fallback_name);
+            let run_description = request
+                .run_description
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(request.goal.as_str());
+            let source_kind = request.source_kind.as_deref().unwrap_or("solo");
             transaction.execute(
-                "INSERT INTO runs (run_id, project_id, goal, boundaries_json, state, current_plan_revision, closure_state, created_at)
-                 VALUES (?1, ?2, ?3, ?4, 'active', 1, 'open', ?5)",
+                "INSERT INTO runs
+                 (run_id, project_id, run_name, run_description, slk_version,
+                  source_kind, source_project_name, goal, boundaries_json, state,
+                  current_plan_revision, closure_state, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', 1, 'open', ?10)",
                 params![
                     request.run_id,
                     request.project.project_id,
+                    run_name,
+                    run_description,
+                    env!("CARGO_PKG_VERSION"),
+                    source_kind,
+                    request.source_project_name,
                     request.goal,
                     serde_json::to_string(&request.boundaries)?,
                     request.occurred_at
@@ -663,9 +690,36 @@ impl StateStore {
                     params![request.run_id, cell_id, state],
                 )?;
             }
+            if request.event_type == EventType::RunSuperseded {
+                let successor = request
+                    .details
+                    .get("superseded_by_run_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| StateError::InvalidPlan("RUN_SUPERSEDED requires superseded_by_run_id".into()))?;
+                transaction.execute(
+                    "UPDATE runs
+                     SET state='archived', closure_state='superseded', closed_at=?2,
+                         archive_reason='superseded', archived_at=?2, superseded_by_run_id=?3
+                     WHERE run_id=?1",
+                    params![request.run_id, request.occurred_at, successor],
+                )?;
+            }
+            if request.event_type == EventType::RunAbandoned {
+                transaction.execute(
+                    "UPDATE runs
+                     SET state='archived', closure_state='abandoned', closed_at=?2,
+                         archive_reason='abandoned', archived_at=?2
+                     WHERE run_id=?1",
+                    params![request.run_id, request.occurred_at],
+                )?;
+            }
             if request.event_type == EventType::RunClosed {
                 transaction.execute(
-                    "UPDATE runs SET state='closed', closure_state='closed', closed_at=?2
+                    "UPDATE runs
+                     SET state='closed', closure_state='closed', closed_at=?2,
+                         archive_reason='completed', archived_at=?2
                      WHERE run_id=?1",
                     params![request.run_id, request.occurred_at],
                 )?;
@@ -768,6 +822,24 @@ fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {
     if request.go_nodes.is_empty() || request.cell_nodes.is_empty() {
         return Err(StateError::InvalidPlan(
             "at least one GO and one CELL are required".into(),
+        ));
+    }
+    let source_kind = request.source_kind.as_deref().unwrap_or("solo");
+    if !matches!(source_kind, "solo" | "clk" | "glk") {
+        return Err(StateError::InvalidPlan(
+            "source_kind must be solo, clk, or glk".into(),
+        ));
+    }
+    if source_kind != "solo"
+        && request
+            .source_project_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none()
+    {
+        return Err(StateError::InvalidPlan(
+            "CLK/GLK source context requires source_project_name".into(),
         ));
     }
     let mut go_ids = BTreeSet::new();

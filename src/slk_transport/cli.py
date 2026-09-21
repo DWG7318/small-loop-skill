@@ -21,7 +21,7 @@ from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
 
 
-VERSION = "4.0.0"
+VERSION = "4.1.0"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),

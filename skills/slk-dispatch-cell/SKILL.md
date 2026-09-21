@@ -14,16 +14,16 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 ## 派发前校准
 
-- 对照当前 GO、前序 CELL 的实际施工、D0/D1、返工表现和真实依赖，动态校准既定 CELL 是否仍处在正确位置；
+- 对照 Run 目标、前序 CELL 的实际施工、D0/D1、返工表现和真实依赖，动态校准既定 CELL 是否仍处在正确位置；
 - 参考 Worker 当前模型、电脑、累积工程量和施工余量，判断范围是否仍然合适；
 - 原验收目标不变而范围明显过大时，可以做一次简单的局部拆分：把 CELL 一分为二，形成两个串行 CELL，并同步 `CELL n/N` 与根 Run 记录；
-- 变化会影响 Run、GO 或验收目标时，建议请 Supervisor 使用 `$slk-adjust-run` 组织调整。
+- 变化会影响 Run 或验收目标时，建议请 Supervisor 使用 `$slk-adjust-run` 组织调整。
 
 这些判断复用已经产生的施工与检验事实，不另设容量检查。
 
 ## 建议交付内容
 
-- `CELL n/N` 与所属 GO；
+- `CELL n/N` 及其在 Run 中的位置；
 - 本 CELL 要实现的目标和可观察结果；
 - 本次施工范围，以及暂时留在后续 CELL 的内容；
 - Worker 需要的相关上下文、入口、候选基线和已有证据；

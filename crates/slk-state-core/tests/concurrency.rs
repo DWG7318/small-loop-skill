@@ -53,6 +53,10 @@ fn request(run_id: &str, project_id: &str) -> InitRunRequest {
             last_known_path: format!("D:/{project_id}"),
         },
         run_id: run_id.into(),
+        run_name: None,
+        run_description: None,
+        source_kind: None,
+        source_project_name: None,
         goal: "Goal".into(),
         boundaries: json!({}),
         go_nodes: vec![GoDefinition {

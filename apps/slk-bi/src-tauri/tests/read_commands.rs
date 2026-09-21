@@ -39,6 +39,10 @@ fn init_request() -> InitRunRequest {
             last_known_path: "D:/ProjectA".into(),
         },
         run_id: "run-a".into(),
+        run_name: None,
+        run_description: None,
+        source_kind: None,
+        source_project_name: None,
         goal: "Read-only BI".into(),
         boundaries: serde_json::json!({}),
         go_nodes: vec![GoDefinition {

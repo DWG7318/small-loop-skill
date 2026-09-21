@@ -35,7 +35,7 @@ native_identity, error_code, evidence
 
 ## Exact adapter addresses
 
-- Codex Supervisor: `command`, exact `thread_id`, absolute `cwd`, `startup_timeout_seconds`, `turn_timeout_seconds`. The adapter resumes that thread ID, verifies it is idle, starts one native turn, and records the exact thread and turn IDs.
+- Codex Supervisor: `command`, exact `thread_id`, absolute `cwd`, `startup_timeout_seconds`, `turn_timeout_seconds`. The adapter resumes that thread ID only when it is idle, starts one native turn, and records the exact thread and turn IDs; an active writer is a delivery failure, not activation evidence.
 - DSH Worker: `command`, Run-scoped `instance_id`, recorded `session_id` or `null` for the first activation, `runtime_root`, absolute `cwd`, `timeout_seconds`. The Worker returns one closed `slk.worker-result/v1`; a successful process exit alone is not completion.
 - OCRV Checker: `command`, `runtime_root`, `timeout_seconds`. `CELL_DISPATCH` creates the exact Worker handoff; `CANDIDATE_READY` produces a closed D1 result with Run, CELL, review invocation, provider, model, session, verdict, and exit identity.
 
@@ -68,7 +68,7 @@ Each attempt is immutable under:
 
 The common files are `endpoint.json`, `envelope.json`, `accepted.json`, `started.json`, `completed.json` or `failed.json`, plus adapter-native stdout, stderr, request, result, and identity evidence when applicable. Job launcher logs are under `<attempt-root>/.jobs/`.
 
-`accepted.json` or a database record does not prove delivery. A matching `started.json` proves native activation. Until that proof exists, the sender retains the same TOKEN and responsibility. After proof, the sender ends its activity instead of watching the receiver.
+`accepted.json` or a database record does not prove delivery. A matching `started.json` proves that the exact native target actually began this message, not merely that a launcher existed or exited. Until that proof exists, the sender retains the same TOKEN and responsibility. After proof, the sender ends its activity instead of watching the receiver.
 
 ## Retry and session rebound
 
@@ -76,7 +76,7 @@ An exact retry reuses the same endpoint, envelope, `message_id`, endpoint versio
 
 When a native task or session is replaced, register a higher endpoint version, mark the old endpoint `retired`, and create the next handoff for the new endpoint identity. A retired endpoint rejects delivery. Session rebound is an identity change, not an excuse to guess by title or reuse an unverified session.
 
-If an adapter explicitly fails or start evidence is absent, the sender follows the existing SLK communication-recovery route. Recovery does not create a receipt-only turn and does not move D0, D1, D2, exemption, or planning authority into the transport.
+If an adapter explicitly fails, reports an active writer, or lacks start evidence, the sender keeps the TOKEN and follows the existing SLK communication-recovery route; it does not claim the receiver or D2 started. Recovery does not create a receipt-only turn and does not move D0, D1, D2, exemption, or planning authority into the transport.
 
 ## Acceptance
 

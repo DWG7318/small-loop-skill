@@ -15,7 +15,14 @@ def test_bi_is_a_read_only_tauri_surface():
     )
 
     assert package["name"] == "slk-bi"
-    assert capability["permissions"] == ["core:default"]
+    assert set(capability["permissions"]) == {
+        "core:default",
+        "core:window:allow-start-dragging",
+        "core:window:allow-minimize",
+        "core:window:allow-close",
+        "core:window:allow-set-always-on-top",
+        "core:window:allow-set-size",
+    }
 
     inspected = [
         BI_ROOT / "package.json",
@@ -36,6 +43,20 @@ def test_bi_is_a_read_only_tauri_surface():
         "allow-write-file",
     ):
         assert forbidden not in source
+
+
+def test_bi_window_is_compact_and_not_maximizable():
+    config = json.loads(
+        (BI_ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8")
+    )
+    window = config["app"]["windows"][0]
+
+    assert window["width"] <= 960
+    assert window["maximizable"] is False
+    assert window["minimizable"] is True
+    assert window["closable"] is True
+    assert window["decorations"] is False
+    assert window["title"] == "LE BI"
 
 
 def test_desktop_and_agent_read_surfaces_share_all_projection_methods():

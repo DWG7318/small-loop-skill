@@ -14,7 +14,7 @@ Supervisor, Checker, and Worker write only the facts owned by their existing SLK
 
 ## State behavior
 
-Every Run has one monotonic token history, one current plan revision, ordered GO/CELL definitions, complete role-instance history, append-only work events, and hashed evidence identities. Role replacement revokes the old credential and endpoint without rewriting history. A session rebound appends a new endpoint version. A changed engineering scheme appends a plan revision. A factual correction is a new authored event whose `corrects_event_id` points to the same role instance's earlier event; the original fact remains intact.
+Every Run has one monotonic token history, one current plan revision, ordered CELL definitions, complete role-instance history, append-only work events, and hashed evidence identities. The public method hierarchy is `Run → CELL`; the original `go_nodes`/`go_id` database fields remain only as a compatibility container for existing 4.0 state and are not shown by LE BI. Role replacement revokes the old credential and endpoint without rewriting history. A session rebound appends a new endpoint version. A changed engineering scheme appends a plan revision. A factual correction is a new authored event whose `corrects_event_id` points to the same role instance's earlier event; the original fact remains intact.
 
 `working` is derived only from the latest authored unfinished event, not from a stale chat status, a token owner, or a BI process. Resource contention leaves the same role, TOKEN, CELL, and rework count in place; see the on-demand SLK resource-continuity reference.
 

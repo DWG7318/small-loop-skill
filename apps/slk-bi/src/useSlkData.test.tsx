@@ -14,6 +14,7 @@ describe("useSlkData", () => {
         return twoRunFixture.projects;
       },
       runs: async () => twoRunFixture.runs,
+      run: async (runId: string) => twoRunFixture.runDetails.find((run) => run.run_id === runId)!,
     } as SlkApi;
 
     const { result } = renderHook(() => useSlkData(api));

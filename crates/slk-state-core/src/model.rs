@@ -43,6 +43,8 @@ pub enum EventType {
     D2Started,
     D2Passed,
     D2Failed,
+    RunSuperseded,
+    RunAbandoned,
     RunClosed,
     CellDispatched,
     D1Started,
@@ -69,7 +71,9 @@ impl EventType {
         use EventType::*;
         match self {
             RunInitialized | PlanRevised | ModelChanged | SessionRebound | ExemptionGranted
-            | D2Started | D2Passed | D2Failed | RunClosed => role == Role::Supervisor,
+            | D2Started | D2Passed | D2Failed | RunSuperseded | RunAbandoned | RunClosed => {
+                role == Role::Supervisor
+            }
             RoleRegistered | RoleReplaced => role == Role::Supervisor || role == Role::Checker,
             CellDispatched | D1Started | D1Passed | D1Failed | ReworkRequested | CellSplit
             | CandidateForwarded => role == Role::Checker,
@@ -93,6 +97,8 @@ impl EventType {
             D2Started => "D2_STARTED",
             D2Passed => "D2_PASSED",
             D2Failed => "D2_FAILED",
+            RunSuperseded => "RUN_SUPERSEDED",
+            RunAbandoned => "RUN_ABANDONED",
             RunClosed => "RUN_CLOSED",
             CellDispatched => "CELL_DISPATCHED",
             D1Started => "D1_STARTED",
@@ -171,6 +177,14 @@ pub struct EndpointIdentity {
 pub struct InitRunRequest {
     pub project: ProjectIdentity,
     pub run_id: String,
+    #[serde(default)]
+    pub run_name: Option<String>,
+    #[serde(default)]
+    pub run_description: Option<String>,
+    #[serde(default)]
+    pub source_kind: Option<String>,
+    #[serde(default)]
+    pub source_project_name: Option<String>,
     pub goal: String,
     pub boundaries: Value,
     pub go_nodes: Vec<GoDefinition>,

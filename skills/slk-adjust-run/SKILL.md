@@ -15,9 +15,9 @@ description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor de
 ## 常见触发
 
 - 连续 D1 返工仍未收敛；
-- D2 发现 CELL 或 GO 之间的衔接问题；
+- D2 发现 CELL 之间的衔接问题；
 - 当前模型、电脑、环境、依赖或独占资源与原计划差异较大；资源占用先按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md) 恢复同一节点；
-- CELL 变化已经影响后续 GO、技术路线、验收目标或 Owner 需求。
+- CELL 变化已经影响后续 CELL、技术路线、验收目标或 Owner 需求。
 
 ## 建议选择
 
@@ -26,7 +26,7 @@ Supervisor 在现有工程权限和资源范围内给出能继续施工的具体
 Supervisor 可以按实际原因组合以下办法：
 
 1. 在现有权限内补充信息、可用资源或验证方式；
-2. 同一 GO 第一次 D2 返工时，使用 `$slk-select-models` 为当前修复 CELL 的 Worker 做第一次升级；同一 GO 第二次 D2 FAIL 时执行第二次升级，并由 Supervisor 重新规划当前修复 CELL。Owner 已指定模型时保留该选择，说明变更理由和影响，再由 Owner 决定是否改变指定；
+2. 同一 Run 第一次 D2 返工时，使用 `$slk-select-models` 为当前修复 CELL 的 Worker 做第一次升级；同一 Run 第二次 D2 FAIL 时执行第二次升级，并由 Supervisor 重新规划当前修复 CELL。Owner 已指定模型时保留该选择，说明变更理由和影响，再由 Owner 决定是否改变指定；
 3. 调整当前或后续 CELL、施工顺序或技术路线，让已验证成果继续被继承；
 4. 解决方案需要 Owner 掌握的电脑、工具、账号、测试环境或业务权限时，提交推荐方案、预期影响、可行替代和最低必要授权；
 5. 同一 CELL 按升级阶梯重新规划后仍未收敛时，Supervisor 可以记录本 CELL 的豁免、实际影响和未来恢复条件，再把当前 Run 的后续 CELL 交还 Checker 继续推进。

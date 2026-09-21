@@ -15,7 +15,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a Worker candidat
 ## 真实激活与接收证据
 
 1. 用 `slk-bi-query` 确认准确目标任务 ID、精确角色端点与原令牌编号，再用 `slk-transport send` 调用对应原生 Agent 入口；Codex Desktop 使用 `send_message_to_thread` 对应的精确任务激活能力。读写数据库或后台聊天记录只说明记录存在，不作为激活。
-2. 重发同一份完整原始令牌，包括 Run、GO、`CELL n/N`、当前节点、接收者、候选身份、下一动作和根记录路径；同一端点重试沿用原 `message_id`、信封、端点版本和原令牌编号，避免把重试变成新工作。
+2. 重发同一份完整原始令牌，包括 Run、`CELL n/N`、当前节点、接收者、候选身份、下一动作和根记录路径；同一端点重试沿用原 `message_id`、信封、端点版本和原令牌编号，避免把重试变成新工作。
 3. `started.json` 中匹配目标原生身份的启动证据才构成流转证据；成功后用 `slk-state handoff` 推进令牌，失败用 `slk-state write` 追加 `TRANSPORT_FAILED`，旧 running 标记不证明投递。
 4. 发送后结束当前活动；平台明确返回不可用、消息未创建或投递失败时，再用真实激活操作把当前持有令牌、未投递的完整下一令牌、目标任务ID和调用结果装入通讯异常信封交给 Supervisor。恢复信封不是令牌所有权转移，Supervisor 不登记为当前持有者。
 
@@ -38,7 +38,6 @@ Supervisor 发送一份干净的 D1 恢复信封，不重新解释工程内容�
 检查 CELL n/N
 
 Run：<RUN-ID>；当前持有令牌：<Tnnn>；未投递令牌：<Tnnn+1>
-GO：<GO-ID>
 CELL：n/N
 Worker 任务 ID：<WORKER-THREAD-ID>
 根记录：<SLK-RUN文件绝对路径>

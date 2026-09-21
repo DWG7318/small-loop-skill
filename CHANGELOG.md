@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.1.0
+
+- Simplified the public SLK hierarchy to `Run → CELL`; retained the original state grouping fields only as a backward-compatible storage detail.
+- Rebuilt the desktop surface as compact read-only **LE BI** with one row per SLK, expandable roles/models and CELL facts, active-work durations, stable CLK/GLK source grouping, and an immediate archive for closed, abandoned, or superseded Runs.
+- Added Run name, description, source identity, explicit supersession, and coexistence of multiple open SLKs within one project without automatic replacement.
+- Aligned CLK composition and GLK Node groups with the same SLK identity while keeping all upper-level Chain/Node logic outside BI.
+
 ## 4.0.0
 
 - Preserved the SLK 3.x Supervisor, Checker, Worker, Run, GO, CELL, D0, D1, D2, rework, exemption, communication, and model-selection method while adding durable cross-Agent execution state.

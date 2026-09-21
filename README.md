@@ -1,8 +1,8 @@
 # Small Loop Skill (SLK)
 
-Current version: **4.0.0**
+Current version: **4.1.0**
 
-SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. GO and CELL work follow one serial path.
+SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. One SLK is one Run, and the Run directly contains one serial CELL path.
 
 ## Core
 
@@ -13,7 +13,7 @@ CELL dispatch → Worker construction + D0 → candidate → isolated Checker D1
 ```
 
 ```text
-Plan Run/GO/checks → select role models → size initial CELLs
+Plan Run/checks → select role models → size initial CELLs
 → Original creates Supervisor and hands off → Supervisor Grill → root record
 → Supervisor creates Checker → Checker readiness → Checker creates Worker
 → communication tests → first CELL
@@ -29,11 +29,11 @@ RTK, Probe CLI, and Ponytail are optional external efficiency aids. They may be 
 
 Cross-Agent handoffs use the accepted `slk-transport` artifact with exact role endpoints and native Agent activation. A database row, background message, or conversation-title match is not delivery; the current sender hands off only after exact native-start evidence and otherwise keeps responsibility. See [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md).
 
-## 4.0 state and BI
+## 4.0 state and LE BI
 
-SLK 4.0 adds one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and a standalone read-only desktop BI. Supervisor, Checker, and Worker write only their own existing facts through the authenticated `slk-state` CLI; the database does not schedule work or add a fourth role. `slk-bi-query` exposes stable read-only JSON for Agents, while BI presents the same projections without credentials or mutation commands. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md), [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md), the independent [`state-core acceptance`](docs/state/SLK-STATE-ACCEPTANCE.md), and [`BI acceptance`](docs/state/SLK-BI-ACCEPTANCE.md).
+SLK 4.0 adds one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and the standalone read-only **LE BI** desktop view. Supervisor, Checker, and Worker write only their own existing facts through the authenticated `slk-state` CLI; the database does not schedule work or add a fourth role. `slk-bi-query` exposes stable read-only JSON for Agents, while LE BI presents the same projections without credentials or mutation commands. The public method is `Run → CELL`; the 4.0 database retains its original grouping fields only for stored-data compatibility and LE BI does not expose them. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md), [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md), the independent [`state-core acceptance`](docs/state/SLK-STATE-ACCEPTANCE.md), and [`BI acceptance`](docs/state/SLK-BI-ACCEPTANCE.md).
 
-BI displays recorded facts only. It does not confirm message delivery, infer current process liveness, repair communication, or modify the Run. Future LCaS rc.08/rc.09 may embed these read components; that integration is not required to operate SLK 4.0.
+LE BI displays active SLK Runs as compact rows, whether independent or owned by a CLK/GLK project. Expanding a row shows only that SLK's roles, models, and CELL records; completed, abandoned, and superseded SLKs move to the archive immediately. BI does not confirm message delivery, infer current process liveness, repair communication, or modify the Run. Future LCaS rc.08/rc.09 may embed these read components; that integration is not required to operate SLK 4.0.
 
 ## Skill collection
 
@@ -53,6 +53,8 @@ Supervisor initializes the Run and its first plan revision. Worker, Checker, and
 ## Install
 
 Place the 14 directories under `skills/` as sibling directories in the Codex Skill root. The main router and 13 focused companion Skills cover planning, resource continuity, model selection, execution, checking, recovery, records, and closure. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
+
+A new Windows machine also needs one-time DSH, OCRV, cross-Agent transport, and state-tool configuration. Follow the [`SLK 4.0 Windows runtime setup guide`](docs/runtime/SLK-WINDOWS-RUNTIME.md). These machine-level components are shared by projects rather than reinstalled for every project.
 
 ## Validation
 
