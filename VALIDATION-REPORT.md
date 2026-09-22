@@ -13,8 +13,9 @@ Each Worker-held TOKEN Overwatcher cycle binds one read-only completion inspecti
 ## Verification gates
 
 - Real R3B CELL03 read-only fixture: PASS. The exact attempt `e180fe95-4913-4eb6-90b6-29ee7261d7c2` produced `WORKER_COMPLETION_HANDOFF_MISSING`, the three missing Worker events, the recorded DSH Session, Worker-02 and Checker-01 identities, and a valid `CANDIDATE_READY` shape for candidate `a28380441913c409a972d2dd7842fab8e1c8d9f8`. Stubbed callbacks wrote only to a disposable system temporary directory; source file hashes were unchanged and no continuation, OCRV start, credential decryption, TOKEN commit, or R3B mutation occurred.
-- Python suite: 243 passed (`python -m pytest -q`).
-- Optimized-mode runtime suite: 170 passed (`python -O -m pytest -q tests/eval tests/transport tests/state tests/install`).
+- Real R3B Worker DPAPI compatibility probe: PASS. The broker accepted the existing 68-character PowerShell UTF-16LE credential without printing or persisting plaintext; no Run state was read or changed beyond the credential file itself.
+- Python suite: 248 passed (`python -m pytest -q`).
+- Optimized-mode runtime suite: 175 passed (`python -O -m pytest -q tests/eval tests/transport tests/state tests/install`).
 - Rust workspace: PASS (`cargo test --workspace --all-targets`).
 - Rust formatting and strict clippy: PASS (`cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`).
 - LE BI: 17 tests passed; TypeScript typecheck and production UI build passed.
@@ -31,6 +32,7 @@ Each Worker-held TOKEN Overwatcher cycle binds one read-only completion inspecti
 - missing or ambiguous source-attempt evidence is rejected instead of defaulting to attempt 1;
 - a historical completed Worker does not receive another cadence of grace;
 - prior notification does not clear an unresolved anomaly on later Overwatcher cycles;
+- invalid DPAPI plaintext encodings, extra embedded NULs, and wrong credential shapes fail closed; only exact UTF-8 or PowerShell UTF-16LE `slk_` credentials are accepted;
 - 4.2.4 retains all revisioned 4.2.3 atomic-start, runtime-revision, active-Overwatcher, TOKEN, and terminal-closure protections.
 
 ## Release boundary

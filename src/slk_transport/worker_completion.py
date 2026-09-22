@@ -607,6 +607,32 @@ def run_worker_continuation(
     }
 
 
+def _decode_dpapi_plaintext(plain: bytes) -> str:
+    """Decode only the two credential encodings produced by supported SLK provisioners."""
+
+    try:
+        if plain.startswith(b"s\x00l\x00k\x00_\x00") and len(plain) % 2 == 0:
+            secret = plain.decode("utf-16-le")
+        elif plain.startswith(b"slk_"):
+            secret = plain.decode("utf-8")
+        else:
+            raise CompletionError(
+                "WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential plaintext is invalid"
+            )
+    except UnicodeDecodeError as exc:
+        raise CompletionError("WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential plaintext is invalid") from exc
+    if secret.endswith("\0"):
+        secret = secret[:-1]
+    suffix = secret[4:]
+    if (
+        not secret.startswith("slk_")
+        or len(suffix) != 64
+        or any(character not in "0123456789abcdef" for character in suffix)
+    ):
+        raise CompletionError("WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential shape is invalid")
+    return secret
+
+
 def unprotect_dpapi_hex(path: Path | str) -> str:
     """Decrypt one CurrentUser DPAPI hex blob without emitting its plaintext."""
 
@@ -634,16 +660,16 @@ def unprotect_dpapi_hex(path: Path | str) -> str:
         raise CompletionError("WORKER_CREDENTIAL_UNAVAILABLE", "DPAPI rejected the Worker credential")
     try:
         plain = ctypes.string_at(outgoing.pbData, outgoing.cbData)
-        secret = plain.decode("utf-8")
-    except (UnicodeDecodeError, ValueError) as exc:
+        secret = _decode_dpapi_plaintext(plain)
+    except CompletionError:
+        raise
+    except ValueError as exc:
         raise CompletionError("WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential plaintext is invalid") from exc
     finally:
         if outgoing.pbData:
             ctypes.memset(outgoing.pbData, 0, outgoing.cbData)
             kernel32.LocalFree(outgoing.pbData)
         ctypes.memset(buffer, 0, len(protected))
-    if not secret.startswith("slk_"):
-        raise CompletionError("WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential shape is invalid")
     return secret
 
 

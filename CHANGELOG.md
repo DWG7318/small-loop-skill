@@ -5,6 +5,7 @@
 - Closed the DSH terminal-without-handoff gap with a bounded same-Session Worker continuation: the original Checker resumes the exact recorded DSH instance/session, while the Worker process alone decrypts its DPAPI credential, writes idempotent `WORK_STARTED`/`D0_COMPLETED`/`CANDIDATE_SUBMITTED`, activates OCRV, verifies exact start evidence, reads a fresh runtime revision, and commits TOKEN atomically.
 - Added `inspect-worker-completion` and a hash-bound Overwatcher cycle invariant. A running Worker and one cadence measured from trustworthy terminal evidence remain clear; a terminal Worker still holding TOKEN without the current CELL/attempt handoff after that cadence must report `WORKER_COMPLETION_HANDOFF_MISSING` and `COMMUNICATION_RECOVERY_REQUIRED` on every unresolved cycle. Old-CELL D1 evidence cannot mask it, and a prior notification suppresses only another notification.
 - Added read-only exact role authentication, 4.2.4 idempotent event replay with conflict rejection, explicit `4.2.3 → 4.2.4` adoption that preserves an active Overwatcher, closed continuation/inspection schemas, and negative role Evals. No scheduler, heartbeat, daemon, new role, BoM path, product mutation, or automatic model change was introduced.
+- The Worker DPAPI broker now strictly accepts both existing UTF-8 credentials and PowerShell-provisioned UTF-16LE credentials with one terminal NUL, while malformed encodings and non-`slk_` credential shapes remain rejected.
 
 ## 4.2.3
 

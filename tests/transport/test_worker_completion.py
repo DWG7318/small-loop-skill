@@ -10,6 +10,7 @@ import pytest
 
 from slk_transport.worker_completion import (
     CompletionError,
+    _decode_dpapi_plaintext,
     build_continuation_request,
     inspect_worker_completion,
     resume_worker_continuation,
@@ -20,12 +21,38 @@ from test_contracts import MESSAGE_ID, endpoint_value, envelope_value
 
 
 FAKE_DSH = Path(__file__).with_name("fake_dsh.py")
+VALID_CREDENTIAL = "slk_" + "a" * 64
 
 
 def write_json(path: Path, value: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize(
+    "plaintext",
+    [
+        VALID_CREDENTIAL.encode("utf-8"),
+        (VALID_CREDENTIAL + "\0").encode("utf-16-le"),
+    ],
+)
+def test_dpapi_plaintext_accepts_existing_utf8_and_powershell_utf16le(plaintext: bytes) -> None:
+    assert _decode_dpapi_plaintext(plaintext) == VALID_CREDENTIAL
+
+
+@pytest.mark.parametrize(
+    "plaintext",
+    [
+        b"\xff\xfe\xfd",
+        ("wrong_" + "a" * 64).encode("utf-8"),
+        (VALID_CREDENTIAL + "\0\0").encode("utf-16-le"),
+    ],
+)
+def test_dpapi_plaintext_rejects_invalid_encoding_and_wrong_credential_shape(plaintext: bytes) -> None:
+    with pytest.raises(CompletionError) as rejected:
+        _decode_dpapi_plaintext(plaintext)
+    assert rejected.value.error_code == "WORKER_CREDENTIAL_UNAVAILABLE"
 
 
 def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[str, object]]:
