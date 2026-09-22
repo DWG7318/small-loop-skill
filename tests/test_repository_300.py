@@ -25,14 +25,14 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.2.4 skill collection" in result.stdout
+    assert "PASS: SLK 4.2.5 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.2.4"
+    assert manifest["version"] == "4.2.5"
     assert manifest["skill_count"] == 15
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -41,7 +41,7 @@ def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     assert "skills/slk-record-run/assets/SLK-RUN.template.md" in paths
 
 
-def test_424_public_runtime_contracts_are_closed_and_versioned() -> None:
+def test_425_public_runtime_contracts_are_closed_and_versioned() -> None:
     contracts = {
         "docs/contracts/slk-transport-task.schema.json": {
             "schema_version", "message_id", "run_id", "go_id", "cell_id",
@@ -76,6 +76,27 @@ def test_424_public_runtime_contracts_are_closed_and_versioned() -> None:
             "worker_result_sha256", "worker_role_instance_id", "worker_instance_id",
             "worker_session_id", "checker_endpoint", "credential_path", "state_command",
             "transport_command", "token_sequence", "occurred_at",
+        },
+        "docs/contracts/slk-ocrv-worker-recovery.schema.json": {
+            "schema_version", "method_version", "recovery_invocation_id",
+            "recovery_envelope_message_id", "run_id", "go_id", "cell_id",
+            "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint",
+            "source_attempt_root", "runtime_projection_path", "plan_revision",
+            "runtime_revision", "token_sequence", "worker_credential_path",
+            "checker_credential_path", "state_command", "transport_command",
+            "occurred_at", "result_path",
+        },
+        "docs/contracts/slk-ocrv-worker-recovery-result.schema.json": {
+            "schema_version", "method_version", "status", "run_id", "cell_id",
+            "source_message_id", "worker_session_id", "checker_role_instance_id",
+            "checker_endpoint_version", "checker_authenticated", "authorized_recovery",
+            "recovery_invocation_id", "request_sha256",
+        },
+        "docs/contracts/slk-overwatcher-cadence-inspection.schema.json": {
+            "schema_version", "run_id", "observed_at", "projected_active",
+            "overwatcher_role_instance_id", "latest_cycle_id",
+            "latest_cycle_completed_at", "cadence_seconds", "elapsed_seconds",
+            "missed_intervals", "status", "anomaly_codes", "action",
         },
     }
     for relative, required in contracts.items():
@@ -112,7 +133,7 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.2.4" in text
+        assert "4.2.5" in text
         assert "14" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
@@ -134,7 +155,7 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog

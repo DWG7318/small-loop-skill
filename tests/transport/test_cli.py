@@ -182,6 +182,15 @@ def test_inspect_worker_completion_cli_returns_anomaly_without_mutating_source(t
     assert not (attempt / "worker-continuation").exists()
 
 
+def test_supervisor_cannot_call_worker_continuation_resume_directly(tmp_path: Path) -> None:
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+
+    rejected = run_cli(artifact, "resume-worker-continuation")
+
+    assert rejected.returncode == 2
+    assert "invalid choice" in rejected.stderr
+
+
 def test_retry_exact_uses_persisted_identity_and_stops_after_one_attempt(
     tmp_path: Path,
 ) -> None:

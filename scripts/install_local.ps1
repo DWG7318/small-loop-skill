@@ -105,7 +105,7 @@ try {
     $oldVersionPath = Join-Path $codexRoot 'tools/slk/share/small-loop-skill/VERSION'
     $oldVersion = if (Test-Path -LiteralPath $oldVersionPath) { (Get-Content -LiteralPath $oldVersionPath -Raw).Trim() } else { 'absent' }
     $safeOldVersion = $oldVersion -replace '[^0-9A-Za-z._-]', '_'
-    $backupRoot = Assert-Within $codexRoot (Join-Path $codexRoot "tools/slk/backups/$safeOldVersion-to-4.2.4-$timestamp")
+    $backupRoot = Assert-Within $codexRoot (Join-Path $codexRoot "tools/slk/backups/$safeOldVersion-to-4.2.5-$timestamp")
     [void][System.IO.Directory]::CreateDirectory($backupRoot)
 
     $mutated = $true
@@ -126,7 +126,7 @@ try {
     }
     [void](Invoke-HiddenPython @($verifyScript, '--root', $codexRoot))
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-    [ordered]@{status='INSTALLED'; version='4.2.4'; backup_root=$backupRoot} | ConvertTo-Json -Compress
+    [ordered]@{status='INSTALLED'; version='4.2.5'; backup_root=$backupRoot} | ConvertTo-Json -Compress
     exit 0
 } catch {
     $message = $_.Exception.Message
@@ -158,7 +158,7 @@ try {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     [ordered]@{
         status=$status
-        version='4.2.4'
+        version='4.2.5'
         error=$message
         active_tree_verified=$rollbackVerified
         backup_root=$backupRoot

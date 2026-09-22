@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-ocrv-worker-recovery-result.schema.json",
+  "title": "SLK authenticated OCRV Worker-completion recovery result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method_version", "status", "run_id", "cell_id", "source_message_id", "worker_session_id", "checker_role_instance_id", "checker_endpoint_version", "checker_authenticated", "authorized_recovery", "recovery_invocation_id", "request_sha256"],
+  "properties": {
+    "schema_version": {"const": "slk.ocrv-worker-recovery-result/v1"},
+    "method_version": {"const": "4.2.5"},
+    "status": {"const": "CHECKER_STARTED"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "cell_id": {"$ref": "#/$defs/identifier"},
+    "source_message_id": {"type": "string", "format": "uuid"},
+    "worker_session_id": {"type": "string", "pattern": "^session-"},
+    "checker_role_instance_id": {"$ref": "#/$defs/identifier"},
+    "checker_endpoint_version": {"type": "integer", "minimum": 1},
+    "checker_authenticated": {"const": true},
+    "authorized_recovery": {"const": true},
+    "recovery_invocation_id": {"type": "string", "format": "uuid"},
+    "request_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

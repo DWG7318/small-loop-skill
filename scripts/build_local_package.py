@@ -37,6 +37,7 @@ DOCUMENT_TREES = (
     "docs/transport",
     "docs/runtime",
     "docs/contracts",
+    "integrations/ocrv",
 )
 SQLITE_SCHEMA_ROOT = "crates/slk-state-core/migrations"
 MANIFEST_SCHEMA = "slk.install-manifest/v1"

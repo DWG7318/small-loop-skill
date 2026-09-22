@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill Collection",
-  "version": "4.2.4",
+  "version": "4.2.5",
   "skill_count": 15,
   "excludes": [
     "MANIFEST.json"
@@ -20,15 +20,15 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "31c66adc3bab68f9184161182118b3f1277fc3c71c99a7c335f05c51ae97f2cc"
+      "sha256": "e77a893c7c7d4ef0da40bfbf2760ecce532a7bc6f04370f083e947220d620a99"
     },
     {
       "path": "Cargo.lock",
-      "sha256": "96cd46e5a38d095db51f4837fc8572f019cf8fb6f8b04c3e2c228dbd8d750e5c"
+      "sha256": "8cf75ba1a8c66f311034a7aa0bbafea463a2a28aabfba1722e5366298d9bf5f8"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "ed20d99d655ab26dadabaee135439504bd681d1befe9b0776b6c46947cdc0314"
+      "sha256": "fc88fe58d6be4a49d7e35c9a9d72166fec51d396553fa447f8a76c115bc5be5d"
     },
     {
       "path": "DESIGN.md",
@@ -40,7 +40,7 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "46dd99ff54902223a3a46587d82fbd677cacf7422cba07f1dc8f59582e1c3a3a"
+      "sha256": "2f4d2c6f5196f127973c86d0057e7aed8f6df3b2ae13e859eeb56d2545a6f8a3"
     },
     {
       "path": "PRODUCT.md",
@@ -48,19 +48,19 @@
     },
     {
       "path": "README.md",
-      "sha256": "35c8d0fc6d7e30efa662bd2b298aa8f70d42d02a72ee3c51b5f06efc8f499bdc"
+      "sha256": "7c32477097c5b671dd65084d194c30684c6f07cecd90d52148778f7363752e77"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "29fae0a75d63152c42630b1a0fc5471d2605af06aa65b2db04035736e034d3e8"
+      "sha256": "ee7f56f6e80541b3d8c4a21fc36abb1a4340fb5128186d034496ba217e99659a"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "8b12a76153d971e05a1eaa11df43ad5e309ac5a55a4855623a3471a061ad3d34"
+      "sha256": "5730c1f6eb4f630a14d401b87e0748182a8d55929baaaeebfc974162ec437992"
     },
     {
       "path": "VERSION",
-      "sha256": "74f517a082180668f5e05dbf4dc168d523e8bd557955754d2d88011d0a0362df"
+      "sha256": "af05c85adb0e255ae14fe4f678439f112437b0b618ce6fd619c8dba788377511"
     },
     {
       "path": "apps/slk-bi/index.html",
@@ -68,7 +68,7 @@
     },
     {
       "path": "apps/slk-bi/package.json",
-      "sha256": "16f10a1a30111b44f8ceb42fa26f15894d33034e39bb42c7ffe9d205715cea3c"
+      "sha256": "7bce3cdd20ca68261efdc3bfa4f96bdce4b227d54fa817a824fcd908a4f4252d"
     },
     {
       "path": "apps/slk-bi/pnpm-lock.yaml",
@@ -328,7 +328,7 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/tauri.conf.json",
-      "sha256": "2441d86ee08874771f8ebfbf15fbf7889d4f87f262e69cc749dbf4a5de611b13"
+      "sha256": "ade4446d643894911ef07d493a140f7335d27585add125078563ce4b49156197"
     },
     {
       "path": "apps/slk-bi/src-tauri/tests/read_commands.rs",
@@ -544,7 +544,7 @@
     },
     {
       "path": "crates/slk-state-core/src/write.rs",
-      "sha256": "bbc26d2f36da6a08124e939ed22b1c9a478ba1e2106f010f20ec6361d2347d8d"
+      "sha256": "f985ce000dd62a07198d6a29b3344fe8bc1efd4789aaa58079344701e4513682"
     },
     {
       "path": "crates/slk-state-core/tests/auth.rs",
@@ -572,7 +572,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/overwatcher.rs",
-      "sha256": "108f1661a1ea1c686cd83768c4f8957e90719707494035d2f15021b1861d7343"
+      "sha256": "b87df191ca5f57d76896193767cbaf3c8c01238dfeb3c80eeb8813a7b8cc1cd5"
     },
     {
       "path": "crates/slk-state-core/tests/query.rs",
@@ -595,8 +595,20 @@
       "sha256": "25de2612c93e314d80af6bedd9930d361bee693b7012cd7e71c9afc9cb3e8753"
     },
     {
+      "path": "docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
+      "sha256": "1f4550d192e23f8b84f96f54b9c52e4d473ed56c00ef763d05927d7ef06de411"
+    },
+    {
+      "path": "docs/contracts/slk-ocrv-worker-recovery.schema.json",
+      "sha256": "3acf83e2f406c9966098c801e040b08e81232855f6f9fe4f5efc1701c8307f8d"
+    },
+    {
       "path": "docs/contracts/slk-overwatch-cycle.schema.json",
       "sha256": "b5c3a7576458eae2115d54c21f423139ccf49e004b4a20e2442451afdbd79e3a"
+    },
+    {
+      "path": "docs/contracts/slk-overwatcher-cadence-inspection.schema.json",
+      "sha256": "37c1237d5fe48b51373435af0b5e7d0ed0ab8bd088d1dd4f55f7ac832b42a818"
     },
     {
       "path": "docs/contracts/slk-runtime-snapshot.schema.json",
@@ -612,7 +624,7 @@
     },
     {
       "path": "docs/contracts/slk-worker-continuation.schema.json",
-      "sha256": "51ccea3cb7d5d5059140811d8ee05524d7d3b604934e3360dde15d825c50c848"
+      "sha256": "22dfe5bf1c54d44e9b3eac662b21fb1edb1d1af82ccc6b64c270805b3a306301"
     },
     {
       "path": "docs/maintenance/2026-09-22-slk-4.2.2-cell02-field-trial-review.md",
@@ -624,7 +636,7 @@
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
-      "sha256": "5655baa1c8985409aca4fac4bb005325d93b50708e4029f92c41e3416053fab3"
+      "sha256": "92cbaa2e8297abb8056e0f70b085468844e904540d32cfe8f84679d3a83a96ca"
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
@@ -632,7 +644,7 @@
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "82a17806079104a41f31cb6a14012ece68ad0c4f5dc87e4dc4a430eec903ba5a"
+      "sha256": "8f9f12fd6fd8f648897af625db6744abf88561509ab2fe1008aa0ca683747801"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",
@@ -640,7 +652,7 @@
     },
     {
       "path": "docs/state/SLK-STATE.md",
-      "sha256": "905a15f19796bd1d84053b13d43a293ae21b8fc35c1c45bb01238bd9605fa93d"
+      "sha256": "69608c7f2b1b7b36a15e0514c998638c02cbb0ca8a4798916993ef11fcae2646"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -763,20 +775,40 @@
       "sha256": "e32af48db08b78bb9887dfc60d8dbfbe4a66ce475abd5770160184bb73d4d765"
     },
     {
+      "path": "docs/superpowers/specs/2026-09-23-slk-4.2.5-authenticated-checker-recovery-design.md",
+      "sha256": "55212dd6e2e63a70a7467b7038e0b3e921e43be0ee524f1b5a833268e72647af"
+    },
+    {
       "path": "docs/transport/SLK-TRANSPORT-LIVE-ACCEPTANCE.md",
       "sha256": "6da05ea19ad6416998d88376914a1aeaccc49709bb1f372e832f4520c9848ade"
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "3e8e87e6dbdf6e2f2ab9ace11028018e2a9ee488b00b8f547bb88c0e576d9783"
+      "sha256": "56550d2af213160528c4b79ddb3e4a592e7de75ca2310db08aeca6105ef54346"
+    },
+    {
+      "path": "integrations/ocrv/install.ps1",
+      "sha256": "e3da962f0f4e843919b3f9eaa6c86cd44fbb50149b0e26dbbeaeef29962af42e"
+    },
+    {
+      "path": "integrations/ocrv/rollback.ps1",
+      "sha256": "e9bc9181af4e4ff21d3d1dded49713947060027d547bf29130cc4b9c58959de9"
+    },
+    {
+      "path": "integrations/ocrv/slk-checker.cmd",
+      "sha256": "b09c120d6f5b9e3107f16fbf2917bd6c3fdbc2972bd8868c6b3ab052f7621828"
+    },
+    {
+      "path": "integrations/ocrv/slk_checker_recovery.py",
+      "sha256": "c35d732f0bc95f1fa46aca6ff10433b97b58a65d0fceba718a70b1d89ab53318"
     },
     {
       "path": "pyproject.toml",
-      "sha256": "13a050f38ae7715ff115e8030a580a798e8653631339e21c19dbd76e12789ecc"
+      "sha256": "dd75fbceaa78331caecd9dfb74482a4eb27c5c989b68b2e28640a58140bc8468"
     },
     {
       "path": "scripts/build_local_package.py",
-      "sha256": "268889d19ce41a7bf7e76a33c43dbdcbd06aed39b36e7b6ba0f3753c0f20ae84"
+      "sha256": "51758d624cf367531c6ddf1f8efb78d309c0be8fe991f9168131ec9d16a9a87d"
     },
     {
       "path": "scripts/build_transport_zipapp.py",
@@ -784,27 +816,27 @@
     },
     {
       "path": "scripts/install_local.ps1",
-      "sha256": "1c2ccff960df352fe0c261aee320dc495773bfb831b56fe058ef9519755d1382"
+      "sha256": "3f3a13371a13e7f4b7059e7e2b45a9532be9137f0413741a58653bc112021b24"
     },
     {
       "path": "scripts/quick_validate.py",
       "sha256": "c22f679ce269ca9a95b7597daed882c982a0145007bb4472c33a09f8c355354b"
     },
     {
-      "path": "scripts/run_424_sandbox_drill.py",
-      "sha256": "1fa6c5d351e16f82b75e71c47a8f9a86040b8cb7417c5f5cfd64badb1503f1d8"
+      "path": "scripts/run_425_sandbox_drill.py",
+      "sha256": "e25e1dd7c27b3a0138ece6e5589641eaf40d00281e21420cff28231256d521ce"
     },
     {
       "path": "scripts/run_transport_drill.py",
-      "sha256": "f0501dd56ef4769ec867de1b06514584216a02caff4c5288886e4a72c2de64c5"
+      "sha256": "27d700ed4d6469635012e2804c38fd587107d768fe8e7cdd81f4c784e833e919"
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "bc4f2f3aa566756d5f8b0806fc1a1bdc149d34cf678a3211d4ce7f31d3c431b2"
+      "sha256": "514980be48d32bbfce3f8c2e9e4763986f39d4042c1db8bca641c1c7d10c62f7"
     },
     {
       "path": "scripts/validate_role_eval.py",
-      "sha256": "fd7a7a7a832d757dc6ef58e91d1dc4f4aa52e2b32bbb9afc5faa8844810ed863"
+      "sha256": "ba84fdaa528ecf4923be112a3c59b45a4ac3951c0a9055e7475ac971e7e5f77f"
     },
     {
       "path": "scripts/verify_local_install.py",
@@ -828,7 +860,7 @@
     },
     {
       "path": "skills/slk-execute-cell/SKILL.md",
-      "sha256": "377f5082e0536edc56fa5e63d70ba2ab5e60d638ca2a21957b253d0cb2a5124b"
+      "sha256": "653cfb30d45f9859b54b2dfbd287dd803778c349194b34a10c4674567a745142"
     },
     {
       "path": "skills/slk-execute-cell/references/resource-contention.md",
@@ -848,7 +880,7 @@
     },
     {
       "path": "skills/slk-overwatch-run/SKILL.md",
-      "sha256": "bd2fae7c88ac28032d02a7d9674d46e8edbad0afb29d14b6ac7f2a9a85eadf6a"
+      "sha256": "881d67d153367c66669ba61f0b30d29c4a3e864f9002635304a325b9561c76eb"
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
@@ -864,7 +896,7 @@
     },
     {
       "path": "skills/slk-recover-communication/SKILL.md",
-      "sha256": "e7576009f9bef4cf20994a5ea7714ac43abedb07796c536e151b77366fc5e167"
+      "sha256": "b9dfbdc4a639b6d42285c4bc9045c127da75df18990f9b82ac6c7edd02e578be"
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
@@ -876,7 +908,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "a9d4e1699e6760fe97ba873a72c01bfcfdc5b17cf91041344eee5b817d159a66"
+      "sha256": "d2cfcc4d2fff76db0baa6f5636be6997855047ff22b3aa9ff1ecfeac125fe9a8"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -884,15 +916,15 @@
     },
     {
       "path": "skills/small-loop-skill/assets/SLK-ROLE-EVAL.v1.json",
-      "sha256": "50bcb8c8f82e05a5caf9883f403f2cfc980186319a4209d7f66d573c6327b6e6"
+      "sha256": "4a1c7fb448fd4cd612d0faa35dbddf6b25005a3a42740cd2dba95e48a3e5162c"
     },
     {
       "path": "src/slk_transport/__init__.py",
-      "sha256": "a67a84834f07f2e98afee2876c53362f3969595aa9eb615a7edbecf8993073b1"
+      "sha256": "2a7459ab0caf2bc467bd3240a1d1c19f5f6c1066474bd4b314328b96865133d8"
     },
     {
       "path": "src/slk_transport/active_writer.py",
-      "sha256": "3ad6f007961694b83ae955f5e5ed1291d949572a44084c3772b6ff59ac6db149"
+      "sha256": "e9d51e9d426a182360158cfa44c451b03311c2540d26a63b8b427b617ffed772"
     },
     {
       "path": "src/slk_transport/adapters/__init__.py",
@@ -904,7 +936,7 @@
     },
     {
       "path": "src/slk_transport/adapters/codex.py",
-      "sha256": "c407b0113089838a5abfcefe34a8cc55c9d001ba612ceadf31ae055f1890c2bb"
+      "sha256": "b4d8b9dcc12085e0616da01b999c50677346f4c0e16eaab4a7829cce48aa9fe7"
     },
     {
       "path": "src/slk_transport/adapters/dsh.py",
@@ -912,15 +944,15 @@
     },
     {
       "path": "src/slk_transport/adapters/ocrv.py",
-      "sha256": "a1ce3764b5cc9577c042a8b82a910ce21228761d689292af85f3a00613d401e7"
+      "sha256": "1fb7918c55aedf561cf48ff31fd046f84424f97bc495232ef8d8fa575f71ffea"
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "8c7c3288736ed76cacf658af4fff1f50e2037e743da64685800918f242fcd0b2"
+      "sha256": "1220b04fa6c76df8fa7607c13c1a676a7ac0c8b15cb9ac964198767e96b20b92"
     },
     {
       "path": "src/slk_transport/contracts.py",
-      "sha256": "169f63dc0046c9ec4536950c3dd75be93f1128533b2f991073863b85f63eaaf4"
+      "sha256": "aff7b6ed2bdd2da7e49554dee8b8a3acb0ff4711fd00d4fefb4a742759f7443c"
     },
     {
       "path": "src/slk_transport/dispatcher.py",
@@ -943,6 +975,10 @@
       "sha256": "a3fd839551d6afd64e84f37ae9576b1ae86e642016525bd42df779dcc4abb589"
     },
     {
+      "path": "src/slk_transport/overwatcher_continuity.py",
+      "sha256": "f71847ab2fb2d74876af277aa938977d5bb9d9f7e84ad6b24d14e8952faaba73"
+    },
+    {
       "path": "src/slk_transport/process.py",
       "sha256": "bfe152740ebeedf3fce878a609286b27e8218bb07a79a77524830c3228251e37"
     },
@@ -960,7 +996,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "b814b37943664cce2578fdc665787c25fd81089ce7d179896ce2c0098225f929"
+      "sha256": "d4d7ef10a2712ddc50852c9b82d07aa1cb8c5a545a25ba2aa4c07acc3d3bdfae"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -968,15 +1004,19 @@
     },
     {
       "path": "tests/eval/test_role_eval.py",
-      "sha256": "d9ec7ada17b36e170ae1d0aa0d6973ccadc812bf9a28753a197a34fcc34ee578"
+      "sha256": "ccd505f7866f38e6aa7a2c40e631e81efd0ad259c33c0b0fdbd4afd4e2ea77c9"
     },
     {
       "path": "tests/install/test_build_local_package.py",
-      "sha256": "e171de0f99f04053f68320012a190a28b11bded51b7d36aec1caa2d0f5ba7010"
+      "sha256": "a2cb6b060d497711e4cd81c6444f3659440ef5ccd9acdd3507e101cdc37c5f7a"
     },
     {
       "path": "tests/install/test_local_install.py",
-      "sha256": "d826f879946af7d804984181e706caf9fd0ec60cc884d5764745957596b44dd5"
+      "sha256": "48740e233245f4995483f95323e0bfbee819f6559371b63152d84d280de598ca"
+    },
+    {
+      "path": "tests/install/test_ocrv_integration.py",
+      "sha256": "0ad98f6da59e20d3c74e1db4e2405baece8cde78726e7f200b84354b8f67dc5c"
     },
     {
       "path": "tests/skill_testkit.py",
@@ -992,19 +1032,23 @@
     },
     {
       "path": "tests/state/test_state_cli.py",
-      "sha256": "22c185381bfd142925937b01a387477b333adf361035a71270133708973b19c5"
+      "sha256": "2d54d3b14fd3d528380cb5c773bb995f3df8440f0cdf6d5c6c614b4174ed29cc"
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "d92632838d766732e317009b09b8adbfe4c38381b6f2cb06ebb2ce017c5cc198"
+      "sha256": "3e194417d8af6033ea9c6284d686f9968161da9fdb65fb46a540dc786558a613"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "f4f846d08ad92a8b3330dabe7af16fd5749e38b20e6a1c5d84d9b35fbbc71b34"
+      "sha256": "47c9be8f9d9df0c07c133eb58a907f1df32743fa42897f67a75832d519a18ab4"
     },
     {
       "path": "tests/transport/fake_app_server.py",
       "sha256": "1ef7594d066148ac8aea300b309506a9d0ba65d4523b81b04c7e4e27d6883e27"
+    },
+    {
+      "path": "tests/transport/fake_checker_recovery_transport.py",
+      "sha256": "632f988696d4954112db6afaab8525b92c84397664b27f61fa26a70c3c5bf323"
     },
     {
       "path": "tests/transport/fake_dsh.py",
@@ -1012,11 +1056,11 @@
     },
     {
       "path": "tests/transport/fake_ocrv.py",
-      "sha256": "9a3f4e5096bfe459b0263d8eddf4db244c6474deae0d9ecd1703d6fc89979f2a"
+      "sha256": "0bd178e51422f577dc9e89408316d1077ed01ad51a491d6746171f1128386bf0"
     },
     {
-      "path": "tests/transport/test_424_sandbox_drill.py",
-      "sha256": "41266d6371d6bffff3bf3803eaa63cba0ffc5523467b66a955d079491e3b7ee5"
+      "path": "tests/transport/test_425_sandbox_drill.py",
+      "sha256": "41ceebd0c1e6539e924f717074efb2b30aec7be9e42b7473c1e5fc75a8020b5f"
     },
     {
       "path": "tests/transport/test_active_writer.py",
@@ -1024,7 +1068,7 @@
     },
     {
       "path": "tests/transport/test_cli.py",
-      "sha256": "8dfb4574d72946ef4e1d977cc9946ec0b51c306c23bd514a771f41b343be1184"
+      "sha256": "41bdfcef5d4bd9801b7ae0ffb94479e2d44b5aca4b901a738c589eb88924290e"
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
@@ -1032,7 +1076,7 @@
     },
     {
       "path": "tests/transport/test_contracts.py",
-      "sha256": "8322ca542fb360adfe072018f422f8b463306dd9f9cd703671184ba640ac710a"
+      "sha256": "da95d09ebcf6e6184688fcf7fdd9e961700bb4b7aea78eebe939de7ef6adf71f"
     },
     {
       "path": "tests/transport/test_dispatcher.py",
@@ -1060,7 +1104,11 @@
     },
     {
       "path": "tests/transport/test_ocrv_adapter.py",
-      "sha256": "8ae80488629d5459e54b07d9263e2ce2aa2780accc5668097c4c01ed813a8f36"
+      "sha256": "cd2f7db4e1b74232f7fda1683892c1e95bdcdb90ccb1fef2fb5b3b6c5311e5ef"
+    },
+    {
+      "path": "tests/transport/test_overwatcher_continuity.py",
+      "sha256": "493580e629ddda0529181e6499aae86a9e7429573360dde7a6e7cf35caa0d093"
     },
     {
       "path": "tests/transport/test_process.py",
@@ -1076,7 +1124,7 @@
     },
     {
       "path": "tests/transport/test_worker_completion.py",
-      "sha256": "cc6f33d7b3ca14960d0dd29f90da0a4b84d7529933881dada9390aeb252c200d"
+      "sha256": "6532873987cd29e2851dbbc983420e365e78b5c1ffbe6c51ac238e27ff5eadae"
     },
     {
       "path": "tests/transport/test_workspace.py",
@@ -1084,7 +1132,7 @@
     },
     {
       "path": "tests/transport/test_zipapp.py",
-      "sha256": "be6658296b5655c88edb32d24fbd5bfb282d678393ebbb36de9a8cd6018dd49c"
+      "sha256": "fb04ad82ddb3bf8e68f98a08055e20b9039f4ff4e06ed1f12697777b579dba01"
     }
   ]
 }

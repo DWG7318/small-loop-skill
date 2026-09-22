@@ -20,7 +20,7 @@ Worker 完成当前 CELL，形成可检查候选，并把 Checker 需要的信�
 3. 选择最低 D0，为 Worker 自己的交付提供基本信心，例如目标测试、构建或直接 smoke。建议围绕本次变化和风险选择低成本检查，不提前重复 D1/D2 的完整验收。
 4. 把实际变化、D0、判断和风险作为倒数第二项通过 `slk-state write` 记录；大证据用 `register-evidence` 保存，随后自动导出，建议调用 `$slk-record-run`。
 5. 初始 D1 交付的业务载荷只包含 `CELL n/N`、候选身份与访问位置、客观变更范围和运行候选所需的必要事实，此外保留主 Skill 定义的统一令牌头。D0 结果、判断过程和建议关注点不进入初始 D1 交付。
-6. 作为最后一项，写入 `D0_COMPLETED` 与 `CANDIDATE_SUBMITTED` 后，通过 `Worker → Checker` 把候选作为下一编号的 `SLK TOKEN` 发送给 Checker，并回复类似“已完成，请检验：CELL n/N”；`slk-transport send` 建立原生进程后先写 `started.json` 作为真实激活证据，发送者再用 fresh `runtime_revision` 调用 `slk-state commit-delivery-start` 原子提交启动证据、TOKEN 与事件。若 DSH 已终态完成却未留下这三项 Worker 事实或 Checker start，恢复路径为原 Checker 用 `resume-worker-continuation` 精确恢复同一 DSH Session，让该 Worker 在进程内注入自己的凭据完成后半段；Supervisor、Checker、Overwatcher 不代写。发送后结束本轮Worker工作，前提是原子提交成功；不使用 `wait_threads`，也不读取Checker状态；令牌到达即开始 D1，不增加接收回执轮次。
+6. 作为最后一项，写入 `D0_COMPLETED` 与 `CANDIDATE_SUBMITTED` 后，通过 `Worker → Checker` 把候选作为下一编号的 `SLK TOKEN` 发送给 Checker，并回复类似“已完成，请检验：CELL n/N”；`slk-transport send` 建立原生进程后先写 `started.json` 作为真实激活证据，发送者再用 fresh `runtime_revision` 调用 `slk-state commit-delivery-start` 原子提交启动证据、TOKEN 与事件。若 DSH 已终态完成却未留下这三项 Worker 事实或 Checker start，Supervisor 仅可把闭合恢复信封投递给原注册 Checker；该 OCRV invocation 认证自身后才可恢复同一 DSH Session，让 Worker 在进程内注入自己的凭据完成后半段。其他角色不直接恢复或代写。发送后结束本轮Worker工作，前提是原子提交成功；不使用 `wait_threads`，也不读取Checker状态；令牌到达即开始 D1，不增加接收回执轮次。
 
 ## Checker 未被激活时
 

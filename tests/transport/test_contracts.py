@@ -222,6 +222,38 @@ def test_d1_failure_escalation_is_closed_and_checker_owned() -> None:
         parse_delivery(endpoint, missing)
 
 
+def test_worker_completion_recovery_is_closed_and_supervisor_to_checker_only() -> None:
+    endpoint = endpoint_value(role="checker")
+    payload = {
+        "source_attempt_root": "D:/run/attempt",
+        "runtime_projection_path": "D:/run/projection.json",
+        "plan_revision": 1,
+        "runtime_revision": 7,
+        "token_sequence": 14,
+        "worker_credential_path": "D:/run/worker.dpapi",
+        "checker_credential_path": "D:/run/checker.dpapi",
+        "state_command": ["D:/SLK/slk-state.exe"],
+        "transport_command": ["python", "D:/SLK/slk-transport.pyz"],
+        "occurred_at": "2026-09-23T00:00:00Z",
+    }
+    envelope = envelope_value(sender_role="supervisor", receiver_role="checker")
+    envelope["payload_type"] = "WORKER_COMPLETION_RECOVERY"
+    envelope["payload"] = payload
+    envelope["payload_sha256"] = payload_hash(payload)
+    assert parse_delivery(endpoint, envelope).envelope.payload_type == "WORKER_COMPLETION_RECOVERY"
+
+    wrong_owner = copy.deepcopy(envelope)
+    wrong_owner["sender_role"] = "worker"
+    with pytest.raises(ContractError, match="supervisor->checker"):
+        Envelope.from_dict(wrong_owner)
+
+    extra = copy.deepcopy(envelope)
+    extra["payload"]["supervisor_may_resume"] = True
+    extra["payload_sha256"] = payload_hash(extra["payload"])
+    with pytest.raises(ContractError, match="Worker completion recovery"):
+        Envelope.from_dict(extra)
+
+
 @pytest.mark.parametrize("extra_role", ["router", "overwatcher"])
 def test_observation_roles_are_not_transport_relays(extra_role: str) -> None:
     endpoint = endpoint_value(role="checker")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the focused disposable acceptance drill for SLK 4.2.4."""
+"""Run the focused disposable acceptance drill for SLK 4.2.5."""
 
 from __future__ import annotations
 
@@ -69,8 +69,8 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         }
     )
     version = _run("state-version", [state_cli, "--version"], root, environment).strip()
-    if "4.2.4" not in version:
-        raise RuntimeError(f"sandbox requires slk-state 4.2.4, got {version!r}")
+    if "4.2.5" not in version:
+        raise RuntimeError(f"sandbox requires slk-state 4.2.5, got {version!r}")
 
     pytest_root = root / "pytest"
     _run(
@@ -86,6 +86,12 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
             "tests/transport/test_active_writer.py::test_active_writer_recovery_uses_new_message_and_preserves_old_failure",
             "tests/transport/test_dsh_adapter.py::test_dsh_records_native_start_before_terminal_result",
             "tests/transport/test_ocrv_adapter.py::test_ocrv_records_spawn_start_before_terminal_result",
+            "tests/transport/test_ocrv_adapter.py::test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery",
+            "tests/transport/test_ocrv_adapter.py::test_checker_recovery_invocation_is_stable_for_exact_message_retry",
+            "tests/transport/test_worker_completion.py::test_exact_ocrv_checker_authenticates_before_resuming_worker",
+            "tests/transport/test_worker_completion.py::test_checker_recovery_rejects_supervisor_direct_call_and_wrong_checker",
+            "tests/transport/test_cli.py::test_supervisor_cannot_call_worker_continuation_resume_directly",
+            "tests/transport/test_overwatcher_continuity.py",
             "tests/transport/test_worker_completion.py",
         ],
         root,
@@ -97,7 +103,7 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         candidate = Path.home() / ".cargo" / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")
         cargo = str(candidate) if candidate.is_file() else None
     if cargo is None:
-        raise FileNotFoundError("cargo is required for the 4.2.4 state sandbox")
+        raise FileNotFoundError("cargo is required for the 4.2.5 state sandbox")
     _run(
         "atomic-delivery-start",
         [
@@ -164,6 +170,23 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         root,
         environment,
     )
+    _run(
+        "adopt-425",
+        [
+            cargo,
+            "test",
+            "-q",
+            "-p",
+            "slk-state-core",
+            "--test",
+            "overwatcher",
+            "adoption_424_to_425_preserves_a_proven_active_overwatcher",
+            "--",
+            "--exact",
+        ],
+        root,
+        environment,
+    )
 
     proofs = {
         "active_writer_new_message_recovery": True,
@@ -179,11 +202,15 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         "one_overwatcher_binding": True,
         "one_overwatcher_foreground_turn": True,
         "same_worker_session_continuation": True,
+        "authenticated_checker_recovery": True,
+        "deterministic_recovery_invocation": True,
+        "projected_active_not_cycle_proof": True,
+        "public_direct_resume_removed": True,
     }
     report = {
         "schema_version": "slk.sandbox-drill-report/v1",
-        "method_version": "4.2.4",
-        "run_id": "RUN-424-SANDBOX",
+        "method_version": "4.2.5",
+        "run_id": "RUN-425-SANDBOX",
         "status": "PASS",
         "proofs": proofs,
         "counts": {

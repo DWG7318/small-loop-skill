@@ -1,6 +1,6 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.2.4` carries one closed SLK delivery into one exact native Agent endpoint, writes native start evidence before any terminal result, and can recover only the explicitly allowed identity. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, model selection, BoM routing, or BI state.
+`slk-transport 4.2.5` carries one closed SLK delivery into one exact native Agent endpoint, writes native start evidence before any terminal result, and can recover only the explicitly allowed identity. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, model selection, BoM routing, or BI state.
 
 ## Role edges
 
@@ -35,13 +35,13 @@ DSH receives one canonical `slk.transport-task/v1` file containing the exact end
 
 `message_id` is a canonical UUID. The payload hash is SHA-256 over canonical JSON. Run, receiving role, role instance, and endpoint version have to match before dispatch.
 
-`D1_FAILURE_ESCALATION` is a closed Checker→Supervisor payload binding the failure event, candidate hash, round, CELL goal, acceptance criteria, findings, reproduction, expected result, and evidence. `D1_REWORK_DIRECTIVE` is a closed Supervisor→same-Worker payload binding those failure facts plus one root-cause hypothesis, one minimal experiment, the minimal repair scope, and regression target. Missing, extra, empty, mismatched, or out-of-order fields fail closed; D1 INCOMPLETE cannot use either payload.
+`D1_FAILURE_ESCALATION` is a closed Checker→Supervisor payload binding the failure event, candidate hash, round, CELL goal, acceptance criteria, findings, reproduction, expected result, and evidence. `D1_REWORK_DIRECTIVE` is a closed Supervisor→same-Worker payload binding those failure facts plus one root-cause hypothesis, one minimal experiment, the minimal repair scope, and regression target. `WORKER_COMPLETION_RECOVERY` is a closed Supervisor→same-Checker payload binding the exact source attempt, runtime snapshot/revisions, role credential paths, commands, and occurrence time. Missing, extra, empty, mismatched, or out-of-order fields fail closed; D1 INCOMPLETE cannot use the rework payloads.
 
 ## Exact adapter addresses
 
 - Codex Supervisor: `command`, exact `thread_id`, absolute `cwd`, `startup_timeout_seconds`, `turn_timeout_seconds`. An idle target starts one native turn and records exact thread/turn IDs. An active writer is not activation evidence; it is a typed state in which only current `D1_FAILURE_ESCALATION` recovery may create a new message bound to the exact active turn, while the old envelope is never replayed as a new message.
 - DSH Worker: `command`, Run-scoped deterministic `instance_id` (maximum 64 characters), recorded `session_id` or `null`, `runtime_root`, absolute `cwd`, `timeout_seconds`, and expected Git repository/worktree identity. A bounded preflight rejects wrong root/common-dir, missing writable boundary or identity drift before work starts. The Worker returns one closed `slk.worker-result/v1`; process exit alone is neither start nor completion evidence.
-- OCRV Checker: `command`, `runtime_root`, `timeout_seconds`. `CELL_DISPATCH` creates the exact Worker delivery; `CANDIDATE_READY` produces a closed D1 result with Run, CELL, fresh review invocation, provider, model, session, verdict, and exit identity.
+- OCRV Checker: `command`, `runtime_root`, `timeout_seconds`. `CELL_DISPATCH` creates the exact Worker delivery; `CANDIDATE_READY` produces a closed D1 result with Run, CELL, fresh review invocation, provider, model, session, verdict, and exit identity; `WORKER_COMPLETION_RECOVERY` starts the same registered command with the narrow recovery flag and deterministic invocation identity.
 
 Addresses are selected by identity, never by conversation title. Secrets stay in the native runtime configuration and do not belong in endpoint, envelope, result, or evidence files.
 
@@ -53,6 +53,7 @@ python path\to\slk-transport.pyz send --endpoint ENDPOINT.json --envelope ENVELO
 python path\to\slk-transport.pyz inspect --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 python path\to\slk-transport.pyz retry-exact --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 python path\to\slk-transport.pyz recover-active-writer --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+python path\to\slk-transport.pyz inspect-overwatcher-cadence --runtime-projection RUN.json --observed-at RFC3339
 python path\to\slk-transport.pyz drill-verify --evidence-root EVIDENCE_ROOT
 ```
 
@@ -75,7 +76,7 @@ Each attempt is immutable under:
 
 The common files are `endpoint.json`, `envelope.json`, `accepted.json`, immutable task/request evidence with hashes, independently written `started.json`, `completed.json` or `failed.json`, plus adapter-native stdout, stderr, result and identity evidence when applicable. Active-writer recovery additionally records the source message, exact turn, new message and native receipt. Job launcher logs are under `<attempt-root>/.jobs/`.
 
-`accepted.json`, a database row, successful launcher exit, terminal result, or visible conversation does not prove delivery. A matching early `started.json` proves that the exact native target began this message. The sender retains TOKEN until `slk-state commit-delivery-start` verifies that evidence and atomically advances TOKEN, event and runtime snapshot; revisioned Runs reject the legacy split handoff. After commit, the sender ends its activity instead of watching the receiver. If a DSH terminal result exists while its Worker-owned D0/candidate facts and Checker start are absent, `inspect-worker-completion` allows one cadence measured from the trustworthy terminal evidence time, then keeps every unresolved cycle anomalous while separately marking whether notification was already sent. `resume-worker-continuation` may resume only the exact recorded DSH instance/session; `continue-worker` runs inside that process, decrypts the pre-provisioned Worker DPAPI credential without printing or persisting plaintext, records idempotent Worker facts, sends a minimal `CANDIDATE_READY`, verifies exact Checker `started.json`, reads a fresh runtime revision, and commits the handoff. It is a bounded suffix, not a scheduler or CELL rerun.
+`accepted.json`, a database row, successful launcher exit, terminal result, or visible conversation does not prove delivery. A matching early `started.json` proves that the exact native target began this message. The sender retains TOKEN until `slk-state commit-delivery-start` verifies that evidence and atomically advances TOKEN, event and runtime snapshot; revisioned Runs reject the legacy split handoff. After commit, the sender ends its activity instead of watching the receiver. If a DSH terminal result exists while its Worker-owned D0/candidate facts and Checker start are absent, `inspect-worker-completion` allows one cadence measured from the trustworthy terminal evidence time, then keeps every unresolved cycle anomalous. Supervisor may only deliver `WORKER_COMPLETION_RECOVERY` to the exact Checker endpoint. Its early `started.json` states authentication pending and unauthorized; the native OCRV companion strips inherited secrets, and internal `checker-recover-worker` must authenticate that Checker against the current runtime revision before the exact DSH instance/session can resume. `continue-worker` then runs inside that Worker process, decrypts the pre-provisioned Worker credential without printing or persisting plaintext, records idempotent Worker facts, sends minimal `CANDIDATE_READY`, verifies exact Checker start, reads a fresh runtime revision, and commits the handoff. The deterministic recovery invocation and removed public direct-resume command make this a Checker-authorized suffix, not a scheduler or CELL rerun.
 
 ## Retry and session rebound
 
@@ -85,7 +86,7 @@ When a native task or session is replaced, register a higher endpoint version, m
 
 If an adapter explicitly fails or lacks start evidence, the sender keeps TOKEN and follows the existing SLK communication-recovery route; it does not claim the receiver or D2 started. An active writer follows only the narrow rule above. Recovery does not create a receipt-only turn, auto-upgrade a model, activate BoM, or move D0/D1/D2, exemption or planning authority into transport.
 
-On Windows, Codex App Server, DSH, OCRV, detached transport jobs, and drill helper processes use the shared hidden-start flags by default. No helper may flash a PowerShell/console window; a visible interactive window is an explicit Owner choice, not a recovery fallback.
+On Windows, Codex App Server, DSH, OCRV, detached transport jobs, and drill/recovery helper processes use the shared hidden-start flags by default. No helper may flash a PowerShell/console window; a visible interactive window is an explicit Owner choice, not a recovery fallback.
 
 ## Acceptance
 

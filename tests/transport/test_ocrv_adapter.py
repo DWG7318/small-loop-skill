@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import threading
 import time
@@ -10,14 +12,17 @@ from pathlib import Path
 import pytest
 
 from slk_transport.adapters.base import AdapterError
-from slk_transport.adapters.ocrv import OcrvAdapter
+from slk_transport.adapters.ocrv import OcrvAdapter, _recovery_invocation_id
 from slk_transport.contracts import Endpoint, Envelope, canonical_json_sha256
 from slk_transport.evidence import AttemptStore
 
 from test_contracts import endpoint_value, envelope_value
+from test_worker_completion import completion_fixture
 
 
 FAKE_OCRV = Path(__file__).with_name("fake_ocrv.py")
+FAKE_RECOVERY_TRANSPORT = Path(__file__).with_name("fake_checker_recovery_transport.py")
+RECOVERY_COMPANION = Path(__file__).parents[2] / "integrations" / "ocrv" / "slk_checker_recovery.py"
 
 
 def checker_endpoint(tmp_path: Path, mode: str = "normal") -> Endpoint:
@@ -49,6 +54,34 @@ def candidate_envelope(tmp_path: Path) -> Envelope:
     return Envelope.from_dict(raw)
 
 
+def recovery_envelope(tmp_path: Path) -> Envelope:
+    source_attempt, _worker, _checker = completion_fixture(tmp_path)
+    projection = tmp_path / "runtime-projection.json"
+    projection.write_text("{}", encoding="utf-8")
+    worker_credential = tmp_path / "worker.dpapi"
+    checker_credential = tmp_path / "checker.dpapi"
+    worker_credential.write_text("00", encoding="ascii")
+    checker_credential.write_text("00", encoding="ascii")
+    payload = {
+        "source_attempt_root": str(source_attempt),
+        "runtime_projection_path": str(projection),
+        "plan_revision": 1,
+        "runtime_revision": 7,
+        "token_sequence": 14,
+        "worker_credential_path": str(worker_credential),
+        "checker_credential_path": str(checker_credential),
+        "state_command": ["slk-state"],
+        "transport_command": [sys.executable, "slk-transport.pyz"],
+        "occurred_at": "2026-09-23T00:00:00Z",
+    }
+    raw = envelope_value(sender_role="supervisor", receiver_role="checker", receiver_endpoint_version=2)
+    raw["message_id"] = "22222222-2222-4222-8222-222222222222"
+    raw["payload_type"] = "WORKER_COMPLETION_RECOVERY"
+    raw["payload"] = payload
+    raw["payload_sha256"] = canonical_json_sha256(payload)
+    return Envelope.from_dict(raw)
+
+
 def test_ocrv_candidate_review_records_run_cell_invocation_and_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -70,6 +103,82 @@ def test_ocrv_candidate_review_records_run_cell_invocation_and_session(
     assert result.native_identity["model"] == "qwen3.8-max"
     assert (attempt.root / "started.json").is_file()
     assert (attempt.root / "ocrv-result.json").is_file()
+
+
+def test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint = checker_endpoint(tmp_path, "recovery")
+    envelope = recovery_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "slk_parent_secret")
+    monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "slk_parent_secret")
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    assert result.native_identity["checker_operation"] == "worker_completion_recovery"
+    assert result.native_identity["checker_role_instance_id"] == endpoint.role_instance_id
+    assert result.native_identity["checker_endpoint_version"] == endpoint.endpoint_version
+    assert result.native_identity["checker_authenticated"] is True
+    assert result.native_identity["authorized_recovery"] is True
+    started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
+    assert started["checker_role_instance_id"] == endpoint.role_instance_id
+    assert started["authentication_status"] == "PENDING"
+    assert started["authorized_recovery"] is False
+    assert (attempt.root / "ocrv-recovery-request.json").is_file()
+    assert (attempt.root / "ocrv-recovery-result.json").is_file()
+
+
+def test_checker_recovery_invocation_is_stable_for_exact_message_retry(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path, "recovery")
+    envelope = recovery_envelope(tmp_path)
+    first = _recovery_invocation_id(envelope.message_id)
+    second = _recovery_invocation_id(envelope.message_id)
+    request = OcrvAdapter()._recovery_request(endpoint, envelope, first, tmp_path / "result.json")
+
+    assert first == second
+    assert request["recovery_invocation_id"] == first
+
+
+def test_ocrv_recovery_companion_strips_parent_credentials_and_keeps_native_identity(
+    tmp_path: Path,
+) -> None:
+    result_path = tmp_path / "result.json"
+    request = {
+        "schema_version": "slk.ocrv-worker-recovery-request/v1",
+        "result_path": str(result_path),
+        "transport_command": [sys.executable, str(FAKE_RECOVERY_TRANSPORT)],
+    }
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    environment = os.environ.copy()
+    environment["SLK_ROLE_CREDENTIAL"] = "slk_parent_secret"
+    environment["SLK_OVERWATCHER_CREDENTIAL"] = "slk_parent_secret"
+    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = "RUN-A-checker-001"
+    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = "recovery-1"
+    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = "2"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(RECOVERY_COMPANION),
+            "--slk-worker-recovery",
+            "--request",
+            str(request_path),
+            "--output",
+            str(result_path),
+        ],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(result_path.read_text(encoding="utf-8"))["status"] == "CHECKER_STARTED"
 
 
 def test_ocrv_records_spawn_start_before_terminal_result(tmp_path: Path) -> None:

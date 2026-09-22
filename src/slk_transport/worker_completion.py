@@ -19,6 +19,8 @@ from .contracts import ENVELOPE_SCHEMA, Endpoint, Envelope, canonical_json_sha25
 
 INSPECTION_SCHEMA = "slk.worker-completion-inspection/v1"
 CONTINUATION_SCHEMA = "slk.worker-continuation/v1"
+CHECKER_RECOVERY_SCHEMA = "slk.ocrv-worker-recovery-request/v1"
+CHECKER_RECOVERY_RESULT_SCHEMA = "slk.ocrv-worker-recovery-result/v1"
 _NAMESPACE = uuid.UUID("23c8316f-29fe-4f2f-b5c5-90ba4e7b1224")
 
 
@@ -155,6 +157,7 @@ def build_continuation_request(
         or result.get("message_id") != envelope.message_id
         or result.get("role_instance_id") != endpoint.role_instance_id
         or not isinstance(snapshot, Mapping)
+        or snapshot.get("method_version") != "4.2.5"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -179,7 +182,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.2.4",
+        "method_version": "4.2.5",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -448,7 +451,7 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.4":
+    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.5":
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
@@ -671,6 +674,143 @@ def unprotect_dpapi_hex(path: Path | str) -> str:
             kernel32.LocalFree(outgoing.pbData)
         ctypes.memset(buffer, 0, len(protected))
     return secret
+
+
+CheckerAuthenticate = Callable[[str, str, Path, list[str]], Mapping[str, Any]]
+ResumeContinuation = Callable[[Mapping[str, Any]], Mapping[str, Any]]
+
+
+def _default_checker_authenticate(
+    run_id: str,
+    role_instance_id: str,
+    credential_path: Path,
+    state_command: list[str],
+) -> Mapping[str, Any]:
+    credential = unprotect_dpapi_hex(credential_path)
+    return _run_json_command(
+        state_command,
+        ["authenticate-role", "--run-id", run_id, "--role-instance-id", role_instance_id],
+        credential=credential,
+    )
+
+
+def execute_checker_recovery(
+    request: Mapping[str, Any],
+    *,
+    request_sha256: str,
+    authenticate_checker: CheckerAuthenticate = _default_checker_authenticate,
+    resume_continuation: ResumeContinuation = resume_worker_continuation,
+) -> dict[str, Any]:
+    """Authenticate the exact OCRV Checker before resuming one Worker completion suffix."""
+
+    fields = {
+        "schema_version",
+        "method_version",
+        "recovery_invocation_id",
+        "recovery_envelope_message_id",
+        "run_id",
+        "go_id",
+        "cell_id",
+        "checker_role_instance_id",
+        "checker_endpoint_version",
+        "checker_endpoint",
+        "source_attempt_root",
+        "runtime_projection_path",
+        "plan_revision",
+        "runtime_revision",
+        "token_sequence",
+        "worker_credential_path",
+        "checker_credential_path",
+        "state_command",
+        "transport_command",
+        "occurred_at",
+        "result_path",
+    }
+    if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
+    if request.get("method_version") != "4.2.5":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.2.5")
+    role_instance_id = request.get("checker_role_instance_id")
+    invocation_id = request.get("recovery_invocation_id")
+    endpoint_version = request.get("checker_endpoint_version")
+    if (
+        os.environ.get("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID") != role_instance_id
+        or os.environ.get("SLK_OCRV_RECOVERY_INVOCATION_ID") != invocation_id
+        or os.environ.get("SLK_OCRV_RECOVERY_ENDPOINT_VERSION") != str(endpoint_version)
+    ):
+        raise CompletionError(
+            "CHECKER_RECOVERY_NATIVE_IDENTITY_UNPROVEN",
+            "recovery is not running inside the exact OCRV Checker invocation",
+        )
+    try:
+        checker = Endpoint.from_dict(request["checker_endpoint"])
+    except (TypeError, ValueError) as exc:
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker endpoint is invalid") from exc
+    if (
+        checker.role != "checker"
+        or checker.role_instance_id != role_instance_id
+        or checker.endpoint_version != endpoint_version
+        or checker.run_id != request.get("run_id")
+    ):
+        raise CompletionError("CHECKER_RECOVERY_IDENTITY_MISMATCH", "Checker endpoint identity is not exact")
+    state_command = request.get("state_command")
+    transport_command = request.get("transport_command")
+    if (
+        not isinstance(state_command, list)
+        or not state_command
+        or not all(isinstance(item, str) and item for item in state_command)
+        or not isinstance(transport_command, list)
+        or not transport_command
+        or not all(isinstance(item, str) and item for item in transport_command)
+    ):
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "closed commands are required")
+    authentication = authenticate_checker(
+        str(request["run_id"]),
+        str(role_instance_id),
+        Path(str(request["checker_credential_path"])),
+        list(state_command),
+    )
+    if (
+        authentication.get("status") != "authenticated"
+        or authentication.get("role") != "checker"
+        or authentication.get("role_instance_id") != role_instance_id
+        or authentication.get("runtime_revision") != request.get("runtime_revision")
+    ):
+        raise CompletionError(
+            "CHECKER_RECOVERY_AUTHENTICATION_FAILED",
+            "credential does not prove the current Checker at the requested runtime revision",
+        )
+    projection = _read_object(Path(str(request["runtime_projection_path"])), "runtime projection")
+    continuation = build_continuation_request(
+        str(request["source_attempt_root"]),
+        request["checker_endpoint"],
+        projection,
+        plan_revision=int(request["plan_revision"]),
+        runtime_revision=int(request["runtime_revision"]),
+        token_sequence=int(request["token_sequence"]),
+        credential_path=str(request["worker_credential_path"]),
+        state_command=list(state_command),
+        transport_command=list(transport_command),
+        occurred_at=str(request["occurred_at"]),
+    )
+    outcome = resume_continuation(continuation)
+    if outcome.get("status") != "CHECKER_STARTED":
+        raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not start Checker D1")
+    return {
+        "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
+        "method_version": "4.2.5",
+        "status": "CHECKER_STARTED",
+        "run_id": request["run_id"],
+        "cell_id": request["cell_id"],
+        "source_message_id": continuation["source_message_id"],
+        "worker_session_id": continuation["worker_session_id"],
+        "checker_role_instance_id": role_instance_id,
+        "checker_endpoint_version": endpoint_version,
+        "checker_authenticated": True,
+        "authorized_recovery": True,
+        "recovery_invocation_id": invocation_id,
+        "request_sha256": request_sha256,
+    }
 
 
 def _run_json_command(

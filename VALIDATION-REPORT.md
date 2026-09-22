@@ -1,40 +1,38 @@
-# Validation Report — SLK 4.2.4 Candidate
+# Validation Report — SLK 4.2.5 Candidate
 
 Date: 2026-09-23
 
-Branch: `feature/slk-4.2.4-worker-completion-guard`
+Branch: `feature/slk-4.2.5-checker-recovery`
 
 ## Accepted scope
 
-SLK 4.2.4 closes one bounded runtime gap without changing the serial Run, Codex Supervisor ↔ OCRV Checker ↔ DSH Worker topology, `SLK TOKEN`, CELL, D0/D1/D2, direct communication, model policy, or optional whole-Run Overwatcher role. When an exact DSH Worker Session has terminal evidence but omitted its Worker-owned events and Worker→Checker start, the original Checker can resume that same Session for one idempotent completion suffix. The Worker credential is decrypted only inside that resumed Worker process; Supervisor, Checker, and Overwatcher cannot author Worker facts.
+SLK 4.2.5 closes the 4.2.4 Worker-completion recovery authority gap without changing the serial Run, Codex Supervisor ↔ OCRV Checker ↔ DSH Worker topology, `SLK TOKEN`, CELL, D0/D1/D2, model policy, BI authority, or optional whole-Run Overwatcher role. Supervisor may send one closed recovery envelope only to the original registered OCRV Checker. The deterministic native Checker invocation records authentication as pending and recovery as unauthorized until the Checker credential proves its exact role and current runtime revision; only then may the same DSH Session execute its Worker-owned completion suffix.
 
-Each Worker-held TOKEN Overwatcher cycle binds one read-only completion inspection. Its repair attempt is derived from the source message's unique `TRANSPORT_STARTED` evidence, never assumed. A trustworthy terminal evidence time prevents historical completion from receiving a fresh grace interval. An unresolved gap remains anomalous on every later cycle; an existing recovery observation suppresses only duplicate notification. Explicit `4.2.3 → 4.2.4` adoption preserves an active Overwatcher.
+The public direct `resume-worker-continuation` entrance is removed. The packaged OCRV integration preserves the accepted D1 adapter and installs only a reversible wrapper plus recovery companion. A read-only cadence inspector separately prevents an `active` role projection from proving that Overwatcher cycles continue: one missed interval wakes the same binding, while more than two intervals return to Supervisor review without creating a heartbeat, daemon, timer, replacement, or state mutation. Explicit `4.2.4 → 4.2.5` adoption preserves the existing Run and proven active Overwatcher.
 
 ## Verification gates
 
-- Real R3B CELL03 read-only fixture: PASS. The exact attempt `e180fe95-4913-4eb6-90b6-29ee7261d7c2` produced `WORKER_COMPLETION_HANDOFF_MISSING`, the three missing Worker events, the recorded DSH Session, Worker-02 and Checker-01 identities, and a valid `CANDIDATE_READY` shape for candidate `a28380441913c409a972d2dd7842fab8e1c8d9f8`. Stubbed callbacks wrote only to a disposable system temporary directory; source file hashes were unchanged and no continuation, OCRV start, credential decryption, TOKEN commit, or R3B mutation occurred.
-- Real R3B Worker DPAPI compatibility probe: PASS. The broker accepted the existing 68-character PowerShell UTF-16LE credential without printing or persisting plaintext; no Run state was read or changed beyond the credential file itself.
-- Python suite: 248 passed (`python -m pytest -q`).
-- Optimized-mode runtime suite: 175 passed (`python -O -m pytest -q tests/eval tests/transport tests/state tests/install`).
+- Focused Python gate: 165 passed. It covers closed recovery contracts, deterministic invocation identity, early pending/unauthorized start evidence, authenticated Checker-before-Worker ordering, direct Supervisor rejection, credential stripping, Overwatcher cadence classification, role Eval, Skill guardrails, and disposable OCRV install/rollback.
+- Full Python suite: 259 passed (`python -m pytest -q`).
+- Optimized-mode runtime suite: 186 passed (`python -O -m pytest -q tests/eval tests/transport tests/state tests/install`).
 - Rust workspace: PASS (`cargo test --workspace --all-targets`).
-- Rust formatting and strict clippy: PASS (`cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`).
+- Rust formatting and strict Clippy: PASS (`cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`).
 - LE BI: 17 tests passed; TypeScript typecheck and production UI build passed.
-- Focused 4.2.4 sandbox: PASS. It covers exact same-Session continuation, credential non-inheritance, idempotent Worker event replay after TOKEN movement, active Overwatcher adoption, persistent handoff anomaly, atomic start, final closure, no BoM route, and no model change.
-- Repository, role Eval, closed schema, deterministic package, package hash, baseline diff, sensitive-information, and scope-boundary gates are rerun after the final Manifest update.
+- Focused 4.2.5 sandbox: PASS. It covers authenticated Checker recovery, removed public direct resume, deterministic invocation identity, exact same-Session continuation, projected-active cadence detection, idempotent Worker event replay, 4.2.4→4.2.5 active-Overwatcher adoption, atomic start, final closure, no BoM route, and no model change.
+- Repository, role Eval, JSON schema, deterministic package, package hash, mirror/version, baseline diff, sensitive-information, and scope-boundary gates are rerun after the final Manifest update.
 
 ## Critical negative evidence
 
-- a first-activation endpoint with `session_id: null` cannot block recovery when immutable `started.json` and terminal evidence bind one exact DSH Session;
-- changed endpoint/envelope bytes, a different Session/instance/role, wrong Worker credential, or conflicting idempotent event replay fails before TOKEN commit;
-- Supervisor, Checker, Overwatcher, OCRV, and ordinary DSH child processes do not inherit a parent SLK role or Overwatcher credential;
-- terminal text or `completed.json` cannot substitute for exact Checker endpoint/envelope/`started.json` evidence;
-- D1 evidence from an older attempt of the same CELL cannot hide the current attempt's stall;
-- missing or ambiguous source-attempt evidence is rejected instead of defaulting to attempt 1;
-- a historical completed Worker does not receive another cadence of grace;
-- prior notification does not clear an unresolved anomaly on later Overwatcher cycles;
-- invalid DPAPI plaintext encodings, extra embedded NULs, and wrong credential shapes fail closed; only exact UTF-8 or PowerShell UTF-16LE `slk_` credentials are accepted;
-- 4.2.4 retains all revisioned 4.2.3 atomic-start, runtime-revision, active-Overwatcher, TOKEN, and terminal-closure protections.
+- the former public direct continuation command is absent, and a recovery call outside the exact native OCRV invocation fails before Checker authentication or Worker resume;
+- wrong Checker role, role instance, endpoint version, Run, runtime revision, or credential authentication fails closed;
+- early OCRV `started.json` cannot claim authentication or authorization; only the final closed result may carry both true values;
+- the recovery invocation ID is deterministic for the immutable envelope, so exact retry cannot create a second logical recovery;
+- parent role and Overwatcher credentials do not enter OCRV or Worker child processes, request/result evidence, stdout, stderr, or package files;
+- changed request/result fields, request hash, source attempt, DSH instance/session, Worker credential, Checker endpoint, or continuation result is rejected before TOKEN commit;
+- projected `active`, old running state, TOKEN, visible task, or heartbeat cannot prove a current Overwatcher cycle; lateness cannot silently create a replacement;
+- 4.2.4 Runs remain on 4.2.4 until explicit adoption, and the OCRV wrapper change remains a separately authorized reversible installation;
+- Windows helper processes remain hidden/no-window by default; the candidate adds no scheduler, resident service, product edit, live recovery, model change, or BoM route.
 
 ## Release boundary
 
-This report establishes a repository-local 4.2.4 candidate only. It does not claim a global installation, deployment, merge, push, tag, GitHub Release, or product Run recovery. LCaS/R3B was read only and remains under its existing Supervisor authority.
+This report establishes a repository-local 4.2.5 candidate only. It does not claim a global installation, OCRV integration installation, deployment, merge, push, tag, GitHub Release, product Run recovery, or active Overwatcher repair. LCaS/R3B and live `D:\OCRV` were not modified.

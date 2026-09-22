@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-overwatcher-cadence-inspection.schema.json",
+  "title": "SLK Overwatcher cadence inspection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "observed_at", "projected_active", "overwatcher_role_instance_id", "latest_cycle_id", "latest_cycle_completed_at", "cadence_seconds", "elapsed_seconds", "missed_intervals", "status", "anomaly_codes", "action"],
+  "properties": {
+    "schema_version": {"const": "slk.overwatcher-cadence-inspection/v1"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "projected_active": {"type": "boolean"},
+    "overwatcher_role_instance_id": {"$ref": "#/$defs/nullable_identifier"},
+    "latest_cycle_id": {"$ref": "#/$defs/nullable_identifier"},
+    "latest_cycle_completed_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
+    "cadence_seconds": {"oneOf": [{"type": "integer", "minimum": 180, "maximum": 300}, {"type": "null"}]},
+    "elapsed_seconds": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+    "missed_intervals": {"type": "integer", "minimum": 0},
+    "status": {"enum": ["ABSENT", "CURRENT", "LATE", "CONTINUITY_UNPROVEN"]},
+    "anomaly_codes": {"type": "array", "uniqueItems": true, "items": {"enum": ["OVERWATCHER_CADENCE_LATE", "OVERWATCHER_CONTINUITY_UNPROVEN"]}},
+    "action": {"enum": ["NONE", "WAKE_BOUND_OVERWATCHER", "SUPERVISOR_RECOVERY_REVIEW"]}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "nullable_identifier": {"oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]}
+  }
+}

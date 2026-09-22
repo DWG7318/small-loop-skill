@@ -153,6 +153,36 @@ def _d1_failure_escalation(value: Mapping[str, Any]) -> None:
         _text_list(value[field], field)
 
 
+def _worker_completion_recovery(value: Mapping[str, Any]) -> None:
+    fields = frozenset(
+        {
+            "source_attempt_root",
+            "runtime_projection_path",
+            "plan_revision",
+            "runtime_revision",
+            "token_sequence",
+            "worker_credential_path",
+            "checker_credential_path",
+            "state_command",
+            "transport_command",
+            "occurred_at",
+        }
+    )
+    _closed(value, fields, "Worker completion recovery")
+    for field in (
+        "source_attempt_root",
+        "runtime_projection_path",
+        "worker_credential_path",
+        "checker_credential_path",
+        "occurred_at",
+    ):
+        _text(value[field], field)
+    for field in ("plan_revision", "runtime_revision", "token_sequence"):
+        _positive_int(value[field], field)
+    for field in ("state_command", "transport_command"):
+        _text_list(value[field], field)
+
+
 def _json(value: Any, label: str) -> JsonValue:
     if value is None or isinstance(value, (bool, str)):
         return value
@@ -301,6 +331,10 @@ class Envelope:
             if (sender_role, receiver_role) != ("supervisor", "worker"):
                 raise ContractError("D1_REWORK_DIRECTIVE requires supervisor->worker")
             _d1_rework_directive(payload)
+        elif payload_type == "WORKER_COMPLETION_RECOVERY":
+            if (sender_role, receiver_role) != ("supervisor", "checker"):
+                raise ContractError("WORKER_COMPLETION_RECOVERY requires supervisor->checker")
+            _worker_completion_recovery(payload)
         elif (sender_role, receiver_role) == ("supervisor", "worker"):
             raise ContractError("supervisor->worker is limited to D1_REWORK_DIRECTIVE")
         payload_sha256 = _text(value["payload_sha256"], "payload_sha256")

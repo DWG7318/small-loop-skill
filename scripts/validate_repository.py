@@ -11,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "4.2.4"
+VERSION = "4.2.5"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -155,6 +155,13 @@ def validate(root: Path) -> list[str]:
         "docs/contracts/slk-transport-task.schema.json",
         "docs/contracts/slk-runtime-snapshot.schema.json",
         "docs/contracts/slk-overwatch-cycle.schema.json",
+        "docs/contracts/slk-ocrv-worker-recovery.schema.json",
+        "docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
+        "docs/contracts/slk-overwatcher-cadence-inspection.schema.json",
+        "integrations/ocrv/install.ps1",
+        "integrations/ocrv/rollback.ps1",
+        "integrations/ocrv/slk-checker.cmd",
+        "integrations/ocrv/slk_checker_recovery.py",
         "scripts/build_local_package.py",
         "scripts/install_local.ps1",
         "scripts/verify_local_install.py",
@@ -219,7 +226,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 4.2.4 skill collection structure, identity, and Manifest are valid.")
+    print("PASS: SLK 4.2.5 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 

@@ -21,17 +21,17 @@ from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
+from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
     CompletionError,
-    build_continuation_request,
     continuation_request_bytes,
+    execute_checker_recovery,
     execute_worker_continuation,
     inspect_worker_completion,
-    resume_worker_continuation,
 )
 
 
-VERSION = "4.2.4"
+VERSION = "4.2.5"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -226,23 +226,6 @@ def _inspect_worker_completion(args: argparse.Namespace) -> int:
     return 3 if result["status"] == "WORKER_COMPLETION_HANDOFF_MISSING" else 0
 
 
-def _resume_worker_completion(args: argparse.Namespace) -> int:
-    request = build_continuation_request(
-        args.source_attempt,
-        _read_object(args.checker_endpoint, "Checker endpoint"),
-        _read_object(args.runtime_projection, "runtime projection"),
-        plan_revision=args.plan_revision,
-        runtime_revision=args.runtime_revision,
-        token_sequence=args.token_sequence,
-        credential_path=args.credential_path,
-        state_command=[str(args.state_command.resolve())],
-        transport_command=_self_command(),
-        occurred_at=args.occurred_at,
-    )
-    _emit(resume_worker_continuation(request))
-    return 0
-
-
 def _continue_worker(args: argparse.Namespace) -> int:
     data = args.request.read_bytes()
     if __import__("hashlib").sha256(data).hexdigest() != args.sha256:
@@ -260,6 +243,34 @@ def _continue_worker(args: argparse.Namespace) -> int:
         temporary.replace(destination)
     _emit(result)
     return 0
+
+
+def _checker_recover_worker(args: argparse.Namespace) -> int:
+    data = args.request.read_bytes()
+    digest = __import__("hashlib").sha256(data).hexdigest()
+    if digest != args.sha256:
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_MISMATCH", "Checker recovery request hash mismatch")
+    request = _read_object(args.request, "Checker recovery request")
+    result = execute_checker_recovery(request, request_sha256=digest)
+    destination = Path(str(request["result_path"]))
+    encoded = continuation_request_bytes(result)
+    if destination.exists() and destination.read_bytes() != encoded:
+        raise CompletionError("CHECKER_RECOVERY_CONFLICT", "Checker recovery result conflicts")
+    if not destination.exists():
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_bytes(encoded)
+        temporary.replace(destination)
+    _emit(result)
+    return 0
+
+
+def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
+    result = inspect_overwatcher_cadence(
+        _read_object(args.runtime_projection, "runtime projection"),
+        observed_at=args.observed_at,
+    )
+    _emit(result)
+    return 3 if result["status"] in {"LATE", "CONTINUITY_UNPROVEN"} else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -282,16 +293,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     completion.add_argument("--observed-at", required=True)
     completion.add_argument("--cadence-seconds", required=True, type=int)
     completion.add_argument("--previous-inspection", type=Path)
-    resume = subparsers.add_parser("resume-worker-continuation")
-    resume.add_argument("--source-attempt", required=True, type=Path)
-    resume.add_argument("--checker-endpoint", required=True, type=Path)
-    resume.add_argument("--runtime-projection", required=True, type=Path)
-    resume.add_argument("--plan-revision", required=True, type=int)
-    resume.add_argument("--runtime-revision", required=True, type=int)
-    resume.add_argument("--token-sequence", required=True, type=int)
-    resume.add_argument("--credential-path", required=True, type=Path)
-    resume.add_argument("--state-command", required=True, type=Path)
-    resume.add_argument("--occurred-at", required=True)
+    checker_recovery = subparsers.add_parser("checker-recover-worker")
+    checker_recovery.add_argument("--request", required=True, type=Path)
+    checker_recovery.add_argument("--sha256", required=True)
+    cadence = subparsers.add_parser("inspect-overwatcher-cadence")
+    cadence.add_argument("--runtime-projection", required=True, type=Path)
+    cadence.add_argument("--observed-at", required=True)
     continuation = subparsers.add_parser("continue-worker")
     continuation.add_argument("--request", required=True, type=Path)
     continuation.add_argument("--sha256", required=True)
@@ -315,8 +322,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _recover_active_writer(args)
         if args.command == "inspect-worker-completion":
             return _inspect_worker_completion(args)
-        if args.command == "resume-worker-continuation":
-            return _resume_worker_completion(args)
+        if args.command == "checker-recover-worker":
+            return _checker_recover_worker(args)
+        if args.command == "inspect-overwatcher-cadence":
+            return _inspect_overwatcher_cadence(args)
         if args.command == "continue-worker":
             return _continue_worker(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")
@@ -328,6 +337,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _rejected("DRILL_EVIDENCE_INVALID", str(exc))
     except CompletionError as exc:
         return _rejected(exc.error_code, str(exc))
+    except OverwatcherContinuityError as exc:
+        return _rejected("OVERWATCHER_CADENCE_PROJECTION_INVALID", str(exc))
     except (OSError, ValueError) as exc:
         return _rejected("INPUT_INVALID", str(exc))
 

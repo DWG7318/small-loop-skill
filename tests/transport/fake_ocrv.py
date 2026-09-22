@@ -12,6 +12,7 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("mode")
+parser.add_argument("--slk-worker-recovery", action="store_true")
 parser.add_argument("--request", required=True, type=Path)
 parser.add_argument("--output", required=True, type=Path)
 args = parser.parse_args()
@@ -20,6 +21,28 @@ if "SLK_ROLE_CREDENTIAL" in os.environ or "SLK_OVERWATCHER_CREDENTIAL" in os.env
     sys.exit(8)
 
 request = json.loads(args.request.read_text(encoding="utf-8"))
+if args.slk_worker_recovery:
+    source_root = Path(request["source_attempt_root"])
+    source_envelope = json.loads((source_root / "envelope.json").read_text(encoding="utf-8"))
+    source_started = json.loads((source_root / "started.json").read_text(encoding="utf-8"))
+    result = {
+        "schema_version": "slk.ocrv-worker-recovery-result/v1",
+        "method_version": "4.2.5",
+        "status": "CHECKER_STARTED",
+        "run_id": request["run_id"],
+        "cell_id": request["cell_id"],
+        "source_message_id": source_envelope["message_id"],
+        "worker_session_id": source_started["session_id"],
+        "checker_role_instance_id": request["checker_role_instance_id"],
+        "checker_endpoint_version": request["checker_endpoint_version"],
+        "checker_authenticated": True,
+        "authorized_recovery": True,
+        "recovery_invocation_id": request["recovery_invocation_id"],
+        "request_sha256": hashlib.sha256(args.request.read_bytes()).hexdigest(),
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(result), encoding="utf-8")
+    sys.exit(0)
 if args.mode == "delayed-terminal":
     time.sleep(0.35)
 session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uuid4()}"

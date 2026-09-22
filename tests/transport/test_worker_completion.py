@@ -12,6 +12,7 @@ from slk_transport.worker_completion import (
     CompletionError,
     _decode_dpapi_plaintext,
     build_continuation_request,
+    execute_checker_recovery,
     inspect_worker_completion,
     resume_worker_continuation,
     run_worker_continuation,
@@ -53,6 +54,114 @@ def test_dpapi_plaintext_rejects_invalid_encoding_and_wrong_credential_shape(pla
     with pytest.raises(CompletionError) as rejected:
         _decode_dpapi_plaintext(plaintext)
     assert rejected.value.error_code == "WORKER_CREDENTIAL_UNAVAILABLE"
+
+
+def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
+    attempt, _worker, checker = completion_fixture(tmp_path)
+    projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
+    return {
+        "schema_version": "slk.ocrv-worker-recovery-request/v1",
+        "method_version": "4.2.5",
+        "recovery_invocation_id": "recovery-invocation-1",
+        "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
+        "run_id": "RUN-A",
+        "go_id": "GO-001",
+        "cell_id": "CELL-001",
+        "checker_role_instance_id": checker["role_instance_id"],
+        "checker_endpoint_version": checker["endpoint_version"],
+        "checker_endpoint": checker,
+        "source_attempt_root": str(attempt),
+        "runtime_projection_path": str(projection_path),
+        "plan_revision": 1,
+        "runtime_revision": 7,
+        "token_sequence": 14,
+        "worker_credential_path": str(tmp_path / "worker.dpapi"),
+        "checker_credential_path": str(tmp_path / "checker.dpapi"),
+        "state_command": ["slk-state"],
+        "transport_command": ["python", "slk-transport.pyz"],
+        "occurred_at": "2026-09-23T00:00:00Z",
+        "result_path": str(tmp_path / "checker-recovery-result.json"),
+    }
+
+
+def test_exact_ocrv_checker_authenticates_before_resuming_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = checker_recovery_request(tmp_path)
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID", str(request["checker_role_instance_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ENDPOINT_VERSION", str(request["checker_endpoint_version"]))
+    calls: list[str] = []
+
+    def authenticate(run_id: str, role_id: str, credential: Path, command: list[str]) -> dict[str, object]:
+        calls.append("authenticate")
+        assert run_id == "RUN-A"
+        assert credential.name == "checker.dpapi"
+        assert command == ["slk-state"]
+        return {
+            "status": "authenticated",
+            "run_id": run_id,
+            "role": "checker",
+            "role_instance_id": role_id,
+            "runtime_revision": 7,
+        }
+
+    def resume(continuation: dict[str, object]) -> dict[str, object]:
+        calls.append("resume")
+        assert continuation["method_version"] == "4.2.5"
+        return {"status": "CHECKER_STARTED"}
+
+    result = execute_checker_recovery(
+        request,
+        request_sha256="a" * 64,
+        authenticate_checker=authenticate,
+        resume_continuation=resume,
+    )
+
+    assert calls == ["authenticate", "resume"]
+    assert result["status"] == "CHECKER_STARTED"
+    assert result["checker_role_instance_id"] == request["checker_role_instance_id"]
+
+
+def test_checker_recovery_rejects_supervisor_direct_call_and_wrong_checker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = checker_recovery_request(tmp_path)
+    called = False
+
+    def authenticate(*_args: object) -> dict[str, object]:
+        nonlocal called
+        called = True
+        return {}
+
+    with pytest.raises(CompletionError) as no_native_checker:
+        execute_checker_recovery(
+            request,
+            request_sha256="a" * 64,
+            authenticate_checker=authenticate,
+            resume_continuation=lambda _request: {},
+        )
+    assert no_native_checker.value.error_code == "CHECKER_RECOVERY_NATIVE_IDENTITY_UNPROVEN"
+    assert called is False
+
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID", str(request["checker_role_instance_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ENDPOINT_VERSION", str(request["checker_endpoint_version"]))
+    with pytest.raises(CompletionError) as wrong_checker:
+        execute_checker_recovery(
+            request,
+            request_sha256="a" * 64,
+            authenticate_checker=lambda *_args: {
+                "status": "authenticated",
+                "role": "supervisor",
+                "role_instance_id": "RUN-A-supervisor-001",
+                "runtime_revision": 7,
+            },
+            resume_continuation=lambda _request: {},
+        )
+    assert wrong_checker.value.error_code == "CHECKER_RECOVERY_AUTHENTICATION_FAILED"
 
 
 def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[str, object]]:
@@ -160,8 +269,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.2.4", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.2.5", "plan_revision": 1},
         "runtime_snapshot": {
+            "method_version": "4.2.5",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,

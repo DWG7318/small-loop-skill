@@ -675,7 +675,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1541,7 +1541,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if method_version == "4.2.4" {
+            if matches!(method_version.as_str(), "4.2.4" | "4.2.5") {
                 type ExistingWorkEvent = (
                     String,
                     Option<String>,
@@ -1931,7 +1931,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if method_version == "4.2.4" {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2802,7 +2802,8 @@ fn validate_worker_completion_cycle(
     }
     if inspections.len() != 1 {
         return Err(StateError::OverwatcherCycleInvalid(
-            "4.2.4 Worker-held TOKEN requires exactly one completion inspection per cycle".into(),
+            "SLK 4.2.4+ Worker-held TOKEN requires exactly one completion inspection per cycle"
+                .into(),
         ));
     }
     let inspection = &inspections[0];
@@ -3493,7 +3494,7 @@ fn validate_reconciliation_request(
 }
 
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
-    matches!(version, "4.2.3" | "4.2.4")
+    matches!(version, "4.2.3" | "4.2.4" | "4.2.5")
 }
 
 fn validate_method_adoption_request(
@@ -3503,7 +3504,8 @@ fn validate_method_adoption_request(
         (matches!(request.from_version.as_str(), "4.1.1" | "4.2.0" | "4.2.1")
             && request.to_version == "4.2.2")
             || (request.from_version == "4.2.2" && request.to_version == "4.2.3")
-            || (request.from_version == "4.2.3" && request.to_version == "4.2.4");
+            || (request.from_version == "4.2.3" && request.to_version == "4.2.4")
+            || (request.from_version == "4.2.4" && request.to_version == "4.2.5");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

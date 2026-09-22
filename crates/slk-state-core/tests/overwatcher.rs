@@ -487,6 +487,60 @@ fn adoption_423_to_424_preserves_a_proven_active_overwatcher() {
 }
 
 #[test]
+fn adoption_424_to_425_preserves_a_proven_active_overwatcher() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut cycle = overwatch_cycle(1);
+    cycle.runtime_revision = fixture.runtime_revision();
+    cycle.latest_event_id = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap()
+        .latest_event_id;
+    cycle.evidence_refs = vec![fixture.evidence_ref("adoption-425-live.json", b"active")];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+    fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_424_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+
+    let result = fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_425_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+
+    assert_eq!(result.effective_version, "4.2.5");
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(after.summary.slk_version, "4.2.5");
+    assert_eq!(
+        after
+            .runtime_snapshot
+            .unwrap()
+            .overwatcher_status
+            .as_deref(),
+        Some("ACTIVE")
+    );
+}
+
+#[test]
 fn a_424_cycle_cannot_clear_a_terminal_worker_completion_without_handoff() {
     let fixture = Fixture::new_423();
     let issued = fixture
@@ -1315,6 +1369,36 @@ fn adoption_424_request(
         },
         reason: "adopt the 4.2.4 Worker completion guard without changing history".into(),
         occurred_at: "2026-09-23T00:00:01Z".into(),
+    }
+}
+
+fn adoption_425_request(
+    fixture: &Fixture,
+    overwatcher: OverwatcherAssertion,
+) -> AdoptMethodContractRequest {
+    AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-425".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.2.4".into(),
+        to_version: "4.2.5".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-425".into(),
+            message_id: "owner-message-425".into(),
+            content_sha256: "c".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-23T01:00:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher,
+        },
+        reason: "adopt the 4.2.5 authenticated Checker recovery boundary".into(),
+        occurred_at: "2026-09-23T01:00:01Z".into(),
     }
 }
 

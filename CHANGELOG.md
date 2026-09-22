@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.2.5
+
+- Closed the 4.2.4 authority gap: Supervisor can only send a closed `WORKER_COMPLETION_RECOVERY` to the original registered OCRV Checker; deterministic native Checker start remains pending/unauthorized until the Checker credential proves the exact role and runtime revision, after which the same DSH Session may run the bounded Worker-owned suffix.
+- Removed the public direct `resume-worker-continuation` command, added closed Checker recovery request/result contracts, and packaged a reversible two-file OCRV wrapper integration without changing the accepted D1 adapter or installing dependencies.
+- Added read-only Overwatcher cadence inspection so a projected active role cannot stand in for continuing 180–300 second cycles. One missed interval wakes the same binding; more than two intervals requires Supervisor recovery review, with no heartbeat, daemon, timer, automatic replacement, or state mutation.
+- Added explicit `4.2.4 → 4.2.5` adoption that preserves roles, plan, TOKEN, engineering history, and a proven active Overwatcher. No model, topology, CELL, D0/D1/D2, BI authority, product, or live R3B/OCRV state is changed.
+
 ## 4.2.4
 
 - Closed the DSH terminal-without-handoff gap with a bounded same-Session Worker continuation: the original Checker resumes the exact recorded DSH instance/session, while the Worker process alone decrypts its DPAPI credential, writes idempotent `WORK_STARTED`/`D0_COMPLETED`/`CANDIDATE_SUBMITTED`, activates OCRV, verifies exact start evidence, reads a fresh runtime revision, and commits TOKEN atomically.
