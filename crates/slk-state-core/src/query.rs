@@ -1,6 +1,8 @@
 //! Stable read-only projections for Agents, the query CLI, and future BI.
 
 use std::collections::{HashMap, HashSet};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -186,6 +188,62 @@ pub struct OverwatchCycleProjection {
     pub started_at: String,
     pub completed_at: String,
     pub next_cycle_at: String,
+    pub binding_revision: u64,
+    pub runtime_revision: u64,
+    pub native_liveness: String,
+    pub cadence_health: String,
+    pub cost_metrics_json: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OverwatcherNativeStatusProjection {
+    pub status_id: String,
+    pub binding_revision: u64,
+    pub role_instance_id: String,
+    pub session_id: String,
+    pub foreground_turn_id: String,
+    pub native_liveness: String,
+    pub evidence_path: String,
+    pub evidence_sha256: String,
+    pub observed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OverwatcherIncidentTransitionProjection {
+    pub transition_id: String,
+    pub incident_id: String,
+    pub binding_revision: u64,
+    pub incident_code: String,
+    pub state: String,
+    pub evidence_path: String,
+    pub evidence_sha256: String,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OverwatcherBindingTransitionProjection {
+    pub transition_id: String,
+    pub binding_revision: u64,
+    pub transition_type: String,
+    pub cycle_id: Option<String>,
+    pub runtime_revision: u64,
+    pub evidence_ref: String,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum WaitForChangeStatus {
+    Changed,
+    Timeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WaitForChangeResult {
+    pub status: WaitForChangeStatus,
+    pub run_id: String,
+    pub after_revision: u64,
+    pub current_revision: u64,
 }
 
 struct OverwatcherBindingRow {
@@ -217,6 +275,9 @@ pub struct RunProjection {
     pub token_history: Vec<TokenProjection>,
     pub evidence: Vec<EvidenceProjection>,
     pub overwatch_cycles: Vec<OverwatchCycleProjection>,
+    pub overwatcher_native_status_receipts: Vec<OverwatcherNativeStatusProjection>,
+    pub overwatcher_incident_transitions: Vec<OverwatcherIncidentTransitionProjection>,
+    pub overwatcher_binding_transitions: Vec<OverwatcherBindingTransitionProjection>,
     pub operational_observations: Vec<OperationalObservationProjection>,
     pub reconciliation_receipts: Vec<RunIdentityReconciliationReceiptProjection>,
     pub method_adoption_receipts: Vec<MethodAdoptionReceiptProjection>,
@@ -315,6 +376,18 @@ impl StateStore {
             token_history: load_tokens(&connection, run_id)?,
             evidence: load_evidence(&connection, run_id)?,
             overwatch_cycles: load_overwatch_cycles(&connection, run_id)?,
+            overwatcher_native_status_receipts: load_overwatcher_native_statuses(
+                &connection,
+                run_id,
+            )?,
+            overwatcher_incident_transitions: load_overwatcher_incident_transitions(
+                &connection,
+                run_id,
+            )?,
+            overwatcher_binding_transitions: load_overwatcher_binding_transitions(
+                &connection,
+                run_id,
+            )?,
             operational_observations: load_operational_observations(&connection, run_id)?,
             reconciliation_receipts: load_reconciliation_receipts(&connection, run_id)?,
             method_adoption_receipts: load_method_adoption_receipts(&connection, run_id)?,
@@ -375,6 +448,76 @@ impl StateStore {
         Ok(
             json!({"schema_version":"slk.bi.evidence/v1","run_id":run_id,"evidence":projection.evidence}),
         )
+    }
+
+    pub fn wait_for_change(
+        &self,
+        run_id: &str,
+        after_revision: u64,
+        timeout_seconds: u64,
+    ) -> Result<WaitForChangeResult, StateError> {
+        let started = Instant::now();
+        self.wait_for_change_with(
+            run_id,
+            after_revision,
+            timeout_seconds,
+            move || started.elapsed().as_millis() as u64,
+            |millis| thread::sleep(Duration::from_millis(millis)),
+        )
+    }
+
+    pub fn wait_for_change_with<N, S>(
+        &self,
+        run_id: &str,
+        after_revision: u64,
+        timeout_seconds: u64,
+        mut monotonic_millis: N,
+        mut sleep_millis: S,
+    ) -> Result<WaitForChangeResult, StateError>
+    where
+        N: FnMut() -> u64,
+        S: FnMut(u64),
+    {
+        if run_id.is_empty() || !(1..=300).contains(&timeout_seconds) {
+            return Err(StateError::RunAdministrationInvalid(
+                "wait-for-change requires a Run and 1-300 second bound".into(),
+            ));
+        }
+        let deadline = monotonic_millis().saturating_add(timeout_seconds.saturating_mul(1_000));
+        loop {
+            let connection = open_database_read_only(&self.data_root)?;
+            let current: u64 = connection
+                .query_row(
+                    "SELECT current_runtime_revision FROM runs WHERE run_id=?1",
+                    [run_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))?;
+            if after_revision > current {
+                return Err(StateError::RunAdministrationInvalid(
+                    "after_revision is ahead of authoritative runtime state".into(),
+                ));
+            }
+            if current > after_revision {
+                return Ok(WaitForChangeResult {
+                    status: WaitForChangeStatus::Changed,
+                    run_id: run_id.to_string(),
+                    after_revision,
+                    current_revision: current,
+                });
+            }
+            let now = monotonic_millis();
+            if now >= deadline {
+                return Ok(WaitForChangeResult {
+                    status: WaitForChangeStatus::Timeout,
+                    run_id: run_id.to_string(),
+                    after_revision,
+                    current_revision: current,
+                });
+            }
+            sleep_millis((deadline - now).min(100));
+        }
     }
 }
 
@@ -1047,7 +1190,9 @@ fn load_overwatch_cycles(
                 cycle_sequence, cadence_seconds, plan_revision, go_id, cell_id, attempt,
                 token_sequence, token_holder_role_instance_id, latest_event_id,
                 latest_message_id, checklist_json, anomaly_codes_json, evidence_refs_json,
-                native_active_session_evidence_ref, started_at, completed_at, next_cycle_at
+                native_active_session_evidence_ref, started_at, completed_at, next_cycle_at,
+                binding_revision, runtime_revision, native_liveness, cadence_health,
+                cost_metrics_json
          FROM overwatch_cycles WHERE run_id=?1 ORDER BY cycle_sequence",
     )?;
     let rows = statement.query_map([run_id], |row| {
@@ -1073,6 +1218,87 @@ fn load_overwatch_cycles(
             started_at: row.get(18)?,
             completed_at: row.get(19)?,
             next_cycle_at: row.get(20)?,
+            binding_revision: row.get(21)?,
+            runtime_revision: row.get(22)?,
+            native_liveness: row.get(23)?,
+            cadence_health: row.get(24)?,
+            cost_metrics_json: row.get(25)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+fn load_overwatcher_native_statuses(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Vec<OverwatcherNativeStatusProjection>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT status_id, binding_revision, role_instance_id, session_id,
+                foreground_turn_id, native_liveness, evidence_path, evidence_sha256,
+                observed_at
+         FROM overwatcher_native_status_receipts
+         WHERE run_id=?1 ORDER BY rowid",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok(OverwatcherNativeStatusProjection {
+            status_id: row.get(0)?,
+            binding_revision: row.get(1)?,
+            role_instance_id: row.get(2)?,
+            session_id: row.get(3)?,
+            foreground_turn_id: row.get(4)?,
+            native_liveness: row.get(5)?,
+            evidence_path: row.get(6)?,
+            evidence_sha256: row.get(7)?,
+            observed_at: row.get(8)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+fn load_overwatcher_incident_transitions(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Vec<OverwatcherIncidentTransitionProjection>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT transition_id, incident_id, binding_revision, incident_code, state,
+                evidence_path, evidence_sha256, occurred_at
+         FROM overwatcher_incident_transitions
+         WHERE run_id=?1 ORDER BY rowid",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok(OverwatcherIncidentTransitionProjection {
+            transition_id: row.get(0)?,
+            incident_id: row.get(1)?,
+            binding_revision: row.get(2)?,
+            incident_code: row.get(3)?,
+            state: row.get(4)?,
+            evidence_path: row.get(5)?,
+            evidence_sha256: row.get(6)?,
+            occurred_at: row.get(7)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+fn load_overwatcher_binding_transitions(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Vec<OverwatcherBindingTransitionProjection>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT transition_id, binding_revision, transition_type, cycle_id,
+                runtime_revision, evidence_ref, occurred_at
+         FROM overwatcher_binding_transitions
+         WHERE run_id=?1 ORDER BY rowid",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok(OverwatcherBindingTransitionProjection {
+            transition_id: row.get(0)?,
+            binding_revision: row.get(1)?,
+            transition_type: row.get(2)?,
+            cycle_id: row.get(3)?,
+            runtime_revision: row.get(4)?,
+            evidence_ref: row.get(5)?,
+            occurred_at: row.get(6)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

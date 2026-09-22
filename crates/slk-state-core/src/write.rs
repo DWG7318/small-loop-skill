@@ -19,10 +19,12 @@ use crate::auth::{
 };
 use crate::model::{
     AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest,
-    CommitDeliveryStartRequest, EventType, InitRunRequest, OperationalObservationRequest,
-    OverwatchCheckResult, OverwatchCycleRequest, OwnerAuthorizationEvidence, OwnerDecision,
-    RebindSessionRequest, ReconcileRunIdentitiesRequest, RegisterRoleRequest, ReplaceRoleRequest,
-    RevisePlanRequest, Role, RunStateSnapshot, RuntimeSnapshot, TokenHandoffRequest, WriteRequest,
+    CommitDeliveryStartRequest, EventType, EvidenceReference, InitRunRequest, NativeLiveness,
+    OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
+    OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
+    RebindSessionRequest, ReconcileRunIdentitiesRequest, RecordOverwatcherStatusRequest,
+    RegisterRoleRequest, ReplaceOverwatcherRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
+    RunStateSnapshot, RuntimeSnapshot, TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
 
@@ -476,17 +478,105 @@ impl StateStore {
                 (false, None) => {}
             }
 
-            let active_overwatcher: Option<i64> = transaction
+            let active_overwatcher: Option<(u64, String)> = transaction
                 .query_row(
-                    "SELECT 1 FROM overwatcher_bindings
+                    "SELECT binding_revision, continuity_state FROM overwatcher_bindings
                      WHERE run_id=?1 AND lifecycle_state='active'",
                     [&request.run_id],
-                    |row| row.get(0),
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
-            if active_overwatcher.is_some() {
+            if request.to_version == "4.2.3" {
+                match (active_overwatcher.as_ref(), request.compatibility.overwatcher) {
+                    (None, OverwatcherAssertion::Absent) => {}
+                    (Some((binding_revision, continuity)), OverwatcherAssertion::PreservedActive) => {
+                        if continuity != "ACTIVE" {
+                            return Err(StateError::RunAdministrationInvalid(
+                                "PRESERVED_ACTIVE requires an active continuity projection".into(),
+                            ));
+                        }
+                        let cycle: Option<(String, String, String)> = transaction
+                            .query_row(
+                                "SELECT evidence_refs_json, native_active_session_evidence_ref,
+                                        native_liveness
+                                 FROM overwatch_cycles
+                                 WHERE run_id=?1 AND binding_revision=?2
+                                 ORDER BY cycle_sequence DESC LIMIT 1",
+                                params![request.run_id, binding_revision],
+                                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                            )
+                            .optional()?;
+                        let Some((evidence_json, native_ref, native_liveness)) = cycle else {
+                            return Err(StateError::RunAdministrationInvalid(
+                                "PRESERVED_ACTIVE requires one complete prior observation cycle"
+                                    .into(),
+                            ));
+                        };
+                        let evidence: Vec<EvidenceReference> =
+                            serde_json::from_str(&evidence_json).map_err(|_| {
+                                StateError::RunAdministrationInvalid(
+                                    "prior observation evidence is not a closed 4.2.3-compatible set"
+                                        .into(),
+                                )
+                            })?;
+                        if native_liveness != "IN_PROGRESS"
+                            || evidence.is_empty()
+                            || !evidence.iter().any(|item| item.path == native_ref)
+                        {
+                            return Err(StateError::RunAdministrationInvalid(
+                                "PRESERVED_ACTIVE requires verified native in-progress evidence"
+                                    .into(),
+                            ));
+                        }
+                        for reference in &evidence {
+                            validate_evidence_reference(reference)?;
+                        }
+                    }
+                    (
+                        Some((binding_revision, _)),
+                        OverwatcherAssertion::ContinuityRecoveryRequired,
+                    ) => {
+                        transaction.execute(
+                            "UPDATE overwatcher_bindings SET continuity_state='VIOLATION'
+                             WHERE run_id=?1 AND binding_revision=?2",
+                            params![request.run_id, binding_revision],
+                        )?;
+                        let incident_id = format!(
+                            "continuity-{}-{}",
+                            request.run_id, binding_revision
+                        );
+                        transaction.execute(
+                            "INSERT INTO overwatcher_incident_transitions
+                             (transition_id, incident_id, run_id, binding_revision,
+                              incident_code, state, evidence_path, evidence_sha256, occurred_at)
+                             VALUES (?1,?2,?3,?4,'OVERWATCHER_CONTINUITY_VIOLATION','OPEN',?5,?6,?7)",
+                            params![
+                                format!("incident-open-{}", request.receipt_id),
+                                incident_id,
+                                request.run_id,
+                                binding_revision,
+                                format!(
+                                    "owner:{}/{}",
+                                    request.owner_authorization.source_thread_id,
+                                    request.owner_authorization.message_id
+                                ),
+                                request.owner_authorization.content_sha256,
+                                request.occurred_at,
+                            ],
+                        )?;
+                    }
+                    _ => {
+                        return Err(StateError::RunAdministrationInvalid(
+                            "4.2.3 adoption requires an exact ABSENT, PRESERVED_ACTIVE, or CONTINUITY_RECOVERY_REQUIRED Overwatcher assertion"
+                                .into(),
+                        ));
+                    }
+                }
+            } else if active_overwatcher.is_some()
+                || request.compatibility.overwatcher != OverwatcherAssertion::Absent
+            {
                 return Err(StateError::RunAdministrationInvalid(
-                    "method adoption requires Overwatcher=ABSENT".into(),
+                    "4.2.2 method adoption requires Overwatcher=ABSENT".into(),
                 ));
             }
 
@@ -521,6 +611,16 @@ impl StateStore {
                     request.occurred_at,
                 ],
             )?;
+            if request.to_version == "4.2.3" {
+                let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+                advance_runtime_snapshot(
+                    transaction,
+                    &request.run_id,
+                    &request.receipt_id,
+                    snapshot.latest_message_id.as_deref(),
+                    &request.occurred_at,
+                )?;
+            }
             Ok(MethodAdoptionResult {
                 status: "APPLIED".into(),
                 receipt_id: request.receipt_id.clone(),
@@ -573,14 +673,31 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
             {
                 return Err(StateError::OverwatcherBindingInvalid(
-                    "active Overwatcher requires an open Run with effective SLK 4.2.1 or 4.2.2"
+                    "active Overwatcher requires an open Run with a supported effective SLK contract"
                         .into(),
+                ));
+            }
+            let binding_revision = if request.binding_revision == 0 {
+                1
+            } else {
+                request.binding_revision
+            };
+            let canonical_task_id = if request.canonical_task_id.trim().is_empty() {
+                request.identity.session_id.clone()
+            } else {
+                request.canonical_task_id.clone()
+            };
+            if run_contract.0 == "4.2.3"
+                && (binding_revision != 1 || !valid_identifier(&canonical_task_id))
+            {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "SLK 4.2.3 requires binding_revision=1 and one canonical task identity".into(),
                 ));
             }
             let already_bound: Option<i64> = transaction
@@ -624,9 +741,11 @@ impl StateStore {
                   native_address_json, bound_by_role_instance_id, binding_reason,
                   credential_id, credential_sha256, credential_state,
                   lifecycle_state, bound_at, observation_mode, cadence_seconds,
-                  foreground_turn_id, native_active_session_evidence_ref)
+                  foreground_turn_id, native_active_session_evidence_ref,
+                  binding_revision, canonical_task_id, continuity_state)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, ?15, 'active', 'active', ?16, ?17, ?18, ?19, ?20)",
+                         ?13, ?14, ?15, 'active', 'active', ?16, ?17, ?18, ?19, ?20,
+                         ?21, ?22, 'ACTIVE')",
                 params![
                     request.run_id,
                     request.identity.role_instance_id,
@@ -648,6 +767,8 @@ impl StateStore {
                     request.cadence_seconds,
                     request.foreground_turn_id,
                     request.native_active_session_evidence_ref,
+                    binding_revision,
+                    canonical_task_id,
                 ],
             )?;
             transaction.execute(
@@ -668,11 +789,36 @@ impl StateStore {
                         "cadence_seconds": request.cadence_seconds,
                         "foreground_turn_id": request.foreground_turn_id,
                         "native_active_session_evidence_ref": request.native_active_session_evidence_ref,
+                        "binding_revision": binding_revision,
+                        "canonical_task_id": canonical_task_id,
                         "reason": request.reason,
                     }))?,
                     request.occurred_at,
                 ],
             )?;
+            if run_contract.0 == "4.2.3" {
+                let runtime_revision = advance_runtime_snapshot(
+                    transaction,
+                    &request.run_id,
+                    &request.event_id,
+                    None,
+                    &request.occurred_at,
+                )?;
+                transaction.execute(
+                    "INSERT INTO overwatcher_binding_transitions
+                     (transition_id, run_id, binding_revision, transition_type,
+                      runtime_revision, evidence_ref, occurred_at)
+                     VALUES (?1,?2,?3,'BOUND',?4,?5,?6)",
+                    params![
+                        format!("binding-transition-{}", request.event_id),
+                        request.run_id,
+                        binding_revision,
+                        runtime_revision,
+                        request.native_active_session_evidence_ref,
+                        request.occurred_at,
+                    ],
+                )?;
+            }
             Ok(IssuedCredential {
                 credential_id: material.credential_id,
                 credential: material.credential,
@@ -735,6 +881,12 @@ impl StateStore {
                     serde_json::to_string(&request.identity)?,
                     request.occurred_at
                 ],
+            )?;
+            advance_runtime_snapshot_if_423(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                &request.occurred_at,
             )?;
             Ok(issued)
         })
@@ -1143,6 +1295,12 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
+            advance_runtime_snapshot_if_423(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                &request.occurred_at,
+            )?;
             Ok(revision)
         })
     }
@@ -1255,6 +1413,12 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
+            advance_runtime_snapshot_if_423(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                &request.occurred_at,
+            )?;
             Ok(issued)
         })
     }
@@ -1351,6 +1515,12 @@ impl StateStore {
                     }))?,
                     request.occurred_at
                 ],
+            )?;
+            advance_runtime_snapshot_if_423(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                &request.occurred_at,
             )?;
             Ok(())
         })
@@ -1482,6 +1652,21 @@ impl StateStore {
                          archive_reason='completed', archived_at=?2
                      WHERE run_id=?1",
                     params![request.run_id, request.occurred_at],
+                )?;
+            }
+            let method_version: String = transaction.query_row(
+                "SELECT slk_version FROM runs WHERE run_id=?1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            if method_version == "4.2.3" {
+                let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+                advance_runtime_snapshot(
+                    transaction,
+                    &request.run_id,
+                    &request.event_id,
+                    snapshot.latest_message_id.as_deref(),
+                    &request.occurred_at,
                 )?;
             }
             Ok(())
@@ -1621,10 +1806,11 @@ impl StateStore {
                     "only the bound Overwatcher may author cycles".into(),
                 ));
             }
-            let binding: Option<(String, String, i64, String, String)> = transaction
+            let binding: Option<(String, String, i64, String, String, u64, String, String)> = transaction
                 .query_row(
                     "SELECT session_id, observation_mode, cadence_seconds,
-                            foreground_turn_id, lifecycle_state
+                            foreground_turn_id, lifecycle_state, binding_revision,
+                            continuity_state, bound_at
                      FROM overwatcher_bindings
                      WHERE run_id=?1 AND role_instance_id=?2",
                     params![request.run_id, overwatcher_role_instance_id],
@@ -1635,11 +1821,14 @@ impl StateStore {
                             row.get(2)?,
                             row.get(3)?,
                             row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                            row.get(7)?,
                         ))
                     },
                 )
                 .optional()?;
-            let Some((session_id, mode, cadence, foreground_turn_id, lifecycle)) = binding else {
+            let Some((session_id, mode, cadence, foreground_turn_id, lifecycle, binding_revision, continuity_state, bound_at)) = binding else {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "the Overwatcher binding does not exist".into(),
                 ));
@@ -1649,10 +1838,40 @@ impl StateStore {
                 || session_id != request.session_id
                 || foreground_turn_id != request.foreground_turn_id
                 || cadence != i64::from(request.cadence_seconds)
+                || continuity_state != "ACTIVE"
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "cycle identity must match the active foreground binding".into(),
                 ));
+            }
+            let method_version: String = transaction.query_row(
+                "SELECT slk_version FROM runs WHERE run_id=?1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            let runtime_snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+            if method_version == "4.2.3" {
+                if request.binding_revision != binding_revision
+                    || request.runtime_revision != runtime_snapshot.runtime_revision
+                    || request.native_liveness != NativeLiveness::InProgress
+                {
+                    return Err(StateError::OverwatcherCycleInvalid(
+                        "cycle must bind the current runtime/binding revision and a live foreground turn"
+                            .into(),
+                    ));
+                }
+                for evidence in &request.evidence_refs {
+                    validate_evidence_reference(evidence)?;
+                }
+                if !request
+                    .evidence_refs
+                    .iter()
+                    .any(|item| item.path == request.native_active_session_evidence_ref)
+                {
+                    return Err(StateError::OverwatcherCycleInvalid(
+                        "native activity reference must name one verified cycle evidence file".into(),
+                    ));
+                }
             }
             let revision = current_plan_revision(transaction, &request.run_id)?;
             if request.plan_revision != revision {
@@ -1691,7 +1910,12 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if current_message_id != request.latest_message_id {
+            let expected_message = if method_version == "4.2.3" {
+                runtime_snapshot.latest_message_id.clone()
+            } else {
+                current_message_id
+            };
+            if expected_message != request.latest_message_id {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "cycle latest message reference is stale".into(),
                 ));
@@ -1701,7 +1925,12 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if latest_event_id != request.latest_event_id {
+            let expected_event = if method_version == "4.2.3" {
+                runtime_snapshot.latest_event_id.clone()
+            } else {
+                latest_event_id
+            };
+            if expected_event != request.latest_event_id {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "cycle latest event reference is stale".into(),
                 ));
@@ -1739,13 +1968,21 @@ impl StateStore {
                     |row| row.get(0),
                 )
                 .optional()?;
-            if let Some(previous_completed_at) = previous_completed_at {
+            if let Some(previous_completed_at) = previous_completed_at.as_deref() {
                 if parse_rfc3339(&request.started_at)? < parse_rfc3339(&previous_completed_at)? {
                     return Err(StateError::OverwatcherCycleInvalid(
                         "observation cycles must not overlap".into(),
                     ));
                 }
             }
+            let cadence_anchor = previous_completed_at.as_deref().unwrap_or(bound_at.as_str());
+            let cadence_health = if parse_rfc3339(&request.started_at)?
+                > parse_rfc3339(cadence_anchor)? + cadence
+            {
+                "LATE"
+            } else {
+                "ON_TIME"
+            };
             transaction.execute(
                 "INSERT INTO overwatch_cycles
                  (cycle_id, run_id, overwatcher_role_instance_id, session_id,
@@ -1753,9 +1990,11 @@ impl StateStore {
                   go_id, cell_id, attempt, token_sequence, token_holder_role_instance_id,
                   latest_event_id, latest_message_id, checklist_json, anomaly_codes_json,
                   evidence_refs_json, native_active_session_evidence_ref, payload_sha256,
-                  started_at, completed_at, next_cycle_at)
+                  started_at, completed_at, next_cycle_at, binding_revision,
+                  runtime_revision, native_liveness, cadence_health, cost_metrics_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+                         ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23,
+                         ?24, ?25, ?26, ?27, ?28)",
                 params![
                     request.cycle_id,
                     request.run_id,
@@ -1780,6 +2019,15 @@ impl StateStore {
                     request.started_at,
                     request.completed_at,
                     request.next_cycle_at,
+                    binding_revision,
+                    runtime_snapshot.runtime_revision,
+                    request.native_liveness.as_str(),
+                    cadence_health,
+                    request
+                        .cost_metrics
+                        .as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()?,
                 ],
             )?;
             Ok(())
@@ -1799,9 +2047,55 @@ impl StateStore {
         self.with_immediate_transaction(|transaction| {
             let overwatcher_role_instance_id =
                 authorize_overwatcher(transaction, &request.run_id, credential)?;
+            let (method_version, closure_state): (String, String) = transaction.query_row(
+                "SELECT slk_version, closure_state FROM runs WHERE run_id=?1",
+                [&request.run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            if method_version == "4.2.3" {
+                if closure_state == "open" {
+                    return Err(StateError::OverwatcherObservationInvalid(
+                        "a whole-Run Overwatcher cannot close at a CELL or GO boundary".into(),
+                    ));
+                }
+                let requested_revision = request.runtime_revision.ok_or_else(|| {
+                    StateError::OverwatcherObservationInvalid(
+                        "terminal close requires the exact runtime revision".into(),
+                    )
+                })?;
+                let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+                if requested_revision != snapshot.runtime_revision {
+                    return Err(StateError::OverwatcherObservationInvalid(
+                        "terminal close runtime revision is stale".into(),
+                    ));
+                }
+                let final_cycle_id = request.final_cycle_id.as_deref().ok_or_else(|| {
+                    StateError::OverwatcherObservationInvalid(
+                        "terminal close requires the final observation cycle".into(),
+                    )
+                })?;
+                let final_cycle: Option<(String, u64)> = transaction
+                    .query_row(
+                        "SELECT cycle_id, runtime_revision FROM overwatch_cycles
+                         WHERE run_id=?1 ORDER BY cycle_sequence DESC LIMIT 1",
+                        [&request.run_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?;
+                if final_cycle.as_ref().map(|item| item.0.as_str()) != Some(final_cycle_id)
+                    || final_cycle.as_ref().map(|item| item.1) != Some(requested_revision)
+                {
+                    return Err(StateError::OverwatcherObservationInvalid(
+                        "terminal close must cite the latest cycle at the same runtime revision"
+                            .into(),
+                    ));
+                }
+            }
             let revision = current_plan_revision(transaction, &request.run_id)?;
             let details = serde_json::json!({
                 "archive_evidence_ref": request.archive_evidence_ref.clone(),
+                "final_cycle_id": request.final_cycle_id.clone(),
+                "runtime_revision": request.runtime_revision,
             });
             let details_json = serde_json::to_string(&details)?;
             let payload_sha256 = sha256_hex(details_json.as_bytes());
@@ -1823,7 +2117,8 @@ impl StateStore {
             )?;
             transaction.execute(
                 "UPDATE overwatcher_bindings
-                 SET lifecycle_state='archived', closed_at=?2, archive_evidence_ref=?3
+                 SET lifecycle_state='archived', continuity_state='ARCHIVED',
+                     closed_at=?2, archive_evidence_ref=?3
                  WHERE run_id=?1 AND role_instance_id=?4",
                 params![
                     request.run_id,
@@ -1836,6 +2131,422 @@ impl StateStore {
                 "UPDATE overwatcher_bindings SET credential_state='revoked'
                  WHERE run_id=?1 AND role_instance_id=?2",
                 params![request.run_id, overwatcher_role_instance_id],
+            )?;
+            if method_version == "4.2.3" {
+                let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+                let runtime_revision = advance_runtime_snapshot(
+                    transaction,
+                    &request.run_id,
+                    &request.event_id,
+                    snapshot.latest_message_id.as_deref(),
+                    &request.occurred_at,
+                )?;
+                transaction.execute(
+                    "INSERT INTO overwatcher_binding_transitions
+                     (transition_id, run_id, binding_revision, transition_type, cycle_id,
+                      runtime_revision, evidence_ref, occurred_at)
+                     SELECT ?1, run_id, binding_revision, 'TERMINAL_CLOSE', ?2, ?3, ?4, ?5
+                     FROM overwatcher_bindings WHERE run_id=?6",
+                    params![
+                        request.event_id,
+                        request.final_cycle_id,
+                        runtime_revision,
+                        request.archive_evidence_ref,
+                        request.occurred_at,
+                        request.run_id,
+                    ],
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn replace_overwatcher(
+        &self,
+        credential: &Credential,
+        request: ReplaceOverwatcherRequest,
+    ) -> Result<IssuedCredential, StateError> {
+        if !valid_identifier(&request.event_id)
+            || request.expected_binding_revision == 0
+            || request.expected_runtime_revision == 0
+            || request.replacement.role != Role::Overwatcher
+            || !valid_identifier(&request.replacement.role_instance_id)
+            || request.replacement.session_id != request.endpoint.session_id
+            || request.replacement.agent_runtime.trim().is_empty()
+            || request.replacement.provider.trim().is_empty()
+            || request.replacement.model.trim().is_empty()
+            || request.replacement.reasoning.trim().is_empty()
+            || request.endpoint.endpoint_version == 0
+            || request.endpoint.transport_adapter.trim().is_empty()
+            || request.endpoint.host_identity.trim().is_empty()
+            || !(180..=300).contains(&request.cadence_seconds)
+            || request.foreground_turn_id.trim().is_empty()
+            || request.reason.trim().is_empty()
+        {
+            return Err(StateError::OverwatcherBindingInvalid(
+                "replacement requires one complete closed identity and 180-300 second cadence"
+                    .into(),
+            ));
+        }
+        validate_admin_timestamp(&request.occurred_at)?;
+        validate_evidence_reference(&request.native_active_session_evidence)?;
+        match request.mode {
+            OverwatcherReplacementMode::Planned => {
+                if request.final_cycle_id.as_deref().is_none_or(str::is_empty)
+                    || request.authorization_evidence.is_some()
+                {
+                    return Err(StateError::OverwatcherBindingInvalid(
+                        "planned replacement requires a final cycle and no recovery authorization"
+                            .into(),
+                    ));
+                }
+            }
+            OverwatcherReplacementMode::ContinuityRecovery => {
+                if request.final_cycle_id.is_some() || request.authorization_evidence.is_none() {
+                    return Err(StateError::OverwatcherBindingInvalid(
+                        "continuity recovery requires authorization and preserves the missing final cycle"
+                            .into(),
+                    ));
+                }
+                validate_evidence_reference(
+                    request.authorization_evidence.as_ref().expect("checked"),
+                )?;
+            }
+        }
+
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_role(transaction, &request.run_id, credential)?;
+            if actor.role != Role::Supervisor {
+                return Err(StateError::OverwatcherBindingNotAuthorized);
+            }
+            let method_version: String = transaction.query_row(
+                "SELECT slk_version FROM runs WHERE run_id=?1 AND closure_state='open'",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            if method_version != "4.2.3" {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "revisioned replacement requires effective SLK 4.2.3".into(),
+                ));
+            }
+            let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+            if snapshot.runtime_revision != request.expected_runtime_revision {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "replacement runtime revision is stale".into(),
+                ));
+            }
+            let binding: (u64, String, String, String) = transaction.query_row(
+                "SELECT binding_revision, role_instance_id, session_id, continuity_state
+                 FROM overwatcher_bindings
+                 WHERE run_id=?1 AND lifecycle_state='active'",
+                [&request.run_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )?;
+            if binding.0 != request.expected_binding_revision
+                || binding.1 == request.replacement.role_instance_id
+                || binding.2 == request.replacement.session_id
+            {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "replacement must bind the exact current revision to a new role/session identity"
+                        .into(),
+                ));
+            }
+            let identity_collision: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM role_instances WHERE role_instance_id=?1",
+                    [&request.replacement.role_instance_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let session_collision: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM overwatcher_bindings
+                     WHERE session_id=?1 AND run_id<>?2",
+                    params![request.replacement.session_id, request.run_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if identity_collision.is_some() || session_collision.is_some() {
+                return Err(StateError::OverwatcherSessionReused);
+            }
+            match request.mode {
+                OverwatcherReplacementMode::Planned => {
+                    if binding.3 != "ACTIVE" {
+                        return Err(StateError::OverwatcherBindingInvalid(
+                            "planned replacement requires uninterrupted active continuity".into(),
+                        ));
+                    }
+                    let last_cycle: Option<(String, u64, u64)> = transaction
+                        .query_row(
+                            "SELECT cycle_id, binding_revision, runtime_revision
+                             FROM overwatch_cycles WHERE run_id=?1
+                             ORDER BY cycle_sequence DESC LIMIT 1",
+                            [&request.run_id],
+                            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                        )
+                        .optional()?;
+                    let expected_cycle = request.final_cycle_id.as_deref().expect("checked");
+                    if last_cycle.as_ref().map(|item| item.0.as_str()) != Some(expected_cycle)
+                        || last_cycle.as_ref().map(|item| item.1) != Some(binding.0)
+                        || last_cycle.as_ref().map(|item| item.2)
+                            != Some(snapshot.runtime_revision)
+                    {
+                        return Err(StateError::OverwatcherBindingInvalid(
+                            "planned replacement requires the exact final cycle at the current revision"
+                                .into(),
+                        ));
+                    }
+                }
+                OverwatcherReplacementMode::ContinuityRecovery => {
+                    if binding.3 != "VIOLATION" {
+                        return Err(StateError::OverwatcherBindingInvalid(
+                            "recovery replacement requires a recorded continuity violation".into(),
+                        ));
+                    }
+                }
+            }
+
+            let next_binding_revision = binding.0 + 1;
+            let material = new_credential_material();
+            let native_address_json = serde_json::to_string(&request.endpoint.native_address)?;
+            if request.mode == OverwatcherReplacementMode::ContinuityRecovery {
+                let authorization = request.authorization_evidence.as_ref().expect("checked");
+                let incident_id = format!("continuity-{}-{}", request.run_id, binding.0);
+                transaction.execute(
+                    "INSERT INTO overwatcher_incident_transitions
+                     (transition_id, incident_id, run_id, binding_revision, incident_code,
+                      state, evidence_path, evidence_sha256, occurred_at)
+                     VALUES (?1,?2,?3,?4,'OVERWATCHER_CONTINUITY_VIOLATION','ACKNOWLEDGED',?5,?6,?7)",
+                    params![
+                        format!("incident-ack-{}", request.event_id),
+                        incident_id,
+                        request.run_id,
+                        binding.0,
+                        authorization.path,
+                        authorization.sha256,
+                        request.occurred_at,
+                    ],
+                )?;
+                transaction.execute(
+                    "INSERT INTO overwatcher_binding_transitions
+                     (transition_id, run_id, binding_revision, transition_type, cycle_id,
+                      runtime_revision, evidence_ref, occurred_at)
+                     VALUES (?1,?2,?3,'INCOMPLETE_SHUTDOWN',NULL,?4,?5,?6)",
+                    params![
+                        format!("incomplete-{}", request.event_id),
+                        request.run_id,
+                        binding.0,
+                        snapshot.runtime_revision,
+                        authorization.path,
+                        request.occurred_at,
+                    ],
+                )?;
+            }
+            transaction.execute(
+                "UPDATE overwatcher_bindings SET
+                    role_instance_id=?2, agent_runtime=?3, provider=?4, model=?5,
+                    reasoning=?6, session_id=?7, endpoint_version=?8,
+                    transport_adapter=?9, host_identity=?10, native_address_json=?11,
+                    bound_by_role_instance_id=?12, binding_reason=?13,
+                    credential_id=?14, credential_sha256=?15, credential_state='active',
+                    lifecycle_state='active', bound_at=?16, closed_at=NULL,
+                    archive_evidence_ref=NULL, cadence_seconds=?17,
+                    foreground_turn_id=?18, native_active_session_evidence_ref=?19,
+                    binding_revision=?20, canonical_task_id=?21, continuity_state='ACTIVE'
+                 WHERE run_id=?1 AND binding_revision=?22",
+                params![
+                    request.run_id,
+                    request.replacement.role_instance_id,
+                    request.replacement.agent_runtime,
+                    request.replacement.provider,
+                    request.replacement.model,
+                    request.replacement.reasoning,
+                    request.replacement.session_id,
+                    request.endpoint.endpoint_version,
+                    request.endpoint.transport_adapter,
+                    request.endpoint.host_identity,
+                    native_address_json,
+                    actor.role_instance_id,
+                    request.reason,
+                    material.credential_id,
+                    material.credential_sha256,
+                    request.occurred_at,
+                    request.cadence_seconds,
+                    request.foreground_turn_id,
+                    request.native_active_session_evidence.path,
+                    next_binding_revision,
+                    request.replacement.session_id,
+                    binding.0,
+                ],
+            )?;
+            let runtime_revision = advance_runtime_snapshot(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                snapshot.latest_message_id.as_deref(),
+                &request.occurred_at,
+            )?;
+            let transition_type = match request.mode {
+                OverwatcherReplacementMode::Planned => "PLANNED_REPLACEMENT",
+                OverwatcherReplacementMode::ContinuityRecovery => "RECOVERY_REPLACEMENT",
+            };
+            transaction.execute(
+                "INSERT INTO overwatcher_binding_transitions
+                 (transition_id, run_id, binding_revision, transition_type, cycle_id,
+                  runtime_revision, evidence_ref, occurred_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    request.event_id,
+                    request.run_id,
+                    next_binding_revision,
+                    transition_type,
+                    request.final_cycle_id,
+                    runtime_revision,
+                    request.native_active_session_evidence.path,
+                    request.occurred_at,
+                ],
+            )?;
+            if request.mode == OverwatcherReplacementMode::ContinuityRecovery {
+                let authorization = request.authorization_evidence.as_ref().expect("checked");
+                transaction.execute(
+                    "INSERT INTO overwatcher_incident_transitions
+                     (transition_id, incident_id, run_id, binding_revision, incident_code,
+                      state, evidence_path, evidence_sha256, occurred_at)
+                     VALUES (?1,?2,?3,?4,'OVERWATCHER_CONTINUITY_VIOLATION','RESOLVED',?5,?6,?7)",
+                    params![
+                        format!("incident-resolved-{}", request.event_id),
+                        format!("continuity-{}-{}", request.run_id, binding.0),
+                        request.run_id,
+                        binding.0,
+                        authorization.path,
+                        authorization.sha256,
+                        request.occurred_at,
+                    ],
+                )?;
+            }
+            Ok(IssuedCredential {
+                credential_id: material.credential_id,
+                credential: material.credential,
+            })
+        })
+    }
+
+    pub fn record_overwatcher_status(
+        &self,
+        credential: &Credential,
+        request: RecordOverwatcherStatusRequest,
+    ) -> Result<(), StateError> {
+        if !valid_identifier(&request.status_id)
+            || request.binding_revision == 0
+            || !valid_identifier(&request.role_instance_id)
+            || request.session_id.trim().is_empty()
+            || request.foreground_turn_id.trim().is_empty()
+        {
+            return Err(StateError::OverwatcherCycleInvalid(
+                "native status identity is incomplete".into(),
+            ));
+        }
+        validate_evidence_reference(&request.evidence)?;
+        validate_admin_timestamp(&request.observed_at)?;
+        let payload_sha256 = sha256_hex(serde_json::to_string(&request)?.as_bytes());
+        self.with_immediate_transaction(|transaction| {
+            let role_instance_id =
+                authorize_overwatcher(transaction, &request.run_id, credential)?;
+            let binding: (u64, String, String, String, String, String) = transaction.query_row(
+                "SELECT binding_revision, role_instance_id, session_id, foreground_turn_id,
+                        lifecycle_state, continuity_state
+                 FROM overwatcher_bindings WHERE run_id=?1",
+                [&request.run_id],
+                |row| {
+                    Ok((
+                        row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )?;
+            if binding.0 != request.binding_revision
+                || binding.1 != role_instance_id
+                || binding.1 != request.role_instance_id
+                || binding.2 != request.session_id
+                || binding.3 != request.foreground_turn_id
+                || binding.4 != "active"
+            {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "native status does not bind the current Overwatcher turn".into(),
+                ));
+            }
+            if binding.5 == "VIOLATION" && request.native_liveness == NativeLiveness::InProgress {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "a continuity violation cannot be silently upgraded to active".into(),
+                ));
+            }
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT payload_sha256 FROM overwatcher_native_status_receipts WHERE status_id=?1",
+                    [&request.status_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing) = existing {
+                return if existing == payload_sha256 {
+                    Ok(())
+                } else {
+                    Err(StateError::OverwatcherObservationConflict)
+                };
+            }
+            transaction.execute(
+                "INSERT INTO overwatcher_native_status_receipts
+                 (status_id, run_id, binding_revision, role_instance_id, session_id,
+                  foreground_turn_id, native_liveness, evidence_path, evidence_sha256,
+                  observed_at, payload_sha256)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![
+                    request.status_id,
+                    request.run_id,
+                    request.binding_revision,
+                    request.role_instance_id,
+                    request.session_id,
+                    request.foreground_turn_id,
+                    request.native_liveness.as_str(),
+                    request.evidence.path,
+                    request.evidence.sha256,
+                    request.observed_at,
+                    payload_sha256,
+                ],
+            )?;
+            if request.native_liveness != NativeLiveness::InProgress {
+                transaction.execute(
+                    "UPDATE overwatcher_bindings SET continuity_state='VIOLATION'
+                     WHERE run_id=?1 AND binding_revision=?2",
+                    params![request.run_id, request.binding_revision],
+                )?;
+                let incident_id = format!(
+                    "continuity-{}-{}",
+                    request.run_id, request.binding_revision
+                );
+                transaction.execute(
+                    "INSERT INTO overwatcher_incident_transitions
+                     (transition_id, incident_id, run_id, binding_revision, incident_code,
+                      state, evidence_path, evidence_sha256, occurred_at)
+                     VALUES (?1,?2,?3,?4,'OVERWATCHER_CONTINUITY_VIOLATION','OPEN',?5,?6,?7)",
+                    params![
+                        format!("incident-open-{}", request.status_id),
+                        incident_id,
+                        request.run_id,
+                        request.binding_revision,
+                        request.evidence.path,
+                        request.evidence.sha256,
+                        request.observed_at,
+                    ],
+                )?;
+            }
+            let current_snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+            advance_runtime_snapshot(
+                transaction,
+                &request.run_id,
+                &request.status_id,
+                current_snapshot.latest_message_id.as_deref(),
+                &request.observed_at,
             )?;
             Ok(())
         })
@@ -1950,7 +2661,7 @@ fn validate_overwatch_cycle_shape(request: &OverwatchCycleRequest) -> Result<(),
         || request
             .evidence_refs
             .iter()
-            .any(|item| item.trim().is_empty())
+            .any(|item| item.path.trim().is_empty() || !is_lower_sha256(&item.sha256))
         || has_anomaly == request.anomaly_codes.is_empty()
         || request.checklist.active_session == OverwatchCheckResult::NotApplicable
         || (request.cell_id.is_some() && request.go_id.is_none())
@@ -1973,20 +2684,60 @@ fn validate_overwatch_cycle_shape(request: &OverwatchCycleRequest) -> Result<(),
     Ok(())
 }
 
+fn validate_evidence_reference(reference: &EvidenceReference) -> Result<(), StateError> {
+    if !is_lower_sha256(&reference.sha256) {
+        return Err(StateError::EvidenceInvalid(
+            "evidence reference must contain a lowercase SHA-256".into(),
+        ));
+    }
+    let path = Path::new(&reference.path);
+    if !path.is_absolute() || !path.is_file() {
+        return Err(StateError::EvidenceInvalid(
+            "evidence reference must name an existing absolute file".into(),
+        ));
+    }
+    let bytes = fs::read(path)?;
+    if sha256_hex(&bytes) != reference.sha256 {
+        return Err(StateError::EvidenceInvalid(
+            "evidence reference hash does not match stored bytes".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_bound_overwatcher_active(
     connection: &Connection,
     run_id: &str,
     action_at: &str,
 ) -> Result<(), StateError> {
-    let binding: Option<(Option<i64>, Option<String>, String)> = connection
+    let binding: Option<(Option<i64>, Option<String>, String, u64, String, String)> = connection
         .query_row(
-            "SELECT cadence_seconds, foreground_turn_id, lifecycle_state
-             FROM overwatcher_bindings WHERE run_id=?1",
+            "SELECT o.cadence_seconds, o.foreground_turn_id, o.lifecycle_state,
+                    o.binding_revision, o.continuity_state, r.slk_version
+             FROM overwatcher_bindings o JOIN runs r ON r.run_id=o.run_id
+             WHERE o.run_id=?1",
             [run_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
         )
         .optional()?;
-    let Some((cadence, foreground_turn_id, lifecycle)) = binding else {
+    let Some((
+        cadence,
+        foreground_turn_id,
+        lifecycle,
+        binding_revision,
+        continuity_state,
+        method_version,
+    )) = binding
+    else {
         return Ok(());
     };
     let Some(cadence) = cadence else {
@@ -1998,6 +2749,28 @@ fn validate_bound_overwatcher_active(
         return Err(StateError::OverwatcherInactive(
             "foreground active turn is not bound".into(),
         ));
+    }
+    if method_version == "4.2.3" {
+        if continuity_state != "ACTIVE" {
+            return Err(StateError::OverwatcherInactive(
+                "foreground turn continuity violation blocks new dispatch".into(),
+            ));
+        }
+        let live_cycle: Option<i64> = connection
+            .query_row(
+                "SELECT 1 FROM overwatch_cycles
+                 WHERE run_id=?1 AND binding_revision=?2 AND native_liveness='IN_PROGRESS'
+                 ORDER BY cycle_sequence DESC LIMIT 1",
+                params![run_id, binding_revision],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if live_cycle.is_none() {
+            return Err(StateError::OverwatcherInactive(
+                "no complete live cycle exists for the current binding revision".into(),
+            ));
+        }
+        return Ok(());
     }
     let completed_at: Option<String> = connection
         .query_row(
@@ -2254,20 +3027,24 @@ fn insert_runtime_snapshot(
         [run_id],
         |row| row.get(0),
     )?;
-    let overwatcher_status: Option<String> = transaction
+    let overwatcher: Option<(u64, String)> = transaction
         .query_row(
-            "SELECT CASE WHEN lifecycle_state='active' THEN 'ACTIVE' ELSE upper(lifecycle_state) END
+            "SELECT binding_revision, continuity_state
              FROM overwatcher_bindings WHERE run_id=?1",
             [run_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
+    let (overwatcher_binding_revision, overwatcher_status) = match overwatcher {
+        Some((revision, status)) => (Some(revision), Some(status)),
+        None => (None, None),
+    };
     transaction.execute(
         "INSERT INTO run_runtime_snapshots
          (run_id, runtime_revision, plan_revision, token_sequence,
           token_holder_role_instance_id, latest_event_id, latest_message_id,
           method_version, overwatcher_binding_revision, overwatcher_status, committed_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,NULL,?9,?10)",
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         params![
             run_id,
             runtime_revision,
@@ -2277,11 +3054,60 @@ fn insert_runtime_snapshot(
             latest_event_id,
             latest_message_id,
             method_version,
+            overwatcher_binding_revision,
             overwatcher_status,
             committed_at,
         ],
     )?;
     Ok(())
+}
+
+fn advance_runtime_snapshot(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+    latest_event_id: &str,
+    latest_message_id: Option<&str>,
+    committed_at: &str,
+) -> Result<u64, StateError> {
+    let revision = current_runtime_revision(transaction, run_id)? + 1;
+    transaction.execute(
+        "UPDATE runs SET current_runtime_revision=?2 WHERE run_id=?1",
+        params![run_id, revision],
+    )?;
+    insert_runtime_snapshot(
+        transaction,
+        run_id,
+        revision,
+        latest_event_id,
+        latest_message_id,
+        committed_at,
+    )?;
+    Ok(revision)
+}
+
+pub(crate) fn advance_runtime_snapshot_if_423(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+    latest_event_id: &str,
+    committed_at: &str,
+) -> Result<Option<u64>, StateError> {
+    let method_version: String = transaction.query_row(
+        "SELECT slk_version FROM runs WHERE run_id=?1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    if method_version != "4.2.3" {
+        return Ok(None);
+    }
+    let snapshot = runtime_snapshot_from(transaction, run_id)?;
+    advance_runtime_snapshot(
+        transaction,
+        run_id,
+        latest_event_id,
+        snapshot.latest_message_id.as_deref(),
+        committed_at,
+    )
+    .map(Some)
 }
 
 pub(crate) fn runtime_snapshot_from(
@@ -2495,12 +3321,15 @@ fn validate_reconciliation_request(
 fn validate_method_adoption_request(
     request: &AdoptMethodContractRequest,
 ) -> Result<(), StateError> {
+    let supported_transition =
+        (matches!(request.from_version.as_str(), "4.1.1" | "4.2.0" | "4.2.1")
+            && request.to_version == "4.2.2")
+            || (request.from_version == "4.2.2" && request.to_version == "4.2.3");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id
         || request.reason.trim().is_empty()
-        || !matches!(request.from_version.as_str(), "4.1.1" | "4.2.0" | "4.2.1")
-        || request.to_version != "4.2.2"
+        || !supported_transition
         || request.from_version == request.to_version
         || request
             .reconciliation_receipt_id
@@ -2508,7 +3337,7 @@ fn validate_method_adoption_request(
             .is_some_and(|value| !valid_identifier(value))
     {
         return Err(StateError::RunAdministrationInvalid(
-            "method adoption requires a supported prior version, exact 4.2.2 target, and closed identities"
+            "method adoption requires a declared compatible version transition and closed identities"
                 .into(),
         ));
     }

@@ -11,7 +11,9 @@ use sha2::{Digest, Sha256};
 use crate::auth::{authorize_event, Credential, StateError};
 use crate::model::EventType;
 use crate::schema::open_database;
-use crate::write::{current_token_from, valid_identifier, StateStore};
+use crate::write::{
+    advance_runtime_snapshot_if_423, current_token_from, valid_identifier, StateStore,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -138,6 +140,12 @@ impl StateStore {
                     byte_length,
                     request.occurred_at
                 ],
+            )?;
+            advance_runtime_snapshot_if_423(
+                transaction,
+                &request.run_id,
+                &request.evidence_id,
+                &request.occurred_at,
             )?;
             Ok(())
         });

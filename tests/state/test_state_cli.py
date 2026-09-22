@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 from pathlib import Path
 import sqlite3
@@ -133,6 +134,8 @@ def overwatcher_binding():
         "cadence_seconds": 240,
         "foreground_turn_id": "foreground-turn-a",
         "native_active_session_evidence_ref": "codex:thread-active:overwatcher-a",
+        "binding_revision": 1,
+        "canonical_task_id": "task-overwatcher-a",
         "reason": "one optional dedicated observer",
         "occurred_at": "2026-09-20T00:00:01Z",
     }
@@ -156,7 +159,18 @@ def observation():
     }
 
 
-def overwatch_cycle():
+def overwatch_cycle(tmp_path):
+    state_evidence = tmp_path / "state-revision-2.json"
+    native_evidence = tmp_path / "foreground-turn-a.json"
+    state_evidence.write_bytes(b'{"runtime_revision":2}')
+    native_evidence.write_bytes(b'{"native_liveness":"IN_PROGRESS"}')
+
+    def evidence(path):
+        return {
+            "path": str(path.resolve()),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+
     return {
         "cycle_id": "cycle-1",
         "run_id": "run-a",
@@ -164,6 +178,9 @@ def overwatch_cycle():
         "role_instance_id": "overwatcher-a",
         "session_id": "thread-overwatcher-a",
         "foreground_turn_id": "foreground-turn-a",
+        "binding_revision": 1,
+        "runtime_revision": 2,
+        "native_liveness": "IN_PROGRESS",
         "cycle_sequence": 1,
         "cadence_seconds": 240,
         "go_id": "GO-001",
@@ -185,10 +202,11 @@ def overwatch_cycle():
         },
         "anomaly_codes": [],
         "evidence_refs": [
-            "state:run-a:revision-1",
-            "codex:foreground-turn:foreground-turn-a",
+            evidence(state_evidence),
+            evidence(native_evidence),
         ],
-        "native_active_session_evidence_ref": "codex:thread-active:overwatcher-a",
+        "cost_metrics": None,
+        "native_active_session_evidence_ref": str(native_evidence.resolve()),
         "started_at": "2026-09-20T00:03:59Z",
         "completed_at": "2026-09-20T00:04:00Z",
         "next_cycle_at": "2026-09-20T00:08:00Z",
@@ -264,7 +282,7 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
             [
                 "record-overwatch-cycle",
                 "--request",
-                write_json(tmp_path / "cycle.json", overwatch_cycle()),
+                write_json(tmp_path / "cycle.json", overwatch_cycle(tmp_path)),
             ],
             observer_environment,
         ).stdout
@@ -344,7 +362,7 @@ def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
     observer_environment["SLK_OVERWATCHER_CREDENTIAL"] = bound[
         "overwatcher_credential"
     ]
-    incomplete = overwatch_cycle()
+    incomplete = overwatch_cycle(tmp_path)
     del incomplete["checklist"]["active_session"]
     rejected = invoke(
         [
@@ -357,7 +375,7 @@ def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
     )
     assert rejected.returncode != 0
 
-    unknown_anomaly = overwatch_cycle()
+    unknown_anomaly = overwatch_cycle(tmp_path)
     unknown_anomaly["checklist"]["active_session"] = "ANOMALY"
     unknown_anomaly["anomaly_codes"] = ["FREE_TEXT_HEARTBEAT_OK"]
     rejected = invoke(

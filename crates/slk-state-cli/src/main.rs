@@ -12,7 +12,8 @@ use slk_state_core::model::{
     AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest,
     CommitDeliveryStartRequest, InitRunRequest, OperationalObservationRequest,
     OverwatchCycleRequest, RebindSessionRequest, ReconcileRunIdentitiesRequest,
-    RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, TokenHandoffRequest, WriteRequest,
+    RecordOverwatcherStatusRequest, RegisterRoleRequest, ReplaceOverwatcherRequest,
+    ReplaceRoleRequest, RevisePlanRequest, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::schema::open_database;
 use slk_state_core::write::StateStore;
@@ -79,6 +80,9 @@ fn run() -> Result<Value, CliError> {
         "adopt-method-contract" => adopt_method_contract(&arguments[1..]),
         "bind-overwatcher" => bind_overwatcher(&arguments[1..]),
         "record-overwatch-cycle" => record_overwatch_cycle(&arguments[1..]),
+        "record-overwatcher-status" => record_overwatcher_status(&arguments[1..]),
+        "replace-overwatcher" => replace_overwatcher(&arguments[1..]),
+        "wait-for-change" => wait_for_change(&arguments[1..]),
         "record-observation" => record_observation(&arguments[1..]),
         "close-overwatcher" => close_overwatcher(&arguments[1..]),
         "register-role" => register_role(&arguments[1..]),
@@ -212,6 +216,37 @@ fn record_overwatch_cycle(arguments: &[String]) -> Result<Value, CliError> {
     }))
 }
 
+fn record_overwatcher_status(arguments: &[String]) -> Result<Value, CliError> {
+    let request: RecordOverwatcherStatusRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let status_id = request.status_id.clone();
+    let native_liveness = request.native_liveness.as_str();
+    let store = configured_store()?;
+    store
+        .record_overwatcher_status(&overwatcher_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"overwatcher_status_recorded",
+        "run_id":run_id,
+        "status_id":status_id,
+        "native_liveness":native_liveness
+    }))
+}
+
+fn wait_for_change(arguments: &[String]) -> Result<Value, CliError> {
+    let run_id = required_value(arguments, "--run-id")?;
+    let after_revision = required_value(arguments, "--after-revision")?
+        .parse::<u64>()
+        .map_err(|_| CliError::usage("--after-revision must be an unsigned integer"))?;
+    let timeout_seconds = required_value(arguments, "--timeout-seconds")?
+        .parse::<u64>()
+        .map_err(|_| CliError::usage("--timeout-seconds must be an unsigned integer"))?;
+    let result = configured_store()?
+        .wait_for_change(&run_id, after_revision, timeout_seconds)
+        .map_err(CliError::command)?;
+    Ok(json!(result))
+}
+
 fn close_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
     let request: CloseOverwatcherRequest = request(arguments)?;
     let run_id = request.run_id.clone();
@@ -220,6 +255,25 @@ fn close_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
         .close_overwatcher(&overwatcher_credential()?, request)
         .map_err(CliError::command)?;
     Ok(json!({"status":"overwatcher_closed","run_id":run_id}))
+}
+
+fn replace_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
+    let request: ReplaceOverwatcherRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let binding_revision = request.expected_binding_revision + 1;
+    let role_instance_id = request.replacement.role_instance_id.clone();
+    let store = configured_store()?;
+    let issued = store
+        .replace_overwatcher(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"overwatcher_replaced",
+        "run_id":run_id,
+        "binding_revision":binding_revision,
+        "overwatcher_role_instance_id":role_instance_id,
+        "overwatcher_credential":issued.credential.expose_secret(),
+        "credential_id":issued.credential_id
+    }))
 }
 
 fn handoff(arguments: &[String]) -> Result<Value, CliError> {
@@ -418,5 +472,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
+    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|replace-overwatcher|wait-for-change|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

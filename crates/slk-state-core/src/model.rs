@@ -318,8 +318,81 @@ pub struct BindOverwatcherRequest {
     pub cadence_seconds: u32,
     pub foreground_turn_id: String,
     pub native_active_session_evidence_ref: String,
+    #[serde(default)]
+    pub binding_revision: u64,
+    #[serde(default)]
+    pub canonical_task_id: String,
     pub reason: String,
     pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum NativeLiveness {
+    InProgress,
+    Completed,
+    Missing,
+    Mismatched,
+}
+
+impl NativeLiveness {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InProgress => "IN_PROGRESS",
+            Self::Completed => "COMPLETED",
+            Self::Missing => "MISSING",
+            Self::Mismatched => "MISMATCHED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CadenceHealth {
+    OnTime,
+    Late,
+}
+
+impl CadenceHealth {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OnTime => "ON_TIME",
+            Self::Late => "LATE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum IncidentState {
+    Open,
+    Acknowledged,
+    Resolved,
+}
+
+impl IncidentState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "OPEN",
+            Self::Acknowledged => "ACKNOWLEDGED",
+            Self::Resolved => "RESOLVED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceReference {
+    pub path: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverwatchCostMetrics {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub tool_output_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -344,6 +417,12 @@ pub struct OverwatchCycleRequest {
     pub role_instance_id: String,
     pub session_id: String,
     pub foreground_turn_id: String,
+    #[serde(default)]
+    pub binding_revision: u64,
+    #[serde(default)]
+    pub runtime_revision: u64,
+    #[serde(default = "default_native_liveness")]
+    pub native_liveness: NativeLiveness,
     pub cycle_sequence: u64,
     pub cadence_seconds: u32,
     pub go_id: Option<String>,
@@ -355,11 +434,31 @@ pub struct OverwatchCycleRequest {
     pub latest_message_id: Option<String>,
     pub checklist: OverwatchCycleChecklist,
     pub anomaly_codes: Vec<OverwatchAnomalyCode>,
-    pub evidence_refs: Vec<String>,
+    pub evidence_refs: Vec<EvidenceReference>,
+    #[serde(default)]
+    pub cost_metrics: Option<OverwatchCostMetrics>,
     pub native_active_session_evidence_ref: String,
     pub started_at: String,
     pub completed_at: String,
     pub next_cycle_at: String,
+}
+
+fn default_native_liveness() -> NativeLiveness {
+    NativeLiveness::InProgress
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordOverwatcherStatusRequest {
+    pub status_id: String,
+    pub run_id: String,
+    pub binding_revision: u64,
+    pub role_instance_id: String,
+    pub session_id: String,
+    pub foreground_turn_id: String,
+    pub native_liveness: NativeLiveness,
+    pub evidence: EvidenceReference,
+    pub observed_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -468,6 +567,47 @@ pub struct CloseOverwatcherRequest {
     pub event_id: String,
     pub run_id: String,
     pub archive_evidence_ref: String,
+    #[serde(default)]
+    pub final_cycle_id: Option<String>,
+    #[serde(default)]
+    pub runtime_revision: Option<u64>,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OverwatcherReplacementMode {
+    Planned,
+    ContinuityRecovery,
+}
+
+impl OverwatcherReplacementMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Planned => "PLANNED",
+            Self::ContinuityRecovery => "CONTINUITY_RECOVERY",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceOverwatcherRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub mode: OverwatcherReplacementMode,
+    pub expected_binding_revision: u64,
+    pub expected_runtime_revision: u64,
+    #[serde(default)]
+    pub final_cycle_id: Option<String>,
+    pub replacement: RoleIdentity,
+    pub endpoint: EndpointIdentity,
+    pub cadence_seconds: u32,
+    pub foreground_turn_id: String,
+    pub native_active_session_evidence: EvidenceReference,
+    #[serde(default)]
+    pub authorization_evidence: Option<EvidenceReference>,
+    pub reason: String,
     pub occurred_at: String,
 }
 
@@ -573,6 +713,8 @@ pub enum PreservedAssertion {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OverwatcherAssertion {
     Absent,
+    PreservedActive,
+    ContinuityRecoveryRequired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

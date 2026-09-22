@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OpenFlags};
 
 use slk_state_core::schema::{create_migration_backup, open_database};
 
-const TABLES: [&str; 19] = [
+const TABLES: [&str; 22] = [
     "projects",
     "runs",
     "go_nodes",
@@ -24,6 +24,9 @@ const TABLES: [&str; 19] = [
     "run_method_adoption_receipts",
     "transport_start_receipts",
     "run_runtime_snapshots",
+    "overwatcher_native_status_receipts",
+    "overwatcher_incident_transitions",
+    "overwatcher_binding_transitions",
 ];
 
 fn scalar_text(connection: &Connection, sql: &str) -> String {

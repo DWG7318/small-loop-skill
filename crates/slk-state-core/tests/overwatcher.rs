@@ -1,16 +1,395 @@
+use std::fs;
+
 use rusqlite::Connection;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
     AdoptMethodContractRequest, BindOverwatcherRequest, CellDefinition, CloseOverwatcherRequest,
-    EndpointIdentity, EventType, GoDefinition, InitRunRequest, MethodCompatibilityAssertions,
-    ObservationKind, ObservationMode, OperationalObservationRequest, OverwatchCheckResult,
-    OverwatchCycleChecklist, OverwatchCycleRequest, OverwatcherAssertion,
-    OwnerAuthorizationEvidence, OwnerDecision, PreservedAssertion, ProjectIdentity,
-    RegisterRoleRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
+    CommitDeliveryStartRequest, DeliveryStartEvidence, EndpointIdentity, EventType,
+    EvidenceReference, GoDefinition, InitRunRequest, MethodCompatibilityAssertions, NativeLiveness,
+    NativeStartStatus, ObservationKind, ObservationMode, OperationalObservationRequest,
+    OverwatchCheckResult, OverwatchCycleChecklist, OverwatchCycleRequest, OverwatcherAssertion,
+    OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision, PreservedAssertion,
+    ProjectIdentity, RecordOverwatcherStatusRequest, RegisterRoleRequest,
+    ReplaceOverwatcherRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
+
+#[test]
+fn completed_foreground_turn_blocks_new_423_dispatch() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut cycle = overwatch_cycle(1);
+    cycle.runtime_revision = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap()
+        .runtime_revision;
+    cycle.evidence_refs = vec![fixture.evidence_ref("cycle-native.json", b"in progress")];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+
+    let status_evidence = fixture.evidence_ref("turn-completed.json", b"completed");
+    fixture
+        .store
+        .record_overwatcher_status(
+            &issued.credential,
+            RecordOverwatcherStatusRequest {
+                status_id: "status-completed-1".into(),
+                run_id: "run-a".into(),
+                binding_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                foreground_turn_id: "foreground-turn-a".into(),
+                native_liveness: NativeLiveness::Completed,
+                evidence: status_evidence,
+                observed_at: "2026-09-22T00:05:00Z".into(),
+            },
+        )
+        .unwrap();
+
+    assert!(matches!(
+        fixture.store.commit_delivery_start(
+            &fixture.supervisor,
+            fixture.delivery_start_request("after-turn-end", "2026-09-22T00:05:01Z")
+        ),
+        Err(StateError::OverwatcherInactive(_))
+    ));
+}
+
+#[test]
+fn late_cycle_with_live_foreground_turn_is_not_false_inactive() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let revision = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap()
+        .runtime_revision;
+    let mut first = overwatch_cycle(1);
+    first.runtime_revision = revision;
+    first.evidence_refs = vec![fixture.evidence_ref("cycle-1.json", b"active")];
+    first.native_active_session_evidence_ref = first.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, first)
+        .unwrap();
+
+    let mut late = overwatch_cycle(2);
+    late.runtime_revision = revision;
+    late.started_at = "2026-09-22T00:20:00Z".into();
+    late.completed_at = "2026-09-22T00:20:01Z".into();
+    late.next_cycle_at = "2026-09-22T00:24:01Z".into();
+    late.evidence_refs = vec![fixture.evidence_ref("cycle-2.json", b"still active")];
+    late.native_active_session_evidence_ref = late.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, late)
+        .unwrap();
+
+    fixture
+        .store
+        .commit_delivery_start(
+            &fixture.supervisor,
+            fixture.delivery_start_request("after-late-cycle", "2026-09-22T00:20:02Z"),
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_423_overwatcher_is_not_closed_at_a_cell_boundary() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut cycle = overwatch_cycle(1);
+    cycle.runtime_revision = fixture.runtime_revision();
+    cycle.evidence_refs = vec![fixture.evidence_ref("cycle-open.json", b"active")];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+
+    let result = fixture.store.close_overwatcher(
+        &issued.credential,
+        CloseOverwatcherRequest {
+            event_id: "premature-overwatcher-close".into(),
+            run_id: "run-a".into(),
+            archive_evidence_ref: "codex:thread-archived:overwatcher-a".into(),
+            final_cycle_id: Some("cycle-1".into()),
+            runtime_revision: Some(fixture.runtime_revision()),
+            occurred_at: "2026-09-22T00:05:00Z".into(),
+        },
+    );
+    assert!(matches!(
+        result,
+        Err(StateError::OverwatcherObservationInvalid(_))
+    ));
+}
+
+#[test]
+fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut first = overwatch_cycle(1);
+    first.runtime_revision = fixture.runtime_revision();
+    first.evidence_refs = vec![fixture.evidence_ref("cycle-first.json", b"active")];
+    first.native_active_session_evidence_ref = first.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, first)
+        .unwrap();
+    fixture
+        .store
+        .write_event(
+            &fixture.supervisor,
+            WriteRequest {
+                event_id: "run-closed-423".into(),
+                run_id: "run-a".into(),
+                go_id: None,
+                cell_id: None,
+                attempt: None,
+                plan_revision: 1,
+                role_instance_id: "supervisor-a".into(),
+                event_type: EventType::RunClosed,
+                details: json!({"reason":"validated terminal state"}),
+                corrects_event_id: None,
+                occurred_at: "2026-09-22T00:06:00Z".into(),
+            },
+        )
+        .unwrap();
+    let mut final_cycle = overwatch_cycle(2);
+    final_cycle.runtime_revision = fixture.runtime_revision();
+    final_cycle.latest_event_id = "run-closed-423".into();
+    final_cycle.started_at = "2026-09-22T00:06:01Z".into();
+    final_cycle.completed_at = "2026-09-22T00:06:02Z".into();
+    final_cycle.next_cycle_at = "2026-09-22T00:10:02Z".into();
+    final_cycle.evidence_refs = vec![fixture.evidence_ref("cycle-final.json", b"terminal")];
+    final_cycle.native_active_session_evidence_ref = final_cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, final_cycle)
+        .unwrap();
+
+    fixture
+        .store
+        .close_overwatcher(
+            &issued.credential,
+            CloseOverwatcherRequest {
+                event_id: "terminal-overwatcher-close".into(),
+                run_id: "run-a".into(),
+                archive_evidence_ref: "codex:thread-archived:overwatcher-a".into(),
+                final_cycle_id: Some("cycle-2".into()),
+                runtime_revision: Some(fixture.runtime_revision()),
+                occurred_at: "2026-09-22T00:06:03Z".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .query_run("run-a")
+            .unwrap()
+            .role("overwatcher"),
+        None
+    );
+}
+
+#[test]
+fn planned_replacement_is_one_nonoverlapping_run_binding() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut cycle = overwatch_cycle(1);
+    cycle.runtime_revision = fixture.runtime_revision();
+    cycle.evidence_refs = vec![fixture.evidence_ref("cycle-replace.json", b"active")];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+
+    let replacement = fixture
+        .store
+        .replace_overwatcher(
+            &fixture.supervisor,
+            replacement_request(
+                &fixture,
+                OverwatcherReplacementMode::Planned,
+                Some("cycle-1"),
+                None,
+            ),
+        )
+        .unwrap();
+    assert_ne!(
+        replacement.credential.expose_secret(),
+        issued.credential.expose_secret()
+    );
+    let projection = fixture.store.query_run("run-a").unwrap();
+    let watcher = projection.role("overwatcher").unwrap();
+    assert_eq!(watcher.role_instance_id, "overwatcher-b");
+    assert_eq!(projection.overwatcher_binding_transitions.len(), 2);
+}
+
+#[test]
+fn dead_turn_recovery_preserves_and_resolves_the_incident_with_authorization() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let evidence = fixture.evidence_ref("dead-turn.json", b"completed");
+    fixture
+        .store
+        .record_overwatcher_status(
+            &issued.credential,
+            RecordOverwatcherStatusRequest {
+                status_id: "dead-turn-status".into(),
+                run_id: "run-a".into(),
+                binding_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                foreground_turn_id: "foreground-turn-a".into(),
+                native_liveness: NativeLiveness::Completed,
+                evidence,
+                observed_at: "2026-09-22T00:05:00Z".into(),
+            },
+        )
+        .unwrap();
+
+    fixture
+        .store
+        .replace_overwatcher(
+            &fixture.supervisor,
+            replacement_request(
+                &fixture,
+                OverwatcherReplacementMode::ContinuityRecovery,
+                None,
+                Some(fixture.evidence_ref("recovery-authorization.json", b"approved")),
+            ),
+        )
+        .unwrap();
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.overwatcher_incident_transitions.len(), 3);
+    assert_eq!(
+        projection
+            .overwatcher_incident_transitions
+            .last()
+            .unwrap()
+            .state,
+        "RESOLVED"
+    );
+}
+
+#[test]
+fn adoption_422_to_423_preserves_only_a_proven_active_run_watcher() {
+    let fixture = Fixture::new();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut cycle = overwatch_cycle(1);
+    cycle.evidence_refs = vec![fixture.evidence_ref("adoption-live.json", b"active")];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+    let before = fixture.store.query_run("run-a").unwrap();
+    let token = before.token_history.clone();
+
+    let result = fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_423_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+    assert_eq!(result.effective_version, "4.2.3");
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(after.token_history, token);
+    assert_eq!(after.summary.slk_version, "4.2.3");
+    assert_eq!(
+        after
+            .runtime_snapshot
+            .unwrap()
+            .overwatcher_status
+            .as_deref(),
+        Some("ACTIVE")
+    );
+}
+
+#[test]
+fn adoption_422_to_423_marks_an_unproven_watcher_for_explicit_recovery() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_423_request(&fixture, OverwatcherAssertion::ContinuityRecoveryRequired),
+        )
+        .unwrap();
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(
+        after
+            .runtime_snapshot
+            .unwrap()
+            .overwatcher_status
+            .as_deref(),
+        Some("VIOLATION")
+    );
+    assert_eq!(after.overwatcher_incident_transitions.len(), 1);
+}
 
 #[test]
 fn a_run_without_overwatcher_keeps_the_original_peer_handoff_path() {
@@ -475,6 +854,8 @@ fn overwatcher_closes_itself_without_closing_or_advancing_the_run() {
                 event_id: "overwatcher-closed".into(),
                 run_id: "run-a".into(),
                 archive_evidence_ref: "codex-thread-archived:overwatcher-a".into(),
+                final_cycle_id: None,
+                runtime_revision: None,
                 occurred_at: "2026-09-22T00:10:00Z".into(),
             },
         )
@@ -518,6 +899,133 @@ impl Fixture {
             supervisor: initialized.supervisor_credential,
             checker: checker.credential,
         }
+    }
+
+    fn new_423() -> Self {
+        let fixture = Self::new();
+        let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.2.3' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        drop(database);
+        fixture
+    }
+
+    fn evidence_ref(&self, name: &str, bytes: &[u8]) -> EvidenceReference {
+        let path = self._root.path().join(name);
+        fs::write(&path, bytes).unwrap();
+        EvidenceReference {
+            path: path.to_string_lossy().into_owned(),
+            sha256: format!("{:x}", Sha256::digest(bytes)),
+        }
+    }
+
+    fn delivery_start_request(
+        &self,
+        suffix: &str,
+        occurred_at: &str,
+    ) -> CommitDeliveryStartRequest {
+        let evidence = self.evidence_ref(&format!("start-{suffix}.json"), b"started");
+        CommitDeliveryStartRequest {
+            event_id: format!("transport-started-{suffix}"),
+            transport_receipt_id: format!("start-receipt-{suffix}"),
+            run_id: "run-a".into(),
+            go_id: "GO-001".into(),
+            cell_id: "CELL-001".into(),
+            attempt: 1,
+            plan_revision: 1,
+            expected_runtime_revision: self
+                .store
+                .query_run("run-a")
+                .unwrap()
+                .runtime_snapshot
+                .unwrap()
+                .runtime_revision,
+            message_id: format!("message-{suffix}"),
+            token_sequence: 2,
+            from_role_instance_id: "supervisor-a".into(),
+            to_role_instance_id: "checker-a".into(),
+            endpoint_version: 1,
+            payload_type: "CELL_ASSIGNMENT".into(),
+            payload_sha256: "c".repeat(64),
+            start_evidence: DeliveryStartEvidence {
+                evidence_id: format!("start-evidence-{suffix}"),
+                stored_path: evidence.path,
+                sha256: evidence.sha256,
+                message_id: format!("message-{suffix}"),
+                endpoint_sha256: "d".repeat(64),
+                envelope_sha256: "e".repeat(64),
+                native_status: NativeStartStatus::Started,
+            },
+            occurred_at: occurred_at.into(),
+        }
+    }
+
+    fn runtime_revision(&self) -> u64 {
+        self.store
+            .query_run("run-a")
+            .unwrap()
+            .runtime_snapshot
+            .unwrap()
+            .runtime_revision
+    }
+}
+
+fn replacement_request(
+    fixture: &Fixture,
+    mode: OverwatcherReplacementMode,
+    final_cycle_id: Option<&str>,
+    authorization_evidence: Option<EvidenceReference>,
+) -> ReplaceOverwatcherRequest {
+    ReplaceOverwatcherRequest {
+        event_id: format!("replace-overwatcher-{}", mode.as_str().to_ascii_lowercase()),
+        run_id: "run-a".into(),
+        mode,
+        expected_binding_revision: 1,
+        expected_runtime_revision: fixture.runtime_revision(),
+        final_cycle_id: final_cycle_id.map(str::to_string),
+        replacement: role("overwatcher-b", Role::Overwatcher, "session-overwatcher-b"),
+        endpoint: endpoint("session-overwatcher-b"),
+        cadence_seconds: 240,
+        foreground_turn_id: "foreground-turn-b".into(),
+        native_active_session_evidence: fixture.evidence_ref("replacement-live.json", b"active"),
+        authorization_evidence,
+        reason: "preserve one whole-Run watcher through an explicit transition".into(),
+        occurred_at: "2026-09-22T00:05:01Z".into(),
+    }
+}
+
+fn adoption_423_request(
+    fixture: &Fixture,
+    overwatcher: OverwatcherAssertion,
+) -> AdoptMethodContractRequest {
+    AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-423".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.2.2".into(),
+        to_version: "4.2.3".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-423".into(),
+            message_id: "owner-message-423".into(),
+            content_sha256: "a".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-22T00:06:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher,
+        },
+        reason: "adopt the revisioned 4.2.3 runtime contract without changing engineering history"
+            .into(),
+        occurred_at: "2026-09-22T00:06:01Z".into(),
     }
 }
 
@@ -574,6 +1082,8 @@ fn overwatcher_binding(
         cadence_seconds: 240,
         foreground_turn_id: "foreground-turn-a".into(),
         native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
+        binding_revision: 1,
+        canonical_task_id: format!("task-{run_id}"),
         reason: "Supervisor selected one dedicated observation Session".into(),
         occurred_at: "2026-09-22T00:00:01Z".into(),
     }
@@ -615,6 +1125,9 @@ fn overwatch_cycle(cycle_sequence: u64) -> OverwatchCycleRequest {
         role_instance_id: "overwatcher-a".into(),
         session_id: "session-overwatcher-a".into(),
         foreground_turn_id: "foreground-turn-a".into(),
+        binding_revision: 1,
+        runtime_revision: 1,
+        native_liveness: NativeLiveness::InProgress,
         cycle_sequence,
         cadence_seconds: 240,
         go_id: Some("GO-001".into()),
@@ -636,9 +1149,16 @@ fn overwatch_cycle(cycle_sequence: u64) -> OverwatchCycleRequest {
         },
         anomaly_codes: Vec::new(),
         evidence_refs: vec![
-            "state:run-a:revision-1".into(),
-            "codex:foreground-turn:foreground-turn-a".into(),
+            EvidenceReference {
+                path: "state:run-a:revision-1".into(),
+                sha256: "a".repeat(64),
+            },
+            EvidenceReference {
+                path: "codex:foreground-turn:foreground-turn-a".into(),
+                sha256: "b".repeat(64),
+            },
         ],
+        cost_metrics: None,
         native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
         started_at: "2026-09-22T00:03:59Z".into(),
         completed_at: "2026-09-22T00:04:00Z".into(),

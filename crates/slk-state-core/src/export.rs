@@ -49,6 +49,9 @@ struct OverwatcherExportRow {
     lifecycle_state: String,
     binding_reason: String,
     bound_at: String,
+    binding_revision: i64,
+    canonical_task_id: Option<String>,
+    continuity_state: String,
 }
 
 impl StateStore {
@@ -109,6 +112,7 @@ impl StateStore {
         writeln!(markdown, "{}", run.boundaries).unwrap();
         writeln!(markdown, "```").unwrap();
 
+        render_runtime_snapshot(&connection, run_id, &mut markdown)?;
         render_plan_revisions(&connection, run_id, &mut markdown)?;
         render_nodes(&connection, run_id, &mut markdown)?;
         render_roles(&connection, run_id, &mut markdown)?;
@@ -119,6 +123,7 @@ impl StateStore {
         render_corrections(&events, &mut markdown);
         render_tokens(&connection, run_id, &mut markdown)?;
         render_overwatch_cycles(&connection, run_id, &mut markdown)?;
+        render_overwatcher_continuity(&connection, run_id, &mut markdown)?;
         render_operational_observations(&connection, run_id, &mut markdown)?;
         render_administration_receipts(&connection, run_id, &mut markdown)?;
         render_evidence(&connection, run_id, &mut markdown)?;
@@ -144,6 +149,37 @@ impl StateStore {
         replace_file(&temporary, &destination)?;
         Ok(destination)
     }
+}
+
+fn render_runtime_snapshot(
+    connection: &rusqlite::Connection,
+    run_id: &str,
+    output: &mut String,
+) -> Result<(), StateError> {
+    let snapshot = crate::write::runtime_snapshot_from(connection, run_id)?;
+    writeln!(output).unwrap();
+    writeln!(output, "## Runtime snapshot").unwrap();
+    writeln!(output).unwrap();
+    writeln!(
+        output,
+        "- revision `{}` — plan v{} — TOKEN T{} `{}` — event `{}` — message `{}` — method `{}` — Overwatcher binding `{}` / status `{}` — `{}`",
+        snapshot.runtime_revision,
+        snapshot.plan_revision,
+        snapshot.token_sequence,
+        snapshot.token_holder_role_instance_id,
+        snapshot.latest_event_id,
+        snapshot.latest_message_id.as_deref().unwrap_or("none"),
+        snapshot.method_version,
+        snapshot
+            .overwatcher_binding_revision
+            .map(|value| value.to_string())
+            .as_deref()
+            .unwrap_or("none"),
+        snapshot.overwatcher_status.as_deref().unwrap_or("none"),
+        snapshot.committed_at,
+    )
+    .unwrap();
+    Ok(())
 }
 
 fn render_administration_receipts(
@@ -348,7 +384,8 @@ fn render_roles(
     let overwatcher: Option<OverwatcherExportRow> = connection
         .query_row(
             "SELECT role_instance_id, agent_runtime, provider, model, reasoning, session_id,
-                        lifecycle_state, binding_reason, bound_at
+                        lifecycle_state, binding_reason, bound_at, binding_revision,
+                        canonical_task_id, continuity_state
                  FROM overwatcher_bindings WHERE run_id=?1",
             [run_id],
             |row| {
@@ -362,15 +399,20 @@ fn render_roles(
                     lifecycle_state: row.get(6)?,
                     binding_reason: row.get(7)?,
                     bound_at: row.get(8)?,
+                    binding_revision: row.get(9)?,
+                    canonical_task_id: row.get(10)?,
+                    continuity_state: row.get(11)?,
                 })
             },
         )
         .optional()?;
     if let Some(overwatcher) = overwatcher {
-        writeln!(output, "- Overwatcher binding `{}` — `{}` / `{}` / `{}` / `{}` — session `{}` — `{}` — selected at `{}` — {}",
-            overwatcher.role_instance_id, overwatcher.agent_runtime, overwatcher.provider,
-            overwatcher.model, overwatcher.reasoning, overwatcher.session_id,
-            overwatcher.lifecycle_state, overwatcher.bound_at,
+        writeln!(output, "- Overwatcher binding `{}` revision `{}` task `{}` — `{}` / `{}` / `{}` / `{}` — session `{}` — lifecycle `{}` / continuity `{}` — selected at `{}` — {}",
+            overwatcher.role_instance_id, overwatcher.binding_revision,
+            overwatcher.canonical_task_id.as_deref().unwrap_or("none"),
+            overwatcher.agent_runtime, overwatcher.provider, overwatcher.model,
+            overwatcher.reasoning, overwatcher.session_id,
+            overwatcher.lifecycle_state, overwatcher.continuity_state, overwatcher.bound_at,
             single_line(&overwatcher.binding_reason)).unwrap();
     }
     Ok(())
@@ -585,7 +627,9 @@ fn render_overwatch_cycles(
         "SELECT cycle_sequence, cycle_id, overwatcher_role_instance_id, foreground_turn_id,
                 cadence_seconds, plan_revision, go_id, cell_id, attempt, token_sequence,
                 token_holder_role_instance_id, latest_event_id, checklist_json,
-                anomaly_codes_json, evidence_refs_json, completed_at, next_cycle_at
+                anomaly_codes_json, evidence_refs_json, completed_at, next_cycle_at,
+                binding_revision, runtime_revision, native_liveness, cadence_health,
+                cost_metrics_json
          FROM overwatch_cycles WHERE run_id=?1 ORDER BY cycle_sequence",
     )?;
     let rows = statement.query_map([run_id], |row| {
@@ -607,6 +651,11 @@ fn render_overwatch_cycles(
             row.get::<_, String>(14)?,
             row.get::<_, String>(15)?,
             row.get::<_, String>(16)?,
+            row.get::<_, i64>(17)?,
+            row.get::<_, i64>(18)?,
+            row.get::<_, String>(19)?,
+            row.get::<_, String>(20)?,
+            row.get::<_, Option<String>>(21)?,
         ))
     })?;
     let mut count = 0;
@@ -630,11 +679,96 @@ fn render_overwatch_cycles(
             evidence,
             completed,
             next,
+            binding_revision,
+            runtime_revision,
+            native_liveness,
+            cadence_health,
+            cost_metrics,
         ) = row?;
-        writeln!(output, "- cycle `{sequence}` / `{id}` by `{role}` foreground `{turn}` — cadence {cadence}s — plan v{revision} / GO `{}` / CELL `{}` / attempt `{}` / TOKEN T{token} `{holder}` / event `{event}` — completed `{completed}` / next `{next}` — checklist {} — anomalies {} — evidence {}",
+        writeln!(output, "- cycle `{sequence}` / `{id}` by `{role}` foreground `{turn}` — binding {binding_revision} / runtime {runtime_revision} / native `{native_liveness}` / cadence `{cadence_health}` {cadence}s — plan v{revision} / GO `{}` / CELL `{}` / attempt `{}` / TOKEN T{token} `{holder}` / event `{event}` — completed `{completed}` / next `{next}` — checklist {} — anomalies {} — evidence {} — cost {}",
             go.as_deref().unwrap_or("none"), cell.as_deref().unwrap_or("none"),
             attempt.map(|value| value.to_string()).as_deref().unwrap_or("none"),
-            single_line(&checklist), single_line(&anomalies), single_line(&evidence)).unwrap();
+            single_line(&checklist), single_line(&anomalies), single_line(&evidence),
+            cost_metrics.as_deref().map(single_line).as_deref().unwrap_or("none")).unwrap();
+    }
+    if count == 0 {
+        writeln!(output, "- None recorded.").unwrap();
+    }
+    Ok(())
+}
+
+fn render_overwatcher_continuity(
+    connection: &rusqlite::Connection,
+    run_id: &str,
+    output: &mut String,
+) -> Result<(), StateError> {
+    writeln!(output).unwrap();
+    writeln!(output, "## Overwatcher continuity").unwrap();
+    writeln!(output).unwrap();
+    let mut count = 0;
+    let mut status = connection.prepare(
+        "SELECT status_id, binding_revision, native_liveness, evidence_path,
+                evidence_sha256, observed_at
+         FROM overwatcher_native_status_receipts WHERE run_id=?1 ORDER BY rowid",
+    )?;
+    for row in status.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+        ))
+    })? {
+        count += 1;
+        let (id, revision, liveness, path, hash, at) = row?;
+        writeln!(
+            output,
+            "- native `{id}` binding {revision} — `{liveness}` — `{path}` / `{hash}` — `{at}`"
+        )
+        .unwrap();
+    }
+    let mut incidents = connection.prepare(
+        "SELECT transition_id, incident_id, binding_revision, incident_code, state,
+                evidence_path, evidence_sha256, occurred_at
+         FROM overwatcher_incident_transitions WHERE run_id=?1 ORDER BY rowid",
+    )?;
+    for row in incidents.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, String>(7)?,
+        ))
+    })? {
+        count += 1;
+        let (transition, incident, revision, code, state, path, hash, at) = row?;
+        writeln!(output, "- incident `{incident}` transition `{transition}` binding {revision} — `{code}` / `{state}` — `{path}` / `{hash}` — `{at}`").unwrap();
+    }
+    let mut bindings = connection.prepare(
+        "SELECT transition_id, binding_revision, transition_type, cycle_id,
+                runtime_revision, evidence_ref, occurred_at
+         FROM overwatcher_binding_transitions WHERE run_id=?1 ORDER BY rowid",
+    )?;
+    for row in bindings.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+        ))
+    })? {
+        count += 1;
+        let (transition, binding, kind, cycle, runtime, evidence, at) = row?;
+        writeln!(output, "- binding transition `{transition}` revision {binding} — `{kind}` / cycle `{}` / runtime {runtime} — `{evidence}` — `{at}`", cycle.as_deref().unwrap_or("none")).unwrap();
     }
     if count == 0 {
         writeln!(output, "- None recorded.").unwrap();

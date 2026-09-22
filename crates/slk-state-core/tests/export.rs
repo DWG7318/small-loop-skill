@@ -38,6 +38,8 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
                 cadence_seconds: 240,
                 foreground_turn_id: "foreground-turn-a".into(),
                 native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
+                binding_revision: 1,
+                canonical_task_id: "task-overwatcher-a".into(),
                 reason: "one dedicated optional observer".into(),
                 occurred_at: "2026-09-22T00:00:01Z".into(),
             },
