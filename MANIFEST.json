@@ -719,6 +719,10 @@
       "sha256": "34d0d2f980fab7d96cf46538ec1809b7e07c9cb91543057bf2b75cf3e1543572"
     },
     {
+      "path": "docs/superpowers/specs/2026-09-22-slk-4.2.3-runtime-consistency-hardening-design.md",
+      "sha256": "6003a76cae99a3f16b8729614421ada2d583e4f4c3bb11d0ce049509a410ad4d"
+    },
+    {
       "path": "docs/transport/SLK-TRANSPORT-LIVE-ACCEPTANCE.md",
       "sha256": "6da05ea19ad6416998d88376914a1aeaccc49709bb1f372e832f4520c9848ade"
     },
