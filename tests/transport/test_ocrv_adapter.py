@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -65,6 +67,28 @@ def test_ocrv_candidate_review_records_run_cell_invocation_and_session(tmp_path:
     assert (attempt.root / "ocrv-result.json").is_file()
 
 
+def test_ocrv_records_spawn_start_before_terminal_result(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path, "delayed-terminal")
+    envelope = candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    outcome: list[object] = []
+
+    thread = threading.Thread(
+        target=lambda: outcome.append(OcrvAdapter().deliver(endpoint, envelope, attempt)),
+        daemon=True,
+    )
+    thread.start()
+    deadline = time.monotonic() + 2
+    while not (attempt.root / "started.json").is_file() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert (attempt.root / "started.json").is_file()
+    assert thread.is_alive()
+    assert not (attempt.root / "ocrv-result.json").exists()
+    thread.join(5)
+    assert outcome and outcome[0].status == "completed"
+
+
 def test_ocrv_fails_closed_when_session_identity_is_missing(tmp_path: Path) -> None:
     endpoint = checker_endpoint(tmp_path, "missing-session")
     envelope = candidate_envelope(tmp_path)
@@ -74,7 +98,7 @@ def test_ocrv_fails_closed_when_session_identity_is_missing(tmp_path: Path) -> N
         OcrvAdapter().deliver(endpoint, envelope, attempt)
 
     assert error.value.error_code == "OCRV_RESULT_INVALID"
-    assert not (attempt.root / "started.json").exists()
+    assert (attempt.root / "started.json").exists()
 
 
 def test_ocrv_preserves_a_valid_incomplete_review_without_calling_it_pass(tmp_path: Path) -> None:

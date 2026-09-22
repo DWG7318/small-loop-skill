@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from dataclasses import asdict
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -13,6 +13,8 @@ from .base import AdapterError
 from ..contracts import RESULT_SCHEMA, DeliveryResult, Endpoint, Envelope
 from ..evidence import Attempt
 from ..process import windows_no_window_kwargs
+from ..subprocess_watch import finish, spawn
+from ..task_file import create_task_file
 
 
 ADDRESS_FIELDS = frozenset(
@@ -51,6 +53,10 @@ def _string_array(value: Any, label: str) -> list[str]:
 
 
 class DshAdapter:
+    def __init__(self, *, monotonic=time.monotonic, sleep=time.sleep) -> None:
+        self._monotonic = monotonic
+        self._sleep = sleep
+
     def validate_address(self, endpoint: Endpoint) -> None:
         if (
             endpoint.role != "worker"
@@ -76,48 +82,52 @@ class DshAdapter:
                 raise AdapterError("DSH_ADDRESS_INVALID", f"{field} must be an existing absolute directory")
         _positive_seconds(address["timeout_seconds"])
 
-    def _prompt(self, envelope: Envelope, result_path: Path) -> str:
-        envelope_json = json.dumps(
-            asdict(envelope),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        result_path_json = json.dumps(str(result_path), ensure_ascii=False)
-        result_contract = json.dumps(
-            {
-                "schema_version": "slk.worker-result/v1",
-                "message_id": envelope.message_id,
-                "run_id": envelope.run_id,
-                "role_instance_id": envelope.receiver_role_instance_id,
-                "status": "completed",
-                "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
-                "next_payload": {},
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+    @staticmethod
+    def result_contract(envelope: Envelope) -> dict[str, Any]:
+        return {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": envelope.message_id,
+            "run_id": envelope.run_id,
+            "role_instance_id": envelope.receiver_role_instance_id,
+            "status": "completed",
+            "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
+            "next_payload": {},
+        }
+
+    @staticmethod
+    def task_instruction(task_path: Path, task_sha256: str) -> str:
         return (
-            "SLK Worker delivery. Execute only the closed envelope below in the current CELL. "
-            "When the assigned work is complete, atomically write the exact slk.worker-result/v1 object "
-            "to the supplied absolute result path. Preserve every fixed identity below, replace the "
-            "candidate with the actual candidate required by the task, and put only the factual handoff "
-            "payload in next_payload. A successful outer process exit without that result does not count "
-            "as delivery.\n"
-            f"<slk-worker-result-path>{result_path_json}</slk-worker-result-path>\n"
-            f"<slk-worker-result-contract>{result_contract}</slk-worker-result-contract>\n"
-            f"<slk-transport-envelope>{envelope_json}</slk-transport-envelope>"
+            "Execute only the immutable SLK task file at the absolute path below. Verify its "
+            "SHA-256 before reading it; reject any mismatch or unknown field. Write only the "
+            "declared result contract to its result_path.\n"
+            f"<slk-transport-task path={json.dumps(str(task_path.resolve()))} "
+            f"sha256={json.dumps(task_sha256)} />"
         )
 
-    def command(self, endpoint: Endpoint, envelope: Envelope, result_path: Path) -> list[str]:
+    def create_task_file(
+        self,
+        endpoint: Endpoint,
+        envelope: Envelope,
+        attempt: Attempt,
+        drop_root: Path,
+    ) -> tuple[Path, str]:
+        return create_task_file(
+            attempt,
+            drop_root / "transport-task.json",
+            endpoint,
+            envelope,
+            self.result_contract(envelope),
+            drop_root / "worker-result.json",
+        )
+
+    def command(self, endpoint: Endpoint, instruction: str) -> list[str]:
         self.validate_address(endpoint)
         address = endpoint.address
         command = _string_array(address["command"], "command")
         command.extend([str(address["instance_id"]), "--profile", "headless"])
         if address["session_id"] is not None:
             command.extend(["--resume", str(address["session_id"])])
-        command.append(self._prompt(envelope, result_path))
+        command.append(instruction)
         return command
 
     def _session_root(self, endpoint: Endpoint) -> Path:
@@ -196,21 +206,54 @@ class DshAdapter:
         before = self._sessions(session_root)
         environment = os.environ.copy()
         environment["DSH_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
-        command = self.command(endpoint, envelope, result_path)
+        task_path, task_sha256 = self.create_task_file(endpoint, envelope, attempt, drop_root)
+        command = self.command(endpoint, self.task_instruction(task_path, task_sha256))
+        process = None
         try:
             try:
-                completed = subprocess.run(
+                started_at = self._monotonic()
+                timeout = _positive_seconds(endpoint.address["timeout_seconds"])
+                process = spawn(
                     command,
-                    cwd=workspace,
+                    cwd=str(workspace),
                     env=environment,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    capture_output=True,
-                    timeout=_positive_seconds(endpoint.address["timeout_seconds"]),
-                    check=False,
-                    **windows_no_window_kwargs(),
+                    process_kwargs=windows_no_window_kwargs(),
                 )
+                session_id: str | None = None
+                while self._monotonic() - started_at < timeout:
+                    after = self._sessions(session_root)
+                    expected = endpoint.address["session_id"]
+                    if expected is not None and expected in after and process.poll() is None:
+                        session_id = str(expected)
+                    elif expected is None:
+                        created = sorted(set(after) - set(before))
+                        if len(created) > 1:
+                            process.kill()
+                            process.communicate()
+                            raise AdapterError(
+                                "DSH_SESSION_AMBIGUOUS",
+                                f"first Worker activation created {len(created)} sessions instead of one",
+                            )
+                        if len(created) == 1 and process.poll() is None:
+                            session_id = created[0]
+                    if session_id is not None:
+                        attempt.write_json_once(
+                            "started.json",
+                            {
+                                "message_id": envelope.message_id,
+                                "run_id": envelope.run_id,
+                                "status": "started",
+                                "instance_id": endpoint.address["instance_id"],
+                                "session_id": session_id,
+                                "task_sha256": task_sha256,
+                            },
+                        )
+                        break
+                    if process.poll() is not None:
+                        break
+                    self._sleep(0.01)
+                remaining = timeout - (self._monotonic() - started_at)
+                completed = finish(process, remaining)
             except subprocess.TimeoutExpired as exc:
                 stdout = exc.stdout if isinstance(exc.stdout, str) else ""
                 stderr = exc.stderr if isinstance(exc.stderr, str) else ""
@@ -222,16 +265,8 @@ class DshAdapter:
             if completed.returncode != 0:
                 raise AdapterError("DSH_EXIT_NONZERO", f"DSH Worker exited with {completed.returncode}")
             session_id = self._resolve_session(endpoint, before, self._sessions(session_root))
-            attempt.write_json_once(
-                "started.json",
-                {
-                    "message_id": envelope.message_id,
-                    "run_id": envelope.run_id,
-                    "status": "started",
-                    "instance_id": endpoint.address["instance_id"],
-                    "session_id": session_id,
-                },
-            )
+            if not (attempt.root / "started.json").is_file():
+                raise AdapterError("DSH_START_UNPROVED", "DSH exited before native start was proven")
             try:
                 worker_result = self._read_result(result_path, endpoint, envelope)
             except AdapterError:
@@ -263,6 +298,7 @@ class DshAdapter:
             )
         finally:
             result_path.unlink(missing_ok=True)
+            task_path.unlink(missing_ok=True)
             try:
                 drop_root.rmdir()
             except OSError:

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -15,13 +16,15 @@ parser.add_argument("--output", required=True, type=Path)
 args = parser.parse_args()
 
 request = json.loads(args.request.read_text(encoding="utf-8"))
+if args.mode == "delayed-terminal":
+    time.sleep(0.35)
 session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uuid4()}"
 verdict = "INCOMPLETE" if args.mode == "incomplete" else "PASS"
 result = {
     "schema_version": "slk.ocrv-d1-result/v1",
     "run_id": request["run_id"],
     "cell_id": request["cell_id"],
-    "review_invocation_id": str(uuid.uuid4()),
+    "review_invocation_id": request["review_invocation_id"],
     "verdict": verdict,
     "reason_codes": ["OCR_STATUS_NOT_COMPLETE"] if verdict == "INCOMPLETE" else ["OCR_COMPLETE_ZERO_FINDINGS"],
     "findings": [],

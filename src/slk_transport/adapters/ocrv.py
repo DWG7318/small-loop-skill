@@ -22,6 +22,7 @@ from ..contracts import (
 )
 from ..evidence import Attempt
 from ..process import windows_no_window_kwargs
+from ..subprocess_watch import finish, spawn
 
 
 ADDRESS_FIELDS = frozenset({"command", "runtime_root", "timeout_seconds"})
@@ -161,7 +162,7 @@ class OcrvAdapter:
             evidence=("started.json", "checker-result.json"),
         )
 
-    def _candidate_request(self, envelope: Envelope) -> dict[str, Any]:
+    def _candidate_request(self, envelope: Envelope, review_invocation_id: str) -> dict[str, Any]:
         payload = envelope.payload
         _closed(payload, CANDIDATE_FIELDS, "CANDIDATE_READY payload")
         repository = Path(_nonempty(payload["repository"], "repository"))
@@ -185,6 +186,7 @@ class OcrvAdapter:
             "schema_version": "slk.ocrv-d1-request/v1",
             "run_id": envelope.run_id,
             "cell_id": envelope.cell_id,
+            "review_invocation_id": review_invocation_id,
             "repository": str(repository.resolve()),
             "candidate": dict(candidate),
             "cell_goal": _nonempty(payload["cell_goal"], "cell_goal"),
@@ -209,8 +211,9 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV result schema mismatch")
         if value["run_id"] != envelope.run_id or value["cell_id"] != envelope.cell_id:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV Run or CELL identity mismatch")
-        if not isinstance(value["review_invocation_id"], str) or not value["review_invocation_id"]:
-            raise AdapterError("OCRV_RESULT_INVALID", "OCRV review invocation identity is missing")
+        request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+        if value["review_invocation_id"] != request.get("review_invocation_id"):
+            raise AdapterError("OCRV_RESULT_INVALID", "OCRV review invocation identity mismatch")
         verdict = value["verdict"]
         if verdict not in VERDICT_EXIT_CODES or VERDICT_EXIT_CODES[verdict] != process_exit_code:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV verdict and process exit code disagree")
@@ -242,7 +245,8 @@ class OcrvAdapter:
         envelope: Envelope,
         attempt: Attempt,
     ) -> DeliveryResult:
-        request = self._candidate_request(envelope)
+        review_invocation_id = str(uuid.uuid4())
+        request = self._candidate_request(envelope, review_invocation_id)
         request_path = attempt.write_json_once("ocrv-request.json", request)
         result_path = attempt.root / "ocrv-result.json"
         command = _string_array(endpoint.address["command"], "command")
@@ -250,18 +254,22 @@ class OcrvAdapter:
         environment = os.environ.copy()
         environment["OCRV_SLK_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
         try:
-            completed = subprocess.run(
+            process = spawn(
                 command,
-                cwd=request["repository"],
+                cwd=str(request["repository"]),
                 env=environment,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
-                timeout=_positive_seconds(endpoint.address["timeout_seconds"]),
-                check=False,
-                **windows_no_window_kwargs(),
+                process_kwargs=windows_no_window_kwargs(),
             )
+            attempt.write_json_once(
+                "started.json",
+                {
+                    "message_id": envelope.message_id,
+                    "run_id": envelope.run_id,
+                    "status": "started",
+                    "review_invocation_id": review_invocation_id,
+                },
+            )
+            completed = finish(process, _positive_seconds(endpoint.address["timeout_seconds"]))
         except subprocess.TimeoutExpired as exc:
             stdout = exc.stdout if isinstance(exc.stdout, str) else ""
             stderr = exc.stderr if isinstance(exc.stderr, str) else ""
@@ -277,16 +285,6 @@ class OcrvAdapter:
             completed.returncode,
         )
         review = result["review"]
-        attempt.write_json_once(
-            "started.json",
-            {
-                "message_id": envelope.message_id,
-                "run_id": envelope.run_id,
-                "status": "started",
-                "review_invocation_id": result["review_invocation_id"],
-                "session_id": review["session_id"],
-            },
-        )
         return DeliveryResult(
             schema_version=RESULT_SCHEMA,
             message_id=envelope.message_id,

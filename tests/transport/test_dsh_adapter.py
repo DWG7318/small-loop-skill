@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -70,18 +72,36 @@ def test_dsh_first_turn_uses_run_scoped_instance_and_records_session(tmp_path: P
     assert not (Path(str(endpoint.address["cwd"])) / ".slk-transport").exists()
 
 
-def test_dsh_prompt_defines_the_closed_worker_result_without_d0_conclusions(tmp_path: Path) -> None:
+def test_dsh_records_native_start_before_terminal_result(tmp_path: Path) -> None:
+    endpoint = worker_endpoint(tmp_path, mode="delayed-terminal")
+    envelope = worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    outcome: list[object] = []
+
+    thread = threading.Thread(
+        target=lambda: outcome.append(DshAdapter().deliver(endpoint, envelope, attempt)),
+        daemon=True,
+    )
+    thread.start()
+    deadline = time.monotonic() + 2
+    while not (attempt.root / "started.json").is_file() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert (attempt.root / "started.json").is_file()
+    assert thread.is_alive()
+    assert not (attempt.root / "worker-result.json").exists()
+    thread.join(5)
+    assert outcome and outcome[0].status == "completed"
+
+
+def test_dsh_command_uses_only_a_short_hashed_task_reference(tmp_path: Path) -> None:
     endpoint = worker_endpoint(tmp_path)
     envelope = worker_envelope()
-    result_path = tmp_path / "worker-result.json"
-
-    prompt = DshAdapter().command(endpoint, envelope, result_path)[-1]
-
-    assert '"schema_version":"slk.worker-result/v1"' in prompt
-    assert f'"message_id":"{envelope.message_id}"' in prompt
-    assert '"candidate"' in prompt
-    assert '"next_payload"' in prompt
-    assert "D0 conclusion" not in prompt
+    instruction = DshAdapter().task_instruction(tmp_path / "task.json", "a" * 64)
+    assert json.dumps(str((tmp_path / "task.json").resolve())) in instruction
+    assert "a" * 64 in instruction
+    assert envelope.message_id not in instruction
+    assert len(instruction) < 600
 
 
 def test_dsh_resume_uses_only_the_recorded_session(tmp_path: Path) -> None:
@@ -101,7 +121,7 @@ def test_dsh_resume_uses_only_the_recorded_session(tmp_path: Path) -> None:
     envelope = worker_envelope()
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
 
-    command = DshAdapter().command(endpoint, envelope, attempt.root / "worker-result.json")
+    command = DshAdapter().command(endpoint, "task")
     assert command[-3:-1] == ["--resume", session_id]
 
     result = DshAdapter().deliver(endpoint, envelope, attempt)
