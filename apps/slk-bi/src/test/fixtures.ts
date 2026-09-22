@@ -10,6 +10,7 @@ export const runFixture: RunView = {
     run_name: "Close flow",
     run_description: "Complete one bounded implementation outcome",
     slk_version: "4.1.0",
+    origin_slk_version: "4.1.0",
     source_kind: "solo",
     source_project_name: null,
     goal: "Acceptance A",
@@ -24,6 +25,22 @@ export const runFixture: RunView = {
     predecessor_run_id: null,
     lineage_root_run_id: "run-a",
     identity_state: "CURRENT",
+  },
+  administrative_snapshot: {
+    run_id: "run-a",
+    project_id: "project-a",
+    slk_version: "4.1.0",
+    state: "active",
+    closure_state: "open",
+    archived_at: null,
+    superseded_by_run_id: null,
+    predecessor_run_id: null,
+    event_count: 1,
+    latest_event_id: "work-started",
+    token_sequence: 3,
+    token_holder_role_instance_id: "worker-a",
+    role_count: 3,
+    evidence_count: 0,
   },
   boundaries_json: "{}",
   go_nodes: [
@@ -148,6 +165,8 @@ export const runFixture: RunView = {
   evidence: [],
   overwatch_cycles: [],
   operational_observations: [],
+  reconciliation_receipts: [],
+  method_adoption_receipts: [],
 };
 
 export const twoRunFixture: { projects: ProjectsView; runs: RunsView; runDetails: RunView[] } = {

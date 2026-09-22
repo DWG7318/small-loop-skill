@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **4.2.1**
+Current version: **4.2.2**
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. One SLK is one Run, and the Run directly contains one serial CELL path.
 
@@ -33,7 +33,7 @@ Cross-Agent handoffs use the accepted `slk-transport` artifact with exact role e
 
 ## 4.0 state and LE BI
 
-SLK 4.0 added one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and the standalone read-only **LE BI** desktop view. In 4.2.1, Supervisor, Checker, and Worker still write only their own engineering facts; an optional Overwatcher receives a separate credential that can append only complete cycle facts and closed operational observations. The database validates those facts but does not schedule the observer or add a fourth engineering role. `slk-bi-query` exposes stable read-only JSON for Agents, while LE BI presents the same projections without credentials or mutation commands. The public method remains `Run → CELL`; compatibility grouping fields are not shown by LE BI. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
+SLK 4.0 added one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and the standalone read-only **LE BI** desktop view. In 4.2.2, Supervisor, Checker, and Worker still write only their own engineering facts; an optional Overwatcher receives a separate credential that can append only complete cycle facts and closed operational observations. Two narrow Supervisor operations can reconcile Owner-selected historical Run roots and explicitly adopt the 4.2.2 contract through exact snapshots and immutable receipts, without changing engineering history or TOKEN. The database validates these facts but does not schedule the observer or add a fourth engineering role. `slk-bi-query` exposes stable read-only JSON for Agents, while LE BI presents the same projections without credentials or mutation commands. The public method remains `Run → CELL`; compatibility grouping fields are not shown by LE BI. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
 
 LE BI displays each explicit Run identity as one compact row, whether independent or owned by a CLK/GLK project. Explicit predecessor lineage distinguishes current, historical, duplicate-active, and orphaned identities; titles and timestamps never merge Runs. Expanding a row shows that SLK's roles, models, CELL facts, and operational observations. BI does not confirm message delivery, repair communication, or modify the Run; accepted observations may conservatively show that activity is unproved without changing engineering progress.
 

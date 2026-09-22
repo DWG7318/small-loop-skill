@@ -14,6 +14,7 @@ export interface RunSummary {
   run_name: string;
   run_description: string;
   slk_version: string;
+  origin_slk_version: string;
   source_kind: "solo" | "clk" | "glk";
   source_project_name: string | null;
   goal: string;
@@ -163,6 +164,32 @@ export interface OverwatchCycleProjection {
   next_cycle_at: string;
 }
 
+export interface RunIdentityReconciliationReceiptProjection {
+  receipt_id: string;
+  canonical_run_id: string;
+  source_run_ids: string[];
+  owner_source_thread_id: string;
+  owner_message_id: string;
+  owner_decision: string;
+  reason: string;
+  occurred_at: string;
+  payload_sha256: string;
+}
+
+export interface MethodAdoptionReceiptProjection {
+  receipt_id: string;
+  run_id: string;
+  from_version: string;
+  to_version: string;
+  reconciliation_receipt_id: string | null;
+  owner_source_thread_id: string;
+  owner_message_id: string;
+  owner_decision: string;
+  reason: string;
+  occurred_at: string;
+  payload_sha256: string;
+}
+
 export interface ProjectsView {
   schema_version: "slk.bi.projects/v1";
   projects: ProjectSummary[];
@@ -177,6 +204,22 @@ export interface RunView {
   schema_version: "slk.bi.run/v1";
   run_id: string;
   summary: RunSummary;
+  administrative_snapshot: {
+    run_id: string;
+    project_id: string;
+    slk_version: string;
+    state: string;
+    closure_state: string;
+    archived_at: string | null;
+    superseded_by_run_id: string | null;
+    predecessor_run_id: string | null;
+    event_count: number;
+    latest_event_id: string;
+    token_sequence: number;
+    token_holder_role_instance_id: string;
+    role_count: number;
+    evidence_count: number;
+  };
   boundaries_json: string;
   go_nodes: GoProjection[];
   roles: RoleProjection[];
@@ -186,6 +229,8 @@ export interface RunView {
   evidence: EvidenceProjection[];
   overwatch_cycles: OverwatchCycleProjection[];
   operational_observations: OperationalObservationProjection[];
+  reconciliation_receipts: RunIdentityReconciliationReceiptProjection[];
+  method_adoption_receipts: MethodAdoptionReceiptProjection[];
 }
 
 export interface GraphView {
@@ -252,7 +297,8 @@ export function parseRunsProjection(value: unknown): RunsView {
 export function parseRunProjection(value: unknown): RunView {
   const projection = schema(value, "slk.bi.run/v1");
   object(projection.summary);
-  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "overwatch_cycles", "operational_observations"]) {
+  object(projection.administrative_snapshot);
+  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "overwatch_cycles", "operational_observations", "reconciliation_receipts", "method_adoption_receipts"]) {
     collection(projection, key);
   }
   return projection as unknown as RunView;

@@ -1,50 +1,35 @@
-# Validation Report — SLK 4.2.1 Candidate
+# Validation Report — SLK 4.2.2 Candidate
 
 Date: 2026-09-22
 
-Branch: `feature/slk-4.2.1-active-overwatcher`
+Branch: `feature/slk-4.2.2-run-identity-recovery`
 
 ## Accepted scope
 
-SLK 4.2.1 preserves the bounded serial Run, normal Supervisor↔Checker↔Worker communication, `SLK TOKEN`, D0/D1/D2, rework, and acceptance authority. It withdraws the unreleased 4.2.0 event-woken observer semantics and replaces them with one optional, Supervisor-and-Owner-confirmed Overwatcher Agent Session that remains in the same foreground active turn and completes a fixed eight-part cycle every 180–300 seconds.
+SLK 4.2.2 preserves the bounded serial Run, fixed Supervisor↔Checker↔Worker topology, optional foreground-active Overwatcher, `SLK TOKEN`, CELL, D0/D1/D2, rework, direct communication and acceptance authority. It adds only two state-administration operations: explicit historical Run identity reconciliation and explicit method-contract adoption.
 
-The candidate adds append-only cycle evidence bound to Session, foreground turn, cadence, plan, CELL, TOKEN, latest event/message, checklist, and native activity evidence. BI reads the cycle projection but cannot mutate it. The implementation does not add a heartbeat, automation, cron, Windows Scheduled Task, Temporal, daemon, service, detached helper, background Agent, second observer, broker, MCP server, or new engineering approval layer.
+The canonical Run's current Supervisor supplies closed Owner evidence and exact optimistic snapshots. Reconciliation atomically archives only the named sources and appends an immutable receipt. Adoption supports only `4.1.1|4.2.0|4.2.1 → 4.2.2`, preserves `origin_slk_version`, requires no active Overwatcher and appends a separate immutable receipt. Neither operation changes plan, role, credential, TOKEN, CELL, D0/D1/D2, evidence or work-event history.
 
-## Fresh verification
+## Verification gates
 
-Repository and Python:
-
-- `python -m pytest -q`: **203 passed**, 0 failed, 0 skipped after final Manifest generation;
-- `python -O -m pytest tests/eval/test_role_eval.py -q`: **21 passed**;
-- `python scripts/validate_role_eval.py --pack skills/small-loop-skill/assets/SLK-ROLE-EVAL.v1.json --check-pack`: **40 cases PASS**;
-- `python scripts/quick_validate.py`: **15/15 Skill directories PASS**;
-- `python scripts/validate_repository.py`: PASS after final Manifest generation;
-- `git diff --check`: PASS.
-
-Rust workspace:
-
-- `cargo fmt --all -- --check`: PASS;
-- `cargo clippy --workspace --all-targets -- -D warnings`: PASS;
-- `cargo test --workspace --all-targets`: **70 passed**, 0 failed.
-
-SLK BI frontend:
-
-- `pnpm test`: **7 files / 17 tests passed**;
-- `pnpm run typecheck`: PASS;
-- `pnpm run build:ui`: PASS.
+- Rust workspace: 79 passed (`cargo test --workspace --all-targets`).
+- Python suite: 205 passed (`python -m pytest -q`).
+- Optimized-mode administration and role-Eval negatives: 26 passed (`python -O -m pytest -q tests/eval/test_role_eval.py tests/state/test_state_cli.py`).
+- Skill collection: all 15 directories passed; the role-Eval pack validated all 44 cases.
+- LE BI: 17 tests passed; TypeScript typecheck and production UI build passed.
+- Workspace format and strict clippy (`-D warnings`) passed.
+- Repository/Manifest, full baseline diff, mirror, sensitive-information and scope-boundary checks passed after final Manifest generation.
 
 ## Critical negative evidence
 
-- zero Overwatcher remains valid; a second binding, cross-Run Session reuse, incomplete identity, wrong authority, or engineering-fact write fails closed;
-- a passive/end-turn binding, heartbeat/scheduled-task substitute, cadence outside 180–300 seconds, incomplete checklist, free-text anomaly, wrong Session/turn, stale TOKEN/event/message, overlapping/reused cycle, or legacy 4.2.0 binding fails closed;
-- a bound Overwatcher requires one complete initial cycle before a new handoff; two missed intervals reject new dispatch/handoff while work already in flight is not rewritten;
-- transport recovery rejects changed message, endpoint, scope, token sequence, or payload, stops after one exact retry, and cannot claim success without native start evidence;
-- stale activity cannot display as current work, while legal pause/block/external wait is preserved;
-- an actual Run continuation cannot silently invent a successor identity, and explicit lineage conflicts remain visible instead of being title-merged;
-- role-Eval omissions, extras, duplicates, stale plan identity, casing/whitespace variants, and wrong answers fail closed, including under Python optimization mode;
-- Codex Checker/Worker substitution and wrong runtime/model/session/adapter bindings fail closed; D1 INCOMPLETE retains Checker TOKEN, while ordinary, stale, wrong-scope, malformed, or wrong-payload Supervisor→Worker handoffs are rejected;
-- Windows helper call sites remain hidden/no-window by default. The Overwatcher stays active in its own foreground Agent turn; it is not implemented as an external heartbeat or scheduled/background process.
+- title/project/time similarity never selects or merges Runs;
+- direct SQLite editing, invented old credentials, replacement Runs and free-text version claims are not administration paths;
+- missing/wrong Owner decisions, malformed hashes, unknown JSON fields, empty/duplicate/self sources, wrong project, stale event/TOKEN/holder/count fields and changed receipt replays fail closed;
+- a receipt-backed cross-root projection becomes `ORPHANED_IDENTITY` if the recorded archive metadata or immutable source facts drift;
+- adoption rejects unsupported versions, stale snapshots, missing/wrong reconciliation receipts, active Overwatchers and silent version mutation;
+- unadopted 4.1.1 Runs cannot bind an active Overwatcher; 4.2.1 compatibility and explicit 4.2.2 adoption remain valid;
+- administration does not discover Runs implicitly, expose credentials, add a BI mutation route, create a scheduler/heartbeat/runtime, or touch LCaS state.
 
 ## Release boundary
 
-This report establishes a locally verified 4.2.1 candidate and records 4.2.0 as `WITHDRAWN / DO NOT ENABLE`; 4.2.0 was never tagged or released. It does not claim a merge, push, tag, GitHub Release, LCaS integration, or modification of the protected source checkout. Publication remains a separate Owner-authorized action.
+This report establishes a local 4.2.2 candidate. It does not claim a merge, push, tag, GitHub Release, LCaS state mutation, Overwatcher binding, CELL dispatch or product execution. Local machine-wide deployment is performed only after every candidate gate passes; remote publication remains a separate Owner-authorized action.

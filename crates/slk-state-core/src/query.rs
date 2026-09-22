@@ -7,8 +7,9 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::auth::StateError;
+use crate::model::{OwnerAuthorizationEvidence, RunStateSnapshot};
 use crate::schema::{open_database_read_only, SCHEMA_VERSION};
-use crate::write::StateStore;
+use crate::write::{run_state_snapshot_from, StateStore};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProjectSummary {
@@ -26,6 +27,7 @@ pub struct RunSummary {
     pub run_name: String,
     pub run_description: String,
     pub slk_version: String,
+    pub origin_slk_version: String,
     pub source_kind: String,
     pub source_project_name: Option<String>,
     pub goal: String,
@@ -204,6 +206,7 @@ struct OverwatcherBindingRow {
 pub struct RunProjection {
     pub schema_version: u32,
     pub summary: RunSummary,
+    pub administrative_snapshot: RunStateSnapshot,
     pub boundaries_json: String,
     pub go_nodes: Vec<GoProjection>,
     pub roles: Vec<RoleProjection>,
@@ -213,6 +216,36 @@ pub struct RunProjection {
     pub evidence: Vec<EvidenceProjection>,
     pub overwatch_cycles: Vec<OverwatchCycleProjection>,
     pub operational_observations: Vec<OperationalObservationProjection>,
+    pub reconciliation_receipts: Vec<RunIdentityReconciliationReceiptProjection>,
+    pub method_adoption_receipts: Vec<MethodAdoptionReceiptProjection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunIdentityReconciliationReceiptProjection {
+    pub receipt_id: String,
+    pub canonical_run_id: String,
+    pub source_run_ids: Vec<String>,
+    pub owner_source_thread_id: String,
+    pub owner_message_id: String,
+    pub owner_decision: String,
+    pub reason: String,
+    pub occurred_at: String,
+    pub payload_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MethodAdoptionReceiptProjection {
+    pub receipt_id: String,
+    pub run_id: String,
+    pub from_version: String,
+    pub to_version: String,
+    pub reconciliation_receipt_id: Option<String>,
+    pub owner_source_thread_id: String,
+    pub owner_message_id: String,
+    pub owner_decision: String,
+    pub reason: String,
+    pub occurred_at: String,
+    pub payload_sha256: String,
 }
 
 impl RunProjection {
@@ -270,6 +303,7 @@ impl StateStore {
         Ok(RunProjection {
             schema_version: SCHEMA_VERSION as u32,
             summary,
+            administrative_snapshot: run_state_snapshot_from(&connection, run_id)?,
             boundaries_json,
             go_nodes: load_go_nodes(&connection, run_id)?,
             roles: load_roles(&connection, run_id)?,
@@ -279,6 +313,8 @@ impl StateStore {
             evidence: load_evidence(&connection, run_id)?,
             overwatch_cycles: load_overwatch_cycles(&connection, run_id)?,
             operational_observations: load_operational_observations(&connection, run_id)?,
+            reconciliation_receipts: load_reconciliation_receipts(&connection, run_id)?,
+            method_adoption_receipts: load_method_adoption_receipts(&connection, run_id)?,
         })
     }
 
@@ -346,6 +382,7 @@ fn load_run_summaries(
     let (sql, value) = if let Some(project_id) = project_id {
         (
             "SELECT r.run_id, r.project_id, r.run_name, r.run_description, r.slk_version,
+                        r.origin_slk_version,
                         r.source_kind, r.source_project_name, r.goal, r.state,
                         r.current_plan_revision, r.closure_state, r.created_at, r.closed_at,
                         r.archive_reason, r.archived_at, r.superseded_by_run_id,
@@ -357,6 +394,7 @@ fn load_run_summaries(
     } else {
         (
             "SELECT r.run_id, r.project_id, r.run_name, r.run_description, r.slk_version,
+                        r.origin_slk_version,
                         r.source_kind, r.source_project_name, r.goal, r.state,
                         r.current_plan_revision, r.closure_state, r.created_at, r.closed_at,
                         r.archive_reason, r.archived_at, r.superseded_by_run_id,
@@ -374,18 +412,19 @@ fn load_run_summaries(
             run_name: row.get(2)?,
             run_description: row.get(3)?,
             slk_version: row.get(4)?,
-            source_kind: row.get(5)?,
-            source_project_name: row.get(6)?,
-            goal: row.get(7)?,
-            state: row.get(8)?,
-            current_plan_revision: row.get(9)?,
-            closure_state: row.get(10)?,
-            created_at: row.get(11)?,
-            closed_at: row.get(12)?,
-            archive_reason: row.get(13)?,
-            archived_at: row.get(14)?,
-            superseded_by_run_id: row.get(15)?,
-            predecessor_run_id: row.get(16)?,
+            origin_slk_version: row.get(5)?,
+            source_kind: row.get(6)?,
+            source_project_name: row.get(7)?,
+            goal: row.get(8)?,
+            state: row.get(9)?,
+            current_plan_revision: row.get(10)?,
+            closure_state: row.get(11)?,
+            created_at: row.get(12)?,
+            closed_at: row.get(13)?,
+            archive_reason: row.get(14)?,
+            archived_at: row.get(15)?,
+            superseded_by_run_id: row.get(16)?,
+            predecessor_run_id: row.get(17)?,
             lineage_root_run_id: row.get(0)?,
             identity_state: String::new(),
         })
@@ -395,10 +434,14 @@ fn load_run_summaries(
         None => statement.query_map([], mapper)?,
     };
     let runs = rows.collect::<Result<Vec<_>, _>>()?;
-    Ok(annotate_run_identities(runs))
+    let reconciled_pairs = load_valid_reconciliation_pairs(connection)?;
+    Ok(annotate_run_identities(runs, &reconciled_pairs))
 }
 
-fn annotate_run_identities(mut runs: Vec<RunSummary>) -> Vec<RunSummary> {
+fn annotate_run_identities(
+    mut runs: Vec<RunSummary>,
+    reconciled_pairs: &HashSet<(String, String)>,
+) -> Vec<RunSummary> {
     let predecessors = runs
         .iter()
         .map(|run| (run.run_id.clone(), run.predecessor_run_id.clone()))
@@ -408,6 +451,9 @@ fn annotate_run_identities(mut runs: Vec<RunSummary>) -> Vec<RunSummary> {
         .filter_map(|run| {
             run.superseded_by_run_id
                 .as_ref()
+                .filter(|successor| {
+                    !reconciled_pairs.contains(&(run.run_id.clone(), (*successor).clone()))
+                })
                 .map(|successor| (successor.clone(), run.run_id.clone()))
         })
         .collect::<HashMap<_, _>>();
@@ -443,7 +489,9 @@ fn annotate_run_identities(mut runs: Vec<RunSummary>) -> Vec<RunSummary> {
 
     for run in &runs {
         if let Some(successor) = &run.superseded_by_run_id {
-            if successors.get(&run.run_id) != Some(successor) {
+            if !reconciled_pairs.contains(&(run.run_id.clone(), successor.clone()))
+                && successors.get(&run.run_id) != Some(successor)
+            {
                 orphaned.insert(run.run_id.clone());
                 orphaned.insert(successor.clone());
             }
@@ -485,6 +533,168 @@ fn annotate_run_identities(mut runs: Vec<RunSummary>) -> Vec<RunSummary> {
         .into();
     }
     runs
+}
+
+fn load_valid_reconciliation_pairs(
+    connection: &Connection,
+) -> Result<HashSet<(String, String)>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT canonical_run_id, canonical_snapshot_json, source_snapshots_json, occurred_at
+         FROM run_identity_reconciliation_receipts ORDER BY occurred_at, receipt_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    })?;
+    let mut pairs = HashSet::new();
+    for row in rows {
+        let (canonical, canonical_snapshot_json, snapshots_json, occurred_at) = row?;
+        let canonical_snapshot: RunStateSnapshot = serde_json::from_str(&canonical_snapshot_json)?;
+        let canonical_exists: Option<i64> = connection
+            .query_row(
+                "SELECT 1 FROM runs WHERE run_id=?1 AND project_id=?2",
+                params![canonical, canonical_snapshot.project_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if canonical_exists.is_none() {
+            continue;
+        }
+        let snapshots: Vec<RunStateSnapshot> = serde_json::from_str(&snapshots_json)?;
+        for snapshot in snapshots {
+            let current = run_state_snapshot_from(connection, &snapshot.run_id)?;
+            let valid: Option<i64> = connection
+                .query_row(
+                    "SELECT 1 FROM runs
+                     WHERE run_id=?1 AND state='archived' AND closure_state='superseded'
+                       AND closed_at=?2
+                       AND archive_reason='owner-authorized-identity-reconciliation'
+                       AND archived_at=?2 AND superseded_by_run_id=?3",
+                    params![snapshot.run_id, occurred_at, canonical],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let immutable_matches = current.project_id == snapshot.project_id
+                && current.slk_version == snapshot.slk_version
+                && current.predecessor_run_id == snapshot.predecessor_run_id
+                && current.event_count == snapshot.event_count
+                && current.latest_event_id == snapshot.latest_event_id
+                && current.token_sequence == snapshot.token_sequence
+                && current.token_holder_role_instance_id == snapshot.token_holder_role_instance_id
+                && current.role_count == snapshot.role_count
+                && current.evidence_count == snapshot.evidence_count;
+            if valid.is_some() && immutable_matches {
+                pairs.insert((snapshot.run_id, canonical.clone()));
+            }
+        }
+    }
+    Ok(pairs)
+}
+
+fn load_reconciliation_receipts(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Vec<RunIdentityReconciliationReceiptProjection>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT receipt_id, canonical_run_id, source_snapshots_json,
+                owner_authorization_json, reason, occurred_at, payload_sha256
+         FROM run_identity_reconciliation_receipts ORDER BY occurred_at, receipt_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+        ))
+    })?;
+    let mut output = Vec::new();
+    for row in rows {
+        let (receipt_id, canonical, snapshots_json, owner_json, reason, occurred_at, hash) = row?;
+        let snapshots: Vec<RunStateSnapshot> = serde_json::from_str(&snapshots_json)?;
+        let source_run_ids = snapshots
+            .into_iter()
+            .map(|snapshot| snapshot.run_id)
+            .collect::<Vec<_>>();
+        if canonical != run_id && !source_run_ids.iter().any(|source| source == run_id) {
+            continue;
+        }
+        let owner: OwnerAuthorizationEvidence = serde_json::from_str(&owner_json)?;
+        output.push(RunIdentityReconciliationReceiptProjection {
+            receipt_id,
+            canonical_run_id: canonical,
+            source_run_ids,
+            owner_source_thread_id: owner.source_thread_id,
+            owner_message_id: owner.message_id,
+            owner_decision: owner.decision.as_str().into(),
+            reason,
+            occurred_at,
+            payload_sha256: hash,
+        });
+    }
+    Ok(output)
+}
+
+fn load_method_adoption_receipts(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Vec<MethodAdoptionReceiptProjection>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT receipt_id, run_id, from_version, to_version,
+                reconciliation_receipt_id, owner_authorization_json, reason,
+                occurred_at, payload_sha256
+         FROM run_method_adoption_receipts WHERE run_id=?1
+         ORDER BY occurred_at, receipt_id",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, String>(7)?,
+            row.get::<_, String>(8)?,
+        ))
+    })?;
+    let mut output = Vec::new();
+    for row in rows {
+        let (
+            receipt_id,
+            run_id,
+            from_version,
+            to_version,
+            reconciliation_receipt_id,
+            owner_json,
+            reason,
+            occurred_at,
+            payload_sha256,
+        ) = row?;
+        let owner: OwnerAuthorizationEvidence = serde_json::from_str(&owner_json)?;
+        output.push(MethodAdoptionReceiptProjection {
+            receipt_id,
+            run_id,
+            from_version,
+            to_version,
+            reconciliation_receipt_id,
+            owner_source_thread_id: owner.source_thread_id,
+            owner_message_id: owner.message_id,
+            owner_decision: owner.decision.as_str().into(),
+            reason,
+            occurred_at,
+            payload_sha256,
+        });
+    }
+    Ok(output)
 }
 
 fn load_go_nodes(connection: &Connection, run_id: &str) -> Result<Vec<GoProjection>, StateError> {

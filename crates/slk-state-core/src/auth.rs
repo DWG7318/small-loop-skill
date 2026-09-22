@@ -80,6 +80,10 @@ pub enum StateError {
     OverwatcherCycleSequence { requested: u64, expected: u64 },
     #[error("bound Overwatcher is not proven active: {0}")]
     OverwatcherInactive(String),
+    #[error("Run administration request is invalid: {0}")]
+    RunAdministrationInvalid(String),
+    #[error("Run administration receipt conflicts with existing immutable content: {0}")]
+    RunAdministrationConflict(String),
     #[error("Run already exists: {0}")]
     RunAlreadyExists(String),
     #[error("invalid linear plan: {0}")]

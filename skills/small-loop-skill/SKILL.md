@@ -24,6 +24,8 @@ D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 �
 
 Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run` 初始化中央状态与自动生成的 `SLK-RUN-<RUN-ID>.md` 导出。随后按 Supervisor 创建 Checker，Checker 创建 Worker 的关系建立成员；正常通讯保持 `Supervisor ↔ Checker ↔ Worker`，只有正式 D1 FAIL 才沿 `Checker → Supervisor → 同一 Worker` 发送结构化返工指引。通讯测试完成后，Supervisor 用 `T001` 把第一个待派发 CELL 的责任交给 Checker；此后当前持有者在完成既有节点时单调增加编号，并用真实激活操作把完整 `SLK TOKEN` 消息投递到已登记的目标原生 Agent 入口。与消息匹配的原生启动证据才证明流转；同一 Run 最大且身份匹配的成功令牌才是当前事实，不增加令牌专用回执。操作明确失败时仍持有当前令牌；恢复只复用同一 message、信封、端点和 scope 一次，任何语义变化交 Supervisor。旧 running、旧 TOKEN、可见消息或 heartbeat 都不证明正在工作；Supervisor、Checker、Worker 不使用正时长 `wait_threads`，完成节点与交接后结束当前活动。Overwatcher 缺席不阻断工作；一旦绑定则按自己的前台 active turn 合同持续巡查，但仍只旁路观察与协助恢复。状态与通讯边界见 [`docs/state/SLK-STATE.md`](../../docs/state/SLK-STATE.md) 和 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
 
+同一实际 Run 应复用其 run_id；历史独立根需要收敛时，只接受 Owner 明确指定的 canonical/source ID、闭合授权证据和精确快照，由 canonical 当前 Supervisor 追加身份对账回执。旧 Run 采用新方法语义需要另有方法采用回执，不能靠标题、提示词或可见对话推断。
+
 ## 按当前情境选择指导
 
 - 新 Run 与初始 CELL 方案：`$slk-plan-run`
@@ -49,4 +51,5 @@ Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run` 初始化�
 - 不要把 D1 INCOMPLETE 当成 FAIL 或返工，不要把正式 D1 FAIL 的受限 Supervisor 指引扩成普通 Worker 派工或 D1 裁决。
 - 不要把针对某个 CELL、某类工作或一次经验形成的容量估计、数字边界或经验规则，泛化为所有 CELL、整个 Run 或其他项目共同遵守的一刀切定额；不要为了平均、整齐或便于管理，要求每个 CELL 满足相同指标。这不排除根据具体 CELL 的目标、难度、依赖、模型、电脑和余量，形成只适用于该 CELL 的、有事实依据的容量边界。
 - 不要把 SLK TOKEN、SQLite、BI 或 Overwatcher 当成逐条命令队列、常驻运行时、裁决者或额外确认层；不要让 Owner、Overwatcher、其他 Agent 或 BI 越权改写工程事实、TOKEN 或只读投影，不要让相同或更旧的令牌编号创建新工作、回退指针或重开 CELL；不要把 Checker 的 D1 交给 Supervisor，把 DELIVERED 当成 D1_ACCEPTED，按标题合并 Run，在同一实际 Run 的继续过程中另造 run_id，或让三工程角色用正时长 `wait_threads`、旧状态和 heartbeat 代替真实交接与活动证据。
+- 不要直接编辑 SQLite、伪造失效的旧角色凭证、新建替代 Run、用自由文本静默升级方法合同，或借身份对账改写 CELL、D0/D1/D2、角色、证据与 TOKEN；Overwatcher 只在有效版本或显式采用回执之后绑定。
 - 不要让 Codex 冒充 OCRV Checker 或 DSH Worker，不要把运行时名称、提示词角色声明或可见对话当成实际角色绑定；不要把零 finding、没有报错或与验收目标无对应关系的一般测试通过直接等同于 D1 PASS，也不要用 Supervisor 后补证据替代 Checker 的 D1；不要把候选可能正确、D1 已通过和 D2/Run 已关闭合并成一个结论，或把间接验证写成未实际执行的目标环境验证。

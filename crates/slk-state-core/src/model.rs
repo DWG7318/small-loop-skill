@@ -438,3 +438,100 @@ pub struct RebindSessionRequest {
     pub reason: String,
     pub occurred_at: String,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OwnerDecision {
+    ApproveRunIdentityReconciliation,
+    ApproveMethodContractAdoption,
+    ApproveReconciliationAndAdoption,
+}
+
+impl OwnerDecision {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ApproveRunIdentityReconciliation => "APPROVE_RUN_IDENTITY_RECONCILIATION",
+            Self::ApproveMethodContractAdoption => "APPROVE_METHOD_CONTRACT_ADOPTION",
+            Self::ApproveReconciliationAndAdoption => "APPROVE_RECONCILIATION_AND_ADOPTION",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnerAuthorizationEvidence {
+    pub source_thread_id: String,
+    pub message_id: String,
+    pub content_sha256: String,
+    pub decision: OwnerDecision,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunStateSnapshot {
+    pub run_id: String,
+    pub project_id: String,
+    pub slk_version: String,
+    pub state: String,
+    pub closure_state: String,
+    pub archived_at: Option<String>,
+    pub superseded_by_run_id: Option<String>,
+    pub predecessor_run_id: Option<String>,
+    pub event_count: u64,
+    pub latest_event_id: String,
+    pub token_sequence: u64,
+    pub token_holder_role_instance_id: String,
+    pub role_count: u64,
+    pub evidence_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReconcileRunIdentitiesRequest {
+    pub receipt_id: String,
+    pub canonical_run_id: String,
+    pub canonical_snapshot: RunStateSnapshot,
+    pub source_snapshots: Vec<RunStateSnapshot>,
+    pub owner_authorization: OwnerAuthorizationEvidence,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PreservedAssertion {
+    Preserved,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OverwatcherAssertion {
+    Absent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MethodCompatibilityAssertions {
+    pub topology: PreservedAssertion,
+    pub role_bindings: PreservedAssertion,
+    pub token: PreservedAssertion,
+    pub engineering_history: PreservedAssertion,
+    pub overwatcher: OverwatcherAssertion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdoptMethodContractRequest {
+    pub receipt_id: String,
+    pub run_id: String,
+    pub expected_snapshot: RunStateSnapshot,
+    pub from_version: String,
+    pub to_version: String,
+    pub owner_authorization: OwnerAuthorizationEvidence,
+    #[serde(default)]
+    pub reconciliation_receipt_id: Option<String>,
+    pub compatibility: MethodCompatibilityAssertions,
+    pub reason: String,
+    pub occurred_at: String,
+}

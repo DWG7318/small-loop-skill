@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**4.2.1**
+当前版本：**4.2.2**
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。一个 SLK 就是一个 Run，Run 直接包含一条线性 CELL 路径。
 
@@ -33,7 +33,7 @@ RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Co
 
 ## 4.0 状态与 LE BI
 
-SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.2.1 中 Supervisor、Checker、Worker 仍只写各自工程事实；可选 Overwatcher 使用独立凭证，只能追加完整巡查周期和封闭运行观察。数据库校验这些事实，但不调度观察者，也不增加第四个工程角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，LE BI 显示同一组投影，不暴露凭据或写入入口。公开方法仍是 `Run → CELL`。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
+SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.2.2 中 Supervisor、Checker、Worker 仍只写各自工程事实；可选 Overwatcher 使用独立凭证，只能追加完整巡查周期和封闭运行观察。两个受限 Supervisor 管理操作可以凭 Owner 明确证据、显式 Run ID 与精确快照收敛历史 Run 身份并采用 4.2.2 合同，不改变工程历史或 TOKEN。数据库校验这些事实，但不调度观察者，也不增加第四个工程角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，LE BI 显示同一组投影，不暴露凭据或写入入口。公开方法仍是 `Run → CELL`。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
 
 LE BI 按显式 Run 身份显示精简横条，不论其为独立 SLK，还是属于某个 CLK/GLK 项目。显式 predecessor lineage 区分当前、历史、重复活动与孤立身份，不再按标题或时间猜测合并。展开后显示该 SLK 的角色、模型、CELL 事实和运行观察。BI 不确认消息是否真正投递，不恢复通讯，也不修改 Run；被接受的观察可以保守显示“活动未证明”，但不能改变工程进度。
 

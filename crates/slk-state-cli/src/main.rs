@@ -9,9 +9,10 @@ use slk_state_core::auth::Credential;
 use slk_state_core::config::{configure_at, default_config_path, resolve_data_root_at};
 use slk_state_core::evidence::{EvidenceRequest, EvidenceState};
 use slk_state_core::model::{
-    BindOverwatcherRequest, CloseOverwatcherRequest, InitRunRequest, OperationalObservationRequest,
-    OverwatchCycleRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
-    RevisePlanRequest, TokenHandoffRequest, WriteRequest,
+    AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest, InitRunRequest,
+    OperationalObservationRequest, OverwatchCycleRequest, RebindSessionRequest,
+    ReconcileRunIdentitiesRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest,
+    TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::schema::open_database;
 use slk_state_core::write::StateStore;
@@ -74,6 +75,8 @@ fn run() -> Result<Value, CliError> {
     match command {
         "configure" => configure(&arguments[1..]),
         "init-run" => init_run(&arguments[1..]),
+        "reconcile-run-identities" => reconcile_run_identities(&arguments[1..]),
+        "adopt-method-contract" => adopt_method_contract(&arguments[1..]),
         "bind-overwatcher" => bind_overwatcher(&arguments[1..]),
         "record-overwatch-cycle" => record_overwatch_cycle(&arguments[1..]),
         "record-observation" => record_observation(&arguments[1..]),
@@ -112,6 +115,33 @@ fn init_run(arguments: &[String]) -> Result<Value, CliError> {
         "run_id":run_id,
         "supervisor_credential":initialized.supervisor_credential.expose_secret(),
         "export":export
+    }))
+}
+
+fn reconcile_run_identities(arguments: &[String]) -> Result<Value, CliError> {
+    let request: ReconcileRunIdentitiesRequest = request(arguments)?;
+    let store = configured_store()?;
+    let result = store
+        .reconcile_run_identities(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status": result.status.to_ascii_lowercase(),
+        "receipt_id": result.receipt_id,
+        "canonical_run_id": result.canonical_run_id
+    }))
+}
+
+fn adopt_method_contract(arguments: &[String]) -> Result<Value, CliError> {
+    let request: AdoptMethodContractRequest = request(arguments)?;
+    let store = configured_store()?;
+    let result = store
+        .adopt_method_contract(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status": result.status.to_ascii_lowercase(),
+        "receipt_id": result.receipt_id,
+        "run_id": result.run_id,
+        "effective_version": result.effective_version
     }))
 }
 
@@ -369,5 +399,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|bind-overwatcher|record-overwatch-cycle|record-observation|close-overwatcher|register-role|handoff|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
+    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-observation|close-overwatcher|register-role|handoff|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

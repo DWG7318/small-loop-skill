@@ -3,9 +3,11 @@ use serde_json::json;
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
-    BindOverwatcherRequest, CellDefinition, CloseOverwatcherRequest, EndpointIdentity, EventType,
-    GoDefinition, InitRunRequest, ObservationKind, ObservationMode, OperationalObservationRequest,
-    OverwatchCheckResult, OverwatchCycleChecklist, OverwatchCycleRequest, ProjectIdentity,
+    AdoptMethodContractRequest, BindOverwatcherRequest, CellDefinition, CloseOverwatcherRequest,
+    EndpointIdentity, EventType, GoDefinition, InitRunRequest, MethodCompatibilityAssertions,
+    ObservationKind, ObservationMode, OperationalObservationRequest, OverwatchCheckResult,
+    OverwatchCycleChecklist, OverwatchCycleRequest, OverwatcherAssertion,
+    OwnerAuthorizationEvidence, OwnerDecision, PreservedAssertion, ProjectIdentity,
     RegisterRoleRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
@@ -63,6 +65,62 @@ fn supervisor_binds_at_most_one_optional_overwatcher_without_moving_token() {
         ),
         Err(StateError::OverwatcherAlreadyBound)
     ));
+}
+
+#[test]
+fn active_overwatcher_requires_an_adopted_supported_method_contract() {
+    let fixture = Fixture::new();
+    let database = Connection::open(fixture._root.path().join("slk.db")).unwrap();
+    database
+        .execute(
+            "UPDATE runs SET slk_version='4.1.1', origin_slk_version='4.1.1'
+             WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+    drop(database);
+
+    assert!(matches!(
+        fixture.store.bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a")
+        ),
+        Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+
+    fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_request(&fixture.store, "4.1.1"),
+        )
+        .unwrap();
+    fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+}
+
+#[test]
+fn method_adoption_rejects_an_already_active_overwatcher() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    assert!(fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_request(&fixture.store, "4.2.1")
+        )
+        .is_err());
 }
 
 #[test]
@@ -518,6 +576,34 @@ fn overwatcher_binding(
         native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
         reason: "Supervisor selected one dedicated observation Session".into(),
         occurred_at: "2026-09-22T00:00:01Z".into(),
+    }
+}
+
+fn adoption_request(store: &StateStore, from_version: &str) -> AdoptMethodContractRequest {
+    AdoptMethodContractRequest {
+        receipt_id: "adoption-overwatcher-gate".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: store.run_state_snapshot("run-a").unwrap(),
+        from_version: from_version.into(),
+        to_version: "4.2.2".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread".into(),
+            message_id: "owner-message".into(),
+            content_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .into(),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-22T00:00:01Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher: OverwatcherAssertion::Absent,
+        },
+        reason: "Adopt active Overwatcher contract".into(),
+        occurred_at: "2026-09-22T00:00:02Z".into(),
     }
 }
 

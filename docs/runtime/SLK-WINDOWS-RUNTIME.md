@@ -1,25 +1,25 @@
-# SLK 4.2.1 Windows 运行环境配置指引
+# SLK 4.2.2 Windows 运行环境配置指引
 
-本指引用于在一台新 Windows 电脑上建立可运行 SLK 4.2.1 的机器环境。它不改变 SLK 方法，也不替代项目内的 15 个 Skill。
+本指引用于在一台新 Windows 电脑上建立可运行 SLK 4.2.2 的机器环境。它不改变 SLK 方法，也不替代项目内的 15 个 Skill。
 
 ## 先分清三个层级
 
 1. **电脑级环境，只配置一次**：DSH、OCRV、`slk-transport`、`slk-state`、`slk-bi-query`，以及它们的凭据和数据目录。多个项目复用这一层。
-2. **项目级部署**：把 SLK 4.2.1 的 15 个 Skill 放入该项目使用的 Skill 根目录。SLK 不因此变成电脑全域工程方法。
+2. **项目级部署**：把 SLK 4.2.2 的 15 个 Skill 放入该项目使用的 Skill 根目录。SLK 不因此变成电脑全域工程方法。
 3. **Run 级绑定**：每个 Run 重新登记 Supervisor、OCRV Checker、DSH Worker 的精确身份、会话和端点，并完成通讯测试；需要旁路保障时再绑定一个专属 Overwatcher Session。
 
 仅完成第 2 层不能启动跨 Agent SLK。
 
 ## 已验收基线
 
-SLK 4.2.1 验收时使用：
+SLK 4.2.2 验收时使用：
 
 - Windows、PowerShell 7、Git、Python 3.10 或更高版本、Node.js/npm 与 Rust/Cargo；
 - `@deepseek-ai/dsh@0.1.5-rc.2`；
 - `@alibaba-group/open-code-review@1.12.7`；
 - DSH：`deepseek-official / deepseek-flash`；
 - OCRV：`dashscope-tokenplan / qwen3.8-max / medium`；
-- SLK 4.2.1 源码，用于构建无第三方依赖的 `slk-transport.pyz` 和状态 CLI。
+- SLK 4.2.2 源码，用于构建无第三方依赖的 `slk-transport.pyz` 和状态 CLI。
 
 升级这些版本应重新验证，不把“能够启动”直接当作与上述基线兼容。
 
@@ -149,7 +149,7 @@ OCRV、PowerShell、Codex App Server、DSH 和传输辅助进程默认使用统�
 
 ## 4. 构建 SLK 传输和状态工具
 
-从受信的 SLK 4.2.1 源码构建机器级工具：
+从受信的 SLK 4.2.2 源码构建机器级工具：
 
 ```powershell
 Set-Location D:\SLK
@@ -186,7 +186,7 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 
 ## 5. 部署一个项目
 
-把 SLK 4.2.1 `skills\` 下的 15 个目录复制到该项目所使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
+把 SLK 4.2.2 `skills\` 下的 15 个目录复制到该项目所使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
 
 首次启动 Run 时：
 
@@ -202,7 +202,7 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 
 ## 6. 新电脑验收清单
 
-以下各项都成立，才把新电脑标记为可运行 SLK 4.2.1：
+以下各项都成立，才把新电脑标记为可运行 SLK 4.2.2：
 
 - DSH 版本命令成功，真实 headless 请求返回预期结果；
 - 两个不同 `instance-id` 的 DSH Worker 不共用 session；
@@ -223,4 +223,4 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 - DSH 外层退出码不能单独证明 Worker 完成；应检查闭合 Worker 结果和命令证据。
 - OCRV 返回 `INCOMPLETE` 时保留事实并修复运行环境，不把它改写成 PASS。
 - 传输未出现原生启动证据时，发送者仍持有原 TOKEN；恢复沿用同一消息身份，不额外创建确认回合。
-- 当前 SLK 4.2.1 源码发布不把 DSH/OCRV 的机器启动配置混入 15 个 Skill。新电脑应从受信的内部配置包或已验收电脑复制上述配置文件，排除 `node_modules`、临时目录、运行状态、日志和任何凭据后，再执行本指引的锁定安装与验收。
+- 当前 SLK 4.2.2 源码发布不把 DSH/OCRV 的机器启动配置混入 15 个 Skill。新电脑应从受信的内部配置包或已验收电脑复制上述配置文件，排除 `node_modules`、临时目录、运行状态、日志和任何凭据后，再执行本指引的锁定安装与验收。

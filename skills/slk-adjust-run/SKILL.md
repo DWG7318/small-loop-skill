@@ -18,6 +18,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor de
 - D2 发现 CELL 之间的衔接问题；
 - 当前固定角色能力、电脑、环境、依赖或独占资源与原计划差异较大；资源占用先按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md) 恢复同一节点；
 - CELL 变化已经影响后续 CELL、技术路线、验收目标或 Owner 需求。
+- 同一项目留下多个独立初始化的 Run 身份，且 Owner 已明确 canonical/source Run ID；这时先取得闭合 Owner 证据与各 Run 精确快照，由 canonical 当前 Supervisor 使用 `reconcile-run-identities` 收敛身份，再按需使用 `adopt-method-contract` 显式采用当前合同。
 
 ## 建议选择
 
@@ -40,3 +41,5 @@ Supervisor 可以按实际原因组合以下办法：
 调整完成后，Supervisor 用 `slk-state revise-plan` 或 `write` 追加决定，沿 `Supervisor → Checker` 完成真实投递，以递增编号的同一 `SLK TOKEN` 用 `slk-state handoff` 交还当前责任，随后结束本次激活。待施工 CELL 使用 `$slk-dispatch-cell`；当前 CELL 修复回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再激活 Supervisor。
 
 不要在线等待或持续介入普通 CELL；可选 Overwatcher 只提供运行证据和通讯告警，不能替 Supervisor 决定路线、修改计划、TOKEN 或 BI。
+
+不要按标题、最近时间或自由文本猜 canonical Run；不要直接编辑 SQLite、伪造失效凭证、新建替代 Run，或借身份对账改写 CELL、D0/D1/D2、角色、证据和 TOKEN。

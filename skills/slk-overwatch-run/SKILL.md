@@ -14,7 +14,7 @@ description: Use when an active Small Loop Skill (SLK) Run has one Supervisor-se
 
 ## 启动与持续活动
 
-1. Supervisor 与 Owner 确认是否启用、精确 Session、前台持续能力和 180–300 秒巡查间隔（建议 240 秒），再用 `bind-overwatcher` 记录 `FOREGROUND_ACTIVE_TURN`、`foreground_turn_id` 与原生活动证据。无法保持同一 Agent Session 和前台 active turn 时判定未就绪。
+1. Supervisor 与 Owner 确认是否启用、精确 Session、前台持续能力和 180–300 秒巡查间隔（建议 240 秒），确认 Run 的有效方法版本支持主动观察（历史 Run 先有 `adopt-method-contract` 回执），再用 `bind-overwatcher` 记录 `FOREGROUND_ACTIVE_TURN`、`foreground_turn_id` 与原生活动证据。无法保持同一 Agent Session 和前台 active turn 时判定未就绪。
 2. 绑定后先完成首轮八项巡查并用 `record-overwatch-cycle` 留证；未有完整首轮时不开始新的派工或 TOKEN 交接。
 3. 保持同一个前台 active turn，不结束当前 turn。每隔冻结的 180–300 秒由本 Session 主动开始下一轮；真实事件可提前触发，但不能替代下一次主动巡查。一次只运行一个巡查周期。
 4. 一轮逾期时立即自检并报告 `OVERWATCHER_ACTIVE_DEGRADED`；连续两轮逾期、turn 结束或活动证据失效时报告 `OVERWATCHER_INACTIVE`，阻止新的派工/交接并唤醒 Supervisor，但不粗暴中断已在执行的 CELL。
@@ -41,4 +41,5 @@ description: Use when an active Small Loop Skill (SLK) Run has one Supervisor-se
 
 - 不要创建 heartbeat；不要创建 automation；不要创建 cron；不要创建 Windows 计划任务；不要创建 daemon；不要创建 后台 Agent；不要创建第二个观察 Session。
 - 不要用旧 running、旧 TOKEN、可见任务、自由文本、heartbeat 或定时唤醒冒充当前活动证据。
+- 不要用提示词中的版本声明替代方法采用回执，也不要在未采用支持版本的历史 Run 上先绑定再补记录。
 - 不要成为第四个工程角色、Router、消息总线或必经 relay；不要写 D0/D1/D2、计划、验收、角色替换、Owner 决定、TOKEN 或 BI；不要阻止原三角色直接通讯，也不要因 Run 从未绑定 Overwatcher 而停止工作。

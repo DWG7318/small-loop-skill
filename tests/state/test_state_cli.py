@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 
 import pytest
@@ -369,3 +370,178 @@ def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
         check=False,
     )
     assert rejected.returncode != 0
+
+
+def administrative_snapshot(database_path, run_id):
+    with sqlite3.connect(database_path) as database:
+        row = database.execute(
+            """SELECT r.project_id, r.slk_version, r.state, r.closure_state,
+                      r.archived_at, r.superseded_by_run_id, l.predecessor_run_id
+               FROM runs r LEFT JOIN run_lineage l ON l.successor_run_id=r.run_id
+               WHERE r.run_id=?""",
+            (run_id,),
+        ).fetchone()
+        event_count = database.execute(
+            "SELECT COUNT(*) FROM work_events WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+        latest_event_id = database.execute(
+            "SELECT event_id FROM work_events WHERE run_id=? ORDER BY rowid DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()[0]
+        token_sequence, holder = database.execute(
+            """SELECT token_sequence, to_role_instance_id FROM token_events
+               WHERE run_id=? ORDER BY token_sequence DESC LIMIT 1""",
+            (run_id,),
+        ).fetchone()
+        role_count = database.execute(
+            "SELECT COUNT(*) FROM role_instances WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+        evidence_count = database.execute(
+            "SELECT COUNT(*) FROM evidence WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+    return {
+        "run_id": run_id,
+        "project_id": row[0],
+        "slk_version": row[1],
+        "state": row[2],
+        "closure_state": row[3],
+        "archived_at": row[4],
+        "superseded_by_run_id": row[5],
+        "predecessor_run_id": row[6],
+        "event_count": event_count,
+        "latest_event_id": latest_event_id,
+        "token_sequence": token_sequence,
+        "token_holder_role_instance_id": holder,
+        "role_count": role_count,
+        "evidence_count": evidence_count,
+    }
+
+
+def test_admin_cli_reconciles_and_adopts_with_closed_payloads(tmp_path):
+    environment = configured_environment(tmp_path)
+    data_root = tmp_path / "state"
+    invoke(["configure", "--data-root", data_root], environment)
+
+    source_request = init_request()
+    source_request["run_id"] = "run-source"
+    source_request["supervisor"]["role_instance_id"] = "supervisor-source"
+    source_request["supervisor"]["session_id"] = "thread-source"
+    source_request["supervisor_endpoint"]["session_id"] = "thread-source"
+    source_request["supervisor_endpoint"]["native_address"] = {
+        "thread_id": "thread-source"
+    }
+    invoke(
+        ["init-run", "--request", write_json(tmp_path / "source.json", source_request)],
+        environment,
+    )
+
+    canonical_request = init_request()
+    canonical_request["run_id"] = "run-canonical"
+    canonical_request["supervisor"]["role_instance_id"] = "supervisor-canonical"
+    canonical_request["supervisor"]["session_id"] = "thread-canonical"
+    canonical_request["supervisor_endpoint"]["session_id"] = "thread-canonical"
+    canonical_request["supervisor_endpoint"]["native_address"] = {
+        "thread_id": "thread-canonical"
+    }
+    canonical = json.loads(
+        invoke(
+            [
+                "init-run",
+                "--request",
+                write_json(tmp_path / "canonical.json", canonical_request),
+            ],
+            environment,
+        ).stdout
+    )
+    supervisor_environment = environment.copy()
+    supervisor_environment["SLK_ROLE_CREDENTIAL"] = canonical[
+        "supervisor_credential"
+    ]
+    database_path = data_root / "slk.db"
+    with sqlite3.connect(database_path) as database:
+        database.execute(
+            "UPDATE runs SET slk_version='4.2.1', origin_slk_version='4.2.1'"
+        )
+    owner = {
+        "source_thread_id": "owner-thread",
+        "message_id": "owner-message",
+        "content_sha256": "0123456789abcdef" * 4,
+        "decision": "APPROVE_RUN_IDENTITY_RECONCILIATION",
+        "occurred_at": "2026-09-22T10:00:00Z",
+    }
+    reconcile = {
+        "receipt_id": "reconcile-cli",
+        "canonical_run_id": "run-canonical",
+        "canonical_snapshot": administrative_snapshot(database_path, "run-canonical"),
+        "source_snapshots": [administrative_snapshot(database_path, "run-source")],
+        "owner_authorization": owner,
+        "reason": "Owner selected one canonical Run",
+        "occurred_at": "2026-09-22T10:01:00Z",
+    }
+    reconciled = json.loads(
+        invoke(
+            [
+                "reconcile-run-identities",
+                "--request",
+                write_json(tmp_path / "reconcile.json", reconcile),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    assert reconciled == {
+        "canonical_run_id": "run-canonical",
+        "receipt_id": "reconcile-cli",
+        "status": "applied",
+    }
+
+    unknown = dict(reconcile)
+    unknown["receipt_id"] = "reconcile-unknown-field"
+    unknown["unexpected"] = True
+    rejected = invoke(
+        [
+            "reconcile-run-identities",
+            "--request",
+            write_json(tmp_path / "unknown.json", unknown),
+        ],
+        supervisor_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
+
+    adoption_owner = dict(owner)
+    adoption_owner["decision"] = "APPROVE_METHOD_CONTRACT_ADOPTION"
+    adoption_owner["message_id"] = "owner-message-adoption"
+    adoption = {
+        "receipt_id": "adoption-cli",
+        "run_id": "run-canonical",
+        "expected_snapshot": administrative_snapshot(database_path, "run-canonical"),
+        "from_version": "4.2.1",
+        "to_version": "4.2.2",
+        "owner_authorization": adoption_owner,
+        "reconciliation_receipt_id": "reconcile-cli",
+        "compatibility": {
+            "topology": "PRESERVED",
+            "role_bindings": "PRESERVED",
+            "token": "PRESERVED",
+            "engineering_history": "PRESERVED",
+            "overwatcher": "ABSENT",
+        },
+        "reason": "Adopt 4.2.2 explicitly",
+        "occurred_at": "2026-09-22T10:02:00Z",
+    }
+    adopted = json.loads(
+        invoke(
+            [
+                "adopt-method-contract",
+                "--request",
+                write_json(tmp_path / "adopt.json", adoption),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    assert adopted == {
+        "effective_version": "4.2.2",
+        "receipt_id": "adoption-cli",
+        "run_id": "run-canonical",
+        "status": "applied",
+    }

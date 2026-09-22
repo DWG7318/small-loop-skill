@@ -14,6 +14,8 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 通过 Eval 后，Supervisor 使用 `slk-state init-run` 写入 Run 定义、计划、方法版本、显式 predecessor（适用时）、身份和端点，再使用 `$slk-manage-team` 建立后续成员。即使成员在其他 worktree 施工，三个工程角色与可选 Overwatcher 都指向同一中央状态；Checker 的 D1 隔离和 Supervisor 的 D2 顺序保持不变。
 
+历史上独立初始化的重复 Run 不属于普通 predecessor：只有 Owner 明确指定 canonical/source ID 后，canonical 当前 Supervisor 才可提交精确快照执行 `slk-state reconcile-run-identities`；旧 Run 需要当前语义时再以独立 Owner 证据执行 `slk-state adopt-method-contract`。两类回执追加且不可变，只更新身份元数据或有效方法版本，origin 版本与全部工程历史、角色、证据和 TOKEN 保持不变。
+
 ## 各角色写自己的事实
 
 - Worker 通过 `slk-state` 记录施工变化、资源占用与恢复、候选、最低 D0、判断过程、风险和交付对象；本地 D0 尝试与正式候选、D1 返工分别标明。
@@ -36,3 +38,4 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 - 不要等到最后交接才补写关键失败或重要决定，不要手工改写自动导出/BI、越权写他人事实，或把尚未执行写成已经执行；不要抹掉错误、返工或豁免历史，也不要把简要记录扩成逐命令审计。
 - 不要只保存二次总结或结论 JSON 而丢失决定验收结论的原始证据位置，也不要把代码未改、代理环境结果或逻辑推断登记成已经执行的真实环境验证。
+- 不要按标题自动合并 Run、直接改 SQLite、伪造旧凭证、另建替代 Run 或用提示词声称版本已升级；管理操作使用闭合 Owner 证据、显式 ID、精确快照和不可变回执。

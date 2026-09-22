@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.2.2
+
+- Added Owner-evidenced, exact-snapshot `reconcile-run-identities` for explicitly named independent historical roots, with atomic archive metadata and immutable receipts.
+- Added explicit `adopt-method-contract` for `4.1.1|4.2.0|4.2.1 → 4.2.2`, preserving origin version, TOKEN, roles, evidence, CELL and D0/D1/D2 history.
+- Made identity projections accept cross-root canonical/history relationships only while the stored reconciliation receipt still matches current metadata.
+- Gated active Overwatcher binding to open Runs on effective 4.2.1 or 4.2.2 and required historical Runs to adopt the supported contract before binding.
+- Kept both administration operations narrow: no title inference, direct SQLite editing, old-credential invention, replacement Run, orchestration layer, BI mutation, or LCaS state change.
+
 ## 4.2.1
 
 - Replaced the withdrawn 4.2.0 event-woken Overwatcher semantics with one dedicated Agent Session that keeps a foreground active turn and completes the fixed eight-part observation cycle every frozen 180–300 seconds.

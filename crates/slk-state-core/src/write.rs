@@ -17,9 +17,10 @@ use crate::auth::{
     StateError,
 };
 use crate::model::{
-    BindOverwatcherRequest, CloseOverwatcherRequest, EventType, InitRunRequest,
-    OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
-    RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
+    AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest, EventType,
+    InitRunRequest, OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
+    OwnerAuthorizationEvidence, OwnerDecision, RebindSessionRequest, ReconcileRunIdentitiesRequest,
+    RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role, RunStateSnapshot,
     TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
@@ -42,6 +43,21 @@ pub struct CurrentToken {
     pub owner_role_instance_id: String,
     pub go_id: Option<String>,
     pub cell_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReconciliationResult {
+    pub status: String,
+    pub receipt_id: String,
+    pub canonical_run_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodAdoptionResult {
+    pub status: String,
+    pub receipt_id: String,
+    pub run_id: String,
+    pub effective_version: String,
 }
 
 impl StateStore {
@@ -121,10 +137,10 @@ impl StateStore {
             let source_kind = request.source_kind.as_deref().unwrap_or("solo");
             transaction.execute(
                 "INSERT INTO runs
-                 (run_id, project_id, run_name, run_description, slk_version,
+                 (run_id, project_id, run_name, run_description, slk_version, origin_slk_version,
                   source_kind, source_project_name, goal, boundaries_json, state,
                   current_plan_revision, closure_state, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', 1, 'open', ?10)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9, 'active', 1, 'open', ?10)",
                 params![
                     request.run_id,
                     request.project.project_id,
@@ -241,6 +257,255 @@ impl StateStore {
         })
     }
 
+    pub fn run_state_snapshot(&self, run_id: &str) -> Result<RunStateSnapshot, StateError> {
+        let connection = open_database(&self.data_root)?;
+        run_state_snapshot_from(&connection, run_id)
+    }
+
+    pub fn reconcile_run_identities(
+        &self,
+        credential: &Credential,
+        request: ReconcileRunIdentitiesRequest,
+    ) -> Result<ReconciliationResult, StateError> {
+        validate_reconciliation_request(&request)?;
+        let payload_json = serde_json::to_string(&request)?;
+        let payload_sha256 = sha256_hex(payload_json.as_bytes());
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_role(transaction, &request.canonical_run_id, credential)?;
+            if actor.role != Role::Supervisor {
+                return Err(StateError::RunAdministrationInvalid(
+                    "reconciliation requires the canonical Run's current Supervisor".into(),
+                ));
+            }
+
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT payload_sha256 FROM run_identity_reconciliation_receipts
+                     WHERE receipt_id=?1",
+                    [&request.receipt_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing_hash) = existing {
+                if existing_hash == payload_sha256 {
+                    return Ok(ReconciliationResult {
+                        status: "IDEMPOTENT_REPLAY".into(),
+                        receipt_id: request.receipt_id.clone(),
+                        canonical_run_id: request.canonical_run_id.clone(),
+                    });
+                }
+                return Err(StateError::RunAdministrationConflict(
+                    request.receipt_id.clone(),
+                ));
+            }
+
+            let actual_canonical = run_state_snapshot_from(transaction, &request.canonical_run_id)?;
+            if actual_canonical != request.canonical_snapshot
+                || request.canonical_snapshot.run_id != request.canonical_run_id
+                || !snapshot_is_open(&actual_canonical)
+            {
+                return Err(StateError::RunAdministrationInvalid(
+                    "canonical Run snapshot is stale, mismatched, or not open".into(),
+                ));
+            }
+
+            for source in &request.source_snapshots {
+                let actual = run_state_snapshot_from(transaction, &source.run_id)?;
+                if actual != *source
+                    || actual.project_id != actual_canonical.project_id
+                    || !snapshot_is_open(&actual)
+                {
+                    return Err(StateError::RunAdministrationInvalid(format!(
+                        "source Run snapshot is stale, cross-project, or not open: {}",
+                        source.run_id
+                    )));
+                }
+            }
+
+            for source in &request.source_snapshots {
+                let changed = transaction.execute(
+                    "UPDATE runs
+                     SET state='archived', closure_state='superseded', closed_at=?2,
+                         archive_reason='owner-authorized-identity-reconciliation',
+                         archived_at=?2, superseded_by_run_id=?3
+                     WHERE run_id=?1 AND state<>'archived' AND closure_state='open'
+                       AND archived_at IS NULL AND superseded_by_run_id IS NULL",
+                    params![source.run_id, request.occurred_at, request.canonical_run_id],
+                )?;
+                if changed != 1 {
+                    return Err(StateError::RunAdministrationInvalid(format!(
+                        "source Run changed during reconciliation: {}",
+                        source.run_id
+                    )));
+                }
+            }
+
+            transaction.execute(
+                "INSERT INTO run_identity_reconciliation_receipts
+                 (receipt_id, canonical_run_id, canonical_snapshot_json,
+                  source_snapshots_json, owner_authorization_json, reason,
+                  payload_sha256, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    request.receipt_id,
+                    request.canonical_run_id,
+                    serde_json::to_string(&request.canonical_snapshot)?,
+                    serde_json::to_string(&request.source_snapshots)?,
+                    serde_json::to_string(&request.owner_authorization)?,
+                    request.reason,
+                    payload_sha256,
+                    request.occurred_at,
+                ],
+            )?;
+            Ok(ReconciliationResult {
+                status: "APPLIED".into(),
+                receipt_id: request.receipt_id.clone(),
+                canonical_run_id: request.canonical_run_id.clone(),
+            })
+        })
+    }
+
+    pub fn adopt_method_contract(
+        &self,
+        credential: &Credential,
+        request: AdoptMethodContractRequest,
+    ) -> Result<MethodAdoptionResult, StateError> {
+        validate_method_adoption_request(&request)?;
+        let payload_json = serde_json::to_string(&request)?;
+        let payload_sha256 = sha256_hex(payload_json.as_bytes());
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_role(transaction, &request.run_id, credential)?;
+            if actor.role != Role::Supervisor {
+                return Err(StateError::RunAdministrationInvalid(
+                    "method adoption requires the Run's current Supervisor".into(),
+                ));
+            }
+
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT payload_sha256 FROM run_method_adoption_receipts
+                     WHERE receipt_id=?1",
+                    [&request.receipt_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing_hash) = existing {
+                if existing_hash == payload_sha256 {
+                    return Ok(MethodAdoptionResult {
+                        status: "IDEMPOTENT_REPLAY".into(),
+                        receipt_id: request.receipt_id.clone(),
+                        run_id: request.run_id.clone(),
+                        effective_version: request.to_version.clone(),
+                    });
+                }
+                return Err(StateError::RunAdministrationConflict(
+                    request.receipt_id.clone(),
+                ));
+            }
+
+            let actual = run_state_snapshot_from(transaction, &request.run_id)?;
+            if actual != request.expected_snapshot
+                || request.expected_snapshot.run_id != request.run_id
+                || actual.slk_version != request.from_version
+                || !snapshot_is_open(&actual)
+            {
+                return Err(StateError::RunAdministrationInvalid(
+                    "method adoption snapshot is stale, mismatched, or not open".into(),
+                ));
+            }
+
+            let reconciliation_count: u64 = transaction.query_row(
+                "SELECT COUNT(*) FROM run_identity_reconciliation_receipts
+                 WHERE canonical_run_id=?1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            match (
+                reconciliation_count > 0,
+                request.reconciliation_receipt_id.as_deref(),
+            ) {
+                (true, Some(receipt_id)) => {
+                    let valid: Option<i64> = transaction
+                        .query_row(
+                            "SELECT 1 FROM run_identity_reconciliation_receipts
+                             WHERE receipt_id=?1 AND canonical_run_id=?2",
+                            params![receipt_id, request.run_id],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    if valid.is_none() {
+                        return Err(StateError::RunAdministrationInvalid(
+                            "reconciliation receipt does not belong to this canonical Run".into(),
+                        ));
+                    }
+                }
+                (true, None) => {
+                    return Err(StateError::RunAdministrationInvalid(
+                        "a reconciled canonical Run must cite its reconciliation receipt".into(),
+                    ));
+                }
+                (false, Some(_)) => {
+                    return Err(StateError::RunAdministrationInvalid(
+                        "method adoption cannot cite an unrelated reconciliation receipt".into(),
+                    ));
+                }
+                (false, None) => {}
+            }
+
+            let active_overwatcher: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM overwatcher_bindings
+                     WHERE run_id=?1 AND lifecycle_state='active'",
+                    [&request.run_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if active_overwatcher.is_some() {
+                return Err(StateError::RunAdministrationInvalid(
+                    "method adoption requires Overwatcher=ABSENT".into(),
+                ));
+            }
+
+            let changed = transaction.execute(
+                "UPDATE runs SET slk_version=?2
+                 WHERE run_id=?1 AND slk_version=?3 AND closure_state='open'
+                   AND state<>'archived' AND archived_at IS NULL",
+                params![request.run_id, request.to_version, request.from_version],
+            )?;
+            if changed != 1 {
+                return Err(StateError::RunAdministrationInvalid(
+                    "effective method version changed during adoption".into(),
+                ));
+            }
+            transaction.execute(
+                "INSERT INTO run_method_adoption_receipts
+                 (receipt_id, run_id, expected_snapshot_json, from_version, to_version,
+                  owner_authorization_json, reconciliation_receipt_id,
+                  compatibility_json, reason, payload_sha256, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    request.receipt_id,
+                    request.run_id,
+                    serde_json::to_string(&request.expected_snapshot)?,
+                    request.from_version,
+                    request.to_version,
+                    serde_json::to_string(&request.owner_authorization)?,
+                    request.reconciliation_receipt_id,
+                    serde_json::to_string(&request.compatibility)?,
+                    request.reason,
+                    payload_sha256,
+                    request.occurred_at,
+                ],
+            )?;
+            Ok(MethodAdoptionResult {
+                status: "APPLIED".into(),
+                receipt_id: request.receipt_id.clone(),
+                run_id: request.run_id.clone(),
+                effective_version: request.to_version.clone(),
+            })
+        })
+    }
+
     pub fn bind_overwatcher(
         &self,
         credential: &Credential,
@@ -277,6 +542,22 @@ impl StateStore {
             let actor = authorize_role(transaction, &request.run_id, credential)?;
             if actor.role != Role::Supervisor {
                 return Err(StateError::OverwatcherBindingNotAuthorized);
+            }
+            let run_contract: (String, String, String, Option<String>) = transaction.query_row(
+                "SELECT slk_version, state, closure_state, archived_at
+                 FROM runs WHERE run_id=?1",
+                [&request.run_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )?;
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2")
+                || run_contract.1 == "archived"
+                || run_contract.2 != "open"
+                || run_contract.3.is_some()
+            {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "active Overwatcher requires an open Run with effective SLK 4.2.1 or 4.2.2"
+                        .into(),
+                ));
             }
             let already_bound: Option<i64> = transaction
                 .query_row(
@@ -1783,6 +2064,180 @@ fn latest_d1_state(
         )
         .optional()
         .map_err(StateError::from)
+}
+
+fn validate_reconciliation_request(
+    request: &ReconcileRunIdentitiesRequest,
+) -> Result<(), StateError> {
+    if !valid_identifier(&request.receipt_id)
+        || !valid_identifier(&request.canonical_run_id)
+        || request.canonical_snapshot.run_id != request.canonical_run_id
+        || request.reason.trim().is_empty()
+        || request.source_snapshots.is_empty()
+    {
+        return Err(StateError::RunAdministrationInvalid(
+            "receipt, canonical Run, explicit sources, and reason are required".into(),
+        ));
+    }
+    validate_owner_authorization(
+        &request.owner_authorization,
+        &[
+            OwnerDecision::ApproveRunIdentityReconciliation,
+            OwnerDecision::ApproveReconciliationAndAdoption,
+        ],
+    )?;
+    validate_admin_timestamp(&request.occurred_at)?;
+    let mut sources = BTreeSet::new();
+    for snapshot in &request.source_snapshots {
+        if !valid_identifier(&snapshot.run_id)
+            || snapshot.run_id == request.canonical_run_id
+            || !sources.insert(snapshot.run_id.as_str())
+        {
+            return Err(StateError::RunAdministrationInvalid(
+                "source Run IDs must be explicit, unique, and different from canonical".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_method_adoption_request(
+    request: &AdoptMethodContractRequest,
+) -> Result<(), StateError> {
+    if !valid_identifier(&request.receipt_id)
+        || !valid_identifier(&request.run_id)
+        || request.expected_snapshot.run_id != request.run_id
+        || request.reason.trim().is_empty()
+        || !matches!(request.from_version.as_str(), "4.1.1" | "4.2.0" | "4.2.1")
+        || request.to_version != "4.2.2"
+        || request.from_version == request.to_version
+        || request
+            .reconciliation_receipt_id
+            .as_deref()
+            .is_some_and(|value| !valid_identifier(value))
+    {
+        return Err(StateError::RunAdministrationInvalid(
+            "method adoption requires a supported prior version, exact 4.2.2 target, and closed identities"
+                .into(),
+        ));
+    }
+    validate_owner_authorization(
+        &request.owner_authorization,
+        &[
+            OwnerDecision::ApproveMethodContractAdoption,
+            OwnerDecision::ApproveReconciliationAndAdoption,
+        ],
+    )?;
+    validate_admin_timestamp(&request.occurred_at)
+}
+
+fn validate_owner_authorization(
+    evidence: &OwnerAuthorizationEvidence,
+    allowed: &[OwnerDecision],
+) -> Result<(), StateError> {
+    if !valid_identifier(&evidence.source_thread_id)
+        || !valid_identifier(&evidence.message_id)
+        || !is_lower_sha256(&evidence.content_sha256)
+        || !allowed.contains(&evidence.decision)
+    {
+        return Err(StateError::RunAdministrationInvalid(
+            "closed Owner authorization evidence is missing or invalid".into(),
+        ));
+    }
+    validate_admin_timestamp(&evidence.occurred_at)
+}
+
+fn validate_admin_timestamp(value: &str) -> Result<(), StateError> {
+    OffsetDateTime::parse(value, &Rfc3339)
+        .map(|_| ())
+        .map_err(|_| StateError::RunAdministrationInvalid("timestamps must be RFC3339".into()))
+}
+
+fn is_lower_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn snapshot_is_open(snapshot: &RunStateSnapshot) -> bool {
+    snapshot.state != "archived"
+        && snapshot.closure_state == "open"
+        && snapshot.archived_at.is_none()
+        && snapshot.superseded_by_run_id.is_none()
+}
+
+struct RunSnapshotRow {
+    project_id: String,
+    slk_version: String,
+    state: String,
+    closure_state: String,
+    archived_at: Option<String>,
+    superseded_by_run_id: Option<String>,
+    predecessor_run_id: Option<String>,
+}
+
+pub(crate) fn run_state_snapshot_from(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<RunStateSnapshot, StateError> {
+    let run: Option<RunSnapshotRow> = connection
+        .query_row(
+            "SELECT r.project_id, r.slk_version, r.state, r.closure_state,
+                    r.archived_at, r.superseded_by_run_id, l.predecessor_run_id
+             FROM runs r LEFT JOIN run_lineage l ON l.successor_run_id=r.run_id
+             WHERE r.run_id=?1",
+            [run_id],
+            |row| {
+                Ok(RunSnapshotRow {
+                    project_id: row.get(0)?,
+                    slk_version: row.get(1)?,
+                    state: row.get(2)?,
+                    closure_state: row.get(3)?,
+                    archived_at: row.get(4)?,
+                    superseded_by_run_id: row.get(5)?,
+                    predecessor_run_id: row.get(6)?,
+                })
+            },
+        )
+        .optional()?;
+    let Some(run) = run else {
+        return Err(StateError::RunNotFound(run_id.to_string()));
+    };
+    let (event_count, latest_event_id): (u64, String) = connection.query_row(
+        "SELECT COUNT(*), COALESCE((SELECT event_id FROM work_events
+                                   WHERE run_id=?1 ORDER BY rowid DESC LIMIT 1), '')
+         FROM work_events WHERE run_id=?1",
+        [run_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let token = current_token_from(connection, run_id)?;
+    let role_count: u64 = connection.query_row(
+        "SELECT COUNT(*) FROM role_instances WHERE run_id=?1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    let evidence_count: u64 = connection.query_row(
+        "SELECT COUNT(*) FROM evidence WHERE run_id=?1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    Ok(RunStateSnapshot {
+        run_id: run_id.to_string(),
+        project_id: run.project_id,
+        slk_version: run.slk_version,
+        state: run.state,
+        closure_state: run.closure_state,
+        archived_at: run.archived_at,
+        superseded_by_run_id: run.superseded_by_run_id,
+        predecessor_run_id: run.predecessor_run_id,
+        event_count,
+        latest_event_id,
+        token_sequence: token.sequence,
+        token_holder_role_instance_id: token.owner_role_instance_id,
+        role_count,
+        evidence_count,
+    })
 }
 
 pub(crate) fn valid_identifier(value: &str) -> bool {

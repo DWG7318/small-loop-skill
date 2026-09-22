@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.1"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.2"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -862,6 +862,30 @@ def test_run_identity_is_explicit_and_one_continuation_reuses_its_run_id() -> No
     negative = main.split("\n## 负面提示词\n\n", 1)[1]
     assert "按标题合并 Run" in negative
     assert "同一实际 Run 的继续过程中另造 run_id" in negative
+
+
+def test_run_identity_recovery_and_method_adoption_are_explicit_and_append_only() -> None:
+    main = read_skill("small-loop-skill")
+    adjust = read_skill("slk-adjust-run")
+    record = read_skill("slk-record-run")
+    watch = read_skill("slk-overwatch-run")
+    combined = "\n".join((main, adjust, record, watch))
+    for marker in (
+        "reconcile-run-identities",
+        "adopt-method-contract",
+        "canonical/source",
+        "精确快照",
+        "Owner 证据",
+        "直接编辑 SQLite",
+        "伪造",
+        "新建替代 Run",
+        "有效方法版本",
+        "工程历史",
+        "TOKEN",
+    ):
+        assert marker in combined
+    assert "按标题自动合并 Run" in record
+    assert "先绑定再补记录" in watch
 
 
 def test_linear_loop_uses_one_registered_native_relay_token_without_a_new_subsystem() -> None:

@@ -33,7 +33,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.2.1"
+    assert pack["method_version"] == "4.2.2"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -132,6 +132,10 @@ def test_pack_covers_fixed_topology_incomplete_and_supervisor_rework() -> None:
         "SUP-D1-FAIL-DIRECTIVE",
         "OVW-FOREGROUND-ACTIVE",
         "OVW-NO-SCHEDULER-SUBSTITUTE",
+        "SUP-IDENTITY-NO-SQL",
+        "SUP-ADOPT-EXPLICITLY",
+        "SUP-ADMIN-HISTORY-IMMUTABLE",
+        "OVW-ADOPTION-GATE",
     } <= case_ids
 
 

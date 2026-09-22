@@ -35,6 +35,8 @@ struct RunExportHeader {
     closure: String,
     created_at: String,
     closed_at: Option<String>,
+    slk_version: String,
+    origin_slk_version: String,
 }
 
 struct OverwatcherExportRow {
@@ -55,7 +57,8 @@ impl StateStore {
         let run: Option<RunExportHeader> = connection
             .query_row(
                 "SELECT project_id, goal, boundaries_json, state, current_plan_revision,
-                            closure_state, created_at, closed_at
+                            closure_state, created_at, closed_at, slk_version,
+                            origin_slk_version
                      FROM runs WHERE run_id=?1",
                 [run_id],
                 |row| {
@@ -68,6 +71,8 @@ impl StateStore {
                         closure: row.get(5)?,
                         created_at: row.get(6)?,
                         closed_at: row.get(7)?,
+                        slk_version: row.get(8)?,
+                        origin_slk_version: row.get(9)?,
                     })
                 },
             )
@@ -80,6 +85,13 @@ impl StateStore {
         writeln!(markdown, "- Project: `{}`", run.project_id).unwrap();
         writeln!(markdown, "- State: `{}`", run.state).unwrap();
         writeln!(markdown, "- Closure: `{}`", run.closure).unwrap();
+        writeln!(markdown, "- Effective SLK version: `{}`", run.slk_version).unwrap();
+        writeln!(
+            markdown,
+            "- Origin SLK version: `{}`",
+            run.origin_slk_version
+        )
+        .unwrap();
         writeln!(markdown, "- Current plan revision: `{}`", run.revision).unwrap();
         writeln!(markdown, "- Created: `{}`", run.created_at).unwrap();
         writeln!(
@@ -108,6 +120,7 @@ impl StateStore {
         render_tokens(&connection, run_id, &mut markdown)?;
         render_overwatch_cycles(&connection, run_id, &mut markdown)?;
         render_operational_observations(&connection, run_id, &mut markdown)?;
+        render_administration_receipts(&connection, run_id, &mut markdown)?;
         render_evidence(&connection, run_id, &mut markdown)?;
 
         let export_directory = self
@@ -131,6 +144,70 @@ impl StateStore {
         replace_file(&temporary, &destination)?;
         Ok(destination)
     }
+}
+
+fn render_administration_receipts(
+    connection: &rusqlite::Connection,
+    run_id: &str,
+    output: &mut String,
+) -> Result<(), StateError> {
+    writeln!(output).unwrap();
+    writeln!(output, "## Run administration receipts").unwrap();
+    writeln!(output).unwrap();
+    let mut count = 0;
+    let mut reconciliations = connection.prepare(
+        "SELECT receipt_id, canonical_run_id, source_snapshots_json, reason,
+                payload_sha256, occurred_at
+         FROM run_identity_reconciliation_receipts ORDER BY occurred_at, receipt_id",
+    )?;
+    let rows = reconciliations.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+        ))
+    })?;
+    for row in rows {
+        let (receipt, canonical, snapshots, reason, hash, occurred_at) = row?;
+        let sources: Vec<crate::model::RunStateSnapshot> = serde_json::from_str(&snapshots)?;
+        if canonical == run_id || sources.iter().any(|source| source.run_id == run_id) {
+            count += 1;
+            let ids = sources
+                .iter()
+                .map(|source| source.run_id.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
+            writeln!(output, "- reconciliation `{receipt}` — canonical `{canonical}` — sources `{ids}` — `{occurred_at}` — SHA-256 `{hash}` — {}", single_line(&reason)).unwrap();
+        }
+    }
+    let mut adoptions = connection.prepare(
+        "SELECT receipt_id, from_version, to_version, reconciliation_receipt_id,
+                reason, payload_sha256, occurred_at
+         FROM run_method_adoption_receipts WHERE run_id=?1 ORDER BY occurred_at, receipt_id",
+    )?;
+    let rows = adoptions.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+        ))
+    })?;
+    for row in rows {
+        count += 1;
+        let (receipt, from, to, reconciliation, reason, hash, occurred_at) = row?;
+        writeln!(output, "- adoption `{receipt}` — `{from}` -> `{to}` — reconciliation `{}` — `{occurred_at}` — SHA-256 `{hash}` — {}", reconciliation.as_deref().unwrap_or("none"), single_line(&reason)).unwrap();
+    }
+    if count == 0 {
+        writeln!(output, "- None recorded.").unwrap();
+    }
+    Ok(())
 }
 
 fn render_plan_revisions(

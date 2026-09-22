@@ -11,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "4.2.1"
+VERSION = "4.2.2"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
