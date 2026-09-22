@@ -15,13 +15,13 @@ CELL 派发 → Worker 施工与 D0 → 候选 → Checker 隔离 D1 → 通过/
 ```
 
 ```text
-规划 Run/检查 → 选择角色模型 → 划分初始 CELL
+规划 Run/检查 → 核对固定角色绑定 → 划分初始 CELL
 → 原对话创建 Supervisor 并交接 → Supervisor 角色 Eval → 根记录
 → Supervisor 创建 Checker → Checker 角色 Eval → Checker 创建 Worker
 → 通讯测试 → 第一个 CELL
 ```
 
-Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。一个当前有效的 `SLK TOKEN` 在状态核心中记录最后已确认的责任边界：发送者仅在原生投递成立后推进令牌，接收者开始真实工作时记录 `WORK_STARTED`；任何一项都不能单独用来假装成员仍在工作。Checker 派发 CELL，并在隔离状态下执行 D1。Worker 完成当前 CELL，并在交付前执行最低程度 D0。一个 Run 还可绑定一个专属且不可复用的 Overwatcher Agent Session；它观察运行证据、在机械安全时原样重试一次投递，并在需要改变语义时唤醒 Supervisor。它不是必选项，不中继正常通讯，不修改 BI/TOKEN，也没有 D0/D1/D2 权限。
+Codex 固定为 Supervisor（`gpt-5.6-sol` + `xhigh`），OCRV 固定为 Checker（Qwen3.8-Max），DSH 固定为 Worker（DeepSeek V4 Flash）；runtime、model、session 和 adapter 身份由工具验证，不从提示词推断。Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。D1 PASS 才增加验收进度；D1 INCOMPLETE 保持 D1 未闭合且 TOKEN 留在 Checker；只有正式 D1 FAIL 可以进入封闭的 `Checker → Supervisor → 同一 Worker` 返工路径，由 Supervisor 生成结构化指引但不重做 D1。一个 Run 还可绑定一个专属且不可复用的 Overwatcher Agent Session；它不是必选项，不中继正常通讯，不修改 BI/TOKEN，也没有 D0/D1/D2 权限。
 
 Run 规划沿用 D0、D1、D2 三层检查，不为检查本身创建独立 CELL。建议优先用现有入口直接验证产品，把检查工具或环境故障与产品缺陷分开，复用仍有效的客观证据，不逐层重复完整验收或先搭建检查体系；证据不足保留未证明，不写成 PASS。SLK 接入已经完成或部分完成的项目时，先保留并复用已完成工作，再选择为可靠达到当前目标所需的合理最小施工路线、范围和工程活动，而不是只追求最小代码差异。
 

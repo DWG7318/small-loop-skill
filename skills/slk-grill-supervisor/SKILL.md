@@ -21,7 +21,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 ## 建议覆盖
 
 1. SLK 的适用范围，以及一个 Run 直接包含线性 CELL 的含义。
-2. Supervisor、Checker、Worker 的职责、原有双向通讯和可选 Overwatcher 的只观察边界。
+2. Codex Supervisor、OCRV Checker、DSH Worker 的固定绑定、正常直连、D1 FAIL 返工例外和可选 Overwatcher 的只观察边界。
 3. D0、D1、D2分别解决什么问题，怎样优先复用现有入口和有效客观证据、减少重复，以及检查工具故障为什么不等于产品缺陷。
 4. CELL 大小怎样参考模型、电脑、累积工程量和余量；本 Run 涉及 Cargo 或其他明显独占资源时采用什么隔离、恢复与清理安排。
 5. Worker 与 Checker 的隔离、通讯和返工关系。

@@ -144,3 +144,25 @@ def test_dsh_rejects_instance_reuse_across_runs(tmp_path: Path) -> None:
         DshAdapter().validate_address(invalid)
 
     assert error.value.error_code == "DSH_ADDRESS_INVALID"
+
+
+@pytest.mark.parametrize(
+    ("role", "adapter"),
+    [("supervisor", "codex-app-server"), ("checker", "ocrv-checker")],
+)
+def test_dsh_adapter_rejects_non_worker_roles(
+    tmp_path: Path, role: str, adapter: str
+) -> None:
+    endpoint = worker_endpoint(tmp_path)
+    invalid = Endpoint(
+        **{
+            **endpoint.__dict__,
+            "role": role,
+            "adapter": adapter,
+        }
+    )
+
+    with pytest.raises(AdapterError) as error:
+        DshAdapter().validate_address(invalid)
+
+    assert error.value.error_code == "DSH_ADDRESS_INVALID"

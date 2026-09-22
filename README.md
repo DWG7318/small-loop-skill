@@ -15,13 +15,13 @@ CELL dispatch → Worker construction + D0 → candidate → isolated Checker D1
 ```
 
 ```text
-Plan Run/checks → select role models → size initial CELLs
+Plan Run/checks → verify fixed role bindings → size initial CELLs
 → Original creates Supervisor and hands off → Supervisor role Eval → root record
 → Supervisor creates Checker → Checker role Eval → Checker creates Worker
 → communication tests → first CELL
 ```
 
-Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. One current `SLK TOKEN` records the last confirmed responsibility boundary in the state core. A sender advances it only after accepted native delivery, and the receiver records `WORK_STARTED` when real work begins; neither fact alone is used to pretend that a member is still working. Checker dispatches CELLs and reviews them independently at D1. Worker implements one current CELL and performs a minimum D0 before delivery. A Run may additionally bind one dedicated, non-reusable Overwatcher Agent Session; it observes operational evidence, may replay one mechanically identical delivery, and wakes Supervisor when semantics must change. It is optional, never relays normal traffic, never edits BI/TOKEN, and has no D0/D1/D2 authority.
+Codex is the Supervisor (`gpt-5.6-sol` + `xhigh`), OCRV is the Checker (Qwen3.8-Max), and DSH is the Worker (DeepSeek V4 Flash); runtime, model, session, and adapter identities are validated instead of inferred from prompts. Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. D1 PASS advances acceptance; D1 INCOMPLETE leaves D1 open and TOKEN with Checker; a formal D1 FAIL alone permits the closed `Checker → Supervisor → same Worker` rework route, where Supervisor supplies a structured directive without redoing D1. A Run may additionally bind one dedicated, non-reusable Overwatcher Agent Session; it is optional, never relays normal traffic, never edits BI/TOKEN, and has no D0/D1/D2 authority.
 
 Run planning keeps D0, D1, and D2 as the existing inspection layers instead of creating inspection-only CELLs. Checks prefer existing entrances and direct product evidence, distinguish checking-tool/environment failures from product defects, and reuse still-valid objective evidence without repeating whole lower-level reviews or building a checking system first; insufficient evidence stays unproved, not PASS. When SLK joins an already completed or partly completed project, the plan preserves and reuses completed work, then chooses the reasonable minimum construction route, scope, and engineering activity needed to reach the current target reliably—not merely the smallest code diff.
 

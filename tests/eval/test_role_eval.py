@@ -121,3 +121,13 @@ def test_pack_bytes_are_stable_json_and_do_not_embed_project_paths() -> None:
     encoded = json.dumps(pack, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     assert "D:/" not in encoded
     assert "C:/" not in encoded
+
+
+def test_pack_covers_fixed_topology_incomplete_and_supervisor_rework() -> None:
+    pack = load_pack(PACK)
+    case_ids = {case["case_id"] for case in pack["cases"]}
+    assert {
+        "SUP-FIXED-RUNTIMES",
+        "CHK-D1-INCOMPLETE",
+        "SUP-D1-FAIL-DIRECTIVE",
+    } <= case_ids

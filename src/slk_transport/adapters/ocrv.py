@@ -75,7 +75,11 @@ def _nonempty(value: Any, label: str) -> str:
 
 class OcrvAdapter:
     def validate_address(self, endpoint: Endpoint) -> None:
-        if endpoint.role != "checker" or endpoint.adapter != "ocrv-checker":
+        if (
+            endpoint.role != "checker"
+            or endpoint.agent_runtime != "ocrv"
+            or endpoint.adapter != "ocrv-checker"
+        ):
             raise AdapterError("OCRV_ADDRESS_INVALID", "OCRV endpoint must be the Checker adapter")
         address = endpoint.address
         if set(address) != ADDRESS_FIELDS:

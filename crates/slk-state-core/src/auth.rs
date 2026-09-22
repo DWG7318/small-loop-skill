@@ -56,6 +56,8 @@ pub enum StateError {
     StoredRoleInvalid(String),
     #[error("role {actor:?} cannot create role {target:?}")]
     RoleCreationNotAuthorized { actor: Role, target: Role },
+    #[error("fixed SLK binding is invalid for {role:?}: {reason}")]
+    RoleBindingInvalid { role: Role, reason: String },
     #[error("role {actor:?} cannot rebind session for role {target:?}")]
     SessionReboundNotAuthorized { actor: Role, target: Role },
     #[error("request role instance does not match authenticated role instance")]

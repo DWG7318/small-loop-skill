@@ -15,7 +15,7 @@ Worker 完成当前 CELL，形成可检查候选，并把 Checker 需要的信�
 ## 建议做法
 
 1. 重新确认当前 `SLK TOKEN` 的 `CELL n/N`、目标、范围、D1 验收目标和候选基线；接收令牌不结束当前 CELL 施工。收到相同或更旧的令牌编号时，不重开 CELL，只结合根记录和现有候选判断是否需要补交。
-2. 用 `slk-state write` 记录 `WORK_STARTED` 后，在同一次当前 CELL 施工中连续完成所需编辑、命令、测试和最低 D0，直到完成整个 CELL 候选；命令、工具结果或中间进展不构成 CELL 交付边界。独占资源阻塞时按需读取 [`references/resource-contention.md`](references/resource-contention.md)，恢复同一 CELL 而不把占用算成返工。
+2. 用 `slk-state write` 记录 `WORK_STARTED` 后，在同一次当前 CELL 施工中连续完成所需编辑、命令、测试和最低 D0，直到完成整个 CELL 候选；正式 D1 FAIL 返工只接受绑定当前失败事件、候选和 round 的 `D1_REWORK_DIRECTIVE`。命令、工具结果或中间进展不构成 CELL 交付边界。独占资源阻塞时按需读取 [`references/resource-contention.md`](references/resource-contention.md)，恢复同一 CELL 而不把占用算成返工。
    Owner 已为本次 Run 启用效率工具时，Worker 可先用 Probe CLI 定位再精准读取，用 RTK 获取测试、构建或 Git 输出的低噪声首轮结果，并在适用时遵循 Ponytail 减少过度施工；完整原始输出仍应可追溯，出现失败、截断、疑义或需要核心代码事实时，读取保留原文或回退原生命令。
 3. 选择最低 D0，为 Worker 自己的交付提供基本信心，例如目标测试、构建或直接 smoke。建议围绕本次变化和风险选择低成本检查，不提前重复 D1/D2 的完整验收。
 4. 把实际变化、D0、判断和风险作为倒数第二项通过 `slk-state write` 记录；大证据用 `register-evidence` 保存，随后自动导出，建议调用 `$slk-record-run`。
@@ -33,3 +33,4 @@ Checker 使用 `$slk-check-cell` 对同一候选执行隔离 D1。
 ## 负面提示词
 
 - 不要以接收令牌、单条命令结束或中间结果代替完整 CELL 候选交付，也不要重复执行相同令牌或自行进入未派发 CELL；不要提前把完整 D1/D2 当成 D0，也不要把 D0 结论或判断过程塞入初始 D1 交付；不要在交付后等待或读取 Checker 检查过程。
+- 不要接受缺少正式 D1 FAIL 锚点的返工指引，不要把 Supervisor 指引当成 D1 裁决，也不要自行拆分 CELL、替换 Worker 或改变验收目标。

@@ -79,6 +79,7 @@ pub enum EventType {
     RunClosed,
     CellDispatched,
     D1Started,
+    D1Incomplete,
     D1Passed,
     D1Failed,
     ReworkRequested,
@@ -105,8 +106,8 @@ impl EventType {
             | ExemptionGranted | D2Started | D2Passed | D2Failed | RunSuperseded | RunAbandoned
             | RunClosed => role == Role::Supervisor,
             RoleRegistered | RoleReplaced => role == Role::Supervisor || role == Role::Checker,
-            CellDispatched | D1Started | D1Passed | D1Failed | ReworkRequested | CellSplit
-            | CandidateForwarded => role == Role::Checker,
+            CellDispatched | D1Started | D1Incomplete | D1Passed | D1Failed | ReworkRequested
+            | CellSplit | CandidateForwarded => role == Role::Checker,
             WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
             | CandidateSubmitted => role == Role::Worker,
             ResourceContended | ResourceRecovered | TokenHandedOff | TransportFailed => {
@@ -135,6 +136,7 @@ impl EventType {
             RunClosed => "RUN_CLOSED",
             CellDispatched => "CELL_DISPATCHED",
             D1Started => "D1_STARTED",
+            D1Incomplete => "D1_INCOMPLETE",
             D1Passed => "D1_PASSED",
             D1Failed => "D1_FAILED",
             ReworkRequested => "REWORK_REQUESTED",

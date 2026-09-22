@@ -197,7 +197,7 @@ fn multiple_open_slks_may_share_one_project_without_superseding_each_other() {
     let fixture = Fixture::new();
     let mut replacement = init_request("run-b");
     replacement.supervisor = role("supervisor-b", Role::Supervisor);
-    replacement.supervisor_endpoint = endpoint("thread-supervisor-b");
+    replacement.supervisor_endpoint = endpoint("session-supervisor-b");
     replacement.occurred_at = "2026-09-20T01:00:00Z".into();
 
     fixture.store.init_run(replacement).unwrap();
@@ -214,7 +214,7 @@ fn explicit_successor_archives_only_its_predecessor_atomically() {
     let mut successor = init_request("run-b");
     successor.predecessor_run_id = Some("run-a".into());
     successor.supervisor = role("supervisor-b", Role::Supervisor);
-    successor.supervisor_endpoint = endpoint("thread-supervisor-b");
+    successor.supervisor_endpoint = endpoint("session-supervisor-b");
     successor.occurred_at = "2026-09-20T01:00:00Z".into();
 
     fixture.store.init_run(successor).unwrap();
@@ -304,6 +304,22 @@ fn supervisor_can_abandon_an_open_run_without_deleting_its_history() {
 #[test]
 fn session_rebound_retires_the_old_endpoint_and_preserves_the_role_credential() {
     let fixture = Fixture::new();
+    let mut wrong_endpoint = endpoint_v("session-checker-rebound", 2);
+    wrong_endpoint.transport_adapter = "codex-app-server".into();
+    assert!(matches!(
+        fixture.store.rebind_session(
+            &fixture.supervisor,
+            RebindSessionRequest {
+                event_id: "rebind-checker-invalid".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "checker-a".into(),
+                endpoint: wrong_endpoint,
+                reason: "wrong adapter".into(),
+                occurred_at: "2026-09-20T00:00:03Z".into(),
+            },
+        ),
+        Err(StateError::RoleBindingInvalid { .. })
+    ));
     fixture
         .store
         .rebind_session(
@@ -443,6 +459,172 @@ fn token_cannot_skip_the_checker() {
     assert_eq!(fixture.store.current_token("run-a").unwrap().sequence, 1);
 }
 
+#[test]
+fn fixed_engineering_role_bindings_fail_closed() {
+    let root = tempfile::tempdir().unwrap();
+    let store = StateStore::new(root.path());
+    let mut invalid_supervisor = init_request("run-a");
+    invalid_supervisor.supervisor = role("supervisor-a", Role::Worker);
+    assert!(matches!(
+        store.init_run(invalid_supervisor),
+        Err(StateError::RoleBindingInvalid { .. })
+    ));
+
+    let initialized = store.init_run(init_request("run-a")).unwrap();
+    let mut invalid_checker = role_request("register-checker", "checker-a", Role::Checker);
+    invalid_checker.identity.agent_runtime = "codex".into();
+    invalid_checker.identity.provider = "openai".into();
+    invalid_checker.identity.model = "gpt-5.6-sol".into();
+    invalid_checker.endpoint.transport_adapter = "codex-app-server".into();
+    assert!(matches!(
+        store.register_role(&initialized.supervisor_credential, invalid_checker),
+        Err(StateError::RoleBindingInvalid { .. })
+    ));
+}
+
+#[test]
+fn d1_incomplete_keeps_checker_token_and_cell_open() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+    let mut incomplete = event(
+        "d1-incomplete",
+        EventType::D1Incomplete,
+        json!({"unproven":["real target smoke"]}),
+    );
+    incomplete.role_instance_id = "checker-a".into();
+    fixture
+        .store
+        .write_event(&fixture.checker, incomplete)
+        .unwrap();
+
+    let token = fixture.store.current_token("run-a").unwrap();
+    assert_eq!(token.owner_role_instance_id, "checker-a");
+    assert_eq!(token.sequence, 2);
+    assert_eq!(
+        fixture
+            .store
+            .current_cell_state("run-a", "CELL-001")
+            .unwrap(),
+        "d1_incomplete"
+    );
+    assert_eq!(
+        fixture.store.d1_rework_count("run-a", "CELL-001").unwrap(),
+        0
+    );
+    let mut escaped = handoff(3, "checker-a", "supervisor-a");
+    escaped.payload_type = "D1_FAILURE_ESCALATION".into();
+    assert!(matches!(
+        fixture.store.handoff_token(&fixture.checker, escaped),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+    assert!(matches!(
+        fixture
+            .store
+            .handoff_token(&fixture.checker, handoff(3, "checker-a", "worker-a")),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+}
+
+#[test]
+fn supervisor_to_worker_is_only_valid_after_current_d1_fail_escalation() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+
+    let mut premature = handoff(3, "checker-a", "supervisor-a");
+    premature.payload_type = "D1_FAILURE_ESCALATION".into();
+    assert!(matches!(
+        fixture.store.handoff_token(&fixture.checker, premature),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+
+    let mut wrong_owner = handoff(3, "checker-a", "worker-a");
+    wrong_owner.payload_type = "D1_REWORK_DIRECTIVE".into();
+    assert!(matches!(
+        fixture.store.handoff_token(&fixture.checker, wrong_owner),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+    for (event_id, event_type) in [
+        ("d1-failed-stale", EventType::D1Failed),
+        ("d1-incomplete-current", EventType::D1Incomplete),
+    ] {
+        let mut observation = event(event_id, event_type, json!({"evidence":[event_id]}));
+        observation.role_instance_id = "checker-a".into();
+        fixture
+            .store
+            .write_event(&fixture.checker, observation)
+            .unwrap();
+    }
+    let mut escalation = handoff(3, "checker-a", "supervisor-a");
+    escalation.payload_type = "D1_FAILURE_ESCALATION".into();
+    assert!(matches!(
+        fixture.store.handoff_token(&fixture.checker, escalation),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+    let mut failed = event(
+        "d1-failed",
+        EventType::D1Failed,
+        json!({"candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+    );
+    failed.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, failed).unwrap();
+    assert!(matches!(
+        fixture
+            .store
+            .handoff_token(&fixture.checker, handoff(3, "checker-a", "worker-a")),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+    let mut escalation = handoff(3, "checker-a", "supervisor-a");
+    escalation.payload_type = "D1_FAILURE_ESCALATION".into();
+    fixture
+        .store
+        .handoff_token(&fixture.checker, escalation)
+        .unwrap();
+
+    let mut wrong_payload = handoff(4, "supervisor-a", "worker-a");
+    wrong_payload.payload_type = "CELL_ASSIGNMENT".into();
+    assert!(matches!(
+        fixture
+            .store
+            .handoff_token(&fixture.supervisor, wrong_payload),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+
+    let mut wrong_cell = handoff(4, "supervisor-a", "worker-a");
+    wrong_cell.payload_type = "D1_REWORK_DIRECTIVE".into();
+    wrong_cell.cell_id = "CELL-OTHER".into();
+    assert!(matches!(
+        fixture.store.handoff_token(&fixture.supervisor, wrong_cell),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+
+    let mut directive = handoff(4, "supervisor-a", "worker-a");
+    directive.payload_type = "D1_REWORK_DIRECTIVE".into();
+    let current = fixture
+        .store
+        .handoff_token(&fixture.supervisor, directive)
+        .unwrap();
+    assert_eq!(current.owner_role_instance_id, "worker-a");
+    assert_eq!(current.sequence, 4);
+}
+
 struct Fixture {
     _root: tempfile::TempDir,
     store: StateStore,
@@ -528,7 +710,7 @@ fn init_request(run_id: &str) -> InitRunRequest {
             objective: "Implement one bounded change".into(),
         }],
         supervisor: role("supervisor-a", Role::Supervisor),
-        supervisor_endpoint: endpoint("thread-supervisor"),
+        supervisor_endpoint: endpoint("session-supervisor-a"),
         occurred_at: "2026-09-20T00:00:00Z".into(),
     }
 }
@@ -554,9 +736,23 @@ fn role(role_instance_id: &str, role: Role) -> RoleIdentity {
             Role::Worker => "dsh",
         }
         .into(),
-        provider: "provider".into(),
-        model: "model".into(),
-        reasoning: "high".into(),
+        provider: match role {
+            Role::Supervisor | Role::Overwatcher => "openai",
+            Role::Checker => "dashscope-tokenplan",
+            Role::Worker => "deepseek",
+        }
+        .into(),
+        model: match role {
+            Role::Supervisor | Role::Overwatcher => "gpt-5.6-sol",
+            Role::Checker => "qwen3.8-max",
+            Role::Worker => "deepseek-v4-flash",
+        }
+        .into(),
+        reasoning: match role {
+            Role::Supervisor | Role::Overwatcher => "xhigh",
+            Role::Checker | Role::Worker => "provider-default",
+        }
+        .into(),
         session_id: format!("session-{role_instance_id}"),
     }
 }
@@ -566,9 +762,16 @@ fn endpoint(session_id: &str) -> EndpointIdentity {
 }
 
 fn endpoint_v(session_id: &str, endpoint_version: u32) -> EndpointIdentity {
+    let transport_adapter = if session_id.contains("checker") {
+        "ocrv-checker"
+    } else if session_id.contains("worker") {
+        "dsh-worker"
+    } else {
+        "codex-app-server"
+    };
     EndpointIdentity {
         endpoint_version,
-        transport_adapter: "native-cli".into(),
+        transport_adapter: transport_adapter.into(),
         host_identity: "host-a".into(),
         session_id: session_id.into(),
         native_address: json!({"session_id":session_id}),

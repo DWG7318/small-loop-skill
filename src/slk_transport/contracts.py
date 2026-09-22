@@ -22,11 +22,17 @@ RESULT_SCHEMA = "slk.transport-result/v1"
 
 ROLES = frozenset({"supervisor", "checker", "worker"})
 ADAPTERS = frozenset({"codex-app-server", "ocrv-checker", "dsh-worker"})
+ROLE_RUNTIME_ADAPTER = {
+    "supervisor": ("codex", "codex-app-server"),
+    "checker": ("ocrv", "ocrv-checker"),
+    "worker": ("dsh", "dsh-worker"),
+}
 ENDPOINT_STATES = frozenset({"active", "retired"})
 DELIVERY_STATUSES = frozenset({"accepted", "started", "completed", "failed"})
 ROLE_EDGES = frozenset(
     {
         ("supervisor", "checker"),
+        ("supervisor", "worker"),
         ("checker", "worker"),
         ("worker", "checker"),
         ("checker", "supervisor"),
@@ -79,6 +85,72 @@ def _positive_int(value: Any, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ContractError(f"{label} must be a positive integer")
     return value
+
+
+def _text_list(value: Any, label: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise ContractError(f"{label} must be a non-empty array")
+    return [_text(item, f"{label} item") for item in value]
+
+
+def _d1_rework_directive(value: Mapping[str, Any]) -> None:
+    fields = frozenset(
+        {
+            "d1_failure_event_id",
+            "failed_candidate_sha256",
+            "rework_round",
+            "cell_goal",
+            "acceptance_criteria",
+            "findings",
+            "evidence_refs",
+            "root_cause_hypothesis",
+            "minimal_experiment",
+            "minimal_repair_scope",
+            "regression_target",
+        }
+    )
+    _closed(value, fields, "rework directive")
+    _identifier(value["d1_failure_event_id"], "d1_failure_event_id")
+    failed_candidate = _text(value["failed_candidate_sha256"], "failed_candidate_sha256")
+    if not SHA256.fullmatch(failed_candidate):
+        raise ContractError("failed_candidate_sha256 must be 64 lowercase hexadecimal characters")
+    _positive_int(value["rework_round"], "rework_round")
+    _text(value["cell_goal"], "cell_goal")
+    for field in ("acceptance_criteria", "findings", "evidence_refs"):
+        _text_list(value[field], field)
+    for field in (
+        "root_cause_hypothesis",
+        "minimal_experiment",
+        "minimal_repair_scope",
+        "regression_target",
+    ):
+        _text(value[field], field)
+
+
+def _d1_failure_escalation(value: Mapping[str, Any]) -> None:
+    fields = frozenset(
+        {
+            "d1_failure_event_id",
+            "failed_candidate_sha256",
+            "rework_round",
+            "cell_goal",
+            "acceptance_criteria",
+            "findings",
+            "reproduction_steps",
+            "expected_result",
+            "evidence_refs",
+        }
+    )
+    _closed(value, fields, "D1 failure escalation")
+    _identifier(value["d1_failure_event_id"], "d1_failure_event_id")
+    failed_candidate = _text(value["failed_candidate_sha256"], "failed_candidate_sha256")
+    if not SHA256.fullmatch(failed_candidate):
+        raise ContractError("failed_candidate_sha256 must be 64 lowercase hexadecimal characters")
+    _positive_int(value["rework_round"], "rework_round")
+    _text(value["cell_goal"], "cell_goal")
+    _text(value["expected_result"], "expected_result")
+    for field in ("acceptance_criteria", "findings", "reproduction_steps", "evidence_refs"):
+        _text_list(value[field], field)
 
 
 def _json(value: Any, label: str) -> JsonValue:
@@ -145,13 +217,20 @@ class Endpoint:
         address = _json(_mapping(value["address"], "address"), "address")
         if not address:
             raise ContractError("address must not be empty")
+        role = _choice(value["role"], ROLES, "role")
+        agent_runtime = _identifier(value["agent_runtime"], "agent_runtime")
+        adapter = _choice(value["adapter"], ADAPTERS, "adapter")
+        if (agent_runtime, adapter) != ROLE_RUNTIME_ADAPTER[role]:
+            raise ContractError(
+                f"fixed SLK role binding mismatch for {role}: {agent_runtime}/{adapter}"
+            )
         return cls(
             schema_version=ENDPOINT_SCHEMA,
             run_id=_identifier(value["run_id"], "run_id"),
-            role=_choice(value["role"], ROLES, "role"),  # type: ignore[arg-type]
+            role=role,  # type: ignore[arg-type]
             role_instance_id=_identifier(value["role_instance_id"], "role_instance_id"),
-            agent_runtime=_identifier(value["agent_runtime"], "agent_runtime"),
-            adapter=_choice(value["adapter"], ADAPTERS, "adapter"),  # type: ignore[arg-type]
+            agent_runtime=agent_runtime,
+            adapter=adapter,  # type: ignore[arg-type]
             host_id=_identifier(value["host_id"], "host_id"),
             endpoint_version=_positive_int(value["endpoint_version"], "endpoint_version"),
             state=_choice(value["state"], ENDPOINT_STATES, "state"),  # type: ignore[arg-type]
@@ -212,7 +291,18 @@ class Envelope:
         receiver_role = _choice(value["receiver_role"], ROLES, "receiver_role")
         if (sender_role, receiver_role) not in ROLE_EDGES:
             raise ContractError(f"unsupported role edge: {sender_role}->{receiver_role}")
+        payload_type = _identifier(value["payload_type"], "payload_type")
         payload = _json(_mapping(value["payload"], "payload"), "payload")
+        if payload_type == "D1_FAILURE_ESCALATION":
+            if (sender_role, receiver_role) != ("checker", "supervisor"):
+                raise ContractError("D1_FAILURE_ESCALATION requires checker->supervisor")
+            _d1_failure_escalation(payload)
+        if payload_type == "D1_REWORK_DIRECTIVE":
+            if (sender_role, receiver_role) != ("supervisor", "worker"):
+                raise ContractError("D1_REWORK_DIRECTIVE requires supervisor->worker")
+            _d1_rework_directive(payload)
+        elif (sender_role, receiver_role) == ("supervisor", "worker"):
+            raise ContractError("supervisor->worker is limited to D1_REWORK_DIRECTIVE")
         payload_sha256 = _text(value["payload_sha256"], "payload_sha256")
         if not SHA256.fullmatch(payload_sha256):
             raise ContractError("payload_sha256 must be 64 lowercase hexadecimal characters")
@@ -236,7 +326,7 @@ class Envelope:
             receiver_endpoint_version=_positive_int(
                 value["receiver_endpoint_version"], "receiver_endpoint_version"
             ),
-            payload_type=_identifier(value["payload_type"], "payload_type"),
+            payload_type=payload_type,
             payload_sha256=payload_sha256,
             payload=payload,
         )

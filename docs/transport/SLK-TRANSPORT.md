@@ -4,7 +4,7 @@
 
 ## Role edges
 
-The normal direct edges remain `Supervisor ↔ Checker` and `Checker ↔ Worker`, with the registered `Supervisor ↔ Worker` emergency path. An optional Overwatcher may inspect immutable evidence and request one exact replay, but it is not a receiver role, relay, TOKEN holder, resident service, acknowledgement turn, or database queue; a Run without it uses the same direct edges.
+The normal direct edges remain `Supervisor ↔ Checker` and `Checker ↔ Worker`. `Supervisor → Worker` is rejected except for a `D1_REWORK_DIRECTIVE` immediately following the current CELL's formal `D1_FAILED` and Checker-owned `D1_FAILURE_ESCALATION`; it is not a general dispatch or recovery edge. An optional Overwatcher may inspect immutable evidence and request one exact replay, but it is not a receiver role, relay, TOKEN holder, resident service, acknowledgement turn, or database queue; a Run without it uses the same direct edges.
 
 ## Closed contracts
 
@@ -32,6 +32,8 @@ native_identity, error_code, evidence
 ```
 
 `message_id` is a canonical UUID. The payload hash is SHA-256 over canonical JSON. Run, receiving role, role instance, and endpoint version have to match before dispatch.
+
+`D1_FAILURE_ESCALATION` is a closed Checker→Supervisor payload binding the failure event, candidate hash, round, CELL goal, acceptance criteria, findings, reproduction, expected result, and evidence. `D1_REWORK_DIRECTIVE` is a closed Supervisor→same-Worker payload binding those failure facts plus one root-cause hypothesis, one minimal experiment, the minimal repair scope, and regression target. Missing, extra, empty, mismatched, or out-of-order fields fail closed; D1 INCOMPLETE cannot use either payload.
 
 ## Exact adapter addresses
 

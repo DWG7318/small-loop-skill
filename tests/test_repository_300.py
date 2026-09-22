@@ -72,10 +72,10 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text
-    assert "select role models → size initial CELLs" in english
+    assert "verify fixed role bindings → size initial CELLs" in english
     assert "Supervisor creates Checker → Checker role Eval" in english
     assert "Checker creates Worker" in english
-    assert "选择角色模型 → 划分初始 CELL" in chinese
+    assert "核对固定角色绑定 → 划分初始 CELL" in chinese
     assert "Supervisor 创建 Checker → Checker 角色 Eval" in chinese
     assert "Checker 创建 Worker" in chinese
     assert "not standalone methods" in english

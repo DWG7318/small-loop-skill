@@ -51,6 +51,7 @@ impl StateStore {
 
     pub fn init_run(&self, request: InitRunRequest) -> Result<InitializedRun, StateError> {
         validate_linear_plan(&request)?;
+        validate_engineering_role_binding(&request.supervisor, &request.supervisor_endpoint)?;
         let snapshot = serde_json::to_string(&request)?;
         let payload_sha256 = sha256_hex(snapshot.as_bytes());
         self.with_immediate_transaction(|transaction| {
@@ -365,6 +366,7 @@ impl StateStore {
         credential: &Credential,
         request: RegisterRoleRequest,
     ) -> Result<IssuedCredential, StateError> {
+        validate_engineering_role_binding(&request.identity, &request.endpoint)?;
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(
                 transaction,
@@ -475,7 +477,7 @@ impl StateStore {
             )?;
             let target_role = Role::parse(&target_role_text)
                 .ok_or_else(|| StateError::StoredRoleInvalid(target_role_text.clone()))?;
-            if !valid_token_route(actor.role, target_role) {
+            if !valid_token_handoff_route(transaction, &request, actor.role, target_role)? {
                 return Err(StateError::InvalidTokenRoute {
                     from: actor.role,
                     to: target_role,
@@ -564,6 +566,7 @@ impl StateStore {
         credential: &Credential,
         request: ReplaceRoleRequest,
     ) -> Result<IssuedCredential, StateError> {
+        validate_engineering_role_binding(&request.replacement, &request.endpoint)?;
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(
                 transaction,
@@ -707,6 +710,7 @@ impl StateStore {
                     target: target_role,
                 });
             }
+            validate_engineering_endpoint_binding(target_role, &request.endpoint)?;
 
             let current_version: u32 = transaction.query_row(
                 "SELECT endpoint_version FROM role_endpoints
@@ -1217,6 +1221,70 @@ fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {
     Ok(())
 }
 
+fn validate_engineering_role_binding(
+    identity: &crate::model::RoleIdentity,
+    endpoint: &crate::model::EndpointIdentity,
+) -> Result<(), StateError> {
+    let expected = match identity.role {
+        Role::Supervisor => (
+            "codex",
+            "openai",
+            "gpt-5.6-sol",
+            "xhigh",
+            "codex-app-server",
+        ),
+        Role::Checker => (
+            "ocrv",
+            "dashscope-tokenplan",
+            "qwen3.8-max",
+            "provider-default",
+            "ocrv-checker",
+        ),
+        Role::Worker => (
+            "dsh",
+            "deepseek",
+            "deepseek-v4-flash",
+            "provider-default",
+            "dsh-worker",
+        ),
+        Role::Overwatcher => return Ok(()),
+    };
+    let actual = (
+        identity.agent_runtime.as_str(),
+        identity.provider.as_str(),
+        identity.model.as_str(),
+        identity.reasoning.as_str(),
+        endpoint.transport_adapter.as_str(),
+    );
+    if actual != expected || identity.session_id != endpoint.session_id {
+        return Err(StateError::RoleBindingInvalid {
+            role: identity.role,
+            reason: "runtime, provider, model, reasoning, adapter, and session must match the fixed role contract"
+                .into(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_engineering_endpoint_binding(
+    role: Role,
+    endpoint: &crate::model::EndpointIdentity,
+) -> Result<(), StateError> {
+    let expected = match role {
+        Role::Supervisor => "codex-app-server",
+        Role::Checker => "ocrv-checker",
+        Role::Worker => "dsh-worker",
+        Role::Overwatcher => return Ok(()),
+    };
+    if endpoint.transport_adapter != expected {
+        return Err(StateError::RoleBindingInvalid {
+            role,
+            reason: "session rebound must retain the fixed role adapter".into(),
+        });
+    }
+    Ok(())
+}
+
 fn insert_role_instance(
     connection: &Connection,
     run_id: &str,
@@ -1308,6 +1376,7 @@ fn projected_cell_state(event: EventType) -> Option<&'static str> {
         EventType::D0Completed => Some("d0_complete"),
         EventType::CandidateSubmitted => Some("candidate_ready"),
         EventType::D1Failed | EventType::ReworkRequested => Some("rework_required"),
+        EventType::D1Incomplete => Some("d1_incomplete"),
         EventType::D1Passed => Some("d1_passed"),
         _ => None,
     }
@@ -1321,6 +1390,85 @@ fn valid_token_route(from: Role, to: Role) -> bool {
             | (Role::Worker, Role::Checker)
             | (Role::Checker, Role::Supervisor)
     )
+}
+
+fn valid_token_handoff_route(
+    connection: &Connection,
+    request: &TokenHandoffRequest,
+    from: Role,
+    to: Role,
+) -> Result<bool, StateError> {
+    let latest_d1 = latest_d1_state(connection, request)?;
+    if from == Role::Checker && latest_d1.as_deref() == Some("D1_INCOMPLETE") {
+        return Ok(false);
+    }
+    if from == Role::Checker && latest_d1.as_deref() == Some("D1_FAILED") {
+        return Ok(to == Role::Supervisor && request.payload_type == "D1_FAILURE_ESCALATION");
+    }
+    match request.payload_type.as_str() {
+        "D1_FAILURE_ESCALATION" => Ok(false),
+        "D1_REWORK_DIRECTIVE" => valid_supervisor_rework_route(connection, request, from, to),
+        _ => Ok(valid_token_route(from, to)),
+    }
+}
+
+fn valid_supervisor_rework_route(
+    connection: &Connection,
+    request: &TokenHandoffRequest,
+    from: Role,
+    to: Role,
+) -> Result<bool, StateError> {
+    if (from, to) != (Role::Supervisor, Role::Worker)
+        || request.payload_type != "D1_REWORK_DIRECTIVE"
+    {
+        return Ok(false);
+    }
+
+    let prior_handoff: Option<(String, String, String, String)> = connection
+        .query_row(
+            "SELECT from_role_instance_id, payload_type, go_id, cell_id
+             FROM token_events WHERE run_id=?1 ORDER BY token_sequence DESC LIMIT 1",
+            [&request.run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    let Some((prior_sender, prior_payload, prior_go, prior_cell)) = prior_handoff else {
+        return Ok(false);
+    };
+    let prior_sender_role: Option<String> = connection
+        .query_row(
+            "SELECT role FROM role_instances
+             WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+            params![request.run_id, prior_sender],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if prior_sender_role.as_deref() != Some("checker")
+        || prior_payload != "D1_FAILURE_ESCALATION"
+        || prior_go != request.go_id
+        || prior_cell != request.cell_id
+    {
+        return Ok(false);
+    }
+
+    Ok(latest_d1_state(connection, request)?.as_deref() == Some("D1_FAILED"))
+}
+
+fn latest_d1_state(
+    connection: &Connection,
+    request: &TokenHandoffRequest,
+) -> Result<Option<String>, StateError> {
+    connection
+        .query_row(
+            "SELECT event_type FROM work_events
+             WHERE run_id=?1 AND go_id=?2 AND cell_id=?3
+               AND event_type IN ('D1_FAILED', 'D1_PASSED', 'D1_INCOMPLETE')
+             ORDER BY rowid DESC LIMIT 1",
+            params![request.run_id, request.go_id, request.cell_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StateError::from)
 }
 
 pub(crate) fn valid_identifier(value: &str) -> bool {

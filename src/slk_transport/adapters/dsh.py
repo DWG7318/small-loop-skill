@@ -52,6 +52,12 @@ def _string_array(value: Any, label: str) -> list[str]:
 
 class DshAdapter:
     def validate_address(self, endpoint: Endpoint) -> None:
+        if (
+            endpoint.role != "worker"
+            or endpoint.agent_runtime != "dsh"
+            or endpoint.adapter != "dsh-worker"
+        ):
+            raise AdapterError("DSH_ADDRESS_INVALID", "DSH endpoint must be the Worker adapter")
         address = endpoint.address
         if set(address) != ADDRESS_FIELDS:
             raise AdapterError("DSH_ADDRESS_INVALID", "DSH address must use the exact field set")

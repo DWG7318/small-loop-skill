@@ -2,6 +2,8 @@
 
 ## 4.2.0
 
+- Fixed the native engineering topology to Codex Supervisor, OCRV Checker, and DSH Worker with fail-closed runtime/model/session/adapter validation; prompt role-play and Codex substitutions are rejected.
+- Distinguished D1 INCOMPLETE from formal FAIL and added one closed rework exception: OCRV escalates a bound failure to Supervisor, Supervisor issues a structured directive to the same Worker without taking over D1, and ordinary Supervisor→Worker dispatch remains rejected.
 - Added one optional, Supervisor-selected Overwatcher Agent Session per Run for sparse operational observation, exact-message recovery, and semantic escalation; it is dedicated to that Run, archived at closure, and has no engineering, TOKEN, or BI authority.
 - Preserved the original Supervisor ↔ Checker ↔ Worker direct communication and event-driven TOKEN path; absence of Overwatcher does not block dispatch, inspection, recovery, or closure.
 - Added immutable inspect/one-shot exact-retry recovery, explicit Run predecessor lineage and conservative duplicate/orphan identity projection, without a daemon, broker, message bus, or workflow engine.

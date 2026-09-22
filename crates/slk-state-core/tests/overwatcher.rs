@@ -385,18 +385,44 @@ fn role(role_instance_id: &str, role: Role, session_id: &str) -> RoleIdentity {
     RoleIdentity {
         role_instance_id: role_instance_id.into(),
         role,
-        agent_runtime: "codex".into(),
-        provider: "openai".into(),
-        model: "gpt-5.6-sol".into(),
-        reasoning: "xhigh".into(),
+        agent_runtime: match role {
+            Role::Supervisor | Role::Overwatcher => "codex",
+            Role::Checker => "ocrv",
+            Role::Worker => "dsh",
+        }
+        .into(),
+        provider: match role {
+            Role::Supervisor | Role::Overwatcher => "openai",
+            Role::Checker => "dashscope-tokenplan",
+            Role::Worker => "deepseek",
+        }
+        .into(),
+        model: match role {
+            Role::Supervisor | Role::Overwatcher => "gpt-5.6-sol",
+            Role::Checker => "qwen3.8-max",
+            Role::Worker => "deepseek-v4-flash",
+        }
+        .into(),
+        reasoning: match role {
+            Role::Supervisor | Role::Overwatcher => "xhigh",
+            Role::Checker | Role::Worker => "provider-default",
+        }
+        .into(),
         session_id: session_id.into(),
     }
 }
 
 fn endpoint(session_id: &str) -> EndpointIdentity {
+    let transport_adapter = if session_id.contains("checker") {
+        "ocrv-checker"
+    } else if session_id.contains("worker") {
+        "dsh-worker"
+    } else {
+        "codex-app-server"
+    };
     EndpointIdentity {
         endpoint_version: 1,
-        transport_adapter: "native-cli".into(),
+        transport_adapter: transport_adapter.into(),
         host_identity: "host-a".into(),
         session_id: session_id.into(),
         native_address: json!({"session_id":session_id}),

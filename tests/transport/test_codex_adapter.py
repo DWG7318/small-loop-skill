@@ -113,6 +113,17 @@ def test_codex_address_is_closed_and_never_accepts_a_title(tmp_path: Path) -> No
     assert error.value.error_code == "CODEX_ADDRESS_INVALID"
 
 
+@pytest.mark.parametrize("role", ["checker", "worker"])
+def test_codex_adapter_rejects_non_supervisor_roles(tmp_path: Path, role: str) -> None:
+    endpoint = codex_endpoint(tmp_path)
+    invalid = Endpoint(**{**endpoint.__dict__, "role": role})
+
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().validate_address(invalid)
+
+    assert error.value.error_code == "CODEX_ADDRESS_INVALID"
+
+
 class FakeClock:
     def __init__(self) -> None:
         self.value = 0.0

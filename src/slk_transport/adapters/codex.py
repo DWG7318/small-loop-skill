@@ -70,6 +70,14 @@ def wait_for_exact_thread_idle(
 
 class CodexAdapter:
     def validate_address(self, endpoint: Endpoint) -> None:
+        if (
+            endpoint.role != "supervisor"
+            or endpoint.agent_runtime != "codex"
+            or endpoint.adapter != "codex-app-server"
+        ):
+            raise AdapterError(
+                "CODEX_ADDRESS_INVALID", "Codex endpoint must be the Supervisor adapter"
+            )
         address = endpoint.address
         if set(address) != ADDRESS_FIELDS:
             raise AdapterError("CODEX_ADDRESS_INVALID", "Codex address must use the exact field set")

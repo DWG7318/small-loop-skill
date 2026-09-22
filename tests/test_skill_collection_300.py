@@ -284,7 +284,7 @@ def test_local_d0_attempts_are_distinct_from_checker_d1_rework() -> None:
     record = read_skill("slk-record-run")
     rework = read_skill("slk-rework-cell")
     assert "本地 D0 尝试" in record
-    assert "Checker 的 D1 FAIL" in rework
+    assert "OCRV Checker" in rework and "D1 FAIL" in rework
     assert "不要把 D0 草稿自修或 Checker 自建检查器故障计入 Worker 的 D1 返工次数" in rework
     assert "保留未受影响且仍有效的已完成工作" in rework
     assert "重复施工未受影响且仍有效的已完成工作" in rework
@@ -294,46 +294,19 @@ def test_select_models_matches_capability_to_each_visible_role() -> None:
     text = read_skill("slk-select-models")
     for marker in (
         "`gpt-5.6-sol` + `xhigh`",
-        "`gpt-5.6-sol` + `medium`",
-        "`gpt-5.6-terra` + `high`",
-        "`gpt-5.6-luna` + `xhigh`",
-        "只有明显小的 CELL",
-        "同一 CELL 第二次 D1 返工",
-        "同一 Run 第一次 D2 返工",
-        "Luna xhigh → Terra high",
-        "Terra high → Sol medium",
-        "Terra high → Sol medium；Sol medium → Sol high",
-        "第三次 D1",
-        "同一 Run 第二次 D2",
-        "重新规划当前 CELL",
-        "升级只跟随当前 CELL",
-        "下一个 CELL 重新从基准线选择",
-        "Checker 与 Supervisor 不因 D1 或 D2 FAIL 自动升级",
-        "CELL",
-        "电脑",
-        "可替换",
-        "记录",
-        "Owner 可以直接指定",
-        "不违反本 Skill",
-        "不因偏离建议层级",
-        "相应调整 CELL",
-        "不擅自替换",
-        "规划阶段",
-        "施工中",
-        "按 Owner 指定、角色基准、当前 CELL 难度、返工信号的顺序判断",
-        "边界清楚",
-        "已有实现路径",
-        "直接验证入口",
-        "跨模块联动",
-        "如果不能明确判断为小 CELL",
-        "按常规 CELL",
-        "初始选择覆盖三个角色",
-        "不是让三个角色共同投票",
+        "Qwen3.8-Max",
+        "DeepSeek V4 Flash",
+        "ocrv-checker",
+        "dsh-worker",
+        "提示词自称某角色不构成绑定",
+        "不自动把 DSH Worker 升级",
+        "Owner 明确修订方法合同",
     ):
         assert marker in text
-    assert "Astra" not in text
+    for removed in ("gpt-5.6-terra", "gpt-5.6-luna", "模型升级阶梯"):
+        assert removed not in text.split("## 负面提示词", 1)[0]
     assert "$slk-select-models" in read_skill("slk-plan-run")
-    assert "$slk-select-models" in read_skill("slk-adjust-run")
+    assert "$slk-select-models" not in read_skill("slk-adjust-run")
 
 
 def test_optional_efficiency_tools_are_global_reusable_and_run_scoped() -> None:
@@ -387,22 +360,19 @@ def test_startup_order_and_creation_authority_are_unambiguous() -> None:
     assert "通过 Eval 后" in record
     assert "$slk-manage-team" in record
     assert "复用" in manage and "不重复" in manage
-    assert manage.index("Supervisor 创建 Checker") < manage.index(
+    assert manage.index("Codex Supervisor 启动并登记 OCRV Checker") < manage.index(
         "Checker 理解确认"
-    ) < manage.index("Checker 创建 Worker")
+    ) < manage.index("OCRV Checker 启动并登记 DSH Worker")
     assert "Worker 不重复完整方法问答" in manage
 
 
-def test_owner_specified_models_are_not_overridden_during_rework() -> None:
+def test_fixed_role_models_are_not_overridden_during_rework() -> None:
     select = read_skill("slk-select-models")
     rework = read_skill("slk-rework-cell")
-    adjust = read_skill("slk-adjust-run")
-
-    assert "Owner 已指定" in select
-    for text in (rework, adjust):
-        assert "Owner 已指定" in text
-        assert "由 Owner 决定" in text
-    assert "返回当前调整" in select
+    assert "不在 CELL 之间自动换模型" in select
+    assert "不自动把 DSH Worker 升级" in select
+    assert "不自动替换 Worker" in rework
+    assert "Owner 明确修订方法合同" in select
 
 
 def test_d2_readiness_requires_d1_pass_or_supervisor_exemption() -> None:
@@ -501,7 +471,7 @@ def test_manage_team_covers_native_role_creation_recovery_tests_and_archive() ->
         "Checker",
         "Worker",
         "双向通讯",
-        "应急通道",
+        "D1_REWORK_DIRECTIVE",
         "上一级",
         "优先恢复原成员",
         "缺少回执不等于失效",
@@ -516,7 +486,7 @@ def test_manage_team_covers_native_role_creation_recovery_tests_and_archive() ->
         "Codex Worker",
     ):
         assert marker in text
-    assert "不要为了角色可见而额外创建 Codex Checker 或 Worker" in text
+    assert "不要创建 Codex Checker 或 Codex Worker" in text
 
 
 def test_dispatch_cell_reality_checks_the_planned_cell_before_handoff() -> None:
@@ -674,20 +644,19 @@ def test_supervisor_is_event_activated_not_a_daily_cell_controller() -> None:
     assert "按需激活" in grill
 
 
-def test_rework_cell_keeps_checker_loop_and_offers_capability_or_split() -> None:
+def test_rework_cell_uses_the_closed_supervisor_directive_path() -> None:
     text = read_skill("slk-rework-cell")
     for marker in (
         "D1 FAIL",
-        "Checker",
-        "Worker",
+        "OCRV Checker",
+        "Codex Supervisor",
+        "同一 DSH Worker",
         "验收目标",
-        "第一次 D1 FAIL",
-        "第二次 D1 返工",
         "第三次 D1 FAIL",
-        "$slk-select-models",
-        "重新规划当前 CELL",
+        "D1_FAILURE_ESCALATION",
+        "D1_REWORK_DIRECTIVE",
+        "不重做或接管 D1",
         "一分为二",
-        "Supervisor",
         "CELL n/N",
         "$slk-dispatch-cell",
         "$slk-execute-cell",
@@ -705,10 +674,9 @@ def test_adjust_run_keeps_supervisor_authority_and_d1_exemption_clear() -> None:
         "Supervisor",
         "连续 D1",
         "D2",
-        "同一 Run 第一次 D2 返工",
-        "同一 Run 第二次 D2 FAIL",
-        "$slk-select-models",
-        "重新规划当前修复 CELL",
+        "固定角色绑定",
+        "调整 CELL 或路线",
+        "重新规划",
         "Owner 授权",
         "推荐方案",
         "最低必要授权",
@@ -1058,3 +1026,42 @@ def test_slk_public_method_is_run_then_cells_without_go() -> None:
     assert "Run → CELL" in read_skill("slk-plan-run")
     assert re.search(r"\bGO\b", active) is None
     assert re.search(r"\bGO\b", template) is None
+
+
+def test_fixed_native_role_topology_rejects_codex_substitution() -> None:
+    main = read_skill("small-loop-skill")
+    manage = read_skill("slk-manage-team")
+    models = read_skill("slk-select-models")
+    combined = "\n".join((main, manage, models))
+    for marker in (
+        "Codex = Supervisor",
+        "OCRV = Checker",
+        "DSH = Worker",
+        "Qwen3.8-Max",
+        "DeepSeek V4 Flash",
+    ):
+        assert marker in combined
+    assert "不要创建 Codex Checker 或 Codex Worker" in manage
+    positive = models.split("## 负面提示词", 1)[0]
+    for forbidden in ("Luna xhigh → Terra high", "Terra high → Sol medium"):
+        assert forbidden not in positive
+
+
+def test_d1_incomplete_and_supervisor_rework_are_not_conflated() -> None:
+    check = read_skill("slk-check-cell")
+    rework = read_skill("slk-rework-cell")
+    execute = read_skill("slk-execute-cell")
+    assert "D1 INCOMPLETE" in check
+    assert "Checker 保留 `SLK TOKEN`" in check
+    assert "不触发返工" in check
+    for marker in (
+        "正式 D1 FAIL",
+        "OCRV Checker",
+        "Codex Supervisor",
+        "Worker",
+        "D1_REWORK_DIRECTIVE",
+        "同一 CELL",
+        "不重做或接管 D1",
+    ):
+        assert marker in rework + execute
+    assert "BoM" not in rework + execute

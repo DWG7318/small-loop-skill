@@ -18,16 +18,16 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 `$slk-plan-run` 已完成原对话 ↔ Supervisor 通讯测试时，任务 ID 与通道没有变化就复用已记录结果，不重复测试。接着建议按顺序进行：
 
-1. Supervisor 创建 Checker（外部运行时为创建或启动），并确认其登记端点可真实激活；Codex Checker 还要确认是项目任务列表中的可见对话；
+1. Codex Supervisor 启动并登记 OCRV Checker（Qwen3.8-Max），确认 `ocrv-checker` 精确端点可真实激活；
 2. 完成 Supervisor ↔ Checker 的双向通讯测试；
 3. 做一次 Checker 理解确认，让 Checker 用当前 Run 说明日常 CELL 派发、D1 隔离、CELL 一分为二、返工和激活 Supervisor 的边界；回答模糊时先解释再确认；
-4. Checker 创建 Worker（外部运行时为创建或启动），并确认其登记端点可真实激活；Codex Worker 还要确认是项目任务列表中的可见对话；
+4. OCRV Checker 启动并登记 DSH Worker（DeepSeek V4 Flash），确认 `dsh-worker` 精确端点可真实激活；
 5. 完成 Checker ↔ Worker 的双向通讯测试；
-6. 完成 Supervisor ↔ Worker 的应急通道测试。
+6. 验证 `Supervisor → Worker` 默认拒绝，仅绑定当前正式 D1 FAIL 的 `D1_REWORK_DIRECTIVE` 可达。
 
 每个角色绑定前先通过 `SLK-ROLE-EVAL.v1` 中本角色的 8 个 runtime-critical 场景。若启用 Overwatcher，Supervisor 用 `slk-state bind-overwatcher` 绑定精确 Session 与端点：每 Run 最多一个、同一 Session 不跨 Run 复用，可以是 Codex 或其他可持续工作的 Agent；它不是第四个工程角色，也不改变上述三角色直连。未启用 Overwatcher 时 Run 正常开工。
 
-相邻通道服务于正常工作，Supervisor ↔ Worker 在 Checker 通讯异常时协助恢复。成员建立以运行时返回的真实身份、准确任务 ID 或会话 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
+相邻通道服务于正常工作；Supervisor 可协助恢复 Checker 通讯，但不绕过 Checker 直接派工。成员建立以运行时返回的真实身份、准确任务 ID 或会话 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
 
 正式工程成员对应已登记、可精确寻址并通过通讯测试的原生 Agent 端点；未登记端点的内部 subagent、隐藏执行或文字角色声明不作为正式成员。Overwatcher 使用单独 binding 与独立凭证，不要伪装 Supervisor、Checker 或 Worker。
 
@@ -56,5 +56,6 @@ D2 通过且最终记录完整后，按准确身份归档 Worker、Checker 与�
 ## 负面提示词
 
 - 不要把内部 subagent 或文字中的角色当成项目可见成员；不要只凭发出操作便声称创建、恢复或归档已完成；不要凭暂时无回复更换成员，也不要为防遗漏让 Supervisor 全程盯成员施工。
-- 不要为了角色可见而额外创建 Codex Checker 或 Worker，也不要把已登记的 DSH、OCRV 等原生端点误写成隐藏成员；不要用标题、角色名称或一次启动命令代替精确身份与真实激活证据。
+- 不要创建 Codex Checker 或 Codex Worker，不要用提示词把 Codex 对话伪装成 OCRV/DSH，也不要把已登记的 DSH、OCRV 原生端点误写成隐藏成员；不要用标题、角色名称或一次启动命令代替精确身份与真实激活证据。
+- 不要把 D1 返工例外扩成 Supervisor 的一般 Worker 派工权，也不要用它绕过 OCRV 的 D1 或 Checker 通讯恢复。
 - 不要强制创建、重复创建或跨 Run 复用 Overwatcher，不要让它成为通讯中继、TOKEN 持有者、工程裁决者或 BI 写入者；不要用正时长 `wait_threads` 维持任何成员在线。
