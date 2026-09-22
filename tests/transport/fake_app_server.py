@@ -33,11 +33,19 @@ for line in sys.stdin:
             thread_id = "thr_wrong"
         emit({"id": request_id, "result": {"thread": {"id": thread_id}}})
     elif method == "thread/read":
-        status = {"type": "active", "activeFlags": []} if MODE == "active" else {"type": "idle"}
+        if MODE == "active":
+            status = {"type": "active", "activeFlags": []}
+            turns = [{"id": "turn_active", "items": [], "status": "inProgress"}]
+        elif MODE == "not-loaded":
+            status = {"type": "notLoaded"}
+            turns = []
+        else:
+            status = {"type": "idle"}
+            turns = []
         emit(
             {
                 "id": request_id,
-                "result": {"thread": {"id": message["params"]["threadId"], "status": status}},
+                "result": {"thread": {"id": message["params"]["threadId"], "status": status, "turns": turns}},
             }
         )
     elif method == "turn/start":
@@ -67,5 +75,16 @@ for line in sys.stdin:
                         "threadId": thread_id,
                         "turn": {"id": "turn_exact", "items": [], "status": terminal_status},
                     },
+                }
+            )
+    elif method == "turn/steer":
+        thread_id = message["params"]["threadId"]
+        if message["params"].get("expectedTurnId") != "turn_active":
+            emit({"id": request_id, "error": {"code": -32000, "message": "wrong turn"}})
+        else:
+            emit(
+                {
+                    "id": request_id,
+                    "result": {"turn": {"id": "turn_active", "items": [], "status": "inProgress"}},
                 }
             )

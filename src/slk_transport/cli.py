@@ -15,6 +15,7 @@ from .adapters.base import Adapter, AdapterError
 from .adapters.codex import CodexAdapter
 from .adapters.dsh import DshAdapter
 from .adapters.ocrv import OcrvAdapter
+from .active_writer import recover_active_writer
 from .contracts import ContractError, Endpoint, Envelope, parse_delivery
 from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
@@ -196,15 +197,23 @@ def _retry_exact(args: argparse.Namespace) -> int:
     return 0 if result["status"] in {"ALREADY_STARTED", "RETRY_COMPLETED"} else 3
 
 
+def _recover_active_writer(args: argparse.Namespace) -> int:
+    endpoint = _read_object(args.endpoint, "endpoint")
+    envelope = _read_object(args.envelope, "envelope")
+    _load_delivery(args.endpoint, args.envelope)
+    _emit(recover_active_writer(args.attempt_root, endpoint, envelope))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="slk-transport")
     parser.add_argument("--version", action="version", version=f"slk-transport {VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("validate", "job", "send", "inspect", "retry-exact"):
+    for name in ("validate", "job", "send", "inspect", "retry-exact", "recover-active-writer"):
         command = subparsers.add_parser(name)
         command.add_argument("--endpoint", required=True, type=Path)
         command.add_argument("--envelope", required=True, type=Path)
-        if name in {"job", "send", "inspect", "retry-exact"}:
+        if name in {"job", "send", "inspect", "retry-exact", "recover-active-writer"}:
             command.add_argument("--attempt-root", required=True, type=Path)
         if name == "send":
             command.add_argument("--startup-timeout-seconds", type=float, default=30.0)
@@ -226,6 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _inspect(args)
         if args.command == "retry-exact":
             return _retry_exact(args)
+        if args.command == "recover-active-writer":
+            return _recover_active_writer(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")
     except AdapterError as exc:
         return _rejected(exc.error_code, str(exc))

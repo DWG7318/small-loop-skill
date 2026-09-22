@@ -37,6 +37,23 @@ def _turn_hash(turn: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def active_turn_id(thread: Mapping[str, Any]) -> str:
+    turns = thread.get("turns")
+    if not isinstance(turns, list):
+        raise AdapterError("CODEX_ACTIVE_WRITER_UNRESOLVED", "active thread omitted its turns")
+    active = [
+        turn.get("id")
+        for turn in turns
+        if isinstance(turn, Mapping) and turn.get("status") in {"inProgress", "active"}
+    ]
+    if len(active) != 1 or not isinstance(active[0], str) or not active[0]:
+        raise AdapterError(
+            "CODEX_ACTIVE_WRITER_UNRESOLVED",
+            "active thread did not expose exactly one active turn",
+        )
+    return active[0]
+
+
 def wait_for_exact_thread_idle(
     probe: Callable[[], Mapping[str, Any]],
     thread_id: str,
@@ -141,13 +158,40 @@ class CodexAdapter:
                 result = client.request(
                     request_id,
                     "thread/read",
-                    {"threadId": thread_id, "includeTurns": False},
+                    {"threadId": thread_id, "includeTurns": True},
                     startup_timeout,
                 )
                 request_id += 1
                 return result
 
-            wait_for_exact_thread_idle(read_thread, thread_id, startup_timeout)
+            read = read_thread()
+            thread = read.get("thread")
+            if not isinstance(thread, Mapping) or thread.get("id") != thread_id:
+                raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex read a different thread")
+            status = thread.get("status")
+            status_type = status.get("type") if isinstance(status, Mapping) else None
+            if status_type == "active":
+                turn_id = active_turn_id(thread)
+                attempt.write_json_once(
+                    "active-writer.json",
+                    {
+                        "schema_version": "slk.transport-active-writer/v1",
+                        "message_id": envelope.message_id,
+                        "run_id": envelope.run_id,
+                        "thread_id": thread_id,
+                        "active_turn_id": turn_id,
+                        "payload_sha256": envelope.payload_sha256,
+                        "status": "active_writer",
+                    },
+                )
+                raise AdapterError(
+                    "CODEX_ACTIVE_WRITER",
+                    f"Supervisor thread has active writer turn {turn_id}",
+                )
+            if status_type not in {"idle", "notLoaded"}:
+                raise AdapterError(
+                    "CODEX_THREAD_TERMINAL", f"Codex target thread has terminal state {status_type}"
+                )
 
             notification_start = len(client.messages)
             started_response = client.request(

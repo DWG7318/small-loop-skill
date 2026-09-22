@@ -78,7 +78,7 @@ def test_codex_resumes_exact_thread_then_starts_turn(tmp_path: Path) -> None:
     ("mode", "error_code"),
     [
         ("wrong-thread", "CODEX_THREAD_ID_MISMATCH"),
-        ("active", "CODEX_THREAD_BUSY"),
+        ("active", "CODEX_ACTIVE_WRITER"),
         ("no-start", "CODEX_TURN_START_TIMEOUT"),
         ("failed-turn", "CODEX_TURN_FAILED"),
     ],
@@ -96,6 +96,32 @@ def test_codex_fails_closed_on_unproved_or_wrong_activation(
         CodexAdapter().deliver(endpoint, envelope, attempt)
 
     assert error.value.error_code == error_code
+
+
+def test_codex_not_loaded_supervisor_is_started_directly(tmp_path: Path) -> None:
+    endpoint = codex_endpoint(tmp_path, "not-loaded")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = CodexAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    assert result.native_identity["turn_id"] == "turn_exact"
+
+
+def test_active_writer_records_exact_turn_without_starting_or_waiting(tmp_path: Path) -> None:
+    endpoint = codex_endpoint(tmp_path, "active")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    with pytest.raises(AdapterError, match="turn_active") as error:
+        CodexAdapter().deliver(endpoint, envelope, attempt)
+
+    assert error.value.error_code == "CODEX_ACTIVE_WRITER"
+    evidence = json.loads((attempt.root / "active-writer.json").read_text(encoding="utf-8"))
+    assert evidence["active_turn_id"] == "turn_active"
+    transcript = (attempt.root / "native.stdout.txt").read_text(encoding="utf-8")
+    assert '"method":"turn/start"' not in transcript
 
 
 def test_codex_address_is_closed_and_never_accepts_a_title(tmp_path: Path) -> None:
