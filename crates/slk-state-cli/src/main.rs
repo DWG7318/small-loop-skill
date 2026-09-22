@@ -73,6 +73,9 @@ fn run() -> Result<Value, CliError> {
     if matches!(command, "--help" | "-h" | "help") {
         return Ok(json!({"status":"ok","help":help()}));
     }
+    if matches!(command, "--version" | "-V" | "version") {
+        return Ok(json!({"status":"ok","version":env!("CARGO_PKG_VERSION")}));
+    }
     match command {
         "configure" => configure(&arguments[1..]),
         "init-run" => init_run(&arguments[1..]),

@@ -29,6 +29,8 @@ use crate::model::{
 use crate::schema::{open_database, SchemaError};
 
 const TRANSACTION_ATTEMPTS: usize = 3;
+type OverwatchCycleBindingRow = (String, String, i64, String, String, u64, String, String);
+type ActiveOverwatcherGateRow = (Option<i64>, Option<String>, String, u64, String, String);
 
 #[derive(Debug, Clone)]
 pub struct StateStore {
@@ -1806,7 +1808,7 @@ impl StateStore {
                     "only the bound Overwatcher may author cycles".into(),
                 ));
             }
-            let binding: Option<(String, String, i64, String, String, u64, String, String)> = transaction
+            let binding: Option<OverwatchCycleBindingRow> = transaction
                 .query_row(
                     "SELECT session_id, observation_mode, cadence_seconds,
                             foreground_turn_id, lifecycle_state, binding_revision,
@@ -1969,7 +1971,7 @@ impl StateStore {
                 )
                 .optional()?;
             if let Some(previous_completed_at) = previous_completed_at.as_deref() {
-                if parse_rfc3339(&request.started_at)? < parse_rfc3339(&previous_completed_at)? {
+                if parse_rfc3339(&request.started_at)? < parse_rfc3339(previous_completed_at)? {
                     return Err(StateError::OverwatcherCycleInvalid(
                         "observation cycles must not overlap".into(),
                     ));
@@ -2710,7 +2712,7 @@ fn validate_bound_overwatcher_active(
     run_id: &str,
     action_at: &str,
 ) -> Result<(), StateError> {
-    let binding: Option<(Option<i64>, Option<String>, String, u64, String, String)> = connection
+    let binding: Option<ActiveOverwatcherGateRow> = connection
         .query_row(
             "SELECT o.cadence_seconds, o.foreground_turn_id, o.lifecycle_state,
                     o.binding_revision, o.continuity_state, r.slk_version

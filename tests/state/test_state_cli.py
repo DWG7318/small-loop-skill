@@ -47,6 +47,11 @@ def write_json(path, value):
     return path
 
 
+def test_state_cli_reports_the_exact_build_version(tmp_path):
+    result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
+    assert result == {"status": "ok", "version": "4.2.3"}
+
+
 def init_request():
     return {
         "project": {

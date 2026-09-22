@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "4018808264ffcecf466deb0eb56690164df44f6f782c4656e6267e4c0ed1df9e"
+      "sha256": "62ff30a0841bf45e4dab482d459c80aa3bf6a867e36160443f0f4149492cfaa4"
     },
     {
       "path": "VERSION",
@@ -476,7 +476,7 @@
     },
     {
       "path": "crates/slk-state-cli/src/main.rs",
-      "sha256": "fa16278adfcf72cbda60fe01531a3872e7f5c7b8d676e91cba122fda4679535b"
+      "sha256": "fb638ec6be2eb5cf8462d4aeb55453edfa53c21cf9d893eae6416c92692c4ebc"
     },
     {
       "path": "crates/slk-state-core/Cargo.toml",
@@ -544,7 +544,7 @@
     },
     {
       "path": "crates/slk-state-core/src/write.rs",
-      "sha256": "177e07bd0d2b7753dbcc2fd332c369501ddd80fce706ef4febd45aca01e86ac8"
+      "sha256": "d95b196bfff2e6e75959e9a4d66fdfff7558cbd1930f73aa34d2e404d37673c5"
     },
     {
       "path": "crates/slk-state-core/tests/auth.rs",
@@ -572,7 +572,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/overwatcher.rs",
-      "sha256": "e7460d95b49e07a299bdfaa2c9df31a522eb83a5c1f78318c6d6309a08d09f11"
+      "sha256": "2d9ebf7ec45060a72a30b640313bf3d969c9fb819c1c0fdb07be8952eab7fd4e"
     },
     {
       "path": "crates/slk-state-core/tests/query.rs",
@@ -584,7 +584,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/runtime_snapshot.rs",
-      "sha256": "d9e6b77490c6076e84742f3da531cf8332a51851a56c111c149b8dc3d54af98a"
+      "sha256": "99e56edec02124e6f421568bdeee23cdcf9741f2716c5d2ba0ca6b4572ceac72"
     },
     {
       "path": "crates/slk-state-core/tests/schema.rs",
@@ -777,6 +777,10 @@
     {
       "path": "scripts/quick_validate.py",
       "sha256": "c22f679ce269ca9a95b7597daed882c982a0145007bb4472c33a09f8c355354b"
+    },
+    {
+      "path": "scripts/run_423_sandbox_drill.py",
+      "sha256": "df9a2c99702f99f6eacffd97abb60459b7d3130032e5ccc3852aa3c005fcf210"
     },
     {
       "path": "scripts/run_transport_drill.py",
@@ -972,7 +976,7 @@
     },
     {
       "path": "tests/state/test_state_cli.py",
-      "sha256": "3c89c9f5fb449817ffa1a648ef0a21bcbea528891a250bfceace7c67e058b66c"
+      "sha256": "98a4554e43dfd2255301de6c83d291a07bba57d1ac0d776c2d85a5cdc7cfdb65"
     },
     {
       "path": "tests/test_repository_300.py",
@@ -993,6 +997,10 @@
     {
       "path": "tests/transport/fake_ocrv.py",
       "sha256": "6b725d07253a6d92bdd7dc2607fcd0afb8a5b0d17d97fc0bf97f515b43385e48"
+    },
+    {
+      "path": "tests/transport/test_423_sandbox_drill.py",
+      "sha256": "b9cf6d5b24eef6942094ffb63116acbd6358d3b043a3e9a872deeec37045cec1"
     },
     {
       "path": "tests/transport/test_active_writer.py",

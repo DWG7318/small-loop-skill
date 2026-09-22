@@ -171,6 +171,17 @@ fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
         .store
         .record_overwatch_cycle(&issued.credential, first)
         .unwrap();
+    let mut late = overwatch_cycle(2);
+    late.runtime_revision = fixture.runtime_revision();
+    late.started_at = "2026-09-22T00:20:00Z".into();
+    late.completed_at = "2026-09-22T00:20:01Z".into();
+    late.next_cycle_at = "2026-09-22T00:24:01Z".into();
+    late.evidence_refs = vec![fixture.evidence_ref("cycle-late.json", b"still active")];
+    late.native_active_session_evidence_ref = late.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, late)
+        .unwrap();
     fixture
         .store
         .write_event(
@@ -186,16 +197,16 @@ fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
                 event_type: EventType::RunClosed,
                 details: json!({"reason":"validated terminal state"}),
                 corrects_event_id: None,
-                occurred_at: "2026-09-22T00:06:00Z".into(),
+                occurred_at: "2026-09-22T00:20:02Z".into(),
             },
         )
         .unwrap();
-    let mut final_cycle = overwatch_cycle(2);
+    let mut final_cycle = overwatch_cycle(3);
     final_cycle.runtime_revision = fixture.runtime_revision();
     final_cycle.latest_event_id = "run-closed-423".into();
-    final_cycle.started_at = "2026-09-22T00:06:01Z".into();
-    final_cycle.completed_at = "2026-09-22T00:06:02Z".into();
-    final_cycle.next_cycle_at = "2026-09-22T00:10:02Z".into();
+    final_cycle.started_at = "2026-09-22T00:20:03Z".into();
+    final_cycle.completed_at = "2026-09-22T00:20:04Z".into();
+    final_cycle.next_cycle_at = "2026-09-22T00:24:04Z".into();
     final_cycle.evidence_refs = vec![fixture.evidence_ref("cycle-final.json", b"terminal")];
     final_cycle.native_active_session_evidence_ref = final_cycle.evidence_refs[0].path.clone();
     fixture
@@ -211,9 +222,9 @@ fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
                 event_id: "terminal-overwatcher-close".into(),
                 run_id: "run-a".into(),
                 archive_evidence_ref: "codex:thread-archived:overwatcher-a".into(),
-                final_cycle_id: Some("cycle-2".into()),
+                final_cycle_id: Some("cycle-3".into()),
                 runtime_revision: Some(fixture.runtime_revision()),
-                occurred_at: "2026-09-22T00:06:03Z".into(),
+                occurred_at: "2026-09-22T00:20:05Z".into(),
             },
         )
         .unwrap();
@@ -225,6 +236,43 @@ fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
             .role("overwatcher"),
         None
     );
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    let binding_count: i64 = database
+        .query_row(
+            "SELECT COUNT(*) FROM overwatcher_bindings WHERE run_id='run-a'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let (cycle_count, session_count, turn_count): (i64, i64, i64) = database
+        .query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT session_id), COUNT(DISTINCT foreground_turn_id)
+             FROM overwatch_cycles WHERE run_id='run-a'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let late_health: (String, String) = database
+        .query_row(
+            "SELECT cadence_health, native_liveness FROM overwatch_cycles WHERE cycle_id='cycle-2'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let forbidden_event_count: i64 = database
+        .query_row(
+            "SELECT COUNT(*) FROM work_events
+             WHERE run_id='run-a' AND (event_type='MODEL_CHANGED' OR upper(details_json) LIKE '%\"BOM\"%')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        (binding_count, cycle_count, session_count, turn_count),
+        (1, 3, 1, 1)
+    );
+    assert_eq!(late_health, ("LATE".into(), "IN_PROGRESS".into()));
+    assert_eq!(forbidden_event_count, 0);
 }
 
 #[test]
@@ -893,6 +941,16 @@ impl Fixture {
                 register_role("run-a", "worker-a", Role::Worker),
             )
             .unwrap();
+        // Most tests in this fixture exercise the preserved 4.2.2 behavior.
+        // Tests for the new contract opt in through `new_423` below.
+        let database = slk_state_core::schema::open_database(root.path()).unwrap();
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.2.2' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        drop(database);
         Self {
             _root: root,
             store,

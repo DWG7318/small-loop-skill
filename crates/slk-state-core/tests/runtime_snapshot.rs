@@ -16,19 +16,20 @@ fn delivery_start_commits_receipt_token_event_and_snapshot_atomically() {
     let fixture = Fixture::new_423();
     let evidence_path = fixture.root.path().join("started.json");
     fs::write(&evidence_path, br#"{"status":"started"}"#).unwrap();
-    let request = start_request(&evidence_path);
+    let before_revision = fixture.runtime_revision();
+    let request = start_request(&evidence_path, before_revision);
 
     let result = fixture
         .store
         .commit_delivery_start(&fixture.supervisor, request.clone())
         .unwrap();
-    assert_eq!(result.runtime_revision, 2);
+    assert_eq!(result.runtime_revision, before_revision + 1);
     assert_eq!(result.token.sequence, 2);
     assert_eq!(result.token.owner_role_instance_id, "checker-a");
 
     let projection = fixture.store.query_run("run-a").unwrap();
     let snapshot = projection.runtime_snapshot.unwrap();
-    assert_eq!(snapshot.runtime_revision, 2);
+    assert_eq!(snapshot.runtime_revision, before_revision + 1);
     assert_eq!(snapshot.token_sequence, 2);
     assert_eq!(snapshot.latest_event_id, "transport-started-2");
     assert_eq!(snapshot.latest_message_id.as_deref(), Some("message-2"));
@@ -52,7 +53,8 @@ fn invalid_start_evidence_rolls_back_every_runtime_fact() {
     let fixture = Fixture::new_423();
     let evidence_path = fixture.root.path().join("started.json");
     fs::write(&evidence_path, br#"{"status":"started"}"#).unwrap();
-    let mut request = start_request(&evidence_path);
+    let before_revision = fixture.runtime_revision();
+    let mut request = start_request(&evidence_path, before_revision);
     request.start_evidence.sha256 = "0".repeat(64);
 
     assert!(matches!(
@@ -62,7 +64,10 @@ fn invalid_start_evidence_rolls_back_every_runtime_fact() {
         Err(StateError::EvidenceInvalid(_))
     ));
     let projection = fixture.store.query_run("run-a").unwrap();
-    assert_eq!(projection.runtime_snapshot.unwrap().runtime_revision, 1);
+    assert_eq!(
+        projection.runtime_snapshot.unwrap().runtime_revision,
+        before_revision
+    );
     assert_eq!(projection.token_history.len(), 1);
     assert_eq!(projection.events.len(), 3); // init plus two role registrations
 }
@@ -72,7 +77,7 @@ fn stale_revision_and_direct_423_handoff_fail_closed() {
     let fixture = Fixture::new_423();
     let evidence_path = fixture.root.path().join("started.json");
     fs::write(&evidence_path, br#"{"status":"started"}"#).unwrap();
-    let mut stale = start_request(&evidence_path);
+    let mut stale = start_request(&evidence_path, fixture.runtime_revision());
     stale.expected_runtime_revision = 9;
     assert!(matches!(
         fixture
@@ -104,7 +109,10 @@ fn stale_revision_and_direct_423_handoff_fail_closed() {
     ));
 }
 
-fn start_request(path: &std::path::Path) -> CommitDeliveryStartRequest {
+fn start_request(
+    path: &std::path::Path,
+    expected_runtime_revision: u64,
+) -> CommitDeliveryStartRequest {
     let bytes = fs::read(path).unwrap();
     CommitDeliveryStartRequest {
         event_id: "transport-started-2".into(),
@@ -114,7 +122,7 @@ fn start_request(path: &std::path::Path) -> CommitDeliveryStartRequest {
         cell_id: "CELL-001".into(),
         attempt: 1,
         plan_revision: 1,
-        expected_runtime_revision: 1,
+        expected_runtime_revision,
         message_id: "message-2".into(),
         token_sequence: 2,
         from_role_instance_id: "supervisor-a".into(),
@@ -170,6 +178,15 @@ impl Fixture {
             store,
             supervisor: initialized.supervisor_credential,
         }
+    }
+
+    fn runtime_revision(&self) -> u64 {
+        self.store
+            .query_run("run-a")
+            .unwrap()
+            .runtime_snapshot
+            .unwrap()
+            .runtime_revision
     }
 }
 
