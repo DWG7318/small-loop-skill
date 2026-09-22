@@ -10,8 +10,8 @@ use slk_state_core::config::{configure_at, default_config_path, resolve_data_roo
 use slk_state_core::evidence::{EvidenceRequest, EvidenceState};
 use slk_state_core::model::{
     BindOverwatcherRequest, CloseOverwatcherRequest, InitRunRequest, OperationalObservationRequest,
-    RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest,
-    TokenHandoffRequest, WriteRequest,
+    OverwatchCycleRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    RevisePlanRequest, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::schema::open_database;
 use slk_state_core::write::StateStore;
@@ -75,6 +75,7 @@ fn run() -> Result<Value, CliError> {
         "configure" => configure(&arguments[1..]),
         "init-run" => init_run(&arguments[1..]),
         "bind-overwatcher" => bind_overwatcher(&arguments[1..]),
+        "record-overwatch-cycle" => record_overwatch_cycle(&arguments[1..]),
         "record-observation" => record_observation(&arguments[1..]),
         "close-overwatcher" => close_overwatcher(&arguments[1..]),
         "register-role" => register_role(&arguments[1..]),
@@ -160,6 +161,23 @@ fn record_observation(arguments: &[String]) -> Result<Value, CliError> {
         "status":"observation_recorded",
         "run_id":run_id,
         "observation_id":observation_id
+    }))
+}
+
+fn record_overwatch_cycle(arguments: &[String]) -> Result<Value, CliError> {
+    let request: OverwatchCycleRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let cycle_id = request.cycle_id.clone();
+    let cycle_sequence = request.cycle_sequence;
+    let store = configured_store()?;
+    store
+        .record_overwatch_cycle(&overwatcher_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"overwatch_cycle_recorded",
+        "run_id":run_id,
+        "cycle_id":cycle_id,
+        "cycle_sequence":cycle_sequence
     }))
 }
 
@@ -351,5 +369,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|bind-overwatcher|record-observation|close-overwatcher|register-role|handoff|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
+    "slk-state <configure|init-run|bind-overwatcher|record-overwatch-cycle|record-observation|close-overwatcher|register-role|handoff|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

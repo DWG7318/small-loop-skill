@@ -160,6 +160,31 @@ pub struct OperationalObservationProjection {
     pub occurred_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OverwatchCycleProjection {
+    pub cycle_id: String,
+    pub overwatcher_role_instance_id: String,
+    pub session_id: String,
+    pub foreground_turn_id: String,
+    pub cycle_sequence: u64,
+    pub cadence_seconds: u32,
+    pub plan_revision: u32,
+    pub go_id: Option<String>,
+    pub cell_id: Option<String>,
+    pub attempt: Option<u32>,
+    pub token_sequence: u64,
+    pub token_holder_role_instance_id: String,
+    pub latest_event_id: String,
+    pub latest_message_id: Option<String>,
+    pub checklist_json: String,
+    pub anomaly_codes_json: String,
+    pub evidence_refs_json: String,
+    pub native_active_session_evidence_ref: String,
+    pub started_at: String,
+    pub completed_at: String,
+    pub next_cycle_at: String,
+}
+
 struct OverwatcherBindingRow {
     role_instance_id: String,
     agent_runtime: String,
@@ -186,6 +211,7 @@ pub struct RunProjection {
     pub events: Vec<EventProjection>,
     pub token_history: Vec<TokenProjection>,
     pub evidence: Vec<EvidenceProjection>,
+    pub overwatch_cycles: Vec<OverwatchCycleProjection>,
     pub operational_observations: Vec<OperationalObservationProjection>,
 }
 
@@ -251,6 +277,7 @@ impl StateStore {
             events: load_events(&connection, run_id)?,
             token_history: load_tokens(&connection, run_id)?,
             evidence: load_evidence(&connection, run_id)?,
+            overwatch_cycles: load_overwatch_cycles(&connection, run_id)?,
             operational_observations: load_operational_observations(&connection, run_id)?,
         })
     }
@@ -793,6 +820,46 @@ fn load_operational_observations(
             evidence_refs_json: row.get(9)?,
             details_json: row.get(10)?,
             occurred_at: row.get(11)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+fn load_overwatch_cycles(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Vec<OverwatchCycleProjection>, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT cycle_id, overwatcher_role_instance_id, session_id, foreground_turn_id,
+                cycle_sequence, cadence_seconds, plan_revision, go_id, cell_id, attempt,
+                token_sequence, token_holder_role_instance_id, latest_event_id,
+                latest_message_id, checklist_json, anomaly_codes_json, evidence_refs_json,
+                native_active_session_evidence_ref, started_at, completed_at, next_cycle_at
+         FROM overwatch_cycles WHERE run_id=?1 ORDER BY cycle_sequence",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok(OverwatchCycleProjection {
+            cycle_id: row.get(0)?,
+            overwatcher_role_instance_id: row.get(1)?,
+            session_id: row.get(2)?,
+            foreground_turn_id: row.get(3)?,
+            cycle_sequence: row.get(4)?,
+            cadence_seconds: row.get(5)?,
+            plan_revision: row.get(6)?,
+            go_id: row.get(7)?,
+            cell_id: row.get(8)?,
+            attempt: row.get(9)?,
+            token_sequence: row.get(10)?,
+            token_holder_role_instance_id: row.get(11)?,
+            latest_event_id: row.get(12)?,
+            latest_message_id: row.get(13)?,
+            checklist_json: row.get(14)?,
+            anomaly_codes_json: row.get(15)?,
+            evidence_refs_json: row.get(16)?,
+            native_active_session_evidence_ref: row.get(17)?,
+            started_at: row.get(18)?,
+            completed_at: row.get(19)?,
+            next_cycle_at: row.get(20)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

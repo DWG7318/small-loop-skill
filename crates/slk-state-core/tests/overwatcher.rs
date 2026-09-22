@@ -1,9 +1,11 @@
+use rusqlite::Connection;
 use serde_json::json;
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
     BindOverwatcherRequest, CellDefinition, CloseOverwatcherRequest, EndpointIdentity, EventType,
-    GoDefinition, InitRunRequest, ObservationKind, OperationalObservationRequest, ProjectIdentity,
+    GoDefinition, InitRunRequest, ObservationKind, ObservationMode, OperationalObservationRequest,
+    OverwatchCheckResult, OverwatchCycleChecklist, OverwatchCycleRequest, ProjectIdentity,
     RegisterRoleRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
@@ -135,6 +137,176 @@ fn binding_rejects_incomplete_identity_endpoint_and_event_fields() {
             .store
             .bind_overwatcher(&fixture.supervisor, missing_model),
         Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+
+    let fixture = Fixture::new();
+    let mut invalid_cadence =
+        overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    invalid_cadence.cadence_seconds = 120;
+    assert!(matches!(
+        fixture
+            .store
+            .bind_overwatcher(&fixture.supervisor, invalid_cadence),
+        Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+
+    let fixture = Fixture::new();
+    let mut missing_active_turn =
+        overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    missing_active_turn.foreground_turn_id.clear();
+    missing_active_turn
+        .native_active_session_evidence_ref
+        .clear();
+    assert!(matches!(
+        fixture
+            .store
+            .bind_overwatcher(&fixture.supervisor, missing_active_turn),
+        Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+}
+
+#[test]
+fn active_overwatcher_records_one_complete_monotonic_cycle() {
+    let fixture = Fixture::new();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, overwatch_cycle(1))
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.overwatch_cycles.len(), 1);
+    assert_eq!(projection.overwatch_cycles[0].cycle_sequence, 1);
+    assert_eq!(projection.overwatch_cycles[0].cadence_seconds, 240);
+    assert_eq!(
+        projection.overwatch_cycles[0].foreground_turn_id,
+        "foreground-turn-a"
+    );
+}
+
+#[test]
+fn overwatch_cycle_rejects_wrong_session_incomplete_checklist_and_reused_sequence() {
+    let fixture = Fixture::new();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+
+    let mut wrong_session = overwatch_cycle(1);
+    wrong_session.session_id = "another-session".into();
+    assert!(matches!(
+        fixture
+            .store
+            .record_overwatch_cycle(&issued.credential, wrong_session),
+        Err(StateError::OverwatcherCycleInvalid(_))
+    ));
+
+    let mut incomplete = overwatch_cycle(1);
+    incomplete.checklist.active_session = OverwatchCheckResult::NotApplicable;
+    assert!(matches!(
+        fixture
+            .store
+            .record_overwatch_cycle(&issued.credential, incomplete),
+        Err(StateError::OverwatcherCycleInvalid(_))
+    ));
+
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, overwatch_cycle(1))
+        .unwrap();
+    let mut reused_sequence = overwatch_cycle(1);
+    reused_sequence.cycle_id = "cycle-reused".into();
+    assert!(matches!(
+        fixture
+            .store
+            .record_overwatch_cycle(&issued.credential, reused_sequence),
+        Err(StateError::OverwatcherCycleSequence { .. })
+    ));
+    assert!(matches!(
+        fixture
+            .store
+            .record_overwatch_cycle(&issued.credential, overwatch_cycle(2)),
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("overlap")
+    ));
+}
+
+#[test]
+fn bound_overwatcher_requires_fresh_cycles_before_new_handoffs() {
+    let fixture = Fixture::new();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        fixture.store.handoff_token(
+            &fixture.supervisor,
+            handoff_at(2, "supervisor-a", "checker-a", "2026-09-22T00:00:02Z")
+        ),
+        Err(StateError::OverwatcherInactive(_))
+    ));
+
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, overwatch_cycle(1))
+        .unwrap();
+    fixture
+        .store
+        .handoff_token(
+            &fixture.supervisor,
+            handoff_at(2, "supervisor-a", "checker-a", "2026-09-22T00:07:59Z"),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        fixture.store.handoff_token(
+            &fixture.checker,
+            handoff_at(3, "checker-a", "worker-a", "2026-09-22T00:12:01Z")
+        ),
+        Err(StateError::OverwatcherInactive(_))
+    ));
+}
+
+#[test]
+fn legacy_4_2_binding_is_not_silently_reinterpreted_as_active() {
+    let fixture = Fixture::new();
+    let database = Connection::open(fixture._root.path().join("slk.db")).unwrap();
+    database
+        .execute(
+            "INSERT INTO overwatcher_bindings
+             (run_id, role_instance_id, agent_runtime, provider, model, reasoning,
+              session_id, endpoint_version, transport_adapter, host_identity,
+              native_address_json, bound_by_role_instance_id, binding_reason,
+              credential_id, credential_sha256, credential_state, lifecycle_state, bound_at)
+             VALUES ('run-a','legacy-overwatcher','codex','openai','gpt-5.6-sol','xhigh',
+                     'legacy-session',1,'codex-app-server','host-a','{}','supervisor-a',
+                     'legacy 4.2 binding','legacy-credential',
+                     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                     'active','active','2026-09-22T00:00:01Z')",
+            [],
+        )
+        .unwrap();
+    drop(database);
+
+    assert!(matches!(
+        fixture.store.handoff_token(
+            &fixture.supervisor,
+            handoff_at(2, "supervisor-a", "checker-a", "2026-09-22T00:00:02Z")
+        ),
+        Err(StateError::OverwatcherInactive(message)) if message.contains("legacy 4.2.0")
     ));
 }
 
@@ -340,8 +512,51 @@ fn overwatcher_binding(
         run_id: run_id.into(),
         identity: role(role_instance_id, Role::Overwatcher, session_id),
         endpoint: endpoint(session_id),
+        observation_mode: ObservationMode::ForegroundActiveTurn,
+        cadence_seconds: 240,
+        foreground_turn_id: "foreground-turn-a".into(),
+        native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
         reason: "Supervisor selected one dedicated observation Session".into(),
         occurred_at: "2026-09-22T00:00:01Z".into(),
+    }
+}
+
+fn overwatch_cycle(cycle_sequence: u64) -> OverwatchCycleRequest {
+    OverwatchCycleRequest {
+        cycle_id: format!("cycle-{cycle_sequence}"),
+        run_id: "run-a".into(),
+        plan_revision: 1,
+        role_instance_id: "overwatcher-a".into(),
+        session_id: "session-overwatcher-a".into(),
+        foreground_turn_id: "foreground-turn-a".into(),
+        cycle_sequence,
+        cadence_seconds: 240,
+        go_id: Some("GO-001".into()),
+        cell_id: Some("CELL-001".into()),
+        attempt: Some(1),
+        token_sequence: 1,
+        token_holder_role_instance_id: "supervisor-a".into(),
+        latest_event_id: "bind-overwatcher-a".into(),
+        latest_message_id: None,
+        checklist: OverwatchCycleChecklist {
+            run_position: OverwatchCheckResult::Clear,
+            role_bindings: OverwatchCheckResult::Clear,
+            direct_handoffs: OverwatchCheckResult::Clear,
+            cell_lifecycle: OverwatchCheckResult::Clear,
+            stall_and_duplicates: OverwatchCheckResult::Clear,
+            bi_projection: OverwatchCheckResult::Clear,
+            active_session: OverwatchCheckResult::Clear,
+            terminal_closure: OverwatchCheckResult::NotApplicable,
+        },
+        anomaly_codes: Vec::new(),
+        evidence_refs: vec![
+            "state:run-a:revision-1".into(),
+            "codex:foreground-turn:foreground-turn-a".into(),
+        ],
+        native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
+        started_at: "2026-09-22T00:03:59Z".into(),
+        completed_at: "2026-09-22T00:04:00Z".into(),
+        next_cycle_at: "2026-09-22T00:08:00Z".into(),
     }
 }
 
@@ -430,6 +645,10 @@ fn endpoint(session_id: &str) -> EndpointIdentity {
 }
 
 fn handoff(sequence: u64, from: &str, to: &str) -> TokenHandoffRequest {
+    handoff_at(sequence, from, to, "2026-09-22T00:00:02Z")
+}
+
+fn handoff_at(sequence: u64, from: &str, to: &str, occurred_at: &str) -> TokenHandoffRequest {
     TokenHandoffRequest {
         event_id: format!("token-{sequence}"),
         message_id: format!("message-{sequence}"),
@@ -443,7 +662,7 @@ fn handoff(sequence: u64, from: &str, to: &str) -> TokenHandoffRequest {
         payload_type: "CELL_ASSIGNMENT".into(),
         payload_sha256: format!("hash-{sequence}"),
         payload_location: None,
-        occurred_at: "2026-09-22T00:00:02Z".into(),
+        occurred_at: occurred_at.into(),
     }
 }
 

@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**4.2.0**
+当前版本：**4.2.1**
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。一个 SLK 就是一个 Run，Run 直接包含一条线性 CELL 路径。
 
@@ -21,7 +21,7 @@ CELL 派发 → Worker 施工与 D0 → 候选 → Checker 隔离 D1 → 通过/
 → 通讯测试 → 第一个 CELL
 ```
 
-Codex 固定为 Supervisor（`gpt-5.6-sol` + `xhigh`），OCRV 固定为 Checker（Qwen3.8-Max），DSH 固定为 Worker（DeepSeek V4 Flash）；runtime、model、session 和 adapter 身份由工具验证，不从提示词推断。Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。D1 PASS 才增加验收进度；D1 INCOMPLETE 保持 D1 未闭合且 TOKEN 留在 Checker；只有正式 D1 FAIL 可以进入封闭的 `Checker → Supervisor → 同一 Worker` 返工路径，由 Supervisor 生成结构化指引但不重做 D1。一个 Run 还可绑定一个专属且不可复用的 Overwatcher Agent Session；它不是必选项，不中继正常通讯，不修改 BI/TOKEN，也没有 D0/D1/D2 权限。
+Codex 固定为 Supervisor（`gpt-5.6-sol` + `xhigh`），OCRV 固定为 Checker（Qwen3.8-Max），DSH 固定为 Worker（DeepSeek V4 Flash）；runtime、model、session 和 adapter 身份由工具验证，不从提示词推断。Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。D1 PASS 才增加验收进度；D1 INCOMPLETE 保持 D1 未闭合且 TOKEN 留在 Checker；只有正式 D1 FAIL 可以进入封闭的 `Checker → Supervisor → 同一 Worker` 返工路径，由 Supervisor 生成结构化指引但不重做 D1。一个 Run 还可绑定一个专属且不可复用的 Overwatcher Agent Session；绑定后由同一 Session 保持前台 active turn，每 180–300 秒完成一次固定主动巡查。它不是 heartbeat、定时任务、daemon、后台 Agent或正常通讯中继，不修改 BI/TOKEN，也没有 D0/D1/D2 权限。
 
 Run 规划沿用 D0、D1、D2 三层检查，不为检查本身创建独立 CELL。建议优先用现有入口直接验证产品，把检查工具或环境故障与产品缺陷分开，复用仍有效的客观证据，不逐层重复完整验收或先搭建检查体系；证据不足保留未证明，不写成 PASS。SLK 接入已经完成或部分完成的项目时，先保留并复用已完成工作，再选择为可靠达到当前目标所需的合理最小施工路线、范围和工程活动，而不是只追求最小代码差异。
 
@@ -33,7 +33,7 @@ RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Co
 
 ## 4.0 状态与 LE BI
 
-SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.2.0 中 Supervisor、Checker、Worker 仍只写各自工程事实；可选 Overwatcher 使用独立凭证，只能追加封闭的运行观察。数据库不调度施工，也不增加第四个工程角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，LE BI 显示同一组投影，不暴露凭据或写入入口。公开方法仍是 `Run → CELL`。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
+SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.2.1 中 Supervisor、Checker、Worker 仍只写各自工程事实；可选 Overwatcher 使用独立凭证，只能追加完整巡查周期和封闭运行观察。数据库校验这些事实，但不调度观察者，也不增加第四个工程角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，LE BI 显示同一组投影，不暴露凭据或写入入口。公开方法仍是 `Run → CELL`。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
 
 LE BI 按显式 Run 身份显示精简横条，不论其为独立 SLK，还是属于某个 CLK/GLK 项目。显式 predecessor lineage 区分当前、历史、重复活动与孤立身份，不再按标题或时间猜测合并。展开后显示该 SLK 的角色、模型、CELL 事实和运行观察。BI 不确认消息是否真正投递，不恢复通讯，也不修改 Run；被接受的观察可以保守显示“活动未证明”，但不能改变工程进度。
 
@@ -50,7 +50,7 @@ LE BI 按显式 Run 身份显示精简横条，不论其为独立 SLK，还是�
 
 ## Run 记录
 
-Supervisor 初始化 Run 及第一版施工方案。Worker、Checker、Supervisor 分别把自己的工程事实追加到配置好的 SLK 数据根目录；启用的 Overwatcher 只追加自己的运行观察。系统再从这一权威状态确定性导出 `SLK-RUN-<RUN-ID>.md`，不写入产品仓库。模板仍位于 [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md)，用于保持可读结构与兼容性。
+Supervisor 初始化 Run 及第一版施工方案。Worker、Checker、Supervisor 分别把自己的工程事实追加到配置好的 SLK 数据根目录；启用的 Overwatcher 只追加自己的完整巡查周期和运行观察。系统再从这一权威状态确定性导出 `SLK-RUN-<RUN-ID>.md`，不写入产品仓库。模板仍位于 [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md)，用于保持可读结构与兼容性。
 
 ## 安装
 

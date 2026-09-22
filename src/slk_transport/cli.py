@@ -22,7 +22,7 @@ from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
 
 
-VERSION = "4.2.0"
+VERSION = "4.2.1"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),

@@ -139,6 +139,30 @@ export interface OperationalObservationProjection {
   occurred_at: string;
 }
 
+export interface OverwatchCycleProjection {
+  cycle_id: string;
+  overwatcher_role_instance_id: string;
+  session_id: string;
+  foreground_turn_id: string;
+  cycle_sequence: number;
+  cadence_seconds: number;
+  plan_revision: number;
+  go_id: string | null;
+  cell_id: string | null;
+  attempt: number | null;
+  token_sequence: number;
+  token_holder_role_instance_id: string;
+  latest_event_id: string;
+  latest_message_id: string | null;
+  checklist_json: string;
+  anomaly_codes_json: string;
+  evidence_refs_json: string;
+  native_active_session_evidence_ref: string;
+  started_at: string;
+  completed_at: string;
+  next_cycle_at: string;
+}
+
 export interface ProjectsView {
   schema_version: "slk.bi.projects/v1";
   projects: ProjectSummary[];
@@ -160,6 +184,7 @@ export interface RunView {
   events: EventProjection[];
   token_history: TokenProjection[];
   evidence: EvidenceProjection[];
+  overwatch_cycles: OverwatchCycleProjection[];
   operational_observations: OperationalObservationProjection[];
 }
 
@@ -227,7 +252,7 @@ export function parseRunsProjection(value: unknown): RunsView {
 export function parseRunProjection(value: unknown): RunView {
   const projection = schema(value, "slk.bi.run/v1");
   object(projection.summary);
-  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "operational_observations"]) {
+  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "overwatch_cycles", "operational_observations"]) {
     collection(projection, key);
   }
   return projection as unknown as RunView;

@@ -106,6 +106,7 @@ impl StateStore {
         render_role_events(&events, "supervisor", "D2 / Supervisor", &mut markdown);
         render_corrections(&events, &mut markdown);
         render_tokens(&connection, run_id, &mut markdown)?;
+        render_overwatch_cycles(&connection, run_id, &mut markdown)?;
         render_operational_observations(&connection, run_id, &mut markdown)?;
         render_evidence(&connection, run_id, &mut markdown)?;
 
@@ -488,6 +489,75 @@ fn render_operational_observations(
             go.as_deref().unwrap_or("none"), cell.as_deref().unwrap_or("none"),
             attempt.map(|value| value.to_string()).as_deref().unwrap_or("none"),
             message.as_deref().unwrap_or("none"), single_line(&evidence), single_line(&details)).unwrap();
+    }
+    if count == 0 {
+        writeln!(output, "- None recorded.").unwrap();
+    }
+    Ok(())
+}
+
+fn render_overwatch_cycles(
+    connection: &rusqlite::Connection,
+    run_id: &str,
+    output: &mut String,
+) -> Result<(), StateError> {
+    writeln!(output).unwrap();
+    writeln!(output, "## Overwatch cycles").unwrap();
+    writeln!(output).unwrap();
+    let mut statement = connection.prepare(
+        "SELECT cycle_sequence, cycle_id, overwatcher_role_instance_id, foreground_turn_id,
+                cadence_seconds, plan_revision, go_id, cell_id, attempt, token_sequence,
+                token_holder_role_instance_id, latest_event_id, checklist_json,
+                anomaly_codes_json, evidence_refs_json, completed_at, next_cycle_at
+         FROM overwatch_cycles WHERE run_id=?1 ORDER BY cycle_sequence",
+    )?;
+    let rows = statement.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
+            row.get::<_, Option<i64>>(8)?,
+            row.get::<_, i64>(9)?,
+            row.get::<_, String>(10)?,
+            row.get::<_, String>(11)?,
+            row.get::<_, String>(12)?,
+            row.get::<_, String>(13)?,
+            row.get::<_, String>(14)?,
+            row.get::<_, String>(15)?,
+            row.get::<_, String>(16)?,
+        ))
+    })?;
+    let mut count = 0;
+    for row in rows {
+        count += 1;
+        let (
+            sequence,
+            id,
+            role,
+            turn,
+            cadence,
+            revision,
+            go,
+            cell,
+            attempt,
+            token,
+            holder,
+            event,
+            checklist,
+            anomalies,
+            evidence,
+            completed,
+            next,
+        ) = row?;
+        writeln!(output, "- cycle `{sequence}` / `{id}` by `{role}` foreground `{turn}` — cadence {cadence}s — plan v{revision} / GO `{}` / CELL `{}` / attempt `{}` / TOKEN T{token} `{holder}` / event `{event}` — completed `{completed}` / next `{next}` — checklist {} — anomalies {} — evidence {}",
+            go.as_deref().unwrap_or("none"), cell.as_deref().unwrap_or("none"),
+            attempt.map(|value| value.to_string()).as_deref().unwrap_or("none"),
+            single_line(&checklist), single_line(&anomalies), single_line(&evidence)).unwrap();
     }
     if count == 0 {
         writeln!(output, "- None recorded.").unwrap();

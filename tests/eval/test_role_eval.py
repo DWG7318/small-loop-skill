@@ -33,7 +33,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.2.0"
+    assert pack["method_version"] == "4.2.1"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -130,4 +130,30 @@ def test_pack_covers_fixed_topology_incomplete_and_supervisor_rework() -> None:
         "SUP-FIXED-RUNTIMES",
         "CHK-D1-INCOMPLETE",
         "SUP-D1-FAIL-DIRECTIVE",
+        "OVW-FOREGROUND-ACTIVE",
+        "OVW-NO-SCHEDULER-SUBSTITUTE",
     } <= case_ids
+
+
+@pytest.mark.parametrize(
+    ("case_id", "wrong_choice"),
+    [
+        ("OVW-FOREGROUND-ACTIVE", "END_TURN_UNTIL_WOKEN"),
+        ("OVW-NO-SCHEDULER-SUBSTITUTE", "CREATE_HEARTBEAT_OR_SCHEDULED_TASK"),
+    ],
+)
+def test_overwatcher_passive_or_scheduled_substitutes_fail_closed(
+    case_id: str, wrong_choice: str
+) -> None:
+    response = valid_response("overwatcher")
+    answer = next(item for item in response["answers"] if item["case_id"] == case_id)
+    answer["choice"] = wrong_choice
+    with pytest.raises(EvalError):
+        validate_response(
+            PACK,
+            response,
+            expected_run_id="RUN-A",
+            expected_project_id="project-a",
+            expected_plan_revision=3,
+            expected_role="overwatcher",
+        )

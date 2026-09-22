@@ -2,7 +2,8 @@ use serde_json::json;
 
 use slk_state_core::model::{
     BindOverwatcherRequest, CellDefinition, EndpointIdentity, GoDefinition, InitRunRequest,
-    ObservationKind, OperationalObservationRequest, ProjectIdentity, Role, RoleIdentity,
+    ObservationKind, ObservationMode, OperationalObservationRequest, ProjectIdentity, Role,
+    RoleIdentity,
 };
 use slk_state_core::write::StateStore;
 
@@ -33,6 +34,10 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
                     session_id: "thread-overwatcher-a".into(),
                     native_address: json!({"thread_id":"thread-overwatcher-a"}),
                 },
+                observation_mode: ObservationMode::ForegroundActiveTurn,
+                cadence_seconds: 240,
+                foreground_turn_id: "foreground-turn-a".into(),
+                native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
                 reason: "one dedicated optional observer".into(),
                 occurred_at: "2026-09-22T00:00:01Z".into(),
             },
@@ -75,6 +80,7 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
         "Corrections and exemptions",
         "SLK TOKEN history",
         "Overwatcher binding",
+        "Overwatch cycles",
         "Operational observations / Overwatcher",
         "ACTIVITY_UNPROVEN",
         "transport/message-a/attempt.json",

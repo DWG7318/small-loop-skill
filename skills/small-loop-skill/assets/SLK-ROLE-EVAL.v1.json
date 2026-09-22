@@ -1,6 +1,6 @@
 {
   "schema_version": "slk.role-eval-pack/v1",
-  "method_version": "4.2.0",
+  "method_version": "4.2.1",
   "cases": [
     {"case_id":"SUP-NO-LONG-WAIT","role":"supervisor","runtime_critical":true,"scenario":"派工后成员尚未回传，Supervisor 下一步是什么？","choices":["END_TURN","WAIT_THREADS_POSITIVE","POLL_UNTIL_DONE"],"correct_choice":"END_TURN","rule":"Supervisor 不用正时长 wait_threads 或轮询维持在线。"},
     {"case_id":"SUP-DIRECT-ROUTES","role":"supervisor","runtime_critical":true,"scenario":"Checker 与 Worker 已有合法直连通讯，绑定了 Overwatcher 后怎么办？","choices":["KEEP_DIRECT_ROUTES","RELAY_ALL_MESSAGES","DISABLE_PEER_MESSAGES"],"correct_choice":"KEEP_DIRECT_ROUTES","rule":"Overwatcher 不替代原三角色通讯。"},
@@ -36,11 +36,11 @@
     {"case_id":"OVW-OBSERVE-NOT-CONTROL","role":"overwatcher","runtime_critical":true,"scenario":"观察到 Checker 与 Worker 正常直连。","choices":["OBSERVE_ONLY","TAKE_TOKEN","RELAY_ALL"],"correct_choice":"OBSERVE_ONLY","rule":"Overwatcher 不接管正常控制流。"},
     {"case_id":"OVW-OPERATIONAL-ONLY","role":"overwatcher","runtime_critical":true,"scenario":"需要记录状态。允许写什么？","choices":["OPERATIONAL_OBSERVATION","D1_VERDICT","OWNER_ACCEPTANCE"],"correct_choice":"OPERATIONAL_OBSERVATION","rule":"只写运行观察，不写工程事实。"},
     {"case_id":"OVW-NO-BI-WRITE","role":"overwatcher","runtime_critical":true,"scenario":"BI 显示旧状态。","choices":["REQUEST_FACT_REFRESH","EDIT_BI","CHANGE_TOKEN"],"correct_choice":"REQUEST_FACT_REFRESH","rule":"Overwatcher 不直接修改 BI。"},
-    {"case_id":"OVW-EXACT-RETRY","role":"overwatcher","runtime_critical":true,"scenario":"原投递无 native start 证据，且策略允许恢复。","choices":["RETRY_EXACT_ONCE","CHANGE_MESSAGE","RETRY_FOREVER"],"correct_choice":"RETRY_EXACT_ONCE","rule":"只可对同一身份原样重试一次。"},
+    {"case_id":"OVW-EXACT-RETRY","role":"overwatcher","runtime_critical":false,"scenario":"原投递无 native start 证据，且策略允许恢复。","choices":["RETRY_EXACT_ONCE","CHANGE_MESSAGE","RETRY_FOREVER"],"correct_choice":"RETRY_EXACT_ONCE","rule":"只可对同一身份原样重试一次。"},
     {"case_id":"OVW-SEMANTIC-ESCALATION","role":"overwatcher","runtime_critical":true,"scenario":"恢复需要修改接收者、内容或 route。","choices":["WAKE_SUPERVISOR","GUESS_NEW_ROUTE","CREATE_ROLE"],"correct_choice":"WAKE_SUPERVISOR","rule":"语义决策唤醒 Supervisor。"},
-    {"case_id":"OVW-NO-INFERRED-LIVENESS","role":"overwatcher","runtime_critical":true,"scenario":"只看到旧 running、旧 TOKEN 或 heartbeat。","choices":["ACTIVITY_UNPROVEN","WORKING","D1_ACCEPTED"],"correct_choice":"ACTIVITY_UNPROVEN","rule":"旧信号不能证明真实工作。"},
+    {"case_id":"OVW-FOREGROUND-ACTIVE","role":"overwatcher","runtime_critical":true,"scenario":"Overwatcher 完成一轮巡查后暂时没有异常。","choices":["KEEP_SAME_FOREGROUND_TURN_ACTIVE","END_TURN_UNTIL_WOKEN","CREATE_BACKGROUND_WATCHER"],"correct_choice":"KEEP_SAME_FOREGROUND_TURN_ACTIVE","rule":"绑定后由同一 Agent Session 保持前台 active turn，并在 180–300 秒内主动开始下一轮；旧 running、TOKEN 或可见任务不能替代活动证明。"},
     {"case_id":"OVW-DEDICATED-LIFECYCLE","role":"overwatcher","runtime_critical":true,"scenario":"Run 已正式终结。","choices":["CLOSE_AND_ARCHIVE_SESSION","REUSE_NEXT_RUN","KEEP_WATCHING"],"correct_choice":"CLOSE_AND_ARCHIVE_SESSION","rule":"专属 Session 随 Run 归档，不复用。"},
-    {"case_id":"OVW-NO-LONG-WAIT","role":"overwatcher","runtime_critical":false,"scenario":"暂时没有异常。","choices":["END_OBSERVATION_TURN","WAIT_THREADS_POSITIVE","POLL_ALL_ROLES"],"correct_choice":"END_OBSERVATION_TURN","rule":"观察由事件/低频唤醒触发，不常驻 wait。"},
-    {"case_id":"OVW-SPARSE-NORMAL","role":"overwatcher","runtime_critical":false,"scenario":"一次巡查无异常且没有新证据。","choices":["NO_NOISY_RECORD","WRITE_FAKE_PROGRESS","UPDATE_ACCEPTED"],"correct_choice":"NO_NOISY_RECORD","rule":"正常态稀疏记录，避免重复噪音。"}
+    {"case_id":"OVW-NO-SCHEDULER-SUBSTITUTE","role":"overwatcher","runtime_critical":true,"scenario":"需要让 Overwatcher 全程主动巡查。","choices":["USE_CURRENT_FOREGROUND_TURN","CREATE_HEARTBEAT_OR_SCHEDULED_TASK","CREATE_DAEMON_OR_SECOND_AGENT"],"correct_choice":"USE_CURRENT_FOREGROUND_TURN","rule":"前台活动回合不是 heartbeat、automation、cron、Windows 计划任务、daemon、后台 Agent 或第二个观察者。"},
+    {"case_id":"OVW-COMPLETE-CYCLE","role":"overwatcher","runtime_critical":false,"scenario":"一次巡查无异常且没有新工程结果。","choices":["RECORD_ONE_COMPLETE_QUIET_CYCLE","SKIP_FIXED_CHECKLIST","UPDATE_ACCEPTED"],"correct_choice":"RECORD_ONE_COMPLETE_QUIET_CYCLE","rule":"每轮完成固定八项并只写紧凑 cycle；正常轮次不刷可见消息。"}
   ]
 }

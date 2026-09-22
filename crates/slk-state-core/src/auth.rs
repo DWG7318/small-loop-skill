@@ -74,6 +74,12 @@ pub enum StateError {
     OverwatcherObservationInvalid(String),
     #[error("Overwatcher observation identity was reused with different content")]
     OverwatcherObservationConflict,
+    #[error("Overwatcher active cycle is invalid: {0}")]
+    OverwatcherCycleInvalid(String),
+    #[error("Overwatcher cycle sequence must be {expected}, not {requested}")]
+    OverwatcherCycleSequence { requested: u64, expected: u64 },
+    #[error("bound Overwatcher is not proven active: {0}")]
+    OverwatcherInactive(String),
     #[error("Run already exists: {0}")]
     RunAlreadyExists(String),
     #[error("invalid linear plan: {0}")]

@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **4.2.0**
+Current version: **4.2.1**
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. One SLK is one Run, and the Run directly contains one serial CELL path.
 
@@ -21,7 +21,7 @@ Plan Run/checks → verify fixed role bindings → size initial CELLs
 → communication tests → first CELL
 ```
 
-Codex is the Supervisor (`gpt-5.6-sol` + `xhigh`), OCRV is the Checker (Qwen3.8-Max), and DSH is the Worker (DeepSeek V4 Flash); runtime, model, session, and adapter identities are validated instead of inferred from prompts. Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. D1 PASS advances acceptance; D1 INCOMPLETE leaves D1 open and TOKEN with Checker; a formal D1 FAIL alone permits the closed `Checker → Supervisor → same Worker` rework route, where Supervisor supplies a structured directive without redoing D1. A Run may additionally bind one dedicated, non-reusable Overwatcher Agent Session; it is optional, never relays normal traffic, never edits BI/TOKEN, and has no D0/D1/D2 authority.
+Codex is the Supervisor (`gpt-5.6-sol` + `xhigh`), OCRV is the Checker (Qwen3.8-Max), and DSH is the Worker (DeepSeek V4 Flash); runtime, model, session, and adapter identities are validated instead of inferred from prompts. Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. D1 PASS advances acceptance; D1 INCOMPLETE leaves D1 open and TOKEN with Checker; a formal D1 FAIL alone permits the closed `Checker → Supervisor → same Worker` rework route, where Supervisor supplies a structured directive without redoing D1. A Run may additionally bind one dedicated, non-reusable Overwatcher Agent Session. Once bound, that same Session keeps one foreground active turn and performs a complete proactive cycle every 180–300 seconds; it is not a heartbeat, scheduled task, daemon, background Agent, relay, BI/TOKEN editor, or D0/D1/D2 authority.
 
 Run planning keeps D0, D1, and D2 as the existing inspection layers instead of creating inspection-only CELLs. Checks prefer existing entrances and direct product evidence, distinguish checking-tool/environment failures from product defects, and reuse still-valid objective evidence without repeating whole lower-level reviews or building a checking system first; insufficient evidence stays unproved, not PASS. When SLK joins an already completed or partly completed project, the plan preserves and reuses completed work, then chooses the reasonable minimum construction route, scope, and engineering activity needed to reach the current target reliably—not merely the smallest code diff.
 
@@ -33,7 +33,7 @@ Cross-Agent handoffs use the accepted `slk-transport` artifact with exact role e
 
 ## 4.0 state and LE BI
 
-SLK 4.0 added one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and the standalone read-only **LE BI** desktop view. In 4.2.0, Supervisor, Checker, and Worker still write only their own engineering facts; an optional Overwatcher receives a separate credential that can append only closed operational observations. The database does not schedule work or add a fourth engineering role. `slk-bi-query` exposes stable read-only JSON for Agents, while LE BI presents the same projections without credentials or mutation commands. The public method remains `Run → CELL`; compatibility grouping fields are not shown by LE BI. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
+SLK 4.0 added one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and the standalone read-only **LE BI** desktop view. In 4.2.1, Supervisor, Checker, and Worker still write only their own engineering facts; an optional Overwatcher receives a separate credential that can append only complete cycle facts and closed operational observations. The database validates those facts but does not schedule the observer or add a fourth engineering role. `slk-bi-query` exposes stable read-only JSON for Agents, while LE BI presents the same projections without credentials or mutation commands. The public method remains `Run → CELL`; compatibility grouping fields are not shown by LE BI. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
 
 LE BI displays each explicit Run identity as one compact row, whether independent or owned by a CLK/GLK project. Explicit predecessor lineage distinguishes current, historical, duplicate-active, and orphaned identities; titles and timestamps never merge Runs. Expanding a row shows that SLK's roles, models, CELL facts, and operational observations. BI does not confirm message delivery, repair communication, or modify the Run; accepted observations may conservatively show that activity is unproved without changing engineering progress.
 
@@ -50,7 +50,7 @@ Ordinary work reads the main Skill and the current situational Skill. Additional
 
 ## Run record
 
-Supervisor initializes the Run and its first plan revision. Worker, Checker, and Supervisor append their own engineering facts to the configured SLK data root; an enabled Overwatcher appends only its own operational observations. Deterministic `SLK-RUN-<RUN-ID>.md` exports are generated from that authority, outside the product repository. The template remains at [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md) for readable structure and compatibility.
+Supervisor initializes the Run and its first plan revision. Worker, Checker, and Supervisor append their own engineering facts to the configured SLK data root; an enabled Overwatcher appends only its own complete cycles and operational observations. Deterministic `SLK-RUN-<RUN-ID>.md` exports are generated from that authority, outside the product repository. The template remains at [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md) for readable structure and compatibility.
 
 ## Install
 

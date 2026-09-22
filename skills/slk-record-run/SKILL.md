@@ -19,7 +19,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 - Worker 通过 `slk-state` 记录施工变化、资源占用与恢复、候选、最低 D0、判断过程、风险和交付对象；本地 D0 尝试与正式候选、D1 返工分别标明。
 - Checker 记录派发、D1 方法与结果、错误、返工建议、CELL 与 Run 进度，以及从实际工作中得到的 CELL 容量事实，并通过 `slk-state` 追加。
 - Supervisor 仅在被激活时记录启动交接、计划调整、豁免、成员恢复、D2、归档或最终结论，并通过 `slk-state` 追加；关键失败、重要决定和未执行事项建议在继续调整前及时追加，保留可能被后续操作覆盖的必要证据，交接前补齐，不接管日常进度记录。
-- Overwatcher 只用独立凭证追加通讯、活动证明、记录冲突、恢复升级和自身归档等 operational observation；不要写 D0/D1/D2、计划、角色替换、Run 结论、TOKEN 或 BI。
+- Overwatcher 只用独立凭证追加完整八项巡查 cycle，以及通讯、活动证明、记录冲突、恢复升级和自身归档等 operational observation；只更新自己的 active/cycle 状态，不要写 D0/D1/D2、计划、角色替换、Run 结论、TOKEN 或 BI。
 
 ## 建议记录方式
 

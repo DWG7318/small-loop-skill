@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OpenFlags};
 
 use slk_state_core::schema::{create_migration_backup, open_database};
 
-const TABLES: [&str; 14] = [
+const TABLES: [&str; 15] = [
     "projects",
     "runs",
     "go_nodes",
@@ -18,6 +18,7 @@ const TABLES: [&str; 14] = [
     "evidence",
     "overwatcher_bindings",
     "operational_observations",
+    "overwatch_cycles",
     "run_lineage",
 ];
 
@@ -41,7 +42,7 @@ fn database_enables_wal_foreign_keys_and_all_current_tables() {
         database
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap(),
-        4
+        5
     );
 
     for table in TABLES {
@@ -114,12 +115,41 @@ fn operational_observations_are_append_only_at_the_database_boundary() {
 }
 
 #[test]
+fn overwatch_cycles_are_append_only_at_the_database_boundary() {
+    let root = tempfile::tempdir().expect("temporary data root");
+    let database = open_database(root.path()).expect("open state database");
+    seed_history(&database);
+    database
+        .execute(
+            "INSERT INTO overwatch_cycles
+             (cycle_id, run_id, overwatcher_role_instance_id, session_id,
+              foreground_turn_id, cycle_sequence, cadence_seconds, plan_revision,
+              token_sequence, token_holder_role_instance_id, latest_event_id,
+              checklist_json, anomaly_codes_json, evidence_refs_json,
+              native_active_session_evidence_ref, payload_sha256, started_at,
+              completed_at, next_cycle_at)
+             VALUES ('cycle-a','run-a','overwatcher-a','session-a','turn-a',1,240,1,
+                     1,'role-a','work-a','{}','[]','[\"evidence-a\"]',
+                     'native:active','hash','2026-09-20T00:00:00Z',
+                     '2026-09-20T00:00:01Z','2026-09-20T00:04:01Z')",
+            [],
+        )
+        .unwrap();
+    assert!(database
+        .execute("UPDATE overwatch_cycles SET checklist_json='[]'", [])
+        .is_err());
+    assert!(database
+        .execute("DELETE FROM overwatch_cycles", [])
+        .is_err());
+}
+
+#[test]
 fn future_nonzero_migration_can_create_and_validate_a_backup() {
     let root = tempfile::tempdir().expect("temporary data root");
     let database = open_database(root.path()).expect("open state database");
     seed_history(&database);
 
-    let backup = create_migration_backup(&database, root.path(), 4, 5, "20260920T000000Z")
+    let backup = create_migration_backup(&database, root.path(), 5, 6, "20260920T000000Z")
         .expect("migration backup");
     let copy = Connection::open_with_flags(backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open backup");

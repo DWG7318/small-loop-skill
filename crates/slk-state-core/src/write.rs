@@ -9,6 +9,7 @@ use rusqlite::{
     params, Connection, ErrorCode, OptionalExtension, Transaction, TransactionBehavior,
 };
 use sha2::{Digest, Sha256};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::auth::{
     authorize_event, authorize_overwatcher, authorize_role, issue_credential,
@@ -17,8 +18,9 @@ use crate::auth::{
 };
 use crate::model::{
     BindOverwatcherRequest, CloseOverwatcherRequest, EventType, InitRunRequest,
-    OperationalObservationRequest, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
-    RevisePlanRequest, Role, TokenHandoffRequest, WriteRequest,
+    OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
+    RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
+    TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
 
@@ -262,9 +264,12 @@ impl StateStore {
             || request.identity.session_id != request.endpoint.session_id
             || request.endpoint.host_identity.trim().is_empty()
             || request.endpoint.transport_adapter.trim().is_empty()
+            || !(180..=300).contains(&request.cadence_seconds)
+            || request.foreground_turn_id.trim().is_empty()
+            || request.native_active_session_evidence_ref.trim().is_empty()
         {
             return Err(StateError::OverwatcherBindingInvalid(
-                "identity, exact endpoint, and Supervisor reason are required".into(),
+                "identity, exact endpoint, 180-300 second foreground active turn, native evidence, and Supervisor reason are required".into(),
             ));
         }
 
@@ -313,9 +318,10 @@ impl StateStore {
                   session_id, endpoint_version, transport_adapter, host_identity,
                   native_address_json, bound_by_role_instance_id, binding_reason,
                   credential_id, credential_sha256, credential_state,
-                  lifecycle_state, bound_at)
+                  lifecycle_state, bound_at, observation_mode, cadence_seconds,
+                  foreground_turn_id, native_active_session_evidence_ref)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, ?15, 'active', 'active', ?16)",
+                         ?13, ?14, ?15, 'active', 'active', ?16, ?17, ?18, ?19, ?20)",
                 params![
                     request.run_id,
                     request.identity.role_instance_id,
@@ -333,6 +339,10 @@ impl StateStore {
                     material.credential_id,
                     material.credential_sha256,
                     request.occurred_at,
+                    request.observation_mode.as_str(),
+                    request.cadence_seconds,
+                    request.foreground_turn_id,
+                    request.native_active_session_evidence_ref,
                 ],
             )?;
             transaction.execute(
@@ -349,6 +359,10 @@ impl StateStore {
                         "overwatcher_role_instance_id": request.identity.role_instance_id,
                         "endpoint_version": request.endpoint.endpoint_version,
                         "session_id": request.endpoint.session_id,
+                        "observation_mode": request.observation_mode.as_str(),
+                        "cadence_seconds": request.cadence_seconds,
+                        "foreground_turn_id": request.foreground_turn_id,
+                        "native_active_session_evidence_ref": request.native_active_session_evidence_ref,
                         "reason": request.reason,
                     }))?,
                     request.occurred_at,
@@ -432,6 +446,11 @@ impl StateStore {
                 &request.run_id,
                 credential,
                 EventType::TokenHandedOff,
+            )?;
+            validate_bound_overwatcher_active(
+                transaction,
+                &request.run_id,
+                &request.occurred_at,
             )?;
             let current = current_token_from(transaction, &request.run_id)?;
             if request.token_sequence <= current.sequence {
@@ -778,6 +797,16 @@ impl StateStore {
         self.with_immediate_transaction(|transaction| {
             let actor =
                 authorize_event(transaction, &request.run_id, credential, request.event_type)?;
+            if matches!(
+                request.event_type,
+                EventType::CellDispatched | EventType::ReworkRequested
+            ) {
+                validate_bound_overwatcher_active(
+                    transaction,
+                    &request.run_id,
+                    &request.occurred_at,
+                )?;
+            }
             if actor.role_instance_id != request.role_instance_id {
                 return Err(StateError::RoleInstanceMismatch);
             }
@@ -1009,6 +1038,187 @@ impl StateStore {
         })
     }
 
+    pub fn record_overwatch_cycle(
+        &self,
+        credential: &Credential,
+        request: OverwatchCycleRequest,
+    ) -> Result<(), StateError> {
+        validate_overwatch_cycle_shape(&request)?;
+        let payload_json = serde_json::to_string(&request)?;
+        let payload_sha256 = sha256_hex(payload_json.as_bytes());
+        self.with_immediate_transaction(|transaction| {
+            let overwatcher_role_instance_id =
+                authorize_overwatcher(transaction, &request.run_id, credential)?;
+            if overwatcher_role_instance_id != request.role_instance_id {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "only the bound Overwatcher may author cycles".into(),
+                ));
+            }
+            let binding: Option<(String, String, i64, String, String)> = transaction
+                .query_row(
+                    "SELECT session_id, observation_mode, cadence_seconds,
+                            foreground_turn_id, lifecycle_state
+                     FROM overwatcher_bindings
+                     WHERE run_id=?1 AND role_instance_id=?2",
+                    params![request.run_id, overwatcher_role_instance_id],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((session_id, mode, cadence, foreground_turn_id, lifecycle)) = binding else {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "the Overwatcher binding does not exist".into(),
+                ));
+            };
+            if lifecycle != "active"
+                || mode != "FOREGROUND_ACTIVE_TURN"
+                || session_id != request.session_id
+                || foreground_turn_id != request.foreground_turn_id
+                || cadence != i64::from(request.cadence_seconds)
+            {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "cycle identity must match the active foreground binding".into(),
+                ));
+            }
+            let revision = current_plan_revision(transaction, &request.run_id)?;
+            if request.plan_revision != revision {
+                return Err(StateError::PlanRevisionMismatch {
+                    requested: request.plan_revision,
+                    current: revision,
+                });
+            }
+            if let (Some(go_id), Some(cell_id)) =
+                (request.go_id.as_deref(), request.cell_id.as_deref())
+            {
+                let exists: Option<i64> = transaction
+                    .query_row(
+                        "SELECT 1 FROM cell_nodes WHERE run_id=?1 AND go_id=?2 AND cell_id=?3",
+                        params![request.run_id, go_id, cell_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if exists.is_none() {
+                    return Err(StateError::OverwatcherCycleInvalid(
+                        "cycle CELL scope is not in the current plan".into(),
+                    ));
+                }
+            }
+            let token = current_token_from(transaction, &request.run_id)?;
+            if token.sequence != request.token_sequence
+                || token.owner_role_instance_id != request.token_holder_role_instance_id
+            {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "cycle TOKEN snapshot is stale or mismatched".into(),
+                ));
+            }
+            let current_message_id: Option<String> = transaction.query_row(
+                "SELECT message_id FROM token_events
+                 WHERE run_id=?1 ORDER BY token_sequence DESC LIMIT 1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            if current_message_id != request.latest_message_id {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "cycle latest message reference is stale".into(),
+                ));
+            }
+            let latest_event_id: String = transaction.query_row(
+                "SELECT event_id FROM work_events WHERE run_id=?1 ORDER BY rowid DESC LIMIT 1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            if latest_event_id != request.latest_event_id {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "cycle latest event reference is stale".into(),
+                ));
+            }
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT payload_sha256 FROM overwatch_cycles WHERE cycle_id=?1",
+                    [&request.cycle_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing) = existing {
+                return if existing == payload_sha256 {
+                    Ok(())
+                } else {
+                    Err(StateError::OverwatcherObservationConflict)
+                };
+            }
+            let current_sequence: u64 = transaction.query_row(
+                "SELECT COALESCE(MAX(cycle_sequence), 0) FROM overwatch_cycles WHERE run_id=?1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            if request.cycle_sequence != current_sequence + 1 {
+                return Err(StateError::OverwatcherCycleSequence {
+                    requested: request.cycle_sequence,
+                    expected: current_sequence + 1,
+                });
+            }
+            let previous_completed_at: Option<String> = transaction
+                .query_row(
+                    "SELECT completed_at FROM overwatch_cycles
+                     WHERE run_id=?1 ORDER BY cycle_sequence DESC LIMIT 1",
+                    [&request.run_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(previous_completed_at) = previous_completed_at {
+                if parse_rfc3339(&request.started_at)? < parse_rfc3339(&previous_completed_at)? {
+                    return Err(StateError::OverwatcherCycleInvalid(
+                        "observation cycles must not overlap".into(),
+                    ));
+                }
+            }
+            transaction.execute(
+                "INSERT INTO overwatch_cycles
+                 (cycle_id, run_id, overwatcher_role_instance_id, session_id,
+                  foreground_turn_id, cycle_sequence, cadence_seconds, plan_revision,
+                  go_id, cell_id, attempt, token_sequence, token_holder_role_instance_id,
+                  latest_event_id, latest_message_id, checklist_json, anomaly_codes_json,
+                  evidence_refs_json, native_active_session_evidence_ref, payload_sha256,
+                  started_at, completed_at, next_cycle_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                         ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+                params![
+                    request.cycle_id,
+                    request.run_id,
+                    overwatcher_role_instance_id,
+                    request.session_id,
+                    request.foreground_turn_id,
+                    request.cycle_sequence,
+                    request.cadence_seconds,
+                    request.plan_revision,
+                    request.go_id,
+                    request.cell_id,
+                    request.attempt,
+                    request.token_sequence,
+                    request.token_holder_role_instance_id,
+                    request.latest_event_id,
+                    request.latest_message_id,
+                    serde_json::to_string(&request.checklist)?,
+                    serde_json::to_string(&request.anomaly_codes)?,
+                    serde_json::to_string(&request.evidence_refs)?,
+                    request.native_active_session_evidence_ref,
+                    payload_sha256,
+                    request.started_at,
+                    request.completed_at,
+                    request.next_cycle_at,
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn close_overwatcher(
         &self,
         credential: &Credential,
@@ -1144,6 +1354,110 @@ impl StateStore {
         }
         Err(last_busy.expect("busy retry records one error").into())
     }
+}
+
+fn validate_overwatch_cycle_shape(request: &OverwatchCycleRequest) -> Result<(), StateError> {
+    let checks = [
+        request.checklist.run_position,
+        request.checklist.role_bindings,
+        request.checklist.direct_handoffs,
+        request.checklist.cell_lifecycle,
+        request.checklist.stall_and_duplicates,
+        request.checklist.bi_projection,
+        request.checklist.active_session,
+        request.checklist.terminal_closure,
+    ];
+    let has_anomaly = checks.contains(&OverwatchCheckResult::Anomaly);
+    if !valid_identifier(&request.cycle_id)
+        || request.plan_revision == 0
+        || request.cycle_sequence == 0
+        || !(180..=300).contains(&request.cadence_seconds)
+        || request.role_instance_id.trim().is_empty()
+        || request.session_id.trim().is_empty()
+        || request.foreground_turn_id.trim().is_empty()
+        || request.token_sequence == 0
+        || request.token_holder_role_instance_id.trim().is_empty()
+        || request.latest_event_id.trim().is_empty()
+        || request.native_active_session_evidence_ref.trim().is_empty()
+        || request.evidence_refs.is_empty()
+        || request
+            .evidence_refs
+            .iter()
+            .any(|item| item.trim().is_empty())
+        || has_anomaly == request.anomaly_codes.is_empty()
+        || request.checklist.active_session == OverwatchCheckResult::NotApplicable
+        || (request.cell_id.is_some() && request.go_id.is_none())
+        || (request.cell_id.is_none() && request.attempt.is_some())
+    {
+        return Err(StateError::OverwatcherCycleInvalid(
+            "closed identity, complete checklist, active-session result, and evidence are required"
+                .into(),
+        ));
+    }
+    let started = parse_rfc3339(&request.started_at)?;
+    let completed = parse_rfc3339(&request.completed_at)?;
+    let next = parse_rfc3339(&request.next_cycle_at)?;
+    if completed < started || next - completed != i64::from(request.cadence_seconds) {
+        return Err(StateError::OverwatcherCycleInvalid(
+            "cycle timestamps must be ordered and next_cycle_at must equal the bound cadence"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_bound_overwatcher_active(
+    connection: &Connection,
+    run_id: &str,
+    action_at: &str,
+) -> Result<(), StateError> {
+    let binding: Option<(Option<i64>, Option<String>, String)> = connection
+        .query_row(
+            "SELECT cadence_seconds, foreground_turn_id, lifecycle_state
+             FROM overwatcher_bindings WHERE run_id=?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((cadence, foreground_turn_id, lifecycle)) = binding else {
+        return Ok(());
+    };
+    let Some(cadence) = cadence else {
+        return Err(StateError::OverwatcherInactive(
+            "legacy 4.2.0 binding has no active-cycle contract".into(),
+        ));
+    };
+    if lifecycle != "active" || foreground_turn_id.as_deref().is_none_or(str::is_empty) {
+        return Err(StateError::OverwatcherInactive(
+            "foreground active turn is not bound".into(),
+        ));
+    }
+    let completed_at: Option<String> = connection
+        .query_row(
+            "SELECT completed_at FROM overwatch_cycles
+             WHERE run_id=?1 ORDER BY cycle_sequence DESC LIMIT 1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(completed_at) = completed_at else {
+        return Err(StateError::OverwatcherInactive(
+            "no complete active observation cycle exists".into(),
+        ));
+    };
+    let elapsed = parse_rfc3339(action_at)? - parse_rfc3339(&completed_at)?;
+    if elapsed < 0 || elapsed > cadence * 2 {
+        return Err(StateError::OverwatcherInactive(
+            "two foreground observation intervals elapsed without a complete cycle".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn parse_rfc3339(value: &str) -> Result<i64, StateError> {
+    OffsetDateTime::parse(value, &Rfc3339)
+        .map(|timestamp| timestamp.unix_timestamp())
+        .map_err(|_| StateError::OverwatcherCycleInvalid("timestamps must be RFC3339".into()))
 }
 
 fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {

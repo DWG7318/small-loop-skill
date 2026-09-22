@@ -146,6 +146,7 @@ export const runFixture: RunView = {
     },
   ],
   evidence: [],
+  overwatch_cycles: [],
   operational_observations: [],
 };
 

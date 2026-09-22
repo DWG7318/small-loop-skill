@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.1"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -821,7 +821,7 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "完成自己当前 Loop 节点" in manage
 
 
-def test_optional_overwatcher_never_becomes_authority_or_a_required_relay() -> None:
+def test_optional_overwatcher_is_one_active_session_without_authority_or_relay() -> None:
     main = read_skill("small-loop-skill")
     manage = read_skill("slk-manage-team")
     watch = read_skill("slk-overwatch-run")
@@ -833,13 +833,27 @@ def test_optional_overwatcher_never_becomes_authority_or_a_required_relay() -> N
         assert marker in manage
     for marker in (
         "不直接改 BI",
-        "不使用正时长 `wait_threads`",
+        "180–300 秒",
+        "前台 active turn",
+        "八项",
+        "不结束当前 turn",
         "exact retry",
         "归档本 Session",
         "不要成为第四个工程角色",
         "不要写 D0/D1/D2",
     ):
         assert marker in watch
+    for forbidden in (
+        "heartbeat",
+        "automation",
+        "cron",
+        "Windows 计划任务",
+        "daemon",
+        "后台 Agent",
+    ):
+        assert f"不要创建 {forbidden}" in watch
+    assert "每次检查后结束 turn" not in watch
+    assert "低频、Run 专属唤醒" not in watch
     assert "必经 relay" in recover
 
 

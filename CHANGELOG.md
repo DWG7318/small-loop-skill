@@ -1,6 +1,15 @@
 # Changelog
 
-## 4.2.0
+## 4.2.1
+
+- Replaced the withdrawn 4.2.0 event-woken Overwatcher semantics with one dedicated Agent Session that keeps a foreground active turn and completes the fixed eight-part observation cycle every frozen 180–300 seconds.
+- Added append-only cycle evidence, strict Session/turn/cadence/checklist/TOKEN/event binding, read-only BI projection, and fail-closed blocking of new dispatch or handoff after two missed cycles.
+- Kept normal cycles quiet and preserved the original Supervisor↔Checker↔Worker routes, engineering ownership, optional zero-Overwatcher path, exact retry, and terminal Session archive.
+- Explicitly rejected heartbeat, Codex automation, cron, Windows Scheduled Task, daemon, service, detached helper, hidden/background Agent, or second observer as substitutes for the active Session.
+
+## 4.2.0 — WITHDRAWN / DO NOT ENABLE
+
+This local-only candidate was never tagged or released. Its event-woken, end-turn Overwatcher wording could not guarantee the Owner-required continuously active Agent Session and is superseded by 4.2.1.
 
 - Fixed the native engineering topology to Codex Supervisor, OCRV Checker, and DSH Worker with fail-closed runtime/model/session/adapter validation; prompt role-play and Codex substitutions are rejected.
 - Distinguished D1 INCOMPLETE from formal FAIL and added one closed rework exception: OCRV escalates a bound failure to Supervisor, Supervisor issues a structured directive to the same Worker without taking over D1, and ordinary Supervisor→Worker dispatch remains rejected.

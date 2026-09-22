@@ -1,6 +1,6 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.2.0` carries one closed SLK handoff into one exact native Agent endpoint and can inspect or replay that exact identity once. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, TOKEN ownership beyond a proven handoff, or BI state.
+`slk-transport 4.2.1` carries one closed SLK handoff into one exact native Agent endpoint and can inspect or replay that exact identity once. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, TOKEN ownership beyond a proven handoff, or BI state.
 
 ## Role edges
 

@@ -77,10 +77,11 @@
 
 ## Overwatcher 运行观察（可选）
 
-- 观察类型/时间：
-- Run/CELL/attempt/message范围：
-- 不可变证据引用：
-- 恢复或升级结果：
+- Session/foreground turn/180–300秒间隔：
+- 最近cycle序号、完成时间、下次时间：
+- Run/CELL/attempt/TOKEN/最近事件：
+- 八项巡查结果与不可变证据：
+- 异常、exact retry或升级结果：
 
 ## D2 交接
 

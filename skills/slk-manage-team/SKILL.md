@@ -25,7 +25,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 5. 完成 Checker ↔ Worker 的双向通讯测试；
 6. 验证 `Supervisor → Worker` 默认拒绝，仅绑定当前正式 D1 FAIL 的 `D1_REWORK_DIRECTIVE` 可达。
 
-每个角色绑定前先通过 `SLK-ROLE-EVAL.v1` 中本角色的 8 个 runtime-critical 场景。若启用 Overwatcher，Supervisor 用 `slk-state bind-overwatcher` 绑定精确 Session 与端点：每 Run 最多一个、同一 Session 不跨 Run 复用，可以是 Codex 或其他可持续工作的 Agent；它不是第四个工程角色，也不改变上述三角色直连。未启用 Overwatcher 时 Run 正常开工。
+每个角色绑定前先通过 `SLK-ROLE-EVAL.v1` 中本角色的 8 个 runtime-critical 场景。若启用 Overwatcher，Supervisor 与 Owner 先确认精确 Session、180–300 秒间隔及其前台持续能力，再由 Supervisor 用 `slk-state bind-overwatcher` 绑定独立凭证、端点、`FOREGROUND_ACTIVE_TURN` 和原生活动证据：每 Run 最多一个、同一 Session 不跨 Run 复用，可以是 Codex 或其他可持续工作的 Agent；它不是 heartbeat、定时任务、第四个工程角色，也不改变上述三角色直连。未启用 Overwatcher 时 Run 正常开工。
 
 相邻通道服务于正常工作；Supervisor 可协助恢复 Checker 通讯，但不绕过 Checker 直接派工。成员建立以运行时返回的真实身份、准确任务 ID 或会话 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
 
@@ -58,4 +58,4 @@ D2 通过且最终记录完整后，按准确身份归档 Worker、Checker 与�
 - 不要把内部 subagent 或文字中的角色当成项目可见成员；不要只凭发出操作便声称创建、恢复或归档已完成；不要凭暂时无回复更换成员，也不要为防遗漏让 Supervisor 全程盯成员施工。
 - 不要创建 Codex Checker 或 Codex Worker，不要用提示词把 Codex 对话伪装成 OCRV/DSH，也不要把已登记的 DSH、OCRV 原生端点误写成隐藏成员；不要用标题、角色名称或一次启动命令代替精确身份与真实激活证据。
 - 不要把 D1 返工例外扩成 Supervisor 的一般 Worker 派工权，也不要用它绕过 OCRV 的 D1 或 Checker 通讯恢复。
-- 不要强制创建、重复创建或跨 Run 复用 Overwatcher，不要让它成为通讯中继、TOKEN 持有者、工程裁决者或 BI 写入者；不要用正时长 `wait_threads` 维持任何成员在线。
+- 不要强制创建、重复创建或跨 Run 复用 Overwatcher，不要让它成为通讯中继、TOKEN 持有者、工程裁决者或 BI 写入者；不要用正时长 `wait_threads` 维持 Supervisor、Checker 或 Worker 在线，也不要用 heartbeat/定时任务冒充 Overwatcher 的前台 active turn。

@@ -50,3 +50,9 @@ New 4.2 Runs keep the same Supervisor ↔ Checker ↔ Worker direct routes, TOKE
 New role registrations use the fixed Codex Supervisor, OCRV Checker, and DSH Worker identities; old prompt-only or all-Codex substitutions are not silently accepted. D1 INCOMPLETE leaves TOKEN with Checker. A formal D1 FAIL uses the closed Checker failure escalation and Supervisor rework directive for the same Worker; this exception does not create a general Supervisor→Worker route or move D1 authority.
 
 Communication recovery now inspects the original immutable attempt first and permits at most one exact retry with the same message, endpoint, payload, and scope. A semantic change returns `SUPERVISOR_DECISION_REQUIRED`. Windows helper processes default to hidden/no-window operation. No Temporal service, daemon, broker, MCP, additional engineering role, or hard optional-tool dependency is introduced.
+
+## Migration from withdrawn 4.2.0 to 4.2.1
+
+Do not start a new Run on 4.2.0. It was a local-only candidate with defective end-turn Overwatcher semantics and was never tagged or released. Install 4.2.1, then run the normal writable `slk-state configure` against the configured data root so a verified schema-v4 backup is created before the atomic schema-v5 migration.
+
+An existing 4.2.0 Overwatcher binding remains visible but receives no inferred active status. Close or explicitly rebind it under 4.2.1 with one exact Session, `FOREGROUND_ACTIVE_TURN`, a Supervisor-and-Owner-confirmed 180–300 second interval, foreground turn identity, and native active-session evidence. Do not convert its former wake fallback into a heartbeat, automation, cron, Windows Scheduled Task, daemon, service, detached helper, background Agent, or second observer. Existing 4.1.1 Runs without an Overwatcher retain the compatibility path above.

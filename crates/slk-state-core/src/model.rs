@@ -45,6 +45,55 @@ pub enum ObservationKind {
     OverwatcherClosed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ObservationMode {
+    ForegroundActiveTurn,
+}
+
+impl ObservationMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ForegroundActiveTurn => "FOREGROUND_ACTIVE_TURN",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OverwatchCheckResult {
+    Clear,
+    Anomaly,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OverwatchAnomalyCode {
+    ActivityUnproven,
+    DeliveryUnconfirmed,
+    CommunicationRecoveryRequired,
+    LoopStalled,
+    DuplicateOperation,
+    EndpointDrift,
+    DuplicateRunIdentity,
+    ProjectionMismatch,
+    RecordConflict,
+    OverwatcherActiveDegraded,
+    OverwatcherInactive,
+    TerminalCloseRequired,
+}
+
+impl OverwatchCheckResult {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Clear => "CLEAR",
+            Self::Anomaly => "ANOMALY",
+            Self::NotApplicable => "NOT_APPLICABLE",
+        }
+    }
+}
+
 impl ObservationKind {
     pub fn as_str(self) -> &'static str {
         use ObservationKind::*;
@@ -264,8 +313,52 @@ pub struct BindOverwatcherRequest {
     pub run_id: String,
     pub identity: RoleIdentity,
     pub endpoint: EndpointIdentity,
+    pub observation_mode: ObservationMode,
+    pub cadence_seconds: u32,
+    pub foreground_turn_id: String,
+    pub native_active_session_evidence_ref: String,
     pub reason: String,
     pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverwatchCycleChecklist {
+    pub run_position: OverwatchCheckResult,
+    pub role_bindings: OverwatchCheckResult,
+    pub direct_handoffs: OverwatchCheckResult,
+    pub cell_lifecycle: OverwatchCheckResult,
+    pub stall_and_duplicates: OverwatchCheckResult,
+    pub bi_projection: OverwatchCheckResult,
+    pub active_session: OverwatchCheckResult,
+    pub terminal_closure: OverwatchCheckResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverwatchCycleRequest {
+    pub cycle_id: String,
+    pub run_id: String,
+    pub plan_revision: u32,
+    pub role_instance_id: String,
+    pub session_id: String,
+    pub foreground_turn_id: String,
+    pub cycle_sequence: u64,
+    pub cadence_seconds: u32,
+    pub go_id: Option<String>,
+    pub cell_id: Option<String>,
+    pub attempt: Option<u32>,
+    pub token_sequence: u64,
+    pub token_holder_role_instance_id: String,
+    pub latest_event_id: String,
+    pub latest_message_id: Option<String>,
+    pub checklist: OverwatchCycleChecklist,
+    pub anomaly_codes: Vec<OverwatchAnomalyCode>,
+    pub evidence_refs: Vec<String>,
+    pub native_active_session_evidence_ref: String,
+    pub started_at: String,
+    pub completed_at: String,
+    pub next_cycle_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

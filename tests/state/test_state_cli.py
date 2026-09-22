@@ -78,7 +78,7 @@ def init_request():
             "role": "supervisor",
             "agent_runtime": "codex",
             "provider": "openai",
-            "model": "sol",
+            "model": "gpt-5.6-sol",
             "reasoning": "xhigh",
             "session_id": "thread-a",
         },
@@ -117,7 +117,7 @@ def overwatcher_binding():
             "role": "overwatcher",
             "agent_runtime": "codex",
             "provider": "openai",
-            "model": "sol",
+            "model": "gpt-5.6-sol",
             "reasoning": "xhigh",
             "session_id": "thread-overwatcher-a",
         },
@@ -128,6 +128,10 @@ def overwatcher_binding():
             "session_id": "thread-overwatcher-a",
             "native_address": {"thread_id": "thread-overwatcher-a"},
         },
+        "observation_mode": "FOREGROUND_ACTIVE_TURN",
+        "cadence_seconds": 240,
+        "foreground_turn_id": "foreground-turn-a",
+        "native_active_session_evidence_ref": "codex:thread-active:overwatcher-a",
         "reason": "one optional dedicated observer",
         "occurred_at": "2026-09-20T00:00:01Z",
     }
@@ -148,6 +152,45 @@ def observation():
         "evidence_refs": ["transport/message-a/attempt.json"],
         "details": {"reason": "no fresh native execution evidence"},
         "occurred_at": "2026-09-20T00:00:02Z",
+    }
+
+
+def overwatch_cycle():
+    return {
+        "cycle_id": "cycle-1",
+        "run_id": "run-a",
+        "plan_revision": 1,
+        "role_instance_id": "overwatcher-a",
+        "session_id": "thread-overwatcher-a",
+        "foreground_turn_id": "foreground-turn-a",
+        "cycle_sequence": 1,
+        "cadence_seconds": 240,
+        "go_id": "GO-001",
+        "cell_id": "CELL-001",
+        "attempt": 1,
+        "token_sequence": 1,
+        "token_holder_role_instance_id": "supervisor-a",
+        "latest_event_id": "bind-overwatcher-a",
+        "latest_message_id": None,
+        "checklist": {
+            "run_position": "CLEAR",
+            "role_bindings": "CLEAR",
+            "direct_handoffs": "CLEAR",
+            "cell_lifecycle": "CLEAR",
+            "stall_and_duplicates": "CLEAR",
+            "bi_projection": "CLEAR",
+            "active_session": "CLEAR",
+            "terminal_closure": "NOT_APPLICABLE",
+        },
+        "anomaly_codes": [],
+        "evidence_refs": [
+            "state:run-a:revision-1",
+            "codex:foreground-turn:foreground-turn-a",
+        ],
+        "native_active_session_evidence_ref": "codex:thread-active:overwatcher-a",
+        "started_at": "2026-09-20T00:03:59Z",
+        "completed_at": "2026-09-20T00:04:00Z",
+        "next_cycle_at": "2026-09-20T00:08:00Z",
     }
 
 
@@ -215,6 +258,22 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
     observer_environment["SLK_OVERWATCHER_CREDENTIAL"] = bound[
         "overwatcher_credential"
     ]
+    cycle = json.loads(
+        invoke(
+            [
+                "record-overwatch-cycle",
+                "--request",
+                write_json(tmp_path / "cycle.json", overwatch_cycle()),
+            ],
+            observer_environment,
+        ).stdout
+    )
+    assert cycle == {
+        "cycle_id": "cycle-1",
+        "cycle_sequence": 1,
+        "run_id": "run-a",
+        "status": "overwatch_cycle_recorded",
+    }
     recorded = json.loads(
         invoke(
             [
@@ -238,3 +297,75 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
     )
     assert rejected.returncode != 0
     assert json.loads(rejected.stderr)["code"] == "SLK_ROLE_CREDENTIAL_REQUIRED"
+
+
+def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke(["configure", "--data-root", tmp_path / "state"], environment)
+    initialized = json.loads(
+        invoke(
+            ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+            environment,
+        ).stdout
+    )
+    supervisor_environment = environment.copy()
+    supervisor_environment["SLK_ROLE_CREDENTIAL"] = initialized["supervisor_credential"]
+
+    passive = overwatcher_binding()
+    passive["observation_mode"] = "HEARTBEAT"
+    rejected = invoke(
+        ["bind-overwatcher", "--request", write_json(tmp_path / "passive.json", passive)],
+        supervisor_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
+
+    too_fast = overwatcher_binding()
+    too_fast["cadence_seconds"] = 120
+    rejected = invoke(
+        ["bind-overwatcher", "--request", write_json(tmp_path / "too-fast.json", too_fast)],
+        supervisor_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
+
+    bound = json.loads(
+        invoke(
+            [
+                "bind-overwatcher",
+                "--request",
+                write_json(tmp_path / "overwatcher.json", overwatcher_binding()),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    observer_environment = environment.copy()
+    observer_environment["SLK_OVERWATCHER_CREDENTIAL"] = bound[
+        "overwatcher_credential"
+    ]
+    incomplete = overwatch_cycle()
+    del incomplete["checklist"]["active_session"]
+    rejected = invoke(
+        [
+            "record-overwatch-cycle",
+            "--request",
+            write_json(tmp_path / "incomplete-cycle.json", incomplete),
+        ],
+        observer_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
+
+    unknown_anomaly = overwatch_cycle()
+    unknown_anomaly["checklist"]["active_session"] = "ANOMALY"
+    unknown_anomaly["anomaly_codes"] = ["FREE_TEXT_HEARTBEAT_OK"]
+    rejected = invoke(
+        [
+            "record-overwatch-cycle",
+            "--request",
+            write_json(tmp_path / "unknown-anomaly.json", unknown_anomaly),
+        ],
+        observer_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
