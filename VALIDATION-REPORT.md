@@ -19,6 +19,8 @@ The candidate adds early native-start evidence, immutable transport task files, 
 - Rust formatting and strict clippy passed (`cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`).
 - LE BI: 17 tests passed; TypeScript typecheck and production UI build passed.
 - Package and rollback tests passed inside the Python suite, including staged corruption with restoration of every managed root.
+- Transactional machine-wide installation from the verified 49-file package returned `INSTALLED`, preserved a complete `4.2.2-to-4.2.3` backup, and the installed Manifest independently revalidated all 15 Skills and five binaries.
+- Installed-path smoke: 8 passed using the global `slk-state.exe`/`slk-bi-query.exe` against new temporary state roots, plus installed `slk-state` and `slk-transport` version checks at 4.2.3.
 - Repository/Manifest, full baseline diff, mirror, sensitive-information and scope-boundary checks are rerun after every final report/Manifest update.
 
 ## Critical negative evidence
@@ -39,4 +41,4 @@ The repository-local execution report is generated at `.codex/.tmp/slk-4.2.3-san
 
 ## Release boundary
 
-This report establishes a local 4.2.3 candidate. It does not claim a merge, push, tag or GitHub Release. Machine-wide replacement of the installed 4.2.2 copy occurs only after candidate gates pass, through the verified transactional installer and an independent post-install smoke against disposable state. No LCaS R3B/CELL03 action is part of this work.
+This report establishes a locally installed 4.2.3 candidate. It does not claim a merge, push, tag or GitHub Release. The machine-wide 4.2.2 copy was replaced only after candidate gates passed, through the verified transactional installer and an independent post-install smoke against disposable state. No LCaS R3B/CELL03 action is part of this work.
