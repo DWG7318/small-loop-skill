@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OpenFlags};
 
 use slk_state_core::schema::{create_migration_backup, open_database};
 
-const TABLES: [&str; 17] = [
+const TABLES: [&str; 19] = [
     "projects",
     "runs",
     "go_nodes",
@@ -22,6 +22,8 @@ const TABLES: [&str; 17] = [
     "run_lineage",
     "run_identity_reconciliation_receipts",
     "run_method_adoption_receipts",
+    "transport_start_receipts",
+    "run_runtime_snapshots",
 ];
 
 fn scalar_text(connection: &Connection, sql: &str) -> String {
@@ -44,7 +46,7 @@ fn database_enables_wal_foreign_keys_and_all_current_tables() {
         database
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap(),
-        6
+        7
     );
 
     for table in TABLES {
@@ -73,6 +75,22 @@ fn append_only_history_rejects_update_and_delete() {
         .execute("UPDATE plan_revisions SET reason='X'", [])
         .is_err());
     assert!(database.execute("DELETE FROM evidence", []).is_err());
+    let start_receipt_triggers: i64 = database
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type='trigger' AND name LIKE 'transport_start_receipts_no_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(start_receipt_triggers, 2);
+    let runtime_snapshot_triggers: i64 = database
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type='trigger' AND name LIKE 'run_runtime_snapshots_no_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(runtime_snapshot_triggers, 2);
 }
 
 #[test]
@@ -197,7 +215,7 @@ fn future_nonzero_migration_can_create_and_validate_a_backup() {
     let database = open_database(root.path()).expect("open state database");
     seed_history(&database);
 
-    let backup = create_migration_backup(&database, root.path(), 6, 7, "20260920T000000Z")
+    let backup = create_migration_backup(&database, root.path(), 7, 8, "20260920T000000Z")
         .expect("migration backup");
     let copy = Connection::open_with_flags(backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open backup");

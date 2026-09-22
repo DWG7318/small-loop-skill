@@ -7,9 +7,10 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::auth::StateError;
+use crate::model::RuntimeSnapshot;
 use crate::model::{OwnerAuthorizationEvidence, RunStateSnapshot};
 use crate::schema::{open_database_read_only, SCHEMA_VERSION};
-use crate::write::{run_state_snapshot_from, StateStore};
+use crate::write::{run_state_snapshot_from, runtime_snapshot_from, StateStore};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProjectSummary {
@@ -207,6 +208,7 @@ pub struct RunProjection {
     pub schema_version: u32,
     pub summary: RunSummary,
     pub administrative_snapshot: RunStateSnapshot,
+    pub runtime_snapshot: Option<RuntimeSnapshot>,
     pub boundaries_json: String,
     pub go_nodes: Vec<GoProjection>,
     pub roles: Vec<RoleProjection>,
@@ -304,6 +306,7 @@ impl StateStore {
             schema_version: SCHEMA_VERSION as u32,
             summary,
             administrative_snapshot: run_state_snapshot_from(&connection, run_id)?,
+            runtime_snapshot: Some(runtime_snapshot_from(&connection, run_id)?),
             boundaries_json,
             go_nodes: load_go_nodes(&connection, run_id)?,
             roles: load_roles(&connection, run_id)?,

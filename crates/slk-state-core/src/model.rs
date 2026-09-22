@@ -145,6 +145,7 @@ pub enum EventType {
     EvidenceRegistered,
     TokenHandedOff,
     TransportFailed,
+    TransportStarted,
 }
 
 impl EventType {
@@ -159,9 +160,8 @@ impl EventType {
             | CellSplit | CandidateForwarded => role == Role::Checker,
             WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
             | CandidateSubmitted => role == Role::Worker,
-            ResourceContended | ResourceRecovered | TokenHandedOff | TransportFailed => {
-                role != Role::Overwatcher
-            }
+            ResourceContended | ResourceRecovered | TokenHandedOff | TransportFailed
+            | TransportStarted => role != Role::Overwatcher,
             EvidenceRegistered => true,
         }
     }
@@ -202,6 +202,7 @@ impl EventType {
             EvidenceRegistered => "EVIDENCE_REGISTERED",
             TokenHandedOff => "TOKEN_HANDED_OFF",
             TransportFailed => "TRANSPORT_FAILED",
+            TransportStarted => "TRANSPORT_STARTED",
         }
     }
 }
@@ -377,6 +378,70 @@ pub struct TokenHandoffRequest {
     pub payload_sha256: String,
     pub payload_location: Option<String>,
     pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum NativeStartStatus {
+    Started,
+}
+
+impl NativeStartStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Started => "STARTED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeliveryStartEvidence {
+    pub evidence_id: String,
+    pub stored_path: String,
+    pub sha256: String,
+    pub message_id: String,
+    pub endpoint_sha256: String,
+    pub envelope_sha256: String,
+    pub native_status: NativeStartStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommitDeliveryStartRequest {
+    pub event_id: String,
+    pub transport_receipt_id: String,
+    pub run_id: String,
+    pub go_id: String,
+    pub cell_id: String,
+    pub attempt: u32,
+    pub plan_revision: u32,
+    pub expected_runtime_revision: u64,
+    pub message_id: String,
+    pub token_sequence: u64,
+    pub from_role_instance_id: String,
+    pub to_role_instance_id: String,
+    pub endpoint_version: u32,
+    pub payload_type: String,
+    pub payload_sha256: String,
+    pub start_evidence: DeliveryStartEvidence,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeSnapshot {
+    pub run_id: String,
+    pub runtime_revision: u64,
+    pub plan_revision: u32,
+    pub token_sequence: u64,
+    pub token_holder_role_instance_id: String,
+    pub latest_event_id: String,
+    pub latest_message_id: Option<String>,
+    pub method_version: String,
+    pub overwatcher_binding_revision: Option<u64>,
+    pub overwatcher_status: Option<String>,
+    pub committed_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

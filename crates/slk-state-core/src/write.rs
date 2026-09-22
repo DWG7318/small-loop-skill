@@ -1,6 +1,7 @@
 //! Atomic Run, role, work-event, and SLK TOKEN transactions.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
@@ -17,11 +18,11 @@ use crate::auth::{
     StateError,
 };
 use crate::model::{
-    AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest, EventType,
-    InitRunRequest, OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
-    OwnerAuthorizationEvidence, OwnerDecision, RebindSessionRequest, ReconcileRunIdentitiesRequest,
-    RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role, RunStateSnapshot,
-    TokenHandoffRequest, WriteRequest,
+    AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest,
+    CommitDeliveryStartRequest, EventType, InitRunRequest, OperationalObservationRequest,
+    OverwatchCheckResult, OverwatchCycleRequest, OwnerAuthorizationEvidence, OwnerDecision,
+    RebindSessionRequest, ReconcileRunIdentitiesRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    RevisePlanRequest, Role, RunStateSnapshot, RuntimeSnapshot, TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
 
@@ -58,6 +59,15 @@ pub struct MethodAdoptionResult {
     pub receipt_id: String,
     pub run_id: String,
     pub effective_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliveryStartResult {
+    pub status: String,
+    pub runtime_revision: u64,
+    pub token: CurrentToken,
+    pub event_id: String,
+    pub message_id: String,
 }
 
 impl StateStore {
@@ -233,6 +243,20 @@ impl StateStore {
                     request.run_id,
                     request.supervisor.role_instance_id,
                     serde_json::to_string(&request.boundaries)?,
+                    request.occurred_at
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO run_runtime_snapshots
+                 (run_id, runtime_revision, plan_revision, token_sequence,
+                  token_holder_role_instance_id, latest_event_id, latest_message_id,
+                  method_version, overwatcher_binding_revision, overwatcher_status, committed_at)
+                 VALUES (?1, 1, 1, 1, ?2, ?3, NULL, ?4, NULL, NULL, ?5)",
+                params![
+                    request.run_id,
+                    request.supervisor.role_instance_id,
+                    format!("run-initialized-{}", request.run_id),
+                    env!("CARGO_PKG_VERSION"),
                     request.occurred_at
                 ],
             )?;
@@ -722,6 +746,17 @@ impl StateStore {
         request: TokenHandoffRequest,
     ) -> Result<CurrentToken, StateError> {
         self.with_immediate_transaction(|transaction| {
+            let method_version: String = transaction
+                .query_row(
+                    "SELECT slk_version FROM runs WHERE run_id=?1",
+                    [&request.run_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
+            if method_version == "4.2.3" {
+                return Err(StateError::LegacyHandoffForbidden);
+            }
             let actor = authorize_event(
                 transaction,
                 &request.run_id,
@@ -806,6 +841,257 @@ impl StateStore {
                 ],
             )?;
             current_token_from(transaction, &request.run_id)
+        })
+    }
+
+    pub fn commit_delivery_start(
+        &self,
+        credential: &Credential,
+        request: CommitDeliveryStartRequest,
+    ) -> Result<DeliveryStartResult, StateError> {
+        validate_delivery_start_request(&request)?;
+        let request_json = serde_json::to_string(&request)?;
+        let request_sha256 = sha256_hex(request_json.as_bytes());
+        let evidence_path = Path::new(&request.start_evidence.stored_path);
+        if !evidence_path.is_absolute() || !evidence_path.is_file() {
+            return Err(StateError::EvidenceInvalid(
+                "transport start evidence must be an existing absolute file".into(),
+            ));
+        }
+        let evidence_bytes = fs::read(evidence_path)?;
+        if sha256_hex(&evidence_bytes) != request.start_evidence.sha256 {
+            return Err(StateError::EvidenceInvalid(
+                "transport start evidence hash does not match stored bytes".into(),
+            ));
+        }
+
+        self.with_immediate_transaction(|transaction| {
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT request_sha256 FROM transport_start_receipts
+                     WHERE transport_receipt_id=?1",
+                    [&request.transport_receipt_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing_sha256) = existing {
+                if existing_sha256 != request_sha256 {
+                    return Err(StateError::TransportStartConflict(
+                        request.transport_receipt_id.clone(),
+                    ));
+                }
+                return delivery_start_result_from(
+                    transaction,
+                    &request.run_id,
+                    &request.event_id,
+                    &request.message_id,
+                    "IDEMPOTENT_REPLAY",
+                );
+            }
+
+            let method_version: String = transaction
+                .query_row(
+                    "SELECT slk_version FROM runs WHERE run_id=?1",
+                    [&request.run_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
+            if method_version != "4.2.3" {
+                return Err(StateError::RunAdministrationInvalid(
+                    "commit-delivery-start requires effective SLK 4.2.3".into(),
+                ));
+            }
+            let actor = authorize_event(
+                transaction,
+                &request.run_id,
+                credential,
+                EventType::TransportStarted,
+            )?;
+            validate_bound_overwatcher_active(transaction, &request.run_id, &request.occurred_at)?;
+            if actor.role_instance_id != request.from_role_instance_id {
+                return Err(StateError::RoleInstanceMismatch);
+            }
+            let plan_revision = current_plan_revision(transaction, &request.run_id)?;
+            if request.plan_revision != plan_revision {
+                return Err(StateError::PlanRevisionMismatch {
+                    requested: request.plan_revision,
+                    current: plan_revision,
+                });
+            }
+            let runtime_revision = current_runtime_revision(transaction, &request.run_id)?;
+            if request.expected_runtime_revision != runtime_revision {
+                return Err(StateError::RuntimeRevisionMismatch {
+                    requested: request.expected_runtime_revision,
+                    current: runtime_revision,
+                });
+            }
+            let current = current_token_from(transaction, &request.run_id)?;
+            if current.owner_role_instance_id != request.from_role_instance_id {
+                return Err(StateError::TokenOwnerMismatch {
+                    requested_owner: request.from_role_instance_id.clone(),
+                    current_owner: current.owner_role_instance_id,
+                });
+            }
+            if request.token_sequence <= current.sequence {
+                return Err(StateError::TokenSequenceConflict {
+                    requested: request.token_sequence,
+                    current: current.sequence,
+                });
+            }
+            if request.token_sequence != current.sequence + 1 {
+                return Err(StateError::TokenSequenceGap {
+                    requested: request.token_sequence,
+                    expected: current.sequence + 1,
+                });
+            }
+            let endpoint_exists: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM role_endpoints
+                     WHERE run_id=?1 AND role_instance_id=?2 AND endpoint_version=?3
+                       AND state='active'",
+                    params![
+                        request.run_id,
+                        request.to_role_instance_id,
+                        request.endpoint_version
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if endpoint_exists.is_none() {
+                return Err(StateError::EndpointNotCurrent);
+            }
+            let target_role_text: String = transaction.query_row(
+                "SELECT role FROM role_instances
+                 WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                params![request.run_id, request.to_role_instance_id],
+                |row| row.get(0),
+            )?;
+            let target_role = Role::parse(&target_role_text)
+                .ok_or_else(|| StateError::StoredRoleInvalid(target_role_text.clone()))?;
+            let route = TokenHandoffRequest {
+                event_id: request.event_id.clone(),
+                message_id: request.message_id.clone(),
+                run_id: request.run_id.clone(),
+                go_id: request.go_id.clone(),
+                cell_id: request.cell_id.clone(),
+                token_sequence: request.token_sequence,
+                from_role_instance_id: request.from_role_instance_id.clone(),
+                to_role_instance_id: request.to_role_instance_id.clone(),
+                endpoint_version: request.endpoint_version,
+                payload_type: request.payload_type.clone(),
+                payload_sha256: request.payload_sha256.clone(),
+                payload_location: Some(request.start_evidence.stored_path.clone()),
+                occurred_at: request.occurred_at.clone(),
+            };
+            if !valid_token_handoff_route(transaction, &route, actor.role, target_role)? {
+                return Err(StateError::InvalidTokenRoute {
+                    from: actor.role,
+                    to: target_role,
+                });
+            }
+
+            let next_runtime_revision = runtime_revision + 1;
+            transaction.execute(
+                "INSERT INTO transport_start_receipts
+                 (transport_receipt_id, run_id, event_id, message_id, go_id, cell_id,
+                  attempt, plan_revision, runtime_revision, token_sequence,
+                  from_role_instance_id, to_role_instance_id, endpoint_version,
+                  payload_type, payload_sha256, evidence_id, evidence_path,
+                  evidence_sha256, endpoint_sha256, envelope_sha256, native_status,
+                  request_sha256, occurred_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
+                         ?16,?17,?18,?19,?20,'STARTED',?21,?22)",
+                params![
+                    request.transport_receipt_id,
+                    request.run_id,
+                    request.event_id,
+                    request.message_id,
+                    request.go_id,
+                    request.cell_id,
+                    request.attempt,
+                    request.plan_revision,
+                    next_runtime_revision,
+                    request.token_sequence,
+                    request.from_role_instance_id,
+                    request.to_role_instance_id,
+                    request.endpoint_version,
+                    request.payload_type,
+                    request.payload_sha256,
+                    request.start_evidence.evidence_id,
+                    request.start_evidence.stored_path,
+                    request.start_evidence.sha256,
+                    request.start_evidence.endpoint_sha256,
+                    request.start_evidence.envelope_sha256,
+                    request_sha256,
+                    request.occurred_at,
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO token_events
+                 (event_id, run_id, token_sequence, from_role_instance_id,
+                  to_role_instance_id, go_id, cell_id, message_id, endpoint_version,
+                  event_type, payload_type, payload_sha256, payload_location, occurred_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'TOKEN_HANDED_OFF',?10,?11,?12,?13)",
+                params![
+                    format!("token-start-{}", request.transport_receipt_id),
+                    request.run_id,
+                    request.token_sequence,
+                    request.from_role_instance_id,
+                    request.to_role_instance_id,
+                    request.go_id,
+                    request.cell_id,
+                    request.message_id,
+                    request.endpoint_version,
+                    request.payload_type,
+                    request.payload_sha256,
+                    request.start_evidence.stored_path,
+                    request.occurred_at,
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO work_events
+                 (event_id, run_id, go_id, cell_id, attempt, plan_revision,
+                  author_role_instance_id, event_type, details_json, occurred_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,'TRANSPORT_STARTED',?8,?9)",
+                params![
+                    request.event_id,
+                    request.run_id,
+                    request.go_id,
+                    request.cell_id,
+                    request.attempt,
+                    request.plan_revision,
+                    request.from_role_instance_id,
+                    serde_json::to_string(&serde_json::json!({
+                        "transport_receipt_id": request.transport_receipt_id,
+                        "message_id": request.message_id,
+                        "start_evidence_id": request.start_evidence.evidence_id,
+                        "start_evidence_sha256": request.start_evidence.sha256,
+                        "endpoint_sha256": request.start_evidence.endpoint_sha256,
+                        "envelope_sha256": request.start_evidence.envelope_sha256,
+                    }))?,
+                    request.occurred_at,
+                ],
+            )?;
+            transaction.execute(
+                "UPDATE runs SET current_runtime_revision=?2 WHERE run_id=?1",
+                params![request.run_id, next_runtime_revision],
+            )?;
+            insert_runtime_snapshot(
+                transaction,
+                &request.run_id,
+                next_runtime_revision,
+                &request.event_id,
+                Some(&request.message_id),
+                &request.occurred_at,
+            )?;
+            delivery_start_result_from(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                &request.message_id,
+                "COMMITTED",
+            )
         })
     }
 
@@ -1942,6 +2228,111 @@ fn current_plan_revision(connection: &Connection, run_id: &str) -> Result<u32, S
         .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))
 }
 
+fn current_runtime_revision(connection: &Connection, run_id: &str) -> Result<u64, StateError> {
+    connection
+        .query_row(
+            "SELECT current_runtime_revision FROM runs WHERE run_id=?1",
+            [run_id],
+            |row| row.get::<_, u64>(0),
+        )
+        .optional()?
+        .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))
+}
+
+fn insert_runtime_snapshot(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+    runtime_revision: u64,
+    latest_event_id: &str,
+    latest_message_id: Option<&str>,
+    committed_at: &str,
+) -> Result<(), StateError> {
+    let plan_revision = current_plan_revision(transaction, run_id)?;
+    let token = current_token_from(transaction, run_id)?;
+    let method_version: String = transaction.query_row(
+        "SELECT slk_version FROM runs WHERE run_id=?1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    let overwatcher_status: Option<String> = transaction
+        .query_row(
+            "SELECT CASE WHEN lifecycle_state='active' THEN 'ACTIVE' ELSE upper(lifecycle_state) END
+             FROM overwatcher_bindings WHERE run_id=?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    transaction.execute(
+        "INSERT INTO run_runtime_snapshots
+         (run_id, runtime_revision, plan_revision, token_sequence,
+          token_holder_role_instance_id, latest_event_id, latest_message_id,
+          method_version, overwatcher_binding_revision, overwatcher_status, committed_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,NULL,?9,?10)",
+        params![
+            run_id,
+            runtime_revision,
+            plan_revision,
+            token.sequence,
+            token.owner_role_instance_id,
+            latest_event_id,
+            latest_message_id,
+            method_version,
+            overwatcher_status,
+            committed_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn runtime_snapshot_from(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<RuntimeSnapshot, StateError> {
+    connection
+        .query_row(
+            "SELECT run_id, runtime_revision, plan_revision, token_sequence,
+                    token_holder_role_instance_id, latest_event_id, latest_message_id,
+                    method_version, overwatcher_binding_revision, overwatcher_status, committed_at
+             FROM run_runtime_snapshots WHERE run_id=?1
+             ORDER BY runtime_revision DESC LIMIT 1",
+            [run_id],
+            |row| {
+                Ok(RuntimeSnapshot {
+                    run_id: row.get(0)?,
+                    runtime_revision: row.get(1)?,
+                    plan_revision: row.get(2)?,
+                    token_sequence: row.get(3)?,
+                    token_holder_role_instance_id: row.get(4)?,
+                    latest_event_id: row.get(5)?,
+                    latest_message_id: row.get(6)?,
+                    method_version: row.get(7)?,
+                    overwatcher_binding_revision: row.get(8)?,
+                    overwatcher_status: row.get(9)?,
+                    committed_at: row.get(10)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))
+}
+
+fn delivery_start_result_from(
+    connection: &Connection,
+    run_id: &str,
+    event_id: &str,
+    message_id: &str,
+    status: &str,
+) -> Result<DeliveryStartResult, StateError> {
+    let snapshot = runtime_snapshot_from(connection, run_id)?;
+    Ok(DeliveryStartResult {
+        status: status.to_string(),
+        runtime_revision: snapshot.runtime_revision,
+        token: current_token_from(connection, run_id)?,
+        event_id: event_id.to_string(),
+        message_id: message_id.to_string(),
+    })
+}
+
 pub(crate) fn current_token_from(
     connection: &Connection,
     run_id: &str,
@@ -2128,6 +2519,38 @@ fn validate_method_adoption_request(
             OwnerDecision::ApproveReconciliationAndAdoption,
         ],
     )?;
+    validate_admin_timestamp(&request.occurred_at)
+}
+
+fn validate_delivery_start_request(request: &CommitDeliveryStartRequest) -> Result<(), StateError> {
+    let identifiers = [
+        request.event_id.as_str(),
+        request.transport_receipt_id.as_str(),
+        request.run_id.as_str(),
+        request.go_id.as_str(),
+        request.cell_id.as_str(),
+        request.message_id.as_str(),
+        request.from_role_instance_id.as_str(),
+        request.to_role_instance_id.as_str(),
+        request.start_evidence.evidence_id.as_str(),
+    ];
+    if identifiers.iter().any(|value| !valid_identifier(value))
+        || request.attempt == 0
+        || request.plan_revision == 0
+        || request.expected_runtime_revision == 0
+        || request.token_sequence == 0
+        || request.endpoint_version == 0
+        || request.payload_type.trim().is_empty()
+        || request.start_evidence.message_id != request.message_id
+        || !is_lower_sha256(&request.payload_sha256)
+        || !is_lower_sha256(&request.start_evidence.sha256)
+        || !is_lower_sha256(&request.start_evidence.endpoint_sha256)
+        || !is_lower_sha256(&request.start_evidence.envelope_sha256)
+    {
+        return Err(StateError::EvidenceInvalid(
+            "delivery-start identity, binding, or digest is invalid".into(),
+        ));
+    }
     validate_admin_timestamp(&request.occurred_at)
 }
 

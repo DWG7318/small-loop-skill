@@ -9,13 +9,14 @@ use thiserror::Error;
 
 use crate::config::{validate_data_root, ConfigError};
 
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 const MIGRATION_V1: &str = include_str!("../migrations/0001.sql");
 const MIGRATION_V2: &str = include_str!("../migrations/0002.sql");
 const MIGRATION_V3: &str = include_str!("../migrations/0003.sql");
 const MIGRATION_V4: &str = include_str!("../migrations/0004.sql");
 const MIGRATION_V5: &str = include_str!("../migrations/0005.sql");
 const MIGRATION_V6: &str = include_str!("../migrations/0006.sql");
+const MIGRATION_V7: &str = include_str!("../migrations/0007.sql");
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -48,7 +49,7 @@ pub fn open_database(data_root: &Path) -> Result<Connection, SchemaError> {
     match version {
         SCHEMA_VERSION => {}
         0 => migrate_database(&mut connection, version)?,
-        1..=5 => {
+        1..=6 => {
             create_migration_backup(
                 &connection,
                 data_root,
@@ -152,6 +153,9 @@ fn migrate_database(connection: &mut Connection, from: i64) -> Result<(), Schema
     }
     if from <= 5 {
         transaction.execute_batch(MIGRATION_V6)?;
+    }
+    if from <= 6 {
+        transaction.execute_batch(MIGRATION_V7)?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;

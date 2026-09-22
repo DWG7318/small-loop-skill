@@ -90,6 +90,8 @@ pub enum StateError {
     InvalidPlan(String),
     #[error("plan revision {requested} is not current revision {current}")]
     PlanRevisionMismatch { requested: u32, current: u32 },
+    #[error("runtime revision {requested} is not current revision {current}")]
+    RuntimeRevisionMismatch { requested: u64, current: u64 },
     #[error("SLK TOKEN sequence {requested} already exists; current sequence is {current}")]
     TokenSequenceConflict { requested: u64, current: u64 },
     #[error("SLK TOKEN sequence must be {expected}, not {requested}")]
@@ -103,6 +105,10 @@ pub enum StateError {
     EndpointNotCurrent,
     #[error("SLK TOKEN route {from:?} -> {to:?} is not part of the SLK loop")]
     InvalidTokenRoute { from: Role, to: Role },
+    #[error("SLK 4.2.3 delivery start must use the atomic commit-delivery-start contract")]
+    LegacyHandoffForbidden,
+    #[error("transport start receipt conflicts with existing immutable content: {0}")]
+    TransportStartConflict(String),
     #[error("Run was not found: {0}")]
     RunNotFound(String),
     #[error("an explicit Run ID is required")]
