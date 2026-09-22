@@ -13,8 +13,10 @@ from .base import AdapterError
 from ..contracts import RESULT_SCHEMA, DeliveryResult, Endpoint, Envelope
 from ..evidence import Attempt
 from ..process import windows_no_window_kwargs
+from ..instance_id import validate_worker_instance_id
 from ..subprocess_watch import finish, spawn
 from ..task_file import create_task_file
+from ..workspace import WorkspaceError, preflight_git_workspace
 
 
 ADDRESS_FIELDS = frozenset(
@@ -69,8 +71,10 @@ class DshAdapter:
             raise AdapterError("DSH_ADDRESS_INVALID", "DSH address must use the exact field set")
         _string_array(address["command"], "command")
         instance_id = address["instance_id"]
-        if not isinstance(instance_id, str) or not instance_id.startswith(f"{endpoint.run_id}-"):
-            raise AdapterError("DSH_ADDRESS_INVALID", "instance_id must be scoped to the endpoint Run")
+        try:
+            validate_worker_instance_id(endpoint.run_id, instance_id)
+        except (TypeError, ValueError) as exc:
+            raise AdapterError("DSH_ADDRESS_INVALID", str(exc)) from exc
         session_id = address["session_id"]
         if session_id is not None and (
             not isinstance(session_id, str) or not session_id.startswith("session-")
@@ -194,6 +198,10 @@ class DshAdapter:
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
         self.validate_address(endpoint)
         workspace = Path(str(endpoint.address["cwd"]))
+        try:
+            preflight_git_workspace(workspace)
+        except WorkspaceError as exc:
+            raise AdapterError("DSH_WORKSPACE_NOT_READY", str(exc)) from exc
         drop_parent = workspace / ".slk-transport"
         drop_root = drop_parent / envelope.message_id
         parent_existed = drop_parent.exists()

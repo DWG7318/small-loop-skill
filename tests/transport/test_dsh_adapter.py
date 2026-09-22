@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import threading
 import time
@@ -30,6 +31,7 @@ def worker_endpoint(
     runtime_root.mkdir(parents=True, exist_ok=True)
     repository = tmp_path / "repository"
     repository.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init"], cwd=repository, check=True, capture_output=True)
     raw = endpoint_value(role="worker", run_id=run_id, version=1)
     raw["agent_runtime"] = "dsh"
     raw["adapter"] = "dsh-worker"

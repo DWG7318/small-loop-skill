@@ -370,7 +370,7 @@ def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str,
     for path in (repository, ocrv_runtime, dsh_runtime):
         path.mkdir(parents=True, exist_ok=True)
     nonce = f"{run_id}-NONCE"
-    base_commit = _initialize_disposable_repository(repository, run_id) if live else None
+    base_commit = _initialize_disposable_repository(repository, run_id)
 
     supervisor_client: JsonRpcProcess | None = None
     if live:
