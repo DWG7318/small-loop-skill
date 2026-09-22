@@ -8,6 +8,8 @@
 - 来源 SHA-256：`71ddac035497157e1e9c1abc7014d2c0c66ccdf7f8c231815fb5f856041343c4`
 - 来源大小：21,360 字节；430 行
 - 关联实战复核：[2026-09-22-slk-4.2.2-cell02-field-trial-review.md](./2026-09-22-slk-4.2.2-cell02-field-trial-review.md)
+- inactive Supervisor唤醒实测：`D:\LCaS\.codex\.tmp\slk-diagnostics\inactive-supervisor-wake\INACTIVE-SUPERVISOR-WAKE-RESULT.md`
+- 唤醒实测 SHA-256：`a72d4bf4f8563c709f29c9ef706c0f4bdbfff99a06b2773107172b33e4bf864d`
 
 本记录把来源指南登记为下一版本候选升级输入，但只在本记录完成冲突过滤后的边界内具有维护权威。来源指南不是可执行授权；本记录不表示升级已经开始或完成，不授权修改 VERSION、源码、测试逻辑、全局安装或 LCaS Run，也不授权进入 CELL03、CELL04 或 D2。
 
@@ -20,17 +22,22 @@
 3. Run仍 active/open 时，唯一 Overwatcher foreground turn在最后权威状态落盘前结束；中央生命周期仍显示 active/observing。这是4.2.2执行合规失败，不是“4.2.2没有规定持续观察”。
 4. 最后可见状态已经前进到 T013/CELL02 D1 PASS，但权威 Overwatcher cycle没有记录该最终状态；聊天说明不能替代审计记录。
 5. 本次实战没有证明 DeepSeek V4 Flash能力不足，也没有形成自动升级模型的依据。
+6. SLK 4.2.2正式 `D1_FAILURE_ESCALATION` 已实测成功唤醒 inactive/notLoaded Supervisor：同一消息产生匹配的 accepted、started、固定Supervisor回执和completed证据，唯一原生turn在19,083毫秒内完成，最终inspect为 `ALREADY_STARTED`且 `should_retry:false`。目标测试前不是active writer，测试后已恢复归档。
+7. inactive/idle/notLoaded 与 active writer必须分流：前者直接按现有transport唤醒，后者才需要新的、可审计的native recovery message。该实测未写R3B TOKEN/BI，也未验证started之后Checker→Supervisor的中央原子handoff。
 
 ### 1.2 `ACCEPTED_CANDIDATE_REQUIREMENTS`
 
 除下文明确冲突项外，NUG-01至NUG-16可作为下一版本设计输入。任何后续实现仍需独立设计、版本选择、TDD、完整验证和 Owner发布授权。
 
-### 1.3 `OWNER_DECISION_REQUIRED`
+### 1.3 `CURRENTLY_DISABLED`
 
-1. **BoM重新引入**：当前 Owner决定是停用不稳定的 BoM，由 Supervisor根据有效 D1 FAIL生成结构化返工指引并交给同一 Worker；现行正式 Skill也按这一路径定义。来源指南中“保留 BoM”“FAIL触发 BoM”的文字不得自动成为下一版本要求。只有 Owner明确推翻现行决定后，才可另行设计和验收。
-2. **非终态更换 Overwatcher绑定**：正常合同不允许 per-CELL停止、释放或重建 Overwatcher。若宿主故障迫使更换 Session/turn，必须视为显式恢复/重绑定，并取得 Owner或 Supervisor按既有权威作出的明确授权；它不是普通 `RESUME`。
+1. **BoM**：Owner已明确决定暂时不要。BoM不进入下一版本候选，不得自动触发、路由或实现。有效 D1 FAIL继续使用 `Checker → Supervisor结构化返工指引 → 同一Worker最小返工 → Checker重新D1`。只有Owner以后另行明确恢复，才允许重新登记为候选。
 
-### 1.4 `REJECTED_BY_CURRENT_CONTRACT`
+### 1.4 `OWNER_DECISION_REQUIRED`
+
+1. **非终态更换 Overwatcher绑定**：正常合同不允许 per-CELL停止、释放或重建 Overwatcher。若宿主故障迫使更换 Session/turn，必须视为显式恢复/重绑定，并取得 Owner或 Supervisor按既有权威作出的明确授权；它不是普通 `RESUME`。
+
+### 1.5 `REJECTED_BY_CURRENT_CONTRACT`
 
 1. Run仍 active/open 时，把 Overwatcher正常置为 `SUSPENDED/RELEASED`，让同一或另一 Session以后再恢复。
 2. 每个 CELL重新确认、重新启动或重新绑定 Overwatcher。
@@ -52,7 +59,7 @@
 | ID | 登记状态 | 候选要求 | 约束后的验收含义 |
 |---|---|---|---|
 | NUG-01 | 接受 | 启动证明与终态分离 | 原生任务被接受并取得身份后立即原子写 started receipt；terminal独立稍后产生。无真实 started evidence不得交接 TOKEN或声明已开始。 |
-| NUG-02 | 接受 | active-writer原生恢复 | 目标 Codex任务正在写回复时，使用新的 logical message ID和可审计 recovery receipt恢复；旧 envelope保持 immutable/failed，不重发、不重复消费 TOKEN、不创建替代角色。 |
+| NUG-02 | 部分已实测；剩余接受 | Supervisor状态分流与active-writer原生恢复 | inactive/idle/notLoaded已证明可由现有transport直接唤醒，不得绕道recovery。只有目标正在生成时，才使用新的 logical message ID和可审计 recovery receipt；旧 envelope保持 immutable/failed，不重发、不重复消费 TOKEN、不创建替代角色。另在独立临时数据库验证started后Checker→Supervisor中央原子handoff。 |
 | NUG-03 | 接受 | revisioned atomic snapshot | TOKEN、latest event、message receipt和 BI projection必须来自同一 committed `snapshot_revision`；读者不得拼接不同 revision。 |
 | NUG-04 | 接受 | Git可写性预检 | 隔离 Worker默认使用 `.git`位于可写根内的 standalone clone；linked worktree只有在 common git dir可写时才可派工。 |
 | NUG-05 | 接受事实、改写方案 | Overwatcher turn提前结束与BI假 active | Run非终态时，turn结束必须显示为 continuity violation/inactive并阻止新派工；不得把它包装成正常 suspended/released。只有 Run终结、取消或授权重绑定才有合法 lifecycle transition。 |
@@ -106,13 +113,13 @@ P0施工应保持协议层优先和最小闭环：先统一 revision，再分离
 
 以下完整登记来源指南的21项，并按现行 Owner决定规范化预期：
 
-1. **active-writer恢复**：目标 Supervisor正在生成回复时，Checker交付通过一个新 recovery message完成；旧 envelope不重发、不重复执行。
+1. **Supervisor状态分流**：inactive/idle/notLoaded目标必须由现有transport直接唤醒并产生唯一accepted/started/completed链；started后在独立临时数据库原子完成Checker→Supervisor TOKEN handoff。只有目标正在生成时才走一个新recovery message；旧 envelope不重发、不重复执行。
 2. **DSH started先于terminal**：启动后30秒内出现 started receipt和TOKEN handoff，terminal可在数分钟后出现；不得由terminal倒填started。
 3. **OCRV started先于verdict**：启动后30秒内完成started/TOKEN；review完成前不得伪造PASS/FAIL。
 4. **不完整检查保持INCOMPLETE**：工具中断、仅检查部分文件或候选SHA不明时，不得写FAIL或PASS。
 5. **FAIL证据门槛**：只有完整证据确认阻塞产品缺陷时才FAIL；非阻塞建议不得升级为FAIL。
 6. **单次返工链**：一个有效FAIL只触发一次返工链；同一失败包不得重复派发。
-7. **BoM隔离**：保留为 `OWNER_DECISION_REQUIRED` 的负例槽位。按当前合同，任何自动BoM触发都必须拒绝；若Owner未来明确恢复BoM，才另行验证“仅有效FAIL后、只经Supervisor进入Worker、Checker不读求解过程”。
+7. **BoM禁用**：当前合同下，任何自动BoM触发、路由或实现都必须拒绝；有效FAIL只能进入Supervisor结构化返工指引闭环。Owner未来若明确恢复BoM，必须作为新的版本输入重新设计和验收，不能复用本项作为正例。
 8. **Git可写预检**：standalone clone可直接commit；common git dir不可写时在模型启动前拒绝。
 9. **instance ID边界**：64字符边界在transport/DSH一致；超长值在启动前由共享validator拒绝。
 10. **task file隔离**：Worker只读指定且hash匹配的task file；目录中的旧Run文件不能影响当前任务。
@@ -132,7 +139,7 @@ P0施工应保持协议层优先和最小闭环：先统一 revision，再分离
 
 下一版本候选只有同时满足以下条件，才可请求发布授权：
 
-1. 经本记录规范化的 P0六项及21个自动反例全部通过；BoM项按当时有效 Owner决定执行。
+1. 经本记录规范化的 P0六项及21个自动反例全部通过；BoM保持禁用并由负例机械拒绝，除非Owner以后产生新的明确版本决定。
 2. 不改变 Run → CELL公开结构，不新增第二 Checker、第二 D1或额外审批层。
 3. 不降低 D1质量，不把INCOMPLETE伪装成PASS/FAIL；Supervisor不接管D1。
 4. Flash仍为Worker，不因成本、返工或适配器问题自动升级模型。
@@ -151,7 +158,7 @@ P0施工应保持协议层优先和最小闭环：先统一 revision，再分离
 - 推翻Worker/Checker/Supervisor通讯拓扑，或让Supervisor深度参与日常施工和D1。
 - 引入第二Checker、第二D1、新审批层、常驻服务、后台Agent、高频heartbeat或重型workflow engine。
 - 让Overwatcher成为必经relay、TOKEN持有者、BI写入者、工程角色或产品验收者。
-- 恢复BoM，除非Owner作出新的明确决定；即使未来恢复，也不得成为SLK角色或裁决者。
+- 触发、路由、实现或恢复BoM；Owner未来若明确恢复，必须另行形成新版本输入，且不得直接把BoM变成SLK角色或裁决者。
 - 把所有finding变成FAIL，或把工具/证据不足写成产品FAIL。
 - 自动把Flash升级到Pro或GPT。
 - 建造与上述缺口和反例无关的大型验证平台。
@@ -176,5 +183,5 @@ P0施工应保持协议层优先和最小闭环：先统一 revision，再分离
 
 - 来源指南已完成身份核验并登记，但必须经过本记录的冲突过滤使用。
 - 当前可直接进入未来设计评审的是：NUG-01至04、NUG-05/06的连续性改写、NUG-07至16及相应规范化反例。
-- BoM重新引入和Run非终态的Overwatcher正常暂停/释放不属于已批准设计。
+- BoM当前明确禁用、不进入下一版本候选；Run非终态的Overwatcher正常暂停/释放也不属于已批准设计。
 - 本次只形成文档级维护输入；SLK仍为4.2.2，未实施、未安装、未发布，也未改变 LCaS R3B任何状态。
