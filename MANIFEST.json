@@ -675,6 +675,10 @@
       "sha256": "a76f7642f93e6ccb8383cdcf8da8aa488070e2c15237a122a39df9804f7f4ca7"
     },
     {
+      "path": "docs/superpowers/plans/2026-09-22-slk-4.2.3-runtime-consistency-hardening.md",
+      "sha256": "6c2941f53d99315195040e66c32c1b06ad7b48f5b604bebfe4e22db315af3a40"
+    },
+    {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
       "sha256": "d26a2d488e8ac2159750b332d8eb1bd02a1187aa9143f0e75a105ad8b601dcfd"
     },
