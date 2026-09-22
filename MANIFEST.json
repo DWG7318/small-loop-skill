@@ -587,6 +587,10 @@
       "sha256": "7178c112434a75a4acc34974cc868c255d9414e191227a64869f77cc533915c5"
     },
     {
+      "path": "docs/maintenance/2026-09-22-slk-next-upgrade-guide-review.md",
+      "sha256": "e33ac400b46d431a137dea7d0ca56845c26d1fdad37edf558d01cc2fb644ffdd"
+    },
+    {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
       "sha256": "a37bf844555164557f2b4487c49bb29087fbd0c44eeee598a71076219a484b06"
     },
