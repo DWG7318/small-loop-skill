@@ -25,7 +25,7 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.2 skill collection" in result.stdout
+    assert "PASS: SLK 4.2.3 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:

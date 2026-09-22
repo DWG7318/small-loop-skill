@@ -152,6 +152,12 @@ def validate(root: Path) -> list[str]:
         "MANIFEST.json",
         "VALIDATION-REPORT.md",
         ".github/workflows/validate.yml",
+        "docs/contracts/slk-transport-task.schema.json",
+        "docs/contracts/slk-runtime-snapshot.schema.json",
+        "docs/contracts/slk-overwatch-cycle.schema.json",
+        "scripts/build_local_package.py",
+        "scripts/install_local.ps1",
+        "scripts/verify_local_install.py",
     )
     for relative in required:
         check((root / relative).is_file(), "SLK_REPO_REQUIRED_FILE", relative, errors)
@@ -213,7 +219,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 4.2 skill collection structure, identity, and Manifest are valid.")
+    print("PASS: SLK 4.2.3 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 

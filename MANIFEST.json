@@ -616,7 +616,7 @@
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
-      "sha256": "32cc4a3d2fed3bf81d834625fb7a17d2e133ae38ce463d27fb19485b57135d4e"
+      "sha256": "7406dd63498060f0859be1eaf184cc142bceb1b39e2c51bc056735dd4380583e"
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
@@ -763,8 +763,16 @@
       "sha256": "6798634e9e9b3b74a99b626d9ee7c7157b3ff332ca99680ae9d2549524ac3a44"
     },
     {
+      "path": "scripts/build_local_package.py",
+      "sha256": "268889d19ce41a7bf7e76a33c43dbdcbd06aed39b36e7b6ba0f3753c0f20ae84"
+    },
+    {
       "path": "scripts/build_transport_zipapp.py",
       "sha256": "c43ed3d8d73f31661ade7a16e7a96386c1c86482a1f14c5209c80a9ef67121a3"
+    },
+    {
+      "path": "scripts/install_local.ps1",
+      "sha256": "a33be3af56022babed1d79c3c51467cb420590c406ae2c54557aa8a3e50855d8"
     },
     {
       "path": "scripts/quick_validate.py",
@@ -776,11 +784,15 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "6b9e8fd803047b2d0fd84f03e839c6b12cfc046df233ef1254efe6754efa773b"
+      "sha256": "23fbc63d3354e4ac1aed226ad76aea1adf1c11c12b1913432e7d3d5ea96d75cc"
     },
     {
       "path": "scripts/validate_role_eval.py",
       "sha256": "5dfca73ce0544e0268abf4aded60df6dc61fcb198283d8015353028cbc188d61"
+    },
+    {
+      "path": "scripts/verify_local_install.py",
+      "sha256": "bf1c94820d125719183c9c750c46ef9d3ee499e83bb0352ff8051d1f2e6bb7a7"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -939,6 +951,14 @@
       "sha256": "849633ec761df0c46fc3db88c361bf6f9ccf206cdf9808661ff6bd59a7f48e5c"
     },
     {
+      "path": "tests/install/test_build_local_package.py",
+      "sha256": "1c49e1c65fe9558ad4b51877b013ccc2fae85c592423b35303cfcfbd01d43c16"
+    },
+    {
+      "path": "tests/install/test_local_install.py",
+      "sha256": "afd7c4971b66ddc0220cd867c02740983503ed617f0961064819680e03cd5f2d"
+    },
+    {
       "path": "tests/skill_testkit.py",
       "sha256": "706c5b1f9b2c78c4dcd7e99aad64d962a2d64a6dceb1f60685e82062f19b63af"
     },
@@ -956,7 +976,7 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "e975272f36b02cefd9bd0bcd4838a90813a47fc3dfa270fa47ec484edb9ed5c3"
+      "sha256": "9b52988c6ebf216cd7178d5ed25e4b985ccb85d515be477445d3c554c16969a7"
     },
     {
       "path": "tests/test_skill_collection_300.py",

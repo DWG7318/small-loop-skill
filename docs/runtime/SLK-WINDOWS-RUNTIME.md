@@ -162,6 +162,17 @@ Copy-Item F:\SLK\build\release\slk-bi-query.exe D:\SLK-RUNTIME\bin\
 Copy-Item F:\SLK\build\release\slk-cargo.exe D:\SLK-RUNTIME\bin\
 ```
 
+正式本机替换先把四个 `.exe` 与 `slk-transport.pyz` 放入单独 artifact 目录，再执行：
+
+```powershell
+python scripts\build_local_package.py --repo . --artifacts <artifact-root> --output <package-root>
+python scripts\verify_local_install.py --root <package-root> --package-mode
+pwsh -NoProfile -NonInteractive -File scripts\install_local.ps1 -PackageRoot <package-root> -CodexHome $env:USERPROFILE\.codex
+python scripts\verify_local_install.py --root $env:USERPROFILE\.codex
+```
+
+安装器只交换 manifest 声明的 15 个 Skill、`tools\slk\bin`、共享文档/Schema 和安装 manifest；旧集合保存到 `tools\slk\backups`。任一暂存、哈希或安装后核验失败都会恢复完整旧集合，并在 `.codex\.tmp` 写失败报告。安装器不会运行 `slk-state configure`，数据库迁移仍需对明确选择的数据根单独执行。
+
 检查版本和入口：
 
 ```powershell
