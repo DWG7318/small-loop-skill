@@ -583,6 +583,10 @@
       "sha256": "25de2612c93e314d80af6bedd9930d361bee693b7012cd7e71c9afc9cb3e8753"
     },
     {
+      "path": "docs/maintenance/2026-09-22-slk-4.2.2-cell02-field-trial-review.md",
+      "sha256": "7178c112434a75a4acc34974cc868c255d9414e191227a64869f77cc533915c5"
+    },
+    {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
       "sha256": "a37bf844555164557f2b4487c49bb29087fbd0c44eeee598a71076219a484b06"
     },
