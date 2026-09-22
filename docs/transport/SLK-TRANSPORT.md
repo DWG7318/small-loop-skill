@@ -1,6 +1,6 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.2.3` carries one closed SLK delivery into one exact native Agent endpoint, writes native start evidence before any terminal result, and can recover only the explicitly allowed identity. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, TOKEN ownership, model selection, BoM routing, or BI state.
+`slk-transport 4.2.4` carries one closed SLK delivery into one exact native Agent endpoint, writes native start evidence before any terminal result, and can recover only the explicitly allowed identity. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, model selection, BoM routing, or BI state.
 
 ## Role edges
 
@@ -75,7 +75,7 @@ Each attempt is immutable under:
 
 The common files are `endpoint.json`, `envelope.json`, `accepted.json`, immutable task/request evidence with hashes, independently written `started.json`, `completed.json` or `failed.json`, plus adapter-native stdout, stderr, result and identity evidence when applicable. Active-writer recovery additionally records the source message, exact turn, new message and native receipt. Job launcher logs are under `<attempt-root>/.jobs/`.
 
-`accepted.json`, a database row, successful launcher exit, terminal result, or visible conversation does not prove delivery. A matching early `started.json` proves that the exact native target began this message. The sender retains TOKEN until `slk-state commit-delivery-start` verifies that evidence and atomically advances TOKEN, event and runtime snapshot; a 4.2.3 Run rejects the legacy split handoff. After commit, the sender ends its activity instead of watching the receiver.
+`accepted.json`, a database row, successful launcher exit, terminal result, or visible conversation does not prove delivery. A matching early `started.json` proves that the exact native target began this message. The sender retains TOKEN until `slk-state commit-delivery-start` verifies that evidence and atomically advances TOKEN, event and runtime snapshot; revisioned Runs reject the legacy split handoff. After commit, the sender ends its activity instead of watching the receiver. If a DSH terminal result exists while its Worker-owned D0/candidate facts and Checker start are absent, `inspect-worker-completion` allows one cadence measured from the trustworthy terminal evidence time, then keeps every unresolved cycle anomalous while separately marking whether notification was already sent. `resume-worker-continuation` may resume only the exact recorded DSH instance/session; `continue-worker` runs inside that process, decrypts the pre-provisioned Worker DPAPI credential without printing or persisting plaintext, records idempotent Worker facts, sends a minimal `CANDIDATE_READY`, verifies exact Checker `started.json`, reads a fresh runtime revision, and commits the handoff. It is a bounded suffix, not a scheduler or CELL rerun.
 
 ## Retry and session rebound
 

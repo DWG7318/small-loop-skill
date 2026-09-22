@@ -21,9 +21,17 @@ from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
+from .worker_completion import (
+    CompletionError,
+    build_continuation_request,
+    continuation_request_bytes,
+    execute_worker_continuation,
+    inspect_worker_completion,
+    resume_worker_continuation,
+)
 
 
-VERSION = "4.2.3"
+VERSION = "4.2.4"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -205,6 +213,55 @@ def _recover_active_writer(args: argparse.Namespace) -> int:
     return 0
 
 
+def _inspect_worker_completion(args: argparse.Namespace) -> int:
+    previous = _read_object(args.previous_inspection, "previous inspection") if args.previous_inspection else None
+    result = inspect_worker_completion(
+        args.source_attempt,
+        _read_object(args.runtime_projection, "runtime projection"),
+        observed_at=args.observed_at,
+        cadence_seconds=args.cadence_seconds,
+        previous_inspection=previous,
+    )
+    _emit(result)
+    return 3 if result["status"] == "WORKER_COMPLETION_HANDOFF_MISSING" else 0
+
+
+def _resume_worker_completion(args: argparse.Namespace) -> int:
+    request = build_continuation_request(
+        args.source_attempt,
+        _read_object(args.checker_endpoint, "Checker endpoint"),
+        _read_object(args.runtime_projection, "runtime projection"),
+        plan_revision=args.plan_revision,
+        runtime_revision=args.runtime_revision,
+        token_sequence=args.token_sequence,
+        credential_path=args.credential_path,
+        state_command=[str(args.state_command.resolve())],
+        transport_command=_self_command(),
+        occurred_at=args.occurred_at,
+    )
+    _emit(resume_worker_continuation(request))
+    return 0
+
+
+def _continue_worker(args: argparse.Namespace) -> int:
+    data = args.request.read_bytes()
+    if __import__("hashlib").sha256(data).hexdigest() != args.sha256:
+        raise CompletionError("WORKER_CONTINUATION_REQUEST_MISMATCH", "continuation request hash mismatch")
+    request = _read_object(args.request, "continuation request")
+    result = execute_worker_continuation(request)
+    destination = Path(str(request["continuation_result_path"]))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    encoded = continuation_request_bytes(result)
+    if destination.exists() and destination.read_bytes() != encoded:
+        raise CompletionError("WORKER_CONTINUATION_CONFLICT", "continuation result conflicts")
+    if not destination.exists():
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_bytes(encoded)
+        temporary.replace(destination)
+    _emit(result)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="slk-transport")
     parser.add_argument("--version", action="version", version=f"slk-transport {VERSION}")
@@ -219,6 +276,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             command.add_argument("--startup-timeout-seconds", type=float, default=30.0)
     drill_verify = subparsers.add_parser("drill-verify")
     drill_verify.add_argument("--evidence-root", required=True, type=Path)
+    completion = subparsers.add_parser("inspect-worker-completion")
+    completion.add_argument("--source-attempt", required=True, type=Path)
+    completion.add_argument("--runtime-projection", required=True, type=Path)
+    completion.add_argument("--observed-at", required=True)
+    completion.add_argument("--cadence-seconds", required=True, type=int)
+    completion.add_argument("--previous-inspection", type=Path)
+    resume = subparsers.add_parser("resume-worker-continuation")
+    resume.add_argument("--source-attempt", required=True, type=Path)
+    resume.add_argument("--checker-endpoint", required=True, type=Path)
+    resume.add_argument("--runtime-projection", required=True, type=Path)
+    resume.add_argument("--plan-revision", required=True, type=int)
+    resume.add_argument("--runtime-revision", required=True, type=int)
+    resume.add_argument("--token-sequence", required=True, type=int)
+    resume.add_argument("--credential-path", required=True, type=Path)
+    resume.add_argument("--state-command", required=True, type=Path)
+    resume.add_argument("--occurred-at", required=True)
+    continuation = subparsers.add_parser("continue-worker")
+    continuation.add_argument("--request", required=True, type=Path)
+    continuation.add_argument("--sha256", required=True)
     args = parser.parse_args(argv)
     if getattr(args, "startup_timeout_seconds", 1) <= 0:
         return _rejected("CLI_ARGUMENT_INVALID", "startup timeout must be positive")
@@ -237,6 +313,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _retry_exact(args)
         if args.command == "recover-active-writer":
             return _recover_active_writer(args)
+        if args.command == "inspect-worker-completion":
+            return _inspect_worker_completion(args)
+        if args.command == "resume-worker-continuation":
+            return _resume_worker_completion(args)
+        if args.command == "continue-worker":
+            return _continue_worker(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")
     except AdapterError as exc:
         return _rejected(exc.error_code, str(exc))
@@ -244,6 +326,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _rejected("CONTRACT_INVALID", str(exc))
     except DrillVerificationError as exc:
         return _rejected("DRILL_EVIDENCE_INVALID", str(exc))
+    except CompletionError as exc:
+        return _rejected(exc.error_code, str(exc))
     except (OSError, ValueError) as exc:
         return _rejected("INPUT_INVALID", str(exc))
 

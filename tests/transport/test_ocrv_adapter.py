@@ -49,10 +49,15 @@ def candidate_envelope(tmp_path: Path) -> Envelope:
     return Envelope.from_dict(raw)
 
 
-def test_ocrv_candidate_review_records_run_cell_invocation_and_session(tmp_path: Path) -> None:
+def test_ocrv_candidate_review_records_run_cell_invocation_and_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     endpoint = checker_endpoint(tmp_path)
     envelope = candidate_envelope(tmp_path)
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "slk_parent_secret")
+    monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "slk_parent_secret")
 
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 

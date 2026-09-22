@@ -12,7 +12,7 @@ use crate::auth::{authorize_event, Credential, StateError};
 use crate::model::EventType;
 use crate::schema::open_database;
 use crate::write::{
-    advance_runtime_snapshot_if_423, current_token_from, valid_identifier, StateStore,
+    advance_runtime_snapshot_if_revisioned, current_token_from, valid_identifier, StateStore,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,7 +141,7 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
-            advance_runtime_snapshot_if_423(
+            advance_runtime_snapshot_if_revisioned(
                 transaction,
                 &request.run_id,
                 &request.evidence_id,

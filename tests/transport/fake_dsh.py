@@ -15,6 +15,8 @@ arguments = sys.argv[2:]
 instance_id = arguments[0]
 prompt = arguments[-1]
 runtime_root = Path(os.environ["DSH_RUNTIME_ROOT"])
+if "SLK_ROLE_CREDENTIAL" in os.environ or "SLK_OVERWATCHER_CREDENTIAL" in os.environ:
+    sys.exit(8)
 session_root = runtime_root / "runs" / instance_id / "home" / "storages" / "session_projcache" / "sessions"
 session_root.mkdir(parents=True, exist_ok=True)
 
@@ -27,6 +29,33 @@ else:
         (session_root / f"session-{uuid.uuid4()}.json").write_text("{}\n", encoding="utf-8")
 
 time.sleep(0.05)
+
+continuation_match = re.search(
+    r'<slk-worker-continuation-task path=(".*?") sha256=("[0-9a-f]{64}") />',
+    prompt,
+)
+if continuation_match:
+    request_path = Path(json.loads(continuation_match.group(1)))
+    request_sha256 = json.loads(continuation_match.group(2))
+    request_bytes = request_path.read_bytes()
+    if hashlib.sha256(request_bytes).hexdigest() != request_sha256:
+        sys.exit(9)
+    request = json.loads(request_bytes)
+    result_path = Path(request["continuation_result_path"])
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "CHECKER_STARTED",
+                "run_id": request["run_id"],
+                "source_message_id": request["source_message_id"],
+                "candidate_message_id": str(uuid.uuid5(uuid.NAMESPACE_URL, request_sha256)),
+            }
+        ),
+        encoding="utf-8",
+    )
+    print(json.dumps({"session_id": session_id, "continuation_result_path": str(result_path)}))
+    sys.exit(0)
 
 match = re.search(r'<slk-transport-task path=(".*?") sha256=("[0-9a-f]{64}") />', prompt)
 if not match:

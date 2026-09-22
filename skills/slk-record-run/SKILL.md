@@ -25,7 +25,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 ## 建议记录方式
 
-- 接收者在令牌激活本轮后的第一步用 `slk-bi-query` 先比较编号与身份，再比较 runtime revision；4.2.3 发送者只在不可变 task file 与匹配 `started.json` 都被验证后，用 `slk-state commit-delivery-start` 一次提交启动回执、当前有效令牌、最后真实流转和运行快照。同号或旧号不改指针，不预写尚未发生的流转，也不用终态结果反推启动。
+- 接收者在令牌激活本轮后的第一步用 `slk-bi-query` 先比较编号与身份，再比较 runtime revision；4.2.3+ revisioned contract 的发送者只在不可变 task file 与匹配 `started.json` 都被验证后，用 `slk-state commit-delivery-start` 一次提交启动回执、当前有效令牌、最后真实流转和运行快照。同号或旧号不改指针，不预写尚未发生的流转，也不用终态结果反推启动。
 - CELL 历史、错误、失败尝试、返工、豁免和重要决定采用追加记录；后来的通过结论保留前面的真实过程。
 - 命令和结果保留简洁摘要及可复查的原始证据路径或哈希，并区分实际执行、间接验证与推断；工具或环境故障与产品缺陷分别记录，保留实际处理和未证明部分。
 - 三个工程角色各写自己的事实，Overwatcher 只写自己的运行观察；Owner、其他 Agent 和 BI 只通过 `slk-bi-query` 读取。记录保持工程上足够完整，从当前节点与相关条目读取；原始日志按失败定位查阅，不复制整段令牌历史或大日志。

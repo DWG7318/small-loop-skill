@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-worker-completion-inspection.schema.json",
+  "title": "SLK Worker completion inspection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "go_id", "cell_id", "attempt", "source_message_id", "worker_role_instance_id", "observed_at", "cadence_seconds", "status", "grace_started_at", "anomaly_codes", "notification_already_sent", "missing_worker_events"],
+  "properties": {
+    "schema_version": {"const": "slk.worker-completion-inspection/v1"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "go_id": {"$ref": "#/$defs/identifier"},
+    "cell_id": {"$ref": "#/$defs/identifier"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "source_message_id": {"type": "string", "format": "uuid"},
+    "worker_role_instance_id": {"$ref": "#/$defs/identifier"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "cadence_seconds": {"type": "integer", "minimum": 1},
+    "status": {"enum": ["IN_PROGRESS", "COMPLETION_GRACE", "WORKER_COMPLETION_HANDOFF_MISSING", "HANDED_OFF_OR_D1"]},
+    "grace_started_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
+    "anomaly_codes": {"type": "array", "uniqueItems": true, "items": {"enum": ["WORKER_COMPLETION_HANDOFF_MISSING", "COMMUNICATION_RECOVERY_REQUIRED"]}},
+    "notification_already_sent": {"type": "boolean"},
+    "missing_worker_events": {"type": "array", "uniqueItems": true, "items": {"enum": ["WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"]}}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}
+  }
+}

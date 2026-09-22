@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.build_transport_zipapp import build_zipapp
 from scripts.run_transport_drill import run_drill
 
 from test_contracts import endpoint_value, envelope_value, payload_hash
+from test_worker_completion import completion_fixture, runtime_projection
 
 
 TESTS = Path(__file__).parent
@@ -147,6 +150,36 @@ def test_inspect_reports_existing_native_start_without_dispatch(tmp_path: Path) 
 
     assert inspected.returncode == 0
     assert json.loads(inspected.stdout)["status"] == "ALREADY_STARTED"
+
+
+def test_inspect_worker_completion_cli_returns_anomaly_without_mutating_source(tmp_path: Path) -> None:
+    attempt, endpoint, _checker = completion_fixture(tmp_path)
+    completed_at = datetime(2026, 9, 23, 0, 0, tzinfo=timezone.utc).timestamp()
+    os.utime(attempt / "completed.json", (completed_at, completed_at))
+    projection_path = write_json(
+        tmp_path / "projection.json",
+        runtime_projection(token_owner=str(endpoint["role_instance_id"])),
+    )
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+
+    inspected = run_cli(
+        artifact,
+        "inspect-worker-completion",
+        "--source-attempt",
+        str(attempt),
+        "--runtime-projection",
+        str(projection_path),
+        "--observed-at",
+        "2026-09-23T00:04:00Z",
+        "--cadence-seconds",
+        "240",
+    )
+
+    assert inspected.returncode == 3
+    output = json.loads(inspected.stdout)
+    assert output["status"] == "WORKER_COMPLETION_HANDOFF_MISSING"
+    assert output["notification_already_sent"] is False
+    assert not (attempt / "worker-continuation").exists()
 
 
 def test_retry_exact_uses_persisted_identity_and_stops_after_one_attempt(

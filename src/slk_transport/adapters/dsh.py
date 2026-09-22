@@ -213,6 +213,8 @@ class DshAdapter:
         session_root = self._session_root(endpoint)
         before = self._sessions(session_root)
         environment = os.environ.copy()
+        environment.pop("SLK_ROLE_CREDENTIAL", None)
+        environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
         environment["DSH_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
         task_path, task_sha256 = self.create_task_file(endpoint, envelope, attempt, drop_root)
         command = self.command(endpoint, self.task_instruction(task_path, task_sha256))

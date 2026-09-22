@@ -10,9 +10,9 @@ use slk_state_core::model::{
     CommitDeliveryStartRequest, DeliveryStartEvidence, EndpointIdentity, EventType,
     EvidenceReference, GoDefinition, InitRunRequest, MethodCompatibilityAssertions, NativeLiveness,
     NativeStartStatus, ObservationKind, ObservationMode, OperationalObservationRequest,
-    OverwatchCheckResult, OverwatchCycleChecklist, OverwatchCycleRequest, OverwatcherAssertion,
-    OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision, PreservedAssertion,
-    ProjectIdentity, RecordOverwatcherStatusRequest, RegisterRoleRequest,
+    OverwatchAnomalyCode, OverwatchCheckResult, OverwatchCycleChecklist, OverwatchCycleRequest,
+    OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
+    PreservedAssertion, ProjectIdentity, RecordOverwatcherStatusRequest, RegisterRoleRequest,
     ReplaceOverwatcherRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
@@ -437,6 +437,207 @@ fn adoption_422_to_423_marks_an_unproven_watcher_for_explicit_recovery() {
         Some("VIOLATION")
     );
     assert_eq!(after.overwatcher_incident_transitions.len(), 1);
+}
+
+#[test]
+fn adoption_423_to_424_preserves_a_proven_active_overwatcher() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut cycle = overwatch_cycle(1);
+    cycle.runtime_revision = fixture.runtime_revision();
+    cycle.latest_event_id = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap()
+        .latest_event_id;
+    cycle.evidence_refs = vec![fixture.evidence_ref("adoption-424-live.json", b"active")];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+
+    let result = fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_424_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+
+    assert_eq!(result.effective_version, "4.2.4");
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(after.summary.slk_version, "4.2.4");
+    assert_eq!(
+        after
+            .runtime_snapshot
+            .unwrap()
+            .overwatcher_status
+            .as_deref(),
+        Some("ACTIVE")
+    );
+}
+
+#[test]
+fn a_424_cycle_cannot_clear_a_terminal_worker_completion_without_handoff() {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut initial_cycle = overwatch_cycle(1);
+    initial_cycle.runtime_revision = fixture.runtime_revision();
+    initial_cycle.latest_event_id = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap()
+        .latest_event_id;
+    initial_cycle.evidence_refs = vec![fixture.evidence_ref("cycle-424-live.json", b"active")];
+    initial_cycle.native_active_session_evidence_ref = initial_cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, initial_cycle)
+        .unwrap();
+    fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_424_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+    fixture
+        .store
+        .commit_delivery_start(
+            &fixture.supervisor,
+            fixture.delivery_start_request("checker-424", "2026-09-23T00:00:02Z"),
+        )
+        .unwrap();
+    let mut to_worker = fixture.delivery_start_request("worker-424", "2026-09-23T00:00:03Z");
+    to_worker.expected_runtime_revision = fixture.runtime_revision();
+    to_worker.event_id = "transport-started-worker-424".into();
+    to_worker.transport_receipt_id = "start-receipt-worker-424".into();
+    to_worker.start_evidence.evidence_id = "start-evidence-worker-424".into();
+    to_worker.message_id = "message-worker-424".into();
+    to_worker.start_evidence.message_id = to_worker.message_id.clone();
+    to_worker.token_sequence = 3;
+    to_worker.from_role_instance_id = "checker-a".into();
+    to_worker.to_role_instance_id = "worker-a".into();
+    fixture
+        .store
+        .commit_delivery_start(&fixture.checker, to_worker)
+        .unwrap();
+
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    let inspection = serde_json::to_vec(&json!({
+        "schema_version":"slk.worker-completion-inspection/v1",
+        "status":"WORKER_COMPLETION_HANDOFF_MISSING",
+        "run_id":"run-a",
+        "go_id":"GO-001",
+        "cell_id":"CELL-001",
+        "source_message_id":"message-worker-424",
+        "worker_role_instance_id":"worker-a",
+        "anomaly_codes":[
+            "WORKER_COMPLETION_HANDOFF_MISSING",
+            "COMMUNICATION_RECOVERY_REQUIRED"
+        ],
+        "notification_already_sent":false
+    }))
+    .unwrap();
+    let inspection_ref = fixture.evidence_ref("worker-completion-inspection.json", &inspection);
+    let live_ref = fixture.evidence_ref("cycle-424-live-2.json", b"active");
+    let mut cycle = overwatch_cycle(2);
+    cycle.runtime_revision = snapshot.runtime_revision;
+    cycle.token_sequence = 3;
+    cycle.token_holder_role_instance_id = "worker-a".into();
+    cycle.latest_event_id = snapshot.latest_event_id;
+    cycle.latest_message_id = Some("message-worker-424".into());
+    cycle.evidence_refs = vec![live_ref, inspection_ref];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    cycle.started_at = "2026-09-23T00:04:01Z".into();
+    cycle.completed_at = "2026-09-23T00:04:02Z".into();
+    cycle.next_cycle_at = "2026-09-23T00:08:02Z".into();
+
+    assert!(matches!(
+        fixture
+            .store
+            .record_overwatch_cycle(&issued.credential, cycle.clone()),
+        Err(StateError::OverwatcherCycleInvalid(_))
+    ));
+    cycle.checklist.stall_and_duplicates = OverwatchCheckResult::Anomaly;
+    cycle.anomaly_codes = vec![
+        OverwatchAnomalyCode::WorkerCompletionHandoffMissing,
+        OverwatchAnomalyCode::CommunicationRecoveryRequired,
+    ];
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+
+    let repeated_inspection = serde_json::to_vec(&json!({
+        "schema_version":"slk.worker-completion-inspection/v1",
+        "status":"WORKER_COMPLETION_HANDOFF_MISSING",
+        "run_id":"run-a",
+        "go_id":"GO-001",
+        "cell_id":"CELL-001",
+        "source_message_id":"message-worker-424",
+        "worker_role_instance_id":"worker-a",
+        "anomaly_codes":[
+            "WORKER_COMPLETION_HANDOFF_MISSING",
+            "COMMUNICATION_RECOVERY_REQUIRED"
+        ],
+        "notification_already_sent":true
+    }))
+    .unwrap();
+    let repeated_ref = fixture.evidence_ref(
+        "worker-completion-inspection-repeat.json",
+        &repeated_inspection,
+    );
+    let repeated_live_ref = fixture.evidence_ref("cycle-424-live-3.json", b"active");
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    let mut repeated_cycle = overwatch_cycle(3);
+    repeated_cycle.runtime_revision = snapshot.runtime_revision;
+    repeated_cycle.token_sequence = 3;
+    repeated_cycle.token_holder_role_instance_id = "worker-a".into();
+    repeated_cycle.latest_event_id = snapshot.latest_event_id;
+    repeated_cycle.latest_message_id = Some("message-worker-424".into());
+    repeated_cycle.evidence_refs = vec![repeated_live_ref, repeated_ref];
+    repeated_cycle.native_active_session_evidence_ref =
+        repeated_cycle.evidence_refs[0].path.clone();
+    repeated_cycle.checklist.stall_and_duplicates = OverwatchCheckResult::Anomaly;
+    repeated_cycle.anomaly_codes = vec![
+        OverwatchAnomalyCode::WorkerCompletionHandoffMissing,
+        OverwatchAnomalyCode::CommunicationRecoveryRequired,
+    ];
+    repeated_cycle.started_at = "2026-09-23T00:08:03Z".into();
+    repeated_cycle.completed_at = "2026-09-23T00:08:04Z".into();
+    repeated_cycle.next_cycle_at = "2026-09-23T00:12:04Z".into();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, repeated_cycle)
+        .unwrap();
 }
 
 #[test]
@@ -1084,6 +1285,36 @@ fn adoption_423_request(
         reason: "adopt the revisioned 4.2.3 runtime contract without changing engineering history"
             .into(),
         occurred_at: "2026-09-22T00:06:01Z".into(),
+    }
+}
+
+fn adoption_424_request(
+    fixture: &Fixture,
+    overwatcher: OverwatcherAssertion,
+) -> AdoptMethodContractRequest {
+    AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-424".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.2.3".into(),
+        to_version: "4.2.4".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-424".into(),
+            message_id: "owner-message-424".into(),
+            content_sha256: "b".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-23T00:00:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher,
+        },
+        reason: "adopt the 4.2.4 Worker completion guard without changing history".into(),
+        occurred_at: "2026-09-23T00:00:01Z".into(),
     }
 }
 

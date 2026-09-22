@@ -57,10 +57,15 @@ def worker_envelope(run_id: str = "RUN-A") -> Envelope:
     )
 
 
-def test_dsh_first_turn_uses_run_scoped_instance_and_records_session(tmp_path: Path) -> None:
+def test_dsh_first_turn_uses_run_scoped_instance_and_records_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     endpoint = worker_endpoint(tmp_path)
     envelope = worker_envelope()
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "slk_parent_secret")
+    monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "slk_parent_secret")
 
     result = DshAdapter().deliver(endpoint, envelope, attempt)
 

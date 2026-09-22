@@ -40,4 +40,4 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 - 不要让 D0 结论或 Worker 判断引导初始 D1，也不要把对话隔离扩成每个 CELL 都新建验证环境；不要为检查器误报递归扩建证明材料，不要把工具故障直接判成产品失败，也不要以一般测试通过掩盖真实缺陷或把证据不足写成 PASS。
 - 不要把零 finding、零 comments、无报错或空证据列表当成 PASS，不要把 INCOMPLETE 当成第三种闭合结论，不要让 Supervisor 后补证据自动替代 Checker 的 D1，也不要把间接验证写成真实目标环境验证。
-- 不要把 INCOMPLETE 或工具故障伪装成 `D1_FAILURE_ESCALATION`，不要让 Supervisor 重做或覆盖 OCRV 的 D1；不要把 Worker 的 DELIVERED、Overwatcher 的观察/恢复成功或 BI 状态当成 D1 PASS，也不要用终态结果补造缺失的启动证据或在 4.2.3 分步推进 TOKEN。
+- 不要把 INCOMPLETE 或工具故障伪装成 `D1_FAILURE_ESCALATION`，不要让 Supervisor 重做或覆盖 OCRV 的 D1；不要把 Worker 的 DELIVERED、Overwatcher 的观察/恢复成功或 BI 状态当成 D1 PASS，也不要用终态结果补造缺失的启动证据或在 4.2.3+ revisioned contract 中分步推进 TOKEN。

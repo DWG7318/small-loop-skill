@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-worker-continuation.schema.json",
+  "title": "SLK bounded Worker completion continuation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method_version", "run_id", "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision", "source_message_id", "source_attempt_root", "continuation_result_path", "source_endpoint_sha256", "source_envelope_sha256", "worker_result_sha256", "worker_role_instance_id", "worker_instance_id", "worker_session_id", "checker_endpoint", "credential_path", "state_command", "transport_command", "token_sequence", "occurred_at"],
+  "properties": {
+    "schema_version": {"const": "slk.worker-continuation/v1"},
+    "method_version": {"const": "4.2.4"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "go_id": {"$ref": "#/$defs/identifier"},
+    "cell_id": {"$ref": "#/$defs/identifier"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "plan_revision": {"type": "integer", "minimum": 1},
+    "runtime_revision": {"type": "integer", "minimum": 1},
+    "source_message_id": {"type": "string", "format": "uuid"},
+    "source_attempt_root": {"type": "string", "minLength": 1},
+    "continuation_result_path": {"type": "string", "minLength": 1},
+    "source_endpoint_sha256": {"$ref": "#/$defs/sha256"},
+    "source_envelope_sha256": {"$ref": "#/$defs/sha256"},
+    "worker_result_sha256": {"$ref": "#/$defs/sha256"},
+    "worker_role_instance_id": {"$ref": "#/$defs/identifier"},
+    "worker_instance_id": {"type": "string", "minLength": 1},
+    "worker_session_id": {"type": "string", "pattern": "^session-"},
+    "checker_endpoint": {"type": "object"},
+    "credential_path": {"type": "string", "minLength": 1},
+    "state_command": {"$ref": "#/$defs/command"},
+    "transport_command": {"$ref": "#/$defs/command"},
+    "token_sequence": {"type": "integer", "minimum": 1},
+    "occurred_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  }
+}

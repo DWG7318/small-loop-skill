@@ -49,7 +49,7 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.2.3"}
+    assert result == {"status": "ok", "version": "4.2.4"}
 
 
 def init_request():
@@ -238,6 +238,49 @@ def test_writer_configures_initializes_and_applies_one_role_event(tmp_path):
         invoke(["write", "--request", event_path], role_environment).stdout
     )
     assert result["status"] == "recorded"
+
+
+def test_authenticate_role_is_read_only_exact_and_does_not_emit_the_secret(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke(["configure", "--data-root", tmp_path / "state"], environment)
+    initialized = json.loads(
+        invoke(
+            ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+            environment,
+        ).stdout
+    )
+    credential = initialized["supervisor_credential"]
+    role_environment = environment.copy()
+    role_environment["SLK_ROLE_CREDENTIAL"] = credential
+    authenticated = invoke(
+        [
+            "authenticate-role",
+            "--run-id",
+            "run-a",
+            "--role-instance-id",
+            "supervisor-a",
+        ],
+        role_environment,
+    )
+    value = json.loads(authenticated.stdout)
+    assert value["status"] == "authenticated"
+    assert value["role"] == "supervisor"
+    assert value["role_instance_id"] == "supervisor-a"
+    assert value["runtime_revision"] >= 1
+    assert credential not in authenticated.stdout
+
+    rejected = invoke(
+        [
+            "authenticate-role",
+            "--run-id",
+            "run-a",
+            "--role-instance-id",
+            "worker-a",
+        ],
+        role_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
 
 
 def test_writer_has_no_owner_or_anonymous_write_mode(tmp_path):

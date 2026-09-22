@@ -252,6 +252,8 @@ class OcrvAdapter:
         command = _string_array(endpoint.address["command"], "command")
         command.extend(["--request", str(request_path), "--output", str(result_path)])
         environment = os.environ.copy()
+        environment.pop("SLK_ROLE_CREDENTIAL", None)
+        environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
         environment["OCRV_SLK_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
         try:
             process = spawn(

@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.3"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.4"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -857,7 +857,7 @@ def test_optional_overwatcher_is_one_active_session_without_authority_or_relay()
     assert "必经 relay" in recover
 
 
-def test_423_runtime_consistency_is_explicit_without_per_cell_watcher_confirmation() -> None:
+def test_424_runtime_consistency_is_explicit_without_per_cell_watcher_confirmation() -> None:
     main = read_skill("small-loop-skill")
     watch = read_skill("slk-overwatch-run")
     recover = read_skill("slk-recover-communication")

@@ -488,7 +488,7 @@ impl StateStore {
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
-            if request.to_version == "4.2.3" {
+            if uses_revisioned_runtime_contract(&request.to_version) {
                 match (active_overwatcher.as_ref(), request.compatibility.overwatcher) {
                     (None, OverwatcherAssertion::Absent) => {}
                     (Some((binding_revision, continuity)), OverwatcherAssertion::PreservedActive) => {
@@ -517,7 +517,7 @@ impl StateStore {
                         let evidence: Vec<EvidenceReference> =
                             serde_json::from_str(&evidence_json).map_err(|_| {
                                 StateError::RunAdministrationInvalid(
-                                    "prior observation evidence is not a closed 4.2.3-compatible set"
+                                    "prior observation evidence is not a closed revisioned-runtime-compatible set"
                                         .into(),
                                 )
                             })?;
@@ -569,7 +569,7 @@ impl StateStore {
                     }
                     _ => {
                         return Err(StateError::RunAdministrationInvalid(
-                            "4.2.3 adoption requires an exact ABSENT, PRESERVED_ACTIVE, or CONTINUITY_RECOVERY_REQUIRED Overwatcher assertion"
+                            "revisioned runtime adoption requires an exact ABSENT, PRESERVED_ACTIVE, or CONTINUITY_RECOVERY_REQUIRED Overwatcher assertion"
                                 .into(),
                         ));
                     }
@@ -613,7 +613,7 @@ impl StateStore {
                     request.occurred_at,
                 ],
             )?;
-            if request.to_version == "4.2.3" {
+            if uses_revisioned_runtime_contract(&request.to_version) {
                 let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
                 advance_runtime_snapshot(
                     transaction,
@@ -675,7 +675,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -695,11 +695,11 @@ impl StateStore {
             } else {
                 request.canonical_task_id.clone()
             };
-            if run_contract.0 == "4.2.3"
+            if uses_revisioned_runtime_contract(&run_contract.0)
                 && (binding_revision != 1 || !valid_identifier(&canonical_task_id))
             {
                 return Err(StateError::OverwatcherBindingInvalid(
-                    "SLK 4.2.3 requires binding_revision=1 and one canonical task identity".into(),
+                    "revisioned SLK runtime requires binding_revision=1 and one canonical task identity".into(),
                 ));
             }
             let already_bound: Option<i64> = transaction
@@ -798,7 +798,7 @@ impl StateStore {
                     request.occurred_at,
                 ],
             )?;
-            if run_contract.0 == "4.2.3" {
+            if uses_revisioned_runtime_contract(&run_contract.0) {
                 let runtime_revision = advance_runtime_snapshot(
                     transaction,
                     &request.run_id,
@@ -884,7 +884,7 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
-            advance_runtime_snapshot_if_423(
+            advance_runtime_snapshot_if_revisioned(
                 transaction,
                 &request.run_id,
                 &request.event_id,
@@ -908,7 +908,7 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if method_version == "4.2.3" {
+            if uses_revisioned_runtime_contract(&method_version) {
                 return Err(StateError::LegacyHandoffForbidden);
             }
             let actor = authorize_event(
@@ -1051,9 +1051,9 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if method_version != "4.2.3" {
+            if !uses_revisioned_runtime_contract(&method_version) {
                 return Err(StateError::RunAdministrationInvalid(
-                    "commit-delivery-start requires effective SLK 4.2.3".into(),
+                    "commit-delivery-start requires a revisioned SLK runtime contract".into(),
                 ));
             }
             let actor = authorize_event(
@@ -1297,7 +1297,7 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
-            advance_runtime_snapshot_if_423(
+            advance_runtime_snapshot_if_revisioned(
                 transaction,
                 &request.run_id,
                 &request.event_id,
@@ -1415,7 +1415,7 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
-            advance_runtime_snapshot_if_423(
+            advance_runtime_snapshot_if_revisioned(
                 transaction,
                 &request.run_id,
                 &request.event_id,
@@ -1518,7 +1518,7 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
-            advance_runtime_snapshot_if_423(
+            advance_runtime_snapshot_if_revisioned(
                 transaction,
                 &request.run_id,
                 &request.event_id,
@@ -1536,6 +1536,68 @@ impl StateStore {
         self.with_immediate_transaction(|transaction| {
             let actor =
                 authorize_event(transaction, &request.run_id, credential, request.event_type)?;
+            let method_version: String = transaction.query_row(
+                "SELECT slk_version FROM runs WHERE run_id=?1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            if method_version == "4.2.4" {
+                type ExistingWorkEvent = (
+                    String,
+                    Option<String>,
+                    Option<String>,
+                    Option<u32>,
+                    u32,
+                    String,
+                    String,
+                    String,
+                    Option<String>,
+                    String,
+                );
+                let existing: Option<ExistingWorkEvent> = transaction
+                    .query_row(
+                        "SELECT run_id, go_id, cell_id, attempt, plan_revision,
+                                author_role_instance_id, event_type, details_json,
+                                corrects_event_id, occurred_at
+                         FROM work_events WHERE event_id=?1",
+                        [&request.event_id],
+                        |row| {
+                            Ok((
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                row.get(3)?,
+                                row.get(4)?,
+                                row.get(5)?,
+                                row.get(6)?,
+                                row.get(7)?,
+                                row.get(8)?,
+                                row.get(9)?,
+                            ))
+                        },
+                    )
+                    .optional()?;
+                if let Some(existing) = existing {
+                    let requested_details = serde_json::to_string(&request.details)?;
+                    return if existing
+                        == (
+                            request.run_id.clone(),
+                            request.go_id.clone(),
+                            request.cell_id.clone(),
+                            request.attempt,
+                            request.plan_revision,
+                            actor.role_instance_id.clone(),
+                            request.event_type.as_str().to_string(),
+                            requested_details,
+                            request.corrects_event_id.clone(),
+                            request.occurred_at.clone(),
+                        ) {
+                        Ok(())
+                    } else {
+                        Err(StateError::WorkEventConflict(request.event_id.clone()))
+                    };
+                }
+            }
             if matches!(
                 request.event_type,
                 EventType::CellDispatched | EventType::ReworkRequested
@@ -1656,12 +1718,7 @@ impl StateStore {
                     params![request.run_id, request.occurred_at],
                 )?;
             }
-            let method_version: String = transaction.query_row(
-                "SELECT slk_version FROM runs WHERE run_id=?1",
-                [&request.run_id],
-                |row| row.get(0),
-            )?;
-            if method_version == "4.2.3" {
+            if uses_revisioned_runtime_contract(&method_version) {
                 let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
                 advance_runtime_snapshot(
                     transaction,
@@ -1852,7 +1909,7 @@ impl StateStore {
                 |row| row.get(0),
             )?;
             let runtime_snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
-            if method_version == "4.2.3" {
+            if uses_revisioned_runtime_contract(&method_version) {
                 if request.binding_revision != binding_revision
                     || request.runtime_revision != runtime_snapshot.runtime_revision
                     || request.native_liveness != NativeLiveness::InProgress
@@ -1873,6 +1930,13 @@ impl StateStore {
                     return Err(StateError::OverwatcherCycleInvalid(
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
+                }
+                if method_version == "4.2.4" {
+                    validate_worker_completion_cycle(
+                        transaction,
+                        &request,
+                        &runtime_snapshot,
+                    )?;
                 }
             }
             let revision = current_plan_revision(transaction, &request.run_id)?;
@@ -1912,7 +1976,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            let expected_message = if method_version == "4.2.3" {
+            let expected_message = if uses_revisioned_runtime_contract(&method_version) {
                 runtime_snapshot.latest_message_id.clone()
             } else {
                 current_message_id
@@ -1927,7 +1991,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            let expected_event = if method_version == "4.2.3" {
+            let expected_event = if uses_revisioned_runtime_contract(&method_version) {
                 runtime_snapshot.latest_event_id.clone()
             } else {
                 latest_event_id
@@ -2054,7 +2118,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
-            if method_version == "4.2.3" {
+            if uses_revisioned_runtime_contract(&method_version) {
                 if closure_state == "open" {
                     return Err(StateError::OverwatcherObservationInvalid(
                         "a whole-Run Overwatcher cannot close at a CELL or GO boundary".into(),
@@ -2134,7 +2198,7 @@ impl StateStore {
                  WHERE run_id=?1 AND role_instance_id=?2",
                 params![request.run_id, overwatcher_role_instance_id],
             )?;
-            if method_version == "4.2.3" {
+            if uses_revisioned_runtime_contract(&method_version) {
                 let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
                 let runtime_revision = advance_runtime_snapshot(
                     transaction,
@@ -2226,9 +2290,9 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if method_version != "4.2.3" {
+            if !uses_revisioned_runtime_contract(&method_version) {
                 return Err(StateError::OverwatcherBindingInvalid(
-                    "revisioned replacement requires effective SLK 4.2.3".into(),
+                    "revisioned replacement requires an effective revisioned runtime contract".into(),
                 ));
             }
             let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
@@ -2707,6 +2771,114 @@ fn validate_evidence_reference(reference: &EvidenceReference) -> Result<(), Stat
     Ok(())
 }
 
+fn validate_worker_completion_cycle(
+    connection: &Connection,
+    request: &OverwatchCycleRequest,
+    runtime_snapshot: &RuntimeSnapshot,
+) -> Result<(), StateError> {
+    let token_role: Option<String> = connection
+        .query_row(
+            "SELECT role FROM role_instances WHERE run_id=?1 AND role_instance_id=?2",
+            params![request.run_id, request.token_holder_role_instance_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if token_role.as_deref() != Some("worker") {
+        return Ok(());
+    }
+    let mut inspections = Vec::new();
+    for reference in &request.evidence_refs {
+        let bytes = fs::read(&reference.path)?;
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            continue;
+        };
+        if value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_str)
+            == Some("slk.worker-completion-inspection/v1")
+        {
+            inspections.push(value);
+        }
+    }
+    if inspections.len() != 1 {
+        return Err(StateError::OverwatcherCycleInvalid(
+            "4.2.4 Worker-held TOKEN requires exactly one completion inspection per cycle".into(),
+        ));
+    }
+    let inspection = &inspections[0];
+    let status = inspection
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            StateError::OverwatcherCycleInvalid(
+                "Worker completion inspection status is missing".into(),
+            )
+        })?;
+    if inspection.get("run_id").and_then(serde_json::Value::as_str) != Some(request.run_id.as_str())
+        || inspection.get("go_id").and_then(serde_json::Value::as_str) != request.go_id.as_deref()
+        || inspection
+            .get("cell_id")
+            .and_then(serde_json::Value::as_str)
+            != request.cell_id.as_deref()
+        || inspection
+            .get("worker_role_instance_id")
+            .and_then(serde_json::Value::as_str)
+            != Some(request.token_holder_role_instance_id.as_str())
+        || inspection
+            .get("source_message_id")
+            .and_then(serde_json::Value::as_str)
+            != runtime_snapshot.latest_message_id.as_deref()
+        || runtime_snapshot.token_sequence != request.token_sequence
+    {
+        return Err(StateError::OverwatcherCycleInvalid(
+            "Worker completion inspection scope or TOKEN identity is stale".into(),
+        ));
+    }
+    let missing = status == "WORKER_COMPLETION_HANDOFF_MISSING";
+    let inspection_codes = inspection
+        .get("anomaly_codes")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            StateError::OverwatcherCycleInvalid(
+                "Worker completion inspection anomaly codes are missing".into(),
+            )
+        })?;
+    let inspection_has_exact_missing_codes = inspection_codes.len() == 2
+        && inspection_codes
+            .iter()
+            .any(|value| value.as_str() == Some("WORKER_COMPLETION_HANDOFF_MISSING"))
+        && inspection_codes
+            .iter()
+            .any(|value| value.as_str() == Some("COMMUNICATION_RECOVERY_REQUIRED"));
+    if inspection
+        .get("notification_already_sent")
+        .and_then(serde_json::Value::as_bool)
+        .is_none()
+        || (missing && !inspection_has_exact_missing_codes)
+        || (!missing && !inspection_codes.is_empty())
+    {
+        return Err(StateError::OverwatcherCycleInvalid(
+            "Worker completion inspection anomaly state is invalid".into(),
+        ));
+    }
+    let has_missing_code = request
+        .anomaly_codes
+        .contains(&crate::model::OverwatchAnomalyCode::WorkerCompletionHandoffMissing);
+    let has_recovery_code = request
+        .anomaly_codes
+        .contains(&crate::model::OverwatchAnomalyCode::CommunicationRecoveryRequired);
+    if missing
+        != (request.checklist.stall_and_duplicates == OverwatchCheckResult::Anomaly
+            && has_missing_code
+            && has_recovery_code)
+    {
+        return Err(StateError::OverwatcherCycleInvalid(
+            "Worker completion handoff anomaly cannot be cleared or fabricated".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_bound_overwatcher_active(
     connection: &Connection,
     run_id: &str,
@@ -2752,7 +2924,7 @@ fn validate_bound_overwatcher_active(
             "foreground active turn is not bound".into(),
         ));
     }
-    if method_version == "4.2.3" {
+    if uses_revisioned_runtime_contract(&method_version) {
         if continuity_state != "ACTIVE" {
             return Err(StateError::OverwatcherInactive(
                 "foreground turn continuity violation blocks new dispatch".into(),
@@ -3087,7 +3259,7 @@ fn advance_runtime_snapshot(
     Ok(revision)
 }
 
-pub(crate) fn advance_runtime_snapshot_if_423(
+pub(crate) fn advance_runtime_snapshot_if_revisioned(
     transaction: &Transaction<'_>,
     run_id: &str,
     latest_event_id: &str,
@@ -3098,7 +3270,7 @@ pub(crate) fn advance_runtime_snapshot_if_423(
         [run_id],
         |row| row.get(0),
     )?;
-    if method_version != "4.2.3" {
+    if !uses_revisioned_runtime_contract(&method_version) {
         return Ok(None);
     }
     let snapshot = runtime_snapshot_from(transaction, run_id)?;
@@ -3320,13 +3492,18 @@ fn validate_reconciliation_request(
     Ok(())
 }
 
+fn uses_revisioned_runtime_contract(version: &str) -> bool {
+    matches!(version, "4.2.3" | "4.2.4")
+}
+
 fn validate_method_adoption_request(
     request: &AdoptMethodContractRequest,
 ) -> Result<(), StateError> {
     let supported_transition =
         (matches!(request.from_version.as_str(), "4.1.1" | "4.2.0" | "4.2.1")
             && request.to_version == "4.2.2")
-            || (request.from_version == "4.2.2" && request.to_version == "4.2.3");
+            || (request.from_version == "4.2.2" && request.to_version == "4.2.3")
+            || (request.from_version == "4.2.3" && request.to_version == "4.2.4");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.run_423_sandbox_drill import run_sandbox_drill
+from scripts.run_424_sandbox_drill import run_sandbox_drill
 
 
 def state_binary() -> Path:
@@ -17,33 +17,37 @@ def state_binary() -> Path:
         suffix = ".exe" if os.name == "nt" else ""
         path = Path(__file__).parents[2] / "target" / "debug" / f"slk-state{suffix}"
     if not path.is_file():
-        pytest.skip("build slk-state or set SLK_STATE_BIN before the 4.2.3 sandbox drill")
+        pytest.skip("build slk-state or set SLK_STATE_BIN before the 4.2.4 sandbox drill")
     return path.resolve()
 
 
-def test_423_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: Path) -> None:
-    output = tmp_path / "slk-4.2.3-sandbox"
+def test_424_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: Path) -> None:
+    output = tmp_path / "slk-4.2.4-sandbox"
 
     report = run_sandbox_drill(output, state_binary())
 
     assert report["schema_version"] == "slk.sandbox-drill-report/v1"
-    assert report["method_version"] == "4.2.3"
+    assert report["method_version"] == "4.2.4"
     assert report["status"] == "PASS"
     assert report["proofs"] == {
         "active_writer_new_message_recovery": True,
         "atomic_delivery_start_revision": True,
         "direct_inactive_wake": True,
         "early_native_start_before_terminal": True,
+        "exact_worker_event_replay": True,
         "final_cycle_close": True,
         "late_cadence_not_false_inactive": True,
         "no_bom_route": True,
         "no_model_upgrade": True,
+        "overwatcher_worker_completion_guard": True,
         "one_overwatcher_binding": True,
         "one_overwatcher_foreground_turn": True,
+        "same_worker_session_continuation": True,
     }
     assert report["counts"]["overwatcher_bindings"] == 1
     assert report["counts"]["overwatch_cycles"] == 3
     assert report["counts"]["transport_start_receipts"] == 1
+    assert report["counts"]["worker_completion_guard_checks"] == 3
     assert report["counts"]["model_change_events"] == 0
     assert report["counts"]["bom_routes"] == 0
 

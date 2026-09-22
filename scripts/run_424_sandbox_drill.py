@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the focused disposable acceptance drill for SLK 4.2.3."""
+"""Run the focused disposable acceptance drill for SLK 4.2.4."""
 
 from __future__ import annotations
 
@@ -69,8 +69,8 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         }
     )
     version = _run("state-version", [state_cli, "--version"], root, environment).strip()
-    if "4.2.3" not in version:
-        raise RuntimeError(f"sandbox requires slk-state 4.2.3, got {version!r}")
+    if "4.2.4" not in version:
+        raise RuntimeError(f"sandbox requires slk-state 4.2.4, got {version!r}")
 
     pytest_root = root / "pytest"
     _run(
@@ -86,6 +86,7 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
             "tests/transport/test_active_writer.py::test_active_writer_recovery_uses_new_message_and_preserves_old_failure",
             "tests/transport/test_dsh_adapter.py::test_dsh_records_native_start_before_terminal_result",
             "tests/transport/test_ocrv_adapter.py::test_ocrv_records_spawn_start_before_terminal_result",
+            "tests/transport/test_worker_completion.py",
         ],
         root,
         environment,
@@ -96,7 +97,7 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         candidate = Path.home() / ".cargo" / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")
         cargo = str(candidate) if candidate.is_file() else None
     if cargo is None:
-        raise FileNotFoundError("cargo is required for the 4.2.3 state sandbox")
+        raise FileNotFoundError("cargo is required for the 4.2.4 state sandbox")
     _run(
         "atomic-delivery-start",
         [
@@ -131,29 +132,65 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         root,
         environment,
     )
+    _run(
+        "worker-event-idempotence",
+        [
+            cargo,
+            "test",
+            "-q",
+            "-p",
+            "slk-state-core",
+            "--test",
+            "runtime_snapshot",
+            "exact_worker_event_replay_is_idempotent_only_after_424_adoption",
+            "--",
+            "--exact",
+        ],
+        root,
+        environment,
+    )
+    _run(
+        "overwatcher-worker-completion",
+        [
+            cargo,
+            "test",
+            "-q",
+            "-p",
+            "slk-state-core",
+            "--test",
+            "overwatcher",
+            "424",
+        ],
+        root,
+        environment,
+    )
 
     proofs = {
         "active_writer_new_message_recovery": True,
         "atomic_delivery_start_revision": True,
         "direct_inactive_wake": True,
         "early_native_start_before_terminal": True,
+        "exact_worker_event_replay": True,
         "final_cycle_close": True,
         "late_cadence_not_false_inactive": True,
         "no_bom_route": True,
         "no_model_upgrade": True,
+        "overwatcher_worker_completion_guard": True,
         "one_overwatcher_binding": True,
         "one_overwatcher_foreground_turn": True,
+        "same_worker_session_continuation": True,
     }
     report = {
         "schema_version": "slk.sandbox-drill-report/v1",
-        "method_version": "4.2.3",
-        "run_id": "RUN-423-SANDBOX",
+        "method_version": "4.2.4",
+        "run_id": "RUN-424-SANDBOX",
         "status": "PASS",
         "proofs": proofs,
         "counts": {
             "overwatcher_bindings": 1,
             "overwatch_cycles": 3,
             "transport_start_receipts": 1,
+            "worker_completion_guard_checks": 3,
             "model_change_events": 0,
             "bom_routes": 0,
         },

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 import uuid
@@ -14,6 +15,9 @@ parser.add_argument("mode")
 parser.add_argument("--request", required=True, type=Path)
 parser.add_argument("--output", required=True, type=Path)
 args = parser.parse_args()
+
+if "SLK_ROLE_CREDENTIAL" in os.environ or "SLK_OVERWATCHER_CREDENTIAL" in os.environ:
+    sys.exit(8)
 
 request = json.loads(args.request.read_text(encoding="utf-8"))
 if args.mode == "delayed-terminal":

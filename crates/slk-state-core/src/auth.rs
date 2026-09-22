@@ -105,10 +105,12 @@ pub enum StateError {
     EndpointNotCurrent,
     #[error("SLK TOKEN route {from:?} -> {to:?} is not part of the SLK loop")]
     InvalidTokenRoute { from: Role, to: Role },
-    #[error("SLK 4.2.3 delivery start must use the atomic commit-delivery-start contract")]
+    #[error("revisioned SLK delivery start must use the atomic commit-delivery-start contract")]
     LegacyHandoffForbidden,
     #[error("transport start receipt conflicts with existing immutable content: {0}")]
     TransportStartConflict(String),
+    #[error("work event conflicts with existing immutable content: {0}")]
+    WorkEventConflict(String),
     #[error("Run was not found: {0}")]
     RunNotFound(String),
     #[error("an explicit Run ID is required")]

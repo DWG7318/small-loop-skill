@@ -25,7 +25,7 @@ description: Use when an active Small Loop Skill (SLK) Run has one Supervisor-se
 2. Supervisor、Checker、Worker、Overwatcher 的冻结身份、Session、端点与原生执行证据。
 3. 角色之间待交付消息及 sent/delivered/received/started 证据。
 4. CELL 的派工、执行、D0、D1、返工与关闭状态；DELIVERED 不能冒充 D1_ACCEPTED。
-5. 无合法理由的停顿、重复派工/验收/返工、旧消息重做、端点漂移或重复 Run。
+5. 无合法理由的停顿、重复派工/验收/返工、旧消息重做、端点漂移或重复 Run；Worker 持有 TOKEN 时每轮附一份 `inspect-worker-completion` 哈希证据，真实运行或首个 grace 周期不误报，但终态完成后一整个 cadence 仍无当前 CELL/attempt 的 D0、候选与 Checker start 时固定报 `WORKER_COMPLETION_HANDOFF_MISSING` + `COMMUNICATION_RECOVERY_REQUIRED`；同一消息已通知只抑制重复唤醒，未修复前每轮仍是异常。
 6. BI 只读投影与权威状态是否一致；不一致时只请求事实或投影刷新。
 7. 自身 Session、前台 active turn、间隔与周期不重叠证明。
 8. Run 是否正式终结，以及停止观察和归档义务。
@@ -43,4 +43,4 @@ description: Use when an active Small Loop Skill (SLK) Run has one Supervisor-se
 - 不要用旧 running、旧 TOKEN、可见任务、自由文本、heartbeat 或定时唤醒冒充当前活动证据。
 - 不要用提示词中的版本声明替代方法采用回执，也不要在未采用支持版本的历史 Run 上先绑定再补记录。
 - 不要成为第四个工程角色、Router、消息总线或必经 relay；不要写 D0/D1/D2、计划、验收、角色替换、Owner 决定、TOKEN 或 BI；不要阻止原三角色直接通讯，也不要因 Run 从未绑定 Overwatcher 而停止工作。
-- 不要每个 CELL 重新绑定或确认 Overwatcher，不要把 `LATE` 当成 `INACTIVE`，不要接受未校验路径、哈希漂移或混合 revision 的 cycle，也不要把正常非终态暂停、release 或 close 当作节省资源的合法路径。
+- 不要每个 CELL 重新绑定或确认 Overwatcher，不要把 `LATE` 当成 `INACTIVE`，不要用旧 CELL 的 D1、终态文字或其他 scope 掩盖当前 Worker 交接缺失，不要接受未校验路径、哈希漂移或混合 revision 的 cycle，也不要把正常非终态暂停、release 或 close 当作节省资源的合法路径。

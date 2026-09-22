@@ -96,6 +96,7 @@ fn run() -> Result<Value, CliError> {
         "replace-role" => replace_role(&arguments[1..]),
         "rebind-session" => rebind_session(&arguments[1..]),
         "register-evidence" => register_evidence(&arguments[1..]),
+        "authenticate-role" => authenticate_role(&arguments[1..]),
         "export" => export(&arguments[1..]),
         "verify-evidence" => verify_evidence(&arguments[1..]),
         _ => Err(CliError::usage(format!(
@@ -396,6 +397,32 @@ fn export(arguments: &[String]) -> Result<Value, CliError> {
     Ok(json!({"status":"exported","run_id":run_id,"path":path}))
 }
 
+fn authenticate_role(arguments: &[String]) -> Result<Value, CliError> {
+    let run_id = required_value(arguments, "--run-id")?;
+    let expected_role_instance_id = required_value(arguments, "--role-instance-id")?;
+    let store = configured_store()?;
+    let actor = store
+        .authenticate_active_role(&run_id, &role_credential()?)
+        .map_err(CliError::command)?;
+    if actor.role_instance_id != expected_role_instance_id {
+        return Err(CliError::command(
+            "credential does not match the requested active role instance",
+        ));
+    }
+    let snapshot = store
+        .query_run(&run_id)
+        .map_err(CliError::command)?
+        .runtime_snapshot
+        .ok_or_else(|| CliError::command("runtime snapshot is unavailable"))?;
+    Ok(json!({
+        "status":"authenticated",
+        "run_id":run_id,
+        "role_instance_id":actor.role_instance_id,
+        "role":actor.role.as_str(),
+        "runtime_revision":snapshot.runtime_revision
+    }))
+}
+
 fn verify_evidence(arguments: &[String]) -> Result<Value, CliError> {
     let run_id = required_value(arguments, "--run-id")?;
     let store = configured_store()?;
@@ -475,5 +502,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|replace-overwatcher|wait-for-change|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
+    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|replace-overwatcher|wait-for-change|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|authenticate-role|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

@@ -5,9 +5,9 @@ use sha2::{Digest, Sha256};
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
-    CellDefinition, CommitDeliveryStartRequest, DeliveryStartEvidence, EndpointIdentity,
+    CellDefinition, CommitDeliveryStartRequest, DeliveryStartEvidence, EndpointIdentity, EventType,
     GoDefinition, InitRunRequest, NativeStartStatus, ProjectIdentity, RegisterRoleRequest, Role,
-    RoleIdentity, TokenHandoffRequest,
+    RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -109,6 +109,80 @@ fn stale_revision_and_direct_423_handoff_fail_closed() {
     ));
 }
 
+#[test]
+fn exact_worker_event_replay_is_idempotent_only_after_424_adoption() {
+    let fixture = Fixture::new_423();
+    let connection = slk_state_core::schema::open_database(fixture.root.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE runs SET slk_version='4.2.4' WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO token_events
+             (event_id, run_id, token_sequence, from_role_instance_id,
+              to_role_instance_id, go_id, cell_id, message_id, endpoint_version,
+              event_type, payload_type, payload_sha256, payload_location, occurred_at)
+             VALUES ('token-worker-2','run-a',2,'supervisor-a','worker-a','GO-001',
+                     'CELL-001','message-worker-2',1,'TOKEN_HANDED_OFF',
+                     'CELL_ASSIGNMENT',?1,NULL,'2026-09-22T00:00:02Z')",
+            ["a".repeat(64)],
+        )
+        .unwrap();
+    let request = WriteRequest {
+        event_id: "worker-started-424".into(),
+        run_id: "run-a".into(),
+        go_id: Some("GO-001".into()),
+        cell_id: Some("CELL-001".into()),
+        attempt: Some(1),
+        plan_revision: 1,
+        role_instance_id: "worker-a".into(),
+        event_type: EventType::WorkStarted,
+        details: json!({"source_message_id":"message-worker-2"}),
+        corrects_event_id: None,
+        occurred_at: "2026-09-22T00:00:03Z".into(),
+    };
+
+    fixture
+        .store
+        .write_event(&fixture.worker, request.clone())
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO token_events
+             (event_id, run_id, token_sequence, from_role_instance_id,
+              to_role_instance_id, go_id, cell_id, message_id, endpoint_version,
+              event_type, payload_type, payload_sha256, payload_location, occurred_at)
+             VALUES ('token-checker-3','run-a',3,'worker-a','checker-a','GO-001',
+                     'CELL-001','message-checker-3',1,'TOKEN_HANDED_OFF',
+                     'CANDIDATE_READY',?1,NULL,'2026-09-22T00:00:04Z')",
+            ["b".repeat(64)],
+        )
+        .unwrap();
+    fixture
+        .store
+        .write_event(&fixture.worker, request.clone())
+        .unwrap();
+    let mut conflict = request;
+    conflict.details = json!({"source_message_id":"different-message"});
+    assert!(matches!(
+        fixture.store.write_event(&fixture.worker, conflict),
+        Err(StateError::WorkEventConflict(_))
+    ));
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(
+        projection
+            .events
+            .iter()
+            .filter(|event| event.event_id == "worker-started-424")
+            .count(),
+        1
+    );
+}
+
 fn start_request(
     path: &std::path::Path,
     expected_runtime_revision: u64,
@@ -147,6 +221,7 @@ struct Fixture {
     root: tempfile::TempDir,
     store: StateStore,
     supervisor: slk_state_core::auth::Credential,
+    worker: slk_state_core::auth::Credential,
 }
 
 impl Fixture {
@@ -160,7 +235,7 @@ impl Fixture {
                 register_role("register-checker", "checker-a", Role::Checker),
             )
             .unwrap();
-        store
+        let worker = store
             .register_role(
                 &checker.credential,
                 register_role("register-worker", "worker-a", Role::Worker),
@@ -177,6 +252,7 @@ impl Fixture {
             root,
             store,
             supervisor: initialized.supervisor_credential,
+            worker: worker.credential,
         }
     }
 

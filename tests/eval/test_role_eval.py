@@ -33,7 +33,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.2.3"
+    assert pack["method_version"] == "4.2.4"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -154,6 +154,16 @@ def test_pack_covers_423_runtime_consistency_failures() -> None:
         "OVW-HASHED-EVIDENCE",
         "OVW-NO-CELL-BOUNDARY-CLOSE",
         "OVW-ONE-RUNTIME-REVISION",
+    } <= case_ids
+
+
+def test_pack_covers_424_worker_completion_guard_failures() -> None:
+    pack = load_pack(PACK)
+    case_ids = {case["case_id"] for case in pack["cases"]}
+    assert {
+        "CHK-RESUME-SAME-WORKER",
+        "WRK-TERMINAL-IS-NOT-HANDOFF",
+        "OVW-WORKER-COMPLETION-GUARD",
     } <= case_ids
 
 

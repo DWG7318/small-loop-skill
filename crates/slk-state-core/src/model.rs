@@ -43,6 +43,7 @@ pub enum ObservationKind {
     RecoveryEscalated,
     ProjectionRefreshRequested,
     OverwatcherClosed,
+    WorkerCompletionHandoffMissing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +83,7 @@ pub enum OverwatchAnomalyCode {
     OverwatcherActiveDegraded,
     OverwatcherInactive,
     TerminalCloseRequired,
+    WorkerCompletionHandoffMissing,
 }
 
 impl OverwatchCheckResult {
@@ -105,6 +107,7 @@ impl ObservationKind {
             RecoveryEscalated => "RECOVERY_ESCALATED",
             ProjectionRefreshRequested => "PROJECTION_REFRESH_REQUESTED",
             OverwatcherClosed => "OVERWATCHER_CLOSED",
+            WorkerCompletionHandoffMissing => "WORKER_COMPLETION_HANDOFF_MISSING",
         }
     }
 }
