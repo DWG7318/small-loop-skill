@@ -1,6 +1,6 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.2.2` carries one closed SLK handoff into one exact native Agent endpoint and can inspect or replay that exact identity once. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, TOKEN ownership beyond a proven handoff, or BI state.
+`slk-transport 4.2.3` carries one closed SLK delivery into one exact native Agent endpoint, writes native start evidence before any terminal result, and can recover only the explicitly allowed identity. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, TOKEN ownership, model selection, BoM routing, or BI state.
 
 ## Role edges
 
@@ -31,15 +31,17 @@ schema_version, message_id, run_id, adapter, status,
 native_identity, error_code, evidence
 ```
 
+DSH receives one canonical `slk.transport-task/v1` file containing the exact endpoint, envelope, result contract and absolute result path. The file is created once and named by an independently supplied SHA-256; mutation, extra fields, an unreadable path or hash drift fails closed. OCRV receives one equivalently bounded request file with a fresh `review_invocation_id`. Both adapters write `started.json` immediately after native process creation and before reading any terminal result. The public JSON contracts are in [`../contracts`](../contracts).
+
 `message_id` is a canonical UUID. The payload hash is SHA-256 over canonical JSON. Run, receiving role, role instance, and endpoint version have to match before dispatch.
 
 `D1_FAILURE_ESCALATION` is a closed Checker→Supervisor payload binding the failure event, candidate hash, round, CELL goal, acceptance criteria, findings, reproduction, expected result, and evidence. `D1_REWORK_DIRECTIVE` is a closed Supervisor→same-Worker payload binding those failure facts plus one root-cause hypothesis, one minimal experiment, the minimal repair scope, and regression target. Missing, extra, empty, mismatched, or out-of-order fields fail closed; D1 INCOMPLETE cannot use either payload.
 
 ## Exact adapter addresses
 
-- Codex Supervisor: `command`, exact `thread_id`, absolute `cwd`, `startup_timeout_seconds`, `turn_timeout_seconds`. The adapter resumes that thread ID only when it is idle, starts one native turn, and records the exact thread and turn IDs; an active writer is a delivery failure, not activation evidence.
-- DSH Worker: `command`, Run-scoped `instance_id`, recorded `session_id` or `null` for the first activation, `runtime_root`, absolute `cwd`, `timeout_seconds`. The Worker returns one closed `slk.worker-result/v1`; a successful process exit alone is not completion.
-- OCRV Checker: `command`, `runtime_root`, `timeout_seconds`. `CELL_DISPATCH` creates the exact Worker handoff; `CANDIDATE_READY` produces a closed D1 result with Run, CELL, review invocation, provider, model, session, verdict, and exit identity.
+- Codex Supervisor: `command`, exact `thread_id`, absolute `cwd`, `startup_timeout_seconds`, `turn_timeout_seconds`. An idle target starts one native turn and records exact thread/turn IDs. An active writer is not activation evidence; it is a typed state in which only current `D1_FAILURE_ESCALATION` recovery may create a new message bound to the exact active turn, while the old envelope is never replayed as a new message.
+- DSH Worker: `command`, Run-scoped deterministic `instance_id` (maximum 64 characters), recorded `session_id` or `null`, `runtime_root`, absolute `cwd`, `timeout_seconds`, and expected Git repository/worktree identity. A bounded preflight rejects wrong root/common-dir, missing writable boundary or identity drift before work starts. The Worker returns one closed `slk.worker-result/v1`; process exit alone is neither start nor completion evidence.
+- OCRV Checker: `command`, `runtime_root`, `timeout_seconds`. `CELL_DISPATCH` creates the exact Worker delivery; `CANDIDATE_READY` produces a closed D1 result with Run, CELL, fresh review invocation, provider, model, session, verdict, and exit identity.
 
 Addresses are selected by identity, never by conversation title. Secrets stay in the native runtime configuration and do not belong in endpoint, envelope, result, or evidence files.
 
@@ -50,10 +52,11 @@ python path\to\slk-transport.pyz validate --endpoint ENDPOINT.json --envelope EN
 python path\to\slk-transport.pyz send --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 python path\to\slk-transport.pyz inspect --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 python path\to\slk-transport.pyz retry-exact --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+python path\to\slk-transport.pyz recover-active-writer --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 python path\to\slk-transport.pyz drill-verify --evidence-root EVIDENCE_ROOT
 ```
 
-`validate` checks closed identities without delivery. `send` starts one short-lived native delivery job and returns after it observes `started.json`, a terminal result, or a bounded startup failure. `inspect` reports the immutable attempt without creating work. `retry-exact` stops when start already exists, otherwise creates at most one deterministic recovery attempt only when endpoint, envelope, message, payload, and scope still match; changed or exhausted recovery returns `SUPERVISOR_DECISION_REQUIRED`. `job` is the internal foreground form used by `send`.
+`validate` checks closed identities without delivery. `send` starts one short-lived native delivery job and returns only on independently observed `started.json`, terminal failure after start, or bounded startup failure. `inspect` reports immutable evidence without creating work. `retry-exact` is limited to an inactive target and the same identity once. `recover-active-writer` is limited to a current Checker→Supervisor `D1_FAILURE_ESCALATION`; it reads the exact active turn, creates a new logical message, uses native steer with `expectedTurnId`, and persists an immutable recovery/start receipt. Changed, unsupported or exhausted recovery returns `SUPERVISOR_DECISION_REQUIRED`. `job` is the internal foreground form used by `send`.
 
 Exit codes are:
 
@@ -70,17 +73,17 @@ Each attempt is immutable under:
 <attempt-root>/<run_id>/<message_id>/
 ```
 
-The common files are `endpoint.json`, `envelope.json`, `accepted.json`, `started.json`, `completed.json` or `failed.json`, plus adapter-native stdout, stderr, request, result, and identity evidence when applicable. Job launcher logs are under `<attempt-root>/.jobs/`.
+The common files are `endpoint.json`, `envelope.json`, `accepted.json`, immutable task/request evidence with hashes, independently written `started.json`, `completed.json` or `failed.json`, plus adapter-native stdout, stderr, result and identity evidence when applicable. Active-writer recovery additionally records the source message, exact turn, new message and native receipt. Job launcher logs are under `<attempt-root>/.jobs/`.
 
-`accepted.json` or a database record does not prove delivery. A matching `started.json` proves that the exact native target actually began this message, not merely that a launcher existed or exited. Until that proof exists, the sender retains the same TOKEN and responsibility. After proof, the sender ends its activity instead of watching the receiver.
+`accepted.json`, a database row, successful launcher exit, terminal result, or visible conversation does not prove delivery. A matching early `started.json` proves that the exact native target began this message. The sender retains TOKEN until `slk-state commit-delivery-start` verifies that evidence and atomically advances TOKEN, event and runtime snapshot; a 4.2.3 Run rejects the legacy split handoff. After commit, the sender ends its activity instead of watching the receiver.
 
 ## Retry and session rebound
 
-An exact retry reuses the same endpoint, envelope, `message_id`, endpoint version, TOKEN number, Run/CELL/attempt scope, and payload. Recovery evidence has one deterministic `recovery/exact-1` identity. Existing start proof stops recovery; changed content or identity and any second retry are rejected rather than becoming a new message.
+An inactive-target exact retry reuses the same endpoint, envelope, `message_id`, endpoint version, TOKEN number, Run/CELL/attempt scope, and payload. Recovery evidence has one deterministic `recovery/exact-1` identity. Existing start proof stops recovery; changed content/identity or any second retry is rejected. The active-Supervisor exception does the opposite deliberately: it never replays the old envelope, and accepts only the new message bound to the exact active turn.
 
 When a native task or session is replaced, register a higher endpoint version, mark the old endpoint `retired`, and create the next handoff for the new endpoint identity. A retired endpoint rejects delivery. Session rebound is an identity change, not an excuse to guess by title or reuse an unverified session.
 
-If an adapter explicitly fails, reports an active writer, or lacks start evidence, the sender keeps the TOKEN and follows the existing SLK communication-recovery route; it does not claim the receiver or D2 started. Recovery does not create a receipt-only turn and does not move D0, D1, D2, exemption, or planning authority into the transport.
+If an adapter explicitly fails or lacks start evidence, the sender keeps TOKEN and follows the existing SLK communication-recovery route; it does not claim the receiver or D2 started. An active writer follows only the narrow rule above. Recovery does not create a receipt-only turn, auto-upgrade a model, activate BoM, or move D0/D1/D2, exemption or planning authority into transport.
 
 On Windows, Codex App Server, DSH, OCRV, detached transport jobs, and drill helper processes use the shared hidden-start flags by default. No helper may flash a PowerShell/console window; a visible interactive window is an explicit Owner choice, not a recovery fallback.
 

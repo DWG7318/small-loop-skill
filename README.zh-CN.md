@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**4.2.2**
+当前版本：**4.2.3**
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。一个 SLK 就是一个 Run，Run 直接包含一条线性 CELL 路径。
 
@@ -29,11 +29,11 @@ SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢�
 
 RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Codex 全域只安装一次，但安装不等于获得项目使用授权；每个 Run 仍由 Owner 决定是否启用。SLK 只显式调用，不启用自动 hook、MCP 或额外 Agent；原生命令与原始证据始终可以回退并作为事实依据。
 
-跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。数据库行、后台消息或按对话标题匹配都不等于投递；只有精确原生启动证据成立后，当前发送者才完成交接，否则继续持有责任。缺少启动证据时先检查；只有 message、端点、payload 与 scope 完全不变才可原样重试一次，其他变化都交回 Supervisor。操作说明见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
+跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。DSH/OCRV 只接收一个不可变、哈希绑定的 task file，并在任何终态结果之前写出 `started.json`；数据库行、后台消息、成功退出或按对话标题匹配都不等于投递。4.2.3 由 `commit-delivery-start` 在一个事务中提交启动回执、TOKEN、事件和同一 `runtime_revision`，拒绝旧式分步 handoff。缺少启动证据时先检查：空闲目标只允许同一消息原样恢复一次；准确识别到活跃 Supervisor writer 时，必须创建绑定该 turn 的新 steer message，不把旧信封作为新消息重放。其他变化都交回 Supervisor。操作说明见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
 
 ## 4.0 状态与 LE BI
 
-SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.2.2 中 Supervisor、Checker、Worker 仍只写各自工程事实；可选 Overwatcher 使用独立凭证，只能追加完整巡查周期和封闭运行观察。两个受限 Supervisor 管理操作可以凭 Owner 明确证据、显式 Run ID 与精确快照收敛历史 Run 身份并采用 4.2.2 合同，不改变工程历史或 TOKEN。数据库校验这些事实，但不调度观察者，也不增加第四个工程角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，LE BI 显示同一组投影，不暴露凭据或写入入口。公开方法仍是 `Run → CELL`。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
+SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.2.3 中 Supervisor、Checker、Worker 仍只写各自工程事实；可选 Overwatcher 使用独立凭证，在整个 Run 只绑定一次，只能追加绑定单一 revision 的 cycle、原生存活回执、连续性事件和封闭运行观察。cadence health 与 native liveness 分开：`LATE` 不等于 `INACTIVE`。Overwatcher 不是每个 CELL 重新确认；正常关闭必须已经终结 Run 并引用最后一轮，异常更换必须由 Supervisor 以证据显式执行。`4.2.2 → 4.2.3` 采用回执保留工程历史与 TOKEN。数据库校验这些事实，但不调度观察者，也不增加第四个工程角色。`slk-bi-query` 为其他 Agent 提供稳定只读 JSON，LE BI 显示同一组投影，不暴露凭据或写入入口。公开方法仍是 `Run → CELL`。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
 
 LE BI 按显式 Run 身份显示精简横条，不论其为独立 SLK，还是属于某个 CLK/GLK 项目。显式 predecessor lineage 区分当前、历史、重复活动与孤立身份，不再按标题或时间猜测合并。展开后显示该 SLK 的角色、模型、CELL 事实和运行观察。BI 不确认消息是否真正投递，不恢复通讯，也不修改 Run；被接受的观察可以保守显示“活动未证明”，但不能改变工程进度。
 

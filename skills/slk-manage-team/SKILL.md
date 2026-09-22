@@ -25,7 +25,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 5. 完成 Checker ↔ Worker 的双向通讯测试；
 6. 验证 `Supervisor → Worker` 默认拒绝，仅绑定当前正式 D1 FAIL 的 `D1_REWORK_DIRECTIVE` 可达。
 
-每个角色绑定前先通过 `SLK-ROLE-EVAL.v1` 中本角色的 8 个 runtime-critical 场景。若启用 Overwatcher，Supervisor 与 Owner 先确认精确 Session、180–300 秒间隔及其前台持续能力，再由 Supervisor 用 `slk-state bind-overwatcher` 绑定独立凭证、端点、`FOREGROUND_ACTIVE_TURN` 和原生活动证据：每 Run 最多一个、同一 Session 不跨 Run 复用，可以是 Codex 或其他可持续工作的 Agent；它不是 heartbeat、定时任务、第四个工程角色，也不改变上述三角色直连。未启用 Overwatcher 时 Run 正常开工。
+每个角色绑定前先通过 `SLK-ROLE-EVAL.v1` 中本角色的 8 个 runtime-critical 场景。若启用 Overwatcher，Supervisor 与 Owner 先确认精确 Session、180–300 秒间隔及其前台持续能力，再由 Supervisor 用 `slk-state bind-overwatcher` 绑定独立凭证、端点、`FOREGROUND_ACTIVE_TURN` 和原生活动证据：一个 Run 只绑定一次同一 Session/active turn，CELL 只改变 cycle scope；同一 Session 不跨 Run 复用，可以是 Codex 或其他可持续工作的 Agent。它不是 heartbeat、定时任务、第四个工程角色，也不改变上述三角色直连；未启用时 Run 正常开工。
 
 相邻通道服务于正常工作；Supervisor 可协助恢复 Checker 通讯，但不绕过 Checker 直接派工。成员建立以运行时返回的真实身份、准确任务 ID 或会话 ID、精确角色端点和真实回复为依据；端点记录 Run、角色实例、原生地址与版本，成员或会话更换时登记新版并退役旧版。Worker 不重复完整方法问答；Checker 创建 Worker 时只交付其施工、最低 D0、记录和回传所需规则。
 
@@ -47,7 +47,7 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, reco
 
 ## 收尾归档
 
-D2 通过且最终记录完整后，按准确身份归档 Worker、Checker 与本 Run 的 Overwatcher；Overwatcher 先记录关闭和归档证据，再归档自身 Session，绝不转给下一 Run。Supervisor 继续保留，方便 Owner 后续查询。
+D2 通过、Run 已进入终态且最终记录完整后，按准确身份归档 Worker、Checker 与本 Run 的 Overwatcher；Overwatcher 先用最后 cycle ID 和同一 runtime revision 执行 `close-overwatcher`，再归档自身 Session，不在普通 CELL 边界关闭或转给下一 Run。计划更换与连续性恢复都由 Supervisor 以显式证据执行非重叠 replacement，并保留旧绑定历史。
 
 ## 完成后
 

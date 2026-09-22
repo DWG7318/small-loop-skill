@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-runtime-snapshot.schema.json",
+  "title": "SLK runtime snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "runtime_revision", "plan_revision", "token_sequence", "token_holder_role_instance_id", "latest_event_id", "latest_message_id", "method_version", "overwatcher_binding_revision", "overwatcher_status", "committed_at"],
+  "properties": {
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "runtime_revision": {"type": "integer", "minimum": 1},
+    "plan_revision": {"type": "integer", "minimum": 1},
+    "token_sequence": {"type": "integer", "minimum": 1},
+    "token_holder_role_instance_id": {"$ref": "#/$defs/identifier"},
+    "latest_event_id": {"$ref": "#/$defs/identifier"},
+    "latest_message_id": {"oneOf": [{"type": "string", "format": "uuid"}, {"type": "null"}]},
+    "method_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "overwatcher_binding_revision": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
+    "overwatcher_status": {"type": ["string", "null"]},
+    "committed_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}
+  }
+}

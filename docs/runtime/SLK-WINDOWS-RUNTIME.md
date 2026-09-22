@@ -1,25 +1,25 @@
-# SLK 4.2.2 Windows 运行环境配置指引
+# SLK 4.2.3 Windows 运行环境配置指引
 
-本指引用于在一台新 Windows 电脑上建立可运行 SLK 4.2.2 的机器环境。它不改变 SLK 方法，也不替代项目内的 15 个 Skill。
+本指引用于在一台新 Windows 电脑上建立可运行 SLK 4.2.3 的机器环境。它不改变 SLK 方法，也不替代项目内的 15 个 Skill。
 
 ## 先分清三个层级
 
 1. **电脑级环境，只配置一次**：DSH、OCRV、`slk-transport`、`slk-state`、`slk-bi-query`，以及它们的凭据和数据目录。多个项目复用这一层。
-2. **项目级部署**：把 SLK 4.2.2 的 15 个 Skill 放入该项目使用的 Skill 根目录。SLK 不因此变成电脑全域工程方法。
+2. **项目级部署**：把 SLK 4.2.3 的 15 个 Skill 放入该项目使用的 Skill 根目录。SLK 不因此变成电脑全域工程方法。
 3. **Run 级绑定**：每个 Run 重新登记 Supervisor、OCRV Checker、DSH Worker 的精确身份、会话和端点，并完成通讯测试；需要旁路保障时再绑定一个专属 Overwatcher Session。
 
 仅完成第 2 层不能启动跨 Agent SLK。
 
 ## 已验收基线
 
-SLK 4.2.2 验收时使用：
+SLK 4.2.3 验收时使用：
 
 - Windows、PowerShell 7、Git、Python 3.10 或更高版本、Node.js/npm 与 Rust/Cargo；
 - `@deepseek-ai/dsh@0.1.5-rc.2`；
 - `@alibaba-group/open-code-review@1.12.7`；
 - DSH：`deepseek-official / deepseek-flash`；
 - OCRV：`dashscope-tokenplan / qwen3.8-max / medium`；
-- SLK 4.2.2 源码，用于构建无第三方依赖的 `slk-transport.pyz` 和状态 CLI。
+- SLK 4.2.3 源码，用于构建无第三方依赖的 `slk-transport.pyz`、状态/查询/Cargo CLI 和只读 BI。
 
 升级这些版本应重新验证，不把“能够启动”直接当作与上述基线兼容。
 
@@ -149,16 +149,17 @@ OCRV、PowerShell、Codex App Server、DSH 和传输辅助进程默认使用统�
 
 ## 4. 构建 SLK 传输和状态工具
 
-从受信的 SLK 4.2.2 源码构建机器级工具：
+从受信的 SLK 4.2.3 源码构建机器级工具；正式升级使用 `build_local_package.py` 生成带哈希的完整包，再由 `install_local.ps1` 在暂存校验后一次替换全部受管文件，失败时恢复原集合：
 
 ```powershell
 Set-Location D:\SLK
 New-Item -ItemType Directory -Force D:\SLK-RUNTIME\bin | Out-Null
 python scripts\build_transport_zipapp.py --output D:\SLK-RUNTIME\bin\slk-transport.pyz
 $env:CARGO_TARGET_DIR = 'F:\SLK\build'
-cargo build --release -p slk-state-cli -p slk-bi-query
+cargo build --release -p slk-state-cli -p slk-bi-query -p slk-cargo
 Copy-Item F:\SLK\build\release\slk-state.exe D:\SLK-RUNTIME\bin\
 Copy-Item F:\SLK\build\release\slk-bi-query.exe D:\SLK-RUNTIME\bin\
+Copy-Item F:\SLK\build\release\slk-cargo.exe D:\SLK-RUNTIME\bin\
 ```
 
 检查版本和入口：
@@ -167,6 +168,7 @@ Copy-Item F:\SLK\build\release\slk-bi-query.exe D:\SLK-RUNTIME\bin\
 python D:\SLK-RUNTIME\bin\slk-transport.pyz --version
 D:\SLK-RUNTIME\bin\slk-state.exe --help
 D:\SLK-RUNTIME\bin\slk-bi-query.exe --help
+D:\SLK-RUNTIME\bin\slk-cargo.exe --help
 ```
 
 配置一次电脑全域状态数据根：
@@ -186,29 +188,29 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 
 ## 5. 部署一个项目
 
-把 SLK 4.2.2 `skills\` 下的 15 个目录复制到该项目所使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
+把 SLK 4.2.3 `skills\` 下的 15 个目录作为同一已校验包部署到该项目使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
 
 首次启动 Run 时：
 
 1. Supervisor 用 `slk-state init-run` 建立 Run；
 2. 登记精确的 Codex Supervisor、OCRV Checker 和 DSH Worker 角色实例；
-3. DSH Worker 端点记录唯一 `instance_id`、当前 `session_id`、运行根、项目绝对路径和命令；
+3. DSH Worker 端点记录确定且不超过 64 字符的 `instance_id`、当前 `session_id`、运行根、项目绝对路径和命令；启动前验证 Git worktree/common-dir 存在且可写；
 4. OCRV Checker 端点记录命令、运行根和超时；
 5. 完成 Supervisor → Checker、Checker → Worker 的真实双向通讯测试；
-6. 只有原生启动证据成立后，才通过 `slk-state handoff` 推进 SLK TOKEN。
-7. 如需 Overwatcher，由 Supervisor 与 Owner 确认精确 Session、180–300 秒间隔和前台持续能力；Supervisor 绑定后，该 Session 在同一前台 active turn 内先完成首轮八项巡查，再持续主动巡查。不得创建 heartbeat、automation、cron、Windows 计划任务、daemon、服务、后台 Agent 或第二观察者；不绑定时原三角色照常运行。
+6. DSH/OCRV 在终态结果前写出匹配 `started.json`；发送者只通过 `slk-state commit-delivery-start` 原子提交启动回执、TOKEN、事件和 runtime revision，不能从退出码或终态结果倒推启动。
+7. 如需 Overwatcher，由 Supervisor 与 Owner 确认精确 Session、180–300 秒间隔和前台持续能力；一个 Run 只绑定一次同一 active turn，CELL 仅改变 cycle scope。`LATE` 不等于 inactive；终态最后一轮与匹配 revision 完成后才关闭归档。不得创建 heartbeat、automation、cron、Windows 计划任务、daemon、服务、后台 Agent 或第二观察者；不绑定时原三角色照常运行。
 
 端点和信封字段、命令及重试语义以 [`../transport/SLK-TRANSPORT.md`](../transport/SLK-TRANSPORT.md) 为准。不要按对话标题猜测目标，也不要把数据库记录当作消息已经投递。
 
 ## 6. 新电脑验收清单
 
-以下各项都成立，才把新电脑标记为可运行 SLK 4.2.2：
+以下各项都成立，才把新电脑标记为可运行 SLK 4.2.3：
 
 - DSH 版本命令成功，真实 headless 请求返回预期结果；
 - 两个不同 `instance-id` 的 DSH Worker 不共用 session；
 - OCRV 版本命令和 Adapter 测试通过；
 - 两次并行 OCRV D1 使用不同 review/session identity；
-- `slk-transport.pyz`、`slk-state.exe`、`slk-bi-query.exe` 可执行；
+- 完整包中的五个本地工件、15 个 Skill、文档、Schema、VERSION 与 manifest 哈希一致，`slk-transport.pyz`、`slk-state.exe`、`slk-bi-query.exe`、`slk-cargo.exe` 和只读 BI 可执行；
 - 状态数据根位于产品仓库之外；
 - 使用一次可丢弃仓库完成四段传输演练，精确验证 `Supervisor → Checker → Worker → Checker → Supervisor`；
 - 演练后产品项目没有文件变化；
@@ -222,5 +224,5 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 - DSH/OCRV 包版本、模型、Provider、Adapter 或 SLK 传输协议发生变化时，重新执行对应验收。
 - DSH 外层退出码不能单独证明 Worker 完成；应检查闭合 Worker 结果和命令证据。
 - OCRV 返回 `INCOMPLETE` 时保留事实并修复运行环境，不把它改写成 PASS。
-- 传输未出现原生启动证据时，发送者仍持有原 TOKEN；恢复沿用同一消息身份，不额外创建确认回合。
-- 当前 SLK 4.2.2 源码发布不把 DSH/OCRV 的机器启动配置混入 15 个 Skill。新电脑应从受信的内部配置包或已验收电脑复制上述配置文件，排除 `node_modules`、临时目录、运行状态、日志和任何凭据后，再执行本指引的锁定安装与验收。
+- 传输未出现原生启动证据时，发送者仍持有原 TOKEN；空闲目标恢复沿用同一消息身份一次，活跃 Supervisor 的当前 D1 FAIL 只用绑定准确 turn 的新消息，其他变化交回 Supervisor。
+- 当前 SLK 4.2.3 源码发布不把 DSH/OCRV 的机器启动配置混入 15 个 Skill，也不读写 LCaS R3B。新电脑应从受信的内部配置包或已验收电脑复制上述配置文件，排除 `node_modules`、临时目录、运行状态、日志和任何凭据后，再执行本指引的锁定安装与验收。

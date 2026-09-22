@@ -32,13 +32,44 @@ def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.2.2"
+    assert manifest["version"] == "4.2.3"
     assert manifest["skill_count"] == 15
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
     assert "skills/slk-close-run/SKILL.md" in paths
     assert "skills/slk-guard-resources/SKILL.md" in paths
     assert "skills/slk-record-run/assets/SLK-RUN.template.md" in paths
+
+
+def test_423_public_runtime_contracts_are_closed_and_versioned() -> None:
+    contracts = {
+        "docs/contracts/slk-transport-task.schema.json": {
+            "schema_version", "message_id", "run_id", "go_id", "cell_id",
+            "endpoint", "envelope", "result_contract", "result_path",
+        },
+        "docs/contracts/slk-runtime-snapshot.schema.json": {
+            "run_id", "runtime_revision", "plan_revision", "token_sequence",
+            "token_holder_role_instance_id", "latest_event_id",
+            "latest_message_id", "method_version", "overwatcher_binding_revision",
+            "overwatcher_status", "committed_at",
+        },
+        "docs/contracts/slk-overwatch-cycle.schema.json": {
+            "cycle_id", "run_id", "plan_revision", "role_instance_id",
+            "session_id", "foreground_turn_id", "binding_revision",
+            "runtime_revision", "native_liveness", "cycle_sequence",
+            "cadence_seconds", "go_id", "cell_id", "attempt", "token_sequence",
+            "token_holder_role_instance_id", "latest_event_id",
+            "latest_message_id", "checklist", "anomaly_codes", "evidence_refs",
+            "cost_metrics", "native_active_session_evidence_ref", "started_at",
+            "completed_at", "next_cycle_at",
+        },
+    }
+    for relative, required in contracts.items():
+        schema = json.loads(read(relative))
+        assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == required
+        assert set(schema["properties"]) == required
 
 
 def test_release_file_discovery_follows_git_and_ignores_local_build_outputs(
@@ -67,7 +98,7 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.2.2" in text
+        assert "4.2.3" in text
         assert "14" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
@@ -89,7 +120,7 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.2.3" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog

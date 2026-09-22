@@ -28,7 +28,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
    - `D1 FAIL：CELL n/N，进入返工`；`D1 INCOMPLETE：CELL n/N，说明未证明项`
 6. D1 FAIL 时形成结构化 `D1_FAILURE_ESCALATION`：绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体差距、复现方式、期望结果和证据引用；把 TOKEN 交给 Supervisor 生成改进指引，不由 Checker 直接启动返工。
 7. 在执行 D1 的同时，顺手记录本 CELL 的容量事实，例如工作量是否合适、是否接近当前能力或是否因过大带来返工；这复用已有事实，不增加额外检查。
-8. 把 D1 结果、错误、返工与容量事实通过 `slk-state` 记录，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项与证据，不写 `D1_PASSED` 或 `D1_FAILED`、不推进令牌。需要交付既定后继时再按精确端点调用 `slk-transport send`，原生启动成功后用 `slk-state handoff` 推进，失败时记录 `TRANSPORT_FAILED` 且仍由 Checker 持有责任。
+8. 把 D1 结果、错误、返工与容量事实通过 `slk-state` 记录，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项与证据，不写 `D1_PASSED` 或 `D1_FAILED`、不推进令牌。需要交付既定后继时按精确端点调用 `slk-transport send`；匹配的 `started.json` 出现后，发送者用 `slk-state commit-delivery-start` 原子提交启动证据、TOKEN、事件和 runtime revision，失败时记录 `TRANSPORT_FAILED` 且仍由 Checker 持有责任。
 
 ## 后继
 
@@ -40,4 +40,4 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 - 不要让 D0 结论或 Worker 判断引导初始 D1，也不要把对话隔离扩成每个 CELL 都新建验证环境；不要为检查器误报递归扩建证明材料，不要把工具故障直接判成产品失败，也不要以一般测试通过掩盖真实缺陷或把证据不足写成 PASS。
 - 不要把零 finding、零 comments、无报错或空证据列表当成 PASS，不要把 INCOMPLETE 当成第三种闭合结论，不要让 Supervisor 后补证据自动替代 Checker 的 D1，也不要把间接验证写成真实目标环境验证。
-- 不要把 INCOMPLETE 或工具故障伪装成 `D1_FAILURE_ESCALATION`，不要让 Supervisor 重做或覆盖 OCRV 的 D1；不要把 Worker 的 DELIVERED、Overwatcher 的观察/恢复成功或 BI 状态当成 D1 PASS。
+- 不要把 INCOMPLETE 或工具故障伪装成 `D1_FAILURE_ESCALATION`，不要让 Supervisor 重做或覆盖 OCRV 的 D1；不要把 Worker 的 DELIVERED、Overwatcher 的观察/恢复成功或 BI 状态当成 D1 PASS，也不要用终态结果补造缺失的启动证据或在 4.2.3 分步推进 TOKEN。

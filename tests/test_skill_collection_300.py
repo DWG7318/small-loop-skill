@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.2"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.3"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -855,6 +855,40 @@ def test_optional_overwatcher_is_one_active_session_without_authority_or_relay()
     assert "每次检查后结束 turn" not in watch
     assert "低频、Run 专属唤醒" not in watch
     assert "必经 relay" in recover
+
+
+def test_423_runtime_consistency_is_explicit_without_per_cell_watcher_confirmation() -> None:
+    main = read_skill("small-loop-skill")
+    watch = read_skill("slk-overwatch-run")
+    recover = read_skill("slk-recover-communication")
+    dispatch = read_skill("slk-dispatch-cell")
+    execute = read_skill("slk-execute-cell")
+    combined = "\n".join((main, watch, recover, dispatch, execute))
+
+    for marker in (
+        "commit-delivery-start",
+        "runtime_revision",
+        "started.json",
+        "不可变 task file",
+        "Git worktree",
+        "wait-for-change",
+    ):
+        assert marker in combined
+    for marker in (
+        "一个 Run 只绑定一次",
+        "不是每个 CELL 重新确认",
+        "LATE 不等于 INACTIVE",
+        "最后一轮",
+        "CONTINUITY_RECOVERY_REQUIRED",
+    ):
+        assert marker in watch
+    for forbidden in (
+        "自动升级模型",
+        "BoM 触发器",
+        "旧信封作为新消息",
+        "终态结果倒推启动成功",
+    ):
+        assert forbidden in combined
 
 
 def test_run_identity_is_explicit_and_one_continuation_reuses_its_run_id() -> None:

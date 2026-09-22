@@ -38,7 +38,7 @@ Checker → Worker → Checker
 ## D2 通过后的收尾
 
 1. 用 `slk-state write` 依次记录 D2 结论与 `RUN_CLOSED`，调用 `$slk-record-run` 自动导出最终 CELL 数、D0、D1通过数、Supervisor豁免数、限制和证据位置；最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。
-2. 调用 `$slk-manage-team`，依次归档 Worker、Checker 与本 Run 专属 Overwatcher（若启用），并保留 Supervisor 对话；本 Run 使用过 Cargo 隔离目录时，在相关命令全部结束后执行 `slk-cargo cleanup` 清理其精确 Run runtime。
+2. 调用 `$slk-manage-team`，依次归档 Worker、Checker 与本 Run 专属 Overwatcher（若启用）：Overwatcher 先完成终态最后一轮，再用该 cycle ID 与同一 runtime revision 执行 `close-overwatcher`；只有成功后才归档其 Session。保留 Supervisor 对话；本 Run 使用过 Cargo 隔离目录时，在相关命令全部结束后执行 `slk-cargo cleanup` 清理其精确 Run runtime。
 3. 向 Owner 发送一个简洁结论，例如：Run 已完工，D0/D1/D2结果、豁免数量、已知限制和根记录路径。
 
 Owner 可以根据结论继续查询；Supervisor 保留最终交接、D2结论和根记录路径，需要时再查阅详细工程历史。
@@ -47,3 +47,4 @@ Owner 可以根据结论继续查询；Supervisor 保留最终交接、D2结论�
 
 - 不要把 D1 PASS 当成 D2 通过证明，或用逐 CELL 重跑完整 D1 替代真实组合、衔接与端到端检查；不要复用已失效的证据、跳过关键未覆盖风险，也不要把豁免写成通过或把归档计划写成已经归档。
 - 不要忽略这一边界：Supervisor 后补证据不能替代 Checker 的 D1；不要追认原本证据不足的 PASS，也不要在令牌尚未真实交回 Supervisor 时写入 D2 已开始或 Run 已关闭。
+- 不要在开放 Run、普通 CELL 边界或缺少最后 cycle/匹配 runtime revision 时关闭、暂停、释放或重新确认 Overwatcher。

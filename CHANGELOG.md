@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.2.3
+
+- Added immutable hash-bound DSH/OCRV task files, early native `started.json`, bounded Git workspace preflight, and atomic `commit-delivery-start` so start receipt, TOKEN, event, and one runtime revision cannot drift apart.
+- Added active-Supervisor recovery by a new message bound to the exact active turn; inactive-target exact retry remains one replay of the original identity, while terminal output can never backfill missing start evidence.
+- Mechanically preserved the 4.2.2 Overwatcher design—one optional Session/foreground turn for the whole Run, not per CELL—while separating cadence lateness from native liveness and adding hashed cycle evidence, continuity incidents, authorized non-overlapping replacement, and terminal final-cycle closure.
+- Added explicit `4.2.2 → 4.2.3` adoption that preserves TOKEN and engineering history, plus closed JSON contracts and revision-bound read projections. Model selection is unchanged, automatic upgrades are rejected, and BoM remains disabled.
+- Added a complete locally verifiable package and transactional Windows installer with rollback; no LCaS/R3B data, service, scheduler, heartbeat, broker, or remote publication is introduced.
+
 ## 4.2.2
 
 - Added Owner-evidenced, exact-snapshot `reconcile-run-identities` for explicitly named independent historical roots, with atomic archive metadata and immutable receipts.

@@ -21,18 +21,18 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 - Worker 通过 `slk-state` 记录施工变化、资源占用与恢复、候选、最低 D0、判断过程、风险和交付对象；本地 D0 尝试与正式候选、D1 返工分别标明。
 - Checker 记录派发、D1 方法与结果、错误、返工建议、CELL 与 Run 进度，以及从实际工作中得到的 CELL 容量事实，并通过 `slk-state` 追加。
 - Supervisor 仅在被激活时记录启动交接、计划调整、豁免、成员恢复、D2、归档或最终结论，并通过 `slk-state` 追加；关键失败、重要决定和未执行事项建议在继续调整前及时追加，保留可能被后续操作覆盖的必要证据，交接前补齐，不接管日常进度记录。
-- Overwatcher 只用独立凭证追加完整八项巡查 cycle，以及通讯、活动证明、记录冲突、恢复升级和自身归档等 operational observation；只更新自己的 active/cycle 状态，不要写 D0/D1/D2、计划、角色替换、Run 结论、TOKEN 或 BI。
+- Overwatcher 在整个 Run 只绑定一次同一 Session/active turn，用独立凭证追加绑定单一 runtime revision 的完整八项巡查 cycle，以及通讯、活动证明、记录冲突、恢复升级和自身归档等 operational observation；CELL 变化只更新 cycle scope，不重新确认或绑定。它只写自己的事实，不写 D0/D1/D2、计划、角色替换、Run 结论、TOKEN 或 BI。
 
 ## 建议记录方式
 
-- 接收者在令牌激活本轮后的第一步用 `slk-bi-query` 先比较编号与身份；发送者只在原生启动成功后用 `slk-state handoff` 原子推进当前有效令牌和最后真实流转，同号或旧号不改指针，不预写尚未发生的流转。
+- 接收者在令牌激活本轮后的第一步用 `slk-bi-query` 先比较编号与身份，再比较 runtime revision；4.2.3 发送者只在不可变 task file 与匹配 `started.json` 都被验证后，用 `slk-state commit-delivery-start` 一次提交启动回执、当前有效令牌、最后真实流转和运行快照。同号或旧号不改指针，不预写尚未发生的流转，也不用终态结果反推启动。
 - CELL 历史、错误、失败尝试、返工、豁免和重要决定采用追加记录；后来的通过结论保留前面的真实过程。
 - 命令和结果保留简洁摘要及可复查的原始证据路径或哈希，并区分实际执行、间接验证与推断；工具或环境故障与产品缺陷分别记录，保留实际处理和未证明部分。
 - 三个工程角色各写自己的事实，Overwatcher 只写自己的运行观察；Owner、其他 Agent 和 BI 只通过 `slk-bi-query` 读取。记录保持工程上足够完整，从当前节点与相关条目读取；原始日志按失败定位查阅，不复制整段令牌历史或大日志。
 
 ## 工作顺序
 
-每次角色行动的倒数第二项建议用 `slk-state` 写入自己的事实；最后一项完成真实传输并在成功后推进 `SLK TOKEN`。完成传输后结束本轮工作，不跟踪下一对话；Markdown 自动导出失败只形成 warning，可稍后重新生成。
+每次角色行动的倒数第二项建议用 `slk-state` 写入自己的事实；最后一项完成真实传输，并在原生启动后原子提交 `SLK TOKEN` 与 runtime snapshot。完成传输后结束本轮工作，不跟踪下一对话；Markdown 自动导出失败只形成 warning，可稍后重新生成。
 
 ## 负面提示词
 

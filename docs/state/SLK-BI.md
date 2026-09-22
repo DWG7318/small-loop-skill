@@ -1,4 +1,4 @@
-# LE BI — SLK 4.2.2 Read-Only View
+# LE BI — SLK 4.2.3 Read-Only View
 
 LE BI presents machine-wide role-authored state plus accepted operational observations. It is a read-only desktop application and does not participate in construction, inspection, transport, recovery, exemption, or closure.
 
@@ -27,7 +27,7 @@ Agents use `slk-bi-query`. The desktop uses the same `slk-state-core` functions 
 
 BI refreshes on window focus and a three-second interval while the window is visible. Hidden windows pause polling. A transient read failure keeps the last successful snapshot visible and labels it stale with the exact error. Missing configuration, an empty data root, an unsupported projection schema, and a read failure have distinct presentation states.
 
-The active surface contains one row per explicit SLK Run identity. `source_kind` and `source_project_name` identify independent, CLK-owned, or GLK-owned SLKs for labeling and quiet color grouping. Explicit predecessor lineage or a validated reconciliation receipt—not title/project/timestamp similarity—marks `CURRENT`, `HISTORY`, `DUPLICATE_ACTIVE_RUN`, or `ORPHANED_IDENTITY`; conflicts remain visible rather than being guessed away. The Run projection includes origin/effective method versions, compact reconciliation/adoption receipt metadata, roles/models, CELL facts, accepted Overwatcher cycles, and operational observations; upper-level Chain and Node logic stays outside BI. Closed, abandoned, and superseded SLKs appear only in the archive.
+The active surface contains one row per explicit SLK Run identity. `source_kind` and `source_project_name` identify independent, CLK-owned, or GLK-owned SLKs for labeling and quiet color grouping. Explicit predecessor lineage or a validated reconciliation receipt—not title/project/timestamp similarity—marks `CURRENT`, `HISTORY`, `DUPLICATE_ACTIVE_RUN`, or `ORPHANED_IDENTITY`; conflicts remain visible rather than being guessed away. The Run projection reads one stored runtime snapshot and exposes its revision-bound method/plan/TOKEN/event/message plus the current whole-Run Overwatcher binding, cadence/native-liveness distinction, incidents and transitions. It does not synthesize a snapshot from independently selected latest rows. Closed, abandoned, and superseded SLKs appear only in the archive.
 
 Refresh is observation only. It does not wake an Agent, acknowledge a token, retry transport, change a Run, or write a heartbeat.
 
@@ -41,7 +41,7 @@ Refresh is observation only. It does not wake an Agent, acknowledge a token, ret
 - `Activity unproved` means an accepted operational observation invalidated a stale activity claim; it does not reduce or increase D1/D2 progress.
 - `Closed` means `RUN_CLOSED` is recorded.
 
-These labels describe durable facts. A current Overwatcher cycle reports accepted foreground evidence and its next due time but BI itself does not keep the Session active, schedule the next cycle, or prove a native message was delivered. Exact Agent reality remains bound to native evidence, not a BI inference.
+These labels describe durable facts. A current Overwatcher cycle reports its binding/runtime revision, verified evidence, native liveness and next due time; `LATE` does not mean inactive, and a CELL boundary does not create or confirm another binding. BI itself does not keep the Session active, schedule the next cycle, commit TOKEN, repair continuity, or prove native delivery. Exact Agent reality remains bound to immutable evidence, not a BI inference.
 
 ## Security boundary
 
