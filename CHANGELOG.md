@@ -2,6 +2,7 @@
 
 ## 4.2.6
 
+- Repaired the LE BI release chain: `custom-protocol` is explicit and default, the artifact builder uses `tauri build --no-bundle`, release/package validation rejects Vite development entrypoints, and a deployed BI no longer depends on localhost:1430.
 - Corrected the LCaS CELL03 recovery gaps without changing SLK topology, CELL/D0/D1/D2 semantics, model policy, BI authority, or the accepted product candidate.
 - Added Supervisor-authorized same-Session Overwatcher foreground-turn resume after an anomalous cycle; prior cycles remain immutable and new/unauthorized Sessions fail closed.
 - Bound Worker completion inspection to exact run/CELL/attempt/candidate/message identity and normalized rework `acceptance_criteria` into Checker D1 criteria.

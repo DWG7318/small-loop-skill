@@ -64,10 +64,10 @@ Desktop development and release builds:
 
 ```text
 pnpm --dir apps/slk-bi tauri dev
-pnpm --dir apps/slk-bi tauri build --no-bundle
+pwsh -NoProfile -NonInteractive -File scripts/build_release_artifacts.ps1 -OutputDirectory <artifact-root> -CargoTargetDirectory <target-root>
 ```
 
-Use an external `CARGO_TARGET_DIR` when source-tree build output is undesirable. The accepted binary and complete evidence are recorded in [`SLK-BI-ACCEPTANCE.md`](SLK-BI-ACCEPTANCE.md).
+The release script invokes `tauri build --no-bundle`, requires a `custom-protocol` release fingerprint, and rejects Vite client/source entry markers before packaging. Plain `cargo build --release -p slk-bi-desktop` is not a release path. A deployed cold start must work with no Node, pnpm, Vite, network, or localhost:1430 listener. The accepted binary and evidence are recorded in [`SLK-BI-ACCEPTANCE.md`](SLK-BI-ACCEPTANCE.md).
 
 ## Troubleshooting
 

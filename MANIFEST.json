@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "ca381e54a89cdb5622fe28c59bd39a75e0f5a62df655dee27785be9ea5d2b5ec"
+      "sha256": "906809b0d8afd0c1019913e70a26af9366b24d51bfd1125fa2765fb0023b97af"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "682b2502276cc61f1e15cda80eb26ea0df02b73634841f883d358e4f88f57214"
+      "sha256": "133ae90eee192efce72974547fcdbb99f17efd617ca3fdaa3da444997d31deaa"
     },
     {
       "path": "VERSION",
@@ -76,7 +76,7 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/Cargo.toml",
-      "sha256": "34595f7fe5c6bfc5ac3f354c635f331194026b8d6a67e9c87a24b8f837d5e2cd"
+      "sha256": "e5fea8207a364d3b0edc225f8716440a48bc72a68238e02285e8bddd83b03bf2"
     },
     {
       "path": "apps/slk-bi/src-tauri/build.rs",
@@ -640,15 +640,15 @@
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
-      "sha256": "22345d31af3f68e7886343b3e608cdc17d0b819f02c8f623eb7bfe7ef1a9f9a7"
+      "sha256": "c48632d3311943d7df19caa7805d8be4f84ed77f9dd353b8eb9e4ec2b9c664b0"
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
-      "sha256": "de084ee25ebffe984ef2a2214a2706e0241eb1e4195e86cb1b5922115cbc4393"
+      "sha256": "11a54feaa78f74b03778d9a2b51b6c309c5d646e8c9dfb84109b39dbd8478834"
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "788fd63cc8bea48b3ee938214ea9a67159aa3dcf8f4d1be778c9e237e60e6971"
+      "sha256": "ed39f5fd246f8c4a42c62bf45d55f7478b383be47df5fdfd85352394c122a298"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",
@@ -820,7 +820,11 @@
     },
     {
       "path": "scripts/build_local_package.py",
-      "sha256": "51758d624cf367531c6ddf1f8efb78d309c0be8fe991f9168131ec9d16a9a87d"
+      "sha256": "bb8b11468105089d0ca6d3b20ec07cad60aee9de96aa5192d7598496190b2cf7"
+    },
+    {
+      "path": "scripts/build_release_artifacts.ps1",
+      "sha256": "84930693b0ec7e8e5dee5cbcf1efb8b4ab59c80fd3857596d5626c699cdeae03"
     },
     {
       "path": "scripts/build_transport_zipapp.py",
@@ -844,11 +848,15 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "252c74a7a181e677fa99251ffaa521eff31863770cc4c6d1e3e91311a746316a"
+      "sha256": "4d9cd2f049a4e0bf0806a92acbdc3d38e6c1dcc498b8df1aab9f04aea0602212"
     },
     {
       "path": "scripts/validate_role_eval.py",
       "sha256": "3fe50f0a2df9ae9e8debc900c8c72c871cecf4d1f43eb0c9265329e8597d1111"
+    },
+    {
+      "path": "scripts/verify_bi_release.py",
+      "sha256": "1e5fb79fe4bee92728cbf80c8de587909c65767c38210bab83312c7afaa48083"
     },
     {
       "path": "scripts/verify_local_install.py",
@@ -1019,8 +1027,12 @@
       "sha256": "8e06847ebf2506064ac33a05c99d446055a5a690caed2857e9406dddafbbc8f7"
     },
     {
+      "path": "tests/install/test_bi_release.py",
+      "sha256": "6a6867ad3e0185f5668e57f0defa74cf78daa1112c135a3bb5ebc35c394d4b87"
+    },
+    {
       "path": "tests/install/test_build_local_package.py",
-      "sha256": "22fbe1d8ab4964d689c1ef25a0fae37ac4ade3d0646b2ca9c90d5dc51a6aca83"
+      "sha256": "0d0f1df2c7117546d385302c570dbfe0f0f872fbdeed1b37828e3d01b4f15efa"
     },
     {
       "path": "tests/install/test_local_install.py",

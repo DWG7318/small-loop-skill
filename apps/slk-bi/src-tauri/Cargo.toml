@@ -17,5 +17,9 @@ serde_json.workspace = true
 slk-state-core = { path = "../../../crates/slk-state-core" }
 tauri = { version = "2", features = [] }
 
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [dev-dependencies]
 tempfile = "3.27.0"

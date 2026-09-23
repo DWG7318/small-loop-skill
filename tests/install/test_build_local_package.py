@@ -66,3 +66,13 @@ def test_artifact_set_is_exact_and_output_must_be_empty(tmp_path: Path) -> None:
     (output / "old.txt").write_text("old", encoding="utf-8")
     with pytest.raises(PackageError, match="output directory"):
         build_package(ROOT, artifacts, output)
+
+
+def test_package_rejects_a_bi_artifact_that_still_uses_vite_dev_assets(tmp_path: Path) -> None:
+    artifacts = fake_artifacts(tmp_path / "artifacts")
+    (artifacts / "slk-bi-desktop.exe").write_bytes(
+        b"MZ release-looking bytes http://localhost:1430/src/main.tsx @vite/client"
+    )
+
+    with pytest.raises(PackageError, match="development asset markers"):
+        build_package(ROOT, artifacts, tmp_path / "package")

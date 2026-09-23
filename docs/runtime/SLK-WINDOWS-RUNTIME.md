@@ -149,20 +149,16 @@ OCRV、PowerShell、Codex App Server、DSH 和传输辅助进程默认使用统�
 
 ## 4. 构建 SLK 传输和状态工具
 
-从受信的 SLK 4.2.6 源码构建机器级工具；正式升级使用 `build_local_package.py` 生成带哈希的完整包，再由 `install_local.ps1` 在暂存校验后一次替换全部受管文件，失败时恢复原集合：
+从受信的 SLK 4.2.6 源码构建机器级工具。正式 artifact 入口先用 Tauri production build 嵌入 BI 前端，再构建其余工具；不要用普通 `cargo build --release -p slk-bi-desktop` 生成可发布 BI：
 
 ```powershell
 Set-Location D:\SLK
-New-Item -ItemType Directory -Force D:\SLK-RUNTIME\bin | Out-Null
-python scripts\build_transport_zipapp.py --output D:\SLK-RUNTIME\bin\slk-transport.pyz
-$env:CARGO_TARGET_DIR = 'F:\SLK\build'
-cargo build --release -p slk-state-cli -p slk-bi-query -p slk-cargo
-Copy-Item F:\SLK\build\release\slk-state.exe D:\SLK-RUNTIME\bin\
-Copy-Item F:\SLK\build\release\slk-bi-query.exe D:\SLK-RUNTIME\bin\
-Copy-Item F:\SLK\build\release\slk-cargo.exe D:\SLK-RUNTIME\bin\
+pwsh -NoProfile -NonInteractive -File scripts\build_release_artifacts.ps1 `
+  -OutputDirectory D:\SLK-RUNTIME\bin `
+  -CargoTargetDirectory F:\SLK\build
 ```
 
-正式本机替换先把四个 `.exe` 与 `slk-transport.pyz` 放入单独 artifact 目录，再执行：
+该脚本只在当前 headless 控制台运行 `tauri build --no-bundle`，并用 release fingerprint 与开发资源标记检查 `slk-bi-desktop.exe`。`build_local_package.py` 会再次拒绝仍含 Vite 开发入口的 BI。正式本机替换随后执行：
 
 ```powershell
 python scripts\build_local_package.py --repo . --artifacts <artifact-root> --output <package-root>
@@ -172,6 +168,8 @@ python scripts\verify_local_install.py --root $env:USERPROFILE\.codex
 ```
 
 安装器只交换 manifest 声明的 15 个 Skill、`tools\slk\bin`、共享文档/Schema 和安装 manifest；旧集合保存到 `tools\slk\backups`。任一暂存、哈希或安装后核验失败都会恢复完整旧集合，并在 `.codex\.tmp` 写失败报告。安装器不会运行 `slk-state configure`，数据库迁移仍需对明确选择的数据根单独执行。
+
+LE BI 发布验收时先确认本机没有 1430 listener，再从已安装路径冷启动；进程应保持运行、无 localhost:1430 连接，WebView2 新证据不得出现 `ERR_CONNECTION_REFUSED`，并应能从现有全域只读数据根显示项目/Run。Node、pnpm 与 Vite 只参与构建，不属于新机器运行依赖。
 
 检查版本和入口：
 

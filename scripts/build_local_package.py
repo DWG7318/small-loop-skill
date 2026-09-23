@@ -11,8 +11,10 @@ from pathlib import Path
 
 try:
     from .validate_repository import EXPECTED_SKILLS, VERSION
+    from .verify_bi_release import BiReleaseError, verify_bi_release
 except ImportError:  # direct script execution
     from validate_repository import EXPECTED_SKILLS, VERSION
+    from verify_bi_release import BiReleaseError, verify_bi_release
 
 
 ARTIFACT_NAMES = (
@@ -155,6 +157,10 @@ def build_package(repository: Path | str, artifacts: Path | str, output: Path | 
     actual_artifacts = {path.name for path in artifact_root.iterdir() if path.is_file()}
     if actual_artifacts != set(ARTIFACT_NAMES) or any(path.is_dir() for path in artifact_root.iterdir()):
         raise PackageError("artifact set must contain exactly the five managed files")
+    try:
+        verify_bi_release(artifact_root / "slk-bi-desktop.exe", require_pe=False)
+    except BiReleaseError as exc:
+        raise PackageError(str(exc)) from exc
     listed = _load_repository_manifest(repo)
     mappings = _repository_sources(repo, listed)
     mappings.extend((artifact_root / name, Path("tools/slk/bin") / name) for name in ARTIFACT_NAMES)

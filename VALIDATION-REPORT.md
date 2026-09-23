@@ -12,18 +12,24 @@ SLK 4.2.6 is a narrow recovery correction derived from the accepted LCaS CELL03 
 
 The patch binds Worker completion to the exact run/CELL/attempt/candidate/message, maps rework acceptance criteria into Checker D1, changes active-writer recovery to read+steer without a conflicting resume, gives detached headless Checker transport an independent Windows job lifetime, and allows only Supervisor to resume the same Overwatcher Session on a new foreground turn after the last recorded anomaly cycle. Code/test completion alone does not complete the Worker role; D0, candidate submission and exactly one Checker handoff remain required. Tool failure stays in the same D1 attempt as `TRANSPORT_FAILED` or INCOMPLETE.
 
+The BI release correction keeps the read-only UI and method semantics unchanged. It enables Tauri production/custom-protocol by default, introduces one headless release artifact entrypoint, and rejects Vite development entrypoints before package installation. Runtime acceptance is a cold start with no localhost:1430 listener rather than a development server workaround.
+
 ## Evidence
 
 - RED first: four Python failures and the missing Rust resume contract reproduced the frozen gaps before implementation.
 - Focused Rust Overwatcher tests: 26 passed.
 - Focused Python transport/completion tests: 28 passed.
 - Rust workspace: 97 executed tests passed; doc tests passed.
-- Python full suite: 263 passed.
-- Python optimized-mode suite: 263 passed; the expected pytest warning notes that Python `assert` statements are disabled under `-O`, while validator paths remained green.
+- Python full suite: 268 passed.
+- Python optimized-mode suite: 268 passed; the expected pytest warning notes that Python `assert` statements are disabled under `-O`, while validator paths remained green.
 - Role Eval case pack: 62 cases, PASS; SHA-256 `365573b3390d9a49d03e66afc85dd431b7ef9d512b0c86e7d7e40f1b05cc7c2a`.
 - Repository validator and Cargo workspace check: PASS.
 - Skill collection remains 15 Skills; the main and Overwatcher instructions remain below repository size limits after replacing redundant text.
 - Windows launch paths remain headless; detached transport adds `CREATE_BREAKAWAY_FROM_JOB` without adding a daemon, heartbeat, scheduled task or workflow engine.
+- BI release-focused Python tests cover feature binding, the Tauri-only build entrance, fingerprint validation and rejection of Vite development artifacts.
+- Frontend tests: 7 files / 17 tests passed; strict TypeScript passed; the production Vite/Tauri build passed from a fresh external target.
+- Fresh BI artifact SHA-256: `2240434a8c19dc020561b15a3191779814e0d1632d502a648eb676099c5df12b`; production fingerprint contains `custom-protocol`, and the executable contains no `@vite/client` or `/src/main.tsx` marker.
+- Staging cold start with no port 1430 listener: responsive `LE BI` window, zero network connections, no new WebView2 `ERR_CONNECTION_REFUSED`, and the current LCaS R3B row displayed.
 
 ## Boundaries
 

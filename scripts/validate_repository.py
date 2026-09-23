@@ -163,8 +163,10 @@ def validate(root: Path) -> list[str]:
         "integrations/ocrv/rollback.ps1",
         "integrations/ocrv/slk-checker.cmd",
         "integrations/ocrv/slk_checker_recovery.py",
+        "scripts/build_release_artifacts.ps1",
         "scripts/build_local_package.py",
         "scripts/install_local.ps1",
+        "scripts/verify_bi_release.py",
         "scripts/verify_local_install.py",
     )
     for relative in required:
