@@ -90,3 +90,14 @@ def test_only_the_six_plus_active_run_viewport_can_scroll_vertically() -> None:
     assert re.search(r"html,\s*body,\s*#root\s*\{[^}]*overflow:\s*hidden", tokens, re.DOTALL)
     scrollable = re.search(r"\.active-run-strips\.is-scrollable\s*\{([^}]*)\}", app, re.DOTALL)
     assert scrollable and "overflow-y: auto" in scrollable.group(1)
+
+
+def test_project_palette_has_eight_distinct_quiet_tones() -> None:
+    app = (ROOT / "apps/slk-bi/src/styles/app.css").read_text(encoding="utf-8")
+    tones = re.findall(
+        r"\.slk-block\.group-(\d+)\s*\{\s*--group-bg:\s*(#[0-9a-fA-F]{6});\s*\}",
+        app,
+    )
+
+    assert [int(index) for index, _ in tones] == list(range(1, 9))
+    assert len({color.lower() for _, color in tones}) == 8

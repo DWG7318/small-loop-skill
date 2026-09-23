@@ -8,7 +8,7 @@
 
 The main surface shows only SLK Runs. Each row answers: which project and Run is this, when did it start, how much CELL work is complete, how much active work time was recorded, who owns the next action, and which SLK version is in use. Expanding a row reveals that SLK's Supervisor, Checker, Worker, model choices, and medium-detail CELL records.
 
-An SLK may be independent or belong to a CLK/GLK project. That origin is a grouping dimension, not a second execution hierarchy in BI: LE BI never renders Chain, Node, Fusion, or DAG internals. Runs from the same parent receive the same quiet tint and retain an explicit source label.
+An SLK may be independent or belong to a CLK/GLK project. That origin is a grouping dimension, not a second execution hierarchy in BI: LE BI never renders Chain, Node, Fusion, or DAG internals. Runs from the same independent project or CLK/GLK parent receive the same stable quiet tint and retain an explicit source label.
 
 Completed, abandoned, and superseded SLKs leave the active surface immediately and remain readable in the archive, even when their parent CLK/GLK project continues.
 

@@ -4,9 +4,18 @@ import { describe, expect, it } from "vitest";
 
 import { buildRunStripView } from "../runPresentation";
 import { runFixture, twoRunFixture } from "../test/fixtures";
-import { RunStrip } from "./RunStrip";
+import { groupTone, RunStrip } from "./RunStrip";
 
 describe("RunStrip", () => {
+  it("uses every quiet project tone while keeping tone assignment deterministic", () => {
+    const keys = Array.from({ length: 64 }, (_, index) => `project:project-${index}`);
+    const tones = keys.map(groupTone);
+
+    expect(groupTone("project:project-a")).toBe(5);
+    expect(groupTone("project:project-b")).toBe(6);
+    expect(new Set(tones)).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8]));
+  });
+
   it("shows source context and expands into roles and CELL facts only", async () => {
     const user = userEvent.setup();
     const run = {

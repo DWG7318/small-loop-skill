@@ -16,11 +16,10 @@ const MARK = {
   blocked: "×",
 } as const;
 
-function groupTone(groupKey: string) {
-  if (groupKey === "solo") return 0;
+export function groupTone(groupKey: string) {
   let hash = 0;
   for (const character of groupKey) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return (hash % 4) + 1;
+  return (hash % 8) + 1;
 }
 
 function SegmentedProgress({ passed, total, tone }: { passed: number; total: number; tone: string }) {

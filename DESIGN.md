@@ -27,7 +27,7 @@ Every collapsed row is one SLK Run and shows, left to right:
 8. SLK version;
 9. disclosure chevron.
 
-Rows from one CLK/GLK parent share a stable very light tint. The source text remains visible, so color is never the only grouping cue.
+Rows from one independent project or CLK/GLK parent share a stable very light tint. Independent-project tinting uses immutable project identity, while the source text remains visible so color is never the only grouping cue.
 
 ## Expanded SLK
 

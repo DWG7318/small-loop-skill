@@ -228,4 +228,27 @@ describe("compact Run presentation", () => {
     expect(view.source).toEqual({ kind: "glk", label: "GLK · Platform 全系统重构" });
     expect(view.sourceGroupKey).toBe("glk:Platform 全系统重构");
   });
+
+  it("uses the immutable project identity to color independent projects", () => {
+    const firstProject = {
+      project_id: "project-a",
+      name: "LCaS",
+      repository_url: null,
+      last_known_path: "D:/LCaS",
+      run_count: 1,
+    };
+    const secondProject = { ...firstProject, project_id: "project-b", name: "WXGate" };
+
+    const first = buildRunStripView(firstProject, runFixture, new Date());
+    const repeated = buildRunStripView(firstProject, runFixture, new Date());
+    const second = buildRunStripView(
+      secondProject,
+      { ...runFixture, summary: { ...runFixture.summary, project_id: "project-b" } },
+      new Date(),
+    );
+
+    expect(first.sourceGroupKey).toBe("project:project-a");
+    expect(repeated.sourceGroupKey).toBe(first.sourceGroupKey);
+    expect(second.sourceGroupKey).toBe("project:project-b");
+  });
 });

@@ -98,10 +98,13 @@
 
 .slk-block:last-child { border-bottom: 0; }
 .slk-block.group-1 { --group-bg: #c2ced1; }
-.slk-block.group-2 { --group-bg: #d1ceb7; }
-.slk-block.group-3 { --group-bg: #cec3c6; }
+.slk-block.group-2 { --group-bg: #d1ccb9; }
+.slk-block.group-3 { --group-bg: #cfc3c8; }
 .slk-block.group-4 { --group-bg: #bfd0c3; }
 .slk-block.group-5 { --group-bg: #c8c4d2; }
+.slk-block.group-6 { --group-bg: #c0ceca; }
+.slk-block.group-7 { --group-bg: #d0c6bc; }
+.slk-block.group-8 { --group-bg: #c5ccd5; }
 
 .slk-block.is-open {
   outline: 1px solid var(--blue);

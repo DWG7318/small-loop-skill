@@ -2,7 +2,7 @@
 
 ## 4.2.6
 
-- Enlarged all visible LE BI typography to 120% through shared text tokens without scaling icons, window controls, or progress segments; active Run lists remain unscrolled through five entries and use a five-row vertical viewport from the sixth entry onward.
+- Enlarged all visible LE BI typography to 120% through shared text tokens without scaling icons, window controls, or progress segments; active Run lists remain unscrolled through five entries and use a five-row vertical viewport from the sixth entry onward; independent projects now receive stable immutable-ID-derived tints from an eight-tone quiet palette.
 - Repaired the LE BI release chain: `custom-protocol` is explicit and default, the artifact builder uses `tauri build --no-bundle`, release/package validation rejects Vite development entrypoints, and a deployed BI no longer depends on localhost:1430.
 - Corrected the LCaS CELL03 recovery gaps without changing SLK topology, CELL/D0/D1/D2 semantics, model policy, BI authority, or the accepted product candidate.
 - Added Supervisor-authorized same-Session Overwatcher foreground-turn resume after an anomalous cycle; prior cycles remain immutable and new/unauthorized Sessions fail closed.

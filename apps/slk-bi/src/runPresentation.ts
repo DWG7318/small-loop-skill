@@ -270,7 +270,10 @@ function source(run: RunSummary) {
   const kind: "solo" | "clk" | "glk" =
     run.source_kind === "clk" || run.source_kind === "glk" ? run.source_kind : "solo";
   if (kind === "solo") {
-    return { source: { kind, label: "独立" } as const, sourceGroupKey: "solo" };
+    return {
+      source: { kind, label: "独立" } as const,
+      sourceGroupKey: `project:${run.project_id}`,
+    };
   }
   const name = run.source_project_name?.trim() || "未命名项目";
   return {
