@@ -122,7 +122,11 @@ export function App({ api = tauriApi }: AppProps) {
       ) : (
         <main className="runs-surface" aria-label="SLK Runs">
           {activeRows.length ? (
-            <ol className="run-strips" aria-label="进行中的 SLK Runs">
+            <ol
+              className={`run-strips active-run-strips${activeRows.length > 5 ? " is-scrollable" : ""}`}
+              data-run-count={activeRows.length}
+              aria-label="进行中的 SLK Runs"
+            >
               {activeRows.map((view) => <RunStrip key={view.runId} view={view} />)}
             </ol>
           ) : (

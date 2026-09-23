@@ -15,14 +15,20 @@
   --red: #813735;
   --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --sans: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  --text-8: 9.6px;
+  --text-9: 10.8px;
+  --text-10: 12px;
+  --text-11: 13.2px;
+  --text-17: 20.4px;
+  --run-row-height: 68px;
   background: transparent;
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: var(--text-11);
 }
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; min-width: 720px; min-height: 100%; background: transparent; }
+html, body, #root { margin: 0; min-width: 720px; min-height: 100%; overflow: hidden; background: transparent; }
 button, input { font: inherit; }
 button:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 code { font-family: var(--mono); }

@@ -31,6 +31,10 @@ The active surface contains one row per explicit SLK Run identity. `source_kind`
 
 Refresh is observation only. It does not wake an Agent, acknowledge a token, retry transport, change a Run, or write a heartbeat.
 
+## Display density
+
+Visible text uses one shared 120% scale relative to the original LE BI typography. Icons, native window controls, and segmented progress geometry keep their original dimensions. An active list with zero through five Runs has no vertical scrolling state; six or more Runs use a viewport of approximately five collapsed rows with vertical scrolling. The threshold is the number of active Run identities, so expanding a row does not change whether the list is scrollable. The archive keeps its existing behavior.
+
 ## Status language
 
 - `Responsibility: <role>` means the last accepted SLK TOKEN points to that role.

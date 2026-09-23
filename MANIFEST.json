@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "906809b0d8afd0c1019913e70a26af9366b24d51bfd1125fa2765fb0023b97af"
+      "sha256": "435fe43fb3c6d19c8c960a7eceb5c8eef51fa4d7b1ccdc041093e0130a6612c9"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "133ae90eee192efce72974547fcdbb99f17efd617ca3fdaa3da444997d31deaa"
+      "sha256": "178ea392a6b04073d12a0722c00219ca6d8d9d7b21d4a3787d72b138c64fead4"
     },
     {
       "path": "VERSION",
@@ -336,11 +336,11 @@
     },
     {
       "path": "apps/slk-bi/src/App.test.tsx",
-      "sha256": "4855e6e636000c62fe1af0f3baaf7feb098cd525a8302d690f5662d4471e2b05"
+      "sha256": "1df0786e15af7ca7c7dd22509eb93f37860bdcaa3c6aaa3d955f0a0248bfa8f7"
     },
     {
       "path": "apps/slk-bi/src/App.tsx",
-      "sha256": "34f0dad071f980749741cce1452f10508ee1aaf5026431a3c6af9283063085e9"
+      "sha256": "dd3568c1abbe892ff1c9a5a85eda466c260a94ce417360780de555233dbbaeea"
     },
     {
       "path": "apps/slk-bi/src/a11y.test.tsx",
@@ -388,11 +388,11 @@
     },
     {
       "path": "apps/slk-bi/src/styles/app.css",
-      "sha256": "1c40f52132ceeb5dacf9b5eb51aba4c3c5823e25cd4764f63f982f89faa05802"
+      "sha256": "2273810b1319d5e77a8921f09fc3d47bb44599733e0dc0368391213fb6451eb1"
     },
     {
       "path": "apps/slk-bi/src/styles/tokens.css",
-      "sha256": "dc47d4d69e5400894a1629bf9782e0dd630da4912f11af97469f11631939ad72"
+      "sha256": "b9b87b487164db59816958093432fde4d5794f92537dc3e2f38d93d0ad6f76e5"
     },
     {
       "path": "apps/slk-bi/src/test/fixtures.ts",
@@ -644,11 +644,11 @@
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
-      "sha256": "11a54feaa78f74b03778d9a2b51b6c309c5d646e8c9dfb84109b39dbd8478834"
+      "sha256": "d0b81fdaa123f803ad139d6153087c591deb4b2a903d9ad6ea95c4f3f7715bbc"
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "ed39f5fd246f8c4a42c62bf45d55f7478b383be47df5fdfd85352394c122a298"
+      "sha256": "7b8e82286304e43685f4d173ba88c15603465ddca59dbde4162db6f66755c4f2"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",
@@ -1028,7 +1028,7 @@
     },
     {
       "path": "tests/install/test_bi_release.py",
-      "sha256": "6a6867ad3e0185f5668e57f0defa74cf78daa1112c135a3bb5ebc35c394d4b87"
+      "sha256": "08e950d279ecd418325890a8074f9fad75652140b3c298e2838c142531a2bfda"
     },
     {
       "path": "tests/install/test_build_local_package.py",

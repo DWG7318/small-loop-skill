@@ -71,3 +71,22 @@ def test_release_verifier_requires_a_custom_protocol_fingerprint(tmp_path: Path)
     )
     with pytest.raises(BiReleaseError, match="custom-protocol"):
         verify_bi_release(executable, fingerprint_root=tmp_path / "fingerprints")
+
+
+def test_bi_typography_is_uniformly_scaled_to_120_percent() -> None:
+    tokens = (ROOT / "apps/slk-bi/src/styles/tokens.css").read_text(encoding="utf-8")
+    app = (ROOT / "apps/slk-bi/src/styles/app.css").read_text(encoding="utf-8")
+
+    for original, scaled in ((8, "9.6"), (9, "10.8"), (10, "12"), (11, "13.2"), (17, "20.4")):
+        assert f"--text-{original}: {scaled}px;" in tokens
+    assert "font-size: var(--text-11);" in tokens
+    assert not re.search(r"font(?:-size)?\s*:[^;\n]*\b(?:8|9|10|11|17)px", app)
+
+
+def test_only_the_six_plus_active_run_viewport_can_scroll_vertically() -> None:
+    tokens = (ROOT / "apps/slk-bi/src/styles/tokens.css").read_text(encoding="utf-8")
+    app = (ROOT / "apps/slk-bi/src/styles/app.css").read_text(encoding="utf-8")
+
+    assert re.search(r"html,\s*body,\s*#root\s*\{[^}]*overflow:\s*hidden", tokens, re.DOTALL)
+    scrollable = re.search(r"\.active-run-strips\.is-scrollable\s*\{([^}]*)\}", app, re.DOTALL)
+    assert scrollable and "overflow-y: auto" in scrollable.group(1)

@@ -1,19 +1,21 @@
 # SLK BI Acceptance
 
-## 4.2.6 production cold-start repair
+## 4.2.6 production cold-start and display repair
 
 Date: 2026-09-23
 
-Result: PASS for the fresh production artifact before packaging.
+Result: PASS for the fresh production artifact before packaging; Owner visually accepted the corrected window.
 
 - Built through `scripts/build_release_artifacts.ps1`, whose BI path is `pnpm tauri build --no-bundle`; ordinary Cargo is not used to produce the desktop artifact.
 - The release fingerprint records both `features` and `declared_features` as `["custom-protocol", "default"]`.
-- The PE contains the embedded production asset `index-foMuc3_Q.js` and contains neither `@vite/client` nor `/src/main.tsx`.
-- Artifact: `C:\Users\DWG\.codex\.tmp\slk-bi-4.2.6-fix-20260923\artifacts-final\slk-bi-desktop.exe`.
-- Size: `10909696` bytes.
-- SHA-256: `2240434a8c19dc020561b15a3191779814e0d1632d502a648eb676099c5df12b`.
+- The PE contains the embedded production assets `index-5vxWFpRv.js` and `index-CumzRgVj.css`, and contains neither `@vite/client` nor `/src/main.tsx`.
+- Visible typography is uniformly 120% of the original sizes without scaling icons, window controls, or progress segments. Active lists with up to five Runs have no scrollbar; six or more use a five-row internal viewport. The document itself cannot scroll.
+- Artifact: `C:\Users\DWG\.codex\.tmp\slk-bi-4.2.6-ui-20260923-1725\artifacts\slk-bi-desktop.exe`.
+- Size: `10910208` bytes.
+- SHA-256: `87ead858dcf0134e224593d9f4d4b017bf0e068bc88528976a4f564bd2765862`.
 - With no process or listener on port 1430, the artifact cold-started as a responsive `LE BI` window and opened no network connection.
-- WebView2 Breadcrumbs grew from 3036 to 3453 bytes while the historical `ERR_CONNECTION_REFUSED` count remained exactly 3; the cold start added no new refusal.
+- WebView2 Breadcrumbs grew from 4620 to 5037 bytes while the historical `ERR_CONNECTION_REFUSED` count remained exactly 3; the cold start added no new refusal.
+- The SQLite database and WAL SHA-256 values were identical before and after the read-only launch.
 - The captured window displayed the current LCaS R3B row, SLK 4.2.6, and CELL 3/4 from the configured read-only `D:\SLK-Data` authority. `slk-bi-query` independently returned current run `SLK-RUN-LCAS-RC08-GUI-WINDOWS-STABILITY-R3B`.
 
 The final installed-path check is repeated after the hash-bound local package replaces the broken executable. The original 4.0 acceptance remains below as historical evidence.
