@@ -13,7 +13,8 @@ use slk_state_core::model::{
     CommitDeliveryStartRequest, InitRunRequest, OperationalObservationRequest,
     OverwatchCycleRequest, RebindSessionRequest, ReconcileRunIdentitiesRequest,
     RecordOverwatcherStatusRequest, RegisterRoleRequest, ReplaceOverwatcherRequest,
-    ReplaceRoleRequest, RevisePlanRequest, TokenHandoffRequest, WriteRequest,
+    ReplaceRoleRequest, ResumeOverwatcherTurnRequest, RevisePlanRequest, TokenHandoffRequest,
+    WriteRequest,
 };
 use slk_state_core::schema::open_database;
 use slk_state_core::write::StateStore;
@@ -84,6 +85,7 @@ fn run() -> Result<Value, CliError> {
         "bind-overwatcher" => bind_overwatcher(&arguments[1..]),
         "record-overwatch-cycle" => record_overwatch_cycle(&arguments[1..]),
         "record-overwatcher-status" => record_overwatcher_status(&arguments[1..]),
+        "resume-overwatcher-turn" => resume_overwatcher_turn(&arguments[1..]),
         "replace-overwatcher" => replace_overwatcher(&arguments[1..]),
         "wait-for-change" => wait_for_change(&arguments[1..]),
         "record-observation" => record_observation(&arguments[1..]),
@@ -234,6 +236,24 @@ fn record_overwatcher_status(arguments: &[String]) -> Result<Value, CliError> {
         "run_id":run_id,
         "status_id":status_id,
         "native_liveness":native_liveness
+    }))
+}
+
+fn resume_overwatcher_turn(arguments: &[String]) -> Result<Value, CliError> {
+    let request: ResumeOverwatcherTurnRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let session_id = request.session_id.clone();
+    let foreground_turn_id = request.foreground_turn_id.clone();
+    let store = configured_store()?;
+    store
+        .resume_overwatcher_turn(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"overwatcher_turn_resumed",
+        "run_id":run_id,
+        "session_id":session_id,
+        "foreground_turn_id":foreground_turn_id,
+        "export":refresh_export(&store, &run_id)
     }))
 }
 
@@ -502,5 +522,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|replace-overwatcher|wait-for-change|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|authenticate-role|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
+    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|resume-overwatcher-turn|replace-overwatcher|wait-for-change|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|authenticate-role|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

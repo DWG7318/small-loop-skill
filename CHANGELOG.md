@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.2.6
+
+- Corrected the LCaS CELL03 recovery gaps without changing SLK topology, CELL/D0/D1/D2 semantics, model policy, BI authority, or the accepted product candidate.
+- Added Supervisor-authorized same-Session Overwatcher foreground-turn resume after an anomalous cycle; prior cycles remain immutable and new/unauthorized Sessions fail closed.
+- Bound Worker completion inspection to exact run/CELL/attempt/candidate/message identity and normalized rework `acceptance_criteria` into Checker D1 criteria.
+- Active-writer recovery now reads and steers the existing turn without `thread/resume`; detached Windows transport is headless and breaks away from a one-shot Worker job so the Checker host owns long OCRV review lifetime.
+- Clarified that code/test completion is not Worker role completion, transport failure is INCOMPLETE/`TRANSPORT_FAILED` in the same D1 attempt, and Overwatcher reports then pauses without implementing, judging, or idle-looping.
+
 ## 4.2.5
 
 - Prompt correction deployment: made the Overwatcher use LLM judgment to distinguish normal progress, reasonable waiting, and anomalous stalls; detailed member inactivity, timeout, missing handoff, skipped D1, premature D2, duplicate work, identity drift, and terminal-state anomalies without turning them into a state machine.

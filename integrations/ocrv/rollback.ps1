@@ -30,4 +30,4 @@ if ($receipt.original_recovery_existed) {
 } elseif (Test-Path -LiteralPath $activeRecovery) {
     Remove-Item -LiteralPath $activeRecovery -Force
 }
-[ordered]@{status='ROLLED_BACK'; version='4.2.5'; backup_root=$backup} | ConvertTo-Json -Compress
+[ordered]@{status='ROLLED_BACK'; version='4.2.6'; backup_root=$backup} | ConvertTo-Json -Compress

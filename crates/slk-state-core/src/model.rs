@@ -122,6 +122,7 @@ pub enum EventType {
     RoleReplaced,
     ModelChanged,
     SessionRebound,
+    OverwatcherTurnResumed,
     ExemptionGranted,
     D2Started,
     D2Passed,
@@ -155,8 +156,18 @@ impl EventType {
     pub fn is_owned_by(self, role: Role) -> bool {
         use EventType::*;
         match self {
-            RunInitialized | OverwatcherBound | PlanRevised | ModelChanged | SessionRebound
-            | ExemptionGranted | D2Started | D2Passed | D2Failed | RunSuperseded | RunAbandoned
+            RunInitialized
+            | OverwatcherBound
+            | PlanRevised
+            | ModelChanged
+            | SessionRebound
+            | OverwatcherTurnResumed
+            | ExemptionGranted
+            | D2Started
+            | D2Passed
+            | D2Failed
+            | RunSuperseded
+            | RunAbandoned
             | RunClosed => role == Role::Supervisor,
             RoleRegistered | RoleReplaced => role == Role::Supervisor || role == Role::Checker,
             CellDispatched | D1Started | D1Incomplete | D1Passed | D1Failed | ReworkRequested
@@ -179,6 +190,7 @@ impl EventType {
             RoleReplaced => "ROLE_REPLACED",
             ModelChanged => "MODEL_CHANGED",
             SessionRebound => "SESSION_REBOUND",
+            OverwatcherTurnResumed => "OVERWATCHER_TURN_RESUMED",
             ExemptionGranted => "EXEMPTION_GRANTED",
             D2Started => "D2_STARTED",
             D2Passed => "D2_PASSED",
@@ -462,6 +474,23 @@ pub struct RecordOverwatcherStatusRequest {
     pub native_liveness: NativeLiveness,
     pub evidence: EvidenceReference,
     pub observed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResumeOverwatcherTurnRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub role_instance_id: String,
+    pub session_id: String,
+    pub binding_revision: u64,
+    pub expected_runtime_revision: u64,
+    pub previous_foreground_turn_id: String,
+    pub foreground_turn_id: String,
+    pub last_anomaly_cycle_id: String,
+    pub native_active_session_evidence: EvidenceReference,
+    pub reason: String,
+    pub occurred_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

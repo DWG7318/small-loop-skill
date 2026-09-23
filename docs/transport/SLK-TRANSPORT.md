@@ -1,6 +1,6 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.2.5` carries one closed SLK delivery into one exact native Agent endpoint, writes native start evidence before any terminal result, and can recover only the explicitly allowed identity. It implements transport only: it does not decide CELL scope, D0/D1/D2, PASS/FAIL, rework, exemptions, plan changes, model selection, BoM routing, or BI state.
+`slk-transport 4.2.6` carries one closed SLK delivery into one exact native Agent endpoint, writes native start evidence before any terminal result, and can recover only the explicitly allowed identity. Worker completion inspection binds run/CELL/attempt to the exact candidate and derived handoff message; a D1 event for another candidate/message cannot prove delivery. Rework `acceptance_criteria` is normalized to Checker `d1_criteria`. Active-writer recovery reads and steers the already-active turn without `thread/resume`, and detached Windows transport uses a headless breakaway Checker host so one-shot DSH exit does not own the long OCRV lifetime. It implements transport only and does not decide D1.
 
 ## Role edges
 

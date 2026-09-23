@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-overwatcher-turn-resume.schema.json",
+  "title": "SLK same-Session Overwatcher foreground turn resume",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "run_id", "role_instance_id", "session_id", "binding_revision", "expected_runtime_revision", "previous_foreground_turn_id", "foreground_turn_id", "last_anomaly_cycle_id", "native_active_session_evidence", "reason", "occurred_at"],
+  "properties": {
+    "event_id": {"$ref": "#/$defs/identifier"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "role_instance_id": {"$ref": "#/$defs/identifier"},
+    "session_id": {"$ref": "#/$defs/identifier"},
+    "binding_revision": {"type": "integer", "minimum": 1},
+    "expected_runtime_revision": {"type": "integer", "minimum": 1},
+    "previous_foreground_turn_id": {"$ref": "#/$defs/identifier"},
+    "foreground_turn_id": {"$ref": "#/$defs/identifier"},
+    "last_anomaly_cycle_id": {"$ref": "#/$defs/identifier"},
+    "native_active_session_evidence": {"$ref": "#/$defs/evidence_ref"},
+    "reason": {"type": "string", "minLength": 1},
+    "occurred_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

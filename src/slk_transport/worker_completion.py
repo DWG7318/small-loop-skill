@@ -157,7 +157,7 @@ def build_continuation_request(
         or result.get("message_id") != envelope.message_id
         or result.get("role_instance_id") != endpoint.role_instance_id
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.2.5"
+        or snapshot.get("method_version") != "4.2.6"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -182,7 +182,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.2.5",
+        "method_version": "4.2.6",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -341,6 +341,54 @@ def _event_types(projection: Mapping[str, Any], *, cell_id: str, attempt: int) -
     }
 
 
+def _event_details(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    details = value.get("details")
+    if isinstance(details, Mapping):
+        return details
+    serialized = value.get("details_json")
+    if isinstance(serialized, str):
+        try:
+            decoded = json.loads(serialized)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(decoded, Mapping):
+            return decoded
+    return {}
+
+
+def _exact_worker_handoff(
+    projection: Mapping[str, Any],
+    *,
+    cell_id: str,
+    attempt: int,
+    candidate: Mapping[str, Any],
+    source_message_id: str,
+    handoff_message_id: str,
+) -> tuple[bool, bool]:
+    events = projection.get("events")
+    if not isinstance(events, list):
+        return False, False
+    candidate_submitted = False
+    transport_started = False
+    for item in events:
+        if (
+            not isinstance(item, Mapping)
+            or item.get("cell_id") != cell_id
+            or item.get("attempt") != attempt
+        ):
+            continue
+        details = _event_details(item)
+        if item.get("event_type") == "CANDIDATE_SUBMITTED":
+            candidate_submitted = candidate_submitted or (
+                details.get("candidate") == candidate
+                and details.get("source_message_id") == source_message_id
+                and details.get("handoff_message_id") == handoff_message_id
+            )
+        if item.get("event_type") == "TRANSPORT_STARTED":
+            transport_started = transport_started or details.get("message_id") == handoff_message_id
+    return candidate_submitted, transport_started
+
+
 def _observation_mentions_message(value: Any, message_id: str) -> bool:
     if not isinstance(value, Mapping):
         return False
@@ -381,7 +429,33 @@ def inspect_worker_completion(
     event_types = _event_types(runtime_projection, cell_id=envelope.cell_id, attempt=attempt_number)
     completed_path = attempt / "completed.json"
     completed = completed_path.is_file()
-    d1_started = bool(event_types & {"D1_STARTED", "D1_INCOMPLETE", "D1_FAILED", "D1_PASSED"})
+    candidate: Mapping[str, Any] | None = None
+    handoff_message_id = _stable_id(envelope.message_id, "candidate-ready")
+    exact_candidate = False
+    exact_transport = False
+    if completed:
+        worker_result = _read_object(attempt / "worker-result.json", "Worker result")
+        raw_candidate = worker_result.get("candidate")
+        if (
+            worker_result.get("message_id") != envelope.message_id
+            or worker_result.get("run_id") != envelope.run_id
+            or worker_result.get("role_instance_id") != endpoint.role_instance_id
+            or worker_result.get("status") != "completed"
+            or not isinstance(raw_candidate, Mapping)
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "terminal Worker result does not match the exact dispatch identity",
+            )
+        candidate = raw_candidate
+        exact_candidate, exact_transport = _exact_worker_handoff(
+            runtime_projection,
+            cell_id=envelope.cell_id,
+            attempt=attempt_number,
+            candidate=candidate,
+            source_message_id=envelope.message_id,
+            handoff_message_id=handoff_message_id,
+        )
     base = {
         "schema_version": INSPECTION_SCHEMA,
         "run_id": envelope.run_id,
@@ -390,6 +464,8 @@ def inspect_worker_completion(
         "attempt": attempt_number,
         "source_message_id": envelope.message_id,
         "worker_role_instance_id": endpoint.role_instance_id,
+        "candidate": candidate,
+        "handoff_message_id": handoff_message_id,
         "observed_at": observed_at,
         "cadence_seconds": cadence_seconds,
         "anomaly_codes": [],
@@ -398,7 +474,7 @@ def inspect_worker_completion(
     }
     if not completed:
         return {**base, "status": "IN_PROGRESS", "grace_started_at": None}
-    if token_owner != endpoint.role_instance_id or d1_started:
+    if token_owner != endpoint.role_instance_id and exact_candidate and exact_transport:
         return {**base, "status": "HANDED_OFF_OR_D1", "grace_started_at": None}
     observations = runtime_projection.get("operational_observations")
     notification_already_sent = isinstance(observations, list) and any(
@@ -430,7 +506,9 @@ def inspect_worker_completion(
         ],
         "notification_already_sent": notification_already_sent,
         "missing_worker_events": sorted(
-            {"WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"} - event_types
+            {"WORK_STARTED", "D0_COMPLETED"} - event_types
+            | ({"CANDIDATE_SUBMITTED"} if not exact_candidate else set())
+            | ({"TRANSPORT_STARTED"} if not exact_transport else set())
         ),
     }
 
@@ -451,7 +529,7 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.5":
+    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.6":
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
@@ -466,6 +544,7 @@ def run_worker_continuation(
     if not isinstance(next_payload, Mapping):
         raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker next_payload is invalid")
     source_message_id = str(request["source_message_id"])
+    handoff_message_id = _stable_id(source_message_id, "candidate-ready")
     common = {
         "run_id": run_id,
         "go_id": request["go_id"],
@@ -488,7 +567,16 @@ def run_worker_continuation(
                 "unproved": next_payload.get("unproved", []),
             },
         ),
-        ("candidate-submitted", "CANDIDATE_SUBMITTED", {"candidate": worker_result["candidate"], "checker_endpoint_version": request["checker_endpoint"]["endpoint_version"]}),
+        (
+            "candidate-submitted",
+            "CANDIDATE_SUBMITTED",
+            {
+                "candidate": worker_result["candidate"],
+                "checker_endpoint_version": request["checker_endpoint"]["endpoint_version"],
+                "source_message_id": source_message_id,
+                "handoff_message_id": handoff_message_id,
+            },
+        ),
     ):
         write_event(
             {
@@ -502,8 +590,16 @@ def run_worker_continuation(
     if isinstance(fresh_runtime_revision, bool) or not isinstance(fresh_runtime_revision, int) or fresh_runtime_revision < 1:
         raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "fresh runtime revision is unavailable")
     repository = next_payload.get("candidate_repository", next_payload.get("repository"))
-    cell_goal = next_payload.get("cell_goal", source_envelope.payload.get("cell_goal"))
+    cell_goal = source_envelope.payload.get("cell_goal", next_payload.get("cell_goal"))
     d1_criteria = source_envelope.payload.get("d1_criteria")
+    acceptance_criteria = source_envelope.payload.get("acceptance_criteria")
+    if d1_criteria is None:
+        d1_criteria = acceptance_criteria
+    elif acceptance_criteria is not None and acceptance_criteria != d1_criteria:
+        raise CompletionError(
+            "WORKER_COMPLETION_EVIDENCE_INVALID",
+            "d1_criteria and acceptance_criteria conflict",
+        )
     evidence_files = [
         str(path.resolve())
         for path in (
@@ -539,7 +635,7 @@ def run_worker_continuation(
     checker = Endpoint.from_dict(request["checker_endpoint"])
     envelope = {
         "schema_version": ENVELOPE_SCHEMA,
-        "message_id": _stable_id(source_message_id, "candidate-ready"),
+        "message_id": handoff_message_id,
         "token_sequence": int(request["token_sequence"]) + 1,
         "run_id": run_id,
         "go_id": request["go_id"],
@@ -728,8 +824,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.2.5":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.2.5")
+    if request.get("method_version") != "4.2.6":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.2.6")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -798,7 +894,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not start Checker D1")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.2.5",
+        "method_version": "4.2.6",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],

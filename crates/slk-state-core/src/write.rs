@@ -23,8 +23,9 @@ use crate::model::{
     OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
     RebindSessionRequest, ReconcileRunIdentitiesRequest, RecordOverwatcherStatusRequest,
-    RegisterRoleRequest, ReplaceOverwatcherRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
-    RunStateSnapshot, RuntimeSnapshot, TokenHandoffRequest, WriteRequest,
+    RegisterRoleRequest, ReplaceOverwatcherRequest, ReplaceRoleRequest,
+    ResumeOverwatcherTurnRequest, RevisePlanRequest, Role, RunStateSnapshot, RuntimeSnapshot,
+    TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
 
@@ -675,7 +676,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1541,7 +1542,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if matches!(method_version.as_str(), "4.2.4" | "4.2.5") {
+            if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6") {
                 type ExistingWorkEvent = (
                     String,
                     Option<String>,
@@ -1931,7 +1932,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2613,6 +2614,158 @@ impl StateStore {
                 &request.status_id,
                 current_snapshot.latest_message_id.as_deref(),
                 &request.observed_at,
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn resume_overwatcher_turn(
+        &self,
+        credential: &Credential,
+        request: ResumeOverwatcherTurnRequest,
+    ) -> Result<(), StateError> {
+        if !valid_identifier(&request.event_id)
+            || !valid_identifier(&request.role_instance_id)
+            || !valid_identifier(&request.last_anomaly_cycle_id)
+            || request.session_id.trim().is_empty()
+            || request.binding_revision == 0
+            || request.expected_runtime_revision == 0
+            || request.previous_foreground_turn_id.trim().is_empty()
+            || request.foreground_turn_id.trim().is_empty()
+            || request.previous_foreground_turn_id == request.foreground_turn_id
+            || request.reason.trim().is_empty()
+        {
+            return Err(StateError::OverwatcherCycleInvalid(
+                "same-Session turn resume identity and Supervisor reason are required".into(),
+            ));
+        }
+        validate_evidence_reference(&request.native_active_session_evidence)?;
+        validate_admin_timestamp(&request.occurred_at)?;
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_role(transaction, &request.run_id, credential)?;
+            if actor.role != Role::Supervisor {
+                return Err(StateError::OverwatcherBindingNotAuthorized);
+            }
+            let method_version: String = transaction
+                .query_row(
+                    "SELECT slk_version FROM runs
+                     WHERE run_id=?1 AND closure_state='open' AND state<>'archived'",
+                    [&request.run_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
+            if method_version != "4.2.6" {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "same-Session Overwatcher turn resume requires SLK 4.2.6".into(),
+                ));
+            }
+            let binding: (String, String, String, u64, String, String) = transaction
+                .query_row(
+                    "SELECT role_instance_id, session_id, foreground_turn_id,
+                            binding_revision, lifecycle_state, continuity_state
+                     FROM overwatcher_bindings WHERE run_id=?1",
+                    [&request.run_id],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                        ))
+                    },
+                )?;
+            if binding.0 != request.role_instance_id
+                || binding.1 != request.session_id
+                || binding.2 != request.previous_foreground_turn_id
+                || binding.3 != request.binding_revision
+                || binding.4 != "active"
+                || binding.5 != "ACTIVE"
+            {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "turn resume must preserve the current Overwatcher role, Session, binding, and active continuity"
+                        .into(),
+                ));
+            }
+            let runtime = runtime_snapshot_from(transaction, &request.run_id)?;
+            if runtime.runtime_revision != request.expected_runtime_revision {
+                return Err(StateError::RuntimeRevisionMismatch {
+                    requested: request.expected_runtime_revision,
+                    current: runtime.runtime_revision,
+                });
+            }
+            let latest_cycle: (String, String, String, String) = transaction
+                .query_row(
+                    "SELECT cycle_id, session_id, foreground_turn_id, anomaly_codes_json
+                     FROM overwatch_cycles WHERE run_id=?1
+                     ORDER BY cycle_sequence DESC LIMIT 1",
+                    [&request.run_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?
+                .ok_or_else(|| {
+                    StateError::OverwatcherCycleInvalid(
+                        "turn resume requires a prior anomalous observation cycle".into(),
+                    )
+                })?;
+            let anomaly_codes: Vec<crate::model::OverwatchAnomalyCode> =
+                serde_json::from_str(&latest_cycle.3).map_err(|_| {
+                    StateError::OverwatcherCycleInvalid(
+                        "last anomaly cycle has invalid closed anomaly codes".into(),
+                    )
+                })?;
+            if latest_cycle.0 != request.last_anomaly_cycle_id
+                || latest_cycle.1 != request.session_id
+                || latest_cycle.2 != request.previous_foreground_turn_id
+                || anomaly_codes.is_empty()
+            {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "turn resume must follow the exact last anomaly cycle in the same Session and old turn"
+                        .into(),
+                ));
+            }
+            transaction.execute(
+                "UPDATE overwatcher_bindings
+                 SET foreground_turn_id=?2, native_active_session_evidence_ref=?3
+                 WHERE run_id=?1",
+                params![
+                    request.run_id,
+                    request.foreground_turn_id,
+                    request.native_active_session_evidence.path
+                ],
+            )?;
+            let revision = current_plan_revision(transaction, &request.run_id)?;
+            transaction.execute(
+                "INSERT INTO work_events
+                 (event_id, run_id, plan_revision, author_role_instance_id, event_type,
+                  details_json, occurred_at)
+                 VALUES (?1,?2,?3,?4,'OVERWATCHER_TURN_RESUMED',?5,?6)",
+                params![
+                    request.event_id,
+                    request.run_id,
+                    revision,
+                    actor.role_instance_id,
+                    serde_json::to_string(&serde_json::json!({
+                        "role_instance_id": request.role_instance_id,
+                        "session_id": request.session_id,
+                        "binding_revision": request.binding_revision,
+                        "previous_foreground_turn_id": request.previous_foreground_turn_id,
+                        "foreground_turn_id": request.foreground_turn_id,
+                        "last_anomaly_cycle_id": request.last_anomaly_cycle_id,
+                        "native_active_session_evidence": request.native_active_session_evidence,
+                        "reason": request.reason,
+                    }))?,
+                    request.occurred_at,
+                ],
+            )?;
+            advance_runtime_snapshot(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                runtime.latest_message_id.as_deref(),
+                &request.occurred_at,
             )?;
             Ok(())
         })
@@ -3494,7 +3647,7 @@ fn validate_reconciliation_request(
 }
 
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
-    matches!(version, "4.2.3" | "4.2.4" | "4.2.5")
+    matches!(version, "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6")
 }
 
 fn validate_method_adoption_request(
@@ -3505,7 +3658,8 @@ fn validate_method_adoption_request(
             && request.to_version == "4.2.2")
             || (request.from_version == "4.2.2" && request.to_version == "4.2.3")
             || (request.from_version == "4.2.3" && request.to_version == "4.2.4")
-            || (request.from_version == "4.2.4" && request.to_version == "4.2.5");
+            || (request.from_version == "4.2.4" && request.to_version == "4.2.5")
+            || (request.from_version == "4.2.5" && request.to_version == "4.2.6");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

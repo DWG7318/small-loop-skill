@@ -13,7 +13,8 @@ use slk_state_core::model::{
     OverwatchAnomalyCode, OverwatchCheckResult, OverwatchCycleChecklist, OverwatchCycleRequest,
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
     PreservedAssertion, ProjectIdentity, RecordOverwatcherStatusRequest, RegisterRoleRequest,
-    ReplaceOverwatcherRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
+    ReplaceOverwatcherRequest, ResumeOverwatcherTurnRequest, Role, RoleIdentity,
+    TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -538,6 +539,116 @@ fn adoption_424_to_425_preserves_a_proven_active_overwatcher() {
             .as_deref(),
         Some("ACTIVE")
     );
+}
+
+#[test]
+fn supervisor_resumes_the_same_overwatcher_session_on_a_new_turn_after_an_anomaly_pause() {
+    let (fixture, overwatcher) = fixture_426_with_anomaly();
+    let previous_revision = fixture.runtime_revision();
+    let evidence =
+        fixture.evidence_ref("resumed-turn-live.json", b"same session active on new turn");
+
+    fixture
+        .store
+        .resume_overwatcher_turn(
+            &fixture.supervisor,
+            ResumeOverwatcherTurnRequest {
+                event_id: "resume-overwatcher-turn-2".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                binding_revision: 1,
+                expected_runtime_revision: previous_revision,
+                previous_foreground_turn_id: "foreground-turn-a".into(),
+                foreground_turn_id: "foreground-turn-b".into(),
+                last_anomaly_cycle_id: "cycle-2".into(),
+                native_active_session_evidence: evidence,
+                reason: "Supervisor resolved the reported anomaly and woke the same Session".into(),
+                occurred_at: "2026-09-23T00:08:01Z".into(),
+            },
+        )
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    let runtime = projection.runtime_snapshot.unwrap();
+    assert_eq!(runtime.runtime_revision, previous_revision + 1);
+    assert_eq!(runtime.latest_event_id, "resume-overwatcher-turn-2");
+    assert_eq!(projection.summary.slk_version, "4.2.6");
+
+    let mut resumed = overwatch_cycle(3);
+    resumed.foreground_turn_id = "foreground-turn-b".into();
+    resumed.runtime_revision = runtime.runtime_revision;
+    resumed.latest_event_id = runtime.latest_event_id;
+    resumed.latest_message_id = runtime.latest_message_id;
+    resumed.started_at = "2026-09-23T00:11:59Z".into();
+    resumed.completed_at = "2026-09-23T00:12:00Z".into();
+    resumed.next_cycle_at = "2026-09-23T00:16:00Z".into();
+    resumed.evidence_refs =
+        vec![fixture.evidence_ref("cycle-resumed.json", b"resumed observation")];
+    resumed.native_active_session_evidence_ref = resumed.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&overwatcher, resumed)
+        .unwrap();
+
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    let binding_turn: String = database
+        .query_row(
+            "SELECT foreground_turn_id FROM overwatcher_bindings WHERE run_id='run-a'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let turns: (String, String) = database
+        .query_row(
+            "SELECT
+                (SELECT foreground_turn_id FROM overwatch_cycles WHERE cycle_id='cycle-2'),
+                (SELECT foreground_turn_id FROM overwatch_cycles WHERE cycle_id='cycle-3')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(binding_turn, "foreground-turn-b");
+    assert_eq!(
+        turns,
+        ("foreground-turn-a".into(), "foreground-turn-b".into())
+    );
+}
+
+#[test]
+fn overwatcher_turn_resume_rejects_a_new_session_and_non_supervisor_authority() {
+    let (fixture, _overwatcher) = fixture_426_with_anomaly();
+    let request = ResumeOverwatcherTurnRequest {
+        event_id: "resume-overwatcher-invalid".into(),
+        run_id: "run-a".into(),
+        role_instance_id: "overwatcher-a".into(),
+        session_id: "session-overwatcher-replacement".into(),
+        binding_revision: 1,
+        expected_runtime_revision: fixture.runtime_revision(),
+        previous_foreground_turn_id: "foreground-turn-a".into(),
+        foreground_turn_id: "foreground-turn-b".into(),
+        last_anomaly_cycle_id: "cycle-2".into(),
+        native_active_session_evidence: fixture.evidence_ref("invalid-resume.json", b"invalid"),
+        reason: "must not replace the bound Session".into(),
+        occurred_at: "2026-09-23T00:08:01Z".into(),
+    };
+
+    assert!(matches!(
+        fixture
+            .store
+            .resume_overwatcher_turn(&fixture.supervisor, request.clone()),
+        Err(StateError::OverwatcherCycleInvalid(_))
+    ));
+    assert!(matches!(
+        fixture.store.resume_overwatcher_turn(
+            &fixture.checker,
+            ResumeOverwatcherTurnRequest {
+                session_id: "session-overwatcher-a".into(),
+                ..request
+            }
+        ),
+        Err(StateError::OverwatcherBindingNotAuthorized)
+    ));
 }
 
 #[test]
@@ -1287,6 +1398,76 @@ impl Fixture {
     }
 }
 
+fn fixture_426_with_anomaly() -> (Fixture, slk_state_core::auth::Credential) {
+    let fixture = Fixture::new_423();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let mut initial = overwatch_cycle(1);
+    initial.runtime_revision = fixture.runtime_revision();
+    initial.latest_event_id = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap()
+        .latest_event_id;
+    initial.evidence_refs = vec![fixture.evidence_ref("cycle-before-426.json", b"active")];
+    initial.native_active_session_evidence_ref = initial.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, initial)
+        .unwrap();
+    fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_424_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+    fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_425_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+    fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            adoption_426_request(&fixture, OverwatcherAssertion::PreservedActive),
+        )
+        .unwrap();
+
+    let runtime = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    let mut anomaly = overwatch_cycle(2);
+    anomaly.runtime_revision = runtime.runtime_revision;
+    anomaly.latest_event_id = runtime.latest_event_id;
+    anomaly.latest_message_id = runtime.latest_message_id;
+    anomaly.started_at = "2026-09-23T00:07:59Z".into();
+    anomaly.completed_at = "2026-09-23T00:08:00Z".into();
+    anomaly.next_cycle_at = "2026-09-23T00:12:00Z".into();
+    anomaly.checklist.direct_handoffs = OverwatchCheckResult::Anomaly;
+    anomaly.anomaly_codes = vec![OverwatchAnomalyCode::CommunicationRecoveryRequired];
+    anomaly.evidence_refs = vec![fixture.evidence_ref("cycle-anomaly.json", b"handoff missing")];
+    anomaly.native_active_session_evidence_ref = anomaly.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, anomaly)
+        .unwrap();
+    (fixture, issued.credential)
+}
+
 fn replacement_request(
     fixture: &Fixture,
     mode: OverwatcherReplacementMode,
@@ -1399,6 +1580,37 @@ fn adoption_425_request(
         },
         reason: "adopt the 4.2.5 authenticated Checker recovery boundary".into(),
         occurred_at: "2026-09-23T01:00:01Z".into(),
+    }
+}
+
+fn adoption_426_request(
+    fixture: &Fixture,
+    overwatcher: OverwatcherAssertion,
+) -> AdoptMethodContractRequest {
+    AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-426".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.2.5".into(),
+        to_version: "4.2.6".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-426".into(),
+            message_id: "owner-message-426".into(),
+            content_sha256: "d".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-23T02:00:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher,
+        },
+        reason: "adopt 4.2.6 same-Session Overwatcher turn recovery without rewriting history"
+            .into(),
+        occurred_at: "2026-09-23T02:00:01Z".into(),
     }
 }
 

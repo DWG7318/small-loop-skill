@@ -20,5 +20,9 @@ def windows_no_window_kwargs(
     startupinfo.wShowWindow = subprocess.SW_HIDE
     flags = subprocess.CREATE_NO_WINDOW
     if detached:
-        flags |= subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        flags |= (
+            subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_BREAKAWAY_FROM_JOB
+        )
     return {"creationflags": flags, "startupinfo": startupinfo}

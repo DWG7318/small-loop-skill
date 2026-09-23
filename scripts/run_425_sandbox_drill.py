@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the focused disposable acceptance drill for SLK 4.2.5."""
+"""Run the focused disposable acceptance drill for SLK 4.2.6."""
 
 from __future__ import annotations
 
@@ -69,8 +69,8 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         }
     )
     version = _run("state-version", [state_cli, "--version"], root, environment).strip()
-    if "4.2.5" not in version:
-        raise RuntimeError(f"sandbox requires slk-state 4.2.5, got {version!r}")
+    if "4.2.6" not in version:
+        raise RuntimeError(f"sandbox requires slk-state 4.2.6, got {version!r}")
 
     pytest_root = root / "pytest"
     _run(
@@ -103,7 +103,7 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         candidate = Path.home() / ".cargo" / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")
         cargo = str(candidate) if candidate.is_file() else None
     if cargo is None:
-        raise FileNotFoundError("cargo is required for the 4.2.5 state sandbox")
+        raise FileNotFoundError("cargo is required for the 4.2.6 state sandbox")
     _run(
         "atomic-delivery-start",
         [
@@ -209,7 +209,7 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
     }
     report = {
         "schema_version": "slk.sandbox-drill-report/v1",
-        "method_version": "4.2.5",
+        "method_version": "4.2.6",
         "run_id": "RUN-425-SANDBOX",
         "status": "PASS",
         "proofs": proofs,

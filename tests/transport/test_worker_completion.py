@@ -16,6 +16,7 @@ from slk_transport.worker_completion import (
     inspect_worker_completion,
     resume_worker_continuation,
     run_worker_continuation,
+    _stable_id,
 )
 
 from test_contracts import MESSAGE_ID, endpoint_value, envelope_value
@@ -61,7 +62,7 @@ def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.2.5",
+        "method_version": "4.2.6",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -109,7 +110,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.2.5"
+        assert continuation["method_version"] == "4.2.6"
         return {"status": "CHECKER_STARTED"}
 
     result = execute_checker_recovery(
@@ -269,9 +270,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.2.5", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.2.6", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.2.5",
+            "method_version": "4.2.6",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,
@@ -281,6 +282,33 @@ def runtime_projection(
         "events": events,
         "operational_observations": [],
     }
+
+
+def current_worker_handoff_events() -> list[dict[str, object]]:
+    candidate = {"kind": "commit", "commit": "b" * 40}
+    handoff_message_id = _stable_id(MESSAGE_ID, "candidate-ready")
+    return [
+        {
+            "event_id": "candidate-current",
+            "event_type": "CANDIDATE_SUBMITTED",
+            "cell_id": "CELL-001",
+            "attempt": 1,
+            "details_json": json.dumps(
+                {
+                    "candidate": candidate,
+                    "source_message_id": MESSAGE_ID,
+                    "handoff_message_id": handoff_message_id,
+                }
+            ),
+        },
+        {
+            "event_id": "handoff-current",
+            "event_type": "TRANSPORT_STARTED",
+            "cell_id": "CELL-001",
+            "attempt": 1,
+            "details_json": json.dumps({"message_id": handoff_message_id}),
+        },
+    ]
 
 
 def test_terminal_worker_without_handoff_alerts_after_one_complete_cadence(tmp_path: Path) -> None:
@@ -340,9 +368,11 @@ def test_running_worker_and_existing_d1_do_not_raise_completion_handoff_alarm(tm
     )["status"] == "IN_PROGRESS"
 
     write_json(attempt / "completed.json", {"status": "completed"})
+    projection = runtime_projection(event_types=["D1_INCOMPLETE"], token_owner="ROLE-checker")
+    projection["events"].extend(current_worker_handoff_events())
     assert inspect_worker_completion(
         attempt,
-        runtime_projection(event_types=["D1_INCOMPLETE"], token_owner="ROLE-checker"),
+        projection,
         observed_at="2026-09-23T00:10:00Z",
         cadence_seconds=240,
     )["status"] == "HANDED_OFF_OR_D1"
@@ -369,6 +399,61 @@ def test_d1_from_an_older_attempt_does_not_hide_current_worker_handoff_stall(tmp
     )
     assert result["status"] == "WORKER_COMPLETION_HANDOFF_MISSING"
     assert result["attempt"] == 2
+
+
+def test_d1_with_same_attempt_but_wrong_candidate_and_message_does_not_prove_handoff(
+    tmp_path: Path,
+) -> None:
+    attempt, endpoint, _checker = completion_fixture(tmp_path)
+    projection = runtime_projection(event_types=[], token_owner="ROLE-checker")
+    projection["events"].extend(
+        [
+            {
+                "event_id": "candidate-other",
+                "event_type": "CANDIDATE_SUBMITTED",
+                "cell_id": "CELL-001",
+                "attempt": 1,
+                "details_json": json.dumps(
+                    {
+                        "candidate": {"kind": "commit", "commit": "c" * 40},
+                        "source_message_id": "other-source-message",
+                        "handoff_message_id": "other-handoff-message",
+                    }
+                ),
+            },
+            {
+                "event_id": "d1-other",
+                "event_type": "D1_PASSED",
+                "cell_id": "CELL-001",
+                "attempt": 1,
+                "details_json": json.dumps(
+                    {
+                        "candidate": {"kind": "commit", "commit": "c" * 40},
+                        "message_id": "other-handoff-message",
+                    }
+                ),
+            },
+        ]
+    )
+
+    result = inspect_worker_completion(
+        attempt,
+        projection,
+        observed_at="2026-09-23T00:10:00Z",
+        cadence_seconds=240,
+        previous_inspection={
+            "schema_version": "slk.worker-completion-inspection/v1",
+            "run_id": "RUN-A",
+            "source_message_id": MESSAGE_ID,
+            "status": "COMPLETION_GRACE",
+            "grace_started_at": "2026-09-23T00:00:00Z",
+        },
+    )
+
+    assert result["status"] == "WORKER_COMPLETION_HANDOFF_MISSING"
+    assert result["worker_role_instance_id"] == endpoint["role_instance_id"]
+    assert result["candidate"] == {"kind": "commit", "commit": "b" * 40}
+    assert result["handoff_message_id"] == _stable_id(MESSAGE_ID, "candidate-ready")
 
 
 def test_recorded_notification_does_not_clear_a_still_unresolved_completion_stall(tmp_path: Path) -> None:
@@ -601,6 +686,77 @@ def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path:
     ]
     assert sends[0]["payload_type"] == "CANDIDATE_READY"
     assert commits[0]["from_role_instance_id"] == endpoint["role_instance_id"]
+
+
+def test_rework_acceptance_criteria_become_checker_d1_criteria(tmp_path: Path) -> None:
+    attempt, endpoint, checker = completion_fixture(tmp_path)
+    source = json.loads((attempt / "envelope.json").read_text(encoding="utf-8"))
+    source["sender_role"] = "supervisor"
+    source["sender_role_instance_id"] = "RUN-A-supervisor-001"
+    source["payload_type"] = "D1_REWORK_DIRECTIVE"
+    source["payload"] = {
+        "d1_failure_event_id": "d1-failed-001",
+        "failed_candidate_sha256": "a" * 64,
+        "rework_round": 1,
+        "cell_goal": "remove the invalid comparison",
+        "acceptance_criteria": [
+            "compare only the valid GUI identity surface",
+            "keep the localized footer text",
+        ],
+        "findings": ["the localized footer is not the GUI package identity"],
+        "evidence_refs": ["evidence/d1-failed-001.json"],
+        "root_cause_hypothesis": "the implementation compared unrelated identity surfaces",
+        "minimal_experiment": "run the focused GUI identity regression",
+        "minimal_repair_scope": "remove only the invalid footer comparison",
+        "regression_target": "the focused regression fails before and passes after",
+    }
+    from slk_transport.contracts import canonical_json_sha256
+
+    source["payload_sha256"] = canonical_json_sha256(source["payload"])
+    write_json(attempt / "envelope.json", source)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    sent: list[dict[str, object]] = []
+
+    def start_checker(endpoint_raw: dict[str, object], envelope_raw: dict[str, object]) -> dict[str, object]:
+        sent.append(envelope_raw)
+        return {
+            "status": "started",
+            "started_path": str(
+                write_json(
+                    tmp_path / "rework-checker-started.json",
+                    {
+                        "message_id": envelope_raw["message_id"],
+                        "run_id": envelope_raw["run_id"],
+                        "status": "started",
+                    },
+                )
+            ),
+            "endpoint_path": str(write_json(tmp_path / "rework-checker-endpoint.json", endpoint_raw)),
+            "envelope_path": str(write_json(tmp_path / "rework-checker-envelope.json", envelope_raw)),
+        }
+
+    result = run_worker_continuation(
+        request,
+        authenticate=lambda run_id, role_id: 10,
+        write_event=lambda event: "RECORDED",
+        start_checker=start_checker,
+        commit_start=lambda value: "COMMITTED",
+    )
+
+    assert result["status"] == "CHECKER_STARTED"
+    assert sent[0]["payload"]["d1_criteria"] == source["payload"]["acceptance_criteria"]
+    assert sent[0]["payload"]["cell_goal"] == source["payload"]["cell_goal"]
 
 
 def test_continuation_exact_replay_does_not_send_checker_twice(tmp_path: Path) -> None:

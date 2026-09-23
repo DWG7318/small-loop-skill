@@ -31,6 +31,7 @@ def test_detached_policy_keeps_no_window_and_process_group() -> None:
     assert flags & subprocess.CREATE_NO_WINDOW
     assert flags & subprocess.CREATE_NEW_PROCESS_GROUP
     assert flags & subprocess.DETACHED_PROCESS
+    assert flags & subprocess.CREATE_BREAKAWAY_FROM_JOB
 
 
 def test_every_transport_process_launch_uses_the_shared_policy() -> None:

@@ -1,4 +1,16 @@
-# Migration from SLK 2.6.0 to 3.0.0
+# SLK Migration Guide
+
+## Current patch migration: 4.2.5 to 4.2.6
+
+Install the complete 4.2.6 package, then explicitly adopt each still-open 4.2.5 Run with its exact current snapshot and Overwatcher assertion. Adoption preserves topology, plan, role/session identities, TOKEN, engineering history, current candidate and all prior Overwatcher cycles.
+
+If an Overwatcher has already reported an anomaly and the Supervisor later wakes the same Session into a new foreground turn, call `slk-state resume-overwatcher-turn` with the current runtime/binding revision, exact prior turn, exact latest anomalous cycle, new turn and hash-verified native evidence before recording the next cycle. Do not create a replacement Session or rewrite the prior cycle.
+
+Worker completion recovery in 4.2.6 requires the exact current attempt, candidate and derived handoff message. A legacy 4.2.5 record that lacks these facts remains unproved and must be recovered through the existing roles; it is not silently reinterpreted. Rework `acceptance_criteria` is passed to OCRV as `d1_criteria`. Active-writer delivery uses read+steer, and long OCRV work must run under the detached headless Checker transport host or a persistent Supervisor host. Tool failure remains the same attempt and is not a product D1 FAIL.
+
+No model policy changes are included. DSH remains the frozen Worker runtime for affected LCaS Runs; Pro and BoM remain disabled.
+
+## Migration from SLK 2.6.0 to 3.0.0
 
 SLK 3.0.0 is a new method boundary. Existing Runs can remain on their bound 2.6.0 method. A new Run can choose 3.0.0 and create a fresh root Run record.
 

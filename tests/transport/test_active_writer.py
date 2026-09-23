@@ -71,6 +71,8 @@ def test_active_writer_recovery_uses_new_message_and_preserves_old_failure(tmp_p
     transcript = (original / "recovery" / "active-writer" / "native.stdout.txt").read_text(
         encoding="utf-8"
     )
+    assert '"method":"thread/resume"' not in transcript
+    assert '"method":"thread/read"' in transcript
     assert '"method":"turn/steer"' in transcript
     assert f'"clientUserMessageId":"{recovered["recovery_message_id"]}"' in transcript
 

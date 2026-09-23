@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.5"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.6"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -224,6 +224,24 @@ def test_checker_separates_product_failure_from_checking_failures() -> None:
     assert "零 finding" in check
     assert "只有 PASS 或 FAIL 闭合 D1" in check
     assert "不写 `D1_PASSED` 或 `D1_FAILED`" in check
+    assert "TRANSPORT_FAILED" in check
+    assert "同一 candidate 与 D1 attempt" in check
+    assert "一次性 DSH/Worker 进程" in check
+
+
+def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -> None:
+    execute = read_skill("slk-execute-cell")
+    recover = read_skill("slk-recover-communication")
+    overwatch = read_skill("slk-overwatch-run")
+    main = read_skill("small-loop-skill")
+    assert "代码、提交与测试完成不等于 Worker 角色完成" in execute
+    assert "恰好一次当前 CELL/attempt/candidate" in execute
+    assert "run+cell+attempt+candidate/message" in recover
+    assert "不要先调用必然与现有 writer 冲突的 `thread/resume`" in recover
+    assert "独立 headless Checker 传输宿主" in recover
+    assert "`slk-state resume-overwatcher-turn`" in overwatch
+    assert "新 Session、非 Supervisor 授权" in overwatch
+    assert "4.2.6" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
