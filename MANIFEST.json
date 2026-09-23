@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "e77a893c7c7d4ef0da40bfbf2760ecce532a7bc6f04370f083e947220d620a99"
+      "sha256": "ef90687bc2fb18c6d72eac41b452128cc97c16c6c56401a58cee6a5b6b75ca23"
     },
     {
       "path": "Cargo.lock",
@@ -880,7 +880,7 @@
     },
     {
       "path": "skills/slk-overwatch-run/SKILL.md",
-      "sha256": "881d67d153367c66669ba61f0b30d29c4a3e864f9002635304a325b9561c76eb"
+      "sha256": "abd5303cd08b268d6965d497fb19ecb8ee0019076ff2e311378faf2e43172f2f"
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
@@ -908,7 +908,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "d2cfcc4d2fff76db0baa6f5636be6997855047ff22b3aa9ff1ecfeac125fe9a8"
+      "sha256": "42c939159a5cc6da165cf629f0a38b76760141698d323049021875c438b40464"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",

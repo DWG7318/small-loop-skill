@@ -2,6 +2,9 @@
 
 ## 4.2.5
 
+- Prompt correction deployment: made the Overwatcher use LLM judgment to distinguish normal progress, reasonable waiting, and anomalous stalls; detailed member inactivity, timeout, missing handoff, skipped D1, premature D2, duplicate work, identity drift, and terminal-state anomalies without turning them into a state machine.
+- An anomalous Overwatcher cycle must now send one complete actionable report to Supervisor, then stop inspecting and end the active turn until Supervisor explicitly wakes the same Session after recovery; unchanged anomalies no longer justify repeated deep cycles or token burn.
+- Added the repository-wide Agent-first/Skill-first correction rule: role-semantic failures are corrected through the relevant sub-Skill plus concise main-Skill guidance, while cross-Agent communication, identity, TOKEN, durable evidence, central state, and BI remain lightweight standardized Tools exposed through documented CLI/MCP/API contracts. Heavy orchestration must be compared with mature engines instead of being rebuilt inside SLK.
 - Closed the 4.2.4 authority gap: Supervisor can only send a closed `WORKER_COMPLETION_RECOVERY` to the original registered OCRV Checker; deterministic native Checker start remains pending/unauthorized until the Checker credential proves the exact role and runtime revision, after which the same DSH Session may run the bounded Worker-owned suffix.
 - Removed the public direct `resume-worker-continuation` command, added closed Checker recovery request/result contracts, and packaged a reversible two-file OCRV wrapper integration without changing the accepted D1 adapter or installing dependencies.
 - Added read-only Overwatcher cadence inspection so a projected active role cannot stand in for continuing 180–300 second cycles. One missed interval wakes the same binding; more than two intervals requires Supervisor recovery review, with no heartbeat, daemon, timer, automatic replacement, or state mutation.
