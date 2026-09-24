@@ -27,7 +27,7 @@ if args.slk_worker_recovery:
     source_started = json.loads((source_root / "started.json").read_text(encoding="utf-8"))
     result = {
         "schema_version": "slk.ocrv-worker-recovery-result/v1",
-        "method_version": "4.2.6",
+        "method_version": "4.2.7",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -45,13 +45,26 @@ if args.slk_worker_recovery:
     sys.exit(0)
 if args.mode == "delayed-terminal":
     time.sleep(0.35)
+expected_request_fields = {
+    "schema_version",
+    "run_id",
+    "cell_id",
+    "repository",
+    "candidate",
+    "cell_goal",
+    "d1_criteria",
+    "evidence_files",
+}
+if set(request) != expected_request_fields:
+    print("SLK_OCRV_REQUEST_INVALID: unknown or missing request field", file=sys.stderr)
+    sys.exit(4)
 session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uuid4()}"
 verdict = "INCOMPLETE" if args.mode == "incomplete" else "PASS"
 result = {
     "schema_version": "slk.ocrv-d1-result/v1",
     "run_id": request["run_id"],
     "cell_id": request["cell_id"],
-    "review_invocation_id": request["review_invocation_id"],
+    "review_invocation_id": str(uuid.uuid4()),
     "verdict": verdict,
     "reason_codes": ["OCR_STATUS_NOT_COMPLETE"] if verdict == "INCOMPLETE" else ["OCR_COMPLETE_ZERO_FINDINGS"],
     "findings": [],

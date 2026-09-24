@@ -676,7 +676,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1542,7 +1542,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6") {
+            if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7") {
                 type ExistingWorkEvent = (
                     String,
                     Option<String>,
@@ -1932,7 +1932,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2655,9 +2655,9 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if method_version != "4.2.6" {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7") {
                 return Err(StateError::OverwatcherCycleInvalid(
-                    "same-Session Overwatcher turn resume requires SLK 4.2.6".into(),
+                    "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             let binding: (String, String, String, u64, String, String) = transaction
@@ -3647,7 +3647,7 @@ fn validate_reconciliation_request(
 }
 
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
-    matches!(version, "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6")
+    matches!(version, "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7")
 }
 
 fn validate_method_adoption_request(
@@ -3659,7 +3659,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.2.2" && request.to_version == "4.2.3")
             || (request.from_version == "4.2.3" && request.to_version == "4.2.4")
             || (request.from_version == "4.2.4" && request.to_version == "4.2.5")
-            || (request.from_version == "4.2.5" && request.to_version == "4.2.6");
+            || (request.from_version == "4.2.5" && request.to_version == "4.2.6")
+            || (request.from_version == "4.2.6" && request.to_version == "4.2.7");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

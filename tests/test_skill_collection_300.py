@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.6"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.7"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -241,7 +241,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.2.6" in main
+    assert "4.2.7" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -1155,3 +1155,35 @@ def test_d1_incomplete_and_supervisor_rework_are_not_conflated() -> None:
     ):
         assert marker in rework + execute
     assert "BoM" not in rework + execute
+
+
+def test_worker_and_checker_preflight_can_rationalize_locally_without_new_formal_units() -> None:
+    main = read_skill("small-loop-skill")
+    execute = read_skill("slk-execute-cell")
+    check = read_skill("slk-check-cell")
+
+    assert "角色本地轻量预检" in main
+    assert "不能把内部顺序段当成正式 CELL 或 D1" in main
+    assert "实现范围、依赖、工具能力、证据负荷" in execute
+    assert "不能自行拆成多个正式 CELL" in execute
+    assert "候选元数据、changed paths、验收条件、模型与工具能力" in check
+    assert "D1-A/B/C" in check
+    assert "仍只形成一个正式 D1" in check
+
+
+def test_checker_does_not_turn_empty_review_or_missing_proof_into_pass() -> None:
+    check = read_skill("slk-check-cell")
+    negative = check.split("\n## 负面提示词\n\n", 1)[1]
+
+    assert "缺少关键证明" in check and "INCOMPLETE" in check
+    assert "实质产品缺陷" in check and "FAIL" in check
+    assert "零 finding" in negative and "自动 PASS" in negative
+
+
+def test_overwatcher_reports_worker_handoff_stall_then_pauses_for_same_member_recovery() -> None:
+    overwatch = read_skill("slk-overwatch-run")
+
+    assert "240 秒" in overwatch
+    assert "报告 Supervisor" in overwatch
+    assert "然后暂停" in overwatch
+    assert "恢复原成员" in overwatch

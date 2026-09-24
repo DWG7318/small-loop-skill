@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.2.7
+
+- Added compact Worker and Checker role-local preflight. Either role may sequence its own work into internal segments, while the formal CELL, D1 attempt, TOKEN, role topology, and single final D1 verdict remain unchanged.
+- Rebound stale Codex Desktop executable paths to the current installed `codex.exe` with immutable evidence, and read active writer state before any `thread/resume` call.
+- Aligned `slk.ocrv-d1-request/v1` with the installed OCRV 1.12.7 closed request contract; the OCRV-generated review invocation remains in the result rather than being injected as an unknown request field, and Windows timeout cleanup terminates the wrapper process tree without opening a console.
+- Allowed a missing Worker result repository only to fall back to the authenticated immutable Worker endpoint `cwd`, while future result contracts include that repository explicitly.
+- Made exact continuation retries reuse the first immutable event bytes and original `occurred_at`, and clarified the 240-second Overwatcher report/pause/recover-existing-members boundary.
+- Preserved the 4.2.6 LE BI behavior and stable project colors without adding a scheduler, heartbeat, daemon, BoM route, role, D2 action, or product mutation.
+
 ## 4.2.6
 
 - Enlarged all visible LE BI typography to 120% through shared text tokens without scaling icons, window controls, or progress segments; active Run lists remain unscrolled through five entries and use a five-row vertical viewport from the sixth entry onward; independent projects now receive stable immutable-ID-derived tints from an eight-tone quiet palette.

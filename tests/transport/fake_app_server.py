@@ -28,12 +28,15 @@ for line in sys.stdin:
         run_id = cwd.parent.name
         emit({"id": request_id, "result": {"thread": {"id": f"thread-{run_id}"}}})
     elif method == "thread/resume":
+        if MODE == "active-resume-conflict":
+            emit({"id": request_id, "error": {"code": -32000, "message": "active writer conflict"}})
+            continue
         thread_id = message["params"]["threadId"]
         if MODE == "wrong-thread":
             thread_id = "thr_wrong"
         emit({"id": request_id, "result": {"thread": {"id": thread_id}}})
     elif method == "thread/read":
-        if MODE == "active":
+        if MODE in {"active", "active-resume-conflict"}:
             status = {"type": "active", "activeFlags": []}
             turns = [{"id": "turn_active", "items": [], "status": "inProgress"}]
         elif MODE == "not-loaded":
@@ -42,10 +45,11 @@ for line in sys.stdin:
         else:
             status = {"type": "idle"}
             turns = []
+        read_thread_id = "thr_wrong" if MODE == "wrong-thread" else message["params"]["threadId"]
         emit(
             {
                 "id": request_id,
-                "result": {"thread": {"id": message["params"]["threadId"], "status": status, "turns": turns}},
+                "result": {"thread": {"id": read_thread_id, "status": status, "turns": turns}},
             }
         )
     elif method == "turn/start":

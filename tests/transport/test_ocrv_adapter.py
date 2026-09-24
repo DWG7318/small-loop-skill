@@ -105,6 +105,30 @@ def test_ocrv_candidate_review_records_run_cell_invocation_and_session(
     assert (attempt.root / "ocrv-result.json").is_file()
 
 
+def test_ocrv_v1_request_matches_installed_closed_contract(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    envelope = candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    request = json.loads((attempt.root / "ocrv-request.json").read_text(encoding="utf-8"))
+    assert set(request) == {
+        "schema_version",
+        "run_id",
+        "cell_id",
+        "repository",
+        "candidate",
+        "cell_goal",
+        "d1_criteria",
+        "evidence_files",
+    }
+    started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
+    assert "transport_invocation_id" in started
+    assert "review_invocation_id" not in started
+    assert result.native_identity["review_invocation_id"]
+
+
 def test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -1,5 +1,15 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.2.6 to 4.2.7
+
+Install the complete 4.2.7 package. Existing 4.2.6 Runs keep their role topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, and optional Overwatcher binding; adopt the new method contract only at an existing Supervisor-controlled boundary with the exact current snapshot.
+
+Worker and Checker now perform role-local lightweight preflight. Internal Worker work segments and Checker `D1-A/B/C...` inspection segments are sequential planning aids only: they do not create another formal CELL, D1, TOKEN, role, or acceptance count. Supervisor intervenes only after a member report or an Overwatcher anomaly.
+
+Codex endpoint files stay immutable when a Desktop update moves `codex.exe`; transport records the resolved executable separately. OCRV requests now match the installed closed v1 contract. Legacy Worker results that omit repository may use only the authenticated immutable endpoint `cwd`; new results include repository explicitly. Exact continuation retries reuse the first stored event bytes and timestamp.
+
+No D2, LCaS product candidate, BoM, model binding, remote tag, or release is changed by migration.
+
 ## Current patch migration: 4.2.5 to 4.2.6
 
 Install the complete 4.2.6 package, then explicitly adopt each still-open 4.2.5 Run with its exact current snapshot and Overwatcher assertion. Adoption preserves topology, plan, role/session identities, TOKEN, engineering history, current candidate and all prior Overwatcher cycles.

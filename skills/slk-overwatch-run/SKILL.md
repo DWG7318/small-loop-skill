@@ -44,7 +44,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 2. 四角色冻结身份、Session、端点与原生执行证据。
 3. 角色间消息及 sent/delivered/received/started 证据。
 4. CELL 派工、执行、D0、D1、返工、关闭；DELIVERED 不冒充 D1_ACCEPTED。
-5. 停顿、重复、旧消息重做、端点漂移或重复 Run。Worker 持有 TOKEN 时附 `inspect-worker-completion` 哈希证据；终态后一整个 cadence 仍缺当前 D0、candidate 或 Checker start 时上报 `WORKER_COMPLETION_HANDOFF_MISSING` 与 `COMMUNICATION_RECOVERY_REQUIRED`，然后暂停，不为同一异常追加周期。
+5. 停顿、重复、旧消息重做、端点漂移或重复 Run。Worker 持有 TOKEN 时附 `inspect-worker-completion` 哈希证据；默认 240 秒（或本 Run 冻结的一个完整 cadence）后仍缺当前 D0、candidate 或 Checker start 时，上报 `WORKER_COMPLETION_HANDOFF_MISSING` 与 `COMMUNICATION_RECOVERY_REQUIRED`，先报告 Supervisor，然后暂停，不为同一异常追加周期；Supervisor 只恢复原成员与原 CELL 后，再叫醒同一 Overwatcher Session 复核并续巡。
 6. BI 只读投影与权威状态是否一致；不一致时请求事实或投影刷新，Overwatcher 不直接改 BI。
 7. 自身 Session、前台 turn、间隔与周期不重叠证明。
 8. Run 是否正式终结，以及停止观察和归档义务。

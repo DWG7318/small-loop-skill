@@ -198,7 +198,7 @@ class OcrvAdapter:
             evidence=("started.json", "checker-result.json"),
         )
 
-    def _candidate_request(self, envelope: Envelope, review_invocation_id: str) -> dict[str, Any]:
+    def _candidate_request(self, envelope: Envelope) -> dict[str, Any]:
         payload = envelope.payload
         _closed(payload, CANDIDATE_FIELDS, "CANDIDATE_READY payload")
         repository = Path(_nonempty(payload["repository"], "repository"))
@@ -222,7 +222,6 @@ class OcrvAdapter:
             "schema_version": "slk.ocrv-d1-request/v1",
             "run_id": envelope.run_id,
             "cell_id": envelope.cell_id,
-            "review_invocation_id": review_invocation_id,
             "repository": str(repository.resolve()),
             "candidate": dict(candidate),
             "cell_goal": _nonempty(payload["cell_goal"], "cell_goal"),
@@ -248,8 +247,8 @@ class OcrvAdapter:
         if value["run_id"] != envelope.run_id or value["cell_id"] != envelope.cell_id:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV Run or CELL identity mismatch")
         request = json.loads(request_path.read_text(encoding="utf-8-sig"))
-        if value["review_invocation_id"] != request.get("review_invocation_id"):
-            raise AdapterError("OCRV_RESULT_INVALID", "OCRV review invocation identity mismatch")
+        if not isinstance(value["review_invocation_id"], str) or not value["review_invocation_id"]:
+            raise AdapterError("OCRV_RESULT_INVALID", "OCRV review invocation identity is missing")
         verdict = value["verdict"]
         if verdict not in VERDICT_EXIT_CODES or VERDICT_EXIT_CODES[verdict] != process_exit_code:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV verdict and process exit code disagree")
@@ -306,7 +305,7 @@ class OcrvAdapter:
         transport_command = _string_array(payload["transport_command"], "transport_command")
         return {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "method_version": "4.2.6",
+            "method_version": "4.2.7",
             "recovery_invocation_id": recovery_invocation_id,
             "recovery_envelope_message_id": envelope.message_id,
             "run_id": envelope.run_id,
@@ -339,7 +338,7 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery result is not closed")
         if (
             value["schema_version"] != "slk.ocrv-worker-recovery-result/v1"
-            or value["method_version"] != "4.2.6"
+            or value["method_version"] != "4.2.7"
             or value["status"] != "CHECKER_STARTED"
             or value["run_id"] != envelope.run_id
             or value["cell_id"] != envelope.cell_id
@@ -446,8 +445,8 @@ class OcrvAdapter:
         envelope: Envelope,
         attempt: Attempt,
     ) -> DeliveryResult:
-        review_invocation_id = str(uuid.uuid4())
-        request = self._candidate_request(envelope, review_invocation_id)
+        transport_invocation_id = str(uuid.uuid4())
+        request = self._candidate_request(envelope)
         request_path = attempt.write_json_once("ocrv-request.json", request)
         result_path = attempt.root / "ocrv-result.json"
         command = _string_array(endpoint.address["command"], "command")
@@ -469,7 +468,7 @@ class OcrvAdapter:
                     "message_id": envelope.message_id,
                     "run_id": envelope.run_id,
                     "status": "started",
-                    "review_invocation_id": review_invocation_id,
+                    "transport_invocation_id": transport_invocation_id,
                 },
             )
             completed = finish(process, _positive_seconds(endpoint.address["timeout_seconds"]))

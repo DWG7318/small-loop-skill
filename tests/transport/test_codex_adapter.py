@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import shutil
 import sys
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def supervisor_envelope() -> Envelope:
     )
 
 
-def test_codex_resumes_exact_thread_then_starts_turn(tmp_path: Path) -> None:
+def test_codex_reads_exact_idle_thread_then_starts_turn(tmp_path: Path) -> None:
     endpoint = codex_endpoint(tmp_path)
     envelope = supervisor_envelope()
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
@@ -65,7 +66,6 @@ def test_codex_resumes_exact_thread_then_starts_turn(tmp_path: Path) -> None:
     assert client_methods == [
         "initialize",
         "initialized",
-        "thread/resume",
         "thread/read",
         "turn/start",
     ]
@@ -122,6 +122,48 @@ def test_active_writer_records_exact_turn_without_starting_or_waiting(tmp_path: 
     assert evidence["active_turn_id"] == "turn_active"
     transcript = (attempt.root / "native.stdout.txt").read_text(encoding="utf-8")
     assert '"method":"turn/start"' not in transcript
+
+
+def test_active_writer_is_read_before_resume_can_conflict(tmp_path: Path) -> None:
+    endpoint = codex_endpoint(tmp_path, "active-resume-conflict")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, envelope, attempt)
+
+    assert error.value.error_code == "CODEX_ACTIVE_WRITER"
+    assert (attempt.root / "active-writer.json").is_file()
+    transcript = (attempt.root / "native.stdout.txt").read_text(encoding="utf-8")
+    assert '"method":"thread/read"' in transcript
+    assert '"method":"thread/resume"' not in transcript
+
+
+def test_stale_codex_executable_is_rebound_without_changing_endpoint_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint = codex_endpoint(tmp_path)
+    stale = Endpoint(
+        **{
+            **endpoint.__dict__,
+            "address": {
+                **endpoint.address,
+                "command": [str(tmp_path / "old-build" / "codex.exe"), str(FAKE_SERVER), "normal"],
+            },
+        }
+    )
+    monkeypatch.setattr(shutil, "which", lambda _name: sys.executable)
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = CodexAdapter().deliver(stale, envelope, attempt)
+
+    assert result.status == "completed"
+    evidence = json.loads((attempt.root / "command-rebind.json").read_text(encoding="utf-8"))
+    assert evidence["requested_executable"].endswith("codex.exe")
+    assert evidence["resolved_executable"] == sys.executable
+    assert evidence["thread_id"] == stale.address["thread_id"]
 
 
 def test_codex_address_is_closed_and_never_accepts_a_title(tmp_path: Path) -> None:

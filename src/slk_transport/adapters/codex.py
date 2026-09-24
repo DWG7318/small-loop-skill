@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -52,6 +53,42 @@ def active_turn_id(thread: Mapping[str, Any]) -> str:
             "active thread did not expose exactly one active turn",
         )
     return active[0]
+
+
+def resolve_codex_command(
+    command: list[str],
+    *,
+    attempt: Attempt | None = None,
+    thread_id: str | None = None,
+) -> list[str]:
+    """Resolve a moved Codex Desktop executable without changing endpoint identity."""
+
+    requested = command[0]
+    requested_path = Path(requested)
+    if requested_path.is_file():
+        return list(command)
+    if not requested_path.is_absolute():
+        found = shutil.which(requested)
+        if found:
+            return [found, *command[1:]]
+    if requested_path.name.lower() not in {"codex", "codex.exe"}:
+        raise AdapterError("CODEX_EXECUTABLE_MISSING", "configured executable does not exist")
+    resolved = shutil.which("codex.exe") or shutil.which("codex")
+    if not resolved or not Path(resolved).is_file():
+        raise AdapterError("CODEX_EXECUTABLE_MISSING", "current Codex executable is unavailable")
+    rebound = [str(Path(resolved).resolve()), *command[1:]]
+    if attempt is not None:
+        attempt.write_json_once(
+            "command-rebind.json",
+            {
+                "schema_version": "slk.codex-command-rebind/v1",
+                "requested_executable": requested,
+                "resolved_executable": rebound[0],
+                "thread_id": thread_id,
+                "reason": "configured_codex_executable_missing",
+            },
+        )
+    return rebound
 
 
 def wait_for_exact_thread_idle(
@@ -121,7 +158,9 @@ class CodexAdapter:
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
         self.validate_address(endpoint)
         address = endpoint.address
-        command = list(address["command"])
+        command = resolve_codex_command(
+            list(address["command"]), attempt=attempt, thread_id=str(address["thread_id"])
+        )
         thread_id = str(address["thread_id"])
         cwd = Path(str(address["cwd"]))
         startup_timeout = _positive_seconds(address["startup_timeout_seconds"], "startup_timeout_seconds")
@@ -136,22 +175,13 @@ class CodexAdapter:
                     "clientInfo": {
                         "name": "slk_transport",
                         "title": "SLK Transport",
-                        "version": "4.2.6",
+                        "version": "4.2.7",
                     }
                 },
                 startup_timeout,
             )
             client.notify("initialized", {})
-            resumed = client.request(
-                2,
-                "thread/resume",
-                {"threadId": thread_id, "cwd": str(cwd)},
-                startup_timeout,
-            )
-            resumed_thread = resumed.get("thread")
-            if not isinstance(resumed_thread, Mapping) or resumed_thread.get("id") != thread_id:
-                raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex resumed a different thread")
-            request_id = 3
+            request_id = 2
 
             def read_thread() -> Mapping[str, Any]:
                 nonlocal request_id
@@ -192,6 +222,17 @@ class CodexAdapter:
                 raise AdapterError(
                     "CODEX_THREAD_TERMINAL", f"Codex target thread has terminal state {status_type}"
                 )
+            if status_type == "notLoaded":
+                resumed = client.request(
+                    request_id,
+                    "thread/resume",
+                    {"threadId": thread_id, "cwd": str(cwd)},
+                    startup_timeout,
+                )
+                request_id += 1
+                resumed_thread = resumed.get("thread")
+                if not isinstance(resumed_thread, Mapping) or resumed_thread.get("id") != thread_id:
+                    raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex resumed a different thread")
 
             notification_start = len(client.messages)
             started_response = client.request(

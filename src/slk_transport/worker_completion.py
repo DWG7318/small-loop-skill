@@ -68,6 +68,30 @@ def _stable_id(source_message_id: str, suffix: str) -> str:
     return str(uuid.uuid5(_NAMESPACE, f"{source_message_id}:{suffix}"))
 
 
+def _write_or_reuse_stable_request(path: Path, value: Mapping[str, Any]) -> Path:
+    """Keep the first immutable request bytes when an exact retry has a later clock value."""
+
+    encoded = (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+    if path.exists():
+        existing_bytes = path.read_bytes()
+        try:
+            existing = json.loads(existing_bytes)
+        except json.JSONDecodeError as exc:
+            raise CompletionError("WORKER_CONTINUATION_CONFLICT", f"immutable request is invalid: {path.name}") from exc
+        comparable = dict(value)
+        if isinstance(existing, dict) and "occurred_at" in comparable:
+            comparable["occurred_at"] = existing.get("occurred_at")
+        if existing != comparable:
+            raise CompletionError("WORKER_CONTINUATION_CONFLICT", f"immutable request conflicts: {path.name}")
+        return path
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_bytes(encoded)
+    temporary.replace(path)
+    return path
+
+
 def _event_details(value: Mapping[str, Any]) -> Mapping[str, Any] | None:
     details = value.get("details")
     if isinstance(details, Mapping):
@@ -157,7 +181,7 @@ def build_continuation_request(
         or result.get("message_id") != envelope.message_id
         or result.get("role_instance_id") != endpoint.role_instance_id
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.2.6"
+        or snapshot.get("method_version") != "4.2.7"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -182,7 +206,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.2.6",
+        "method_version": "4.2.7",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -529,7 +553,7 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.6":
+    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.7":
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
@@ -539,6 +563,18 @@ def run_worker_continuation(
     if _sha256(result_path) != request.get("worker_result_sha256"):
         raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker result hash changed")
     worker_result = _read_object(result_path, "Worker result")
+    endpoint_path = attempt / "endpoint.json"
+    source_endpoint = Endpoint.from_dict(_read_object(endpoint_path, "Worker endpoint"))
+    if (
+        _sha256(endpoint_path) != request.get("source_endpoint_sha256")
+        or source_endpoint.role != "worker"
+        or source_endpoint.run_id != run_id
+        or source_endpoint.role_instance_id != role_instance_id
+    ):
+        raise CompletionError(
+            "WORKER_COMPLETION_EVIDENCE_INVALID",
+            "authenticated immutable Worker endpoint does not match the continuation",
+        )
     source_envelope = Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))
     next_payload = worker_result.get("next_payload")
     if not isinstance(next_payload, Mapping):
@@ -590,6 +626,8 @@ def run_worker_continuation(
     if isinstance(fresh_runtime_revision, bool) or not isinstance(fresh_runtime_revision, int) or fresh_runtime_revision < 1:
         raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "fresh runtime revision is unavailable")
     repository = next_payload.get("candidate_repository", next_payload.get("repository"))
+    if repository is None:
+        repository = source_endpoint.address.get("cwd")
     cell_goal = source_envelope.payload.get("cell_goal", next_payload.get("cell_goal"))
     d1_criteria = source_envelope.payload.get("d1_criteria")
     acceptance_criteria = source_envelope.payload.get("acceptance_criteria")
@@ -824,8 +862,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.2.6":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.2.6")
+    if request.get("method_version") != "4.2.7":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.2.7")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -894,7 +932,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not start Checker D1")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.2.6",
+        "method_version": "4.2.7",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -963,13 +1001,7 @@ def execute_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
 
     def state_request(command_name: str, value: Mapping[str, Any]) -> dict[str, Any]:
         path = request_root / f"{command_name}-{value.get('event_id', value.get('transport_receipt_id', 'request'))}.json"
-        encoded = (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-        if path.exists() and path.read_bytes() != encoded:
-            raise CompletionError("WORKER_CONTINUATION_CONFLICT", f"immutable request conflicts: {path.name}")
-        if not path.exists():
-            temporary = path.with_suffix(path.suffix + ".tmp")
-            temporary.write_bytes(encoded)
-            temporary.replace(path)
+        _write_or_reuse_stable_request(path, value)
         return _run_json_command(state_command, [command_name, "--request", str(path)], credential=credential)
 
     def authenticate(run_id: str, role_instance_id: str) -> int:

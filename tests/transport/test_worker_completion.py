@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import slk_transport.worker_completion as worker_completion
 
 from slk_transport.worker_completion import (
     CompletionError,
@@ -62,7 +63,7 @@ def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.2.6",
+        "method_version": "4.2.7",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -110,7 +111,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.2.6"
+        assert continuation["method_version"] == "4.2.7"
         return {"status": "CHECKER_STARTED"}
 
     result = execute_checker_recovery(
@@ -270,9 +271,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.2.6", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.2.7", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.2.6",
+            "method_version": "4.2.7",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,
@@ -686,6 +687,61 @@ def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path:
     ]
     assert sends[0]["payload_type"] == "CANDIDATE_READY"
     assert commits[0]["from_role_instance_id"] == endpoint["role_instance_id"]
+
+
+def test_missing_worker_repository_uses_authenticated_endpoint_cwd(tmp_path: Path) -> None:
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    worker_result = json.loads((attempt / "worker-result.json").read_text(encoding="utf-8"))
+    worker_result["next_payload"].pop("candidate_repository")
+    write_json(attempt / "worker-result.json", worker_result)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    sent: list[dict[str, object]] = []
+
+    def start_checker(endpoint_raw: dict[str, object], envelope_raw: dict[str, object]) -> dict[str, object]:
+        sent.append(envelope_raw)
+        return {
+            "status": "started",
+            "started_path": str(write_json(tmp_path / "repo-fallback-started.json", {
+                "message_id": envelope_raw["message_id"], "run_id": "RUN-A", "status": "started"
+            })),
+            "endpoint_path": str(write_json(tmp_path / "repo-fallback-endpoint.json", endpoint_raw)),
+            "envelope_path": str(write_json(tmp_path / "repo-fallback-envelope.json", envelope_raw)),
+        }
+
+    result = run_worker_continuation(
+        request,
+        authenticate=lambda *_: 10,
+        write_event=lambda _event: "RECORDED",
+        start_checker=start_checker,
+        commit_start=lambda _request: "COMMITTED",
+    )
+
+    assert result["status"] == "CHECKER_STARTED"
+    assert sent[0]["payload"]["repository"] == str((tmp_path / "repository").resolve())
+
+
+def test_retry_reuses_original_immutable_request_bytes_when_only_time_changes(tmp_path: Path) -> None:
+    path = tmp_path / "write-event.json"
+    first = {"event_id": "stable-event", "event_type": "WORK_STARTED", "occurred_at": "2026-09-23T00:00:00Z"}
+    retry = {**first, "occurred_at": "2026-09-23T00:05:00Z"}
+
+    first_path = worker_completion._write_or_reuse_stable_request(path, first)
+    original = first_path.read_bytes()
+    retry_path = worker_completion._write_or_reuse_stable_request(path, retry)
+
+    assert retry_path.read_bytes() == original
+    assert json.loads(original)["occurred_at"] == "2026-09-23T00:00:00Z"
 
 
 def test_rework_acceptance_criteria_become_checker_d1_criteria(tmp_path: Path) -> None:

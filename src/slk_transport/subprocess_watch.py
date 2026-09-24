@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
+
+from .process import windows_no_window_kwargs
 
 
 @dataclass(frozen=True)
@@ -25,7 +28,17 @@ def finish(process: subprocess.Popen[str], timeout_seconds: float) -> ProcessRes
     try:
         stdout, stderr = process.communicate(timeout=max(timeout_seconds, 0.001))
     except subprocess.TimeoutExpired:
-        process.kill()
-        stdout, stderr = process.communicate()
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                **windows_no_window_kwargs(),
+            )
+        else:
+            process.kill()
+        stdout, stderr = process.communicate(timeout=5)
         raise subprocess.TimeoutExpired(process.args, timeout_seconds, output=stdout, stderr=stderr)
     return ProcessResult(process.returncode, stdout or "", stderr or "")

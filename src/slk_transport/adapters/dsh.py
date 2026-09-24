@@ -87,7 +87,7 @@ class DshAdapter:
         _positive_seconds(address["timeout_seconds"])
 
     @staticmethod
-    def result_contract(envelope: Envelope) -> dict[str, Any]:
+    def result_contract(endpoint: Endpoint, envelope: Envelope) -> dict[str, Any]:
         return {
             "schema_version": "slk.worker-result/v1",
             "message_id": envelope.message_id,
@@ -95,7 +95,9 @@ class DshAdapter:
             "role_instance_id": envelope.receiver_role_instance_id,
             "status": "completed",
             "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
-            "next_payload": {},
+            "next_payload": {
+                "candidate_repository": str(Path(str(endpoint.address["cwd"])).resolve())
+            },
         }
 
     @staticmethod
@@ -120,7 +122,7 @@ class DshAdapter:
             drop_root / "transport-task.json",
             endpoint,
             envelope,
-            self.result_contract(envelope),
+            self.result_contract(endpoint, envelope),
             drop_root / "worker-result.json",
         )
 

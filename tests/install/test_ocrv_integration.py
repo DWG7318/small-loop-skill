@@ -54,7 +54,7 @@ def test_ocrv_integration_installs_and_rolls_back_only_two_files(tmp_path: Path)
     assert installed.returncode == 0, installed.stdout + installed.stderr
     receipt = json.loads(installed.stdout.strip())
     backup = Path(receipt["backup_root"])
-    assert receipt["version"] == "4.2.6"
+    assert receipt["version"] == "4.2.7"
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == adapter
     assert (ocrv / "slk-checker.cmd").read_bytes() == (INTEGRATION / "slk-checker.cmd").read_bytes()
     assert (ocrv / "slk_checker_recovery.py").read_bytes() == (

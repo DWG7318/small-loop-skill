@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
-from .adapters.codex import CodexAdapter, active_turn_id
+from .adapters.codex import CodexAdapter, active_turn_id, resolve_codex_command
 from .contracts import ContractError, parse_delivery
 from .evidence import Attempt
 from .jsonrpc import JsonRpcProcess
@@ -95,11 +95,14 @@ def recover_active_writer(
     expected_turn_id = str(active["active_turn_id"])
     startup_timeout = float(endpoint.address["startup_timeout_seconds"])
     try:
-        client = JsonRpcProcess(list(endpoint.address["command"]), Path(str(endpoint.address["cwd"])))
+        command = resolve_codex_command(
+            list(endpoint.address["command"]), attempt=attempt, thread_id=thread_id
+        )
+        client = JsonRpcProcess(command, Path(str(endpoint.address["cwd"])))
         client.request(
             1,
             "initialize",
-            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.2.6"}},
+            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.2.7"}},
             startup_timeout,
         )
         client.notify("initialized", {})
