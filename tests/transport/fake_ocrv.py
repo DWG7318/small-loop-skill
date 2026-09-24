@@ -27,7 +27,7 @@ if args.slk_worker_recovery:
     source_started = json.loads((source_root / "started.json").read_text(encoding="utf-8"))
     result = {
         "schema_version": "slk.ocrv-worker-recovery-result/v1",
-        "method_version": "4.2.8",
+        "method_version": "4.2.9",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],

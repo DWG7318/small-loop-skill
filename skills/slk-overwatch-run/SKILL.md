@@ -27,7 +27,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 1. 写一条紧凑 observation，绑定 Run/CELL/attempt/TOKEN、最后可信进展、缺失或冲突证据、当前责任角色和最小建议。
 2. 立即通过既有直连通知注册 Supervisor；只写本地记录不算送达。
 3. 送达后暂停巡查并结束当前活动轮次，不继续生成 cycle，也不旁观 Supervisor 处理。
-4. Supervisor 处理后叫醒同一 Session。若平台产生新 foreground turn，Supervisor 先用 `slk-state resume-overwatcher-turn` 绑定原 Session、binding revision、上一异常 cycle、旧 turn、新 turn 和原生活动证据。旧 cycle 保持不可变；新 Session、非 Supervisor 授权、无上一异常 cycle 或旧 turn 不匹配均拒绝。Overwatcher 核对异常解除后恢复巡查。
+4. Supervisor 处理后叫醒同一 Session。若平台产生新 foreground turn，Supervisor 用 `slk-state resume-overwatcher-turn` 保留原 Session/binding，提交旧 turn、新 turn、原生活动证据，并在 `last_anomaly_cycle_id` 与 `last_native_status_id` 二者只选一个：前者绑定仍为 `ACTIVE` 的最新异常 cycle，后者绑定已由最新非 `IN_PROGRESS` native status 记为 `VIOLATION` 的同一 Session。新 Session、非 Supervisor 授权、非最新依据、身份或旧 turn 不匹配均拒绝。Overwatcher 核对异常解除后恢复巡查。
 
 异常报告应让 Supervisor 无需重新发现问题：精确 scope/TOKEN/责任角色、预期与实际节点、最后可信进展及时间、成员原生状态、sent/delivered/started/completed 证据、阻断风险、最小建议，以及“已暂停，等待同一 Session 重新叫醒”。
 
@@ -36,7 +36,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 1. Supervisor 与 Owner 确认是否启用、精确 Session、前台持续能力和 180–300 秒间隔（建议 240 秒）。历史 Run 先有 `adopt-method-contract` 回执，再用 `bind-overwatcher` 写唯一 binding、canonical task、`FOREGROUND_ACTIVE_TURN`、turn ID 与原生活动证据。一个 Run 只绑定一次，不是每个 CELL 重新确认；同一 Session 不跨 Run 复用。
 2. 绑定后完成首轮八项巡查并 `record-overwatch-cycle`；每轮只绑定一个权威 `runtime_revision`，证据使用现存绝对路径与匹配 SHA-256。首轮不完整时不开始新派工或 TOKEN 交接。
 3. 正常推进或合理等待期间不结束当前 turn。一次有界 `slk-state wait-for-change` 在 revision 变化时立即触发巡查，TIMEOUT 时按冻结间隔进入下一轮；这不是 heartbeat、automation、cron、daemon、计划任务或 detached helper。异常送达 Supervisor 后才暂停并结束当前活动轮次。
-4. cadence 与 native liveness 分开。`inspect-overwatcher-cadence` 超过一个间隔记 `LATE`，但 LATE 不等于 INACTIVE；超过两个间隔记 `CONTINUITY_UNPROVEN` 并交 Supervisor。精确原生状态为 `COMPLETED`、`MISSING` 或 `MISMATCHED` 时才记录 `OVERWATCHER_CONTINUITY_VIOLATION`；不自动替换，也不凭旧 running 恢复 ACTIVE。
+4. cadence 与 native liveness 分开。`inspect-overwatcher-cadence` 超过一个间隔记 `LATE`，但 LATE 不等于 INACTIVE；超过两个间隔记 `CONTINUITY_UNPROVEN` 并交 Supervisor。精确 native status 为 `COMPLETED`、`MISSING` 或 `MISMATCHED` 时，Tool 在 status/incident 中记录 `OVERWATCHER_CONTINUITY_VIOLATION`，不写入 `cycle.anomaly_codes`；仍为 `ACTIVE` + `IN_PROGRESS` 且 active-session 检查异常的 cycle 才使用 `OVERWATCHER_ACTIVE_DEGRADED`。两者都不自动替换，也不凭旧 running 恢复 ACTIVE。
 
 ## 每轮固定八项巡查
 
@@ -53,6 +53,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 
 - `slk-bi-query` 只读事实；`slk-state` 记录本角色 cycle、observation、cadence/native 状态和合法关闭；`slk-transport` 检查精确投递与原生 start。通讯恢复走 `$slk-recover-communication`，空闲目标可做同一消息的 exact retry。
 - 每轮只追加一条紧凑 cycle；无新鲜原生证据时记录“活动无法证明”。不复制完整日志，不增加 CELL/D1/D2 进度。正常轮次不发可见状态消息。
+- 终态 cycle 的 `native_active_session_evidence_ref` 逐字等于 `evidence_refs` 中一个条目的现存绝对路径 `path`，且该条目的 SHA-256 与文件匹配。例如 `evidence_refs: [{path: 'C:\\evidence\\terminal-active-session.json', sha256: '<64位小写值>'}]` 对应 `native_active_session_evidence_ref: 'C:\\evidence\\terminal-active-session.json'`；不要填 `status_id`、`cycle_id`、URI、哈希值或说明文字。
 - Tool 失败或输出矛盾时，把错误与证据缺口交 Supervisor，不猜测、不伪造、不临时开发新系统。
 - 若绑定后完整写凭证丢失或误把 `overwatcher_credential_id` 当作凭证，不伪造 cycle/continuity violation，也不更换角色、Session、turn 或 binding；由当前 Supervisor 以精确身份和证据执行 `rotate-overwatcher-credential`，一次性保存 `overwatcher_write_credential` 并立即 `authenticate-role` 后，原 Session 才继续记录。
 - Run 终结后记录最后一轮，再用同一 revision 和 cycle ID 调用 `close-overwatcher`，停止前台 turn 并归档本 Session。开放 Run 不关闭；异常暂停不归档、不更换、不复用，意外失活保持 `CONTINUITY_RECOVERY_REQUIRED`。

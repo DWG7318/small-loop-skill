@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.8"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.9"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -241,7 +241,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.2.8" in main
+    assert "4.2.9" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -1207,3 +1207,40 @@ def test_lost_overwatcher_write_credential_rotates_the_same_exact_binding() -> N
     assert "不要把 `overwatcher_credential_id` 当作 `overwatcher_write_credential`" in overwatch
     assert "不伪造 cycle/continuity violation" in overwatch
     assert "直接改数据库" in combined
+
+
+def test_overwatcher_native_status_resume_and_cycle_anomaly_mapping_are_unambiguous() -> None:
+    overwatch = read_skill("slk-overwatch-run")
+    manage = read_skill("slk-manage-team")
+    combined = "\n".join((overwatch, manage))
+
+    for marker in (
+        "last_anomaly_cycle_id",
+        "last_native_status_id",
+        "二者只选一个",
+        "OVERWATCHER_CONTINUITY_VIOLATION",
+        "status/incident",
+        "不写入 `cycle.anomaly_codes`",
+        "OVERWATCHER_ACTIVE_DEGRADED",
+        "ACTIVE",
+        "IN_PROGRESS",
+    ):
+        assert marker in combined
+
+
+def test_terminal_overwatcher_cycle_explains_the_exact_native_evidence_reference() -> None:
+    overwatch = read_skill("slk-overwatch-run")
+
+    for marker in (
+        "native_active_session_evidence_ref",
+        "逐字等于",
+        "evidence_refs",
+        "现存绝对路径",
+        "SHA-256",
+        "status_id",
+        "cycle_id",
+        "URI",
+        "哈希值",
+        "说明文字",
+    ):
+        assert marker in overwatch

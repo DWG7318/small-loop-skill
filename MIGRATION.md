@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.2.8 to 4.2.9
+
+Install the complete 4.2.9 package. Existing 4.2.8 Runs retain the same topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, schema-v8 database and Overwatcher identity. This patch adds no database migration.
+
+If the current exact Overwatcher binding is already `VIOLATION` because its latest native status is `COMPLETED`, `MISSING` or `MISMATCHED`, the current Supervisor may resume the same Session with `last_native_status_id`, a fresh runtime snapshot, the old/new foreground turns and hash-valid active-session evidence. Do not also send `last_anomaly_cycle_id`; do not select an older status, replace the Session, edit SQLite or write an ordinary cycle while continuity remains `VIOLATION`. After recovery, adopt 4.2.9 at the existing Supervisor-controlled boundary with a fresh exact snapshot.
+
+No role responsibility, TOKEN semantics, CELL, D0/D1/D2, model policy, BI authority, product candidate, remote tag or Release changes in this migration.
+
 ## Current patch migration: 4.2.7 to 4.2.8
 
 Install the complete 4.2.8 package. Existing 4.2.7 Runs retain the same topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts and Overwatcher identity. The schema-v8 migration creates a verified backup and one append-only credential-rotation receipt table; it does not expose credential metadata to BI.

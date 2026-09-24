@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "status", "run_id", "cell_id", "source_message_id", "worker_session_id", "checker_role_instance_id", "checker_endpoint_version", "checker_authenticated", "authorized_recovery", "recovery_invocation_id", "request_sha256"],
   "properties": {
     "schema_version": {"const": "slk.ocrv-worker-recovery-result/v1"},
-    "method_version": {"const": "4.2.8"},
+    "method_version": {"const": "4.2.9"},
     "status": {"const": "CHECKER_STARTED"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "cell_id": {"$ref": "#/$defs/identifier"},

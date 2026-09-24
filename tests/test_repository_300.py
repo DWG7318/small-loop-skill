@@ -25,14 +25,14 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.2.8 skill collection" in result.stdout
+    assert "PASS: SLK 4.2.9 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.2.8"
+    assert manifest["version"] == "4.2.9"
     assert manifest["skill_count"] == 15
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -102,7 +102,7 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "event_id", "run_id", "role_instance_id", "session_id",
             "binding_revision", "expected_runtime_revision",
             "previous_foreground_turn_id", "foreground_turn_id",
-            "last_anomaly_cycle_id", "native_active_session_evidence",
+            "last_anomaly_cycle_id", "last_native_status_id", "native_active_session_evidence",
             "reason", "occurred_at",
         },
         "docs/contracts/slk-overwatcher-credential-rotation.schema.json": {
@@ -116,8 +116,26 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
         schema = json.loads(read(relative))
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         assert schema["additionalProperties"] is False
-        assert set(schema["required"]) == required
         assert set(schema["properties"]) == required
+        if relative.endswith("slk-overwatcher-turn-resume.schema.json"):
+            assert set(schema["required"]) == required - {
+                "last_anomaly_cycle_id",
+                "last_native_status_id",
+            }
+        else:
+            assert set(schema["required"]) == required
+
+
+def test_overwatcher_resume_has_exactly_one_basis_and_cycle_enum_excludes_incident_code() -> None:
+    resume = json.loads(read("docs/contracts/slk-overwatcher-turn-resume.schema.json"))
+    cycle = json.loads(read("docs/contracts/slk-overwatch-cycle.schema.json"))
+
+    assert "last_anomaly_cycle_id" not in resume["required"]
+    assert "last_native_status_id" not in resume["required"]
+    assert len(resume["oneOf"]) == 2
+    anomaly_codes = cycle["properties"]["anomaly_codes"]["items"]["enum"]
+    assert "OVERWATCHER_ACTIVE_DEGRADED" in anomaly_codes
+    assert "OVERWATCHER_CONTINUITY_VIOLATION" not in anomaly_codes
 
 
 def test_release_file_discovery_follows_git_and_ignores_local_build_outputs(
@@ -146,7 +164,7 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.2.8" in text
+        assert "4.2.9" in text
         assert "14" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
@@ -168,7 +186,7 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog

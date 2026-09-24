@@ -4,7 +4,11 @@
   "title": "SLK same-Session Overwatcher foreground turn resume",
   "type": "object",
   "additionalProperties": false,
-  "required": ["event_id", "run_id", "role_instance_id", "session_id", "binding_revision", "expected_runtime_revision", "previous_foreground_turn_id", "foreground_turn_id", "last_anomaly_cycle_id", "native_active_session_evidence", "reason", "occurred_at"],
+  "required": ["event_id", "run_id", "role_instance_id", "session_id", "binding_revision", "expected_runtime_revision", "previous_foreground_turn_id", "foreground_turn_id", "native_active_session_evidence", "reason", "occurred_at"],
+  "oneOf": [
+    {"required": ["last_anomaly_cycle_id"], "not": {"required": ["last_native_status_id"]}},
+    {"required": ["last_native_status_id"], "not": {"required": ["last_anomaly_cycle_id"]}}
+  ],
   "properties": {
     "event_id": {"$ref": "#/$defs/identifier"},
     "run_id": {"$ref": "#/$defs/identifier"},
@@ -15,6 +19,7 @@
     "previous_foreground_turn_id": {"$ref": "#/$defs/identifier"},
     "foreground_turn_id": {"$ref": "#/$defs/identifier"},
     "last_anomaly_cycle_id": {"$ref": "#/$defs/identifier"},
+    "last_native_status_id": {"$ref": "#/$defs/identifier"},
     "native_active_session_evidence": {"$ref": "#/$defs/evidence_ref"},
     "reason": {"type": "string", "minLength": 1},
     "occurred_at": {"type": "string", "format": "date-time"}

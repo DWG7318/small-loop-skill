@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.2.9
+
+- Added a second, mutually exclusive `resume-overwatcher-turn` basis for the latest exact non-`IN_PROGRESS` native status receipt. It restores the same role/Session/binding after a recorded continuity violation, resolves that incident and advances runtime once without creating a replacement.
+- Kept the existing latest-anomalous-cycle resume path and ordinary `ACTIVE`/`IN_PROGRESS` cycle gate unchanged. Both/neither basis, stale runtime, older status, wrong identity/turn, replacement, new Session and non-Supervisor requests fail closed.
+- Clarified that `OVERWATCHER_CONTINUITY_VIOLATION` belongs to native status/incident records, while `OVERWATCHER_ACTIVE_DEGRADED` is the `ACTIVE` + `IN_PROGRESS` cycle anomaly; documented the exact absolute-path/SHA-256 terminal evidence reference without adding a role, scheduler, heartbeat, daemon, workflow engine, BoM route or BI mutation.
+
 ## 4.2.8
 
 - Added one Supervisor-authorized, exact-binding `rotate-overwatcher-credential` recovery for a lost or mis-saved one-time Overwatcher write secret. It changes only the current credential ID/hash and one runtime revision; role, Session, foreground turn, binding revision, TOKEN, engineering history, continuity and BI remain unchanged.

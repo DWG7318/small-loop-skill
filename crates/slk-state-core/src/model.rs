@@ -487,7 +487,10 @@ pub struct ResumeOverwatcherTurnRequest {
     pub expected_runtime_revision: u64,
     pub previous_foreground_turn_id: String,
     pub foreground_turn_id: String,
-    pub last_anomaly_cycle_id: String,
+    #[serde(default)]
+    pub last_anomaly_cycle_id: Option<String>,
+    #[serde(default)]
+    pub last_native_status_id: Option<String>,
     pub native_active_session_evidence: EvidenceReference,
     pub reason: String,
     pub occurred_at: String,

@@ -717,7 +717,8 @@ fn supervisor_resumes_the_same_overwatcher_session_on_a_new_turn_after_an_anomal
                 expected_runtime_revision: previous_revision,
                 previous_foreground_turn_id: "foreground-turn-a".into(),
                 foreground_turn_id: "foreground-turn-b".into(),
-                last_anomaly_cycle_id: "cycle-2".into(),
+                last_anomaly_cycle_id: Some("cycle-2".into()),
+                last_native_status_id: None,
                 native_active_session_evidence: evidence,
                 reason: "Supervisor resolved the reported anomaly and woke the same Session".into(),
                 occurred_at: "2026-09-23T00:08:01Z".into(),
@@ -772,6 +773,289 @@ fn supervisor_resumes_the_same_overwatcher_session_on_a_new_turn_after_an_anomal
 }
 
 #[test]
+fn supervisor_resumes_the_same_overwatcher_session_from_the_exact_latest_native_status() {
+    for fixture in [Fixture::new_428(), Fixture::new_429()] {
+        let issued = fixture
+            .store
+            .bind_overwatcher(
+                &fixture.supervisor,
+                overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+            )
+            .unwrap();
+        fixture
+            .store
+            .record_overwatcher_status(
+                &issued.credential,
+                RecordOverwatcherStatusRequest {
+                    status_id: "mismatched-native-status-a".into(),
+                    run_id: "run-a".into(),
+                    binding_revision: 1,
+                    role_instance_id: "overwatcher-a".into(),
+                    session_id: "session-overwatcher-a".into(),
+                    foreground_turn_id: "foreground-turn-a".into(),
+                    native_liveness: NativeLiveness::Mismatched,
+                    evidence: fixture.evidence_ref("mismatched-status.json", b"mismatched"),
+                    observed_at: "2026-09-24T01:00:00Z".into(),
+                },
+            )
+            .unwrap();
+        let before = fixture.store.query_run("run-a").unwrap();
+        let before_runtime = before.runtime_snapshot.unwrap().runtime_revision;
+
+        fixture
+            .store
+            .resume_overwatcher_turn(
+                &fixture.supervisor,
+                ResumeOverwatcherTurnRequest {
+                    event_id: "resume-from-native-status-a".into(),
+                    run_id: "run-a".into(),
+                    role_instance_id: "overwatcher-a".into(),
+                    session_id: "session-overwatcher-a".into(),
+                    binding_revision: 1,
+                    expected_runtime_revision: before_runtime,
+                    previous_foreground_turn_id: "foreground-turn-a".into(),
+                    foreground_turn_id: "foreground-turn-b".into(),
+                    last_anomaly_cycle_id: None,
+                    last_native_status_id: Some("mismatched-native-status-a".into()),
+                    native_active_session_evidence: fixture
+                        .evidence_ref("resumed-native-status.json", b"same session active"),
+                    reason: "resume the exact same Session from its native status receipt".into(),
+                    occurred_at: "2026-09-24T01:00:01Z".into(),
+                },
+            )
+            .unwrap();
+
+        let after = fixture.store.query_run("run-a").unwrap();
+        let watcher = after.role("overwatcher").unwrap();
+        assert_eq!(watcher.role_instance_id, "overwatcher-a");
+        assert_eq!(watcher.session_id, "session-overwatcher-a");
+        assert_eq!(after.overwatcher_binding_transitions.len(), 1);
+        assert_eq!(
+            after.overwatcher_incident_transitions.last().unwrap().state,
+            "RESOLVED"
+        );
+        let runtime = after.runtime_snapshot.unwrap();
+        assert_eq!(runtime.runtime_revision, before_runtime + 1);
+        assert_eq!(runtime.overwatcher_status.as_deref(), Some("ACTIVE"));
+
+        let mut resumed = overwatch_cycle(1);
+        resumed.foreground_turn_id = "foreground-turn-b".into();
+        resumed.runtime_revision = runtime.runtime_revision;
+        resumed.latest_event_id = runtime.latest_event_id;
+        resumed.latest_message_id = runtime.latest_message_id;
+        resumed.started_at = "2026-09-24T01:03:59Z".into();
+        resumed.completed_at = "2026-09-24T01:04:00Z".into();
+        resumed.next_cycle_at = "2026-09-24T01:08:00Z".into();
+        resumed.evidence_refs =
+            vec![fixture.evidence_ref("cycle-after-status-resume.json", b"active")];
+        resumed.native_active_session_evidence_ref = resumed.evidence_refs[0].path.clone();
+        fixture
+            .store
+            .record_overwatch_cycle(&issued.credential, resumed)
+            .unwrap();
+    }
+}
+
+#[test]
+fn native_status_resume_requires_exactly_one_current_eligible_basis() {
+    let fixture = Fixture::new_428();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    for (status_id, native_liveness, name, bytes, observed_at) in [
+        (
+            "native-status-old",
+            NativeLiveness::InProgress,
+            "native-status-old.json",
+            b"old".as_slice(),
+            "2026-09-24T01:00:00Z",
+        ),
+        (
+            "native-status-current",
+            NativeLiveness::Missing,
+            "native-status-current.json",
+            b"current".as_slice(),
+            "2026-09-24T01:00:01Z",
+        ),
+    ] {
+        fixture
+            .store
+            .record_overwatcher_status(
+                &issued.credential,
+                RecordOverwatcherStatusRequest {
+                    status_id: status_id.into(),
+                    run_id: "run-a".into(),
+                    binding_revision: 1,
+                    role_instance_id: "overwatcher-a".into(),
+                    session_id: "session-overwatcher-a".into(),
+                    foreground_turn_id: "foreground-turn-a".into(),
+                    native_liveness,
+                    evidence: fixture.evidence_ref(name, bytes),
+                    observed_at: observed_at.into(),
+                },
+            )
+            .unwrap();
+    }
+    let request = ResumeOverwatcherTurnRequest {
+        event_id: "resume-native-status-invalid".into(),
+        run_id: "run-a".into(),
+        role_instance_id: "overwatcher-a".into(),
+        session_id: "session-overwatcher-a".into(),
+        binding_revision: 1,
+        expected_runtime_revision: fixture.runtime_revision(),
+        previous_foreground_turn_id: "foreground-turn-a".into(),
+        foreground_turn_id: "foreground-turn-b".into(),
+        last_anomaly_cycle_id: None,
+        last_native_status_id: Some("native-status-current".into()),
+        native_active_session_evidence: fixture.evidence_ref("resume-invalid.json", b"active"),
+        reason: "exercise fail-closed status resume inputs".into(),
+        occurred_at: "2026-09-24T01:00:02Z".into(),
+    };
+
+    for invalid in [
+        ResumeOverwatcherTurnRequest {
+            last_anomaly_cycle_id: Some("cycle-does-not-exist".into()),
+            ..request.clone()
+        },
+        ResumeOverwatcherTurnRequest {
+            last_native_status_id: None,
+            ..request.clone()
+        },
+        ResumeOverwatcherTurnRequest {
+            last_native_status_id: Some("native-status-old".into()),
+            ..request.clone()
+        },
+        ResumeOverwatcherTurnRequest {
+            binding_revision: 2,
+            ..request.clone()
+        },
+        ResumeOverwatcherTurnRequest {
+            role_instance_id: "different-overwatcher".into(),
+            ..request.clone()
+        },
+        ResumeOverwatcherTurnRequest {
+            session_id: "different-session".into(),
+            ..request.clone()
+        },
+        ResumeOverwatcherTurnRequest {
+            previous_foreground_turn_id: "different-turn".into(),
+            ..request.clone()
+        },
+        ResumeOverwatcherTurnRequest {
+            expected_runtime_revision: request.expected_runtime_revision - 1,
+            ..request.clone()
+        },
+    ] {
+        assert!(matches!(
+            fixture
+                .store
+                .resume_overwatcher_turn(&fixture.supervisor, invalid),
+            Err(StateError::OverwatcherCycleInvalid(_))
+                | Err(StateError::RuntimeRevisionMismatch { .. })
+        ));
+    }
+    assert!(matches!(
+        fixture
+            .store
+            .resume_overwatcher_turn(&fixture.checker, request),
+        Err(StateError::OverwatcherBindingNotAuthorized)
+    ));
+}
+
+#[test]
+fn native_status_resume_rejects_in_progress_status_and_a_replaced_binding() {
+    let active_fixture = Fixture::new_428();
+    let active_issued = active_fixture
+        .store
+        .bind_overwatcher(
+            &active_fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    active_fixture
+        .store
+        .record_overwatcher_status(
+            &active_issued.credential,
+            RecordOverwatcherStatusRequest {
+                status_id: "native-status-in-progress".into(),
+                run_id: "run-a".into(),
+                binding_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                foreground_turn_id: "foreground-turn-a".into(),
+                native_liveness: NativeLiveness::InProgress,
+                evidence: active_fixture.evidence_ref("in-progress.json", b"active"),
+                observed_at: "2026-09-24T01:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    let in_progress = native_status_resume_request(
+        &active_fixture,
+        "native-status-in-progress",
+        "resume-in-progress-status",
+    );
+    assert!(matches!(
+        active_fixture
+            .store
+            .resume_overwatcher_turn(&active_fixture.supervisor, in_progress),
+        Err(StateError::OverwatcherCycleInvalid(_))
+    ));
+
+    let replaced_fixture = Fixture::new_428();
+    let replaced_issued = replaced_fixture
+        .store
+        .bind_overwatcher(
+            &replaced_fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    replaced_fixture
+        .store
+        .record_overwatcher_status(
+            &replaced_issued.credential,
+            RecordOverwatcherStatusRequest {
+                status_id: "native-status-before-replacement".into(),
+                run_id: "run-a".into(),
+                binding_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                foreground_turn_id: "foreground-turn-a".into(),
+                native_liveness: NativeLiveness::Completed,
+                evidence: replaced_fixture.evidence_ref("completed-before-replace.json", b"done"),
+                observed_at: "2026-09-24T01:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    replaced_fixture
+        .store
+        .replace_overwatcher(
+            &replaced_fixture.supervisor,
+            replacement_request(
+                &replaced_fixture,
+                OverwatcherReplacementMode::ContinuityRecovery,
+                None,
+                Some(replaced_fixture.evidence_ref("replace-approved.json", b"approved")),
+            ),
+        )
+        .unwrap();
+    let replaced = native_status_resume_request(
+        &replaced_fixture,
+        "native-status-before-replacement",
+        "resume-replaced-status",
+    );
+    assert!(matches!(
+        replaced_fixture
+            .store
+            .resume_overwatcher_turn(&replaced_fixture.supervisor, replaced),
+        Err(StateError::OverwatcherCycleInvalid(_))
+    ));
+}
+
+#[test]
 fn overwatcher_turn_resume_rejects_a_new_session_and_non_supervisor_authority() {
     let (fixture, _overwatcher) = fixture_426_with_anomaly();
     let request = ResumeOverwatcherTurnRequest {
@@ -783,7 +1067,8 @@ fn overwatcher_turn_resume_rejects_a_new_session_and_non_supervisor_authority() 
         expected_runtime_revision: fixture.runtime_revision(),
         previous_foreground_turn_id: "foreground-turn-a".into(),
         foreground_turn_id: "foreground-turn-b".into(),
-        last_anomaly_cycle_id: "cycle-2".into(),
+        last_anomaly_cycle_id: Some("cycle-2".into()),
+        last_native_status_id: None,
         native_active_session_evidence: fixture.evidence_ref("invalid-resume.json", b"invalid"),
         reason: "must not replace the bound Session".into(),
         occurred_at: "2026-09-23T00:08:01Z".into(),
@@ -1507,6 +1792,32 @@ impl Fixture {
         fixture
     }
 
+    fn new_428() -> Self {
+        let fixture = Self::new();
+        let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.2.8' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        drop(database);
+        fixture
+    }
+
+    fn new_429() -> Self {
+        let fixture = Self::new();
+        let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.2.9' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        drop(database);
+        fixture
+    }
+
     fn evidence_ref(&self, name: &str, bytes: &[u8]) -> EvidenceReference {
         let path = self._root.path().join(name);
         fs::write(&path, bytes).unwrap();
@@ -1586,6 +1897,29 @@ fn credential_rotation_request(
         ),
         reason: "restore the exact active binding after one-time credential loss".into(),
         occurred_at: "2026-09-24T00:00:00Z".into(),
+    }
+}
+
+fn native_status_resume_request(
+    fixture: &Fixture,
+    status_id: &str,
+    event_id: &str,
+) -> ResumeOverwatcherTurnRequest {
+    ResumeOverwatcherTurnRequest {
+        event_id: event_id.into(),
+        run_id: "run-a".into(),
+        role_instance_id: "overwatcher-a".into(),
+        session_id: "session-overwatcher-a".into(),
+        binding_revision: 1,
+        expected_runtime_revision: fixture.runtime_revision(),
+        previous_foreground_turn_id: "foreground-turn-a".into(),
+        foreground_turn_id: "foreground-turn-b".into(),
+        last_anomaly_cycle_id: None,
+        last_native_status_id: Some(status_id.into()),
+        native_active_session_evidence: fixture
+            .evidence_ref(&format!("{event_id}.json"), b"same session active"),
+        reason: "resume the exact same Session from native status evidence".into(),
+        occurred_at: "2026-09-24T01:00:02Z".into(),
     }
 }
 

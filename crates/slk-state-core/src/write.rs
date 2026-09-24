@@ -684,7 +684,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1552,7 +1552,7 @@ impl StateStore {
             )?;
             if matches!(
                 method_version.as_str(),
-                "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8"
+                "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -1943,7 +1943,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2541,9 +2541,9 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if !matches!(method_version.as_str(), "4.2.7" | "4.2.8") {
+            if !matches!(method_version.as_str(), "4.2.7" | "4.2.8" | "4.2.9") {
                 return Err(StateError::OverwatcherBindingInvalid(
-                    "credential rotation requires effective SLK 4.2.7 or 4.2.8".into(),
+                    "credential rotation requires effective SLK 4.2.7 or later".into(),
                 ));
             }
             let replay: Option<i64> = transaction
@@ -2785,9 +2785,16 @@ impl StateStore {
         credential: &Credential,
         request: ResumeOverwatcherTurnRequest,
     ) -> Result<(), StateError> {
+        let resume_basis_is_valid = match (
+            request.last_anomaly_cycle_id.as_deref(),
+            request.last_native_status_id.as_deref(),
+        ) {
+            (Some(identifier), None) | (None, Some(identifier)) => valid_identifier(identifier),
+            _ => false,
+        };
         if !valid_identifier(&request.event_id)
             || !valid_identifier(&request.role_instance_id)
-            || !valid_identifier(&request.last_anomaly_cycle_id)
+            || !resume_basis_is_valid
             || request.session_id.trim().is_empty()
             || request.binding_revision == 0
             || request.expected_runtime_revision == 0
@@ -2816,9 +2823,16 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
+                ));
+            }
+            if request.last_native_status_id.is_some()
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9")
+            {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "native status turn resume requires effective SLK 4.2.8 or later".into(),
                 ));
             }
             let binding: (String, String, String, u64, String, String) = transaction
@@ -2843,10 +2857,9 @@ impl StateStore {
                 || binding.2 != request.previous_foreground_turn_id
                 || binding.3 != request.binding_revision
                 || binding.4 != "active"
-                || binding.5 != "ACTIVE"
             {
                 return Err(StateError::OverwatcherCycleInvalid(
-                    "turn resume must preserve the current Overwatcher role, Session, binding, and active continuity"
+                    "turn resume must preserve the current Overwatcher role, Session, binding, and lifecycle"
                         .into(),
                 ));
             }
@@ -2857,46 +2870,132 @@ impl StateStore {
                     current: runtime.runtime_revision,
                 });
             }
-            let latest_cycle: (String, String, String, String) = transaction
-                .query_row(
-                    "SELECT cycle_id, session_id, foreground_turn_id, anomaly_codes_json
-                     FROM overwatch_cycles WHERE run_id=?1
-                     ORDER BY cycle_sequence DESC LIMIT 1",
-                    [&request.run_id],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-                )
-                .optional()?
-                .ok_or_else(|| {
-                    StateError::OverwatcherCycleInvalid(
-                        "turn resume requires a prior anomalous observation cycle".into(),
-                    )
-                })?;
-            let anomaly_codes: Vec<crate::model::OverwatchAnomalyCode> =
-                serde_json::from_str(&latest_cycle.3).map_err(|_| {
-                    StateError::OverwatcherCycleInvalid(
-                        "last anomaly cycle has invalid closed anomaly codes".into(),
-                    )
-                })?;
-            if latest_cycle.0 != request.last_anomaly_cycle_id
-                || latest_cycle.1 != request.session_id
-                || latest_cycle.2 != request.previous_foreground_turn_id
-                || anomaly_codes.is_empty()
-            {
-                return Err(StateError::OverwatcherCycleInvalid(
-                    "turn resume must follow the exact last anomaly cycle in the same Session and old turn"
-                        .into(),
-                ));
-            }
-            transaction.execute(
+            let (expected_continuity_state, resume_basis) =
+                if let Some(cycle_id) = request.last_anomaly_cycle_id.as_deref() {
+                    if binding.5 != "ACTIVE" {
+                        return Err(StateError::OverwatcherCycleInvalid(
+                            "anomaly-cycle turn resume requires active continuity".into(),
+                        ));
+                    }
+                    let latest_cycle: (String, String, String, String) = transaction
+                        .query_row(
+                            "SELECT cycle_id, session_id, foreground_turn_id, anomaly_codes_json
+                             FROM overwatch_cycles WHERE run_id=?1
+                             ORDER BY cycle_sequence DESC LIMIT 1",
+                            [&request.run_id],
+                            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                        )
+                        .optional()?
+                        .ok_or_else(|| {
+                            StateError::OverwatcherCycleInvalid(
+                                "turn resume requires a prior anomalous observation cycle".into(),
+                            )
+                        })?;
+                    let anomaly_codes: Vec<crate::model::OverwatchAnomalyCode> =
+                        serde_json::from_str(&latest_cycle.3).map_err(|_| {
+                            StateError::OverwatcherCycleInvalid(
+                                "last anomaly cycle has invalid closed anomaly codes".into(),
+                            )
+                        })?;
+                    if latest_cycle.0 != cycle_id
+                        || latest_cycle.1 != request.session_id
+                        || latest_cycle.2 != request.previous_foreground_turn_id
+                        || anomaly_codes.is_empty()
+                    {
+                        return Err(StateError::OverwatcherCycleInvalid(
+                            "turn resume must follow the exact last anomaly cycle in the same Session and old turn"
+                                .into(),
+                        ));
+                    }
+                    ("ACTIVE", "ANOMALY_CYCLE")
+                } else {
+                    if binding.5 != "VIOLATION" {
+                        return Err(StateError::OverwatcherCycleInvalid(
+                            "native-status turn resume requires a recorded continuity violation"
+                                .into(),
+                        ));
+                    }
+                    let latest_status: (String, u64, String, String, String, String) = transaction
+                        .query_row(
+                            "SELECT status_id, binding_revision, role_instance_id, session_id,
+                                    foreground_turn_id, native_liveness
+                             FROM overwatcher_native_status_receipts WHERE run_id=?1
+                             ORDER BY rowid DESC LIMIT 1",
+                            [&request.run_id],
+                            |row| {
+                                Ok((
+                                    row.get(0)?,
+                                    row.get(1)?,
+                                    row.get(2)?,
+                                    row.get(3)?,
+                                    row.get(4)?,
+                                    row.get(5)?,
+                                ))
+                            },
+                        )
+                        .optional()?
+                        .ok_or_else(|| {
+                            StateError::OverwatcherCycleInvalid(
+                                "turn resume requires a prior native status receipt".into(),
+                            )
+                        })?;
+                    if Some(latest_status.0.as_str()) != request.last_native_status_id.as_deref()
+                        || latest_status.1 != request.binding_revision
+                        || latest_status.2 != request.role_instance_id
+                        || latest_status.3 != request.session_id
+                        || latest_status.4 != request.previous_foreground_turn_id
+                        || latest_status.5 == NativeLiveness::InProgress.as_str()
+                    {
+                        return Err(StateError::OverwatcherCycleInvalid(
+                            "turn resume must follow the latest non-active native status for the exact current binding and old turn"
+                                .into(),
+                        ));
+                    }
+                    ("VIOLATION", "NATIVE_STATUS")
+                };
+            let changed = transaction.execute(
                 "UPDATE overwatcher_bindings
-                 SET foreground_turn_id=?2, native_active_session_evidence_ref=?3
-                 WHERE run_id=?1",
+                 SET foreground_turn_id=?2, native_active_session_evidence_ref=?3,
+                     continuity_state='ACTIVE'
+                 WHERE run_id=?1 AND binding_revision=?4 AND role_instance_id=?5
+                   AND session_id=?6 AND foreground_turn_id=?7
+                   AND lifecycle_state='active' AND continuity_state=?8",
                 params![
                     request.run_id,
                     request.foreground_turn_id,
-                    request.native_active_session_evidence.path
+                    request.native_active_session_evidence.path,
+                    request.binding_revision,
+                    request.role_instance_id,
+                    request.session_id,
+                    request.previous_foreground_turn_id,
+                    expected_continuity_state,
                 ],
             )?;
+            if changed != 1 {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "turn resume lost the exact current Overwatcher binding".into(),
+                ));
+            }
+            if resume_basis == "NATIVE_STATUS" {
+                transaction.execute(
+                    "INSERT INTO overwatcher_incident_transitions
+                     (transition_id, incident_id, run_id, binding_revision, incident_code,
+                      state, evidence_path, evidence_sha256, occurred_at)
+                     VALUES (?1,?2,?3,?4,'OVERWATCHER_CONTINUITY_VIOLATION','RESOLVED',?5,?6,?7)",
+                    params![
+                        format!("incident-resolved-{}", request.event_id),
+                        format!(
+                            "continuity-{}-{}",
+                            request.run_id, request.binding_revision
+                        ),
+                        request.run_id,
+                        request.binding_revision,
+                        request.native_active_session_evidence.path,
+                        request.native_active_session_evidence.sha256,
+                        request.occurred_at,
+                    ],
+                )?;
+            }
             let revision = current_plan_revision(transaction, &request.run_id)?;
             transaction.execute(
                 "INSERT INTO work_events
@@ -2915,6 +3014,8 @@ impl StateStore {
                         "previous_foreground_turn_id": request.previous_foreground_turn_id,
                         "foreground_turn_id": request.foreground_turn_id,
                         "last_anomaly_cycle_id": request.last_anomaly_cycle_id,
+                        "last_native_status_id": request.last_native_status_id,
+                        "resume_basis": resume_basis,
                         "native_active_session_evidence": request.native_active_session_evidence,
                         "reason": request.reason,
                     }))?,
@@ -3810,7 +3911,7 @@ fn validate_reconciliation_request(
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
     matches!(
         version,
-        "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8"
+        "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9"
     )
 }
 
@@ -3825,7 +3926,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.2.4" && request.to_version == "4.2.5")
             || (request.from_version == "4.2.5" && request.to_version == "4.2.6")
             || (request.from_version == "4.2.6" && request.to_version == "4.2.7")
-            || (request.from_version == "4.2.7" && request.to_version == "4.2.8");
+            || (request.from_version == "4.2.7" && request.to_version == "4.2.8")
+            || (request.from_version == "4.2.8" && request.to_version == "4.2.9");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id
