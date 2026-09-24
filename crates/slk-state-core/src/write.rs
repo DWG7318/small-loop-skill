@@ -24,8 +24,8 @@ use crate::model::{
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
     RebindSessionRequest, ReconcileRunIdentitiesRequest, RecordOverwatcherStatusRequest,
     RegisterRoleRequest, ReplaceOverwatcherRequest, ReplaceRoleRequest,
-    ResumeOverwatcherTurnRequest, RevisePlanRequest, Role, RunStateSnapshot, RuntimeSnapshot,
-    TokenHandoffRequest, WriteRequest,
+    ResumeOverwatcherTurnRequest, RevisePlanRequest, Role, RotateOverwatcherCredentialRequest,
+    RunStateSnapshot, RuntimeSnapshot, TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
 
@@ -73,6 +73,14 @@ pub struct DeliveryStartResult {
     pub token: CurrentToken,
     pub event_id: String,
     pub message_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct OverwatcherCredentialRotationResult {
+    pub binding_revision: u64,
+    pub runtime_revision: u64,
+    pub role_instance_id: String,
+    pub issued: IssuedCredential,
 }
 
 impl StateStore {
@@ -676,7 +684,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1542,7 +1550,10 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
-            if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7") {
+            if matches!(
+                method_version.as_str(),
+                "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8"
+            ) {
                 type ExistingWorkEvent = (
                     String,
                     Option<String>,
@@ -1932,7 +1943,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2498,6 +2509,156 @@ impl StateStore {
         })
     }
 
+    pub fn rotate_overwatcher_credential(
+        &self,
+        credential: &Credential,
+        request: RotateOverwatcherCredentialRequest,
+    ) -> Result<OverwatcherCredentialRotationResult, StateError> {
+        if !valid_identifier(&request.rotation_id)
+            || !valid_identifier(&request.run_id)
+            || request.expected_binding_revision == 0
+            || request.expected_runtime_revision == 0
+            || !valid_identifier(&request.role_instance_id)
+            || request.session_id.trim().is_empty()
+            || request.foreground_turn_id.trim().is_empty()
+            || !valid_identifier(&request.expected_overwatcher_credential_id)
+            || request.reason.trim().is_empty()
+        {
+            return Err(StateError::OverwatcherBindingInvalid(
+                "credential rotation requires one complete exact binding identity".into(),
+            ));
+        }
+        validate_evidence_reference(&request.evidence)?;
+        validate_admin_timestamp(&request.occurred_at)?;
+
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_role(transaction, &request.run_id, credential)?;
+            if actor.role != Role::Supervisor {
+                return Err(StateError::OverwatcherBindingNotAuthorized);
+            }
+            let method_version: String = transaction.query_row(
+                "SELECT slk_version FROM runs WHERE run_id=?1 AND closure_state='open'",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            if !matches!(method_version.as_str(), "4.2.7" | "4.2.8") {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "credential rotation requires effective SLK 4.2.7 or 4.2.8".into(),
+                ));
+            }
+            let replay: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM overwatcher_credential_rotations WHERE rotation_id=?1",
+                    [&request.rotation_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if replay.is_some() {
+                return Err(StateError::OverwatcherCredentialRotationNotReplayable);
+            }
+            let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+            if snapshot.runtime_revision != request.expected_runtime_revision {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "credential rotation runtime revision is stale".into(),
+                ));
+            }
+            let binding: (u64, String, String, String, String, String, String) = transaction
+                .query_row(
+                    "SELECT binding_revision, role_instance_id, session_id,
+                            foreground_turn_id, credential_id, credential_state,
+                            lifecycle_state || ':' || continuity_state
+                     FROM overwatcher_bindings WHERE run_id=?1",
+                    [&request.run_id],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                        ))
+                    },
+                )?;
+            if binding.0 != request.expected_binding_revision
+                || binding.1 != request.role_instance_id
+                || binding.2 != request.session_id
+                || binding.3 != request.foreground_turn_id
+                || binding.4 != request.expected_overwatcher_credential_id
+                || binding.5 != "active"
+                || binding.6 != "active:ACTIVE"
+            {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "credential rotation does not match the exact current ACTIVE binding".into(),
+                ));
+            }
+
+            let material = new_credential_material();
+            let changed = transaction.execute(
+                "UPDATE overwatcher_bindings
+                 SET credential_id=?2, credential_sha256=?3, credential_state='active'
+                 WHERE run_id=?1 AND binding_revision=?4 AND role_instance_id=?5
+                   AND session_id=?6 AND foreground_turn_id=?7 AND credential_id=?8
+                   AND credential_state='active' AND lifecycle_state='active'
+                   AND continuity_state='ACTIVE'",
+                params![
+                    request.run_id,
+                    material.credential_id,
+                    material.credential_sha256,
+                    request.expected_binding_revision,
+                    request.role_instance_id,
+                    request.session_id,
+                    request.foreground_turn_id,
+                    request.expected_overwatcher_credential_id,
+                ],
+            )?;
+            if changed != 1 {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "credential rotation lost the exact binding race".into(),
+                ));
+            }
+            let runtime_revision = advance_runtime_snapshot(
+                transaction,
+                &request.run_id,
+                &request.rotation_id,
+                snapshot.latest_message_id.as_deref(),
+                &request.occurred_at,
+            )?;
+            transaction.execute(
+                "INSERT INTO overwatcher_credential_rotations
+                 (rotation_id, run_id, binding_revision, role_instance_id, session_id,
+                  foreground_turn_id, old_credential_id, new_credential_id,
+                  runtime_revision, evidence_path, evidence_sha256, reason, occurred_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                params![
+                    request.rotation_id,
+                    request.run_id,
+                    request.expected_binding_revision,
+                    request.role_instance_id,
+                    request.session_id,
+                    request.foreground_turn_id,
+                    request.expected_overwatcher_credential_id,
+                    material.credential_id,
+                    runtime_revision,
+                    request.evidence.path,
+                    request.evidence.sha256,
+                    request.reason,
+                    request.occurred_at,
+                ],
+            )?;
+            Ok(OverwatcherCredentialRotationResult {
+                binding_revision: request.expected_binding_revision,
+                runtime_revision,
+                role_instance_id: request.role_instance_id.clone(),
+                issued: IssuedCredential {
+                    credential_id: material.credential_id,
+                    credential: material.credential,
+                },
+            })
+        })
+    }
+
     pub fn record_overwatcher_status(
         &self,
         credential: &Credential,
@@ -2655,7 +2816,7 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
@@ -2782,7 +2943,7 @@ impl StateStore {
         credential: &Credential,
     ) -> Result<AuthorizedActor, StateError> {
         let connection = open_database(&self.data_root)?;
-        authorize_event(&connection, run_id, credential, EventType::TokenHandedOff)
+        authorize_role(&connection, run_id, credential)
     }
 
     pub fn current_cell_state(&self, run_id: &str, cell_id: &str) -> Result<String, StateError> {
@@ -3647,7 +3808,10 @@ fn validate_reconciliation_request(
 }
 
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
-    matches!(version, "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7")
+    matches!(
+        version,
+        "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8"
+    )
 }
 
 fn validate_method_adoption_request(
@@ -3660,7 +3824,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.2.3" && request.to_version == "4.2.4")
             || (request.from_version == "4.2.4" && request.to_version == "4.2.5")
             || (request.from_version == "4.2.5" && request.to_version == "4.2.6")
-            || (request.from_version == "4.2.6" && request.to_version == "4.2.7");
+            || (request.from_version == "4.2.6" && request.to_version == "4.2.7")
+            || (request.from_version == "4.2.7" && request.to_version == "4.2.8");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

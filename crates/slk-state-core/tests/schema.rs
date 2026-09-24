@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OpenFlags};
 
 use slk_state_core::schema::{create_migration_backup, open_database};
 
-const TABLES: [&str; 22] = [
+const TABLES: [&str; 23] = [
     "projects",
     "runs",
     "go_nodes",
@@ -27,6 +27,7 @@ const TABLES: [&str; 22] = [
     "overwatcher_native_status_receipts",
     "overwatcher_incident_transitions",
     "overwatcher_binding_transitions",
+    "overwatcher_credential_rotations",
 ];
 
 fn scalar_text(connection: &Connection, sql: &str) -> String {
@@ -49,7 +50,7 @@ fn database_enables_wal_foreign_keys_and_all_current_tables() {
         database
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap(),
-        7
+        8
     );
 
     for table in TABLES {
@@ -62,6 +63,35 @@ fn database_enables_wal_foreign_keys_and_all_current_tables() {
             .expect("table query");
         assert_eq!(count, 1, "missing table {table}");
     }
+}
+
+#[test]
+fn overwatcher_credential_rotation_receipts_are_append_only() {
+    let root = tempfile::tempdir().expect("temporary data root");
+    let database = open_database(root.path()).expect("open state database");
+    seed_history(&database);
+    database
+        .execute(
+            "INSERT INTO overwatcher_credential_rotations
+             (rotation_id, run_id, binding_revision, role_instance_id, session_id,
+              foreground_turn_id, old_credential_id, new_credential_id,
+              runtime_revision, evidence_path, evidence_sha256, reason, occurred_at)
+             VALUES ('rotate-a','run-a',1,'role-a','session-a','turn-a',
+                     'old-credential','new-credential',2,'evidence.json',
+                     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                     'lost credential', '2026-09-24T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+    assert!(database
+        .execute(
+            "UPDATE overwatcher_credential_rotations SET reason='forged'",
+            [],
+        )
+        .is_err());
+    assert!(database
+        .execute("DELETE FROM overwatcher_credential_rotations", [])
+        .is_err());
 }
 
 #[test]
@@ -218,7 +248,7 @@ fn future_nonzero_migration_can_create_and_validate_a_backup() {
     let database = open_database(root.path()).expect("open state database");
     seed_history(&database);
 
-    let backup = create_migration_backup(&database, root.path(), 7, 8, "20260920T000000Z")
+    let backup = create_migration_backup(&database, root.path(), 8, 9, "20260920T000000Z")
         .expect("migration backup");
     let copy = Connection::open_with_flags(backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open backup");

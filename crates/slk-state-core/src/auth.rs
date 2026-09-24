@@ -66,6 +66,8 @@ pub enum StateError {
     OverwatcherBindingNotAuthorized,
     #[error("Overwatcher binding is invalid: {0}")]
     OverwatcherBindingInvalid(String),
+    #[error("Overwatcher credential rotation is one-time and cannot be replayed")]
+    OverwatcherCredentialRotationNotReplayable,
     #[error("this Run already has a bound Overwatcher")]
     OverwatcherAlreadyBound,
     #[error("this Agent Session is already bound as an Overwatcher")]

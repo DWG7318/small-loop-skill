@@ -54,6 +54,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 - `slk-bi-query` 只读事实；`slk-state` 记录本角色 cycle、observation、cadence/native 状态和合法关闭；`slk-transport` 检查精确投递与原生 start。通讯恢复走 `$slk-recover-communication`，空闲目标可做同一消息的 exact retry。
 - 每轮只追加一条紧凑 cycle；无新鲜原生证据时记录“活动无法证明”。不复制完整日志，不增加 CELL/D1/D2 进度。正常轮次不发可见状态消息。
 - Tool 失败或输出矛盾时，把错误与证据缺口交 Supervisor，不猜测、不伪造、不临时开发新系统。
+- 若绑定后完整写凭证丢失或误把 `overwatcher_credential_id` 当作凭证，不伪造 cycle/continuity violation，也不更换角色、Session、turn 或 binding；由当前 Supervisor 以精确身份和证据执行 `rotate-overwatcher-credential`，一次性保存 `overwatcher_write_credential` 并立即 `authenticate-role` 后，原 Session 才继续记录。
 - Run 终结后记录最后一轮，再用同一 revision 和 cycle ID 调用 `close-overwatcher`，停止前台 turn 并归档本 Session。开放 Run 不关闭；异常暂停不归档、不更换、不复用，意外失活保持 `CONTINUITY_RECOVERY_REQUIRED`。
 
 ## 负面提示词
@@ -61,6 +62,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 - 不要创建 heartbeat；不要创建 automation；不要创建 cron；不要创建 Windows 计划任务；不要创建 daemon；不要创建 后台 Agent；不要创建第二个观察 Session。
 - 不要成为第四个工程角色、Router、消息总线或必经 relay；不要写 D0/D1/D2、计划、验收、角色替换、Owner 决定、TOKEN 或 BI；不要阻止三角色直连。
 - 不要每个 CELL 重绑或确认，不要把 LATE 当 INACTIVE，不要用旧 scope 掩盖当前交接缺失，不要混合 revision；历史 Run 不要先绑定再补记录。
+- 不要把 `overwatcher_credential_id` 当作 `overwatcher_write_credential`，不要因一次性写凭证丢失就伪造连续性故障、另建 Overwatcher 或直接编辑数据库。
 - 不要在异常送达后继续巡查、重复分析或自行恢复；等待 Supervisor 为同一 Session 完成新 turn 绑定。
 - 不要把判断退化成固定分钟、关键词、异常码或状态机，也不要为通讯阻塞新造协议、运行时、凭证流程或后台服务。
 - 不要绕过标准 Tool 修改共享状态，也不要把 Tool 事实当成语义结论；Tool 保证标准化，Overwatcher Agent 负责理解与汇报。

@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.2.8
+
+- Added one Supervisor-authorized, exact-binding `rotate-overwatcher-credential` recovery for a lost or mis-saved one-time Overwatcher write secret. It changes only the current credential ID/hash and one runtime revision; role, Session, foreground turn, binding revision, TOKEN, engineering history, continuity and BI remain unchanged.
+- Renamed bind/replace/rotate output fields to `overwatcher_credential_id` and one-time `overwatcher_write_credential`, with `ONE_TIME_NON_REPLAYABLE` delivery semantics. Credential IDs cannot authenticate, replay fails closed, and immediate exact-role authentication is required.
+- Added the closed rotation schema, append-only schema-v8 audit receipt, 4.2.7 bridge recovery/adoption guidance and focused failure coverage without adding a role, scheduler, heartbeat, daemon, workflow engine, BoM route or product mutation.
+
 ## 4.2.7
 
 - Added compact Worker and Checker role-local preflight. Either role may sequence its own work into internal segments, while the formal CELL, D1 attempt, TOKEN, role topology, and single final D1 verdict remain unchanged.

@@ -49,7 +49,7 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.2.7"}
+    assert result == {"status": "ok", "version": "4.2.8"}
 
 
 def init_request():
@@ -323,7 +323,7 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
 
     observer_environment = environment.copy()
     observer_environment["SLK_OVERWATCHER_CREDENTIAL"] = bound[
-        "overwatcher_credential"
+        "overwatcher_write_credential"
     ]
     cycle = json.loads(
         invoke(
@@ -364,6 +364,105 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
     )
     assert rejected.returncode != 0
     assert json.loads(rejected.stderr)["code"] == "SLK_ROLE_CREDENTIAL_REQUIRED"
+
+
+def test_overwatcher_credential_rotation_uses_unambiguous_one_time_fields(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke(["configure", "--data-root", tmp_path / "state"], environment)
+    initialized = json.loads(
+        invoke(
+            ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+            environment,
+        ).stdout
+    )
+    supervisor_environment = environment.copy()
+    supervisor_environment["SLK_ROLE_CREDENTIAL"] = initialized["supervisor_credential"]
+    bound = json.loads(
+        invoke(
+            [
+                "bind-overwatcher",
+                "--request",
+                write_json(tmp_path / "overwatcher.json", overwatcher_binding()),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    assert "overwatcher_credential" not in bound
+    assert "credential_id" not in bound
+    assert bound["overwatcher_write_credential"].startswith("slk_")
+    assert bound["overwatcher_credential_id"].startswith("credential-")
+    assert bound["write_credential_delivery"] == "ONE_TIME_NON_REPLAYABLE"
+
+    evidence = tmp_path / "credential-loss.json"
+    evidence.write_bytes(b"credential id was stored instead of secret")
+    request = {
+        "rotation_id": "rotate-overwatcher-credential-a",
+        "run_id": "run-a",
+        "expected_binding_revision": 1,
+        "expected_runtime_revision": 2,
+        "role_instance_id": "overwatcher-a",
+        "session_id": "thread-overwatcher-a",
+        "foreground_turn_id": "foreground-turn-a",
+        "expected_overwatcher_credential_id": bound["overwatcher_credential_id"],
+        "evidence": {
+            "path": str(evidence.resolve()),
+            "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+        },
+        "reason": "restore the exact active binding after one-time credential loss",
+        "occurred_at": "2026-09-24T00:00:00Z",
+    }
+    rotated = json.loads(
+        invoke(
+            [
+                "rotate-overwatcher-credential",
+                "--request",
+                write_json(tmp_path / "rotate.json", request),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    assert rotated["status"] == "overwatcher_credential_rotated"
+    assert rotated["binding_revision"] == 1
+    assert rotated["runtime_revision"] == 3
+    assert rotated["overwatcher_role_instance_id"] == "overwatcher-a"
+    assert rotated["overwatcher_credential_id"] != bound["overwatcher_credential_id"]
+    assert rotated["overwatcher_write_credential"].startswith("slk_")
+    assert rotated["write_credential_delivery"] == "ONE_TIME_NON_REPLAYABLE"
+
+    authenticate_environment = environment.copy()
+    authenticate_environment["SLK_ROLE_CREDENTIAL"] = rotated[
+        "overwatcher_write_credential"
+    ]
+    authenticated = json.loads(
+        invoke(
+            [
+                "authenticate-role",
+                "--run-id",
+                "run-a",
+                "--role-instance-id",
+                "overwatcher-a",
+            ],
+            authenticate_environment,
+        ).stdout
+    )
+    assert authenticated["status"] == "authenticated"
+
+    wrong_secret_environment = environment.copy()
+    wrong_secret_environment["SLK_ROLE_CREDENTIAL"] = rotated[
+        "overwatcher_credential_id"
+    ]
+    rejected = invoke(
+        [
+            "authenticate-role",
+            "--run-id",
+            "run-a",
+            "--role-instance-id",
+            "overwatcher-a",
+        ],
+        wrong_secret_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
 
 
 def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
@@ -408,7 +507,7 @@ def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
     )
     observer_environment = environment.copy()
     observer_environment["SLK_OVERWATCHER_CREDENTIAL"] = bound[
-        "overwatcher_credential"
+        "overwatcher_write_credential"
     ]
     incomplete = overwatch_cycle(tmp_path)
     del incomplete["checklist"]["active_session"]

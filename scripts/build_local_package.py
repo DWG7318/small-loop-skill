@@ -133,8 +133,8 @@ def _repository_sources(repository: Path, listed: dict[str, str]) -> list[tuple[
             mappings.append((source, share / source.relative_to(repository)))
 
     migrations = _files(repository / SQLITE_SCHEMA_ROOT)
-    if [path.name for path in migrations] != [f"{index:04}.sql" for index in range(1, 8)]:
-        raise PackageError("SQLite schema identity must contain migrations 0001.sql through 0007.sql")
+    if [path.name for path in migrations] != [f"{index:04}.sql" for index in range(1, 9)]:
+        raise PackageError("SQLite schema identity must contain migrations 0001.sql through 0008.sql")
     for source in migrations:
         relative = source.relative_to(repository).as_posix()
         if listed.get(relative) != sha256(source):

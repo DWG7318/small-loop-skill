@@ -643,6 +643,22 @@ pub struct ReplaceOverwatcherRequest {
     pub occurred_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RotateOverwatcherCredentialRequest {
+    pub rotation_id: String,
+    pub run_id: String,
+    pub expected_binding_revision: u64,
+    pub expected_runtime_revision: u64,
+    pub role_instance_id: String,
+    pub session_id: String,
+    pub foreground_turn_id: String,
+    pub expected_overwatcher_credential_id: String,
+    pub evidence: EvidenceReference,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RevisePlanRequest {

@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.2.7 to 4.2.8
+
+Install the complete 4.2.8 package. Existing 4.2.7 Runs retain the same topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts and Overwatcher identity. The schema-v8 migration creates a verified backup and one append-only credential-rotation receipt table; it does not expose credential metadata to BI.
+
+If the current Overwatcher write secret was lost or a caller stored `overwatcher_credential_id` instead, the current Supervisor may call `rotate-overwatcher-credential` against the exact ACTIVE binding. Capture the one-time `overwatcher_write_credential`, immediately run `authenticate-role`, and let the same Session record a valid current-binding cycle. Only then adopt 4.2.8 with a fresh snapshot and `PRESERVED_ACTIVE`. Do not invent a continuity violation, replace the Session/turn/binding, replay the rotation, or edit SQLite.
+
+No role responsibility, TOKEN semantics, CELL, D0/D1/D2, model policy, BI authority, product candidate, remote tag or Release changes in this migration.
+
 ## Current patch migration: 4.2.6 to 4.2.7
 
 Install the complete 4.2.7 package. Existing 4.2.6 Runs keep their role topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, and optional Overwatcher binding; adopt the new method contract only at an existing Supervisor-controlled boundary with the exact current snapshot.

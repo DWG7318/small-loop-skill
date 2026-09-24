@@ -14,9 +14,165 @@ use slk_state_core::model::{
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
     PreservedAssertion, ProjectIdentity, RecordOverwatcherStatusRequest, RegisterRoleRequest,
     ReplaceOverwatcherRequest, ResumeOverwatcherTurnRequest, Role, RoleIdentity,
-    TokenHandoffRequest, WriteRequest,
+    RotateOverwatcherCredentialRequest, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
+
+#[test]
+fn supervisor_rotates_only_the_exact_active_overwatcher_credential_without_a_cycle() {
+    let fixture = Fixture::new_427();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let before = fixture.store.query_run("run-a").unwrap();
+    assert!(before.overwatch_cycles.is_empty());
+
+    let request = credential_rotation_request(&fixture, &issued.credential_id);
+    let rotated = fixture
+        .store
+        .rotate_overwatcher_credential(&fixture.supervisor, request.clone())
+        .unwrap();
+
+    assert_eq!(rotated.binding_revision, 1);
+    assert_eq!(
+        rotated.runtime_revision,
+        before.runtime_snapshot.unwrap().runtime_revision + 1
+    );
+    assert_ne!(rotated.issued.credential_id, issued.credential_id);
+    assert_eq!(
+        fixture
+            .store
+            .authenticate_active_role("run-a", &rotated.issued.credential)
+            .unwrap()
+            .role_instance_id,
+        "overwatcher-a"
+    );
+    assert!(matches!(
+        fixture
+            .store
+            .authenticate_active_role("run-a", &issued.credential),
+        Err(StateError::CredentialInvalid)
+    ));
+    assert!(matches!(
+        fixture.store.authenticate_active_role(
+            "run-a",
+            &slk_state_core::auth::Credential::from_secret(issued.credential_id.clone())
+        ),
+        Err(StateError::CredentialInvalid)
+    ));
+
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(after.token_history, before.token_history);
+    assert_eq!(after.events, before.events);
+    let watcher = after.role("overwatcher").unwrap();
+    assert_eq!(watcher.role_instance_id, "overwatcher-a");
+    assert_eq!(watcher.session_id, "session-overwatcher-a");
+    assert!(after.overwatch_cycles.is_empty());
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    let receipt: (String, String, u64) = database
+        .query_row(
+            "SELECT old_credential_id, new_credential_id, runtime_revision
+             FROM overwatcher_credential_rotations WHERE rotation_id=?1",
+            [&request.rotation_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(receipt.0, issued.credential_id);
+    assert_eq!(receipt.1, rotated.issued.credential_id);
+    assert_eq!(receipt.2, rotated.runtime_revision);
+    assert_ne!(receipt.1, rotated.issued.credential.expose_secret());
+
+    assert!(matches!(
+        fixture
+            .store
+            .rotate_overwatcher_credential(&fixture.supervisor, request),
+        Err(StateError::OverwatcherCredentialRotationNotReplayable)
+    ));
+}
+
+#[test]
+fn overwatcher_credential_rotation_fails_closed_for_wrong_authority_or_stale_identity() {
+    let fixture = Fixture::new_427();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    let request = credential_rotation_request(&fixture, &issued.credential_id);
+
+    assert!(matches!(
+        fixture
+            .store
+            .rotate_overwatcher_credential(&fixture.checker, request.clone()),
+        Err(StateError::OverwatcherBindingNotAuthorized)
+    ));
+
+    let mut stale = request.clone();
+    stale.expected_runtime_revision -= 1;
+    assert!(matches!(
+        fixture
+            .store
+            .rotate_overwatcher_credential(&fixture.supervisor, stale),
+        Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+
+    let mut wrong_session = request;
+    wrong_session.session_id = "different-session".into();
+    assert!(matches!(
+        fixture
+            .store
+            .rotate_overwatcher_credential(&fixture.supervisor, wrong_session),
+        Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+
+    let request = credential_rotation_request(&fixture, &issued.credential_id);
+    for invalid in [
+        RotateOverwatcherCredentialRequest {
+            expected_binding_revision: 2,
+            ..request.clone()
+        },
+        RotateOverwatcherCredentialRequest {
+            role_instance_id: "different-overwatcher".into(),
+            ..request.clone()
+        },
+        RotateOverwatcherCredentialRequest {
+            foreground_turn_id: "different-turn".into(),
+            ..request.clone()
+        },
+        RotateOverwatcherCredentialRequest {
+            expected_overwatcher_credential_id: "credential-different".into(),
+            ..request.clone()
+        },
+    ] {
+        assert!(matches!(
+            fixture
+                .store
+                .rotate_overwatcher_credential(&fixture.supervisor, invalid),
+            Err(StateError::OverwatcherBindingInvalid(_))
+        ));
+    }
+
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    database
+        .execute(
+            "UPDATE overwatcher_bindings SET continuity_state='VIOLATION' WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+    drop(database);
+    assert!(matches!(
+        fixture
+            .store
+            .rotate_overwatcher_credential(&fixture.supervisor, request),
+        Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+}
 
 #[test]
 fn completed_foreground_turn_blocks_new_423_dispatch() {
@@ -1338,6 +1494,19 @@ impl Fixture {
         fixture
     }
 
+    fn new_427() -> Self {
+        let fixture = Self::new();
+        let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.2.7' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        drop(database);
+        fixture
+    }
+
     fn evidence_ref(&self, name: &str, bytes: &[u8]) -> EvidenceReference {
         let path = self._root.path().join(name);
         fs::write(&path, bytes).unwrap();
@@ -1395,6 +1564,28 @@ impl Fixture {
             .runtime_snapshot
             .unwrap()
             .runtime_revision
+    }
+}
+
+fn credential_rotation_request(
+    fixture: &Fixture,
+    credential_id: &str,
+) -> RotateOverwatcherCredentialRequest {
+    RotateOverwatcherCredentialRequest {
+        rotation_id: "rotate-overwatcher-credential-a".into(),
+        run_id: "run-a".into(),
+        expected_binding_revision: 1,
+        expected_runtime_revision: fixture.runtime_revision(),
+        role_instance_id: "overwatcher-a".into(),
+        session_id: "session-overwatcher-a".into(),
+        foreground_turn_id: "foreground-turn-a".into(),
+        expected_overwatcher_credential_id: credential_id.into(),
+        evidence: fixture.evidence_ref(
+            "credential-loss.json",
+            b"credential id was stored instead of secret",
+        ),
+        reason: "restore the exact active binding after one-time credential loss".into(),
+        occurred_at: "2026-09-24T00:00:00Z".into(),
     }
 }
 

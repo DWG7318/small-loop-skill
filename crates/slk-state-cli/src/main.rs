@@ -13,8 +13,8 @@ use slk_state_core::model::{
     CommitDeliveryStartRequest, InitRunRequest, OperationalObservationRequest,
     OverwatchCycleRequest, RebindSessionRequest, ReconcileRunIdentitiesRequest,
     RecordOverwatcherStatusRequest, RegisterRoleRequest, ReplaceOverwatcherRequest,
-    ReplaceRoleRequest, ResumeOverwatcherTurnRequest, RevisePlanRequest, TokenHandoffRequest,
-    WriteRequest,
+    ReplaceRoleRequest, ResumeOverwatcherTurnRequest, RevisePlanRequest,
+    RotateOverwatcherCredentialRequest, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::schema::open_database;
 use slk_state_core::write::StateStore;
@@ -87,6 +87,7 @@ fn run() -> Result<Value, CliError> {
         "record-overwatcher-status" => record_overwatcher_status(&arguments[1..]),
         "resume-overwatcher-turn" => resume_overwatcher_turn(&arguments[1..]),
         "replace-overwatcher" => replace_overwatcher(&arguments[1..]),
+        "rotate-overwatcher-credential" => rotate_overwatcher_credential(&arguments[1..]),
         "wait-for-change" => wait_for_change(&arguments[1..]),
         "record-observation" => record_observation(&arguments[1..]),
         "close-overwatcher" => close_overwatcher(&arguments[1..]),
@@ -184,8 +185,9 @@ fn bind_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
         "status":"overwatcher_bound",
         "run_id":run_id,
         "overwatcher_role_instance_id":role_instance_id,
-        "overwatcher_credential":issued.credential.expose_secret(),
-        "credential_id":issued.credential_id,
+        "overwatcher_write_credential":issued.credential.expose_secret(),
+        "overwatcher_credential_id":issued.credential_id,
+        "write_credential_delivery":"ONE_TIME_NON_REPLAYABLE",
         "export":refresh_export(&store, &run_id)
     }))
 }
@@ -295,8 +297,28 @@ fn replace_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
         "run_id":run_id,
         "binding_revision":binding_revision,
         "overwatcher_role_instance_id":role_instance_id,
-        "overwatcher_credential":issued.credential.expose_secret(),
-        "credential_id":issued.credential_id
+        "overwatcher_write_credential":issued.credential.expose_secret(),
+        "overwatcher_credential_id":issued.credential_id,
+        "write_credential_delivery":"ONE_TIME_NON_REPLAYABLE"
+    }))
+}
+
+fn rotate_overwatcher_credential(arguments: &[String]) -> Result<Value, CliError> {
+    let request: RotateOverwatcherCredentialRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let store = configured_store()?;
+    let result = store
+        .rotate_overwatcher_credential(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status":"overwatcher_credential_rotated",
+        "run_id":run_id,
+        "binding_revision":result.binding_revision,
+        "runtime_revision":result.runtime_revision,
+        "overwatcher_role_instance_id":result.role_instance_id,
+        "overwatcher_write_credential":result.issued.credential.expose_secret(),
+        "overwatcher_credential_id":result.issued.credential_id,
+        "write_credential_delivery":"ONE_TIME_NON_REPLAYABLE"
     }))
 }
 
@@ -522,5 +544,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|resume-overwatcher-turn|replace-overwatcher|wait-for-change|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|authenticate-role|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
+    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|resume-overwatcher-turn|replace-overwatcher|rotate-overwatcher-credential|wait-for-change|record-observation|close-overwatcher|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|authenticate-role|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

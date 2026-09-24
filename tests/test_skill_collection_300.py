@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.7"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.8"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -241,7 +241,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.2.7" in main
+    assert "4.2.8" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -1187,3 +1187,23 @@ def test_overwatcher_reports_worker_handoff_stall_then_pauses_for_same_member_re
     assert "报告 Supervisor" in overwatch
     assert "然后暂停" in overwatch
     assert "恢复原成员" in overwatch
+
+
+def test_lost_overwatcher_write_credential_rotates_the_same_exact_binding() -> None:
+    overwatch = read_skill("slk-overwatch-run")
+    manage = read_skill("slk-manage-team")
+    combined = "\n".join((overwatch, manage))
+
+    for marker in (
+        "rotate-overwatcher-credential",
+        "overwatcher_write_credential",
+        "overwatcher_credential_id",
+        "authenticate-role",
+        "Session",
+        "turn",
+        "binding",
+    ):
+        assert marker in combined
+    assert "不要把 `overwatcher_credential_id` 当作 `overwatcher_write_credential`" in overwatch
+    assert "不伪造 cycle/continuity violation" in overwatch
+    assert "直接改数据库" in combined

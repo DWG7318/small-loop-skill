@@ -1,36 +1,31 @@
-# Validation Report — SLK 4.2.7 Candidate
+# Validation Report — SLK 4.2.8 Candidate
 
 Date: 2026-09-24
 
-Branch: `feature/slk-4.2.7-preflight-transport-compat`
+Branch: `feature/slk-4.2.8-overwatcher-credential-rotation`
 
-Base candidate: `002aaecc9c500149d702de268b151f6dcc22e254`
+Base candidate: `61f7e7756234773603666ed2d780ef80e6fe7e39`
 
 ## Scope
 
-SLK 4.2.7 is a narrow compatibility and role-local preflight patch over the accepted 4.2.6 method. It preserves the Codex Supervisor ↔ OCRV Checker ↔ DSH Worker topology, one formal CELL/D0/D1/D2 path, TOKEN authority, BI authority, model policy and optional whole-Run Overwatcher. It does not introduce BoM, a scheduler, heartbeat, daemon, workflow engine, extra role, formal sub-CELL, extra D1 attempt or automatic D2.
+SLK 4.2.8 is a narrow recovery patch over 4.2.7. It adds one Supervisor-authenticated action for rotating the write credential of the exact current ACTIVE Overwatcher binding when the one-time secret was lost or the caller mistakenly stored the non-secret credential ID. The action preserves role, Session, foreground turn, binding revision, TOKEN, engineering history, continuity, CELL/D0/D1/D2 and BI authority; it advances only the runtime revision and stores one append-only audit receipt.
 
-Worker and Checker now perform bounded local preflight before work: the Worker may sequence implementation, test and evidence steps inside one frozen CELL, while the Checker may sequence criterion-bound D1-A/D1-B/D1-C inspection inside one formal D1. Missing proof, unsupported coverage or tool failure produces INCOMPLETE; a material criterion-bound product defect produces FAIL; zero comments, zero findings or empty evidence never produces an automatic PASS. Supervisor involvement remains exception-driven and restores the same members instead of taking over ordinary execution.
+Bind, replace and rotate responses now distinguish `overwatcher_credential_id` from the one-time `overwatcher_write_credential` and label delivery `ONE_TIME_NON_REPLAYABLE`. The old secret and the credential ID both fail authentication, rotation replay fails closed, and exact Supervisor/binding/runtime/role/Session/turn/current-credential/evidence mismatches are rejected.
 
-The transport patch resolves a stale absolute Codex executable only to the currently discoverable Codex executable and records immutable rebind evidence. Codex delivery reads thread state before resume, never resumes an active writer, and resumes only a not-loaded thread. OCRV requests now match the installed v1.12.7 closed request contract while retaining OCRV-generated result identity. DSH completion may recover an omitted repository only from the authenticated immutable Worker endpoint; retries reuse the first canonical request bytes when only the proposed timestamp differs. Windows bounded subprocess cleanup terminates the whole process tree headlessly.
-
-The accepted 4.2.6 LE BI behavior is preserved: immutable project identity supplies stable quiet project colors, status color remains separate, only six-or-more active Runs receive a five-row internal scrolling viewport, and the document itself does not scroll. This patch updates the packaged BI version but does not redesign the UI.
+Schema v8 adds only the append-only rotation receipt table. Rotation metadata is not exposed through general Run projection or LE BI. A stranded 4.2.7 Run may rotate under its current contract, authenticate the returned write secret, record a valid cycle for the same binding, and then adopt 4.2.8 with `PRESERVED_ACTIVE`; the rotation never invents continuity evidence.
 
 ## Evidence
 
-- RED first: stale Codex path, active-thread resume conflict, OCRV closed-contract mismatch, missing Worker repository, unstable retry bytes, missing role-local preflight language and Windows child-process timeout were reproduced before their fixes.
-- Focused Python transport, completion and Skill checks: 155 passed.
-- Windows process-tree timeout check: 1 passed.
-- Rust workspace: 97 executed integration tests passed; doc tests passed.
-- Cargo workspace check and debug builds for `slk-state`, `slk-bi-query` and `slk-cargo`: PASS.
-- Real installed OCRV v1.12.7 contract probe against a tiny isolated repository: PASS in 12.6 seconds; OCRV supplied `review_invocation_id=b43bf42e-8f2d-47e9-a2c7-7d360f6fed82` and `session_id=b5d6fa40-ebdc-4f97-a810-f7af3f6700e0`.
-- Python full suite: 280 passed.
-- Python optimized-mode suite: 280 passed; the expected pytest warning notes that Python `assert` statements are disabled under `-O`, while validator paths remained green.
-- Role Eval case pack: 62 cases, PASS; SHA-256 `4618248ad22e0c5d75eae63abba51c609c384e2063250c22b1d319d3204c5104`.
-- Repository validator and `git diff --check`: PASS.
-- Release artifacts, package installation and installed-tree hashes are recorded by the final package gate.
-- Windows launch and cleanup paths use hidden process creation; no PowerShell, cmd or helper console is introduced.
+- TDD RED reproduced the absent rotation request/action/CLI/table and the ambiguous output field names before implementation.
+- Focused exact-binding positive, wrong-authority/stale-identity/replay negative, CLI secret-vs-ID and append-only schema tests: PASS.
+- Rust workspace: 100 integration tests passed; unit and documentation test targets passed.
+- Python full suite: 282 passed.
+- Python optimized-mode suite: 282 passed; the expected pytest warning notes that Python assertions are disabled under `-O`.
+- LE BI: 21 tests passed; TypeScript typecheck passed. No BI projection exposes credential identifiers.
+- Role Eval case pack: 62 cases, PASS; SHA-256 `42891fc04f147e6bf89f13007e11eabf5cf2a28541c247e34942bc7d80ffd79e`.
+- Repository validator, closed JSON contract parsing, schema-v8 migration/backup checks and root/install packaging tests: PASS.
+- Windows helper/runtime guidance continues to require hidden/no-window execution; no visible PowerShell, cmd or helper console is introduced.
 
 ## Boundaries
 
-No LCaS product file, candidate, CELL, D2, Docker, model policy, remote branch, tag or Release is changed. The package installer performs a hash-verified atomic replacement and retains the previous installation as the rollback point. Any running legacy Run adopts 4.2.7 only at an existing Supervisor-controlled method-contract boundary; history is not rewritten.
+No LCaS/R3B product file, Run state, candidate, CELL, D2, model policy, Docker component, remote branch, tag or Release is changed. The patch adds no role, heartbeat, scheduler, daemon, workflow engine, BoM route, automatic recovery or BI write path. Local installation replaces only the hash-closed SLK package; the Supervisor remains responsible for any later explicit R3B rotation and method adoption.
