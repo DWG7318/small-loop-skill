@@ -609,6 +609,17 @@ pub struct CloseOverwatcherRequest {
     pub occurred_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloseRoleRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub role_instance_id: String,
+    pub role: Role,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OverwatcherReplacementMode {

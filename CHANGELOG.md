@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.2.11
+
+- Added one Supervisor-authenticated, idempotent `slk-state close-role` action for the exact terminal Checker or Worker. It appends `ROLE_CLOSED`, retires the endpoint, revokes the credential, and sets the role lifecycle to `exited` in one transaction without a successor or TOKEN movement.
+- Made LE BI and `slk-bi-query roles` derive `archived` from the central exited lifecycle, so a closed Run cannot leave its Checker/Worker visibly ready; planned archival or native-session absence is not presented as completed archival.
+- Added fail-closed coverage for open Runs, wrong authority, wrong role/credential, TOKEN holders, nonterminal projections, and conflicting replay. Existing D1/D2/RUN_CLOSED evidence, Supervisor identity, Overwatcher close path, schema v8, and method topology remain unchanged.
+
 ## 4.2.10
 
 - Replaced post-turn delayed self-wake and fixed-time promises with one auditable message to the exact active canonical Codex task/turn; preserved the failed attempt and kept Owner/Main activation as the truthful fallback.

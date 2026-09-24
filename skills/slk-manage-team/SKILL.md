@@ -49,7 +49,9 @@ Overwatcher 的一次性完整写凭证丢失、或调用方误存非秘密 `ove
 
 ## 收尾归档
 
-D2 通过、Run 已进入终态且最终记录完整后，按准确身份归档 Worker、Checker 与本 Run 的 Overwatcher；Overwatcher 先用最后 cycle ID 和同一 runtime revision 执行 `close-overwatcher`，再归档自身 Session，不在普通 CELL 边界关闭或转给下一 Run。计划更换与连续性恢复都由 Supervisor 以显式证据执行非重叠 replacement，并保留旧绑定历史。
+D2 通过、Run 已进入终态且最终记录完整后，归档 Worker、Checker 的中央事实由 Supervisor 写入：对同一 Run 的准确 Worker、Checker 身份分别执行 `slk-state close-role --request <json>`；目标仍持有 TOKEN、身份或角色不匹配、Run 未终结、凭证错误时均被拒绝。成功事务只追加 `ROLE_CLOSED`、令角色 `lifecycle=exited`、退役 `active endpoint` 并撤销其凭证，不创建继任者、不移动 TOKEN、不改写 D1/D2/`RUN_CLOSED`；完全相同请求可安全重放。随后用 `slk-bi-query roles` 确认 Worker/Checker 均为 `display_state=archived`。Supervisor 保留。
+
+Overwatcher 继续使用独立的 `close-overwatcher`：先记录最后 cycle，再以同一 runtime revision 关闭并归档自身 Session，不在普通 CELL 边界关闭或转给下一 Run。计划更换与连续性恢复都由 Supervisor 以显式证据执行非重叠 replacement，并保留旧绑定历史。
 
 ## 完成后
 
@@ -61,3 +63,4 @@ D2 通过、Run 已进入终态且最终记录完整后，按准确身份归档 
 - 不要创建 Codex Checker 或 Codex Worker，不要用提示词把 Codex 对话伪装成 OCRV/DSH，也不要把已登记的 DSH、OCRV 原生端点误写成隐藏成员；不要用标题、角色名称或一次启动命令代替精确身份与真实激活证据。
 - 不要把 D1 返工例外扩成 Supervisor 的一般 Worker 派工权，也不要用它绕过 OCRV 的 D1 或 Checker 通讯恢复。
 - 不要强制创建、重复创建或跨 Run 复用 Overwatcher，不要让它成为通讯中继、TOKEN 持有者、工程裁决者或 BI 写入者；不要用正时长 `wait_threads` 维持 Supervisor、Checker 或 Worker 在线，也不要用 heartbeat/定时任务冒充 Overwatcher 的前台 active turn。
+- 不要把计划归档、原生 Session 结束或发出命令当作已经归档；没有中央 `ROLE_CLOSED` 收据且仍显示 active/ready 时，应如实报告未归档，不能用自由文本覆盖事实。

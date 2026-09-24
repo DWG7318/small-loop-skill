@@ -49,7 +49,7 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.2.10"}
+    assert result == {"status": "ok", "version": "4.2.11"}
 
 
 def init_request():
@@ -112,6 +112,56 @@ def supervisor_event():
         "event_type": "D2_STARTED",
         "details": {},
         "occurred_at": "2026-09-20T00:00:01Z",
+    }
+
+
+def role_request(event_id, role_instance_id, role):
+    if role == "checker":
+        runtime, provider, model, adapter = (
+            "ocrv",
+            "dashscope-tokenplan",
+            "qwen3.8-max",
+            "ocrv-checker",
+        )
+    else:
+        runtime, provider, model, adapter = (
+            "dsh",
+            "deepseek",
+            "deepseek-v4-flash",
+            "dsh-worker",
+        )
+    session_id = f"session-{role_instance_id}"
+    return {
+        "event_id": event_id,
+        "run_id": "run-a",
+        "identity": {
+            "role_instance_id": role_instance_id,
+            "role": role,
+            "agent_runtime": runtime,
+            "provider": provider,
+            "model": model,
+            "reasoning": "provider-default",
+            "session_id": session_id,
+        },
+        "endpoint": {
+            "endpoint_version": 1,
+            "transport_adapter": adapter,
+            "host_identity": "host-a",
+            "session_id": session_id,
+            "native_address": {"session_id": session_id},
+        },
+        "occurred_at": "2026-09-20T00:00:01Z",
+    }
+
+
+def close_role_request(event_id, role_instance_id, role):
+    return {
+        "event_id": event_id,
+        "run_id": "run-a",
+        "role_instance_id": role_instance_id,
+        "role": role,
+        "reason": "terminal Run member retirement",
+        "occurred_at": "2026-09-20T00:00:03Z",
     }
 
 
@@ -238,6 +288,111 @@ def test_writer_configures_initializes_and_applies_one_role_event(tmp_path):
         invoke(["write", "--request", event_path], role_environment).stdout
     )
     assert result["status"] == "recorded"
+
+
+def test_close_role_cli_retires_exact_terminal_checker_and_worker(tmp_path):
+    environment = configured_environment(tmp_path)
+    data_root = tmp_path / "state"
+    invoke(["configure", "--data-root", data_root], environment)
+    initialized = json.loads(
+        invoke(
+            ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+            environment,
+        ).stdout
+    )
+    supervisor_environment = environment.copy()
+    supervisor_environment["SLK_ROLE_CREDENTIAL"] = initialized[
+        "supervisor_credential"
+    ]
+    checker = json.loads(
+        invoke(
+            [
+                "register-role",
+                "--request",
+                write_json(
+                    tmp_path / "checker.json",
+                    role_request("register-checker", "checker-a", "checker"),
+                ),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    checker_environment = environment.copy()
+    checker_environment["SLK_ROLE_CREDENTIAL"] = checker["role_credential"]
+    worker = json.loads(
+        invoke(
+            [
+                "register-role",
+                "--request",
+                write_json(
+                    tmp_path / "worker.json",
+                    role_request("register-worker", "worker-a", "worker"),
+                ),
+            ],
+            checker_environment,
+        ).stdout
+    )
+
+    closed = supervisor_event()
+    closed.update(
+        {
+            "event_id": "run-closed",
+            "event_type": "RUN_CLOSED",
+            "occurred_at": "2026-09-20T00:00:02Z",
+        }
+    )
+    invoke(
+        ["write", "--request", write_json(tmp_path / "closed.json", closed)],
+        supervisor_environment,
+    )
+
+    for role in ("worker", "checker"):
+        role_id = f"{role}-a"
+        request_path = write_json(
+            tmp_path / f"close-{role}.json",
+            close_role_request(f"close-{role}", role_id, role),
+        )
+        result = json.loads(
+            invoke(["close-role", "--request", request_path], supervisor_environment).stdout
+        )
+        assert result["status"] == "closed"
+        assert result["role_instance_id"] == role_id
+        if role == "worker":
+            replay = json.loads(
+                invoke(
+                    ["close-role", "--request", request_path], supervisor_environment
+                ).stdout
+            )
+            assert replay["status"] == "already_closed"
+
+    with sqlite3.connect(data_root / "slk.db") as database:
+        roles = database.execute(
+            "SELECT role, lifecycle, successor_role_instance_id FROM role_instances WHERE role IN ('checker','worker') ORDER BY role"
+        ).fetchall()
+        endpoints = database.execute(
+            "SELECT state FROM role_endpoints WHERE role_instance_id IN ('checker-a','worker-a')"
+        ).fetchall()
+        token = database.execute(
+            "SELECT token_sequence, to_role_instance_id FROM token_events ORDER BY token_sequence DESC LIMIT 1"
+        ).fetchone()
+    assert roles == [("checker", "exited", None), ("worker", "exited", None)]
+    assert endpoints == [("retired",), ("retired",)]
+    assert token == (1, "supervisor-a")
+
+    worker_environment = environment.copy()
+    worker_environment["SLK_ROLE_CREDENTIAL"] = worker["role_credential"]
+    rejected = invoke(
+        [
+            "authenticate-role",
+            "--run-id",
+            "run-a",
+            "--role-instance-id",
+            "worker-a",
+        ],
+        worker_environment,
+        check=False,
+    )
+    assert rejected.returncode != 0
 
 
 def test_authenticate_role_is_read_only_exact_and_does_not_emit_the_secret(tmp_path):

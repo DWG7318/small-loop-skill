@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.10"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.11"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -241,7 +241,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.2.10" in main
+    assert "4.2.11" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -999,6 +999,22 @@ def test_existing_handoffs_move_the_same_token_between_existing_roles() -> None:
     assert "Supervisor → Checker" in adjust and "SLK TOKEN" in adjust
     assert "最终令牌" in close and "CLOSED" in close
     assert "同一 `message_id`" in recover and "新消息" in recover
+
+
+def test_terminal_engineering_roles_require_central_close_evidence_before_archive_claim() -> None:
+    manage = read_skill("slk-manage-team")
+    close = read_skill("slk-close-run")
+    combined = "\n".join((manage, close))
+    for marker in (
+        "`slk-state close-role`",
+        "lifecycle=exited",
+        "display_state=archived",
+        "active endpoint",
+    ):
+        assert marker in combined
+    assert "计划归档" in combined and "已经归档" in combined
+    assert "Supervisor 保留" in combined
+    assert "Overwatcher" in combined and "close-overwatcher" in combined
 
 
 def test_token_is_compact_monotonic_and_duplicate_safe() -> None:

@@ -2,9 +2,9 @@ use serde_json::json;
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
-    CellDefinition, EndpointIdentity, EventType, GoDefinition, InitRunRequest, ProjectIdentity,
-    RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest, RevisePlanRequest, Role,
-    RoleIdentity, TokenHandoffRequest, WriteRequest,
+    CellDefinition, CloseRoleRequest, EndpointIdentity, EventType, GoDefinition, InitRunRequest,
+    ProjectIdentity, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    RevisePlanRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -190,6 +190,199 @@ fn run_closed_updates_the_read_projection_without_moving_the_token() {
         Some("2026-09-20T00:00:03Z")
     );
     assert_eq!(fixture.store.current_token("run-a").unwrap().sequence, 1);
+}
+
+#[test]
+fn terminal_checker_and_worker_close_is_atomic_auditable_and_idempotent() {
+    let fixture = Fixture::new();
+    close_run(&fixture);
+    let token_before = fixture.store.current_token("run-a").unwrap();
+
+    let worker_request = close_role_request("close-worker", "worker-a", Role::Worker);
+    let worker_closed = fixture
+        .store
+        .close_role(&fixture.supervisor, worker_request.clone())
+        .unwrap();
+    assert_eq!(worker_closed.status, "closed");
+    let replayed = fixture
+        .store
+        .close_role(&fixture.supervisor, worker_request)
+        .unwrap();
+    assert_eq!(replayed.status, "already_closed");
+
+    fixture
+        .store
+        .close_role(
+            &fixture.supervisor,
+            close_role_request("close-checker", "checker-a", Role::Checker),
+        )
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    for role_id in ["checker-a", "worker-a"] {
+        let role = projection
+            .roles
+            .iter()
+            .find(|role| role.role_instance_id == role_id)
+            .unwrap();
+        assert_eq!(role.lifecycle, "exited");
+        assert_eq!(role.display_state, "archived");
+        assert_eq!(role.successor_role_instance_id, None);
+        assert!(role
+            .endpoints
+            .iter()
+            .all(|endpoint| endpoint.state == "retired"));
+        assert!(role.exited_at.is_some());
+    }
+    assert_eq!(projection.summary.closure_state, "closed");
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), token_before);
+    assert_eq!(
+        projection
+            .events
+            .iter()
+            .filter(|event| event.event_type == "ROLE_CLOSED")
+            .count(),
+        2
+    );
+    assert!(matches!(
+        slk_state_core::auth::authorize_role(
+            &slk_state_core::schema::open_database(fixture._root.path()).unwrap(),
+            "run-a",
+            &fixture.worker,
+        ),
+        Err(StateError::CredentialRevoked)
+    ));
+}
+
+#[test]
+fn installed_4211_tool_reconciles_a_terminal_429_role_without_reopening_the_run() {
+    let fixture = Fixture::new();
+    close_run(&fixture);
+    let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE runs SET slk_version='4.2.9' WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+
+    fixture
+        .store
+        .close_role(
+            &fixture.supervisor,
+            close_role_request("close-legacy-worker", "worker-a", Role::Worker),
+        )
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.summary.slk_version, "4.2.9");
+    assert_eq!(projection.summary.state, "closed");
+    assert_eq!(projection.summary.closure_state, "closed");
+    let worker = projection
+        .roles
+        .iter()
+        .find(|role| role.role_instance_id == "worker-a")
+        .unwrap();
+    assert_eq!(worker.lifecycle, "exited");
+    assert_eq!(worker.display_state, "archived");
+}
+
+#[test]
+fn close_role_fails_closed_for_open_run_wrong_authority_or_invalid_target() {
+    let fixture = Fixture::new();
+    assert!(matches!(
+        fixture.store.close_role(
+            &fixture.supervisor,
+            close_role_request("close-open-worker", "worker-a", Role::Worker),
+        ),
+        Err(StateError::RoleCloseInvalid(_))
+    ));
+
+    close_run(&fixture);
+    assert!(matches!(
+        fixture.store.close_role(
+            &fixture.checker,
+            close_role_request("close-by-checker", "worker-a", Role::Worker),
+        ),
+        Err(StateError::RoleCloseInvalid(_))
+    ));
+    assert!(matches!(
+        fixture.store.close_role(
+            &fixture.supervisor,
+            close_role_request("close-wrong-role", "worker-a", Role::Checker),
+        ),
+        Err(StateError::RoleCloseInvalid(_))
+    ));
+    assert!(matches!(
+        fixture.store.close_role(
+            &fixture.supervisor,
+            close_role_request("close-supervisor", "supervisor-a", Role::Supervisor),
+        ),
+        Err(StateError::RoleCloseInvalid(_))
+    ));
+    let mut invalid_time = close_role_request("close-invalid-time", "worker-a", Role::Worker);
+    invalid_time.occurred_at = "not-a-timestamp".into();
+    assert!(fixture
+        .store
+        .close_role(&fixture.supervisor, invalid_time)
+        .is_err());
+    assert!(matches!(
+        fixture.store.close_role(
+            &fixture.supervisor,
+            CloseRoleRequest {
+                run_id: "run-b".into(),
+                ..close_role_request("close-wrong-run", "worker-a", Role::Worker)
+            },
+        ),
+        Err(StateError::CredentialInvalid)
+    ));
+}
+
+#[test]
+fn close_role_rejects_token_holder_nonterminal_projection_and_conflicting_replay() {
+    let fixture = Fixture::new();
+    close_run(&fixture);
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+    assert!(matches!(
+        fixture.store.close_role(
+            &fixture.supervisor,
+            close_role_request("close-token-holder", "checker-a", Role::Checker),
+        ),
+        Err(StateError::RoleCloseInvalid(_))
+    ));
+
+    let fixture = Fixture::new();
+    let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE runs SET state='closed', closure_state='closed', closed_at='2026-09-20T00:00:03Z' WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+    assert!(matches!(
+        fixture.store.close_role(
+            &fixture.supervisor,
+            close_role_request("close-without-final-event", "worker-a", Role::Worker),
+        ),
+        Err(StateError::RoleCloseInvalid(_))
+    ));
+
+    let fixture = Fixture::new();
+    close_run(&fixture);
+    let request = close_role_request("close-worker-conflict", "worker-a", Role::Worker);
+    fixture
+        .store
+        .close_role(&fixture.supervisor, request.clone())
+        .unwrap();
+    let mut changed = request;
+    changed.reason = "different content under the same event id".into();
+    assert!(matches!(
+        fixture.store.close_role(&fixture.supervisor, changed),
+        Err(StateError::WorkEventConflict(_))
+    ));
 }
 
 #[test]
@@ -809,5 +1002,32 @@ fn event(event_id: &str, event_type: EventType, details: serde_json::Value) -> W
         details,
         corrects_event_id: None,
         occurred_at: "2026-09-20T00:00:03Z".into(),
+    }
+}
+
+fn close_run(fixture: &Fixture) {
+    let mut closed = event(
+        "run-closed-for-role-close",
+        EventType::RunClosed,
+        json!({"outcome":"passed"}),
+    );
+    closed.role_instance_id = "supervisor-a".into();
+    closed.go_id = None;
+    closed.cell_id = None;
+    closed.attempt = None;
+    fixture
+        .store
+        .write_event(&fixture.supervisor, closed)
+        .unwrap();
+}
+
+fn close_role_request(event_id: &str, role_instance_id: &str, role: Role) -> CloseRoleRequest {
+    CloseRoleRequest {
+        event_id: event_id.into(),
+        run_id: "run-a".into(),
+        role_instance_id: role_instance_id.into(),
+        role,
+        reason: "terminal Run member retirement".into(),
+        occurred_at: "2026-09-20T00:00:04Z".into(),
     }
 }

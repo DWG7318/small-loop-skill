@@ -18,7 +18,7 @@ use crate::auth::{
     StateError,
 };
 use crate::model::{
-    AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest,
+    AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest, CloseRoleRequest,
     CommitDeliveryStartRequest, EventType, EvidenceReference, InitRunRequest, NativeLiveness,
     OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
@@ -81,6 +81,12 @@ pub struct OverwatcherCredentialRotationResult {
     pub runtime_revision: u64,
     pub role_instance_id: String,
     pub issued: IssuedCredential,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloseRoleResult {
+    pub status: String,
+    pub role_instance_id: String,
 }
 
 impl StateStore {
@@ -684,7 +690,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1434,6 +1440,240 @@ impl StateStore {
         })
     }
 
+    pub fn close_role(
+        &self,
+        credential: &Credential,
+        request: CloseRoleRequest,
+    ) -> Result<CloseRoleResult, StateError> {
+        if !valid_identifier(&request.event_id)
+            || !valid_identifier(&request.role_instance_id)
+            || request.reason.trim().is_empty()
+            || !matches!(request.role, Role::Checker | Role::Worker)
+        {
+            return Err(StateError::RoleCloseInvalid(
+                "event, exact Checker/Worker identity, and reason are required".into(),
+            ));
+        }
+        validate_admin_timestamp(&request.occurred_at)?;
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_role(transaction, &request.run_id, credential)?;
+            if actor.role != Role::Supervisor {
+                return Err(StateError::RoleCloseInvalid(
+                    "only the current Supervisor may close a terminal engineering role".into(),
+                ));
+            }
+
+            let revision = current_plan_revision(transaction, &request.run_id)?;
+            let details_json = serde_json::to_string(&serde_json::json!({
+                "role_instance_id": request.role_instance_id,
+                "role": request.role.as_str(),
+                "reason": request.reason,
+            }))?;
+            type ExistingClose = (String, u32, String, String, String);
+            let existing: Option<ExistingClose> = transaction
+                .query_row(
+                    "SELECT run_id, plan_revision, author_role_instance_id, details_json, occurred_at
+                     FROM work_events WHERE event_id=?1 AND event_type='ROLE_CLOSED'",
+                    [&request.event_id],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            if let Some(existing) = existing {
+                if existing
+                    != (
+                        request.run_id.clone(),
+                        revision,
+                        actor.role_instance_id,
+                        details_json,
+                        request.occurred_at.clone(),
+                    )
+                {
+                    return Err(StateError::WorkEventConflict(request.event_id.clone()));
+                }
+                let lifecycle: Option<String> = transaction
+                    .query_row(
+                        "SELECT lifecycle FROM role_instances
+                         WHERE run_id=?1 AND role_instance_id=?2 AND role=?3",
+                        params![
+                            request.run_id,
+                            request.role_instance_id,
+                            request.role.as_str()
+                        ],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let active_endpoint: Option<i64> = transaction
+                    .query_row(
+                        "SELECT 1 FROM role_endpoints
+                         WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                        params![request.run_id, request.role_instance_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let active_credential: Option<i64> = transaction
+                    .query_row(
+                        "SELECT 1 FROM role_credentials
+                         WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                        params![request.run_id, request.role_instance_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if lifecycle.as_deref() != Some("exited")
+                    || active_endpoint.is_some()
+                    || active_credential.is_some()
+                {
+                    return Err(StateError::RoleCloseInvalid(
+                        "existing close receipt does not match retired role state".into(),
+                    ));
+                }
+                return Ok(CloseRoleResult {
+                    status: "already_closed".into(),
+                    role_instance_id: request.role_instance_id.clone(),
+                });
+            }
+            let reused_event: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM work_events WHERE event_id=?1",
+                    [&request.event_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if reused_event.is_some() {
+                return Err(StateError::WorkEventConflict(request.event_id.clone()));
+            }
+
+            let (state, closure_state): (String, String) = transaction
+                .query_row(
+                    "SELECT state, closure_state FROM runs WHERE run_id=?1",
+                    [&request.run_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?
+                .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
+            let terminal_event = match closure_state.as_str() {
+                "closed" if state == "closed" => "RUN_CLOSED",
+                "superseded" if state == "archived" => "RUN_SUPERSEDED",
+                "abandoned" if state == "archived" => "RUN_ABANDONED",
+                _ => {
+                    return Err(StateError::RoleCloseInvalid(
+                        "Run must be terminal before Checker or Worker close".into(),
+                    ))
+                }
+            };
+            let final_record: Option<i64> = transaction
+                .query_row(
+                    "SELECT 1 FROM work_events WHERE run_id=?1 AND event_type=?2 LIMIT 1",
+                    params![request.run_id, terminal_event],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if final_record.is_none() {
+                return Err(StateError::RoleCloseInvalid(
+                    "terminal Run projection lacks its final engineering record".into(),
+                ));
+            }
+
+            let target_role: String = transaction
+                .query_row(
+                    "SELECT role FROM role_instances
+                     WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                    params![request.run_id, request.role_instance_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| {
+                    StateError::RoleCloseInvalid(
+                        "target role is not the exact current active role instance".into(),
+                    )
+                })?;
+            if target_role != request.role.as_str() {
+                return Err(StateError::RoleCloseInvalid(
+                    "target role kind does not match the registered role instance".into(),
+                ));
+            }
+            let token = current_token_from(transaction, &request.run_id)?;
+            if token.owner_role_instance_id == request.role_instance_id {
+                return Err(StateError::RoleCloseInvalid(
+                    "a role holding the current SLK TOKEN cannot be closed".into(),
+                ));
+            }
+            let active_endpoint_count: i64 = transaction.query_row(
+                "SELECT COUNT(*) FROM role_endpoints
+                 WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                params![request.run_id, request.role_instance_id],
+                |row| row.get(0),
+            )?;
+            if active_endpoint_count != 1 {
+                return Err(StateError::RoleCloseInvalid(
+                    "target role must have exactly one active endpoint".into(),
+                ));
+            }
+            let credential_id: String = transaction
+                .query_row(
+                    "SELECT credential_id FROM role_credentials
+                     WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                    params![request.run_id, request.role_instance_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| {
+                    StateError::RoleCloseInvalid(
+                        "target role must have one active credential".into(),
+                    )
+                })?;
+
+            transaction.execute(
+                "INSERT INTO work_events
+                 (event_id, run_id, plan_revision, author_role_instance_id,
+                  event_type, details_json, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, 'ROLE_CLOSED', ?5, ?6)",
+                params![
+                    request.event_id,
+                    request.run_id,
+                    revision,
+                    actor.role_instance_id,
+                    details_json,
+                    request.occurred_at,
+                ],
+            )?;
+            transaction.execute(
+                "UPDATE role_endpoints SET state='retired', retired_at=?3
+                 WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                params![request.run_id, request.role_instance_id, request.occurred_at],
+            )?;
+            revoke_credential(transaction, &credential_id, &request.occurred_at)?;
+            let changed = transaction.execute(
+                "UPDATE role_instances
+                 SET lifecycle='exited', exited_at=?3, current_go_id=NULL, current_cell_id=NULL
+                 WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                params![request.run_id, request.role_instance_id, request.occurred_at],
+            )?;
+            if changed != 1 {
+                return Err(StateError::RoleCloseInvalid(
+                    "target role changed during close".into(),
+                ));
+            }
+            advance_runtime_snapshot_if_revisioned(
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                &request.occurred_at,
+            )?;
+            Ok(CloseRoleResult {
+                status: "closed".into(),
+                role_instance_id: request.role_instance_id.clone(),
+            })
+        })
+    }
+
     pub fn rebind_session(
         &self,
         credential: &Credential,
@@ -1552,7 +1792,7 @@ impl StateStore {
             )?;
             if matches!(
                 method_version.as_str(),
-                "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10"
+                "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -1943,7 +2183,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2543,7 +2783,7 @@ impl StateStore {
             )?;
             if !matches!(
                 method_version.as_str(),
-                "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10"
+                "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -2826,13 +3066,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -3914,7 +4154,7 @@ fn validate_reconciliation_request(
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
     matches!(
         version,
-        "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10"
+        "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11"
     )
 }
 
@@ -3931,7 +4171,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.2.6" && request.to_version == "4.2.7")
             || (request.from_version == "4.2.7" && request.to_version == "4.2.8")
             || (request.from_version == "4.2.8" && request.to_version == "4.2.9")
-            || (request.from_version == "4.2.9" && request.to_version == "4.2.10");
+            || (request.from_version == "4.2.9" && request.to_version == "4.2.10")
+            || (request.from_version == "4.2.10" && request.to_version == "4.2.11");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

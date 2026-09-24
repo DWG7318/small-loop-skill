@@ -1033,6 +1033,14 @@ fn load_endpoints(
 }
 
 fn role_display_state(connection: &Connection, role_instance_id: &str) -> rusqlite::Result<String> {
+    let lifecycle: String = connection.query_row(
+        "SELECT lifecycle FROM role_instances WHERE role_instance_id=?1",
+        [role_instance_id],
+        |row| row.get(0),
+    )?;
+    if lifecycle == "exited" {
+        return Ok("archived".into());
+    }
     let event: Option<String> = connection
         .query_row(
             "SELECT event_type FROM work_events WHERE author_role_instance_id=?1

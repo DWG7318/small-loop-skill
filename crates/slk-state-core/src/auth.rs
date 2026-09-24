@@ -86,6 +86,8 @@ pub enum StateError {
     RunAdministrationInvalid(String),
     #[error("Run administration receipt conflicts with existing immutable content: {0}")]
     RunAdministrationConflict(String),
+    #[error("engineering role close request is invalid: {0}")]
+    RoleCloseInvalid(String),
     #[error("Run already exists: {0}")]
     RunAlreadyExists(String),
     #[error("invalid linear plan: {0}")]

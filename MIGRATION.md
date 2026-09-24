@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.2.10 to 4.2.11
+
+Install the complete 4.2.11 package. Existing 4.2.10 Runs retain topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, schema-v8 data, role identities, and Overwatcher history; adopt 4.2.11 only at an existing Supervisor-controlled boundary with the exact current snapshot. No database migration is added.
+
+For a Run that already has its terminal event but still projects an active Checker or Worker, the current Supervisor uses the installed 4.2.11 `slk-state close-role` once for each exact role instance. A terminal legacy Run is not reopened or silently re-versioned; the compatible maintenance action preserves its recorded effective version. The command confirms the terminal Run, final record, non-TOKEN-holder target, active endpoint, and active credential. Exact replay is harmless; changed replay, open Run, wrong role or credential, and nonterminal state fail closed. Do not use `replace-role`, edit SQLite, invent a successor, or report a planned archive as actual archival. Overwatcher continues to use `close-overwatcher`; Supervisor remains available as the closed Run's authority record.
+
+No role responsibility, TOKEN semantics, CELL, D0/D1/D2, model policy, product candidate, database schema, remote tag, or Release changes in this migration.
+
 ## Current patch migration: 4.2.9 to 4.2.10
 
 Install the complete 4.2.10 package. Existing 4.2.9 Runs retain topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, schema-v8 data and Overwatcher identity; adopt 4.2.10 only at an existing Supervisor-controlled boundary with the exact current snapshot. No database migration is added.
