@@ -14,7 +14,7 @@ description: Use when an active Small Loop Skill (SLK) Run may encounter Cargo l
 
 ## 静态检查
 
-1. 本 Run 是否执行 Cargo/Rust 构建或测试？如是，建议 Worker 与 Checker 通过 `slk-cargo` 复用本 Run 的独立 target；参数和恢复细节查看 `slk-cargo --help`。
+1. 本 Run 是否执行 Cargo/Rust 构建或测试？如是，建议 Worker 与 Checker 通过 `slk-cargo` 复用本 Run 的独立 target；若不同 Codex sandbox SID 使旧 artifact 不可读并触发重复 relink，Supervisor 应把同一 D2 边界内兼容的 Cargo filters 合并到同一安全命令会话，不逐项重启 Cargo。参数和恢复细节查看 `slk-cargo --help`。
 2. 本 Run 是否还有一个明显的独占资源，例如固定数据库实例、端口、临时目录或 GPU？如有，记录它的临时隔离办法、无法隔离时的有界恢复办法和收尾责任。
 3. 没有明显独占资源时，记录“无特别资源安排”即可，不扩展检查。
 

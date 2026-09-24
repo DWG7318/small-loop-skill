@@ -33,11 +33,22 @@ def write_json(path: Path, value: object) -> Path:
     return path
 
 
+def commit_result(request: dict[str, object], *, status: str = "committed") -> dict[str, object]:
+    return {
+        "status": status,
+        "runtime_revision": int(request["expected_runtime_revision"]) + 1,
+        "token_sequence": request["token_sequence"],
+        "message_id": request["message_id"],
+    }
+
+
 @pytest.mark.parametrize(
     "plaintext",
     [
         VALID_CREDENTIAL.encode("utf-8"),
+        (VALID_CREDENTIAL + "\0").encode("utf-8"),
         (VALID_CREDENTIAL + "\0").encode("utf-16-le"),
+        b"\xff\xfe" + (VALID_CREDENTIAL + "\0").encode("utf-16-le"),
     ],
 )
 def test_dpapi_plaintext_accepts_existing_utf8_and_powershell_utf16le(plaintext: bytes) -> None:
@@ -49,6 +60,7 @@ def test_dpapi_plaintext_accepts_existing_utf8_and_powershell_utf16le(plaintext:
     [
         b"\xff\xfe\xfd",
         ("wrong_" + "a" * 64).encode("utf-8"),
+        (VALID_CREDENTIAL + "\0\0").encode("utf-8"),
         (VALID_CREDENTIAL + "\0\0").encode("utf-16-le"),
     ],
 )
@@ -58,12 +70,32 @@ def test_dpapi_plaintext_rejects_invalid_encoding_and_wrong_credential_shape(pla
     assert rejected.value.error_code == "WORKER_CREDENTIAL_UNAVAILABLE"
 
 
+def test_dpapi_plaintext_rejects_pseudo_utf8_with_embedded_nul() -> None:
+    with pytest.raises(CompletionError, match="embedded NUL"):
+        _decode_dpapi_plaintext(b"slk_" + b"a" * 8 + b"\0" + b"a" * 55)
+
+
+def test_json_command_preserves_nonzero_valid_stdout_business_status() -> None:
+    result = worker_completion._run_json_command(
+        [sys.executable],
+        ["-c", "import json,sys; print(json.dumps({'verdict':'INCOMPLETE'})); sys.exit(3)"],
+        credential=None,
+    )
+
+    assert result["verdict"] == "INCOMPLETE"
+    assert result["_slk_command"] == {
+        "process_exit": 3,
+        "json_parse": "PARSED_STDOUT",
+        "business_status": "INCOMPLETE",
+    }
+
+
 def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     attempt, _worker, checker = completion_fixture(tmp_path)
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.2.9",
+        "method_version": "4.2.10",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -111,7 +143,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.2.9"
+        assert continuation["method_version"] == "4.2.10"
         return {"status": "CHECKER_STARTED"}
 
     result = execute_checker_recovery(
@@ -271,9 +303,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.2.9", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.2.10", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.2.9",
+            "method_version": "4.2.10",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,
@@ -622,6 +654,8 @@ def test_resume_worker_continuation_uses_exact_session_and_strips_parent_credent
 
 def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path: Path) -> None:
     attempt, endpoint, checker = completion_fixture(tmp_path)
+    (attempt / "native.stdout.txt").write_text("x" * 100_000, encoding="utf-8")
+    (attempt / "native.stderr.txt").write_text("warning tail", encoding="utf-8")
     request = build_continuation_request(
         attempt,
         checker,
@@ -667,9 +701,14 @@ def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path:
             "envelope_path": str(envelope_path),
         }
 
-    def commit_start(value: dict[str, object]) -> str:
+    def commit_start(value: dict[str, object]) -> dict[str, object]:
         commits.append(value)
-        return "COMMITTED"
+        return {
+            "status": "committed",
+            "runtime_revision": 11,
+            "token_sequence": value["token_sequence"],
+            "message_id": value["message_id"],
+        }
 
     result = run_worker_continuation(
         request,
@@ -687,6 +726,13 @@ def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path:
     ]
     assert sends[0]["payload_type"] == "CANDIDATE_READY"
     assert commits[0]["from_role_instance_id"] == endpoint["role_instance_id"]
+    assert result["runtime_revision"] == 11
+    evidence_files = sends[0]["payload"]["evidence_files"]
+    assert all(not str(path).endswith(("native.stdout.txt", "native.stderr.txt")) for path in evidence_files)
+    index_path = next(Path(str(path)) for path in evidence_files if str(path).endswith("checker-evidence-index.json"))
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    assert index["schema_version"] == "slk.checker-evidence-index/v1"
+    assert {entry["name"] for entry in index["entries"]} >= {"native.stdout.txt", "native.stderr.txt"}
 
 
 def test_missing_worker_repository_uses_authenticated_endpoint_cwd(tmp_path: Path) -> None:
@@ -724,7 +770,7 @@ def test_missing_worker_repository_uses_authenticated_endpoint_cwd(tmp_path: Pat
         authenticate=lambda *_: 10,
         write_event=lambda _event: "RECORDED",
         start_checker=start_checker,
-        commit_start=lambda _request: "COMMITTED",
+        commit_start=commit_result,
     )
 
     assert result["status"] == "CHECKER_STARTED"
@@ -807,7 +853,7 @@ def test_rework_acceptance_criteria_become_checker_d1_criteria(tmp_path: Path) -
         authenticate=lambda run_id, role_id: 10,
         write_event=lambda event: "RECORDED",
         start_checker=start_checker,
-        commit_start=lambda value: "COMMITTED",
+        commit_start=commit_result,
     )
 
     assert result["status"] == "CHECKER_STARTED"
@@ -851,7 +897,7 @@ def test_continuation_exact_replay_does_not_send_checker_twice(tmp_path: Path) -
         authenticate=lambda *_: 10,
         write_event=lambda _event: "IDEMPOTENT_REPLAY",
         start_checker=start_checker,
-        commit_start=lambda _request: "IDEMPOTENT_REPLAY",
+        commit_start=lambda request: commit_result(request, status="idempotent_replay"),
     )
 
     assert result["status"] == "CHECKER_STARTED"

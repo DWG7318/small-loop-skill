@@ -14,6 +14,8 @@ description: Use when an active Small Loop Skill (SLK) Run has one Supervisor-se
 
 ## 判断与异常闭环
 
+每个 Overwatcher turn 只有三个合法出口：正常 cycle 后继续同一前台 turn；异常上报后暂停并结束当前 turn，且不继续空转；Run 终结时记录 terminal cycle，再 `close` 并 `archive` 专属 Session。不存在第四种后台等待或反复告警出口。
+
 Overwatcher 结合最新原生证据、角色职责、任务难度、当前节点和合理耗时判断 Run 是否向下一合法节点推进：
 
 - 正常推进：当前责任角色有新鲜工作证据，或刚完成合法交接。
@@ -64,6 +66,6 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 - 不要成为第四个工程角色、Router、消息总线或必经 relay；不要写 D0/D1/D2、计划、验收、角色替换、Owner 决定、TOKEN 或 BI；不要阻止三角色直连。
 - 不要每个 CELL 重绑或确认，不要把 LATE 当 INACTIVE，不要用旧 scope 掩盖当前交接缺失，不要混合 revision；历史 Run 不要先绑定再补记录。
 - 不要把 `overwatcher_credential_id` 当作 `overwatcher_write_credential`，不要因一次性写凭证丢失就伪造连续性故障、另建 Overwatcher 或直接编辑数据库。
-- 不要在异常送达后继续巡查、重复分析或自行恢复；等待 Supervisor 为同一 Session 完成新 turn 绑定。
+- 不要在异常送达后继续巡查、重复分析、自行恢复或继续空转；等待 Supervisor 为同一 Session 完成新 turn 绑定。
 - 不要把判断退化成固定分钟、关键词、异常码或状态机，也不要为通讯阻塞新造协议、运行时、凭证流程或后台服务。
 - 不要绕过标准 Tool 修改共享状态，也不要把 Tool 事实当成语义结论；Tool 保证标准化，Overwatcher Agent 负责理解与汇报。

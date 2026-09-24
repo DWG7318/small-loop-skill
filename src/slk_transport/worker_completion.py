@@ -181,7 +181,7 @@ def build_continuation_request(
         or result.get("message_id") != envelope.message_id
         or result.get("role_instance_id") != endpoint.role_instance_id
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.2.9"
+        or snapshot.get("method_version") != "4.2.10"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -206,7 +206,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.2.9",
+        "method_version": "4.2.10",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -540,7 +540,7 @@ def inspect_worker_completion(
 Authenticate = Callable[[str, str], int]
 WriteEvent = Callable[[dict[str, Any]], str]
 StartChecker = Callable[[dict[str, Any], dict[str, Any]], Mapping[str, Any]]
-CommitStart = Callable[[dict[str, Any]], str]
+CommitStart = Callable[[dict[str, Any]], Mapping[str, Any]]
 
 
 def run_worker_continuation(
@@ -553,7 +553,7 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.9":
+    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.2.10":
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
@@ -638,14 +638,39 @@ def run_worker_continuation(
             "WORKER_COMPLETION_EVIDENCE_INVALID",
             "d1_criteria and acceptance_criteria conflict",
         )
-    evidence_files = [
-        str(path.resolve())
+    raw_evidence = [
+        path
         for path in (
             attempt / "worker-result.json",
             attempt / "completed.json",
             attempt / "native.stdout.txt",
             attempt / "native.stderr.txt",
         )
+        if path.is_file()
+    ]
+    evidence_index_path = attempt / "worker-continuation" / "checker-evidence-index.json"
+    evidence_index_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_index = {
+        "schema_version": "slk.checker-evidence-index/v1",
+        "run_id": run_id,
+        "go_id": request["go_id"],
+        "cell_id": request["cell_id"],
+        "attempt": request["attempt"],
+        "candidate_message_id": handoff_message_id,
+        "entries": [
+            {
+                "name": path.name,
+                "path": str(path.resolve()),
+                "byte_length": path.stat().st_size,
+                "sha256": _sha256(path),
+            }
+            for path in raw_evidence
+        ],
+    }
+    _write_or_reuse_stable_request(evidence_index_path, evidence_index)
+    evidence_files = [
+        str(path.resolve())
+        for path in (attempt / "worker-result.json", attempt / "completed.json", evidence_index_path)
         if path.is_file()
     ]
     if (
@@ -735,12 +760,26 @@ def run_worker_continuation(
         },
         "occurred_at": request["occurred_at"],
     }
-    commit_start(commit_request)
+    committed = commit_start(commit_request)
+    committed_revision = committed.get("runtime_revision")
+    if (
+        committed.get("status") not in {"committed", "idempotent_replay"}
+        or isinstance(committed_revision, bool)
+        or not isinstance(committed_revision, int)
+        or committed_revision <= fresh_runtime_revision
+        or committed.get("token_sequence") != envelope["token_sequence"]
+        or committed.get("message_id") != envelope["message_id"]
+    ):
+        raise CompletionError(
+            "WORKER_RUNTIME_REVISION_INVALID",
+            "delivery commit did not return the exact resulting runtime revision",
+        )
     return {
         "status": "CHECKER_STARTED",
         "run_id": run_id,
         "source_message_id": source_message_id,
         "candidate_message_id": envelope["message_id"],
+        "runtime_revision": committed_revision,
     }
 
 
@@ -748,10 +787,21 @@ def _decode_dpapi_plaintext(plain: bytes) -> str:
     """Decode only the two credential encodings produced by supported SLK provisioners."""
 
     try:
-        if plain.startswith(b"s\x00l\x00k\x00_\x00") and len(plain) % 2 == 0:
+        if plain.startswith(b"\xff\xfe"):
+            encoded = plain[2:]
+            if not encoded or len(encoded) % 2:
+                raise CompletionError(
+                    "WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential UTF-16LE bytes are invalid"
+                )
+            secret = encoded.decode("utf-16-le")
+        elif plain.startswith(b"s\x00l\x00k\x00_\x00"):
+            if len(plain) % 2:
+                raise CompletionError(
+                    "WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential UTF-16LE bytes are invalid"
+                )
             secret = plain.decode("utf-16-le")
         elif plain.startswith(b"slk_"):
-            secret = plain.decode("utf-8")
+            secret = plain.decode("utf-8", errors="strict")
         else:
             raise CompletionError(
                 "WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential plaintext is invalid"
@@ -760,6 +810,10 @@ def _decode_dpapi_plaintext(plain: bytes) -> str:
         raise CompletionError("WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential plaintext is invalid") from exc
     if secret.endswith("\0"):
         secret = secret[:-1]
+    if "\0" in secret:
+        raise CompletionError(
+            "WORKER_CREDENTIAL_UNAVAILABLE", "Worker credential contains an embedded NUL"
+        )
     suffix = secret[4:]
     if (
         not secret.startswith("slk_")
@@ -862,8 +916,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.2.9":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.2.9")
+    if request.get("method_version") != "4.2.10":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.2.10")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -932,7 +986,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not start Checker D1")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.2.9",
+        "method_version": "4.2.10",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -970,16 +1024,40 @@ def _run_json_command(
         env=environment,
         **windows_no_window_kwargs(),
     )
-    text = completed.stdout.strip() if completed.returncode == 0 else completed.stderr.strip()
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise CompletionError("WORKER_CONTINUATION_COMMAND_FAILED", "continuation command returned non-JSON") from exc
-    if completed.returncode != 0 or not isinstance(value, dict):
+    parsed: tuple[dict[str, Any], str] | None = None
+    last_error: json.JSONDecodeError | None = None
+    for raw, parse_status in (
+        (completed.stdout, "PARSED_STDOUT"),
+        (completed.stderr, "PARSED_STDERR"),
+    ):
+        if not raw.strip():
+            continue
+        try:
+            candidate = json.loads(raw.strip())
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        if not isinstance(candidate, dict):
+            raise CompletionError(
+                "WORKER_CONTINUATION_COMMAND_FAILED", "continuation command JSON must be an object"
+            )
+        parsed = (dict(candidate), parse_status)
+        break
+    if parsed is None:
         raise CompletionError(
-            "WORKER_CONTINUATION_COMMAND_FAILED",
-            str(value.get("message", "continuation command failed")) if isinstance(value, dict) else "continuation command failed",
+            "WORKER_CONTINUATION_COMMAND_FAILED", "continuation command returned no parseable JSON"
+        ) from last_error
+    value, parse_status = parsed
+    if "_slk_command" in value:
+        raise CompletionError(
+            "WORKER_CONTINUATION_COMMAND_FAILED", "continuation command used a reserved result field"
         )
+    business_status = value.get("verdict", value.get("status"))
+    value["_slk_command"] = {
+        "process_exit": completed.returncode,
+        "json_parse": parse_status,
+        "business_status": business_status if isinstance(business_status, str) else None,
+    }
     return value
 
 
@@ -1061,8 +1139,8 @@ def execute_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             ),
         }
 
-    def commit_start(value: dict[str, Any]) -> str:
-        return str(state_request("commit-delivery-start", value).get("status"))
+    def commit_start(value: dict[str, Any]) -> Mapping[str, Any]:
+        return state_request("commit-delivery-start", value)
 
     try:
         return run_worker_continuation(

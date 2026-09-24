@@ -110,6 +110,13 @@ def _nonempty(value: Any, label: str) -> str:
     return value.strip()
 
 
+def _checker_process_kwargs() -> dict[str, Any]:
+    resumed_dsh = bool(
+        os.environ.get("SLK_DSH_INSTANCE_ID") and os.environ.get("SLK_DSH_SESSION_ID")
+    )
+    return windows_no_window_kwargs(detached=resumed_dsh)
+
+
 class OcrvAdapter:
     def validate_address(self, endpoint: Endpoint) -> None:
         if (
@@ -305,7 +312,7 @@ class OcrvAdapter:
         transport_command = _string_array(payload["transport_command"], "transport_command")
         return {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "method_version": "4.2.9",
+            "method_version": "4.2.10",
             "recovery_invocation_id": recovery_invocation_id,
             "recovery_envelope_message_id": envelope.message_id,
             "run_id": envelope.run_id,
@@ -338,7 +345,7 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery result is not closed")
         if (
             value["schema_version"] != "slk.ocrv-worker-recovery-result/v1"
-            or value["method_version"] != "4.2.9"
+            or value["method_version"] != "4.2.10"
             or value["status"] != "CHECKER_STARTED"
             or value["run_id"] != envelope.run_id
             or value["cell_id"] != envelope.cell_id
@@ -382,7 +389,7 @@ class OcrvAdapter:
             command,
             cwd=str(Path(request["source_attempt_root"])),
             env=environment,
-            process_kwargs=windows_no_window_kwargs(),
+            process_kwargs=_checker_process_kwargs(),
         )
         attempt.write_json_once(
             "started.json",
@@ -460,7 +467,7 @@ class OcrvAdapter:
                 command,
                 cwd=str(request["repository"]),
                 env=environment,
-                process_kwargs=windows_no_window_kwargs(),
+                process_kwargs=_checker_process_kwargs(),
             )
             attempt.write_json_once(
                 "started.json",

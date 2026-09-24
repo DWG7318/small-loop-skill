@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.2.9 to 4.2.10
+
+Install the complete 4.2.10 package. Existing 4.2.9 Runs retain topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, schema-v8 data and Overwatcher identity; adopt 4.2.10 only at an existing Supervisor-controlled boundary with the exact current snapshot. No database migration is added.
+
+Do not preserve any 4.2.9 prompt or wrapper that promises a delayed post-turn self-wake. An active-writer collision keeps the failed delivery immutable and sends one new auditable recovery message to the exact canonical task/active turn, or waits for a real Owner/Main activation. Worker continuation now returns the committed runtime revision, retains bulk logs by path/hash rather than sending them to Checker, revalidates resumed DSH identity, and starts OCRV headlessly outside the Worker job. LE BI separates Overwatcher binding, native liveness, cycle/incident pause and terminal closure; none changes CELL progress.
+
+DeepSeek V4 Flash remains the Worker, Pro is not introduced, and BoM remains disabled. No role responsibility, TOKEN semantics, CELL, D0/D1/D2, model policy, product candidate, remote tag or Release changes in this migration.
+
 ## Current patch migration: 4.2.8 to 4.2.9
 
 Install the complete 4.2.9 package. Existing 4.2.8 Runs retain the same topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, schema-v8 database and Overwatcher identity. This patch adds no database migration.

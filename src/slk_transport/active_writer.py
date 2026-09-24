@@ -54,8 +54,8 @@ def recover_active_writer(
     endpoint = parsed.endpoint
     envelope = parsed.envelope
     CodexAdapter().validate_address(endpoint)
-    if envelope.payload_type != "D1_FAILURE_ESCALATION":
-        raise ContractError("active-writer recovery is limited to D1_FAILURE_ESCALATION")
+    if (envelope.sender_role, envelope.receiver_role) != ("checker", "supervisor"):
+        raise ContractError("active-writer recovery is limited to exact Checker-to-Supervisor handoffs")
 
     original = Path(attempt_root).resolve() / envelope.run_id / envelope.message_id
     endpoint_path = original / "endpoint.json"
@@ -102,7 +102,7 @@ def recover_active_writer(
         client.request(
             1,
             "initialize",
-            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.2.9"}},
+            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.2.10"}},
             startup_timeout,
         )
         client.notify("initialized", {})

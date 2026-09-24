@@ -91,3 +91,27 @@ def test_active_writer_recovery_rejects_changed_identity_and_second_attempt(tmp_
     changed["payload_sha256"] = payload_hash(changed["payload"])
     with pytest.raises(ContractError, match="identity"):
         recover_active_writer(attempts, endpoint, changed)
+
+
+def test_checker_d2_handoff_uses_the_same_new_message_recovery_path(tmp_path: Path) -> None:
+    endpoint, envelope = delivery(tmp_path)
+    payload = {
+        "d1_receipt_id": "d1-pass-001",
+        "candidate_sha256": "b" * 64,
+        "required_cell_count": 3,
+        "accepted_cell_count": 3,
+    }
+    envelope["payload_type"] = "D2_CANDIDATE_READY"
+    envelope["payload"] = payload
+    envelope["payload_sha256"] = payload_hash(payload)
+    attempts = tmp_path / "attempts"
+    result = dispatch_once(
+        endpoint, envelope, attempts, adapters={"codex-app-server": CodexAdapter()}
+    )
+    assert result.error_code == "CODEX_ACTIVE_WRITER"
+
+    recovered = recover_active_writer(attempts, endpoint, envelope)
+
+    assert recovered["recovery_of_message_id"] == envelope["message_id"]
+    assert recovered["recovery_message_id"] != envelope["message_id"]
+    assert recovered["payload_sha256"] == envelope["payload_sha256"]

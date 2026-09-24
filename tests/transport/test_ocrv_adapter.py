@@ -105,6 +105,28 @@ def test_ocrv_candidate_review_records_run_cell_invocation_and_session(
     assert (attempt.root / "ocrv-result.json").is_file()
 
 
+def test_ocrv_breaks_away_from_a_resumed_dsh_job_while_staying_headless(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    envelope = candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    def process_policy(*, detached: bool = False) -> dict[str, object]:
+        detached_values.append(detached)
+        return {}
+
+    detached_values: list[bool] = []
+    monkeypatch.setenv("SLK_DSH_INSTANCE_ID", "RUN-A-worker-001")
+    monkeypatch.setenv("SLK_DSH_SESSION_ID", "session-worker-a")
+    monkeypatch.setattr("slk_transport.adapters.ocrv.windows_no_window_kwargs", process_policy)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    assert detached_values == [True]
+
+
 def test_ocrv_v1_request_matches_installed_closed_contract(tmp_path: Path) -> None:
     endpoint = checker_endpoint(tmp_path)
     envelope = candidate_envelope(tmp_path)

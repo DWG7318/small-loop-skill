@@ -101,6 +101,12 @@ export function RunStrip({ view, archived = false }: RunStripProps) {
               </div>
             ))}
           </dl>
+          {view.overwatcher ? (
+            <div className={`overwatch-status status-${view.overwatcher.tone}`} aria-label="Overwatcher 运行保障状态">
+              <strong>OVERWATCHER · {view.overwatcher.label}</strong>
+              <code>{view.overwatcher.detail}</code>
+            </div>
+          ) : null}
           <ol className="cell-list" aria-label={`${view.runName} CELL 记录`}>
             {view.cells.map((cell) => <CellRow key={cell.id} cell={cell} />)}
           </ol>

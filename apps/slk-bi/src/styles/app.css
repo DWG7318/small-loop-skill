@@ -223,6 +223,19 @@
 .role-strip dd strong { font-size: var(--text-10); }
 .role-strip dd code { color: var(--ink-2); font-size: var(--text-8); }
 
+.overwatch-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgb(255 255 255 / 5%);
+}
+.overwatch-status strong { font-size: var(--text-9); }
+.overwatch-status code { color: var(--ink-2); font-size: var(--text-8); }
+
 .cell-list { margin: 0; padding: 0; list-style: none; }
 .cell-row {
   display: grid;

@@ -39,7 +39,7 @@ def test_every_transport_process_launch_uses_the_shared_policy() -> None:
         "src/slk_transport/cli.py": "windows_no_window_kwargs(detached=True)",
         "src/slk_transport/jsonrpc.py": "windows_no_window_kwargs()",
         "src/slk_transport/adapters/dsh.py": "windows_no_window_kwargs()",
-        "src/slk_transport/adapters/ocrv.py": "windows_no_window_kwargs()",
+        "src/slk_transport/adapters/ocrv.py": "_checker_process_kwargs()",
         "scripts/run_transport_drill.py": "windows_no_window_kwargs()",
     }
     for relative, marker in required.items():

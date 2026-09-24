@@ -162,6 +162,44 @@ export interface OverwatchCycleProjection {
   started_at: string;
   completed_at: string;
   next_cycle_at: string;
+  binding_revision: number;
+  runtime_revision: number;
+  native_liveness: string;
+  cadence_health: string;
+  cost_metrics_json: string | null;
+}
+
+export interface OverwatcherNativeStatusProjection {
+  status_id: string;
+  binding_revision: number;
+  role_instance_id: string;
+  session_id: string;
+  foreground_turn_id: string;
+  native_liveness: string;
+  evidence_path: string;
+  evidence_sha256: string;
+  observed_at: string;
+}
+
+export interface OverwatcherIncidentTransitionProjection {
+  transition_id: string;
+  incident_id: string;
+  binding_revision: number;
+  incident_code: string;
+  state: string;
+  evidence_path: string;
+  evidence_sha256: string;
+  occurred_at: string;
+}
+
+export interface OverwatcherBindingTransitionProjection {
+  transition_id: string;
+  binding_revision: number;
+  transition_type: string;
+  cycle_id: string | null;
+  runtime_revision: number;
+  evidence_ref: string;
+  occurred_at: string;
 }
 
 export interface RunIdentityReconciliationReceiptProjection {
@@ -228,6 +266,9 @@ export interface RunView {
   token_history: TokenProjection[];
   evidence: EvidenceProjection[];
   overwatch_cycles: OverwatchCycleProjection[];
+  overwatcher_native_status_receipts: OverwatcherNativeStatusProjection[];
+  overwatcher_incident_transitions: OverwatcherIncidentTransitionProjection[];
+  overwatcher_binding_transitions: OverwatcherBindingTransitionProjection[];
   operational_observations: OperationalObservationProjection[];
   reconciliation_receipts: RunIdentityReconciliationReceiptProjection[];
   method_adoption_receipts: MethodAdoptionReceiptProjection[];
@@ -298,7 +339,7 @@ export function parseRunProjection(value: unknown): RunView {
   const projection = schema(value, "slk.bi.run/v1");
   object(projection.summary);
   object(projection.administrative_snapshot);
-  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "overwatch_cycles", "operational_observations", "reconciliation_receipts", "method_adoption_receipts"]) {
+  for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "overwatch_cycles", "overwatcher_native_status_receipts", "overwatcher_incident_transitions", "overwatcher_binding_transitions", "operational_observations", "reconciliation_receipts", "method_adoption_receipts"]) {
     collection(projection, key);
   }
   return projection as unknown as RunView;

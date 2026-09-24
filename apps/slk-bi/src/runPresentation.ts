@@ -40,6 +40,7 @@ export interface RunStripView {
   source: { kind: "solo" | "clk" | "glk"; label: string };
   sourceGroupKey: string;
   roles: RunStripRole[];
+  overwatcher: { label: string; detail: string; tone: RunTone } | null;
   cells: RunStripCell[];
 }
 
@@ -282,6 +283,44 @@ function source(run: RunSummary) {
   };
 }
 
+function latestBy<T>(values: T[], time: (value: T) => string): T | undefined {
+  return [...values].sort((left, right) => Date.parse(time(left)) - Date.parse(time(right))).at(-1);
+}
+
+function overwatcher(run: RunView): RunStripView["overwatcher"] {
+  const role = run.roles.find((candidate) => candidate.role === "overwatcher");
+  const latestBinding = latestBy(run.overwatcher_binding_transitions, (item) => item.occurred_at);
+  const latestNative = latestBy(run.overwatcher_native_status_receipts, (item) => item.observed_at);
+  const latestCycle = latestBy(run.overwatch_cycles, (item) => item.completed_at);
+  if (!role && !latestBinding && !latestNative && !latestCycle && !run.overwatcher_incident_transitions.length) {
+    return null;
+  }
+
+  const binding = latestBinding?.transition_type ?? role?.binding_mode ?? role?.lifecycle.toUpperCase() ?? "未登记";
+  const native = latestNative?.native_liveness ?? latestCycle?.native_liveness ?? "未登记";
+  const cycle = latestCycle ? `周期 #${latestCycle.cycle_sequence}` : "周期 未登记";
+  const detail = `绑定 ${binding} · 原生 ${native} · ${cycle}`;
+  if (latestBinding?.transition_type === "TERMINAL_CLOSE") {
+    return { label: "已关闭", detail, tone: "done" };
+  }
+
+  const latestIncidentStates = new Map<string, string>();
+  for (const transition of [...run.overwatcher_incident_transitions]
+    .sort((left, right) => Date.parse(left.occurred_at) - Date.parse(right.occurred_at))) {
+    latestIncidentStates.set(transition.incident_id, transition.state);
+  }
+  if ([...latestIncidentStates.values()].some((state) => state !== "RESOLVED")) {
+    return { label: "异常后暂停", detail, tone: "blocked" };
+  }
+  if (native === "COMPLETED") return { label: "原生会话已结束", detail, tone: "blocked" };
+  if (native === "MISSING") return { label: "原生会话缺失", detail, tone: "blocked" };
+  if (native === "MISMATCHED") return { label: "原生会话不匹配", detail, tone: "blocked" };
+  if (native !== "IN_PROGRESS") return { label: "等待原生状态", detail, tone: "wait" };
+  if (!latestCycle) return { label: "等待首轮巡查", detail, tone: "wait" };
+  if (latestCycle.cadence_health !== "ON_TIME") return { label: "巡查逾期后暂停", detail, tone: "blocked" };
+  return { label: "巡查正常", detail, tone: "active" };
+}
+
 export function buildRunStripView(project: ProjectSummary, run: RunView, now: Date): RunStripView {
   const allCells = cells(run);
   const passed = allCells.filter((cell) => cell.state === "d1_passed").length;
@@ -321,6 +360,7 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
     statusTone,
     slkVersion: run.summary.slk_version,
     roles,
+    overwatcher: overwatcher(run),
     cells: allCells.map((cell) => cellView(cell, run, intervals)),
     ...sourceInfo,
   };

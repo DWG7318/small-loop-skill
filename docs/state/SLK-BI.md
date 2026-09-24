@@ -1,4 +1,4 @@
-# LE BI — SLK 4.2.9 Read-Only View
+# LE BI — SLK 4.2.10 Read-Only View
 
 LE BI presents machine-wide role-authored state plus accepted operational observations. It is a read-only desktop application and does not participate in construction, inspection, transport, recovery, exemption, or closure.
 
@@ -27,7 +27,7 @@ Agents use `slk-bi-query`. The desktop uses the same `slk-state-core` functions 
 
 BI refreshes on window focus and a three-second interval while the window is visible. Hidden windows pause polling. A transient read failure keeps the last successful snapshot visible and labels it stale with the exact error. Missing configuration, an empty data root, an unsupported projection schema, and a read failure have distinct presentation states.
 
-The active surface contains one row per explicit SLK Run identity. Immutable project identity groups independent SLKs into stable quiet colors; `source_kind` and `source_project_name` group CLK/GLK-owned SLKs by parent while retaining explicit labels. Explicit predecessor lineage or a validated reconciliation receipt—not title/project/timestamp similarity—marks `CURRENT`, `HISTORY`, `DUPLICATE_ACTIVE_RUN`, or `ORPHANED_IDENTITY`; conflicts remain visible rather than being guessed away. The Run projection reads one stored runtime snapshot and exposes its revision-bound method/plan/TOKEN/event/message plus the current whole-Run Overwatcher binding, cadence/native-liveness distinction, incidents and transitions. It does not synthesize a snapshot from independently selected latest rows. Closed, abandoned, and superseded SLKs appear only in the archive.
+The active surface contains one row per explicit SLK Run identity. Immutable project identity groups independent SLKs into stable quiet colors; `source_kind` and `source_project_name` group CLK/GLK-owned SLKs by parent while retaining explicit labels. Explicit predecessor lineage or a validated reconciliation receipt—not title/project/timestamp similarity—marks `CURRENT`, `HISTORY`, `DUPLICATE_ACTIVE_RUN`, or `ORPHANED_IDENTITY`; conflicts remain visible rather than being guessed away. The Run projection reads one stored runtime snapshot and exposes its revision-bound method/plan/TOKEN/event/message plus the current whole-Run Overwatcher binding, native-status receipts, cycles, incidents and transitions. Expanded details keep Supervisor/Checker/Worker as the three technical role cards and show Overwatcher in a separate compact operational strip whose binding, native liveness and cycle are never collapsed into a synthetic “working” claim. Closed, abandoned, and superseded SLKs appear only in the archive.
 
 Refresh is observation only. It does not wake an Agent, acknowledge a token, retry transport, change a Run, or write a heartbeat.
 
@@ -45,7 +45,7 @@ Visible text uses one shared 120% scale relative to the original LE BI typograph
 - `Activity unproved` means an accepted operational observation invalidated a stale activity claim; it does not reduce or increase D1/D2 progress.
 - `Closed` means `RUN_CLOSED` is recorded.
 
-These labels describe durable facts. A current Overwatcher cycle reports its binding/runtime revision, verified evidence, native liveness and next due time; `LATE` does not mean inactive, and a CELL boundary does not create or confirm another binding. BI itself does not keep the Session active, schedule the next cycle, commit TOKEN, repair continuity, or prove native delivery. Exact Agent reality remains bound to immutable evidence, not a BI inference.
+These labels describe durable facts. The Overwatcher strip reports central binding, latest native liveness and latest cycle separately. An unresolved incident or late cadence is shown as paused; `TERMINAL_CLOSE` is shown as closed; `COMPLETED`, `MISSING`, or `MISMATCHED` native liveness is never called active merely because the binding remains. BI itself does not keep the Session active, schedule the next cycle, commit TOKEN, repair continuity, or prove native delivery. Exact Agent reality remains bound to immutable evidence, not a BI inference.
 
 ## Security boundary
 

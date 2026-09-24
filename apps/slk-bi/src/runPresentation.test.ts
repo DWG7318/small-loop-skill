@@ -210,6 +210,61 @@ describe("compact Run presentation", () => {
     expect(view.progress).toEqual({ passed: 0, total: 1 });
   });
 
+  it("pauses the Overwatcher display after an unresolved incident without changing CELL progress", () => {
+    const run = {
+      ...runFixture,
+      overwatcher_incident_transitions: [
+        {
+          transition_id: "incident-transition-1",
+          incident_id: "incident-1",
+          binding_revision: 1,
+          incident_code: "OVERWATCHER_CONTINUITY_VIOLATION",
+          state: "OPEN",
+          evidence_path: "evidence/incident.json",
+          evidence_sha256: "b".repeat(64),
+          occurred_at: "2026-09-20T00:10:00Z",
+        },
+      ],
+    };
+
+    const view = buildRunStripView(
+      { project_id: "project-a", name: "LCaS", repository_url: null, last_known_path: "D:/LCaS", run_count: 1 },
+      run,
+      new Date("2026-09-20T00:11:00Z"),
+    );
+
+    expect(view.overwatcher?.label).toBe("异常后暂停");
+    expect(view.overwatcher?.tone).toBe("blocked");
+    expect(view.progress).toEqual({ passed: 0, total: 1 });
+  });
+
+  it("shows a terminally closed Overwatcher separately from engineering completion", () => {
+    const run = {
+      ...runFixture,
+      overwatcher_binding_transitions: [
+        {
+          transition_id: "binding-close-1",
+          binding_revision: 1,
+          transition_type: "TERMINAL_CLOSE",
+          cycle_id: "cycle-final",
+          runtime_revision: 9,
+          evidence_ref: "evidence/close.json",
+          occurred_at: "2026-09-20T01:00:00Z",
+        },
+      ],
+    };
+
+    const view = buildRunStripView(
+      { project_id: "project-a", name: "LCaS", repository_url: null, last_known_path: "D:/LCaS", run_count: 1 },
+      run,
+      new Date("2026-09-20T01:01:00Z"),
+    );
+
+    expect(view.overwatcher?.label).toBe("已关闭");
+    expect(view.overwatcher?.detail).toContain("绑定 TERMINAL_CLOSE");
+    expect(view.status).toBe("Worker 工作中");
+  });
+
   it("uses a stable group key for SLKs in the same CLK or GLK project", () => {
     const run = {
       ...runFixture,

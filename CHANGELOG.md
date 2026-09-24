@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.2.10
+
+- Replaced post-turn delayed self-wake and fixed-time promises with one auditable message to the exact active canonical Codex task/turn; preserved the failed attempt and kept Owner/Main activation as the truthful fallback.
+- Closed the Worker suffix gaps: strict UTF-8/UTF-16LE DPAPI decoding rejects embedded NULs, resumed DSH identity is re-injected, OCRV starts headless outside the resumed Worker job, command exit/JSON/business outcomes stay distinct, and the committed runtime revision is returned.
+- Slimmed Checker handoff evidence to essential receipts plus a hash/size/path index for retained raw logs; Checker keeps one formal D1, serial internal inspection segments, and does not mechanically fail low-only observations.
+- Kept Overwatcher to three explicit exits and exposed binding, native liveness, cycle/incident pause, and terminal closure as separate read-only LE BI facts without changing engineering progress.
+- Kept Cargo filter reuse inside one safe command session where sandbox identity would otherwise relink; added no scheduler, heartbeat, daemon, background Agent, BoM route, role, database migration, or product mutation.
+
 ## 4.2.9
 
 - Added a second, mutually exclusive `resume-overwatcher-turn` basis for the latest exact non-`IN_PROGRESS` native status receipt. It restores the same role/Session/binding after a recorded continuity violation, resolves that incident and advances runtime once without creating a replacement.

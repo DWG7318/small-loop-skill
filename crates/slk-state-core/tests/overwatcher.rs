@@ -774,7 +774,7 @@ fn supervisor_resumes_the_same_overwatcher_session_on_a_new_turn_after_an_anomal
 
 #[test]
 fn supervisor_resumes_the_same_overwatcher_session_from_the_exact_latest_native_status() {
-    for fixture in [Fixture::new_428(), Fixture::new_429()] {
+    for fixture in [Fixture::new_428(), Fixture::new_429(), Fixture::new_4210()] {
         let issued = fixture
             .store
             .bind_overwatcher(
@@ -854,6 +854,47 @@ fn supervisor_resumes_the_same_overwatcher_session_from_the_exact_latest_native_
             .record_overwatch_cycle(&issued.credential, resumed)
             .unwrap();
     }
+}
+
+#[test]
+fn adoption_429_to_4210_preserves_the_schema_v8_run() {
+    let fixture = Fixture::new_429();
+    let before = fixture.store.query_run("run-a").unwrap();
+    let request = AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-4210".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.2.9".into(),
+        to_version: "4.2.10".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-4210".into(),
+            message_id: "owner-message-4210".into(),
+            content_sha256: "e".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-25T00:00:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher: OverwatcherAssertion::Absent,
+        },
+        reason: "adopt 4.2.10 field corrections without rewriting engineering history".into(),
+        occurred_at: "2026-09-25T00:00:01Z".into(),
+    };
+
+    let applied = fixture
+        .store
+        .adopt_method_contract(&fixture.supervisor, request)
+        .unwrap();
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(applied.effective_version, "4.2.10");
+    assert_eq!(after.summary.slk_version, "4.2.10");
+    assert_eq!(after.events, before.events);
+    assert_eq!(after.token_history, before.token_history);
+    assert_eq!(after.go_nodes, before.go_nodes);
 }
 
 #[test]
@@ -1811,6 +1852,19 @@ impl Fixture {
         database
             .execute(
                 "UPDATE runs SET slk_version='4.2.9' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        drop(database);
+        fixture
+    }
+
+    fn new_4210() -> Self {
+        let fixture = Self::new();
+        let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.2.10' WHERE run_id='run-a'",
                 [],
             )
             .unwrap();

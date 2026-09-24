@@ -15,7 +15,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.9"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.10"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -237,11 +237,11 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "代码、提交与测试完成不等于 Worker 角色完成" in execute
     assert "恰好一次当前 CELL/attempt/candidate" in execute
     assert "run+cell+attempt+candidate/message" in recover
-    assert "不要先调用必然与现有 writer 冲突的 `thread/resume`" in recover
+    assert "不要先 resume" in recover
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.2.9" in main
+    assert "4.2.10" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -744,7 +744,7 @@ def test_recover_communication_requires_real_activation_and_preserves_checker() 
         assert marker in text
     for forbidden in ("新消息", "更换 receiver", "轮询循环", "daemon", "无限 retry"):
         assert forbidden in text
-    assert "Owner" not in text
+    assert "Owner/Main 真实激活" in text
     assert "原对话" not in text
 
 
@@ -1244,3 +1244,71 @@ def test_terminal_overwatcher_cycle_explains_the_exact_native_evidence_reference
         "说明文字",
     ):
         assert marker in overwatch
+
+
+def test_4210_forbids_post_turn_self_wake_and_fixed_time_promises() -> None:
+    main = read_skill("small-loop-skill")
+    supervisor = read_skill("slk-grill-supervisor")
+    recovery = read_skill("slk-recover-communication")
+    combined = "\n".join((main, supervisor, recovery))
+
+    for marker in (
+        "post-turn",
+        "延迟脚本",
+        "固定秒数",
+        "新可审计恢复消息",
+        "Owner/Main 真实激活",
+    ):
+        assert marker in combined
+    for forbidden in ("15 秒后自动", "后台自唤醒"):
+        assert forbidden in combined
+
+
+def test_4210_worker_checker_and_resource_corrections_are_explicit() -> None:
+    execute = read_skill("slk-execute-cell")
+    check = read_skill("slk-check-cell")
+    resources = read_skill("slk-guard-resources")
+
+    for marker in (
+        "SLK_DSH_INSTANCE_ID",
+        "SLK_DSH_SESSION_ID",
+        "evidence index",
+        "原始日志路径",
+    ):
+        assert marker in execute
+    for marker in (
+        "一个正式 D1",
+        "低严重性观察",
+        "不能机械判为 FAIL",
+        "process exit",
+        "JSON parse",
+        "business status",
+    ):
+        assert marker in check
+    assert "sandbox SID" in resources
+    assert "同一安全命令会话" in resources
+
+
+def test_4210_overwatcher_has_only_three_exits_and_no_spin() -> None:
+    overwatch = read_skill("slk-overwatch-run")
+
+    for marker in (
+        "三个合法出口",
+        "正常 cycle 后继续",
+        "异常上报后暂停",
+        "terminal cycle",
+        "close",
+        "archive",
+        "不继续空转",
+    ):
+        assert marker in overwatch
+
+
+def test_4210_keeps_bom_off_and_worker_flash_without_pro() -> None:
+    main = read_skill("small-loop-skill")
+    models = read_skill("slk-select-models")
+    combined = "\n".join((main, models))
+
+    assert "BoM 保持禁用" in combined
+    assert "DeepSeek V4 Flash" in combined
+    assert "DeepSeek V4 Pro" not in combined
