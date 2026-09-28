@@ -73,15 +73,42 @@ if MODE != "missing-result":
         time.sleep(0.35)
     envelope = task["envelope"]
     result_path.parent.mkdir(parents=True, exist_ok=True)
-    result = {
-        "schema_version": "slk.worker-result/v1",
-        "message_id": envelope["message_id"],
-        "run_id": envelope["run_id"],
-        "role_instance_id": envelope["receiver_role_instance_id"],
-        "status": "completed",
-        "candidate": {"kind": "none"},
-        "next_payload": envelope["payload"],
+    outcome_modes = {
+        "incomplete-git-blocker": ("incomplete", "GIT_COMMON_DIR_UNWRITABLE"),
+        "blocked-result": ("blocked", "EXTERNAL_DEPENDENCY_BLOCKED"),
+        "execution-failure-result": ("execution_failure", "COMMAND_EXECUTION_FAILED"),
+        "timed-out-result": ("timed_out", "WORKER_BUDGET_EXHAUSTED"),
+        "invalid-incomplete-candidate": ("incomplete", "GIT_COMMON_DIR_UNWRITABLE"),
     }
+    if MODE in outcome_modes:
+        outcome, cause = outcome_modes[MODE]
+        result = {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": envelope["message_id"],
+            "run_id": envelope["run_id"],
+            "role_instance_id": envelope["receiver_role_instance_id"],
+            "status": outcome,
+            "candidate": {"kind": "commit", "commit": "fake"}
+            if MODE == "invalid-incomplete-candidate"
+            else None,
+            "next_payload": None,
+            "blocker": {
+                "phase": "git_commit",
+                "cause": cause,
+                "summary": "the exact Worker sandbox cannot write the Git common directory",
+                "evidence": ["native.stderr.txt"],
+            },
+        }
+    else:
+        result = {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": envelope["message_id"],
+            "run_id": envelope["run_id"],
+            "role_instance_id": envelope["receiver_role_instance_id"],
+            "status": "completed",
+            "candidate": {"kind": "none"},
+            "next_payload": envelope["payload"],
+        }
     temporary = result_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(result), encoding="utf-8")
     os.replace(temporary, result_path)

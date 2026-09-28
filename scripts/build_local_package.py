@@ -39,6 +39,7 @@ DOCUMENT_TREES = (
     "docs/transport",
     "docs/runtime",
     "docs/contracts",
+    "docs/maintenance",
     "integrations/ocrv",
     "integrations/temporal",
 )

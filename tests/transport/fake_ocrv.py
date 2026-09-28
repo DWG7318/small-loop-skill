@@ -27,7 +27,7 @@ if args.slk_worker_recovery:
     source_started = json.loads((source_root / "started.json").read_text(encoding="utf-8"))
     result = {
         "schema_version": "slk.ocrv-worker-recovery-result/v1",
-        "method_version": "4.3.0",
+        "method_version": "4.3.1",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -58,6 +58,8 @@ expected_request_fields = {
 if set(request) != expected_request_fields:
     print("SLK_OCRV_REQUEST_INVALID: unknown or missing request field", file=sys.stderr)
     sys.exit(4)
+if args.mode == "timeout-second" and "segment 2/" in request["cell_goal"]:
+    time.sleep(0.35)
 session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uuid4()}"
 verdict = "INCOMPLETE" if args.mode == "incomplete" else "PASS"
 result = {

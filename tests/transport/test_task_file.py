@@ -46,9 +46,11 @@ def test_worker_task_file_is_closed_hashed_and_copied_to_attempt(tmp_path: Path)
         "endpoint", "envelope", "result_contract", "result_path",
     }
     assert task["schema_version"] == "slk.transport-task/v1"
-    assert task["result_contract"]["next_payload"]["candidate_repository"] == str(
+    assert task["result_contract"]["completed"]["next_payload"]["candidate_repository"] == str(
         Path(str(endpoint.address["cwd"])).resolve()
     )
+    assert "incomplete" in task["result_contract"]["allowed_statuses"]
+    assert task["result_contract"]["non_completed"]["candidate"] is None
     assert (attempt.root / "transport-task.json").read_bytes() == task_path.read_bytes()
     assert "envelope" not in DshAdapter().task_instruction(task_path, digest).lower()
 

@@ -13,7 +13,7 @@
     "cell_id": {"$ref": "#/$defs/identifier"},
     "endpoint": {"$ref": "#/$defs/worker_endpoint"},
     "envelope": {"$ref": "#/$defs/envelope"},
-    "result_contract": {"$ref": "#/$defs/worker_result"},
+    "result_contract": {"$ref": "#/$defs/worker_result_contract"},
     "result_path": {"type": "string", "minLength": 1}
   },
   "$defs": {
@@ -69,26 +69,54 @@
         "payload": {"type": "object"}
       }
     },
-    "worker_result": {
+    "worker_result_contract": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "message_id", "run_id", "role_instance_id", "status", "candidate", "next_payload"],
+      "required": ["schema_version", "identity", "allowed_statuses", "completed", "non_completed"],
       "properties": {
-        "schema_version": {"const": "slk.worker-result/v1"},
-        "message_id": {"type": "string", "format": "uuid"},
-        "run_id": {"$ref": "#/$defs/identifier"},
-        "role_instance_id": {"$ref": "#/$defs/identifier"},
-        "status": {"const": "completed"},
-        "candidate": {
+        "schema_version": {"const": "slk.worker-result-contract/v1"},
+        "identity": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "commit"],
+          "required": ["schema_version", "message_id", "run_id", "role_instance_id"],
           "properties": {
-            "kind": {"const": "commit"},
-            "commit": {"type": "string", "minLength": 1}
+            "schema_version": {"const": "slk.worker-result/v1"},
+            "message_id": {"type": "string", "format": "uuid"},
+            "run_id": {"$ref": "#/$defs/identifier"},
+            "role_instance_id": {"$ref": "#/$defs/identifier"}
           }
         },
-        "next_payload": {"type": "object"}
+        "allowed_statuses": {
+          "const": ["completed", "incomplete", "blocked", "execution_failure", "timed_out"]
+        },
+        "completed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidate", "next_payload", "blocker"],
+          "properties": {
+            "candidate": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "commit"],
+              "properties": {
+                "kind": {"const": "commit"},
+                "commit": {"type": "string", "minLength": 1}
+              }
+            },
+            "next_payload": {"type": "object"},
+            "blocker": {"type": "null"}
+          }
+        },
+        "non_completed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidate", "next_payload", "blocker_fields"],
+          "properties": {
+            "candidate": {"type": "null"},
+            "next_payload": {"type": "null"},
+            "blocker_fields": {"const": ["phase", "cause", "summary", "evidence"]}
+          }
+        }
       }
     }
   }

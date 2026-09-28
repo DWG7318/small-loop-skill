@@ -43,9 +43,18 @@ for line in sys.stdin:
             thread_id = "thr_wrong"
         emit({"id": request_id, "result": {"thread": {"id": thread_id}}})
     elif method == "thread/read":
-        if MODE in {"active", "active-resume-conflict"}:
+        if MODE in {
+            "active",
+            "active-resume-conflict",
+            "active-paginated",
+            "active-paginated-omitted",
+            "active-paginated-missing",
+            "active-paginated-multiple",
+        }:
             status = {"type": "active", "activeFlags": []}
-            turns = [{"id": "turn_active", "items": [], "status": "inProgress"}]
+            turns = [] if MODE.startswith("active-paginated") else [
+                {"id": "turn_active", "items": [], "status": "inProgress"}
+            ]
         elif MODE == "resume-already-active-writer" and (
             request_id > 2 or (Path.cwd() / ".fake-active-writer").is_file()
         ):
@@ -61,12 +70,47 @@ for line in sys.stdin:
             status = {"type": "idle"}
             turns = []
         read_thread_id = "thr_wrong" if MODE == "wrong-thread" else message["params"]["threadId"]
-        emit(
-            {
-                "id": request_id,
-                "result": {"thread": {"id": read_thread_id, "status": status, "turns": turns}},
-            }
-        )
+        thread = {"id": read_thread_id, "status": status, "turns": turns}
+        if MODE == "active-paginated-omitted":
+            thread.pop("turns")
+        emit({"id": request_id, "result": {"thread": thread}})
+    elif method == "thread/turns/list":
+        cursor = message["params"].get("cursor")
+        if MODE in {"active-paginated", "active-paginated-omitted", "active-paginated-multiple"} and cursor is None:
+            emit(
+                {
+                    "id": request_id,
+                    "result": {
+                        "data": [{"id": "turn_old", "items": [], "status": "completed"}],
+                        "nextCursor": "active-page-2",
+                    },
+                }
+            )
+        elif MODE in {"active-paginated", "active-paginated-omitted"} and cursor == "active-page-2":
+            emit(
+                {
+                    "id": request_id,
+                    "result": {
+                        "data": [{"id": "turn_active", "items": [], "status": "inProgress"}],
+                        "nextCursor": None,
+                    },
+                }
+            )
+        elif MODE == "active-paginated-multiple" and cursor == "active-page-2":
+            emit(
+                {
+                    "id": request_id,
+                    "result": {
+                        "data": [
+                            {"id": "turn_active", "items": [], "status": "inProgress"},
+                            {"id": "turn_other", "items": [], "status": "active"},
+                        ],
+                        "nextCursor": None,
+                    },
+                }
+            )
+        else:
+            emit({"id": request_id, "result": {"data": [], "nextCursor": None}})
     elif method == "turn/start":
         thread_id = message["params"]["threadId"]
         turn = {"id": "turn_exact", "items": [], "status": "inProgress"}

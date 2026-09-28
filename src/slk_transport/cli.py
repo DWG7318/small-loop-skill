@@ -31,7 +31,7 @@ from .worker_completion import (
 )
 
 
-VERSION = "4.3.0"
+VERSION = "4.3.1"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -222,6 +222,18 @@ def _inspect_worker_completion(args: argparse.Namespace) -> int:
         cadence_seconds=args.cadence_seconds,
         previous_inspection=previous,
     )
+    if args.output:
+        encoded = continuation_request_bytes(result)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with args.output.open("xb") as stream:
+                stream.write(encoded)
+        except FileExistsError as exc:
+            if args.output.read_bytes() != encoded:
+                raise CompletionError(
+                    "WORKER_COMPLETION_INSPECTION_CONFLICT",
+                    "immutable inspection output already exists with different content",
+                ) from exc
     _emit(result)
     return 3 if result["status"] == "WORKER_COMPLETION_HANDOFF_MISSING" else 0
 
@@ -293,6 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     completion.add_argument("--observed-at", required=True)
     completion.add_argument("--cadence-seconds", required=True, type=int)
     completion.add_argument("--previous-inspection", type=Path)
+    completion.add_argument("--output", type=Path)
     checker_recovery = subparsers.add_parser("checker-recover-worker")
     checker_recovery.add_argument("--request", required=True, type=Path)
     checker_recovery.add_argument("--sha256", required=True)

@@ -161,6 +161,7 @@ def test_inspect_worker_completion_cli_returns_anomaly_without_mutating_source(t
         runtime_projection(token_owner=str(endpoint["role_instance_id"])),
     )
     artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+    inspection_path = tmp_path / "worker-inspection.json"
 
     inspected = run_cli(
         artifact,
@@ -173,12 +174,15 @@ def test_inspect_worker_completion_cli_returns_anomaly_without_mutating_source(t
         "2026-09-23T00:04:00Z",
         "--cadence-seconds",
         "240",
+        "--output",
+        str(inspection_path),
     )
 
     assert inspected.returncode == 3
     output = json.loads(inspected.stdout)
     assert output["status"] == "WORKER_COMPLETION_HANDOFF_MISSING"
     assert output["notification_already_sent"] is False
+    assert json.loads(inspection_path.read_text(encoding="utf-8")) == output
     assert not (attempt / "worker-continuation").exists()
 
 

@@ -66,7 +66,16 @@ def preflight_git_workspace(cwd: Path | str) -> GitWorkspace:
         requested.relative_to(root)
     except ValueError as exc:
         raise WorkspaceError("requested Worker cwd is outside the resolved Git worktree") from exc
+    try:
+        common.relative_to(root)
+    except ValueError as exc:
+        raise WorkspaceError(
+            "Git common directory is outside the Worker sandbox; use a standalone writable clone"
+        ) from exc
     _probe(root)
-    if common != root:
-        _probe(common)
+    _probe(common)
+    for required in (common / "objects", common / "refs"):
+        if not required.is_dir():
+            raise WorkspaceError(f"Git common directory is incomplete: {required}")
+        _probe(required)
     return GitWorkspace(root, common)

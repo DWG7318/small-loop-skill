@@ -11,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "4.3.0"
+VERSION = "4.3.1"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -160,6 +160,8 @@ def validate(root: Path) -> list[str]:
         "docs/contracts/slk-ocrv-worker-recovery.schema.json",
         "docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
         "docs/contracts/slk-overwatcher-cadence-inspection.schema.json",
+        "docs/maintenance/2026-09-28-slk-4.3.1-consistency-audit.md",
+        "docs/superpowers/specs/2026-09-28-slk-4.3.1-field-corrections-design.md",
         "integrations/ocrv/install.ps1",
         "integrations/ocrv/rollback.ps1",
         "integrations/ocrv/slk-checker.cmd",
@@ -188,6 +190,22 @@ def validate(root: Path) -> list[str]:
             text = utf8_text(path, errors)
             check(frontmatter_name(text) == name, "SLK_REPO_SKILL_NAME", name, errors)
             check("description: Use when " in text, "SLK_REPO_SKILL_DESCRIPTION", name, errors)
+
+    audit = utf8_text(
+        root / "docs/maintenance/2026-09-28-slk-4.3.1-consistency-audit.md",
+        errors,
+    )
+    for marker in (
+        "Skill / contract / producer / consumer matrix",
+        "Authority and outcome matrix",
+        "Writes, capacity and continuity",
+        "Migration, package, BI and Temporal-off",
+        "Same-class findings and corrections",
+        "context compaction",
+    ):
+        check(marker in audit, "SLK_REPO_AUDIT_MATRIX", marker, errors)
+    for name in EXPECTED_SKILLS:
+        check(f"`{name}`" in audit, "SLK_REPO_AUDIT_SKILL", name, errors)
 
     main = utf8_text(SKILLS_ROOT / "small-loop-skill" / "SKILL.md", errors)
     for name in EXPECTED_SKILLS[1:]:
@@ -230,7 +248,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 4.3.0 skill collection structure, identity, and Manifest are valid.")
+    print("PASS: SLK 4.3.1 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 

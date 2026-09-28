@@ -14,8 +14,8 @@ if (-not (Test-Path -LiteralPath $adapter -PathType Leaf) -or -not (Test-Path -L
     throw 'OCRV root must contain the accepted slk_checker_adapter.py and slk-checker.cmd'
 }
 $timestamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss-fffffff')
-$backup = Join-Path $root ".slk-backups\slk-4.3.0-transport-compat-$timestamp"
-$stage = Join-Path $root ".slk-stage-4.3.0-$timestamp"
+$backup = Join-Path $root ".slk-backups\slk-4.3.1-transport-compat-$timestamp"
+$stage = Join-Path $root ".slk-stage-4.3.1-$timestamp"
 [void][System.IO.Directory]::CreateDirectory($backup)
 [void][System.IO.Directory]::CreateDirectory($stage)
 $hadRecovery = Test-Path -LiteralPath $activeRecovery -PathType Leaf
@@ -28,7 +28,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $source 'slk_checker_recovery.py') -Destination (Join-Path $stage 'slk_checker_recovery.py')
     $receipt = [ordered]@{
         schema_version = 'slk.ocrv-recovery-install/v1'
-        version = '4.3.0'
+        version = '4.3.1'
         ocrv_root = $root
         original_recovery_existed = $hadRecovery
         adapter_sha256 = (Get-FileHash -LiteralPath $adapter -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -43,7 +43,7 @@ try {
         if ($expected -ne $actual) { throw "OCRV integration hash mismatch: $name" }
     }
     Remove-Item -LiteralPath $stage -Recurse -Force
-    [ordered]@{status='INSTALLED'; version='4.3.0'; backup_root=$backup} | ConvertTo-Json -Compress
+    [ordered]@{status='INSTALLED'; version='4.3.1'; backup_root=$backup} | ConvertTo-Json -Compress
 } catch {
     if (Test-Path -LiteralPath (Join-Path $backup 'slk-checker.cmd')) {
         Copy-Item -LiteralPath (Join-Path $backup 'slk-checker.cmd') -Destination $activeCmd -Force

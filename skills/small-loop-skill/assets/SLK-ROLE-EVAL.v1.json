@@ -1,6 +1,6 @@
 {
   "schema_version": "slk.role-eval-pack/v1",
-  "method_version": "4.3.0",
+  "method_version": "4.3.1",
   "cases": [
     {"case_id":"SUP-NO-LONG-WAIT","role":"supervisor","runtime_critical":true,"scenario":"派工后成员尚未回传，Supervisor 下一步是什么？","choices":["END_TURN","WAIT_THREADS_POSITIVE","POLL_UNTIL_DONE"],"correct_choice":"END_TURN","rule":"Supervisor 不用正时长 wait_threads 或轮询维持在线。"},
     {"case_id":"SUP-DIRECT-ROUTES","role":"supervisor","runtime_critical":true,"scenario":"Checker 与 Worker 已有合法直连通讯，绑定了 Overwatcher 后怎么办？","choices":["KEEP_DIRECT_ROUTES","RELAY_ALL_MESSAGES","DISABLE_PEER_MESSAGES"],"correct_choice":"KEEP_DIRECT_ROUTES","rule":"Overwatcher 不替代原三角色通讯。"},

@@ -37,7 +37,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 
 1. Supervisor 与 Owner 确认是否启用、精确 Session、前台持续能力和 180–300 秒间隔（建议 240 秒）。历史 Run 先有 `adopt-method-contract` 回执，再用 `bind-overwatcher` 写唯一 binding、canonical task、`FOREGROUND_ACTIVE_TURN`、turn ID 与原生活动证据。一个 Run 只绑定一次，不是每个 CELL 重新确认；同一 Session 不跨 Run 复用。
 2. 绑定后完成首轮八项巡查并 `record-overwatch-cycle`；每轮只绑定一个权威 `runtime_revision`，证据使用现存绝对路径与匹配 SHA-256。首轮不完整时不开始新派工或 TOKEN 交接。
-3. 正常推进或合理等待期间不结束当前 turn。一次有界 `slk-state wait-for-change` 在 revision 变化时立即触发巡查，TIMEOUT 时按冻结间隔进入下一轮；这不是 heartbeat、automation、cron、daemon、计划任务或 detached helper。异常送达 Supervisor 后才暂停并结束当前活动轮次。
+3. 正常推进或合理等待期间不结束当前 turn，也不输出会让平台结束 turn 的最终答复；写完 cycle 后应在同一原生进程、同一前台 turn 内立即调用一次有界 `slk-state wait-for-change`，revision 变化时巡查，TIMEOUT 时按冻结间隔继续下一轮。不要返回后依赖第二条用户消息、自我唤醒或另一个 turn 才继续；这不是 heartbeat、automation、cron、daemon、计划任务或 detached helper。异常送达 Supervisor 后才暂停并结束当前活动轮次。
 4. cadence 与 native liveness 分开。`inspect-overwatcher-cadence` 超过一个间隔记 `LATE`，但 LATE 不等于 INACTIVE；超过两个间隔记 `CONTINUITY_UNPROVEN` 并交 Supervisor。精确 native status 为 `COMPLETED`、`MISSING` 或 `MISMATCHED` 时，Tool 在 status/incident 中记录 `OVERWATCHER_CONTINUITY_VIOLATION`，不写入 `cycle.anomaly_codes`；仍为 `ACTIVE` + `IN_PROGRESS` 且 active-session 检查异常的 cycle 才使用 `OVERWATCHER_ACTIVE_DEGRADED`。两者都不自动替换，也不凭旧 running 恢复 ACTIVE。
 
 ## 每轮固定八项巡查
@@ -46,7 +46,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 2. 四角色冻结身份、Session、端点与原生执行证据。
 3. 角色间消息及 sent/delivered/received/started 证据。
 4. CELL 派工、执行、D0、D1、返工、关闭；DELIVERED 不冒充 D1_ACCEPTED。
-5. 停顿、重复、旧消息重做、端点漂移或重复 Run。Worker 持有 TOKEN 时附 `inspect-worker-completion` 哈希证据；默认 240 秒（或本 Run 冻结的一个完整 cadence）后仍缺当前 D0、candidate 或 Checker start 时，上报 `WORKER_COMPLETION_HANDOFF_MISSING` 与 `COMMUNICATION_RECOVERY_REQUIRED`，先报告 Supervisor，然后暂停，不为同一异常追加周期；Supervisor 只恢复原成员与原 CELL 后，再叫醒同一 Overwatcher Session 复核并续巡。
+5. 停顿、重复、旧消息重做、端点漂移或重复 Run。Worker 持有 TOKEN 时，用已安装 `slk-transport inspect-worker-completion --source-attempt <绝对路径> --runtime-projection <绝对路径> --observed-at <RFC3339> --cadence-seconds <冻结值> --output <不可变绝对路径>` 生成并附上哈希证据；默认 240 秒（或本 Run 冻结的一个完整 cadence）后仍缺当前 D0、candidate 或 Checker start 时，上报 `WORKER_COMPLETION_HANDOFF_MISSING` 与 `COMMUNICATION_RECOVERY_REQUIRED`。若检查返回 `WORKER_INCOMPLETE`、`WORKER_BLOCKED`、`WORKER_EXECUTION_FAILURE` 或 `WORKER_TIMED_OUT`，原样报告结构化 blocker，不伪造 candidate。先报告 Supervisor，然后暂停，不为同一异常追加周期；Supervisor 只恢复原成员与原 CELL 后，再叫醒同一 Overwatcher Session 复核并续巡。
 6. BI 只读投影与权威状态是否一致；不一致时请求事实或投影刷新，Overwatcher 不直接改 BI。
 7. 自身 Session、前台 turn、间隔与周期不重叠证明。
 8. Run 是否正式终结，以及停止观察和归档义务。
@@ -67,5 +67,6 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 - 不要每个 CELL 重绑或确认，不要把 LATE 当 INACTIVE，不要用旧 scope 掩盖当前交接缺失，不要混合 revision；历史 Run 不要先绑定再补记录。
 - 不要把 `overwatcher_credential_id` 当作 `overwatcher_write_credential`，不要因一次性写凭证丢失就伪造连续性故障、另建 Overwatcher 或直接编辑数据库。
 - 不要在异常送达后继续巡查、重复分析、自行恢复或继续空转；等待 Supervisor 为同一 Session 完成新 turn 绑定。
+- 不要在正常 cycle 后提交 final、退出当前 turn 或等待第二条用户消息再继续；同 turn 内的有界 wait/巡查循环才是持续 active。
 - 不要把判断退化成固定分钟、关键词、异常码或状态机，也不要为通讯阻塞新造协议、运行时、凭证流程或后台服务。
 - 不要绕过标准 Tool 修改共享状态，也不要把 Tool 事实当成语义结论；Tool 保证标准化，Overwatcher Agent 负责理解与汇报。

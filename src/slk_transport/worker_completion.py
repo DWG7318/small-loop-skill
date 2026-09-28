@@ -181,7 +181,7 @@ def build_continuation_request(
         or result.get("message_id") != envelope.message_id
         or result.get("role_instance_id") != endpoint.role_instance_id
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.3.0"
+        or snapshot.get("method_version") != "4.3.1"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -206,7 +206,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.3.0",
+        "method_version": "4.3.1",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -453,6 +453,7 @@ def inspect_worker_completion(
     event_types = _event_types(runtime_projection, cell_id=envelope.cell_id, attempt=attempt_number)
     completed_path = attempt / "completed.json"
     completed = completed_path.is_file()
+    failed_path = attempt / "failed.json"
     candidate: Mapping[str, Any] | None = None
     handoff_message_id = _stable_id(envelope.message_id, "candidate-ready")
     exact_candidate = False
@@ -489,6 +490,8 @@ def inspect_worker_completion(
         "source_message_id": envelope.message_id,
         "worker_role_instance_id": endpoint.role_instance_id,
         "candidate": candidate,
+        "worker_outcome": "completed" if completed else None,
+        "blocker": None,
         "handoff_message_id": handoff_message_id,
         "observed_at": observed_at,
         "cadence_seconds": cadence_seconds,
@@ -497,6 +500,67 @@ def inspect_worker_completion(
         "missing_worker_events": [],
     }
     if not completed:
+        result_path = attempt / "worker-result.json"
+        if failed_path.is_file() and result_path.is_file():
+            failed = _read_object(failed_path, "Worker failed result")
+            worker_result = _read_object(result_path, "Worker result")
+            outcome = worker_result.get("status")
+            status_map = {
+                "incomplete": "WORKER_INCOMPLETE",
+                "blocked": "WORKER_BLOCKED",
+                "execution_failure": "WORKER_EXECUTION_FAILURE",
+                "timed_out": "WORKER_TIMED_OUT",
+            }
+            error_map = {key: f"DSH_WORKER_{value.removeprefix('WORKER_')}" for key, value in status_map.items()}
+            blocker = worker_result.get("blocker")
+            if (
+                outcome not in status_map
+                or set(worker_result)
+                != {
+                    "schema_version",
+                    "message_id",
+                    "run_id",
+                    "role_instance_id",
+                    "status",
+                    "candidate",
+                    "next_payload",
+                    "blocker",
+                }
+                or worker_result.get("schema_version") != "slk.worker-result/v1"
+                or worker_result.get("message_id") != envelope.message_id
+                or worker_result.get("run_id") != envelope.run_id
+                or worker_result.get("role_instance_id") != endpoint.role_instance_id
+                or worker_result.get("candidate") is not None
+                or worker_result.get("next_payload") is not None
+                or not isinstance(blocker, Mapping)
+                or set(blocker) != {"phase", "cause", "summary", "evidence"}
+                or not all(
+                    isinstance(blocker.get(field), str) and str(blocker[field]).strip()
+                    for field in ("phase", "cause", "summary")
+                )
+                or not isinstance(blocker.get("evidence"), list)
+                or not all(
+                    isinstance(item, str) and item.strip()
+                    for item in blocker.get("evidence", [])
+                )
+                or failed.get("schema_version") != "slk.transport-result/v1"
+                or failed.get("message_id") != envelope.message_id
+                or failed.get("run_id") != envelope.run_id
+                or failed.get("adapter") != "dsh-worker"
+                or failed.get("status") != "failed"
+                or failed.get("error_code") != error_map[outcome]
+            ):
+                raise CompletionError(
+                    "WORKER_COMPLETION_EVIDENCE_INVALID",
+                    "non-completed Worker result does not match the exact failed dispatch",
+                )
+            return {
+                **base,
+                "status": status_map[outcome],
+                "worker_outcome": outcome,
+                "blocker": dict(blocker),
+                "grace_started_at": None,
+            }
         return {**base, "status": "IN_PROGRESS", "grace_started_at": None}
     if token_owner != endpoint.role_instance_id and exact_candidate and exact_transport:
         return {**base, "status": "HANDED_OFF_OR_D1", "grace_started_at": None}
@@ -553,7 +617,7 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.3.0":
+    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.3.1":
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
@@ -916,8 +980,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.3.0":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.3.0")
+    if request.get("method_version") != "4.3.1":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.3.1")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -986,7 +1050,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not start Checker D1")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.3.0",
+        "method_version": "4.3.1",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],

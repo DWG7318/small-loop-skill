@@ -115,6 +115,8 @@ pub enum StateError {
     TransportStartConflict(String),
     #[error("work event conflicts with existing immutable content: {0}")]
     WorkEventConflict(String),
+    #[error("work event is invalid: {0}")]
+    WorkEventInvalid(String),
     #[error("Run was not found: {0}")]
     RunNotFound(String),
     #[error("an explicit Run ID is required")]

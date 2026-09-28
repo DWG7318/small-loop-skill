@@ -1,40 +1,33 @@
-# Validation Report — SLK 4.3.0 Candidate
+# Validation Report — SLK 4.3.1 Candidate
 
 Date: 2026-09-28
 
-Branch: `feature/slk-4.3.0-temporal-continuity`
+Branch: `feature/slk-4.3.1-field-corrections`
 
-Base candidate: `99fab0929e08672757ba960482c88352eabea77f`
+Base: `bdb0e27607da928a20f351ed94494544bef8502c`
 
 ## Scope
 
-SLK 4.3.0 is a schema-v8-compatible continuity enhancement over 4.2.11. It keeps Codex Supervisor, OCRV Checker, DSH DeepSeek V4 Flash Worker, the optional whole-Run Overwatcher, serial CELL/D0/D1/D2, TOKEN, direct communication, model bindings, read-only BI and disabled BoM unchanged.
+SLK 4.3.1 is a schema-v8-compatible patch over 4.3.0. It preserves Codex Supervisor, OCRV Checker, DSH Worker, the optional whole-Run Overwatcher, serial CELL/D0/D1/D2, one TOKEN, direct communication, read-only BI and optional Temporal continuity. It adds no role, scheduler, heartbeat, daemon, BoM path or product mutation.
 
-The release adds two optional reusable Temporal templates. `SLK.Start` freezes one startup identity and owns one deterministic `SLK.Run` child; `SLK.Run` persists only exact delivery, matching native-start ACK, bounded timeout, recovery request and terminal closure. Temporal is not a core dependency and has no engineering authority.
+The patch closes the observed same-class gaps: unsupported linked-worktree Git writes, truthless Worker terminal outcomes, mismatched D1/rework authority, incomplete Codex active-turn reads, missing immutable Worker inspection, repeated Overwatcher incident collisions and turn endings, monolithic OCRV timeout evidence loss, and context-restoration drift. The repository-wide audit is recorded in `docs/maintenance/2026-09-28-slk-4.3.1-consistency-audit.md`.
 
-The same candidate closes four narrow RC08 field defects: invalid `evidence_id` diagnostics, substantive plan-revision validation, state/transport rework vocabulary, and native `already has an active writer` recovery.
+## Verification evidence
 
-## Evidence
+- Full Python suite: 340 passed and two optional Temporal SDK modules skipped when `temporalio` is absent. The same full suite is run under `python -O`; focused transport, state, Skill, role and package RED/GREEN cases also pass independently.
+- Rust workspace: 115 integration tests passed; unit and documentation targets passed. State tests cover exact Supervisor rework authority, stale/cross-scope rejection, two independent Overwatcher pause/resume occurrences, and preserving `4.3.0 → 4.3.1` adoption. `cargo check --workspace` and `cargo fmt --check` pass.
+- LE BI: 24 tests passed; TypeScript typecheck and production UI build passed. Role Eval: 70 cases, PASS; case-pack SHA-256 `ee7ff5f8a0207141b8b7dd21f9faba1a703e42ecba87b79550ae86d34cbbda5b`.
+- Repository/schema/manifest validation, Temporal-off direct import, package mode and transactional install/rollback tests pass. The package contains 74 hash-bound managed files.
+- Clean release artifacts were built headlessly in an isolated Cargo target:
+  - `slk-bi-desktop.exe`: `cc9f177a5eeea0f8f840c29f4889f1fbc5323565809b864c4cf8febf09ebab15`
+  - `slk-bi-query.exe`: `a2c46012817512bf86155d7a9826fd95adf38fb03f4ff3615597f3d91d19ae7e`
+  - `slk-cargo.exe`: `7efae278ac6adcf4cd4f8c7872f20b5c2838596fa215d5cc60e6af1b4666e078`
+  - `slk-state.exe`: `40fe1129e28ad5a17f96d64f1679747e5f8fdd6e049271f5a2140f01103db9a9`
+  - `slk-transport.pyz`: `32e47238d33ea2ee667b8448263af8f4ee7ef24e88f3ff801ef221cc526363d2`
+- `git diff --check bdb0e27607da928a20f351ed94494544bef8502c..HEAD`, JSON/schema parsing, source/package/install mirrors, scope and sensitive-value scans are final completion gates.
 
-- Field method findings: `D:\LCaS\.codex\.tmp\SLK-RUN-LCAS-RC08-OUTPUT-LIMIT-SAFE-RECOVERY\method-findings.md`, SHA-256 `5b97f8b22e62f9720b446fd31514f0a286b11eca78358eccb0908eec313b36c0`.
-- Field D2 evidence: `D:\LCaS\.codex\.tmp\SLK-RUN-LCAS-RC08-OUTPUT-LIMIT-SAFE-RECOVERY\evidence-d2-run-level-20260928.json`, SHA-256 `a6c5a0a27c9424044214da5bc263ae5c92508de73ff1854b45348516cfe9df37`.
-- TDD RED/GREEN covers explicit identifier error text, empty/blank/unchanged plan revisions, exact rework vocabulary, the native active-writer response, closed Temporal identities, changed duplicates, mismatched ACKs, terminal-result-not-ACK, optional Overwatcher recovery, sender fallback, ACK stopping recovery, blocked state, adapter-loader signatures and deterministic workflow ownership.
-- Python core suite: 321 passed, 2 optional-SDK modules skipped when `temporalio` is absent. Key optimized-mode suite: 133 passed. In the isolated optional SDK environment, all Temporal tests passed in normal and optimized modes: 24 + 24.
-- Real local Temporal service E2E used official Python SDK 1.33.0 and standalone CLI 1.9.1 / Server 1.32.0 with a local persistent development DB and no Docker. Startup, child ownership, delivery/ACK, Overwatcher recovery and sender fallback passed. The test service is not claimed as a production deployment.
-- Rust workspace: 111 integration tests passed; unit and documentation targets passed. `4.2.11 → 4.3.0` adoption preserves engineering events, TOKEN and CELL graph. `cargo check --workspace` and `cargo fmt --check` passed.
-- LE BI: 24 tests passed; TypeScript typecheck and production UI build passed. Role Eval: 70 cases, PASS; case-pack SHA-256 `8fbb0cdc7c779e42d31a41ff1b927ed7a66c072b2c9e09394d20c59f5731bb49`.
-- A fresh isolated Cargo target produced the five headless release artifacts and one Tauri production fingerprint:
-  - `slk-bi-desktop.exe`: `117165afcd12b2338cd12730a4873e3f96f210196971ad94a0f8dd4a033fa51c`
-  - `slk-bi-query.exe`: `d8fc447c629024aa937cfdc31412692df6fa282faee915008b5157163626b29a`
-  - `slk-cargo.exe`: `be7452df0ecff69a9b1d97484fec1956f9256c7d900efd34f2c750d3b5592220`
-  - `slk-state.exe`: `17f60a8097645830400fed8c4f541c809aaecb90b66f62c8f61e507954bb9de0`
-  - `slk-transport.pyz`: `50a379fb2df49cb6ab72eb7e05ca15de43b137126f6da3cd3f425257393fc2ea`
-- Transactional local package/install verification passed for 71 hash-bound files: five artifacts, all 15 Skills, the Temporal template tree, docs, contracts and schema. Package mode rejected missing/extra/modified bytes, and the installed `C:\Users\DWG\.codex` mirror passed the same closed manifest check.
+## Migration and deployment boundary
 
-## Boundaries and limitations
+Explicit 4.3.0-to-4.3.1 adoption preserves Run ID, plan revision, TOKEN holder/sequence, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher binding/incidents, attempt evidence and uncommitted product changes. Installation alone does not adopt or resume a Run. Schema stays v8 with migrations `0001.sql` through `0008.sql`.
 
-No LCaS product file or Run was modified or dispatched. No main merge, tag or Release is part of this candidate. No Docker runtime, service, daemon, heartbeat, scheduler, Agent, role, model switch, database migration, BI write path or second SLK state machine was added.
-
-Core SLK remains fully usable without the Temporal SDK or service. The repository ships importable templates and documentation; an operator separately supplies an existing endpoint and adapter. A matching native-start ACK is the only activation fact. Delivery/activity success and terminal output remain insufficient, and Temporal cannot decide D0/D1/D2, move TOKEN, write BI or alter role/model bindings.
-
-The verified local development server is evidence that the templates execute against a real Temporal service; it is not evidence of production durability, HA, backup or access-control configuration. Those remain deployment decisions outside SLK.
+The candidate is locally committed and transactionally deployed only after every gate is green. Source, local package and `C:\Users\DWG\.codex` installed bytes are verified against their closed manifests. No main merge, push, tag, Release, Docker installation or LCaS product action is authorized.

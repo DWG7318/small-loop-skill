@@ -95,7 +95,7 @@ def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.3.0",
+        "method_version": "4.3.1",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -143,7 +143,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.3.0"
+        assert continuation["method_version"] == "4.3.1"
         return {"status": "CHECKER_STARTED"}
 
     result = execute_checker_recovery(
@@ -303,9 +303,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.3.0", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.3.1", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.3.0",
+            "method_version": "4.3.1",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,
@@ -969,3 +969,99 @@ def test_terminal_text_without_exact_started_evidence_cannot_advance_token(tmp_p
             commit_start=commit,
         )
     assert committed is False
+
+
+def test_inspector_reports_structured_incomplete_worker_result(tmp_path: Path) -> None:
+    attempt, _endpoint, _checker = completion_fixture(tmp_path)
+    (attempt / "completed.json").unlink()
+    result = json.loads((attempt / "worker-result.json").read_text(encoding="utf-8"))
+    result.update(
+        {
+            "status": "incomplete",
+            "candidate": None,
+            "next_payload": None,
+            "blocker": {
+                "phase": "git_commit",
+                "cause": "GIT_COMMON_DIR_UNWRITABLE",
+                "summary": "the exact sandbox cannot create index.lock",
+                "evidence": ["native.stderr.txt"],
+            },
+        }
+    )
+    write_json(attempt / "worker-result.json", result)
+    write_json(
+        attempt / "failed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": MESSAGE_ID,
+            "run_id": "RUN-A",
+            "adapter": "dsh-worker",
+            "status": "failed",
+            "native_identity": {"worker_outcome": "incomplete"},
+            "error_code": "DSH_WORKER_INCOMPLETE",
+            "evidence": ["started.json", "worker-result.json"],
+        },
+    )
+
+    inspection = inspect_worker_completion(
+        attempt,
+        runtime_projection(),
+        observed_at="2026-09-23T00:04:00Z",
+        cadence_seconds=240,
+    )
+
+    assert inspection["status"] == "WORKER_INCOMPLETE"
+    assert inspection["worker_outcome"] == "incomplete"
+    assert inspection["blocker"]["cause"] == "GIT_COMMON_DIR_UNWRITABLE"
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: value.update({"message_id": "22222222-2222-4222-8222-222222222222"}),
+        lambda value: value.update({"unexpected": True}),
+        lambda value: value["blocker"].update({"unexpected": True}),
+    ],
+)
+def test_inspector_rejects_mismatched_or_open_ended_noncompleted_worker_result(
+    tmp_path: Path, mutate
+) -> None:
+    attempt, _endpoint, _checker = completion_fixture(tmp_path)
+    (attempt / "completed.json").unlink()
+    result = json.loads((attempt / "worker-result.json").read_text(encoding="utf-8"))
+    result.update(
+        {
+            "status": "incomplete",
+            "candidate": None,
+            "next_payload": None,
+            "blocker": {
+                "phase": "git_commit",
+                "cause": "GIT_COMMON_DIR_UNWRITABLE",
+                "summary": "blocked",
+                "evidence": ["native.stderr.txt"],
+            },
+        }
+    )
+    mutate(result)
+    write_json(attempt / "worker-result.json", result)
+    write_json(
+        attempt / "failed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": MESSAGE_ID,
+            "run_id": "RUN-A",
+            "adapter": "dsh-worker",
+            "status": "failed",
+            "native_identity": {"worker_outcome": "incomplete"},
+            "error_code": "DSH_WORKER_INCOMPLETE",
+            "evidence": ["started.json", "worker-result.json"],
+        },
+    )
+
+    with pytest.raises(CompletionError, match="non-completed Worker result"):
+        inspect_worker_completion(
+            attempt,
+            runtime_projection(),
+            observed_at="2026-09-23T00:04:00Z",
+            cadence_seconds=240,
+        )

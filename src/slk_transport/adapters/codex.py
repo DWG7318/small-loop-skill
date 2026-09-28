@@ -38,21 +38,78 @@ def _turn_hash(turn: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def active_turn_id(thread: Mapping[str, Any]) -> str:
+def active_turn_id(
+    thread: Mapping[str, Any],
+    *,
+    list_turns: Callable[[str | None], Mapping[str, Any]] | None = None,
+) -> str:
     turns = thread.get("turns")
+    if turns is None and list_turns is not None:
+        turns = []
     if not isinstance(turns, list):
         raise AdapterError("CODEX_ACTIVE_WRITER_UNRESOLVED", "active thread omitted its turns")
-    active = [
+    active = {
         turn.get("id")
         for turn in turns
         if isinstance(turn, Mapping) and turn.get("status") in {"inProgress", "active"}
-    ]
-    if len(active) != 1 or not isinstance(active[0], str) or not active[0]:
+        and isinstance(turn.get("id"), str)
+        and turn.get("id")
+    }
+    if len(active) > 1:
+        raise AdapterError(
+            "CODEX_ACTIVE_WRITER_UNRESOLVED",
+            "active thread exposed multiple active turns",
+        )
+    if len(active) == 1:
+        return next(iter(active))
+    if list_turns is None:
         raise AdapterError(
             "CODEX_ACTIVE_WRITER_UNRESOLVED",
             "active thread did not expose exactly one active turn",
         )
-    return active[0]
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    for _ in range(100):
+        page = list_turns(cursor)
+        data = page.get("data")
+        next_cursor = page.get("nextCursor")
+        if not isinstance(data, list) or (
+            next_cursor is not None and (not isinstance(next_cursor, str) or not next_cursor)
+        ):
+            raise AdapterError(
+                "CODEX_ACTIVE_WRITER_UNRESOLVED", "active-turn page is malformed"
+            )
+        active.update(
+            turn.get("id")
+            for turn in data
+            if isinstance(turn, Mapping)
+            and turn.get("status") in {"inProgress", "active"}
+            and isinstance(turn.get("id"), str)
+            and turn.get("id")
+        )
+        if len(active) > 1:
+            raise AdapterError(
+                "CODEX_ACTIVE_WRITER_UNRESOLVED",
+                "paginated thread exposed multiple active turns",
+            )
+        if next_cursor is None:
+            break
+        if next_cursor in seen_cursors:
+            raise AdapterError(
+                "CODEX_ACTIVE_WRITER_UNRESOLVED", "active-turn pagination repeated a cursor"
+            )
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    else:
+        raise AdapterError(
+            "CODEX_ACTIVE_WRITER_UNRESOLVED", "active-turn pagination exceeded its bound"
+        )
+    if len(active) != 1:
+        raise AdapterError(
+            "CODEX_ACTIVE_WRITER_UNRESOLVED",
+            "paginated thread did not expose exactly one active turn",
+        )
+    return next(iter(active))
 
 
 def _active_writer_error(
@@ -60,8 +117,10 @@ def _active_writer_error(
     envelope: Envelope,
     thread_id: str,
     thread: Mapping[str, Any],
+    *,
+    list_turns: Callable[[str | None], Mapping[str, Any]] | None = None,
 ) -> AdapterError:
-    turn_id = active_turn_id(thread)
+    turn_id = active_turn_id(thread, list_turns=list_turns)
     attempt.write_json_once(
         "active-writer.json",
         {
@@ -206,7 +265,7 @@ class CodexAdapter:
                     "clientInfo": {
                         "name": "slk_transport",
                         "title": "SLK Transport",
-                        "version": "4.3.0",
+                        "version": "4.3.1",
                     }
                 },
                 startup_timeout,
@@ -225,6 +284,23 @@ class CodexAdapter:
                 request_id += 1
                 return result
 
+            def list_turns(cursor: str | None) -> Mapping[str, Any]:
+                nonlocal request_id
+                result = client.request(
+                    request_id,
+                    "thread/turns/list",
+                    {
+                        "threadId": thread_id,
+                        "cursor": cursor,
+                        "limit": 50,
+                        "sortDirection": "desc",
+                        "itemsView": "summary",
+                    },
+                    startup_timeout,
+                )
+                request_id += 1
+                return result
+
             read = read_thread()
             thread = read.get("thread")
             if not isinstance(thread, Mapping) or thread.get("id") != thread_id:
@@ -232,7 +308,9 @@ class CodexAdapter:
             status = thread.get("status")
             status_type = status.get("type") if isinstance(status, Mapping) else None
             if status_type == "active":
-                raise _active_writer_error(attempt, envelope, thread_id, thread)
+                raise _active_writer_error(
+                    attempt, envelope, thread_id, thread, list_turns=list_turns
+                )
             if status_type not in {"idle", "notLoaded"}:
                 raise AdapterError(
                     "CODEX_THREAD_TERMINAL", f"Codex target thread has terminal state {status_type}"
@@ -256,7 +334,11 @@ class CodexAdapter:
                             "CODEX_THREAD_ID_MISMATCH", "Codex read a different thread after resume conflict"
                         ) from error
                     raise _active_writer_error(
-                        attempt, envelope, thread_id, active_thread
+                        attempt,
+                        envelope,
+                        thread_id,
+                        active_thread,
+                        list_turns=list_turns,
                     ) from error
                 resumed_thread = resumed.get("thread")
                 if not isinstance(resumed_thread, Mapping) or resumed_thread.get("id") != thread_id:

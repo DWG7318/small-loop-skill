@@ -158,6 +158,58 @@ def test_dsh_fails_closed_without_one_result_and_one_session(
     assert error.value.error_code == error_code
 
 
+def test_dsh_preserves_truthful_incomplete_worker_result_without_fake_candidate(
+    tmp_path: Path,
+) -> None:
+    endpoint = worker_endpoint(tmp_path, mode="incomplete-git-blocker")
+    envelope = worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = DshAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == "DSH_WORKER_INCOMPLETE"
+    assert result.native_identity["worker_outcome"] == "incomplete"
+    worker_result = json.loads(
+        (attempt.root / "worker-result.json").read_text(encoding="utf-8")
+    )
+    assert worker_result["candidate"] is None
+    assert worker_result["blocker"]["cause"] == "GIT_COMMON_DIR_UNWRITABLE"
+
+
+@pytest.mark.parametrize(
+    ("mode", "outcome", "error_code"),
+    [
+        ("blocked-result", "blocked", "DSH_WORKER_BLOCKED"),
+        ("execution-failure-result", "execution_failure", "DSH_WORKER_EXECUTION_FAILURE"),
+        ("timed-out-result", "timed_out", "DSH_WORKER_TIMED_OUT"),
+    ],
+)
+def test_dsh_preserves_each_closed_noncompleted_worker_outcome(
+    tmp_path: Path, mode: str, outcome: str, error_code: str
+) -> None:
+    endpoint = worker_endpoint(tmp_path, mode=mode)
+    envelope = worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = DshAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == error_code
+    assert result.native_identity["worker_outcome"] == outcome
+
+
+def test_dsh_rejects_noncompleted_result_that_claims_a_candidate(tmp_path: Path) -> None:
+    endpoint = worker_endpoint(tmp_path, mode="invalid-incomplete-candidate")
+    envelope = worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    with pytest.raises(AdapterError) as error:
+        DshAdapter().deliver(endpoint, envelope, attempt)
+
+    assert error.value.error_code == "DSH_RESULT_INVALID"
+
+
 def test_dsh_rejects_instance_reuse_across_runs(tmp_path: Path) -> None:
     endpoint = worker_endpoint(tmp_path, run_id="RUN-B")
     invalid = Endpoint(

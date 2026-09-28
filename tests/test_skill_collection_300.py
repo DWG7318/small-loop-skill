@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.1"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -242,7 +242,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.3.0" in main
+    assert "4.3.1" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -1322,6 +1322,16 @@ def test_4210_overwatcher_has_only_three_exits_and_no_spin() -> None:
         "不继续空转",
     ):
         assert marker in overwatch
+    for marker in (
+        "同一原生进程",
+        "同一前台 turn",
+        "不要返回后依赖第二条用户消息",
+        "不要在正常 cycle 后提交 final",
+        "--output <不可变绝对路径>",
+        "WORKER_INCOMPLETE",
+        "不伪造 candidate",
+    ):
+        assert marker in overwatch
 
 
 def test_430_temporal_mode_is_optional_and_keeps_engineering_authority_outside_workflows() -> None:
@@ -1367,3 +1377,17 @@ def test_4210_keeps_bom_off_and_worker_flash_without_pro() -> None:
     assert "BoM 保持禁用" in combined
     assert "DeepSeek V4 Flash" in combined
     assert "DeepSeek V4 Pro" not in combined
+
+
+def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:
+    main = read_skill("small-loop-skill")
+
+    for marker in (
+        "上下文压缩",
+        "中央状态",
+        "当前 Run 记录",
+        "当前 TOKEN",
+        "摘要、旧话题或对话记忆",
+        "停止串题",
+    ):
+        assert marker in main

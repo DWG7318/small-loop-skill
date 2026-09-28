@@ -35,7 +35,7 @@ def start_value(*, overwatcher: bool = True) -> dict[str, object]:
         )
     return {
         "run_id": "RUN-A",
-        "method_version": "4.3.0",
+        "method_version": "4.3.1",
         "runtime_revision": 7,
         "task_queue": "slk-local",
         "ack_timeout_seconds": 120,

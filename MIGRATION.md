@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.3.0 to 4.3.1
+
+Install the complete 4.3.1 package. Installation alone does not adopt, resume, dispatch, inspect or mutate an existing Run. At an existing Supervisor-controlled boundary, an Owner-authorized exact snapshot may explicitly adopt `4.3.0 → 4.3.1`. The adoption preserves the Run ID, plan revision, current CELL/attempt, T006 TOKEN holder and sequence, role/session endpoints, candidate and D0/D1/D2 history, Overwatcher binding and incidents, transport/attempt evidence, product working tree and every uncommitted product change. No SQLite migration is added; schema v8 and migrations `0001.sql` through `0008.sql` remain authoritative.
+
+Before new Worker dispatch under 4.3.1, prove the visible worktree and the actual Git common store (`index`, `objects`, `refs`) are writable inside the supported Worker root; otherwise move the planned work to a separately authorized standalone writable clone before dispatch. A 4.3.0 in-flight attempt is not silently reinterpreted as the new closed Worker outcome contract. Preserve it unchanged and either finish it under its frozen contract or authorize a versioned same-scope recovery with exact evidence.
+
+Checker still owns D1 and Supervisor still owns D2. For a formal D1 failure, Checker writes the exact `D1_FAILED`; Supervisor alone writes the successor `REWORK_REQUESTED` for the same candidate, CELL and attempt. OCRV segment results are durable review inputs, never separate D1 verdicts. An Overwatcher remains optional and non-authoritative; each later pause/resume occurrence gets a new incident identity while retaining the same binding. Temporal remains opt-in and direct mode remains valid. No product Run, model binding, BI authority, Docker service, remote tag or Release changes automatically.
+
 ## Current minor migration: 4.2.11 to 4.3.0
 
 Install the complete 4.3.0 package. Existing 4.2.11 Runs keep schema v8, topology, role identities, CELL/D0/D1/D2 history, TOKEN, candidates, direct communication and Overwatcher history. At an existing Supervisor-controlled boundary, an Owner-authorized exact snapshot may explicitly adopt `4.2.11 → 4.3.0`; adoption does not automatically enable Temporal.

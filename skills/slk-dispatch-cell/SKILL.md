@@ -35,7 +35,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 Checker 先用 `slk-state write` 记录 `CELL_DISPATCHED`，再按 Worker 精确端点调用 `slk-transport send` 一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发；同一封闭信封写入 `SLK TOKEN Tnnn`、令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径，编号单调递增。Worker 只接收一份不可变、哈希绑定的 task file；原生进程建立后、任何终态结果之前应写出匹配的 `started.json`，作为真实激活证据。发送者随后用 `slk-state commit-delivery-start` 在同一事务中绑定启动证据、推进 TOKEN、追加事件并产生唯一 `runtime_revision`；数据库文字、后台消息、成功退出或终态结果都不能反推启动，4.2.3+ revisioned contract 不再使用分步 `handoff`。Worker 直接开始 CELL，不增加令牌专用回执；Checker 发出完整 CELL 后结束本次激活，前提是原子提交成功；不使用 `wait_threads`，也不读取Worker施工状态，候选交付重新激活Checker。
 
-`slk-transport` 明确报告未启动、投递失败或 Worker 端点不可用时，Checker 保留当前令牌与责任并调用 `$slk-recover-communication`；可选 Overwatcher 可旁路检查/原样重试一次，但三角色原通讯不变，缺少 Overwatcher 不阻断派工。
+`slk-transport` 明确报告未启动、投递失败、Worker 端点不可用或 Git common-dir 位于 Worker 沙箱外时，Checker 保留当前令牌与责任并调用 `$slk-recover-communication`；后者只允许在派工前改用独立可写 clone/simple layout，不把原 linked worktree 静默搬家。可选 Overwatcher 可旁路检查/原样重试一次，但三角色原通讯不变，缺少 Overwatcher 不阻断派工。
 
 Worker 提出合理澄清时，Checker可以补充上下文；若答案会改变 Run 目标或验收目标，建议请 Supervisor 协助判断。
 

@@ -29,7 +29,7 @@ ADDRESS_FIELDS = frozenset(
         "timeout_seconds",
     }
 )
-RESULT_FIELDS = frozenset(
+COMPLETED_RESULT_FIELDS = frozenset(
     {
         "schema_version",
         "message_id",
@@ -40,6 +40,17 @@ RESULT_FIELDS = frozenset(
         "next_payload",
     }
 )
+NONCOMPLETED_RESULT_FIELDS = COMPLETED_RESULT_FIELDS | {"blocker"}
+NONCOMPLETED_STATUSES = frozenset(
+    {"incomplete", "blocked", "execution_failure", "timed_out"}
+)
+BLOCKER_FIELDS = frozenset({"phase", "cause", "summary", "evidence"})
+NONCOMPLETED_ERROR_CODES = {
+    "incomplete": "DSH_WORKER_INCOMPLETE",
+    "blocked": "DSH_WORKER_BLOCKED",
+    "execution_failure": "DSH_WORKER_EXECUTION_FAILURE",
+    "timed_out": "DSH_WORKER_TIMED_OUT",
+}
 
 
 def _positive_seconds(value: Any) -> float:
@@ -89,14 +100,31 @@ class DshAdapter:
     @staticmethod
     def result_contract(endpoint: Endpoint, envelope: Envelope) -> dict[str, Any]:
         return {
-            "schema_version": "slk.worker-result/v1",
-            "message_id": envelope.message_id,
-            "run_id": envelope.run_id,
-            "role_instance_id": envelope.receiver_role_instance_id,
-            "status": "completed",
-            "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
-            "next_payload": {
-                "candidate_repository": str(Path(str(endpoint.address["cwd"])).resolve())
+            "schema_version": "slk.worker-result-contract/v1",
+            "identity": {
+                "schema_version": "slk.worker-result/v1",
+                "message_id": envelope.message_id,
+                "run_id": envelope.run_id,
+                "role_instance_id": envelope.receiver_role_instance_id,
+            },
+            "allowed_statuses": [
+                "completed",
+                "incomplete",
+                "blocked",
+                "execution_failure",
+                "timed_out",
+            ],
+            "completed": {
+                "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
+                "next_payload": {
+                    "candidate_repository": str(Path(str(endpoint.address["cwd"])).resolve())
+                },
+                "blocker": None,
+            },
+            "non_completed": {
+                "candidate": None,
+                "next_payload": None,
+                "blocker_fields": ["phase", "cause", "summary", "evidence"],
             },
         }
 
@@ -179,22 +207,47 @@ class DshAdapter:
             value = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
             raise AdapterError("DSH_RESULT_INVALID", "Worker result is not valid JSON") from exc
-        if not isinstance(value, dict) or set(value) != RESULT_FIELDS:
+        if not isinstance(value, dict):
+            raise AdapterError("DSH_RESULT_INVALID", "Worker result must be an object")
+        status = value.get("status")
+        expected_fields = (
+            COMPLETED_RESULT_FIELDS if status == "completed" else NONCOMPLETED_RESULT_FIELDS
+        )
+        if set(value) != expected_fields:
             raise AdapterError("DSH_RESULT_INVALID", "Worker result does not use the closed field set")
         expected = {
             "schema_version": "slk.worker-result/v1",
             "message_id": envelope.message_id,
             "run_id": envelope.run_id,
             "role_instance_id": endpoint.role_instance_id,
-            "status": "completed",
         }
         for field, expected_value in expected.items():
             if value.get(field) != expected_value:
                 raise AdapterError("DSH_RESULT_INVALID", f"Worker result {field} mismatch")
-        if not isinstance(value["candidate"], dict) or not isinstance(value["candidate"].get("kind"), str):
-            raise AdapterError("DSH_RESULT_INVALID", "Worker result candidate is invalid")
-        if not isinstance(value["next_payload"], dict):
-            raise AdapterError("DSH_RESULT_INVALID", "Worker result next_payload is invalid")
+        if status == "completed":
+            if not isinstance(value["candidate"], dict) or not isinstance(
+                value["candidate"].get("kind"), str
+            ):
+                raise AdapterError("DSH_RESULT_INVALID", "Worker result candidate is invalid")
+            if not isinstance(value["next_payload"], dict):
+                raise AdapterError("DSH_RESULT_INVALID", "Worker result next_payload is invalid")
+        elif status in NONCOMPLETED_STATUSES:
+            blocker = value.get("blocker")
+            if value.get("candidate") is not None or value.get("next_payload") is not None:
+                raise AdapterError(
+                    "DSH_RESULT_INVALID", "non-completed Worker result cannot claim a candidate"
+                )
+            if not isinstance(blocker, dict) or set(blocker) != BLOCKER_FIELDS:
+                raise AdapterError("DSH_RESULT_INVALID", "Worker blocker does not use the closed field set")
+            if not all(
+                isinstance(blocker[field], str) and blocker[field].strip()
+                for field in ("phase", "cause", "summary")
+            ) or not isinstance(blocker["evidence"], list) or not all(
+                isinstance(item, str) and item.strip() for item in blocker["evidence"]
+            ):
+                raise AdapterError("DSH_RESULT_INVALID", "Worker blocker is invalid")
+        else:
+            raise AdapterError("DSH_RESULT_INVALID", "Worker result status is unsupported")
         return value
 
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
@@ -289,18 +342,26 @@ class DshAdapter:
                     )
                 raise
             attempt.write_json_once("worker-result.json", worker_result)
+            worker_outcome = str(worker_result["status"])
+            error_code = NONCOMPLETED_ERROR_CODES.get(worker_outcome)
             return DeliveryResult(
                 schema_version=RESULT_SCHEMA,
                 message_id=envelope.message_id,
                 run_id=envelope.run_id,
                 adapter=endpoint.adapter,
-                status="completed",
+                status="completed" if worker_outcome == "completed" else "failed",
                 native_identity={
                     "instance_id": str(endpoint.address["instance_id"]),
                     "session_id": session_id,
                     "exit_code": completed.returncode,
+                    "worker_outcome": worker_outcome,
+                    "blocker_cause": (
+                        worker_result["blocker"]["cause"]
+                        if worker_outcome != "completed"
+                        else None
+                    ),
                 },
-                error_code=None,
+                error_code=error_code,
                 evidence=(
                     "started.json",
                     "worker-result.json",

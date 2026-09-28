@@ -142,3 +142,57 @@ def test_resume_error_text_already_has_active_writer_enters_active_writer_recove
     assert recovered["status"] == "started"
     assert recovered["expected_turn_id"] == "turn_active"
     assert (original / "failed.json").read_bytes() == failed_before
+
+
+def test_paginated_active_turn_is_resolved_and_recovered_once(tmp_path: Path) -> None:
+    endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["command"] = [
+        sys.executable,
+        str(FAKE_SERVER),
+        "active-paginated",
+    ]
+    attempts = tmp_path / "attempts"
+
+    result = dispatch_once(
+        endpoint, envelope, attempts, adapters={"codex-app-server": CodexAdapter()}
+    )
+
+    assert result.error_code == "CODEX_ACTIVE_WRITER"
+    recovered = recover_active_writer(attempts, endpoint, envelope)
+    assert recovered["expected_turn_id"] == "turn_active"
+    with pytest.raises(ContractError, match="already exists"):
+        recover_active_writer(attempts, endpoint, envelope)
+
+
+@pytest.mark.parametrize("mode", ["active-paginated", "active-paginated-omitted"])
+def test_active_turn_pages_are_authoritative_when_embedded_turns_are_empty_or_omitted(
+    tmp_path: Path, mode: str
+) -> None:
+    endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["command"] = [sys.executable, str(FAKE_SERVER), mode]
+
+    result = dispatch_once(
+        endpoint,
+        envelope,
+        tmp_path / "attempts",
+        adapters={"codex-app-server": CodexAdapter()},
+    )
+
+    assert result.error_code == "CODEX_ACTIVE_WRITER"
+
+
+@pytest.mark.parametrize("mode", ["active-paginated-missing", "active-paginated-multiple"])
+def test_active_turn_pages_fail_closed_when_current_writer_is_missing_or_ambiguous(
+    tmp_path: Path, mode: str
+) -> None:
+    endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["command"] = [sys.executable, str(FAKE_SERVER), mode]
+
+    result = dispatch_once(
+        endpoint,
+        envelope,
+        tmp_path / "attempts",
+        adapters={"codex-app-server": CodexAdapter()},
+    )
+
+    assert result.error_code == "CODEX_ACTIVE_WRITER_UNRESOLVED"

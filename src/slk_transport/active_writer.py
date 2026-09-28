@@ -102,7 +102,7 @@ def recover_active_writer(
         client.request(
             1,
             "initialize",
-            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.3.0"}},
+            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.3.1"}},
             startup_timeout,
         )
         client.notify("initialized", {})
@@ -113,10 +113,31 @@ def recover_active_writer(
             startup_timeout,
         )
         thread = read.get("thread")
-        if not isinstance(thread, Mapping) or active_turn_id(thread) != expected_turn_id:
+        request_id = 3
+
+        def list_turns(cursor: str | None) -> Mapping[str, Any]:
+            nonlocal request_id
+            result = client.request(
+                request_id,
+                "thread/turns/list",
+                {
+                    "threadId": thread_id,
+                    "cursor": cursor,
+                    "limit": 50,
+                    "sortDirection": "desc",
+                    "itemsView": "summary",
+                },
+                startup_timeout,
+            )
+            request_id += 1
+            return result
+
+        if not isinstance(thread, Mapping) or active_turn_id(
+            thread, list_turns=list_turns
+        ) != expected_turn_id:
             raise ContractError("active-writer recovery active turn changed")
         client.request(
-            3,
+            request_id,
             "turn/steer",
             {
                 "threadId": thread_id,

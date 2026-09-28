@@ -857,6 +857,109 @@ fn supervisor_resumes_the_same_overwatcher_session_from_the_exact_latest_native_
 }
 
 #[test]
+fn same_binding_supports_two_independent_native_pause_resume_incidents() {
+    let fixture = Fixture::new_4210();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+
+    fixture
+        .store
+        .record_overwatcher_status(
+            &issued.credential,
+            RecordOverwatcherStatusRequest {
+                status_id: "native-pause-1".into(),
+                run_id: "run-a".into(),
+                binding_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                foreground_turn_id: "foreground-turn-a".into(),
+                native_liveness: NativeLiveness::Completed,
+                evidence: fixture.evidence_ref("native-pause-1.json", b"turn a completed"),
+                observed_at: "2026-09-24T01:00:00Z".into(),
+            },
+        )
+        .unwrap();
+    fixture
+        .store
+        .resume_overwatcher_turn(
+            &fixture.supervisor,
+            ResumeOverwatcherTurnRequest {
+                event_id: "native-resume-1".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                binding_revision: 1,
+                expected_runtime_revision: fixture.runtime_revision(),
+                previous_foreground_turn_id: "foreground-turn-a".into(),
+                foreground_turn_id: "foreground-turn-b".into(),
+                last_anomaly_cycle_id: None,
+                last_native_status_id: Some("native-pause-1".into()),
+                native_active_session_evidence: fixture
+                    .evidence_ref("native-resume-1.json", b"same session turn b active"),
+                reason: "resume first completed foreground turn".into(),
+                occurred_at: "2026-09-24T01:00:01Z".into(),
+            },
+        )
+        .unwrap();
+
+    fixture
+        .store
+        .record_overwatcher_status(
+            &issued.credential,
+            RecordOverwatcherStatusRequest {
+                status_id: "native-pause-2".into(),
+                run_id: "run-a".into(),
+                binding_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                foreground_turn_id: "foreground-turn-b".into(),
+                native_liveness: NativeLiveness::Completed,
+                evidence: fixture.evidence_ref("native-pause-2.json", b"turn b completed"),
+                observed_at: "2026-09-24T01:04:00Z".into(),
+            },
+        )
+        .unwrap();
+    fixture
+        .store
+        .resume_overwatcher_turn(
+            &fixture.supervisor,
+            ResumeOverwatcherTurnRequest {
+                event_id: "native-resume-2".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                binding_revision: 1,
+                expected_runtime_revision: fixture.runtime_revision(),
+                previous_foreground_turn_id: "foreground-turn-b".into(),
+                foreground_turn_id: "foreground-turn-c".into(),
+                last_anomaly_cycle_id: None,
+                last_native_status_id: Some("native-pause-2".into()),
+                native_active_session_evidence: fixture
+                    .evidence_ref("native-resume-2.json", b"same session turn c active"),
+                reason: "resume second completed foreground turn".into(),
+                occurred_at: "2026-09-24T01:04:01Z".into(),
+            },
+        )
+        .unwrap();
+
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.overwatcher_incident_transitions.len(), 4);
+    let incident_ids = projection
+        .overwatcher_incident_transitions
+        .iter()
+        .map(|transition| transition.incident_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(incident_ids.len(), 2);
+    assert!(incident_ids.contains("continuity-run-a-1-native-pause-1"));
+    assert!(incident_ids.contains("continuity-run-a-1-native-pause-2"));
+}
+
+#[test]
 fn adoption_429_to_4210_preserves_the_schema_v8_run() {
     let fixture = Fixture::new_429();
     let before = fixture.store.query_run("run-a").unwrap();
@@ -974,6 +1077,76 @@ fn adoption_4211_to_430_preserves_the_schema_v8_run() {
     let after = fixture.store.query_run("run-a").unwrap();
     assert_eq!(applied.effective_version, "4.3.0");
     assert_eq!(after.summary.slk_version, "4.3.0");
+    assert_eq!(after.events, before.events);
+    assert_eq!(after.token_history, before.token_history);
+    assert_eq!(after.go_nodes, before.go_nodes);
+}
+
+#[test]
+fn adoption_430_to_431_preserves_the_schema_v8_run() {
+    let fixture = Fixture::new_4211();
+    let to_430 = AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-430-first".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.2.11".into(),
+        to_version: "4.3.0".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-430-first".into(),
+            message_id: "owner-message-430-first".into(),
+            content_sha256: "a".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-28T00:10:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher: OverwatcherAssertion::Absent,
+        },
+        reason: "reach the frozen 4.3.0 contract before patch adoption".into(),
+        occurred_at: "2026-09-28T00:10:01Z".into(),
+    };
+    fixture
+        .store
+        .adopt_method_contract(&fixture.supervisor, to_430)
+        .unwrap();
+    let before = fixture.store.query_run("run-a").unwrap();
+
+    let to_431 = AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-431".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.3.0".into(),
+        to_version: "4.3.1".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-431".into(),
+            message_id: "owner-message-431".into(),
+            content_sha256: "b".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-28T00:11:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher: OverwatcherAssertion::Absent,
+        },
+        reason: "adopt field corrections without changing Run facts".into(),
+        occurred_at: "2026-09-28T00:11:01Z".into(),
+    };
+
+    let applied = fixture
+        .store
+        .adopt_method_contract(&fixture.supervisor, to_431)
+        .unwrap();
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(applied.effective_version, "4.3.1");
+    assert_eq!(after.summary.slk_version, "4.3.1");
     assert_eq!(after.events, before.events);
     assert_eq!(after.token_history, before.token_history);
     assert_eq!(after.go_nodes, before.go_nodes);

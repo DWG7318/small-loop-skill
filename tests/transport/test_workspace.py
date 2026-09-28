@@ -24,7 +24,9 @@ def test_standalone_git_workspace_and_common_dir_are_writable(tmp_path: Path) ->
     assert not list(repository.glob(".slk-write-probe-*"))
 
 
-def test_linked_worktree_resolves_the_real_common_dir(tmp_path: Path) -> None:
+def test_linked_worktree_is_rejected_when_common_dir_is_outside_worker_sandbox(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "source"
     linked = tmp_path / "linked"
     source.mkdir()
@@ -36,10 +38,8 @@ def test_linked_worktree_resolves_the_real_common_dir(tmp_path: Path) -> None:
     git("commit", "-m", "init", cwd=source)
     git("worktree", "add", str(linked), "-b", "linked-test", cwd=source)
 
-    result = preflight_git_workspace(linked)
-
-    assert result.worktree_root == linked.resolve()
-    assert result.git_common_dir == (source / ".git").resolve()
+    with pytest.raises(WorkspaceError, match="common directory.*outside"):
+        preflight_git_workspace(linked)
 
 
 def test_non_git_workspace_fails_before_execution(tmp_path: Path) -> None:

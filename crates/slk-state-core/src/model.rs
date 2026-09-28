@@ -168,10 +168,11 @@ impl EventType {
             | D2Failed
             | RunSuperseded
             | RunAbandoned
-            | RunClosed => role == Role::Supervisor,
+            | RunClosed
+            | ReworkRequested => role == Role::Supervisor,
             RoleRegistered | RoleReplaced => role == Role::Supervisor || role == Role::Checker,
-            CellDispatched | D1Started | D1Incomplete | D1Passed | D1Failed | ReworkRequested
-            | CellSplit | CandidateForwarded => role == Role::Checker,
+            CellDispatched | D1Started | D1Incomplete | D1Passed | D1Failed | CellSplit
+            | CandidateForwarded => role == Role::Checker,
             WorkStarted | WorkProgress | BlockerReported | ChangeRecorded | D0Completed
             | CandidateSubmitted => role == Role::Worker,
             ResourceContended | ResourceRecovered | TokenHandedOff | TransportFailed

@@ -882,6 +882,21 @@ fn supervisor_to_worker_is_only_valid_after_current_d1_fail_escalation() {
         .handoff_token(&fixture.checker, escalation)
         .unwrap();
 
+    let mut rework_requested = event(
+        "rework-requested-1",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"d1-failed",
+            "failed_candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rework_round":1
+        }),
+    );
+    rework_requested.role_instance_id = "supervisor-a".into();
+    fixture
+        .store
+        .write_event(&fixture.supervisor, rework_requested)
+        .unwrap();
+
     let mut wrong_payload = handoff(4, "supervisor-a", "worker-a");
     wrong_payload.payload_type = "CELL_ASSIGNMENT".into();
     assert!(matches!(
@@ -907,6 +922,125 @@ fn supervisor_to_worker_is_only_valid_after_current_d1_fail_escalation() {
         .unwrap();
     assert_eq!(current.owner_role_instance_id, "worker-a");
     assert_eq!(current.sequence, 4);
+}
+
+#[test]
+fn rework_request_fails_closed_for_wrong_authority_identity_candidate_attempt_or_round() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+
+    let mut checker_authored = event(
+        "checker-rework",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"d1-failed",
+            "failed_candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rework_round":1
+        }),
+    );
+    checker_authored.role_instance_id = "checker-a".into();
+    assert!(matches!(
+        fixture
+            .store
+            .write_event(&fixture.checker, checker_authored),
+        Err(StateError::RoleNotAuthorized { .. })
+    ));
+
+    let mut failed = event(
+        "d1-failed",
+        EventType::D1Failed,
+        json!({"candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+    );
+    failed.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, failed).unwrap();
+    let mut escalation = handoff(3, "checker-a", "supervisor-a");
+    escalation.payload_type = "D1_FAILURE_ESCALATION".into();
+    fixture
+        .store
+        .handoff_token(&fixture.checker, escalation)
+        .unwrap();
+
+    for (event_id, failure_id, candidate, attempt, round) in [
+        (
+            "wrong-failure",
+            "d1-other",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            1,
+            1,
+        ),
+        (
+            "wrong-candidate",
+            "d1-failed",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            1,
+            1,
+        ),
+        (
+            "wrong-attempt",
+            "d1-failed",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            2,
+            1,
+        ),
+        (
+            "wrong-round",
+            "d1-failed",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            1,
+            2,
+        ),
+    ] {
+        let mut request = event(
+            event_id,
+            EventType::ReworkRequested,
+            json!({
+                "d1_failure_event_id":failure_id,
+                "failed_candidate_sha256":candidate,
+                "rework_round":round
+            }),
+        );
+        request.role_instance_id = "supervisor-a".into();
+        request.attempt = Some(attempt);
+        assert!(matches!(
+            fixture.store.write_event(&fixture.supervisor, request),
+            Err(StateError::WorkEventInvalid(_))
+        ));
+    }
+
+    let mut valid = event(
+        "valid-rework",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"d1-failed",
+            "failed_candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rework_round":1
+        }),
+    );
+    valid.role_instance_id = "supervisor-a".into();
+    fixture
+        .store
+        .write_event(&fixture.supervisor, valid)
+        .unwrap();
+
+    let mut duplicate_round = event(
+        "duplicate-round",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"d1-failed",
+            "failed_candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rework_round":1
+        }),
+    );
+    duplicate_round.role_instance_id = "supervisor-a".into();
+    assert!(matches!(
+        fixture
+            .store
+            .write_event(&fixture.supervisor, duplicate_round),
+        Err(StateError::WorkEventInvalid(_))
+    ));
 }
 
 struct Fixture {

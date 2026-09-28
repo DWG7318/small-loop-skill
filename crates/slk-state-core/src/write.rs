@@ -559,8 +559,8 @@ impl StateStore {
                             params![request.run_id, binding_revision],
                         )?;
                         let incident_id = format!(
-                            "continuity-{}-{}",
-                            request.run_id, binding_revision
+                            "continuity-{}-{}-{}",
+                            request.run_id, binding_revision, request.receipt_id
                         );
                         transaction.execute(
                             "INSERT INTO overwatcher_incident_transitions
@@ -690,7 +690,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1826,6 +1826,7 @@ impl StateStore {
                     | "4.2.10"
                     | "4.2.11"
                     | "4.3.0"
+                    | "4.3.1"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -1921,6 +1922,9 @@ impl StateStore {
                 if cell_exists.is_none() {
                     return Err(StateError::CellNotFound(cell_id.to_string()));
                 }
+            }
+            if request.event_type == EventType::ReworkRequested {
+                validate_rework_requested(transaction, &request)?;
             }
             if let Some(corrects_event_id) = request.corrects_event_id.as_deref() {
                 let target_author: Option<String> = transaction
@@ -2216,7 +2220,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2660,9 +2664,26 @@ impl StateStore {
             let next_binding_revision = binding.0 + 1;
             let material = new_credential_material();
             let native_address_json = serde_json::to_string(&request.endpoint.native_address)?;
+            let mut recovery_incident_id: Option<String> = None;
             if request.mode == OverwatcherReplacementMode::ContinuityRecovery {
                 let authorization = request.authorization_evidence.as_ref().expect("checked");
-                let incident_id = format!("continuity-{}-{}", request.run_id, binding.0);
+                let incident_id: String = transaction
+                    .query_row(
+                        "SELECT incident_id FROM overwatcher_incident_transitions
+                         WHERE run_id=?1 AND binding_revision=?2
+                           AND incident_code='OVERWATCHER_CONTINUITY_VIOLATION'
+                           AND state='OPEN'
+                         ORDER BY rowid DESC LIMIT 1",
+                        params![request.run_id, binding.0],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .ok_or_else(|| {
+                        StateError::OverwatcherBindingInvalid(
+                            "continuity recovery requires the exact open incident".into(),
+                        )
+                    })?;
+                recovery_incident_id = Some(incident_id.clone());
                 transaction.execute(
                     "INSERT INTO overwatcher_incident_transitions
                      (transition_id, incident_id, run_id, binding_revision, incident_code,
@@ -2766,7 +2787,7 @@ impl StateStore {
                      VALUES (?1,?2,?3,?4,'OVERWATCHER_CONTINUITY_VIOLATION','RESOLVED',?5,?6,?7)",
                     params![
                         format!("incident-resolved-{}", request.event_id),
-                        format!("continuity-{}-{}", request.run_id, binding.0),
+                        recovery_incident_id.as_deref().expect("recovery incident checked"),
                         request.run_id,
                         binding.0,
                         authorization.path,
@@ -2816,7 +2837,7 @@ impl StateStore {
             )?;
             if !matches!(
                 method_version.as_str(),
-                "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0"
+                "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3025,8 +3046,8 @@ impl StateStore {
                     params![request.run_id, request.binding_revision],
                 )?;
                 let incident_id = format!(
-                    "continuity-{}-{}",
-                    request.run_id, request.binding_revision
+                    "continuity-{}-{}-{}",
+                    request.run_id, request.binding_revision, request.status_id
                 );
                 transaction.execute(
                     "INSERT INTO overwatcher_incident_transitions
@@ -3099,13 +3120,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -3261,8 +3282,10 @@ impl StateStore {
                     params![
                         format!("incident-resolved-{}", request.event_id),
                         format!(
-                            "continuity-{}-{}",
-                            request.run_id, request.binding_revision
+                            "continuity-{}-{}-{}",
+                            request.run_id,
+                            request.binding_revision,
+                            request.last_native_status_id.as_deref().expect("checked")
                         ),
                         request.run_id,
                         request.binding_revision,
@@ -4047,6 +4070,97 @@ pub(crate) fn current_token_from(
         .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))
 }
 
+fn validate_rework_requested(
+    connection: &Connection,
+    request: &WriteRequest,
+) -> Result<(), StateError> {
+    let go_id = request.go_id.as_deref().ok_or_else(|| {
+        StateError::WorkEventInvalid("REWORK_REQUESTED requires an exact GO".into())
+    })?;
+    let cell_id = request.cell_id.as_deref().ok_or_else(|| {
+        StateError::WorkEventInvalid("REWORK_REQUESTED requires an exact CELL".into())
+    })?;
+    let attempt = request.attempt.ok_or_else(|| {
+        StateError::WorkEventInvalid("REWORK_REQUESTED requires an exact attempt".into())
+    })?;
+    let details = request.details.as_object().ok_or_else(|| {
+        StateError::WorkEventInvalid("REWORK_REQUESTED details must be an object".into())
+    })?;
+    let required = [
+        "d1_failure_event_id",
+        "failed_candidate_sha256",
+        "rework_round",
+    ];
+    if details.len() != required.len() || required.iter().any(|field| !details.contains_key(*field))
+    {
+        return Err(StateError::WorkEventInvalid(
+            "REWORK_REQUESTED details must use the closed field set".into(),
+        ));
+    }
+    let failure_event_id = details["d1_failure_event_id"]
+        .as_str()
+        .filter(|value| valid_identifier(value))
+        .ok_or_else(|| {
+            StateError::WorkEventInvalid("D1 failure event identity is invalid".into())
+        })?;
+    let failed_candidate = details["failed_candidate_sha256"]
+        .as_str()
+        .filter(|value| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+        .ok_or_else(|| {
+            StateError::WorkEventInvalid("failed candidate SHA-256 is invalid".into())
+        })?;
+    let rework_round = details["rework_round"]
+        .as_u64()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
+
+    let latest: Option<(String, String, String)> = connection
+        .query_row(
+            "SELECT event_id, event_type, details_json FROM work_events
+             WHERE run_id=?1 AND go_id=?2 AND cell_id=?3 AND attempt=?4
+               AND event_type IN ('D1_FAILED','D1_PASSED','D1_INCOMPLETE')
+             ORDER BY rowid DESC LIMIT 1",
+            params![request.run_id, go_id, cell_id, attempt],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((latest_event_id, latest_type, latest_details_json)) = latest else {
+        return Err(StateError::WorkEventInvalid(
+            "REWORK_REQUESTED requires a current D1 failure".into(),
+        ));
+    };
+    let latest_details: serde_json::Value = serde_json::from_str(&latest_details_json)?;
+    if latest_type != "D1_FAILED"
+        || latest_event_id != failure_event_id
+        || latest_details
+            .get("candidate_sha256")
+            .and_then(|value| value.as_str())
+            != Some(failed_candidate)
+    {
+        return Err(StateError::WorkEventInvalid(
+            "REWORK_REQUESTED does not bind the current D1 failure and candidate".into(),
+        ));
+    }
+    let prior_rounds: u64 = connection.query_row(
+        "SELECT COUNT(*) FROM work_events
+         WHERE run_id=?1 AND cell_id=?2 AND event_type='REWORK_REQUESTED'",
+        params![request.run_id, cell_id],
+        |row| row.get(0),
+    )?;
+    if rework_round != prior_rounds + 1 {
+        return Err(StateError::WorkEventInvalid(format!(
+            "rework round must be {}, not {rework_round}",
+            prior_rounds + 1
+        )));
+    }
+    Ok(())
+}
+
 fn projected_cell_state(event: EventType) -> Option<&'static str> {
     match event {
         EventType::CellDispatched => Some("dispatched"),
@@ -4197,6 +4311,7 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
             | "4.2.10"
             | "4.2.11"
             | "4.3.0"
+            | "4.3.1"
     )
 }
 
@@ -4215,7 +4330,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.2.8" && request.to_version == "4.2.9")
             || (request.from_version == "4.2.9" && request.to_version == "4.2.10")
             || (request.from_version == "4.2.10" && request.to_version == "4.2.11")
-            || (request.from_version == "4.2.11" && request.to_version == "4.3.0");
+            || (request.from_version == "4.2.11" && request.to_version == "4.3.0")
+            || (request.from_version == "4.3.0" && request.to_version == "4.3.1");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

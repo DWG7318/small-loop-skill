@@ -25,14 +25,14 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.3.0 skill collection" in result.stdout
+    assert "PASS: SLK 4.3.1 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.3.0"
+    assert manifest["version"] == "4.3.1"
     assert manifest["skill_count"] == 15
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -66,8 +66,9 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
         "docs/contracts/slk-worker-completion-inspection.schema.json": {
             "schema_version", "run_id", "go_id", "cell_id", "attempt", "source_message_id",
             "worker_role_instance_id", "observed_at", "cadence_seconds", "status",
-            "grace_started_at", "anomaly_codes", "notification_already_sent",
-            "missing_worker_events", "candidate", "handoff_message_id",
+                "grace_started_at", "anomaly_codes", "notification_already_sent",
+                "missing_worker_events", "candidate", "worker_outcome", "blocker",
+                "handoff_message_id",
         },
         "docs/contracts/slk-worker-continuation.schema.json": {
             "schema_version", "method_version", "run_id", "go_id", "cell_id", "attempt",
@@ -164,7 +165,7 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.3.0" in text
+        assert "4.3.1" in text
         assert "14" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
@@ -186,11 +187,31 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.3.1" in changelog and "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog
     assert "completed work" in changelog
+
+
+def test_431_consistency_audit_is_complete_and_packaged() -> None:
+    audit = (ROOT / "docs/maintenance/2026-09-28-slk-4.3.1-consistency-audit.md").read_text(
+        encoding="utf-8"
+    )
+    for skill in validate_repository.EXPECTED_SKILLS:
+        assert f"`{skill}`" in audit
+    for marker in (
+        "Skill / contract / producer / consumer matrix",
+        "Authority and outcome matrix",
+        "Writes, capacity and continuity",
+        "Migration, package, BI and Temporal-off",
+        "Same-class findings and corrections",
+        "context compaction",
+    ):
+        assert marker in audit
+    assert "docs/maintenance" in (ROOT / "scripts/build_local_package.py").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_current_design_uses_the_same_startup_d2_and_recovery_routes() -> None:

@@ -281,6 +281,49 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV nested review exit code is invalid")
         return value
 
+    @staticmethod
+    def _changed_paths(request: Mapping[str, Any]) -> list[str]:
+        changed: list[str] = []
+        for raw_path in request["evidence_files"]:
+            try:
+                evidence = json.loads(Path(str(raw_path)).read_text(encoding="utf-8-sig"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(evidence, Mapping):
+                continue
+            next_payload = evidence.get("next_payload")
+            paths = next_payload.get("changed_paths") if isinstance(next_payload, Mapping) else None
+            if isinstance(paths, list):
+                for path in paths:
+                    if isinstance(path, str) and path.strip() and path not in changed:
+                        changed.append(path)
+        return changed
+
+    def _review_segments(self, request: Mapping[str, Any]) -> list[dict[str, Any]]:
+        changed_paths = self._changed_paths(request)
+        criteria = list(request["d1_criteria"])
+        segment_count = max(len(changed_paths), (len(criteria) + 1) // 2)
+        if segment_count <= 1:
+            return []
+        segments: list[dict[str, Any]] = []
+        for index in range(segment_count):
+            criterion_start = index * 2
+            scoped_criteria = criteria[criterion_start : criterion_start + 2]
+            if not scoped_criteria:
+                scoped_criteria = criteria
+            path_scope = changed_paths[index] if index < len(changed_paths) else "criteria-only"
+            segments.append(
+                {
+                    **request,
+                    "cell_goal": (
+                        f"[SLK review segment {index + 1}/{segment_count}] "
+                        f"Changed-path scope: {path_scope}. Original goal: {request['cell_goal']}"
+                    ),
+                    "d1_criteria": scoped_criteria,
+                }
+            )
+        return segments
+
     def _recovery_request(
         self,
         endpoint: Endpoint,
@@ -312,7 +355,7 @@ class OcrvAdapter:
         transport_command = _string_array(payload["transport_command"], "transport_command")
         return {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "method_version": "4.3.0",
+            "method_version": "4.3.1",
             "recovery_invocation_id": recovery_invocation_id,
             "recovery_envelope_message_id": envelope.message_id,
             "run_id": envelope.run_id,
@@ -345,7 +388,7 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery result is not closed")
         if (
             value["schema_version"] != "slk.ocrv-worker-recovery-result/v1"
-            or value["method_version"] != "4.3.0"
+            or value["method_version"] != "4.3.1"
             or value["status"] != "CHECKER_STARTED"
             or value["run_id"] != envelope.run_id
             or value["cell_id"] != envelope.cell_id
@@ -454,14 +497,120 @@ class OcrvAdapter:
     ) -> DeliveryResult:
         transport_invocation_id = str(uuid.uuid4())
         request = self._candidate_request(envelope)
-        request_path = attempt.write_json_once("ocrv-request.json", request)
-        result_path = attempt.root / "ocrv-result.json"
-        command = _string_array(endpoint.address["command"], "command")
-        command.extend(["--request", str(request_path), "--output", str(result_path)])
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
         environment["OCRV_SLK_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
+        timeout = _positive_seconds(endpoint.address["timeout_seconds"])
+        segments = self._review_segments(request)
+        attempt.write_json_once(
+            "started.json",
+            {
+                "message_id": envelope.message_id,
+                "run_id": envelope.run_id,
+                "status": "started",
+                "transport_invocation_id": transport_invocation_id,
+            },
+        )
+        segment_results: list[Path] = []
+        if segments:
+            for ordinal, segment_request in enumerate(segments, start=1):
+                segment_root = attempt.root / "review-segments" / f"segment-{ordinal:03d}"
+                segment_root.mkdir(parents=True, exist_ok=False)
+                segment_attempt = Attempt(segment_root)
+                segment_request_path = segment_attempt.write_json_once("request.json", segment_request)
+                segment_result_path = segment_root / "result.json"
+                command = _string_array(endpoint.address["command"], "command")
+                command.extend(
+                    ["--request", str(segment_request_path), "--output", str(segment_result_path)]
+                )
+                process = spawn(
+                    command,
+                    cwd=str(request["repository"]),
+                    env=environment,
+                    process_kwargs=_checker_process_kwargs(),
+                )
+                try:
+                    completed = finish(process, timeout)
+                except subprocess.TimeoutExpired as exc:
+                    stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+                    stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+                    segment_attempt.write_text_once("native.stdout.txt", stdout)
+                    segment_attempt.write_text_once("native.stderr.txt", stderr)
+                    attempt.write_json_once(
+                        "ocrv-review-progress.json",
+                        {
+                            "schema_version": "slk.ocrv-review-progress/v1",
+                            "run_id": envelope.run_id,
+                            "cell_id": envelope.cell_id,
+                            "status": "INCOMPLETE",
+                            "completed_segments": len(segment_results),
+                            "total_segments": len(segments),
+                            "current_segment": ordinal,
+                        },
+                    )
+                    return DeliveryResult(
+                        schema_version=RESULT_SCHEMA,
+                        message_id=envelope.message_id,
+                        run_id=envelope.run_id,
+                        adapter=endpoint.adapter,
+                        status="failed",
+                        native_identity={
+                            "run_id": envelope.run_id,
+                            "cell_id": envelope.cell_id,
+                            "review_segment_count": len(segments),
+                            "completed_review_segments": len(segment_results),
+                        },
+                        error_code="OCRV_REVIEW_INCOMPLETE",
+                        evidence=("started.json", "ocrv-review-progress.json"),
+                    )
+                segment_attempt.write_text_once("native.stdout.txt", completed.stdout)
+                segment_attempt.write_text_once("native.stderr.txt", completed.stderr)
+                segment_result = self._read_ocrv_result(
+                    segment_result_path,
+                    segment_request_path,
+                    envelope,
+                    completed.returncode,
+                )
+                segment_results.append(segment_result_path)
+                segment_review = segment_result["review"]
+                attempt.write_json_once(
+                    f"ocrv-review-progress-{ordinal:03d}.json",
+                    {
+                        "schema_version": "slk.ocrv-review-progress/v1",
+                        "run_id": envelope.run_id,
+                        "cell_id": envelope.cell_id,
+                        "status": "SEGMENT_COMPLETE",
+                        "completed_segments": len(segment_results),
+                        "total_segments": len(segments),
+                        "current_segment": ordinal,
+                        "request_sha256": hashlib.sha256(
+                            segment_request_path.read_bytes()
+                        ).hexdigest(),
+                        "result_sha256": hashlib.sha256(
+                            segment_result_path.read_bytes()
+                        ).hexdigest(),
+                        "review_invocation_id": segment_result["review_invocation_id"],
+                        "session_id": segment_review["session_id"],
+                        "process_exit_code": completed.returncode,
+                    },
+                )
+            request = {
+                **request,
+                "cell_goal": (
+                    f"[SLK aggregate after {len(segments)} durable review segments] "
+                    f"{request['cell_goal']}"
+                ),
+                "evidence_files": [
+                    *request["evidence_files"],
+                    *(str(path.resolve()) for path in segment_results),
+                ],
+            }
+
+        request_path = attempt.write_json_once("ocrv-request.json", request)
+        result_path = attempt.root / "ocrv-result.json"
+        command = _string_array(endpoint.address["command"], "command")
+        command.extend(["--request", str(request_path), "--output", str(result_path)])
         try:
             process = spawn(
                 command,
@@ -469,16 +618,7 @@ class OcrvAdapter:
                 env=environment,
                 process_kwargs=_checker_process_kwargs(),
             )
-            attempt.write_json_once(
-                "started.json",
-                {
-                    "message_id": envelope.message_id,
-                    "run_id": envelope.run_id,
-                    "status": "started",
-                    "transport_invocation_id": transport_invocation_id,
-                },
-            )
-            completed = finish(process, _positive_seconds(endpoint.address["timeout_seconds"]))
+            completed = finish(process, timeout)
         except subprocess.TimeoutExpired as exc:
             stdout = exc.stdout if isinstance(exc.stdout, str) else ""
             stderr = exc.stderr if isinstance(exc.stderr, str) else ""
@@ -493,6 +633,19 @@ class OcrvAdapter:
             envelope,
             completed.returncode,
         )
+        if segments:
+            attempt.write_json_once(
+                "ocrv-review-progress.json",
+                {
+                    "schema_version": "slk.ocrv-review-progress/v1",
+                    "run_id": envelope.run_id,
+                    "cell_id": envelope.cell_id,
+                    "status": "COMPLETE",
+                    "completed_segments": len(segment_results),
+                    "total_segments": len(segments),
+                    "current_segment": len(segments),
+                },
+            )
         review = result["review"]
         return DeliveryResult(
             schema_version=RESULT_SCHEMA,
@@ -509,6 +662,7 @@ class OcrvAdapter:
                 "model": review["model"],
                 "verdict": result["verdict"],
                 "exit_code": completed.returncode,
+                "review_segment_count": len(segment_results),
             },
             error_code=None,
             evidence=(

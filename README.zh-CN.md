@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**4.3.0**
+当前版本：**4.3.1**
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。一个 SLK 就是一个 Run，Run 直接包含一条线性 CELL 路径。
 
@@ -29,13 +29,13 @@ SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢�
 
 RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Codex 全域只安装一次，但安装不等于获得项目使用授权；每个 Run 仍由 Owner 决定是否启用。SLK 只显式调用，不启用自动 hook、MCP 或额外 Agent；原生命令与原始证据始终可以回退并作为事实依据。
 
-跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。DSH/OCRV 只接收一个不可变、哈希绑定的 task file，并在任何终态结果之前写出 `started.json`；数据库行、后台消息、成功退出或按对话标题匹配都不等于投递。4.3.0 在 active-writer 冲突时向精确 canonical task/active turn 新发一条可审计消息，不再承诺 turn 结束后的延时自唤醒；恢复的 DSH 身份会重新校验，OCRV 在 Worker job 外 headless 启动，DPAPI 解码严格区分编码，命令退出/JSON 解析/业务状态保持分离，提交后的 runtime revision 会返回，Checker 只接收必要回执与原始日志的路径/大小/哈希索引。工具或传输失败保留同一 D1 attempt，不冒充产品 FAIL。详见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
+跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。DSH/OCRV 只接收一个不可变、哈希绑定的 task file，并在任何终态结果之前写出 `started.json`；数据库行、后台消息、成功退出或按对话标题匹配都不等于投递。4.3.1 还在 DSH 构造前证明真实 Git common store 可写，闭合并保留 Worker 的真实终态，按有界分页解析 active writer，并让 OCRV 先保存容量分段证据再产生唯一聚合 D1。恢复的 DSH 身份会重新校验，OCRV 在 Worker job 外 headless 启动；工具或传输失败保留同一 D1 attempt，不冒充产品 FAIL。详见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
 
-4.3.0 另带可选的 `SLK.Start` 与 `SLK.Run` Temporal 模板，只保存启动和通讯连续性。它必须按 Run 显式选择并连接现有服务/adapter，不安装 Docker、不成为硬依赖，也不裁决工程状态；未启用或不可用时继续原直连。详见 [`docs/runtime/SLK-TEMPORAL.md`](docs/runtime/SLK-TEMPORAL.md)。
+4.3.1 继续包含 4.3.0 引入的可选 `SLK.Start` 与 `SLK.Run` Temporal 模板，只保存启动和通讯连续性。它必须按 Run 显式选择并连接现有服务/adapter，不安装 Docker、不成为硬依赖，也不裁决工程状态；未启用或不可用时继续原直连。详见 [`docs/runtime/SLK-TEMPORAL.md`](docs/runtime/SLK-TEMPORAL.md)。
 
 ## 4.0 状态与 LE BI
 
-SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.3.0 中三工程角色仍只写各自事实；可选 whole-Run Overwatcher 仍是非权威观察者，不成为调度器。Run 终结后，Supervisor 可原子退役精确的 Checker 和 Worker，不创建替代者；LE BI 只依据该中央事实显示归档，同时保留 Supervisor 与全部工程历史。显式采用链延伸到 4.3.0；`slk-bi-query` 与 LE BI 仍只读。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
+SLK 4.0 加入一个可配置的电脑全域数据根目录、版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出，以及独立的只读桌面 **LE BI**。4.3.1 中三工程角色仍只写各自事实；可选 whole-Run Overwatcher 仍是非权威观察者，不成为调度器。返工请求已与现场职责对齐，多次 Overwatcher 暂停/恢复也使用彼此独立的追加式事件。显式采用链延伸到 4.3.1；`slk-bi-query` 与 LE BI 仍只读。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
 
 LE BI 按显式 Run 身份显示精简横条，不论其为独立 SLK，还是属于某个 CLK/GLK 项目。显式 predecessor lineage 区分当前、历史、重复活动与孤立身份，不再按标题或时间猜测合并。展开后显示三个技术角色、CELL 事实，以及有绑定时独立的 Overwatcher 运行保障条。BI 不确认消息是否真正投递，不恢复通讯，也不修改 Run；被接受的观察可以保守显示“活动未证明”，但不能改变工程进度。
 

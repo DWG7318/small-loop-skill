@@ -7,7 +7,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 ## 方法身份
 
-SLK 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
+SLK 4.3.1 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
 
 它以 CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，帮助成员判断怎样继续：D1 FAIL 回到同一 CELL 返工，D1 PASS 前进，全部 CELL 处理后由 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌本身不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态事实，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与未来 BI 只读查询。
 
@@ -63,7 +63,7 @@ Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run` 初始化�
 - 不要直接编辑 SQLite、伪造失效的旧角色凭证、新建替代 Run、用自由文本静默升级方法合同，或借身份对账改写 CELL、D0/D1/D2、角色、证据与 TOKEN；Overwatcher 只在有效版本或显式采用回执之后绑定。
 - 不要用终态结果倒推启动成功，也不要用旧 attempt D1 或其他 candidate/message 冒充当前交接；不要把旧信封作为新消息重放，不要混合多个 `runtime_revision`，不要在 active writer 前先 resume，不要用 sleep、延迟 PowerShell、post-turn 脚本、后台自唤醒或固定秒数承诺维持关键交接，不要由一次性 DSH 进程托管 OCRV 长审查，不要把传输/工具失败写成产品 D1 FAIL；不要由 Supervisor/Overwatcher/普通 shell 直接启动 Worker completion continuation，不要在原 Checker 原生 invocation 认证前标记 authorized recovery，不要用 projected active 冒充 Overwatcher cycle 正在继续，也不要用新 Session 或未授权 turn 绕过同一 Overwatcher 绑定；不要为恢复自动升级模型或静默改变 reasoning，也不要加入 BoM 触发器、route、角色或运行时；BoM 保持禁用。
 - 不要让 Codex 冒充 OCRV Checker 或 DSH Worker，不要把运行时名称、提示词角色声明或可见对话当成实际角色绑定；不要把本地顺序段升级成正式 CELL、多次 D1、并行工作或新 TOKEN，也不要让 Supervisor 预排内部步骤；不要把零 finding、没有报错或与验收目标无对应关系的一般测试通过直接等同于 D1 PASS，也不要用 Supervisor 后补证据替代 Checker 的 D1；不要把候选可能正确、D1 已通过和 D2/Run 已关闭合并成一个结论，或把间接验证写成未实际执行的目标环境验证。
-- 不要把角色理解或协作问题首先改造成代码问题，不要用“更可靠”作为增加状态机、协议层、恢复运行时或数百行代码的理由；先把对应子 Skill 和必要的主 Skill 提示写清楚，让 Agent 履行职责。
+- 不要因协作问题加状态机。上下文压缩或续作后按中央状态、当前 Run 记录、计划和当前 TOKEN 重验 `run_id`、CELL/attempt、下一动作；摘要、旧话题或对话记忆冲突时停止串题。
 - 不要让 Temporal 自动启动、切换模型或重复恢复；缺失走直连或报阻断。
 - 不要反向把跨 Agent 通讯、身份校验、TOKEN 原子流转、中央记录或 BI 一致性退回自由文本约定；这些共享事实与传输边界应继续由小而明确的代码合同保证。
 - 不要新增只有作者知道如何运行的一次性脚本或隐藏代码路径；需要长期复用的确定性能力应成为有文档调用规则的标准 Tool，做不到轻量稳定时就不要继续堆代码。

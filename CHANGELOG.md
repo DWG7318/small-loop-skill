@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.3.1
+
+- Rejected DSH construction before native start when the actual Git common store is outside the supported Worker root or its index/object/ref locations are not writable; supported standalone clones still pass.
+- Closed Worker terminal outcomes as `completed`, `incomplete`, `blocked`, `execution_failure` or `timed_out`, forbade candidates on non-completed results, and installed one immutable exact-attempt completion inspector.
+- Kept `D1_FAILED` Checker-owned while making the exact successor `REWORK_REQUESTED` Supervisor-owned and mechanically bound to the current failure event, candidate, scope, attempt and round.
+- Made Codex active-writer recovery follow bounded turn pagination and require exactly one current turn before one payload-hash-bound recovery message.
+- Gave each Overwatcher pause/resume occurrence a distinct append-only incident identity and required normal cycles to continue their bounded central-state wait in the same foreground turn.
+- Replaced monolithic OCRV review cliffs with ordered durable capacity-sized segments and one aggregate D1; timeout now preserves completed evidence and returns a truthful incomplete result.
+- Added context-restoration revalidation against central Run/plan/TOKEN facts plus a mechanically checked 15-Skill producer/consumer, authority, outcome, writability, timeout, continuity, migration, package, BI and Temporal-off audit.
+- Preserved schema v8, the existing topology and direct fallback. Explicit `4.3.0 → 4.3.1` adoption does not resume or mutate a product Run; no Docker, BoM, heartbeat, scheduler, new role or product change was introduced.
+
 ## 4.3.0
 
 - Added two optional reusable Temporal templates, `SLK.Start` and `SLK.Run`, for deterministic Run startup and exact delivery/native-start-ACK continuity. They preserve existing Supervisor/Checker/Worker/Overwatcher authority and do not decide D0/D1/D2, move TOKEN, write BI, switch models, install a server or require Docker.

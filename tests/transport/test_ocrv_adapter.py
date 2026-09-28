@@ -319,3 +319,82 @@ def test_ocrv_address_is_closed(tmp_path: Path) -> None:
         OcrvAdapter().validate_address(invalid)
 
     assert error.value.error_code == "OCRV_ADDRESS_INVALID"
+
+
+def _large_candidate_envelope(tmp_path: Path) -> Envelope:
+    envelope = candidate_envelope(tmp_path)
+    repository = Path(str(envelope.payload["repository"]))
+    changed_paths = []
+    for ordinal in range(1, 4):
+        path = repository / f"src-{ordinal}.rs"
+        path.write_text(f"fn item_{ordinal}() {{}}\n", encoding="utf-8")
+        changed_paths.append(path.name)
+    worker_result = tmp_path / "worker-result-large.json"
+    worker_result.write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.worker-result/v1",
+                "message_id": envelope.message_id,
+                "run_id": envelope.run_id,
+                "role_instance_id": "RUN-A-worker-001",
+                "status": "completed",
+                "candidate": {"kind": "workspace"},
+                "next_payload": {"changed_paths": changed_paths},
+            }
+        ),
+        encoding="utf-8",
+    )
+    raw = dict(envelope.__dict__)
+    payload = dict(envelope.payload)
+    payload["d1_criteria"] = [f"criterion {ordinal}" for ordinal in range(1, 6)]
+    payload["evidence_files"] = [str(worker_result)]
+    raw["payload"] = payload
+    raw["payload_sha256"] = canonical_json_sha256(payload)
+    return Envelope(**raw)
+
+
+def test_ocrv_large_review_is_split_into_durable_segments_then_aggregated(
+    tmp_path: Path,
+) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    envelope = _large_candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    segment_results = sorted((attempt.root / "review-segments").glob("segment-*/result.json"))
+    assert len(segment_results) >= 3
+    segment_progress = json.loads(
+        (attempt.root / "ocrv-review-progress-001.json").read_text(encoding="utf-8")
+    )
+    assert len(segment_progress["request_sha256"]) == 64
+    assert len(segment_progress["result_sha256"]) == 64
+    assert segment_progress["session_id"].startswith("ocrv-session-")
+    progress = json.loads((attempt.root / "ocrv-review-progress.json").read_text(encoding="utf-8"))
+    assert progress["completed_segments"] == progress["total_segments"]
+    assert (attempt.root / "ocrv-result.json").is_file()
+    assert result.native_identity["review_segment_count"] == len(segment_results)
+
+
+def test_ocrv_timeout_preserves_completed_segments_and_returns_incomplete(
+    tmp_path: Path,
+) -> None:
+    endpoint = checker_endpoint(tmp_path, "timeout-second")
+    endpoint = Endpoint(
+        **{
+            **endpoint.__dict__,
+            "address": {**endpoint.address, "timeout_seconds": 0.25},
+        }
+    )
+    envelope = _large_candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
+    progress = json.loads((attempt.root / "ocrv-review-progress.json").read_text(encoding="utf-8"))
+    assert progress["completed_segments"] == 1
+    assert progress["status"] == "INCOMPLETE"
+    assert (attempt.root / "review-segments" / "segment-001" / "result.json").is_file()
