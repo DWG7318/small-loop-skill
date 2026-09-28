@@ -641,6 +641,97 @@ fn plan_revision_and_role_replacement_preserve_current_authority() {
 }
 
 #[test]
+fn plan_revision_requires_a_substantive_nonempty_change() {
+    let fixture = Fixture::new();
+
+    for (event_id, snapshot, reason, expected) in [
+        (
+            "plan-empty",
+            json!({}),
+            "empty snapshot",
+            "plan revision snapshot must be a non-empty object",
+        ),
+        (
+            "plan-blank-reason",
+            json!({"cells":["CELL-001","CELL-002"]}),
+            "   ",
+            "plan revision reason must not be blank",
+        ),
+    ] {
+        let error = fixture
+            .store
+            .revise_plan(
+                &fixture.supervisor,
+                RevisePlanRequest {
+                    event_id: event_id.into(),
+                    run_id: "run-a".into(),
+                    snapshot,
+                    reason: reason.into(),
+                    occurred_at: "2026-09-20T00:00:02Z".into(),
+                },
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("invalid linear plan: {expected}")
+        );
+    }
+
+    let snapshot = json!({"cells":["CELL-001","CELL-002"]});
+    assert_eq!(
+        fixture
+            .store
+            .revise_plan(
+                &fixture.supervisor,
+                RevisePlanRequest {
+                    event_id: "plan-split".into(),
+                    run_id: "run-a".into(),
+                    snapshot: snapshot.clone(),
+                    reason: "split the remaining acceptance surface".into(),
+                    occurred_at: "2026-09-20T00:00:02Z".into(),
+                },
+            )
+            .unwrap(),
+        2
+    );
+
+    let unchanged = fixture
+        .store
+        .revise_plan(
+            &fixture.supervisor,
+            RevisePlanRequest {
+                event_id: "plan-split-again".into(),
+                run_id: "run-a".into(),
+                snapshot,
+                reason: "repeat the same plan under a new event".into(),
+                occurred_at: "2026-09-20T00:00:03Z".into(),
+            },
+        )
+        .unwrap_err();
+    assert_eq!(
+        unchanged.to_string(),
+        "invalid linear plan: plan revision must change the current snapshot"
+    );
+
+    assert_eq!(
+        fixture
+            .store
+            .revise_plan(
+                &fixture.supervisor,
+                RevisePlanRequest {
+                    event_id: "plan-split-expanded".into(),
+                    run_id: "run-a".into(),
+                    snapshot: json!({"cells":["CELL-001","CELL-002","CELL-003"]}),
+                    reason: "new capacity evidence requires another split".into(),
+                    occurred_at: "2026-09-20T00:00:04Z".into(),
+                },
+            )
+            .unwrap(),
+        3
+    );
+}
+
+#[test]
 fn token_cannot_skip_the_checker() {
     let fixture = Fixture::new();
     assert!(matches!(

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slk-temporal-templates"
+version = "4.3.0"
+description = "Optional Temporal continuity templates for Small Loop Skill"
+requires-python = ">=3.10"
+dependencies = ["temporalio>=1.33,<2"]
+
+[project.scripts]
+slk-temporal-worker = "slk_temporal.worker:main"
+slk-temporal-start = "slk_temporal.starter:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

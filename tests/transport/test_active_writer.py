@@ -115,3 +115,30 @@ def test_checker_d2_handoff_uses_the_same_new_message_recovery_path(tmp_path: Pa
     assert recovered["recovery_of_message_id"] == envelope["message_id"]
     assert recovered["recovery_message_id"] != envelope["message_id"]
     assert recovered["payload_sha256"] == envelope["payload_sha256"]
+
+
+def test_resume_error_text_already_has_active_writer_enters_active_writer_recovery(
+    tmp_path: Path,
+) -> None:
+    endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["command"] = [
+        sys.executable,
+        str(FAKE_SERVER),
+        "resume-already-active-writer",
+    ]
+    attempts = tmp_path / "attempts"
+
+    result = dispatch_once(
+        endpoint, envelope, attempts, adapters={"codex-app-server": CodexAdapter()}
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "CODEX_ACTIVE_WRITER"
+    original = attempts / str(envelope["run_id"]) / str(envelope["message_id"])
+    failed_before = (original / "failed.json").read_bytes()
+
+    recovered = recover_active_writer(attempts, endpoint, envelope)
+
+    assert recovered["status"] == "started"
+    assert recovered["expected_turn_id"] == "turn_active"
+    assert (original / "failed.json").read_bytes() == failed_before

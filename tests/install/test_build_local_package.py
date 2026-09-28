@@ -7,6 +7,7 @@ import pytest
 
 from scripts.build_local_package import ARTIFACT_NAMES, PackageError, build_package
 from scripts.validate_repository import EXPECTED_SKILLS
+from scripts.verify_local_install import VerificationError, verify
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def fake_artifacts(root: Path) -> Path:
     root.mkdir()
     for name in ARTIFACT_NAMES:
-        (root / name).write_bytes(f"fake-{name}-4.2.11\n".encode())
+        (root / name).write_bytes(f"fake-{name}-4.3.0\n".encode())
     return root
 
 
@@ -24,7 +25,7 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
     manifest = json.loads((package / "install-manifest.json").read_text(encoding="utf-8"))
 
     assert manifest["schema_version"] == "slk.install-manifest/v1"
-    assert manifest["version"] == "4.2.11"
+    assert manifest["version"] == "4.3.0"
     assert manifest["skill_count"] == 15
     assert manifest["artifact_count"] == 5
     paths = {entry["path"] for entry in manifest["files"]}
@@ -48,12 +49,33 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
         "tools/slk/share/small-loop-skill/integrations/ocrv/rollback.ps1",
         "tools/slk/share/small-loop-skill/integrations/ocrv/slk-checker.cmd",
         "tools/slk/share/small-loop-skill/integrations/ocrv/slk_checker_recovery.py",
+        "tools/slk/share/small-loop-skill/integrations/temporal/README.md",
+        "tools/slk/share/small-loop-skill/integrations/temporal/pyproject.toml",
+        "tools/slk/share/small-loop-skill/integrations/temporal/src/slk_temporal/contracts.py",
+        "tools/slk/share/small-loop-skill/integrations/temporal/src/slk_temporal/workflows.py",
         "tools/slk/share/small-loop-skill/schema/sqlite/0007.sql",
         "tools/slk/share/small-loop-skill/schema/sqlite/0008.sql",
         "tools/slk/share/small-loop-skill/VERSION",
     } <= paths
     assert sorted(paths) == [entry["path"] for entry in manifest["files"]]
     assert all(len(entry["sha256"]) == 64 and entry["size"] >= 0 for entry in manifest["files"])
+
+
+def test_temporal_tree_is_closed_and_hash_bound_in_package(tmp_path: Path) -> None:
+    package = build_package(ROOT, fake_artifacts(tmp_path / "artifacts"), tmp_path / "package")
+    assert verify(package, package_mode=True)["status"] == "PASS"
+
+    target = package / "tools/slk/share/small-loop-skill/integrations/temporal/README.md"
+    original = target.read_bytes()
+    target.write_bytes(original + b"tampered")
+    with pytest.raises(VerificationError, match="hash mismatch"):
+        verify(package, package_mode=True)
+    target.write_bytes(original)
+
+    extra = package / "tools/slk/share/small-loop-skill/integrations/temporal/extra.py"
+    extra.write_text("unexpected", encoding="utf-8")
+    with pytest.raises(VerificationError, match="missing or extra"):
+        verify(package, package_mode=True)
 
 
 def test_artifact_set_is_exact_and_output_must_be_empty(tmp_path: Path) -> None:

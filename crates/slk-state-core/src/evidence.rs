@@ -48,7 +48,12 @@ impl StateStore {
         credential: &Credential,
         request: EvidenceRequest,
     ) -> Result<SavedEvidence, StateError> {
-        if !valid_identifier(&request.evidence_id) || !request.source_path.is_file() {
+        if !valid_identifier(&request.evidence_id) {
+            return Err(StateError::EvidenceInvalid(
+                "evidence_id must be 1-128 ASCII letters, digits, '-', '_' or '.'".into(),
+            ));
+        }
+        if !request.source_path.is_file() {
             return Err(StateError::EvidenceInvalid(
                 request.source_path.display().to_string(),
             ));

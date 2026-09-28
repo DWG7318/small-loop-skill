@@ -40,6 +40,7 @@ DOCUMENT_TREES = (
     "docs/runtime",
     "docs/contracts",
     "integrations/ocrv",
+    "integrations/temporal",
 )
 SQLITE_SCHEMA_ROOT = "crates/slk-state-core/migrations"
 MANIFEST_SCHEMA = "slk.install-manifest/v1"
@@ -58,7 +59,16 @@ def sha256(path: Path) -> str:
 
 
 def _files(root: Path) -> list[Path]:
-    return sorted((path for path in root.rglob("*") if path.is_file()), key=lambda p: p.as_posix())
+    return sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file()
+            and "__pycache__" not in path.parts
+            and path.suffix not in {".pyc", ".pyo"}
+        ),
+        key=lambda p: p.as_posix(),
+    )
 
 
 def _copy(source: Path, destination: Path) -> None:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slk-transport"
-version = "4.2.11"
+version = "4.3.0"
 description = "Exact cross-agent transport for Small Loop Skill"
 requires-python = ">=3.10"
 dependencies = []
@@ -19,5 +19,5 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "integrations/temporal/src"]
 testpaths = ["tests"]

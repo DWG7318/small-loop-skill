@@ -16,7 +16,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 
 - 使用 `small-loop-skill/assets/SLK-ROLE-EVAL.v1.json` 中 Supervisor 的 8 个 runtime-critical 场景；响应要绑定当前 Run、project、plan revision、角色与 case-pack SHA-256，并通过 `scripts/validate_role_eval.py`。
 - 缺题、多题、重复题、错角色、错答案、错 schema/hash、大小写或首尾空白变体、旧 plan revision 都失败关闭；“我理解了”不替代结构化答案。
-- 失败时只解释对应易错规则，再生成同一版本 Eval 的新响应；不新增 Agent、不扩成开放式长问答。完整 40-case pack 是版本发布门禁，运行时只付 8 题成本。
+- 失败时只解释对应易错规则，再生成同一版本 Eval 的新响应；不新增 Agent、不扩成开放式长问答。完整 70-case pack 是版本发布门禁，运行时只付 8 题成本。
 
 ## 建议覆盖
 

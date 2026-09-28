@@ -1,6 +1,6 @@
 {
   "schema_version": "slk.role-eval-pack/v1",
-  "method_version": "4.2.11",
+  "method_version": "4.3.0",
   "cases": [
     {"case_id":"SUP-NO-LONG-WAIT","role":"supervisor","runtime_critical":true,"scenario":"派工后成员尚未回传，Supervisor 下一步是什么？","choices":["END_TURN","WAIT_THREADS_POSITIVE","POLL_UNTIL_DONE"],"correct_choice":"END_TURN","rule":"Supervisor 不用正时长 wait_threads 或轮询维持在线。"},
     {"case_id":"SUP-DIRECT-ROUTES","role":"supervisor","runtime_critical":true,"scenario":"Checker 与 Worker 已有合法直连通讯，绑定了 Overwatcher 后怎么办？","choices":["KEEP_DIRECT_ROUTES","RELAY_ALL_MESSAGES","DISABLE_PEER_MESSAGES"],"correct_choice":"KEEP_DIRECT_ROUTES","rule":"Overwatcher 不替代原三角色通讯。"},
@@ -67,6 +67,10 @@
     {"case_id":"SUP-NO-DELAYED-SELF-WAKE","role":"supervisor","runtime_critical":false,"scenario":"D2 交接遇到 Desktop active writer，平台没有已验证的延迟续作原语。","choices":["SEND_NEW_AUDITABLE_MESSAGE_OR_WAIT_REAL_ACTIVATION","PROMISE_15_SECOND_AUTO_WAKE","START_BACKGROUND_SLEEP_SCRIPT"],"correct_choice":"SEND_NEW_AUDITABLE_MESSAGE_OR_WAIT_REAL_ACTIVATION","rule":"保留原失败消息；可向准确 canonical task/active turn 发送绑定 payload hash 的新消息，否则如实等待 Owner/Main 真实激活。"},
     {"case_id":"CHK-LOW-ONLY-NOT-FAIL","role":"checker","runtime_critical":false,"scenario":"全部验收条件已有直接证据，仅剩两个低严重性观察。","choices":["PASS_WITH_LOW_OBSERVATIONS","MECHANICAL_FAIL","INCOMPLETE_WITHOUT_MISSING_PROOF"],"correct_choice":"PASS_WITH_LOW_OBSERVATIONS","rule":"低严重性观察不自动构成阻断；覆盖完整且无实质验收缺陷时可 PASS 并保留观察。"},
     {"case_id":"WRK-RESUMED-NATIVE-IDENTITY","role":"worker","runtime_critical":false,"scenario":"同一 DSH Session 被恢复以完成交接后缀。","choices":["REINJECT_AND_VERIFY_INSTANCE_AND_SESSION","TRUST_OLD_SHELL_ENVIRONMENT","CREATE_NEW_WORKER_IDENTITY"],"correct_choice":"REINJECT_AND_VERIFY_INSTANCE_AND_SESSION","rule":"恢复进程必须从冻结端点重新注入并核对 SLK_DSH_INSTANCE_ID/SLK_DSH_SESSION_ID。"},
-    {"case_id":"OVW-THREE-LEGAL-EXITS","role":"overwatcher","runtime_critical":false,"scenario":"Overwatcher 完成本轮判断后选择退出路径。","choices":["NORMAL_CONTINUE_ANOMALY_PAUSE_OR_TERMINAL_CLOSE","KEEP_SPINNING_AFTER_ALERT","END_NORMAL_TURN_AND_WAIT_BACKGROUND_WAKE"],"correct_choice":"NORMAL_CONTINUE_ANOMALY_PAUSE_OR_TERMINAL_CLOSE","rule":"只有正常 cycle 续巡、异常上报暂停、terminal cycle 后 close/archive 三种出口。"}
+    {"case_id":"OVW-THREE-LEGAL-EXITS","role":"overwatcher","runtime_critical":false,"scenario":"Overwatcher 完成本轮判断后选择退出路径。","choices":["NORMAL_CONTINUE_ANOMALY_PAUSE_OR_TERMINAL_CLOSE","KEEP_SPINNING_AFTER_ALERT","END_NORMAL_TURN_AND_WAIT_BACKGROUND_WAKE"],"correct_choice":"NORMAL_CONTINUE_ANOMALY_PAUSE_OR_TERMINAL_CLOSE","rule":"只有正常 cycle 续巡、异常上报暂停、terminal cycle 后 close/archive 三种出口。"},
+    {"case_id":"SUP-TEMPORAL-EXPLICIT-OPTIONAL","role":"supervisor","runtime_critical":false,"scenario":"本 Run 未显式选择 Temporal，且现有直连正常。","choices":["KEEP_DIRECT_MODE","AUTO_START_TEMPORAL","BLOCK_RUN"],"correct_choice":"KEEP_DIRECT_MODE","rule":"Temporal 连续性是显式可选增强，不是 SLK 硬依赖。"},
+    {"case_id":"CHK-TEMPORAL-NO-D1","role":"checker","runtime_critical":false,"scenario":"Temporal 显示 Worker 消息已投递且收到 native-start ACK。是否可代替 D1？","choices":["RUN_NORMAL_D1","PASS_FROM_ACK","LET_WORKFLOW_DECIDE"],"correct_choice":"RUN_NORMAL_D1","rule":"Temporal 只证明通讯启动，不获得 Checker 的 D1 权威。"},
+    {"case_id":"WRK-TEMPORAL-NATIVE-START","role":"worker","runtime_critical":false,"scenario":"投递 activity 成功，但还没有匹配本 operation 的 native-start ACK。","choices":["DO_NOT_CLAIM_STARTED","CLAIM_FROM_DELIVERY","MOVE_TOKEN"],"correct_choice":"DO_NOT_CLAIM_STARTED","rule":"delivery success 和终态不是 native-start ACK。"},
+    {"case_id":"OVW-TEMPORAL-RECOVERY-ONLY","role":"overwatcher","runtime_critical":false,"scenario":"Temporal 报告同一投递 ACK 超时并请求绑定 Overwatcher 恢复。","choices":["RECOVER_EXACT_COMMUNICATION","DECIDE_D1","CHANGE_MODEL_AND_RECEIVER"],"correct_choice":"RECOVER_EXACT_COMMUNICATION","rule":"Overwatcher 只按既有边界恢复通讯，不借 Temporal 改工程语义。"}
   ]
 }

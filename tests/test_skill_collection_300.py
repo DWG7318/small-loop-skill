@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.2.11"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.0"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -241,7 +242,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.2.11" in main
+    assert "4.3.0" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -476,7 +477,7 @@ def test_supervisor_eval_is_closed_versioned_and_runtime_bounded() -> None:
     ):
         assert marker in text
     assert "开放式长问答" in text
-    assert "完整 40-case pack" in text
+    assert "完整 70-case pack" in text
 
 
 def test_manage_team_covers_native_role_creation_recovery_tests_and_archive() -> None:
@@ -1170,6 +1171,9 @@ def test_d1_incomplete_and_supervisor_rework_are_not_conflated() -> None:
         "不重做或接管 D1",
     ):
         assert marker in rework + execute
+    assert "REWORK_REQUESTED" in rework
+    assert "state event" in rework
+    assert "transport payload" in rework
     assert "BoM" not in rework + execute
 
 
@@ -1318,6 +1322,41 @@ def test_4210_overwatcher_has_only_three_exits_and_no_spin() -> None:
         "不继续空转",
     ):
         assert marker in overwatch
+
+
+def test_430_temporal_mode_is_optional_and_keeps_engineering_authority_outside_workflows() -> None:
+    main = read_skill("small-loop-skill")
+    planning = read_skill("slk-plan-run")
+    recovery = read_skill("slk-recover-communication")
+    combined = "\n".join((main, planning, recovery))
+
+    for marker in (
+        "显式可选",
+        "StartSlkWorkflow",
+        "RunSlkWorkflow",
+        "native-start ACK",
+        "delivery success",
+        "D0/D1/D2",
+        "SLK TOKEN",
+        "自动切换模型",
+        "Temporal 服务不存在",
+    ):
+        assert marker in combined
+
+
+def test_430_role_eval_covers_temporal_start_authority_and_recovery_boundaries() -> None:
+    pack = json.loads(
+        (ROOT / "skills/small-loop-skill/assets/SLK-ROLE-EVAL.v1.json").read_text(
+            encoding="utf-8-sig"
+        )
+    )
+    case_ids = {case["case_id"] for case in pack["cases"]}
+    assert {
+        "SUP-TEMPORAL-EXPLICIT-OPTIONAL",
+        "CHK-TEMPORAL-NO-D1",
+        "WRK-TEMPORAL-NATIVE-START",
+        "OVW-TEMPORAL-RECOVERY-ONLY",
+    } <= case_ids
 
 
 def test_4210_keeps_bom_off_and_worker_flash_without_pro() -> None:

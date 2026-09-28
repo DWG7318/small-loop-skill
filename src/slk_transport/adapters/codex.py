@@ -55,6 +55,37 @@ def active_turn_id(thread: Mapping[str, Any]) -> str:
     return active[0]
 
 
+def _active_writer_error(
+    attempt: Attempt,
+    envelope: Envelope,
+    thread_id: str,
+    thread: Mapping[str, Any],
+) -> AdapterError:
+    turn_id = active_turn_id(thread)
+    attempt.write_json_once(
+        "active-writer.json",
+        {
+            "schema_version": "slk.transport-active-writer/v1",
+            "message_id": envelope.message_id,
+            "run_id": envelope.run_id,
+            "thread_id": thread_id,
+            "active_turn_id": turn_id,
+            "payload_sha256": envelope.payload_sha256,
+            "status": "active_writer",
+        },
+    )
+    return AdapterError(
+        "CODEX_ACTIVE_WRITER",
+        f"Supervisor thread has active writer turn {turn_id}",
+    )
+
+
+def _is_already_active_writer(error: AdapterError) -> bool:
+    return error.error_code == "CODEX_RPC_ERROR" and "already has an active writer" in str(
+        error
+    ).lower()
+
+
 def resolve_codex_command(
     command: list[str],
     *,
@@ -175,7 +206,7 @@ class CodexAdapter:
                     "clientInfo": {
                         "name": "slk_transport",
                         "title": "SLK Transport",
-                        "version": "4.2.11",
+                        "version": "4.3.0",
                     }
                 },
                 startup_timeout,
@@ -201,35 +232,32 @@ class CodexAdapter:
             status = thread.get("status")
             status_type = status.get("type") if isinstance(status, Mapping) else None
             if status_type == "active":
-                turn_id = active_turn_id(thread)
-                attempt.write_json_once(
-                    "active-writer.json",
-                    {
-                        "schema_version": "slk.transport-active-writer/v1",
-                        "message_id": envelope.message_id,
-                        "run_id": envelope.run_id,
-                        "thread_id": thread_id,
-                        "active_turn_id": turn_id,
-                        "payload_sha256": envelope.payload_sha256,
-                        "status": "active_writer",
-                    },
-                )
-                raise AdapterError(
-                    "CODEX_ACTIVE_WRITER",
-                    f"Supervisor thread has active writer turn {turn_id}",
-                )
+                raise _active_writer_error(attempt, envelope, thread_id, thread)
             if status_type not in {"idle", "notLoaded"}:
                 raise AdapterError(
                     "CODEX_THREAD_TERMINAL", f"Codex target thread has terminal state {status_type}"
                 )
             if status_type == "notLoaded":
-                resumed = client.request(
-                    request_id,
-                    "thread/resume",
-                    {"threadId": thread_id, "cwd": str(cwd)},
-                    startup_timeout,
-                )
                 request_id += 1
+                try:
+                    resumed = client.request(
+                        request_id - 1,
+                        "thread/resume",
+                        {"threadId": thread_id, "cwd": str(cwd)},
+                        startup_timeout,
+                    )
+                except AdapterError as error:
+                    if not _is_already_active_writer(error):
+                        raise
+                    reread = read_thread()
+                    active_thread = reread.get("thread")
+                    if not isinstance(active_thread, Mapping) or active_thread.get("id") != thread_id:
+                        raise AdapterError(
+                            "CODEX_THREAD_ID_MISMATCH", "Codex read a different thread after resume conflict"
+                        ) from error
+                    raise _active_writer_error(
+                        attempt, envelope, thread_id, active_thread
+                    ) from error
                 resumed_thread = resumed.get("thread")
                 if not isinstance(resumed_thread, Mapping) or resumed_thread.get("id") != thread_id:
                     raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex resumed a different thread")

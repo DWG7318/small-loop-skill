@@ -28,8 +28,15 @@ for line in sys.stdin:
         run_id = cwd.parent.name
         emit({"id": request_id, "result": {"thread": {"id": f"thread-{run_id}"}}})
     elif method == "thread/resume":
-        if MODE == "active-resume-conflict":
-            emit({"id": request_id, "error": {"code": -32000, "message": "active writer conflict"}})
+        if MODE in {"active-resume-conflict", "resume-already-active-writer"}:
+            message = (
+                "already has an active writer"
+                if MODE == "resume-already-active-writer"
+                else "active writer conflict"
+            )
+            if MODE == "resume-already-active-writer":
+                (Path.cwd() / ".fake-active-writer").write_text("active", encoding="utf-8")
+            emit({"id": request_id, "error": {"code": -32000, "message": message}})
             continue
         thread_id = message["params"]["threadId"]
         if MODE == "wrong-thread":
@@ -39,6 +46,14 @@ for line in sys.stdin:
         if MODE in {"active", "active-resume-conflict"}:
             status = {"type": "active", "activeFlags": []}
             turns = [{"id": "turn_active", "items": [], "status": "inProgress"}]
+        elif MODE == "resume-already-active-writer" and (
+            request_id > 2 or (Path.cwd() / ".fake-active-writer").is_file()
+        ):
+            status = {"type": "active", "activeFlags": []}
+            turns = [{"id": "turn_active", "items": [], "status": "inProgress"}]
+        elif MODE == "resume-already-active-writer":
+            status = {"type": "notLoaded"}
+            turns = []
         elif MODE == "not-loaded":
             status = {"type": "notLoaded"}
             turns = []

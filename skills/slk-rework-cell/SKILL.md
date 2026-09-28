@@ -15,7 +15,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 ## 建议做法
 
 1. OCRV Checker 写入 `D1_FAILED`，再发送结构化 `D1_FAILURE_ESCALATION` 与 TOKEN 给 Supervisor；载荷绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体 findings 与证据引用。
-2. Supervisor 不重做或接管 D1、不改变验收目标；只基于冻结 CELL 与 OCRV 失败事实形成 `D1_REWORK_DIRECTIVE`，给出一个根因假设、一个最小实验、最小修复边界和回归目标。
+2. Supervisor 不重做或接管 D1、不改变验收目标；只基于冻结 CELL 与 OCRV 失败事实写入 `REWORK_REQUESTED` state event，并形成 `D1_REWORK_DIRECTIVE` transport payload，给出一个根因假设、一个最小实验、最小修复边界和回归目标。
 3. Supervisor 把 `D1_REWORK_DIRECTIVE` 与 TOKEN 直接交给同一 DSH Worker 后结束本轮；这是 `Supervisor → Worker` 唯一合法情形，不构成一般派工通路。
 4. Worker 继续处理同一 `CELL n/N`，自行判断和施工；原因仍不清楚时可调用 Debug Skill，例如 `$superpowers:systematic-debugging`。第三次正式 D1 FAIL 后停止普通重试，由 Checker 与 Supervisor 重新审视当前 CELL；必要时可调用 `$slk-dispatch-cell` 一分为二或另选路线，但不自动替换 Worker。
 5. Worker 完成修改和最低 D0 后，使用 `$slk-execute-cell` 的记录与交付方式重新提交。

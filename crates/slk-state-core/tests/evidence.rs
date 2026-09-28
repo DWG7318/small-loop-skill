@@ -45,6 +45,36 @@ fn evidence_is_copied_under_project_run_and_hash_checked() {
     );
 }
 
+#[test]
+fn invalid_evidence_id_reports_the_field_and_accepted_characters() {
+    let root = tempfile::tempdir().unwrap();
+    let source_root = tempfile::tempdir().unwrap();
+    let source = source_root.path().join("proof.txt");
+    std::fs::write(&source, b"proof").unwrap();
+    let store = StateStore::new(root.path());
+    let initialized = store.init_run(init_request()).unwrap();
+
+    let error = store
+        .register_evidence(
+            &initialized.supervisor_credential,
+            EvidenceRequest {
+                evidence_id: "proof+0800".into(),
+                run_id: "run-a".into(),
+                go_id: Some("GO-001".into()),
+                cell_id: Some("CELL-001".into()),
+                evidence_type: "test-output".into(),
+                source_path: source,
+                occurred_at: "2026-09-20T00:00:01Z".into(),
+            },
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "evidence source or identity is invalid: evidence_id must be 1-128 ASCII letters, digits, '-', '_' or '.'"
+    );
+}
+
 fn init_request() -> InitRunRequest {
     InitRunRequest {
         project: ProjectIdentity {

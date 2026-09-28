@@ -690,7 +690,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1269,6 +1269,20 @@ impl StateStore {
         credential: &Credential,
         request: RevisePlanRequest,
     ) -> Result<u32, StateError> {
+        if request
+            .snapshot
+            .as_object()
+            .is_none_or(serde_json::Map::is_empty)
+        {
+            return Err(StateError::InvalidPlan(
+                "plan revision snapshot must be a non-empty object".into(),
+            ));
+        }
+        if request.reason.trim().is_empty() {
+            return Err(StateError::InvalidPlan(
+                "plan revision reason must not be blank".into(),
+            ));
+        }
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(
                 transaction,
@@ -1277,6 +1291,17 @@ impl StateStore {
                 EventType::PlanRevised,
             )?;
             let previous = current_plan_revision(transaction, &request.run_id)?;
+            let previous_snapshot: String = transaction.query_row(
+                "SELECT snapshot_json FROM plan_revisions WHERE run_id=?1 AND revision=?2",
+                params![request.run_id, previous],
+                |row| row.get(0),
+            )?;
+            let previous_snapshot: serde_json::Value = serde_json::from_str(&previous_snapshot)?;
+            if previous_snapshot == request.snapshot {
+                return Err(StateError::InvalidPlan(
+                    "plan revision must change the current snapshot".into(),
+                ));
+            }
             let revision = previous + 1;
             transaction.execute(
                 "INSERT INTO plan_revisions
@@ -1792,7 +1817,15 @@ impl StateStore {
             )?;
             if matches!(
                 method_version.as_str(),
-                "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11"
+                "4.2.4"
+                    | "4.2.5"
+                    | "4.2.6"
+                    | "4.2.7"
+                    | "4.2.8"
+                    | "4.2.9"
+                    | "4.2.10"
+                    | "4.2.11"
+                    | "4.3.0"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -2183,7 +2216,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2783,7 +2816,7 @@ impl StateStore {
             )?;
             if !matches!(
                 method_version.as_str(),
-                "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11"
+                "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3066,13 +3099,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -4154,7 +4187,16 @@ fn validate_reconciliation_request(
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
     matches!(
         version,
-        "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11"
+        "4.2.3"
+            | "4.2.4"
+            | "4.2.5"
+            | "4.2.6"
+            | "4.2.7"
+            | "4.2.8"
+            | "4.2.9"
+            | "4.2.10"
+            | "4.2.11"
+            | "4.3.0"
     )
 }
 
@@ -4172,7 +4214,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.2.7" && request.to_version == "4.2.8")
             || (request.from_version == "4.2.8" && request.to_version == "4.2.9")
             || (request.from_version == "4.2.9" && request.to_version == "4.2.10")
-            || (request.from_version == "4.2.10" && request.to_version == "4.2.11");
+            || (request.from_version == "4.2.10" && request.to_version == "4.2.11")
+            || (request.from_version == "4.2.11" && request.to_version == "4.3.0");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

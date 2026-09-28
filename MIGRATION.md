@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current minor migration: 4.2.11 to 4.3.0
+
+Install the complete 4.3.0 package. Existing 4.2.11 Runs keep schema v8, topology, role identities, CELL/D0/D1/D2 history, TOKEN, candidates, direct communication and Overwatcher history. At an existing Supervisor-controlled boundary, an Owner-authorized exact snapshot may explicitly adopt `4.2.11 → 4.3.0`; adoption does not automatically enable Temporal.
+
+Temporal continuity is opt-in per Run. Before selecting it, supply an already-operated endpoint, explicit task queue, closed role endpoint bindings, bounded ACK timeout and adapter module, then preserve the startup fingerprint and workflow IDs. If the SDK, adapter or service is missing, continue the existing direct path or report the startup blockage; do not infer activation. Existing Runs and new direct-mode Runs require no Temporal migration.
+
+No role responsibility, model policy, TOKEN rule, CELL, D0/D1/D2, BI authority, product candidate or database migration changes. Docker is not installed or required. The package ships templates and documentation only; service operation is a separate deployment choice.
+
 ## Current patch migration: 4.2.10 to 4.2.11
 
 Install the complete 4.2.11 package. Existing 4.2.10 Runs retain topology, CELL/D0/D1/D2 history, TOKEN, candidates, BI facts, schema-v8 data, role identities, and Overwatcher history; adopt 4.2.11 only at an existing Supervisor-controlled boundary with the exact current snapshot. No database migration is added.

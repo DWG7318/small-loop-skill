@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.3.0
+
+- Added two optional reusable Temporal templates, `SLK.Start` and `SLK.Run`, for deterministic Run startup and exact delivery/native-start-ACK continuity. They preserve existing Supervisor/Checker/Worker/Overwatcher authority and do not decide D0/D1/D2, move TOKEN, write BI, switch models, install a server or require Docker.
+- Added closed dependency-light startup/delivery/ACK contracts, one-attempt adapter activities, bounded timeout recovery through the bound Overwatcher or original sender, local real-service workflow tests, and an explicitly optional Windows setup/fallback guide. Core SLK remains fully usable without the SDK or service.
+- Closed the RC08 field gaps: explicit invalid `evidence_id` diagnostics, substantive `revise-plan` validation, unambiguous `REWORK_REQUESTED` state versus `D1_REWORK_DIRECTIVE` transport vocabulary, and direct recovery for the native `already has an active writer` response.
+- Packaged and hash-bound the complete Temporal template tree while keeping the five core artifacts, 15 Skills, schema v8, role topology, direct routes, DeepSeek V4 Flash Worker and disabled BoM unchanged.
+
 ## 4.2.11
 
 - Added one Supervisor-authenticated, idempotent `slk-state close-role` action for the exact terminal Checker or Worker. It appends `ROLE_CLOSED`, retires the endpoint, revokes the credential, and sets the role lifecycle to `exited` in one transaction without a successor or TOKEN movement.

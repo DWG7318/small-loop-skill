@@ -102,7 +102,7 @@ def recover_active_writer(
         client.request(
             1,
             "initialize",
-            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.2.11"}},
+            {"clientInfo": {"name": "slk_transport", "title": "SLK Transport", "version": "4.3.0"}},
             startup_timeout,
         )
         client.notify("initialized", {})
