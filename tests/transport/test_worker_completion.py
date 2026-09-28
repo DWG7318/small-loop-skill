@@ -256,6 +256,7 @@ def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[st
                 "d0": {"commands_and_outcomes": ["pytest: pass"], "not_run": []},
                 "unproved": [],
             },
+            "blocker": None,
         },
     )
     write_json(
@@ -1013,6 +1014,184 @@ def test_inspector_reports_structured_incomplete_worker_result(tmp_path: Path) -
     assert inspection["status"] == "WORKER_INCOMPLETE"
     assert inspection["worker_outcome"] == "incomplete"
     assert inspection["blocker"]["cause"] == "GIT_COMMON_DIR_UNWRITABLE"
+
+
+def legacy_missing_result_fixture(
+    tmp_path: Path,
+) -> tuple[Path, dict[str, object], dict[str, object]]:
+    attempt, worker, checker = completion_fixture(tmp_path)
+    (attempt / "completed.json").unlink()
+    (attempt / "worker-result.json").unlink()
+    write_json(
+        attempt / "failed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": MESSAGE_ID,
+            "run_id": "RUN-A",
+            "adapter": "dsh-worker",
+            "status": "failed",
+            "native_identity": {},
+            "error_code": "DSH_RESULT_MISSING",
+            "evidence": ["started.json", "native.stdout.txt", "native.stderr.txt"],
+        },
+    )
+    (attempt / "native.stdout.txt").write_text(
+        "Worker reports that implementation and checks completed but the result contract was not written.\n",
+        encoding="utf-8",
+    )
+    (attempt / "native.stderr.txt").write_text("", encoding="utf-8")
+    return attempt, worker, checker
+
+
+def test_inspector_reports_legacy_missing_result_as_recoverable_incomplete(
+    tmp_path: Path,
+) -> None:
+    attempt, _worker, _checker = legacy_missing_result_fixture(tmp_path)
+
+    inspection = inspect_worker_completion(
+        attempt,
+        runtime_projection(),
+        observed_at="2026-09-23T00:04:00Z",
+        cadence_seconds=240,
+    )
+
+    assert inspection["status"] == "WORKER_INCOMPLETE"
+    assert inspection["worker_outcome"] == "incomplete"
+    assert inspection["blocker"] == {
+        "phase": "result_contract",
+        "cause": "RESULT_CONTRACT_MISSING",
+        "summary": "the exact started DSH Worker terminated without its closed result contract",
+        "evidence": ["failed.json", "native.stdout.txt", "native.stderr.txt"],
+    }
+
+
+def test_checker_recovery_builds_missing_result_continuation(tmp_path: Path) -> None:
+    attempt, _worker, checker = legacy_missing_result_fixture(tmp_path)
+
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+
+    assert request["recovery_mode"] == "MISSING_RESULT"
+    assert request["worker_result_sha256"] is None
+    assert request["worker_result_path"] == str(
+        (attempt / "worker-continuation" / "recovered-worker-result.json").resolve()
+    )
+    assert request["source_terminal_sha256"] == worker_completion._sha256(
+        attempt / "failed.json"
+    )
+
+
+def test_checker_recovery_rejects_other_terminal_failure_without_result(
+    tmp_path: Path,
+) -> None:
+    attempt, _worker, checker = legacy_missing_result_fixture(tmp_path)
+    failed = json.loads((attempt / "failed.json").read_text(encoding="utf-8"))
+    failed["error_code"] = "DSH_PROCESS_FAILED"
+    write_json(attempt / "failed.json", failed)
+
+    with pytest.raises(CompletionError) as rejected:
+        build_continuation_request(
+            attempt,
+            checker,
+            runtime_projection(),
+            plan_revision=1,
+            runtime_revision=7,
+            token_sequence=14,
+            credential_path=tmp_path / "worker.dpapi",
+            state_command=["slk-state"],
+            transport_command=["slk-transport"],
+            occurred_at="2026-09-23T00:00:00Z",
+        )
+
+    assert rejected.value.error_code == "WORKER_CONTINUATION_NOT_READY"
+
+
+def test_worker_owned_missing_result_continuation_uses_recovered_result(
+    tmp_path: Path,
+) -> None:
+    attempt, endpoint, checker = legacy_missing_result_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    write_json(
+        Path(str(request["worker_result_path"])),
+        {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": MESSAGE_ID,
+            "run_id": "RUN-A",
+            "role_instance_id": endpoint["role_instance_id"],
+            "status": "completed",
+            "candidate": {"kind": "commit", "commit": "c" * 40},
+            "next_payload": {
+                "candidate_repository": str(tmp_path / "repository"),
+                "cell_goal": "finish one bounded change",
+                "candidate_baseline": "a" * 40,
+                "changed_paths": ["src/example.py"],
+                "d0": {"commands_and_outcomes": ["pytest: pass"], "not_run": []},
+                "unproved": [],
+            },
+            "blocker": None,
+        },
+    )
+    sent: list[dict[str, object]] = []
+
+    def start_checker(
+        endpoint_raw: dict[str, object], envelope_raw: dict[str, object]
+    ) -> dict[str, object]:
+        sent.append(envelope_raw)
+        return {
+            "status": "started",
+            "started_path": str(
+                write_json(
+                    tmp_path / "missing-result-checker-started.json",
+                    {
+                        "message_id": envelope_raw["message_id"],
+                        "run_id": "RUN-A",
+                        "status": "started",
+                    },
+                )
+            ),
+            "endpoint_path": str(
+                write_json(tmp_path / "missing-result-checker-endpoint.json", endpoint_raw)
+            ),
+            "envelope_path": str(
+                write_json(tmp_path / "missing-result-checker-envelope.json", envelope_raw)
+            ),
+        }
+
+    result = run_worker_continuation(
+        request,
+        authenticate=lambda *_: 10,
+        write_event=lambda _event: "RECORDED",
+        start_checker=start_checker,
+        commit_start=commit_result,
+    )
+
+    assert result["status"] == "CHECKER_STARTED"
+    assert sent[0]["payload"]["candidate"] == {
+        "kind": "commit",
+        "commit": "c" * 40,
+    }
+    assert str(request["worker_result_path"]) in sent[0]["payload"]["evidence_files"]
 
 
 @pytest.mark.parametrize(

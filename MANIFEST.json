@@ -636,7 +636,7 @@
     },
     {
       "path": "docs/contracts/slk-worker-continuation.schema.json",
-      "sha256": "fc4189e67f69b4624effda4e567c39718fa8d29fb3153fe8f62f78b6efaf1e43"
+      "sha256": "71782c6a4bf963a573e330ef7725a8da0e6e509770da0ad455f6e0ede1d832cf"
     },
     {
       "path": "docs/maintenance/2026-09-22-slk-4.2.2-cell02-field-trial-review.md",
@@ -1116,7 +1116,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "be9e3fd5578c955116577481900be2fcae9ffd6d7eaf447488d938352994ac07"
+      "sha256": "20203a96e885a732283ec265b18d331c6a3e86d7bec82c7d957e0c1cebacfb83"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1184,7 +1184,7 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "ed7e66a6530b68496f3b472316db433991c69d57d1b47da9c037111793b15c54"
+      "sha256": "b4576313e328e5d0fbc4745116ed52858b405e581dba0ab8a0469122d2c82381"
     },
     {
       "path": "tests/test_skill_collection_300.py",
@@ -1276,7 +1276,7 @@
     },
     {
       "path": "tests/transport/test_worker_completion.py",
-      "sha256": "66681359c94192a1364f9cecadd3a51a54fbb36ddb8c3de399e9cb3657b4b0eb"
+      "sha256": "b7ae6592d807425f4700c8c4ab88c578dad6bf301c7d435e5a5054ada71d34e2"
     },
     {
       "path": "tests/transport/test_workspace.py",

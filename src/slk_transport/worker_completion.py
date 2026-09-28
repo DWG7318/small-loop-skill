@@ -136,6 +136,29 @@ def _source_attempt(runtime_projection: Mapping[str, Any], envelope: Envelope) -
     return attempts.pop()
 
 
+def _missing_result_failure(attempt: Path, envelope: Envelope) -> dict[str, Any] | None:
+    """Return the exact legacy DSH missing-result terminal, if present."""
+
+    failed_path = attempt / "failed.json"
+    if (
+        not failed_path.is_file()
+        or (attempt / "completed.json").exists()
+        or (attempt / "worker-result.json").exists()
+    ):
+        return None
+    failed = _read_object(failed_path, "Worker failed result")
+    if (
+        failed.get("schema_version") != "slk.transport-result/v1"
+        or failed.get("message_id") != envelope.message_id
+        or failed.get("run_id") != envelope.run_id
+        or failed.get("adapter") != "dsh-worker"
+        or failed.get("status") != "failed"
+        or failed.get("error_code") != "DSH_RESULT_MISSING"
+    ):
+        return None
+    return failed
+
+
 def build_continuation_request(
     attempt_root: Path | str,
     checker_endpoint_raw: Mapping[str, Any],
@@ -161,8 +184,26 @@ def build_continuation_request(
     envelope = Envelope.from_dict(_read_object(envelope_path, "Worker envelope"))
     checker = Endpoint.from_dict(checker_endpoint_raw)
     started = _read_object(started_path, "Worker started evidence")
-    result = _read_object(result_path, "Worker result")
-    completed = _read_object(completed_path, "Worker terminal result")
+    missing_result_failure = _missing_result_failure(attempt, envelope)
+    if result_path.is_file() and completed_path.is_file():
+        recovery_mode = "COMPLETED_RESULT"
+        result = _read_object(result_path, "Worker result")
+        completed = _read_object(completed_path, "Worker terminal result")
+        continuation_result_path = result_path
+        worker_result_sha256: str | None = _sha256(result_path)
+        source_terminal_path = completed_path
+    elif missing_result_failure is not None:
+        recovery_mode = "MISSING_RESULT"
+        result = None
+        completed = None
+        continuation_result_path = attempt / "worker-continuation" / "recovered-worker-result.json"
+        worker_result_sha256 = None
+        source_terminal_path = attempt / "failed.json"
+    else:
+        raise CompletionError(
+            "WORKER_CONTINUATION_NOT_READY",
+            "Worker attempt has neither a completed result nor the exact recoverable missing-result terminal",
+        )
     attempt_number = _source_attempt(runtime_projection, envelope)
     snapshot = runtime_projection.get("runtime_snapshot")
     session_id = started.get("session_id")
@@ -176,10 +217,17 @@ def build_continuation_request(
         or not isinstance(session_id, str)
         or not session_id.startswith("session-")
         or (configured_session_id is not None and session_id != configured_session_id)
-        or completed.get("status") != "completed"
-        or result.get("status") != "completed"
-        or result.get("message_id") != envelope.message_id
-        or result.get("role_instance_id") != endpoint.role_instance_id
+        or (
+            recovery_mode == "COMPLETED_RESULT"
+            and (
+                completed is None
+                or result is None
+                or completed.get("status") != "completed"
+                or result.get("status") != "completed"
+                or result.get("message_id") != envelope.message_id
+                or result.get("role_instance_id") != endpoint.role_instance_id
+            )
+        )
         or not isinstance(snapshot, Mapping)
         or snapshot.get("method_version") != "4.3.1"
         or snapshot.get("plan_revision") != plan_revision
@@ -218,7 +266,10 @@ def build_continuation_request(
         "continuation_result_path": str(attempt / "worker-continuation" / "result.json"),
         "source_endpoint_sha256": _sha256(endpoint_path),
         "source_envelope_sha256": _sha256(envelope_path),
-        "worker_result_sha256": _sha256(result_path),
+        "recovery_mode": recovery_mode,
+        "worker_result_path": str(continuation_result_path.resolve()),
+        "worker_result_sha256": worker_result_sha256,
+        "source_terminal_sha256": _sha256(source_terminal_path),
         "worker_role_instance_id": endpoint.role_instance_id,
         "worker_instance_id": str(endpoint.address["instance_id"]),
         "worker_session_id": session_id,
@@ -258,6 +309,15 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             "WORKER_CONTINUATION_SOURCE_CHANGED",
             "immutable Worker endpoint or envelope changed before continuation",
         )
+    recovery_mode = request.get("recovery_mode")
+    terminal_path = attempt / ("failed.json" if recovery_mode == "MISSING_RESULT" else "completed.json")
+    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT"} or (
+        _sha256(terminal_path) != request.get("source_terminal_sha256")
+    ):
+        raise CompletionError(
+            "WORKER_CONTINUATION_SOURCE_CHANGED",
+            "immutable Worker terminal evidence changed before continuation",
+        )
     adapter = DshAdapter()
     adapter.validate_address(endpoint)
     configured_session_id = endpoint.address.get("session_id")
@@ -284,13 +344,27 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
         temporary.write_bytes(data)
         temporary.replace(request_path)
     digest = hashlib.sha256(data).hexdigest()
-    instruction = (
-        "Resume this exact SLK Worker Session only to finish its already-completed CELL handoff. "
-        "Verify the immutable request SHA-256, then execute its transport_command with "
-        f"`continue-worker --request {json.dumps(str(request_path))} --sha256 {digest}`. "
-        "Do not read, print, copy, or return credential plaintext.\n"
-        f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
-    )
+    if recovery_mode == "MISSING_RESULT":
+        instruction = (
+            "Resume this exact SLK Worker Session only to recover its missing closed result contract and finish "
+            "the existing CELL handoff. Do not redo or expand the implementation. Verify the immutable request "
+            "SHA-256, inspect the frozen source envelope and current repository candidate, then write one closed "
+            "slk.worker-result/v1 JSON object to the request's worker_result_path. It must contain exactly "
+            "schema_version, message_id, run_id, role_instance_id, status, candidate, next_payload, and blocker; "
+            "status must be completed, blocker must be null, and the identity must match the source attempt. "
+            "After writing it, execute the request's transport_command with "
+            f"`continue-worker --request {json.dumps(str(request_path))} --sha256 {digest}`. "
+            "Do not read, print, copy, or return credential plaintext.\n"
+            f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
+        )
+    else:
+        instruction = (
+            "Resume this exact SLK Worker Session only to finish its already-completed CELL handoff. "
+            "Verify the immutable request SHA-256, then execute its transport_command with "
+            f"`continue-worker --request {json.dumps(str(request_path))} --sha256 {digest}`. "
+            "Do not read, print, copy, or return credential plaintext.\n"
+            f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
+        )
     command = adapter.command(resumed_endpoint, instruction)
     environment = os.environ.copy()
     environment.pop("SLK_ROLE_CREDENTIAL", None)
@@ -561,6 +635,20 @@ def inspect_worker_completion(
                 "blocker": dict(blocker),
                 "grace_started_at": None,
             }
+        missing_result_failure = _missing_result_failure(attempt, envelope)
+        if missing_result_failure is not None:
+            return {
+                **base,
+                "status": "WORKER_INCOMPLETE",
+                "worker_outcome": "incomplete",
+                "blocker": {
+                    "phase": "result_contract",
+                    "cause": "RESULT_CONTRACT_MISSING",
+                    "summary": "the exact started DSH Worker terminated without its closed result contract",
+                    "evidence": ["failed.json", "native.stdout.txt", "native.stderr.txt"],
+                },
+                "grace_started_at": None,
+            }
         return {**base, "status": "IN_PROGRESS", "grace_started_at": None}
     if token_owner != endpoint.role_instance_id and exact_candidate and exact_transport:
         return {**base, "status": "HANDED_OFF_OR_D1", "grace_started_at": None}
@@ -623,9 +711,33 @@ def run_worker_continuation(
     role_instance_id = str(request["worker_role_instance_id"])
     authenticate(run_id, role_instance_id)
     attempt = Path(str(request["source_attempt_root"]))
-    result_path = attempt / "worker-result.json"
-    if _sha256(result_path) != request.get("worker_result_sha256"):
-        raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker result hash changed")
+    recovery_mode = request.get("recovery_mode")
+    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT"}:
+        raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation recovery mode is invalid")
+    result_path = Path(str(request.get("worker_result_path", ""))).resolve()
+    expected_result_path = (
+        attempt / "worker-continuation" / "recovered-worker-result.json"
+        if recovery_mode == "MISSING_RESULT"
+        else attempt / "worker-result.json"
+    ).resolve()
+    if result_path != expected_result_path:
+        raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker result path is not exact")
+    if recovery_mode == "COMPLETED_RESULT":
+        if (
+            request.get("worker_result_sha256") is None
+            or _sha256(result_path) != request.get("worker_result_sha256")
+            or _sha256(attempt / "completed.json") != request.get("source_terminal_sha256")
+        ):
+            raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker result hash changed")
+    elif (
+        request.get("worker_result_sha256") is not None
+        or _missing_result_failure(attempt, Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))) is None
+        or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")
+    ):
+        raise CompletionError(
+            "WORKER_COMPLETION_EVIDENCE_INVALID",
+            "missing-result recovery source is not exact",
+        )
     worker_result = _read_object(result_path, "Worker result")
     endpoint_path = attempt / "endpoint.json"
     source_endpoint = Endpoint.from_dict(_read_object(endpoint_path, "Worker endpoint"))
@@ -641,7 +753,29 @@ def run_worker_continuation(
         )
     source_envelope = Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))
     next_payload = worker_result.get("next_payload")
-    if not isinstance(next_payload, Mapping):
+    completed_result_fields = {
+        "schema_version",
+        "message_id",
+        "run_id",
+        "role_instance_id",
+        "status",
+        "candidate",
+        "next_payload",
+    }
+    valid_result_fields = {frozenset(completed_result_fields | {"blocker"})}
+    if recovery_mode == "COMPLETED_RESULT":
+        valid_result_fields.add(frozenset(completed_result_fields))
+    if (
+        frozenset(worker_result) not in valid_result_fields
+        or worker_result.get("schema_version") != "slk.worker-result/v1"
+        or worker_result.get("message_id") != request.get("source_message_id")
+        or worker_result.get("run_id") != run_id
+        or worker_result.get("role_instance_id") != role_instance_id
+        or worker_result.get("status") != "completed"
+        or not isinstance(worker_result.get("candidate"), Mapping)
+        or not isinstance(next_payload, Mapping)
+        or ("blocker" in worker_result and worker_result.get("blocker") is not None)
+    ):
         raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker next_payload is invalid")
     source_message_id = str(request["source_message_id"])
     handoff_message_id = _stable_id(source_message_id, "candidate-ready")
@@ -702,11 +836,12 @@ def run_worker_continuation(
             "WORKER_COMPLETION_EVIDENCE_INVALID",
             "d1_criteria and acceptance_criteria conflict",
         )
+    source_terminal_path = attempt / ("failed.json" if recovery_mode == "MISSING_RESULT" else "completed.json")
     raw_evidence = [
         path
         for path in (
-            attempt / "worker-result.json",
-            attempt / "completed.json",
+            result_path,
+            source_terminal_path,
             attempt / "native.stdout.txt",
             attempt / "native.stderr.txt",
         )
@@ -734,7 +869,7 @@ def run_worker_continuation(
     _write_or_reuse_stable_request(evidence_index_path, evidence_index)
     evidence_files = [
         str(path.resolve())
-        for path in (attempt / "worker-result.json", attempt / "completed.json", evidence_index_path)
+        for path in (result_path, source_terminal_path, evidence_index_path)
         if path.is_file()
     ]
     if (
