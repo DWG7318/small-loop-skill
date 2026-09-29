@@ -1153,6 +1153,90 @@ fn adoption_430_to_431_preserves_the_schema_v8_run() {
 }
 
 #[test]
+fn adoption_431_to_432_preserves_the_schema_v8_run() {
+    let fixture = Fixture::new_4211();
+    for (receipt_id, from_version, to_version, occurred_at) in [
+        (
+            "adopt-run-a-430-first",
+            "4.2.11",
+            "4.3.0",
+            "2026-09-28T00:10:01Z",
+        ),
+        (
+            "adopt-run-a-431-first",
+            "4.3.0",
+            "4.3.1",
+            "2026-09-28T00:11:01Z",
+        ),
+    ] {
+        let request = AdoptMethodContractRequest {
+            receipt_id: receipt_id.into(),
+            run_id: "run-a".into(),
+            expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+            from_version: from_version.into(),
+            to_version: to_version.into(),
+            owner_authorization: OwnerAuthorizationEvidence {
+                source_thread_id: format!("owner-thread-{receipt_id}"),
+                message_id: format!("owner-message-{receipt_id}"),
+                content_sha256: "c".repeat(64),
+                decision: OwnerDecision::ApproveMethodContractAdoption,
+                occurred_at: occurred_at.into(),
+            },
+            reconciliation_receipt_id: None,
+            compatibility: MethodCompatibilityAssertions {
+                topology: PreservedAssertion::Preserved,
+                role_bindings: PreservedAssertion::Preserved,
+                token: PreservedAssertion::Preserved,
+                engineering_history: PreservedAssertion::Preserved,
+                overwatcher: OverwatcherAssertion::Absent,
+            },
+            reason: format!("reach {to_version} before the next patch adoption"),
+            occurred_at: occurred_at.into(),
+        };
+        fixture
+            .store
+            .adopt_method_contract(&fixture.supervisor, request)
+            .unwrap();
+    }
+    let before = fixture.store.query_run("run-a").unwrap();
+    let request = AdoptMethodContractRequest {
+        receipt_id: "adopt-run-a-432".into(),
+        run_id: "run-a".into(),
+        expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+        from_version: "4.3.1".into(),
+        to_version: "4.3.2".into(),
+        owner_authorization: OwnerAuthorizationEvidence {
+            source_thread_id: "owner-thread-432".into(),
+            message_id: "owner-message-432".into(),
+            content_sha256: "d".repeat(64),
+            decision: OwnerDecision::ApproveMethodContractAdoption,
+            occurred_at: "2026-09-29T00:10:00Z".into(),
+        },
+        reconciliation_receipt_id: None,
+        compatibility: MethodCompatibilityAssertions {
+            topology: PreservedAssertion::Preserved,
+            role_bindings: PreservedAssertion::Preserved,
+            token: PreservedAssertion::Preserved,
+            engineering_history: PreservedAssertion::Preserved,
+            overwatcher: OverwatcherAssertion::Absent,
+        },
+        reason: "adopt Desktop current-turn recovery without rewriting Run facts".into(),
+        occurred_at: "2026-09-29T00:10:01Z".into(),
+    };
+
+    let applied = fixture
+        .store
+        .adopt_method_contract(&fixture.supervisor, request)
+        .unwrap();
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(applied.effective_version, "4.3.2");
+    assert_eq!(after.summary.slk_version, "4.3.2");
+    assert_eq!(after.events, before.events);
+    assert_eq!(after.token_history, before.token_history);
+    assert_eq!(after.go_nodes, before.go_nodes);
+}
+
+#[test]
 fn native_status_resume_requires_exactly_one_current_eligible_basis() {
     let fixture = Fixture::new_428();
     let issued = fixture

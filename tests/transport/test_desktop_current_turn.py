@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from slk_transport.adapters.codex import CodexAdapter
+from slk_transport.contracts import ContractError
+from slk_transport.desktop_current_turn import (
+    complete_desktop_current_turn,
+    prepare_desktop_current_turn,
+)
+from slk_transport.dispatcher import dispatch_once
+from slk_transport.recovery import retry_exact
+from scripts.build_transport_zipapp import build_zipapp
+
+from test_active_writer import delivery
+
+
+FAKE_SERVER = Path(__file__).with_name("fake_app_server.py")
+REPOSITORY = Path(__file__).resolve().parents[2]
+
+
+def canonical_sha(value: object) -> str:
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def unresolved_delivery(
+    tmp_path: Path, *, with_exact_retry: bool = True
+) -> tuple[dict[str, object], dict[str, object], Path, Path]:
+    endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["command"] = [
+        sys.executable,
+        str(FAKE_SERVER),
+        "initialize-writer-conflict",
+    ]
+    attempts = tmp_path / "attempts"
+    result = dispatch_once(
+        endpoint,
+        envelope,
+        attempts,
+        adapters={"codex-app-server": CodexAdapter()},
+    )
+    assert result.error_code == "CODEX_ACTIVE_WRITER_UNRESOLVED"
+    original = attempts / str(envelope["run_id"]) / str(envelope["message_id"])
+    assert not (original / "started.json").exists()
+    assert not (original / "active-writer.json").exists()
+    if with_exact_retry:
+        retry = retry_exact(
+            attempts,
+            endpoint,
+            envelope,
+            adapters={"codex-app-server": CodexAdapter()},
+        )
+        assert retry["status"] == "SUPERVISOR_DECISION_REQUIRED"
+        assert retry["reason"] == "EXACT_RETRY_EXHAUSTED"
+    return endpoint, envelope, attempts, original
+
+
+def host_receipt(request: dict[str, object]) -> dict[str, object]:
+    turn_id = "turn-desktop-active"
+    return {
+        "schema_version": "slk.transport-desktop-current-turn-host-receipt/v1",
+        "request_sha256": canonical_sha(request),
+        "host_thread_id": "thread-bridge-host",
+        "host_turn_id": "turn-bridge-host",
+        "host_session_id": "thread-bridge-host",
+        "target_thread_id": request["target_thread_id"],
+        "before": {
+            "thread_status": "active",
+            "turn_id": turn_id,
+            "turn_status": "inProgress",
+        },
+        "after": {
+            "thread_status": "active",
+            "turn_id": turn_id,
+            "turn_status": "inProgress",
+            "platform_item_id": "fco-desktop-recovery",
+            "item_type": "functionCallOutput",
+            "item_name": "send_message_to_thread",
+            "item_namespace": "codex_app",
+            "message_sha256": request["prompt_sha256"],
+        },
+        "status": "PLATFORM_READBACK_CONFIRMED",
+    }
+
+
+def desktop_environment() -> dict[str, str]:
+    return {
+        "CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "Codex Desktop",
+        "CODEX_THREAD_ID": "thread-bridge-host",
+        "CODEX_SESSION_ID": "thread-bridge-host",
+    }
+
+
+def test_desktop_owned_writer_recovers_original_unresolved_handoff_without_forging_start(
+    tmp_path: Path,
+) -> None:
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    failed_before = (original / "failed.json").read_bytes()
+
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+    recovered = complete_desktop_current_turn(
+        attempts,
+        endpoint,
+        envelope,
+        host_receipt(request),
+        environment=desktop_environment(),
+    )
+
+    assert recovered["status"] == "started"
+    assert recovered["recovery_of_message_id"] == envelope["message_id"]
+    assert recovered["recovery_message_id"] != envelope["message_id"]
+    assert recovered["thread_id"] == endpoint["address"]["thread_id"]
+    assert recovered["turn_id"] == "turn-desktop-active"
+    assert recovered["payload_sha256"] == envelope["payload_sha256"]
+    assert (original / "failed.json").read_bytes() == failed_before
+    recovery_root = original / "recovery" / "desktop-current-turn"
+    assert (recovery_root / "host-receipt.json").is_file()
+    assert (recovery_root / "recovery.json").is_file()
+    started = json.loads((recovery_root / "started.json").read_text(encoding="utf-8"))
+    assert started["message_id"] == recovered["recovery_message_id"]
+    assert started["recovery_of_message_id"] == envelope["message_id"]
+
+    assert prepare_desktop_current_turn(attempts, endpoint, envelope) == request
+    assert (
+        complete_desktop_current_turn(
+            attempts,
+            endpoint,
+            envelope,
+            host_receipt(request),
+            environment=desktop_environment(),
+        )
+        == recovered
+    )
+
+
+def test_desktop_bridge_requires_the_exhausted_exact_retry(tmp_path: Path) -> None:
+    endpoint, envelope, attempts, original = unresolved_delivery(
+        tmp_path, with_exact_retry=False
+    )
+
+    with pytest.raises(ContractError, match="exact retry"):
+        prepare_desktop_current_turn(attempts, endpoint, envelope)
+
+    assert not (original / "recovery" / "desktop-current-turn").exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (lambda value: value.update(request_sha256="0" * 64), "request"),
+        (lambda value: value.update(target_thread_id="wrong-thread"), "thread"),
+        (lambda value: value["after"].update(turn_id="wrong-turn"), "turn"),
+        (lambda value: value["after"].update(message_sha256="0" * 64), "message"),
+        (lambda value: value["after"].update(item_name="ordinary_message"), "platform"),
+    ],
+)
+def test_desktop_bridge_rejects_mismatched_platform_evidence_without_start(
+    tmp_path: Path, mutation, match: str
+) -> None:
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+    receipt = host_receipt(request)
+    mutation(receipt)
+
+    with pytest.raises(ContractError, match=match):
+        complete_desktop_current_turn(
+            attempts,
+            endpoint,
+            envelope,
+            receipt,
+            environment=desktop_environment(),
+        )
+
+    assert not (original / "recovery" / "desktop-current-turn" / "started.json").exists()
+
+
+def test_desktop_bridge_rejects_changed_delivery_and_non_desktop_host(tmp_path: Path) -> None:
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+
+    changed = copy.deepcopy(envelope)
+    changed["payload"]["expected_result"] = "changed"
+    changed["payload_sha256"] = canonical_sha(changed["payload"])
+    with pytest.raises(ContractError, match="identity"):
+        complete_desktop_current_turn(
+            attempts,
+            endpoint,
+            changed,
+            host_receipt(request),
+            environment=desktop_environment(),
+        )
+
+    environment = desktop_environment()
+    environment.pop("CODEX_INTERNAL_ORIGINATOR_OVERRIDE")
+    with pytest.raises(ContractError, match="Desktop host"):
+        complete_desktop_current_turn(
+            attempts,
+            endpoint,
+            envelope,
+            host_receipt(request),
+            environment=environment,
+        )
+    assert not (original / "recovery" / "desktop-current-turn" / "started.json").exists()
+
+
+def test_zipapp_exposes_prepare_and_complete_desktop_bridge(tmp_path: Path) -> None:
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    endpoint_path = tmp_path / "endpoint.json"
+    envelope_path = tmp_path / "envelope.json"
+    endpoint_path.write_text(json.dumps(endpoint), encoding="utf-8")
+    envelope_path.write_text(json.dumps(envelope), encoding="utf-8")
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+
+    prepared = subprocess.run(
+        [
+            sys.executable,
+            str(artifact),
+            "prepare-desktop-current-turn",
+            "--endpoint",
+            str(endpoint_path),
+            "--envelope",
+            str(envelope_path),
+            "--attempt-root",
+            str(attempts),
+        ],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+    )
+    assert prepared.returncode == 0, prepared.stderr
+    request = json.loads(prepared.stdout)
+    receipt_path = tmp_path / "host-receipt.json"
+    receipt_path.write_text(json.dumps(host_receipt(request)), encoding="utf-8")
+    environment = os.environ.copy()
+    environment.update(desktop_environment())
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(artifact),
+            "complete-desktop-current-turn",
+            "--endpoint",
+            str(endpoint_path),
+            "--envelope",
+            str(envelope_path),
+            "--attempt-root",
+            str(attempts),
+            "--host-receipt",
+            str(receipt_path),
+        ],
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["status"] == "started"
+    assert (original / "recovery" / "desktop-current-turn" / "started.json").is_file()
+
+
+def test_desktop_current_turn_contract_schema_is_closed() -> None:
+    schema = json.loads(
+        (
+            REPOSITORY
+            / "docs"
+            / "contracts"
+            / "slk-desktop-current-turn-recovery.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert set(schema["$defs"]) == {"request", "host_receipt", "recovery", "started"}
+    for definition in schema["$defs"].values():
+        assert definition["additionalProperties"] is False

@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.3.1 to 4.3.2
+
+Install the complete 4.3.2 package. Installation alone does not adopt, resume, dispatch, inspect or mutate an existing Run. At an existing Supervisor-controlled boundary, an Owner-authorized exact snapshot may explicitly adopt `4.3.1 → 4.3.2`; Run ID, plan revision, current CELL/attempt, TOKEN holder/sequence, roles/endpoints, candidate and D0/D1/D2 history, Overwatcher state, transport evidence, product working tree and uncommitted product changes are preserved. Schema remains v8 with migrations `0001.sql` through `0008.sql`.
+
+One preserved 4.3.1 Checker→registered Supervisor attempt that failed `CODEX_ACTIVE_WRITER_UNRESOLVED` may use the 4.3.2 Desktop current-turn bridge without first rewriting the Run's method history. This exception is transport-only: preserve the original attempt and exhausted exact retry, run `prepare-desktop-current-turn` against the attempts root, have the current Codex Desktop host read the target thread, inject the generated prompt, and read the same active turn back. Only the exact platform `functionCallOutput/codex_app/send_message_to_thread` item and matching message hash may enter the closed host receipt used by `complete-desktop-current-turn`. The resulting start belongs to a new recovery message under `recovery/desktop-current-turn`; it never backfills the original attempt.
+
+PowerShell invokes the artifact as `python <slk-transport.pyz> ...`, not `& <slk-transport.pyz> ...`; `--attempt-root` names the attempts root above `<run_id>/<message_id>`. Missing readback, changed thread/turn/host/role/endpoint/payload, a visible message alone, or a self-authored success receipt remains unresolved. Transport never advances TOKEN; the original Checker inspects the matching recovery start and uses the existing authenticated `commit-delivery-start`. No other role route, Temporal workflow, Overwatcher authority, BI fact or product file changes automatically.
+
 ## Current patch migration: 4.3.0 to 4.3.1
 
 Install the complete 4.3.1 package. Installation alone does not adopt, resume, dispatch, inspect or mutate an existing Run. At an existing Supervisor-controlled boundary, an Owner-authorized exact snapshot may explicitly adopt `4.3.0 → 4.3.1`. The adoption preserves the Run ID, plan revision, current CELL/attempt, T006 TOKEN holder and sequence, role/session endpoints, candidate and D0/D1/D2 history, Overwatcher binding and incidents, transport/attempt evidence, product working tree and every uncommitted product change. No SQLite migration is added; schema v8 and migrations `0001.sql` through `0008.sql` remain authoritative.

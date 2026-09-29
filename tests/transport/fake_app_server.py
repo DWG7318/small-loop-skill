@@ -20,6 +20,19 @@ for line in sys.stdin:
     method = message.get("method")
     request_id = message.get("id")
     if method == "initialize":
+        if MODE in {"initialize-writer-conflict", "initialize-writer-flood-conflict"}:
+            if MODE == "initialize-writer-flood-conflict":
+                emit({"method": "diagnostic", "params": {"blob": "x" * (2 * 1024 * 1024)}})
+            emit(
+                {
+                    "id": request_id,
+                    "error": {
+                        "code": -32000,
+                        "message": "thread-store conflict: thread thr_exact already has an active writer",
+                    },
+                }
+            )
+            continue
         emit({"id": request_id, "result": {"serverInfo": {"name": "fake", "version": "1"}}})
     elif method == "initialized":
         continue

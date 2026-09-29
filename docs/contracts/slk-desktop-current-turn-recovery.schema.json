@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-desktop-current-turn-recovery.schema.json",
+  "title": "SLK Codex Desktop current-turn recovery evidence",
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/host_receipt"},
+    {"$ref": "#/$defs/recovery"},
+    {"$ref": "#/$defs/started"}
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "status", "original_message_id", "recovery_message_id", "run_id", "go_id", "cell_id", "token_sequence", "sender_role", "sender_role_instance_id", "receiver_role", "receiver_role_instance_id", "receiver_endpoint_version", "payload_type", "payload_sha256", "endpoint_sha256", "envelope_sha256", "target_thread_id", "challenge", "prompt", "prompt_sha256"],
+      "properties": {
+        "schema_version": {"const": "slk.transport-desktop-current-turn-request/v1"},
+        "status": {"const": "PREPARED"},
+        "original_message_id": {"type": "string", "format": "uuid"},
+        "recovery_message_id": {"type": "string", "format": "uuid"},
+        "run_id": {"type": "string", "minLength": 1},
+        "go_id": {"type": "string", "minLength": 1},
+        "cell_id": {"type": "string", "minLength": 1},
+        "token_sequence": {"type": "integer", "minimum": 0},
+        "sender_role": {"const": "checker"},
+        "sender_role_instance_id": {"type": "string", "minLength": 1},
+        "receiver_role": {"const": "supervisor"},
+        "receiver_role_instance_id": {"type": "string", "minLength": 1},
+        "receiver_endpoint_version": {"type": "integer", "minimum": 1},
+        "payload_type": {"type": "string", "minLength": 1},
+        "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "endpoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "envelope_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "target_thread_id": {"type": "string", "minLength": 1},
+        "challenge": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "prompt": {"type": "string", "minLength": 1},
+        "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "host_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_sha256", "host_thread_id", "host_turn_id", "host_session_id", "target_thread_id", "before", "after", "status"],
+      "properties": {
+        "schema_version": {"const": "slk.transport-desktop-current-turn-host-receipt/v1"},
+        "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "host_thread_id": {"type": "string", "minLength": 1},
+        "host_turn_id": {"type": "string", "minLength": 1},
+        "host_session_id": {"type": "string", "minLength": 1},
+        "target_thread_id": {"type": "string", "minLength": 1},
+        "before": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["thread_status", "turn_id", "turn_status"],
+          "properties": {
+            "thread_status": {"const": "active"},
+            "turn_id": {"type": "string", "minLength": 1},
+            "turn_status": {"enum": ["inProgress", "active"]}
+          }
+        },
+        "after": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["thread_status", "turn_id", "turn_status", "platform_item_id", "item_type", "item_name", "item_namespace", "message_sha256"],
+          "properties": {
+            "thread_status": {"const": "active"},
+            "turn_id": {"type": "string", "minLength": 1},
+            "turn_status": {"enum": ["inProgress", "active"]},
+            "platform_item_id": {"type": "string", "minLength": 1},
+            "item_type": {"const": "functionCallOutput"},
+            "item_name": {"const": "send_message_to_thread"},
+            "item_namespace": {"const": "codex_app"},
+            "message_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "status": {"const": "PLATFORM_READBACK_CONFIRMED"}
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "recovery_of_message_id", "recovery_message_id", "run_id", "thread_id", "turn_id", "platform_item_id", "payload_sha256", "endpoint_sha256", "envelope_sha256", "status"],
+      "properties": {
+        "schema_version": {"const": "slk.transport-desktop-current-turn-recovery/v1"},
+        "recovery_of_message_id": {"type": "string", "format": "uuid"},
+        "recovery_message_id": {"type": "string", "format": "uuid"},
+        "run_id": {"type": "string", "minLength": 1},
+        "thread_id": {"type": "string", "minLength": 1},
+        "turn_id": {"type": "string", "minLength": 1},
+        "platform_item_id": {"type": "string", "minLength": 1},
+        "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "endpoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "envelope_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "status": {"const": "started"}
+      }
+    },
+    "started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message_id", "run_id", "status", "thread_id", "turn_id", "platform_item_id", "recovery_of_message_id"],
+      "properties": {
+        "message_id": {"type": "string", "format": "uuid"},
+        "run_id": {"type": "string", "minLength": 1},
+        "status": {"const": "started"},
+        "thread_id": {"type": "string", "minLength": 1},
+        "turn_id": {"type": "string", "minLength": 1},
+        "platform_item_id": {"type": "string", "minLength": 1},
+        "recovery_of_message_id": {"type": "string", "format": "uuid"}
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import queue
 import subprocess
 import threading
@@ -12,6 +13,54 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .adapters.base import AdapterError
 from .process import windows_no_window_kwargs
+
+
+MAX_DIAGNOSTIC_BYTES = 64 * 1024
+MAX_DIAGNOSTIC_LINE_BYTES = 32 * 1024
+DIAGNOSTIC_PREFIX_BYTES = 2048
+
+
+class _BoundedCapture:
+    def __init__(self) -> None:
+        self._lines: list[str] = []
+        self._bytes = 0
+        self._omitted_lines = 0
+        self._omitted_bytes = 0
+        self._omitted_digest = hashlib.sha256()
+        self._lock = threading.Lock()
+
+    def add(self, prefix: str, text: str) -> None:
+        raw = text.encode("utf-8", errors="replace")
+        if len(raw) > MAX_DIAGNOSTIC_LINE_BYTES:
+            shown = raw[:DIAGNOSTIC_PREFIX_BYTES].decode("utf-8", errors="replace")
+            rendered = (
+                f"{prefix}{shown}\nSLK_DIAGNOSTIC_TRUNCATED "
+                f"original_bytes={len(raw)} sha256={hashlib.sha256(raw).hexdigest()}"
+            )
+        else:
+            rendered = f"{prefix}{text}"
+        rendered_bytes = len(rendered.encode("utf-8")) + 1
+        with self._lock:
+            if self._bytes + rendered_bytes <= MAX_DIAGNOSTIC_BYTES:
+                self._lines.append(rendered)
+                self._bytes += rendered_bytes
+                return
+            self._omitted_lines += 1
+            self._omitted_bytes += len(raw)
+            self._omitted_digest.update(raw)
+            self._omitted_digest.update(b"\n")
+
+    def lines(self) -> list[str]:
+        with self._lock:
+            result = list(self._lines)
+            if self._omitted_lines:
+                result.append(
+                    "SLK_DIAGNOSTIC_TRUNCATED "
+                    f"omitted_lines={self._omitted_lines} "
+                    f"omitted_bytes={self._omitted_bytes} "
+                    f"sha256={self._omitted_digest.hexdigest()}"
+                )
+            return result
 
 
 class JsonRpcProcess:
@@ -33,8 +82,8 @@ class JsonRpcProcess:
             raise AdapterError("CODEX_PROCESS_PIPE_FAILED", "Codex App Server pipes are unavailable")
         self._queue: queue.Queue[str | None] = queue.Queue()
         self.messages: list[dict[str, Any]] = []
-        self.transcript: list[str] = []
-        self.stderr_lines: list[str] = []
+        self._transcript = _BoundedCapture()
+        self._stderr = _BoundedCapture()
         self._stdout_thread = threading.Thread(target=self._read_stdout, daemon=True)
         self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
         self._stdout_thread.start()
@@ -49,12 +98,20 @@ class JsonRpcProcess:
     def _read_stderr(self) -> None:
         assert self._process.stderr is not None
         for line in self._process.stderr:
-            self.stderr_lines.append(line.rstrip("\r\n"))
+            self._stderr.add("", line.rstrip("\r\n"))
+
+    @property
+    def transcript(self) -> list[str]:
+        return self._transcript.lines()
+
+    @property
+    def stderr_lines(self) -> list[str]:
+        return self._stderr.lines()
 
     def send(self, value: Mapping[str, Any]) -> None:
         assert self._process.stdin is not None
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        self.transcript.append(f"C {encoded}")
+        self._transcript.add("C ", encoded)
         try:
             self._process.stdin.write(encoded + "\n")
             self._process.stdin.flush()
@@ -72,7 +129,7 @@ class JsonRpcProcess:
                 f"Codex App Server exited with code {self._process.poll()}",
             )
         text = line.rstrip("\r\n")
-        self.transcript.append(f"S {text}")
+        self._transcript.add("S ", text)
         try:
             value = json.loads(text)
         except json.JSONDecodeError as exc:

@@ -145,6 +145,12 @@ def _is_already_active_writer(error: AdapterError) -> bool:
     ).lower()
 
 
+def _is_initialize_writer_conflict(error: AdapterError, client: JsonRpcProcess) -> bool:
+    evidence = f"{error}\n" + "\n".join(client.stderr_lines)
+    lowered = evidence.lower()
+    return "thread-store conflict" in lowered and "already has an active writer" in lowered
+
+
 def resolve_codex_command(
     command: list[str],
     *,
@@ -258,18 +264,26 @@ class CodexAdapter:
         client: JsonRpcProcess | None = None
         try:
             client = JsonRpcProcess(command, cwd)
-            client.request(
-                1,
-                "initialize",
-                {
-                    "clientInfo": {
-                        "name": "slk_transport",
-                        "title": "SLK Transport",
-                        "version": "4.3.1",
-                    }
-                },
-                startup_timeout,
-            )
+            try:
+                client.request(
+                    1,
+                    "initialize",
+                    {
+                        "clientInfo": {
+                            "name": "slk_transport",
+                            "title": "SLK Transport",
+                            "version": "4.3.2",
+                        }
+                    },
+                    startup_timeout,
+                )
+            except AdapterError as error:
+                if _is_initialize_writer_conflict(error, client):
+                    raise AdapterError(
+                        "CODEX_ACTIVE_WRITER_UNRESOLVED",
+                        "Codex Desktop owns the thread writer but the independent process cannot prove its turn",
+                    ) from error
+                raise
             client.notify("initialized", {})
             request_id = 2
 

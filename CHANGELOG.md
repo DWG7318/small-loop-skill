@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.3.2
+
+- Added one narrow two-phase Codex Desktop current-turn bridge for an exact Checker→registered Supervisor delivery whose external App Server attempt and one exact retry are preserved but remain blocked by the Desktop active writer.
+- Bound the new logical recovery message to Run/GO/CELL/TOKEN, both role identities, endpoint version, payload, endpoint/envelope file hashes, target thread, challenge, Desktop host/session, exact active turn, platform item and injected-message hash. Missing or mismatched platform readback fails closed and never writes start evidence.
+- Kept the original failed attempt immutable and wrote request, host receipt, recovery and start evidence only under a separate deterministic recovery directory. Transport does not move TOKEN; the original sender still commits delivery start after inspecting the matching evidence.
+- Mapped the real App Server initialization conflict to `CODEX_ACTIVE_WRITER_UNRESOLVED`, bounded oversized native stdout/stderr while retaining byte count and SHA-256, and documented correct PowerShell zipapp invocation plus attempts-root semantics.
+- Added explicit `4.3.1 → 4.3.2` schema-v8 adoption. Roles, CELL/D0/D1/D2, direct routes, optional Overwatcher/Temporal behavior, model bindings, BI authority and product state are unchanged; no scheduler, daemon, heartbeat, new role, Docker or product mutation was added.
+
 ## 4.3.1
 
 - Rejected DSH construction before native start when the actual Git common store is outside the supported Worker root or its index/object/ref locations are not writable; supported standalone clones still pass.

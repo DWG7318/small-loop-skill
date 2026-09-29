@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.1"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.2"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -242,7 +242,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.3.1" in main
+    assert "4.3.2" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -747,6 +747,15 @@ def test_recover_communication_requires_real_activation_and_preserves_checker() 
         assert forbidden in text
     assert "Owner/Main 真实激活" in text
     assert "原对话" not in text
+
+
+def test_432_desktop_recovery_documents_windows_invocation_and_attempt_root() -> None:
+    text = read_skill("slk-recover-communication")
+    assert "PowerShell 用 `python <slk-transport.pyz>`" in text
+    assert "不要用 `& <slk-transport.pyz>`" in text
+    assert "`--attempt-root` 是 attempts 根目录" in text
+    assert "不是 `<run_id>/<message_id>`" in text
+    assert "平台回读" in text and "可见消息" in text
 
 
 def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:

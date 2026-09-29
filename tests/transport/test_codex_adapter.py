@@ -139,6 +139,19 @@ def test_active_writer_is_read_before_resume_can_conflict(tmp_path: Path) -> Non
     assert '"method":"thread/resume"' not in transcript
 
 
+def test_initialize_thread_store_conflict_is_unresolved_active_writer(tmp_path: Path) -> None:
+    endpoint = codex_endpoint(tmp_path, "initialize-writer-conflict")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, envelope, attempt)
+
+    assert error.value.error_code == "CODEX_ACTIVE_WRITER_UNRESOLVED"
+    assert not (attempt.root / "active-writer.json").exists()
+    assert not (attempt.root / "started.json").exists()
+
+
 def test_stale_codex_executable_is_rebound_without_changing_endpoint_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
