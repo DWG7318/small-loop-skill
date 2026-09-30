@@ -10,7 +10,7 @@
     "roleRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["role", "expected_runtime", "actual_runtime", "expected_model", "actual_model", "adapter_command", "endpoint_path", "workspace_root", "context_capacity", "task_context_estimate", "required_skills", "required_tools"],
+      "required": ["role", "expected_runtime", "actual_runtime", "expected_model", "actual_model", "adapter_command", "endpoint_path", "workspace_root", "context_capacity", "task_context_estimate", "required_skills", "required_tools", "native_activity_capability"],
       "properties": {
         "role": { "enum": ["supervisor", "worker", "checker"] },
         "expected_runtime": { "type": "string", "minLength": 1 },
@@ -23,7 +23,8 @@
         "context_capacity": { "type": "integer", "minimum": 1 },
         "task_context_estimate": { "type": "integer", "minimum": 1 },
         "required_skills": { "$ref": "#/$defs/nonemptyStrings" },
-        "required_tools": { "$ref": "#/$defs/nonemptyStrings" }
+        "required_tools": { "$ref": "#/$defs/nonemptyStrings" },
+        "native_activity_capability": { "type": ["string", "null"] }
       }
     },
     "option": {

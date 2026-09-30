@@ -1,10 +1,12 @@
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use slk_state_core::auth::Credential;
 use slk_state_core::config::{configure_at, default_config_path, resolve_data_root_at};
 use slk_state_core::evidence::{EvidenceRequest, EvidenceState};
@@ -120,15 +122,89 @@ fn configure(arguments: &[String]) -> Result<Value, CliError> {
 fn init_run(arguments: &[String]) -> Result<Value, CliError> {
     let request: InitRunRequest = request(arguments)?;
     let run_id = request.run_id.clone();
+    let credential_target = optional_value(arguments, "--credential-out").map(PathBuf::from);
+    let credential_stage = if let Some(target) = credential_target.as_ref() {
+        if !target.is_absolute() {
+            return Err(CliError::usage("--credential-out must be an absolute path"));
+        }
+        if target.exists() {
+            return Err(CliError::usage("--credential-out target already exists"));
+        }
+        let parent = target
+            .parent()
+            .ok_or_else(|| CliError::usage("--credential-out has no parent directory"))?;
+        if !parent.is_dir() {
+            return Err(CliError::usage(
+                "--credential-out parent must already exist",
+            ));
+        }
+        let mut selected = None;
+        for ordinal in 0..100_u32 {
+            let temporary = parent.join(format!(
+                ".{}.{}.{}.tmp",
+                target
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("credential"),
+                std::process::id(),
+                ordinal
+            ));
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
+            {
+                Ok(file) => {
+                    selected = Some((temporary, file));
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(CliError::command(error)),
+            }
+        }
+        Some(selected.ok_or_else(|| CliError::usage("cannot reserve credential output"))?)
+    } else {
+        None
+    };
     let store = configured_store()?;
-    let initialized = store.init_run(request).map_err(CliError::command)?;
+    let initialized = match store.init_run(request) {
+        Ok(value) => value,
+        Err(error) => {
+            if let Some((temporary, _)) = credential_stage.as_ref() {
+                let _ = fs::remove_file(temporary);
+            }
+            return Err(CliError::command(error));
+        }
+    };
     let export = refresh_export(&store, &run_id);
-    Ok(json!({
-        "status":"initialized",
-        "run_id":run_id,
-        "supervisor_credential":initialized.supervisor_credential.expose_secret(),
-        "export":export
-    }))
+    if let (Some(target), Some((temporary, mut file))) =
+        (credential_target.as_ref(), credential_stage)
+    {
+        let secret = initialized.supervisor_credential.expose_secret();
+        file.write_all(secret.as_bytes())
+            .map_err(CliError::command)?;
+        file.write_all(b"\n").map_err(CliError::command)?;
+        file.sync_all().map_err(CliError::command)?;
+        drop(file);
+        fs::rename(&temporary, target).map_err(CliError::command)?;
+        let digest = format!("{:x}", Sha256::digest(secret.as_bytes()));
+        Ok(json!({
+            "status":"initialized",
+            "run_id":run_id,
+            "credential_delivery":"ATOMIC_FILE",
+            "supervisor_credential_file":target,
+            "supervisor_credential_sha256":digest,
+            "export":export
+        }))
+    } else {
+        Ok(json!({
+            "status":"initialized",
+            "run_id":run_id,
+            "credential_delivery":"STDOUT_LEGACY",
+            "supervisor_credential":initialized.supervisor_credential.expose_secret(),
+            "export":export
+        }))
+    }
 }
 
 fn reconcile_run_identities(arguments: &[String]) -> Result<Value, CliError> {
@@ -522,6 +598,14 @@ fn required_value(arguments: &[String], option: &str) -> Result<String, CliError
         .get(index + 1)
         .cloned()
         .ok_or_else(|| CliError::usage(format!("missing value for {option}")))
+}
+
+fn optional_value(arguments: &[String], option: &str) -> Option<String> {
+    arguments
+        .iter()
+        .position(|value| value == option)
+        .and_then(|index| arguments.get(index + 1))
+        .cloned()
 }
 
 fn configured_store() -> Result<StateStore, CliError> {

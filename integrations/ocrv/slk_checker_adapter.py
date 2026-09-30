@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -12,7 +13,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -288,7 +291,7 @@ def _review_args(request: dict[str, Any], background_path: Path, output_path: Pa
     capacity = request["capacity"]
     command = _ocr_command() + [
         "review", "--repo", request["repository"], "--background-file", str(background_path),
-        "--audience", "agent", "--format", "json", "--output", str(output_path),
+        "--audience", "human", "--format", "json", "--output", str(output_path),
         "--concurrency", "1", "--effort", "medium", "--provider", EXPECTED_PROVIDER,
         "--model", EXPECTED_MODEL, "--max-tokens", str(capacity["max_tokens"]),
         "--max-tokens-budget", str(capacity["max_tokens_budget"]),
@@ -305,6 +308,101 @@ def _artifact_root(request: dict[str, Any]) -> tuple[str, Path]:
     root = runtime / request["run_id"] / request["cell_id"] / invocation
     root.mkdir(parents=True, exist_ok=True)
     return invocation, root
+
+
+def _process_creation_time(pid: int) -> str:
+    if os.name != "nt":
+        stat = Path(f"/proc/{pid}/stat")
+        fields = stat.read_text(encoding="ascii").split()
+        return f"proc-start:{fields[21]}"
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+    if not handle:
+        raise RequestError("native OCRV process is not queryable")
+    try:
+        created = ctypes.c_ulonglong()
+        exited = ctypes.c_ulonglong()
+        kernel = ctypes.c_ulonglong()
+        user = ctypes.c_ulonglong()
+        if not kernel32.GetProcessTimes(
+            handle,
+            ctypes.byref(created),
+            ctypes.byref(exited),
+            ctypes.byref(kernel),
+            ctypes.byref(user),
+        ):
+            raise RequestError("native OCRV process creation time is unavailable")
+        return f"win-filetime:{created.value}"
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _native_context() -> tuple[Path, dict[str, str]] | None:
+    receipt = os.environ.get("SLK_NATIVE_START_RECEIPT")
+    raw = os.environ.get("SLK_NATIVE_START_CONTEXT")
+    if not receipt or not raw:
+        return None
+    try:
+        context = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RequestError("SLK native start context is invalid") from exc
+    required = {
+        "adapter",
+        "run_id",
+        "cell_id",
+        "message_id",
+        "request_sha256",
+        "native_request_sha256",
+    }
+    if not isinstance(context, dict) or set(context) != required or not all(
+        isinstance(context[name], str) and context[name] for name in required
+    ):
+        raise RequestError("SLK native start context is not closed")
+    path = Path(receipt).resolve()
+    if not path.is_absolute():
+        raise RequestError("SLK native start receipt must be absolute")
+    return path, context
+
+
+def _publish_native_start(
+    receipt_path: Path,
+    context: dict[str, str],
+    invocation: str,
+    pid: int,
+) -> Path:
+    value = {
+        "schema_version": "slk.native-start/v2",
+        "status": "STARTED",
+        "adapter": context["adapter"],
+        "run_id": context["run_id"],
+        "cell_id": context["cell_id"],
+        "message_id": context["message_id"],
+        "request_sha256": context["request_sha256"],
+        "native_request_sha256": context["native_request_sha256"],
+        "observed_at": datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+        "process": {"pid": pid, "creation_time": _process_creation_time(pid)},
+        "native_task": {"kind": "ocrv-review", "id": invocation, "status": "RUNNING"},
+    }
+    _write_json_atomic(receipt_path, value)
+    activity_path = receipt_path.with_name("native-activity.json")
+    _write_json_atomic(
+        activity_path,
+        {
+            "schema_version": "slk.native-task-activity/v1",
+            "adapter": context["adapter"],
+            "run_id": context["run_id"],
+            "cell_id": context["cell_id"],
+            "message_id": context["message_id"],
+            "native_task_id": invocation,
+            "status": "RUNNING",
+            "sequence": 0,
+            "observed_at": value["observed_at"],
+            "last_event": {"kind": "OCRV_PROCESS_STARTED", "sequence": 0},
+            "waiting_on": "OCRV_REVIEW",
+        },
+    )
+    return activity_path
 
 
 def preflight(request_path: Path, output_path: Path) -> int:
@@ -397,7 +495,19 @@ def _classify(review: dict[str, Any] | None, exit_code: int) -> tuple[str, list[
     comments = review.get("comments")
     if not isinstance(comments, list):
         return "INCOMPLETE", ["OCR_COMMENTS_INVALID"]
-    return ("FAIL", ["OCR_FINDINGS_PRESENT"]) if comments else ("PASS", ["OCR_COMPLETE_ZERO_FINDINGS"])
+    if not comments:
+        return "PASS", ["OCR_COMPLETE_ZERO_FINDINGS"]
+    severities: list[str] = []
+    for comment in comments:
+        if not isinstance(comment, dict) or not isinstance(comment.get("severity"), str):
+            return "INCOMPLETE", ["OCR_FINDING_SEVERITY_UNKNOWN"]
+        severity = comment["severity"].strip().upper()
+        if severity not in {"INFO", "LOW", "MEDIUM", "HIGH", "BLOCKER", "CRITICAL"}:
+            return "INCOMPLETE", ["OCR_FINDING_SEVERITY_UNKNOWN"]
+        severities.append(severity)
+    if any(value in {"MEDIUM", "HIGH", "BLOCKER", "CRITICAL"} for value in severities):
+        return "FAIL", ["OCR_BLOCKING_FINDINGS_PRESENT"]
+    return "PASS", ["OCR_COMPLETE_LOW_SEVERITY_OBSERVATIONS"]
 
 
 def run(request_path: Path, output_path: Path) -> int:
@@ -408,13 +518,78 @@ def run(request_path: Path, output_path: Path) -> int:
     background_path.write_text(_background(request, capabilities), encoding="utf-8", newline="\n")
     raw_path = root / "ocrv-review.json"
     stdout_path, stderr_path = root / "ocrv.stdout.txt", root / "ocrv.stderr.txt"
-    completed = subprocess.run(
+    process = subprocess.Popen(
         _review_args(request, background_path, raw_path), cwd=request["repository"],
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
-        errors="replace", check=False, **_no_window_kwargs(),
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", **_no_window_kwargs(),
     )
-    stdout_path.write_text(completed.stdout, encoding="utf-8", newline="\n")
-    stderr_path.write_text(completed.stderr, encoding="utf-8", newline="\n")
+    native = _native_context()
+    activity_path: Path | None = None
+    if native is not None:
+        activity_path = _publish_native_start(native[0], native[1], invocation, process.pid)
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+
+    def drain(stream: Any, destination: list[str], kind: str) -> None:
+        sequence = 0
+        for line in iter(stream.readline, ""):
+            destination.append(line)
+            if kind == "OCRV_PROGRESS" and activity_path is not None:
+                sequence += 1
+                _write_json_atomic(
+                    activity_path,
+                    {
+                        "schema_version": "slk.native-task-activity/v1",
+                        "adapter": native[1]["adapter"] if native is not None else "ocrv-checker",
+                        "run_id": native[1]["run_id"] if native is not None else request["run_id"],
+                        "cell_id": native[1]["cell_id"] if native is not None else request["cell_id"],
+                        "message_id": native[1]["message_id"] if native is not None else "unknown",
+                        "native_task_id": invocation,
+                        "status": "RUNNING",
+                        "sequence": sequence,
+                        "observed_at": datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                        "last_event": {
+                            "kind": kind,
+                            "sequence": sequence,
+                            "summary_sha256": hashlib.sha256(line.encode("utf-8")).hexdigest(),
+                        },
+                        "waiting_on": "OCRV_REVIEW",
+                    },
+                )
+        stream.close()
+
+    stdout_thread = threading.Thread(target=drain, args=(process.stdout, stdout_lines, "OCRV_STDOUT"))
+    stderr_thread = threading.Thread(target=drain, args=(process.stderr, stderr_lines, "OCRV_PROGRESS"))
+    stdout_thread.start()
+    stderr_thread.start()
+    returncode = process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+    stdout = "".join(stdout_lines)
+    stderr = "".join(stderr_lines)
+    stdout_path.write_text(stdout, encoding="utf-8", newline="\n")
+    stderr_path.write_text(stderr, encoding="utf-8", newline="\n")
+    if activity_path is not None:
+        _write_json_atomic(
+            activity_path,
+            {
+                "schema_version": "slk.native-task-activity/v1",
+                "adapter": native[1]["adapter"] if native is not None else "ocrv-checker",
+                "run_id": native[1]["run_id"] if native is not None else request["run_id"],
+                "cell_id": native[1]["cell_id"] if native is not None else request["cell_id"],
+                "message_id": native[1]["message_id"] if native is not None else "unknown",
+                "native_task_id": invocation,
+                "status": "COMPLETED" if returncode == 0 else "FAILED",
+                "sequence": len(stderr_lines) + 1,
+                "observed_at": datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                "last_event": {
+                    "kind": "OCRV_PROCESS_EXITED",
+                    "sequence": len(stderr_lines) + 1,
+                    "exit_code": returncode,
+                },
+                "waiting_on": None,
+            },
+        )
     review: dict[str, Any] | None = None
     if raw_path.is_file():
         try:
@@ -422,7 +597,7 @@ def run(request_path: Path, output_path: Path) -> int:
             review = parsed if isinstance(parsed, dict) else None
         except json.JSONDecodeError:
             pass
-    verdict, reasons = _classify(review, completed.returncode)
+    verdict, reasons = _classify(review, returncode)
     llm = review.get("llm", {}) if isinstance(review, dict) else {}
     result = {
         "schema_version": RESULT_SCHEMA, "run_id": request["run_id"], "cell_id": request["cell_id"],
@@ -433,7 +608,7 @@ def run(request_path: Path, output_path: Path) -> int:
             "provider": llm.get("provider") if isinstance(llm, dict) else None,
             "model": llm.get("model") if isinstance(llm, dict) else None,
             "session_id": review.get("session_id") if isinstance(review, dict) else None,
-            "exit_code": completed.returncode,
+            "exit_code": returncode,
         },
         "evidence": request["evidence"], "request_sha256": _sha256(request_path),
         "artifacts": {

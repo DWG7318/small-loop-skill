@@ -25,14 +25,14 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.3.4 skill collection" in result.stdout
+    assert "PASS: SLK 4.3.5 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.3.4"
+    assert manifest["version"] == "4.3.5"
     assert manifest["skill_count"] == 15
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -77,7 +77,7 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "recovery_mode", "worker_result_path", "worker_result_sha256",
             "source_terminal_sha256", "worker_role_instance_id", "worker_instance_id",
             "worker_session_id", "checker_endpoint", "credential_path", "state_command",
-            "transport_command", "token_sequence", "occurred_at",
+            "transport_command", "token_sequence", "checker_token_already_committed", "occurred_at",
         },
         "docs/contracts/slk-ocrv-worker-recovery.schema.json": {
             "schema_version", "method_version", "recovery_invocation_id",
@@ -92,7 +92,17 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "schema_version", "method_version", "status", "run_id", "cell_id",
             "source_message_id", "worker_session_id", "checker_role_instance_id",
             "checker_endpoint_version", "checker_authenticated", "authorized_recovery",
-            "recovery_invocation_id", "request_sha256",
+            "recovery_invocation_id", "request_sha256", "runtime_revision", "token_sequence",
+            "checker_token_already_committed", "native_attempt_path", "d1_verdict",
+            "d1_event_type", "native_result_path",
+        },
+        "docs/contracts/slk-native-start.schema.json": {
+            "schema_version", "status", "adapter", "run_id", "cell_id", "message_id",
+            "request_sha256", "native_request_sha256", "observed_at", "process", "native_task",
+        },
+        "docs/contracts/slk-native-task-activity.schema.json": {
+            "schema_version", "adapter", "run_id", "cell_id", "message_id",
+            "native_task_id", "status", "sequence", "observed_at", "last_event", "waiting_on",
         },
         "docs/contracts/slk-overwatcher-cadence-inspection.schema.json": {
             "schema_version", "run_id", "observed_at", "projected_active",
@@ -166,7 +176,7 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.3.4" in text
+        assert "4.3.5" in text
         assert "14" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
@@ -188,14 +198,14 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 4.3.4" in changelog and "## 4.3.3" in changelog and "## 4.3.2" in changelog and "## 4.3.1" in changelog and "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.3.5" in changelog and "## 4.3.4" in changelog and "## 4.3.3" in changelog and "## 4.3.2" in changelog and "## 4.3.1" in changelog and "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog
     assert "completed work" in changelog
 
 
-def test_434_readiness_and_ocrv_preflight_contracts_are_closed() -> None:
+def test_435_readiness_and_ocrv_preflight_contracts_are_closed() -> None:
     readiness = json.loads(read("docs/contracts/slk-run-readiness.schema.json"))
     ocrv = json.loads(read("docs/contracts/slk-ocrv-d1-preflight.schema.json"))
     for schema in (readiness, ocrv):

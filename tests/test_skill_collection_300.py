@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.4"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.5"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -237,12 +237,12 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     main = read_skill("small-loop-skill")
     assert "代码、提交与测试完成不等于 Worker 角色完成" in execute
     assert "恰好一次当前 CELL/attempt/candidate" in execute
-    assert "run+cell+attempt+candidate/message" in recover
+    assert "同一 candidate/message/attempt" in recover
     assert "不要先 resume" in recover
-    assert "独立 headless Checker 传输宿主" in recover
+    assert "外部 OCRV 宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.3.4" in main
+    assert "4.3.5" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -373,7 +373,7 @@ def test_startup_order_and_creation_authority_are_unambiguous() -> None:
 
     assert plan.index("$slk-select-models") < plan.index("划分为初始 CELL")
     assert "原对话 ↔ Supervisor" in plan
-    assert "Supervisor 创建 Checker，Checker 创建 Worker" in main
+    assert "再创建 Checker，Checker 创建 Worker" in main
     assert "结构化角色 Eval" in main
     assert grill.index("$slk-record-run") < grill.index("$slk-manage-team")
     assert "通过 Eval 后" in record
@@ -430,7 +430,7 @@ def test_cross_agent_delivery_requires_native_activation() -> None:
         "原生 Agent 入口",
         "与消息匹配的原生启动证据",
         "不增加令牌专用回执",
-        "旧 running、旧 TOKEN、可见消息或 heartbeat 都不证明正在工作",
+        "旧状态、可见消息或 heartbeat 不证明工作",
     ):
         assert marker in main
     for marker in ("active writer", "not activation evidence", "does not claim the receiver or D2 started"):
@@ -743,7 +743,7 @@ def test_recover_communication_requires_real_activation_and_preserves_checker() 
         "最多原样重试一次",
     ):
         assert marker in text
-    for forbidden in ("新消息", "更换 receiver", "轮询循环", "daemon", "无限 retry"):
+    for forbidden in ("新消息", "endpoint/receiver", "轮询循环", "daemon", "无限 retry"):
         assert forbidden in text
     assert "Owner/Main 真实激活" in text
     assert "原对话" not in text
@@ -823,14 +823,14 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     ):
         assert stale not in active
 
-    for marker in ("不使用正时长 `wait_threads`", "真实激活操作", "原生启动证据"):
+    for marker in ("不用正时长 `wait_threads`", "真实激活操作", "原生启动证据"):
         assert marker in main
     assert "不增加令牌专用回执" in dispatch and "发出完整 CELL 后结束本次激活" in dispatch
     assert "不读取Worker施工状态" in dispatch
     assert "候选交付重新激活Checker" in dispatch
-    assert "发送后结束本轮Worker工作" in execute
-    assert "不读取Checker状态" in execute
-    assert "令牌到达即开始 D1" in execute
+    assert "交付完成后 Worker 结束活动" in execute
+    assert "不读取 Checker 状态" in execute
+    assert "外部 headless OCRV 宿主" in execute
     assert "每次操作结束当前 turn" in recover
     assert "真实激活返回端点不可用" in recover
     assert "不重复激活" in recover
@@ -855,7 +855,7 @@ def test_optional_overwatcher_is_one_active_session_without_authority_or_relay()
     watch = read_skill("slk-overwatch-run")
     recover = read_skill("slk-recover-communication")
 
-    for marker in ("可选", "每 Run 最多一个", "不接管三角色通讯", "缺席不阻断工作"):
+    for marker in ("可选", "每 Run 最多一个", "不接管三角色通讯", "缺席不阻断"):
         assert marker in main
     for marker in ("同一 Session 不跨 Run 复用", "独立凭证", "不改变上述三角色直连"):
         assert marker in manage
@@ -1046,7 +1046,7 @@ def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
     assert "单调递增" in dispatch
     assert "相同或更旧的令牌编号" in execute and "不重开 CELL" in execute
     assert "真实激活操作" in main
-    assert "同一 message、信封、端点和 scope 一次" in main
+    assert "exact retry 只原样一次" in main
     assert "同号或旧号不改指针" in record
     assert "完整工程历史" in record and "不复制整段令牌历史" in record
 
@@ -1298,13 +1298,10 @@ def test_4210_worker_checker_and_resource_corrections_are_explicit() -> None:
     check = read_skill("slk-check-cell")
     resources = read_skill("slk-guard-resources")
 
-    for marker in (
-        "SLK_DSH_INSTANCE_ID",
-        "SLK_DSH_SESSION_ID",
-        "evidence index",
-        "原始日志路径",
-    ):
+    for marker in ("密封 Checker endpoint/envelope", "evidence index", "原始日志路径"):
         assert marker in execute
+    assert "SLK_DSH_INSTANCE_ID" not in execute
+    assert "SLK_DSH_SESSION_ID" not in execute
     for marker in (
         "一个正式 D1",
         "低严重性观察",

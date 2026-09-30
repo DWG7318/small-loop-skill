@@ -4,8 +4,15 @@ import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
+import uuid
 
 import pytest
+
+from slk_transport.adapters.dsh import DshAdapter
+from slk_transport.adapters.ocrv import OcrvAdapter
+from slk_transport.contracts import canonical_json_sha256
+from slk_transport.dispatcher import dispatch_once
 
 
 def state_binary() -> Path:
@@ -49,7 +56,258 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.3.4"}
+    assert result == {"status": "ok", "version": "4.3.5"}
+
+
+def test_init_run_can_atomically_deliver_credential_without_printing_secret(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke(["configure", "--data-root", tmp_path / "state"], environment)
+    request_path = write_json(tmp_path / "init.json", init_request())
+    credential_path = (tmp_path / "credentials" / "supervisor.secret").resolve()
+    credential_path.parent.mkdir()
+
+    completed = invoke(
+        [
+            "init-run",
+            "--request",
+            request_path,
+            "--credential-out",
+            credential_path,
+        ],
+        environment,
+    )
+
+    result = json.loads(completed.stdout)
+    secret = credential_path.read_text(encoding="utf-8").strip()
+    assert secret.startswith("slk_")
+    assert secret not in completed.stdout
+    assert result["credential_delivery"] == "ATOMIC_FILE"
+    assert result["supervisor_credential_file"] == str(credential_path)
+    assert result["supervisor_credential_sha256"] == hashlib.sha256(secret.encode()).hexdigest()
+
+
+def test_init_run_credential_target_collision_fails_before_run_creation(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke(["configure", "--data-root", tmp_path / "state"], environment)
+    request_path = write_json(tmp_path / "init.json", init_request())
+    credential_path = tmp_path / "existing.secret"
+    credential_path.write_text("owner-data", encoding="utf-8")
+
+    failed = invoke(
+        ["init-run", "--request", request_path, "--credential-out", credential_path],
+        environment,
+        check=False,
+    )
+
+    assert failed.returncode != 0
+    assert credential_path.read_text(encoding="utf-8") == "owner-data"
+    retry = invoke(["init-run", "--request", request_path], environment)
+    assert json.loads(retry.stdout)["status"] == "initialized"
+
+
+def test_actual_adapter_native_v2_receipt_commits_to_state_without_hash_aliasing(tmp_path):
+    environment = configured_environment(tmp_path)
+    invoke(["configure", "--data-root", tmp_path / "state"], environment)
+    initialized = json.loads(
+        invoke(
+            ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+            environment,
+        ).stdout
+    )
+    supervisor_environment = environment.copy()
+    supervisor_environment["SLK_ROLE_CREDENTIAL"] = initialized["supervisor_credential"]
+    checker = json.loads(
+        invoke(
+            [
+                "register-role",
+                "--request",
+                write_json(tmp_path / "checker.json", role_request("register-checker", "checker-a", "checker")),
+            ],
+            supervisor_environment,
+        ).stdout
+    )
+    checker_environment = environment.copy()
+    checker_environment["SLK_ROLE_CREDENTIAL"] = checker["role_credential"]
+    worker = json.loads(
+        invoke(
+            [
+                "register-role",
+                "--request",
+                write_json(tmp_path / "worker.json", role_request("register-worker", "worker-a", "worker")),
+            ],
+            checker_environment,
+        ).stdout
+    )
+    fake_dsh = Path(__file__).parents[1] / "transport" / "fake_dsh.py"
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init"], cwd=repository, check=True, capture_output=True)
+    dsh_runtime = tmp_path / "dsh-runtime"
+    dsh_runtime.mkdir()
+    worker_endpoint = {
+        "schema_version": "slk.transport-endpoint/v1",
+        "run_id": "run-a",
+        "role": "worker",
+        "role_instance_id": "worker-a",
+        "agent_runtime": "dsh",
+        "adapter": "dsh-worker",
+        "host_id": "local",
+        "endpoint_version": 1,
+        "state": "active",
+        "address": {
+            "command": [sys.executable, str(fake_dsh), "normal"],
+            "instance_id": "run-a-worker",
+            "session_id": None,
+            "runtime_root": str(dsh_runtime),
+            "cwd": str(repository),
+            "timeout_seconds": 5,
+        },
+    }
+    ocrv_runtime = tmp_path / "ocrv-runtime"
+    ocrv_runtime.mkdir()
+    checker_endpoint = {
+        "schema_version": "slk.transport-endpoint/v1",
+        "run_id": "run-a",
+        "role": "checker",
+        "role_instance_id": "checker-a",
+        "agent_runtime": "ocrv",
+        "adapter": "ocrv-checker",
+        "host_id": "local",
+        "endpoint_version": 1,
+        "state": "active",
+        "address": {
+            "command": ["D:/OCRV/slk-checker.cmd"],
+            "runtime_root": str(ocrv_runtime),
+            "timeout_seconds": 5,
+        },
+    }
+
+    def commit_start(
+        *,
+        sender_environment,
+        endpoint,
+        envelope,
+        attempt,
+        expected_runtime_revision,
+        suffix,
+    ):
+        started_path = attempt / "started.json"
+        request = {
+            "event_id": f"transport-started-{suffix}",
+            "transport_receipt_id": f"transport-receipt-{suffix}",
+            "run_id": "run-a",
+            "go_id": "GO-001",
+            "cell_id": "CELL-001",
+            "attempt": 1,
+            "plan_revision": 1,
+            "expected_runtime_revision": expected_runtime_revision,
+            "message_id": envelope["message_id"],
+            "token_sequence": envelope["token_sequence"],
+            "from_role_instance_id": envelope["sender_role_instance_id"],
+            "to_role_instance_id": envelope["receiver_role_instance_id"],
+            "endpoint_version": endpoint["endpoint_version"],
+            "payload_type": envelope["payload_type"],
+            "payload_sha256": envelope["payload_sha256"],
+            "start_evidence": {
+                "evidence_id": f"native-start-{suffix}",
+                "stored_path": str(started_path.resolve()),
+                "sha256": hashlib.sha256(started_path.read_bytes()).hexdigest(),
+                "message_id": envelope["message_id"],
+                "endpoint_sha256": hashlib.sha256((attempt / "endpoint.json").read_bytes()).hexdigest(),
+                "envelope_sha256": hashlib.sha256((attempt / "envelope.json").read_bytes()).hexdigest(),
+                "native_status": "STARTED",
+            },
+            "occurred_at": "2026-09-20T00:00:02Z",
+        }
+        return json.loads(
+            invoke(
+                ["commit-delivery-start", "--request", write_json(tmp_path / f"commit-{suffix}.json", request)],
+                sender_environment,
+            ).stdout
+        )
+
+    worker_payload = {"probe_nonce": "native-v2-cross-layer"}
+    dispatch_payload = {"worker_endpoint": worker_endpoint, "worker_payload": worker_payload}
+    supervisor_to_checker = {
+        "schema_version": "slk.transport-envelope/v1",
+        "message_id": str(uuid.uuid4()),
+        "token_sequence": 2,
+        "run_id": "run-a",
+        "go_id": "GO-001",
+        "cell_id": "CELL-001",
+        "sender_role": "supervisor",
+        "sender_role_instance_id": "supervisor-a",
+        "receiver_role": "checker",
+        "receiver_role_instance_id": "checker-a",
+        "receiver_endpoint_version": 1,
+        "payload_type": "CELL_DISPATCH",
+        "payload_sha256": canonical_json_sha256(dispatch_payload),
+        "payload": dispatch_payload,
+    }
+    first_root = tmp_path / "ocrv-attempts"
+    first_result = dispatch_once(
+        checker_endpoint,
+        supervisor_to_checker,
+        first_root,
+        adapters={"ocrv-checker": OcrvAdapter()},
+    )
+    assert first_result.status == "completed"
+    first_attempt = first_root / "run-a" / supervisor_to_checker["message_id"]
+    supervisor_auth = json.loads(
+        invoke(
+            ["authenticate-role", "--run-id", "run-a", "--role-instance-id", "supervisor-a"],
+            supervisor_environment,
+        ).stdout
+    )
+    first_commit = commit_start(
+        sender_environment=supervisor_environment,
+        endpoint=checker_endpoint,
+        envelope=supervisor_to_checker,
+        attempt=first_attempt,
+        expected_runtime_revision=supervisor_auth["runtime_revision"],
+        suffix="checker",
+    )
+    assert first_commit["token_owner_role_instance_id"] == "checker-a"
+
+    worker_task = {
+        "schema_version": "slk.transport-envelope/v1",
+        "message_id": str(uuid.uuid4()),
+        "token_sequence": 3,
+        "run_id": "run-a",
+        "go_id": "GO-001",
+        "cell_id": "CELL-001",
+        "sender_role": "checker",
+        "sender_role_instance_id": "checker-a",
+        "receiver_role": "worker",
+        "receiver_role_instance_id": "worker-a",
+        "receiver_endpoint_version": 1,
+        "payload_type": "WORKER_TASK",
+        "payload_sha256": canonical_json_sha256(worker_payload),
+        "payload": worker_payload,
+    }
+    second_root = tmp_path / "dsh-attempts"
+    second_result = dispatch_once(
+        worker_endpoint,
+        worker_task,
+        second_root,
+        adapters={"dsh-worker": DshAdapter()},
+    )
+    assert second_result.status == "completed"
+    second_attempt = second_root / "run-a" / worker_task["message_id"]
+    start = json.loads((second_attempt / "started.json").read_text(encoding="utf-8"))
+    assert start["request_sha256"] == worker_task["payload_sha256"]
+    assert start["native_request_sha256"] != start["request_sha256"]
+    second_commit = commit_start(
+        sender_environment=checker_environment,
+        endpoint=worker_endpoint,
+        envelope=worker_task,
+        attempt=second_attempt,
+        expected_runtime_revision=first_commit["runtime_revision"],
+        suffix="worker",
+    )
+    assert second_commit["status"] == "committed"
+    assert second_commit["token_owner_role_instance_id"] == "worker-a"
+    assert worker["role_credential"].startswith("slk_")
 
 
 def init_request():

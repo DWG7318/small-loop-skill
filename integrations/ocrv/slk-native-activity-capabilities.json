@@ -1,0 +1,8 @@
+{
+  "schema_version": "slk.native-activity-capability/v1",
+  "method_version": "4.3.5",
+  "runtime": "ocrv",
+  "read_only_observation": true,
+  "model_call_required": false,
+  "native_events": ["review/progress", "task/status"]
+}

@@ -70,8 +70,12 @@ def test_codex_reads_exact_idle_thread_then_starts_turn(tmp_path: Path) -> None:
         "turn/start",
     ]
     started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
-    assert started["thread_id"] == "thr_exact"
-    assert started["turn_id"] == "turn_exact"
+    assert started["schema_version"] == "slk.native-start/v2"
+    assert started["native_task"] == {
+        "kind": "codex-turn",
+        "id": "thr_exact:turn_exact",
+        "status": "RUNNING",
+    }
 
 
 @pytest.mark.parametrize(

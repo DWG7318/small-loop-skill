@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-native-start.schema.json",
+  "title": "SLK exact native start receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "adapter", "run_id", "cell_id", "message_id", "request_sha256", "native_request_sha256", "observed_at", "process", "native_task"],
+  "properties": {
+    "schema_version": {"const": "slk.native-start/v2"},
+    "status": {"const": "STARTED"},
+    "adapter": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "cell_id": {"type": "string", "minLength": 1},
+    "message_id": {"type": "string", "format": "uuid"},
+    "request_sha256": {"$ref": "#/$defs/sha256"},
+    "native_request_sha256": {"$ref": "#/$defs/sha256"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "creation_time"],
+      "properties": {
+        "pid": {"type": "integer", "minimum": 1},
+        "creation_time": {"type": "string", "minLength": 1}
+      }
+    },
+    "native_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "status"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["PENDING", "RUNNING", "IDLE", "COMPLETED", "FAILED"]}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

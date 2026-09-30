@@ -12,6 +12,11 @@ from typing import Any, Mapping
 from .base import AdapterError
 from ..contracts import RESULT_SCHEMA, DeliveryResult, Endpoint, Envelope
 from ..evidence import Attempt
+from ..native_activity import (
+    NativeActivityError,
+    make_native_start,
+    validate_native_task_activity,
+)
 from ..process import windows_no_window_kwargs
 from ..instance_id import validate_worker_instance_id
 from ..subprocess_watch import finish, spawn
@@ -271,6 +276,18 @@ class DshAdapter:
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
         environment["DSH_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
+        environment["SLK_NATIVE_ACTIVITY_PATH"] = str(attempt.root / "native-activity.json")
+        environment["SLK_NATIVE_ACTIVITY_CONTEXT"] = json.dumps(
+            {
+                "adapter": endpoint.adapter,
+                "run_id": envelope.run_id,
+                "cell_id": envelope.cell_id,
+                "message_id": envelope.message_id,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         task_path, task_sha256 = self.create_task_file(endpoint, envelope, attempt, drop_root)
         command = self.command(endpoint, self.task_instruction(task_path, task_sha256))
         process = None
@@ -285,33 +302,58 @@ class DshAdapter:
                     process_kwargs=windows_no_window_kwargs(),
                 )
                 session_id: str | None = None
+                activity_path = attempt.root / "native-activity.json"
                 while self._monotonic() - started_at < timeout:
                     after = self._sessions(session_root)
                     expected = endpoint.address["session_id"]
-                    if expected is not None and expected in after and process.poll() is None:
-                        session_id = str(expected)
-                    elif expected is None:
-                        created = sorted(set(after) - set(before))
-                        if len(created) > 1:
-                            process.kill()
-                            process.communicate()
-                            raise AdapterError(
-                                "DSH_SESSION_AMBIGUOUS",
-                                f"first Worker activation created {len(created)} sessions instead of one",
+                    created = sorted(set(after) - set(before))
+                    if expected is None and len(created) > 1:
+                        process.kill()
+                        process.communicate()
+                        raise AdapterError(
+                            "DSH_SESSION_AMBIGUOUS",
+                            f"first Worker activation created {len(created)} sessions instead of one",
+                        )
+                    if activity_path.is_file() and process.poll() is None:
+                        try:
+                            activity_raw = json.loads(
+                                activity_path.read_text(encoding="utf-8-sig")
                             )
-                        if len(created) == 1 and process.poll() is None:
-                            session_id = created[0]
+                            if not isinstance(activity_raw, Mapping):
+                                raise NativeActivityError(
+                                    "DSH native activity projection must be an object"
+                                )
+                            activity = validate_native_task_activity(
+                                activity_raw,
+                                adapter=endpoint.adapter,
+                                run_id=envelope.run_id,
+                                cell_id=envelope.cell_id,
+                                message_id=envelope.message_id,
+                                native_task_id=str(expected) if expected is not None else None,
+                            )
+                            activity_session = str(activity["native_task_id"])
+                            if expected is not None:
+                                if expected in after:
+                                    session_id = activity_session
+                            elif activity_session in created:
+                                session_id = activity_session
+                        except (OSError, json.JSONDecodeError, NativeActivityError):
+                            session_id = None
                     if session_id is not None:
                         attempt.write_json_once(
                             "started.json",
-                            {
-                                "message_id": envelope.message_id,
-                                "run_id": envelope.run_id,
-                                "status": "started",
-                                "instance_id": endpoint.address["instance_id"],
-                                "session_id": session_id,
-                                "task_sha256": task_sha256,
-                            },
+                            make_native_start(
+                                adapter=endpoint.adapter,
+                                run_id=envelope.run_id,
+                                cell_id=envelope.cell_id,
+                                message_id=envelope.message_id,
+                                request_sha256=envelope.payload_sha256,
+                                native_request_sha256=task_sha256,
+                                native_task_kind="dsh-session",
+                                native_task_id=session_id,
+                                native_task_status="RUNNING",
+                                pid=process.pid,
+                            ),
                         )
                         break
                     if process.poll() is not None:

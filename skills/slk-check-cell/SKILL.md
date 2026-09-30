@@ -20,7 +20,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 1. 先做 Checker 本地轻量预检：确认候选对应当前 `CELL n/N`，读取候选元数据、changed paths、验收条件、模型与工具能力、已通过的 OCRV runtime/model/adapter/endpoint 与 D1 验收目标。OCRV 先物化最终 background，记录字符/字节/证据量，再执行 `review --preview`；仅按 preview 的真实 reviewable paths、criteria 和容量动态生成顺序 `D1-A/B/C...` 内部段。每段用 `--exclude` 排除其余候选路径，preview 选中路径应与 manifest 完全相同，否则模型启动前返回 `OCRV_REVIEW_INCOMPLETE`。内部段共享同一 CELL、candidate、attempt 与 TOKEN，仍只形成一个正式 D1。
 2. 检查目标结果、相关回归、明显副作用和候选中客观可观察的风险。
-3. 用 `slk-state write` 记录 `D1_STARTED`，优先使用现有测试、构建入口或直接操作，验证目标和真实未覆盖风险，形成独立判断；证据足够时收敛。检查命令遇到独占资源阻塞时按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md)，不把占用误判为 D1 FAIL。
+3. OCRV 标准入口用密封 Checker 凭证记录绑定当前 candidate 的 `D1_STARTED`；Supervisor、Overwatcher 和普通 shell 不读取凭证、不代写 D1。Checker 优先使用现有测试、构建入口或直接操作，验证目标和真实未覆盖风险；独占资源阻塞时按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md)，不把占用误判为 D1 FAIL。
    Owner 已为本次 Run 启用效率工具时，Checker 可用 Probe CLI 独立定位影响范围，用 RTK 压缩高噪声测试或构建输出；核心 diff、关键错误原文和决定 D1 的证据仍直接检查，出现失败、截断或疑义时回退原生命令，不能让压缩摘要替代独立判断。
 4. 随后读取 Worker 的 D0 与施工记录，核对是否出现新的客观事实或遗漏风险；D0 结论不替代 Checker 的独立证据。
 5. 由 Checker 汇总内部检查段后给出唯一正式 D1 结果；只有 PASS 或 FAIL 闭合 D1。段严格顺序执行，HIGH/BLOCKER/CRITICAL finding 立即停止后继；精确 PASS 复用应同时绑定 candidate、scope 和 criteria 哈希。aggregate 只接收段身份、verdict、reason codes、finding 摘要及 request/result 哈希，不回灌完整段结果或其路径。过程把 `process exit`、`JSON parse` 与 `business status` 分开；段超时、缺少关键证明或覆盖不完整保留证据并返回 `OCRV_REVIEW_INCOMPLETE`，检查工具或环境故障不写为 PASS，也不冒充产品 FAIL。发现绑定验收条件的实质产品缺陷才记 FAIL；完整覆盖下只有低严重性观察时可以 PASS 并保留观察，不能机械判为 FAIL。INCOMPLETE 保留同一 candidate 与 D1 attempt，不增加返工 round；关键验收条件有直接证据才写 PASS。OCRV 长审查不由一次性 DSH/Worker 进程托管；确需改变方案时交 Supervisor 协助：
@@ -28,7 +28,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
    - `D1 FAIL：CELL n/N，进入返工`；`D1 INCOMPLETE：CELL n/N，说明未证明项`
 6. D1 FAIL 时形成结构化 `D1_FAILURE_ESCALATION`：绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体差距、复现方式、期望结果和证据引用；把 TOKEN 交给 Supervisor 生成改进指引，不由 Checker 直接启动返工。
 7. 在执行 D1 的同时，顺手记录本 CELL 的容量事实，例如工作量是否合适、是否接近当前能力或是否因过大带来返工；这复用已有事实，不增加额外检查。
-8. 把 D1 结果、错误、返工与容量事实通过 `slk-state` 记录，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项与证据，不写 `D1_PASSED` 或 `D1_FAILED`、不推进令牌。需要交付既定后继时按精确端点调用 `slk-transport send`；匹配的 `started.json` 出现后，发送者用 `slk-state commit-delivery-start` 原子提交启动证据、TOKEN、事件和 runtime revision，失败时记录 `TRANSPORT_FAILED` 且仍由 Checker 持有责任。
+8. 标准工具先把终态 run/message、当前原生 review 身份、实际 result SHA-256 及分段 aggregate/segment 哈希闭合绑定，再用 Checker 凭证把 D1 结果、错误、返工与容量事实写入 `slk-state`，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项，不写 `D1_PASSED` 或 `D1_FAILED`、不推进令牌。后继交付仍由发送者在匹配 v2 start 后原子提交 TOKEN、事件和 revision；失败记 `TRANSPORT_FAILED` 且责任仍由 Checker 持有。
 
 ## 后继
 

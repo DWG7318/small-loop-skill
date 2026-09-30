@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 import slk_transport.worker_completion as worker_completion
 
+from slk_transport.adapters.ocrv import OcrvAdapter
+from slk_transport.contracts import Endpoint, Envelope, canonical_json_sha256
+from slk_transport.dispatcher import dispatch_once
 from slk_transport.worker_completion import (
     CompletionError,
+    _activate_staged_checker,
     _decode_dpapi_plaintext,
     build_continuation_request,
     execute_checker_recovery,
@@ -19,11 +25,13 @@ from slk_transport.worker_completion import (
     run_worker_continuation,
     _stable_id,
 )
+from slk_transport.native_activity import make_native_start
 
 from test_contracts import MESSAGE_ID, endpoint_value, envelope_value
 
 
 FAKE_DSH = Path(__file__).with_name("fake_dsh.py")
+FAKE_OCRV = Path(__file__).with_name("fake_ocrv.py")
 VALID_CREDENTIAL = "slk_" + "a" * 64
 
 
@@ -95,7 +103,7 @@ def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.3.4",
+        "method_version": "4.3.5",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -143,18 +151,59 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.3.4"
-        return {"status": "CHECKER_STARTED"}
+        assert continuation["method_version"] == "4.3.5"
+        return {
+            "status": "CHECKER_DELIVERY_READY",
+            "source_message_id": continuation["source_message_id"],
+            "candidate_message_id": "candidate-message-1",
+            "runtime_revision": 10,
+            "endpoint_path": str(tmp_path / "checker-endpoint.json"),
+            "envelope_path": str(tmp_path / "candidate-envelope.json"),
+            "attempt_root": str(tmp_path / "checker-attempts"),
+        }
+
+    def activate(outcome: dict[str, object], continuation: dict[str, object]) -> dict[str, object]:
+        calls.append("activate")
+        assert outcome["status"] == "CHECKER_DELIVERY_READY"
+        assert continuation["method_version"] == "4.3.5"
+        return {
+            "status": "CHECKER_STARTED",
+            "runtime_revision": 11,
+            "candidate_message_id": outcome["candidate_message_id"],
+            "token_sequence": 15,
+            "checker_token_already_committed": False,
+            "native_attempt_path": str(tmp_path / "checker-attempts" / "RUN-A" / "candidate-message-1"),
+        }
+
+    def record(
+        activation: dict[str, object],
+        continuation: dict[str, object],
+        credential: Path,
+        timeout: float,
+    ) -> dict[str, object]:
+        calls.append("record")
+        assert activation["status"] == "CHECKER_STARTED"
+        assert continuation["method_version"] == "4.3.5"
+        assert credential.name == "checker.dpapi"
+        assert timeout == 30
+        return {
+            "status": "CHECKER_D1_RECORDED",
+            "d1_verdict": "PASS",
+            "d1_event_type": "D1_PASSED",
+            "native_result_path": str(tmp_path / "ocrv-result.json"),
+        }
 
     result = execute_checker_recovery(
         request,
         request_sha256="a" * 64,
         authenticate_checker=authenticate,
         resume_continuation=resume,
+        activate_checker=activate,
+        record_checker_d1=record,
     )
 
-    assert calls == ["authenticate", "resume"]
-    assert result["status"] == "CHECKER_STARTED"
+    assert calls == ["authenticate", "resume", "activate", "record"]
+    assert result["status"] == "CHECKER_D1_RECORDED"
     assert result["checker_role_instance_id"] == request["checker_role_instance_id"]
 
 
@@ -198,6 +247,70 @@ def test_checker_recovery_rejects_supervisor_direct_call_and_wrong_checker(
     assert wrong_checker.value.error_code == "CHECKER_RECOVERY_AUTHENTICATION_FAILED"
 
 
+def test_checker_token_recovery_reuses_staged_candidate_without_resuming_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = checker_recovery_request(tmp_path)
+    source_message_id = MESSAGE_ID
+    candidate_message_id = _stable_id(source_message_id, "candidate-ready")
+    projection_path = Path(str(request["runtime_projection_path"]))
+    projection = json.loads(projection_path.read_text(encoding="utf-8"))
+    projection["runtime_snapshot"]["token_holder_role_instance_id"] = request["checker_role_instance_id"]
+    projection["runtime_snapshot"]["latest_message_id"] = candidate_message_id
+    write_json(projection_path, projection)
+    attempt_root = (
+        Path(str(request["source_attempt_root"]))
+        / "worker-continuation"
+        / "checker-attempts"
+    )
+    candidate_attempt = attempt_root / "RUN-A" / candidate_message_id
+    write_json(candidate_attempt / "endpoint.json", request["checker_endpoint"])
+    write_json(candidate_attempt / "envelope.json", {"message_id": candidate_message_id})
+    write_json(candidate_attempt / "started.json", {"status": "started"})
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID", str(request["checker_role_instance_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ENDPOINT_VERSION", str(request["checker_endpoint_version"]))
+    activated_outcomes: list[dict[str, object]] = []
+
+    result = execute_checker_recovery(
+        request,
+        request_sha256="d" * 64,
+        authenticate_checker=lambda run_id, role_id, _path, _command: {
+            "status": "authenticated",
+            "run_id": run_id,
+            "role": "checker",
+            "role_instance_id": role_id,
+            "runtime_revision": 7,
+        },
+        resume_continuation=lambda _continuation: pytest.fail(
+            "existing candidate and Checker TOKEN must not resume or redo Worker"
+        ),
+        activate_checker=lambda outcome, _continuation: (
+            activated_outcomes.append(dict(outcome))
+            or {
+                "status": "CHECKER_STARTED",
+                "runtime_revision": 7,
+                "candidate_message_id": candidate_message_id,
+                "token_sequence": 14,
+                "checker_token_already_committed": True,
+                "native_attempt_path": str(candidate_attempt),
+            }
+        ),
+        record_checker_d1=lambda _activation, _continuation, _credential, _timeout: {
+            "status": "CHECKER_D1_RECORDED",
+            "d1_verdict": "PASS",
+            "d1_event_type": "D1_PASSED",
+            "native_result_path": str(candidate_attempt / "ocrv-result.json"),
+        },
+    )
+
+    assert result["status"] == "CHECKER_D1_RECORDED"
+    assert result["checker_token_already_committed"] is True
+    assert activated_outcomes[0]["checker_token_already_committed"] is True
+    assert activated_outcomes[0]["attempt_root"] == str(attempt_root.resolve())
+
+
 def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[str, object]]:
     (tmp_path / "runtime").mkdir()
     (tmp_path / "repository").mkdir()
@@ -231,12 +344,21 @@ def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[st
     write_json(
         attempt / "started.json",
         {
-            "message_id": envelope["message_id"],
+            "schema_version": "slk.native-start/v2",
+            "status": "STARTED",
+            "adapter": "dsh-worker",
             "run_id": "RUN-A",
-            "status": "started",
-            "instance_id": "RUN-A-worker",
-            "session_id": endpoint["address"]["session_id"],
-            "task_sha256": "a" * 64,
+            "cell_id": "CELL-001",
+            "message_id": envelope["message_id"],
+            "request_sha256": "a" * 64,
+            "native_request_sha256": "b" * 64,
+            "observed_at": "2026-09-23T00:00:00Z",
+            "process": {"pid": 1, "creation_time": "fixture:1"},
+            "native_task": {
+                "kind": "dsh-session",
+                "id": endpoint["address"]["session_id"],
+                "status": "RUNNING",
+            },
         },
     )
     write_json(
@@ -288,7 +410,7 @@ def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[st
 def runtime_projection(
     *,
     event_types: list[str] | None = None,
-    token_owner: str = "ROLE-worker",
+    token_owner: str = "RUN-A-worker-001",
     attempt: int = 1,
 ) -> dict[str, object]:
     types = ["TRANSPORT_STARTED", *(item for item in event_types or [] if item != "TRANSPORT_STARTED")]
@@ -304,9 +426,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.3.4", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.3.5", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.3.4",
+            "method_version": "4.3.5",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,
@@ -647,7 +769,7 @@ def test_resume_worker_continuation_uses_exact_session_and_strips_parent_credent
 
     result = resume_worker_continuation(request)
 
-    assert result["status"] == "CHECKER_STARTED"
+    assert result["status"] == "CHECKER_DELIVERY_READY"
     assert result["source_message_id"] == request["source_message_id"]
     started = json.loads((attempt / "worker-continuation" / "started.json").read_text(encoding="utf-8"))
     assert started["session_id"] == session_id
@@ -734,6 +856,549 @@ def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path:
     index = json.loads(index_path.read_text(encoding="utf-8"))
     assert index["schema_version"] == "slk.checker-evidence-index/v1"
     assert {entry["name"] for entry in index["entries"]} >= {"native.stdout.txt", "native.stderr.txt"}
+
+
+def test_dsh_worker_only_stages_checker_delivery_and_never_hosts_ocrv(tmp_path: Path) -> None:
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    staged: list[dict[str, object]] = []
+
+    def stage_checker(
+        endpoint_raw: dict[str, object], envelope_raw: dict[str, object]
+    ) -> dict[str, object]:
+        staged.append(envelope_raw)
+        endpoint_path = write_json(tmp_path / "staged-endpoint.json", endpoint_raw)
+        envelope_path = write_json(tmp_path / "staged-envelope.json", envelope_raw)
+        return {
+            "status": "delivery_ready",
+            "endpoint_path": str(endpoint_path),
+            "envelope_path": str(envelope_path),
+            "attempt_root": str(tmp_path / "checker-attempts"),
+        }
+
+    result = run_worker_continuation(
+        request,
+        authenticate=lambda *_: 10,
+        write_event=lambda _event: "RECORDED",
+        start_checker=stage_checker,
+        commit_start=lambda _request: pytest.fail(
+            "DSH must not commit a start before the external OCRV host proves it"
+        ),
+        defer_checker_start=True,
+    )
+
+    assert result["status"] == "CHECKER_DELIVERY_READY"
+    assert result["runtime_revision"] == 10
+    assert staged[0]["payload_type"] == "CANDIDATE_READY"
+
+
+def test_external_recovery_host_starts_ocrv_then_commits_exact_native_v2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+
+    def stage_checker(
+        endpoint_raw: dict[str, object], envelope_raw: dict[str, object]
+    ) -> dict[str, object]:
+        return {
+            "status": "delivery_ready",
+            "endpoint_path": str(write_json(tmp_path / "staged-endpoint.json", endpoint_raw)),
+            "envelope_path": str(write_json(tmp_path / "staged-envelope.json", envelope_raw)),
+            "attempt_root": str(tmp_path / "checker-attempts"),
+        }
+
+    outcome = run_worker_continuation(
+        request,
+        authenticate=lambda *_: 10,
+        write_event=lambda _event: "RECORDED",
+        start_checker=stage_checker,
+        commit_start=lambda _request: pytest.fail("DSH must not commit Checker start"),
+        defer_checker_start=True,
+    )
+    commands: list[tuple[list[str], list[str], str | None]] = []
+
+    def run_command(
+        command: list[str], arguments: list[str], *, credential: str | None
+    ) -> dict[str, object]:
+        commands.append((command, arguments, credential))
+        if arguments[0] == "send":
+            endpoint_raw = json.loads(Path(str(outcome["endpoint_path"])).read_text(encoding="utf-8"))
+            envelope_raw = json.loads(Path(str(outcome["envelope_path"])).read_text(encoding="utf-8"))
+            delivery = (
+                Path(str(outcome["attempt_root"]))
+                / str(envelope_raw["run_id"])
+                / str(envelope_raw["message_id"])
+            )
+            write_json(delivery / "endpoint.json", endpoint_raw)
+            write_json(delivery / "envelope.json", envelope_raw)
+            write_json(
+                delivery / "started.json",
+                make_native_start(
+                    adapter=str(endpoint_raw["adapter"]),
+                    run_id=str(envelope_raw["run_id"]),
+                    cell_id=str(envelope_raw["cell_id"]),
+                    message_id=str(envelope_raw["message_id"]),
+                    request_sha256=str(envelope_raw["payload_sha256"]),
+                    native_request_sha256="b" * 64,
+                    native_task_kind="ocrv-review",
+                    native_task_id="review-1",
+                    native_task_status="RUNNING",
+                    pid=os.getpid(),
+                ),
+            )
+            return {
+                "status": "started",
+                "run_id": envelope_raw["run_id"],
+                "message_id": envelope_raw["message_id"],
+                "_slk_command": {"process_exit": 0},
+            }
+        commit_request = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        return {
+            "status": "committed",
+            "runtime_revision": int(commit_request["expected_runtime_revision"]) + 1,
+            "token_sequence": commit_request["token_sequence"],
+            "message_id": commit_request["message_id"],
+            "_slk_command": {"process_exit": 0},
+        }
+
+    monkeypatch.setattr(worker_completion, "_run_json_command", run_command)
+    monkeypatch.setattr(worker_completion, "unprotect_dpapi_hex", lambda _path: VALID_CREDENTIAL)
+
+    activated = _activate_staged_checker(outcome, request)
+
+    assert activated["status"] == "CHECKER_STARTED"
+    assert [arguments[0] for _, arguments, _ in commands] == ["send", "commit-delivery-start"]
+    assert commands[0][2] is None
+    assert commands[1][2] == VALID_CREDENTIAL
+
+
+def test_false_legacy_start_with_token_at_checker_recovers_same_candidate_without_recommit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_id = "SLK-RUN-LCAS-RC08-WINDOWS-IDENTITY-ROOT-R2"
+    source_message_id = "d1d118c5-abb7-4ef9-b0bc-7e5321da73bb"
+    candidate_message_id = "5fe6847d-11bb-5111-8b32-389ea73f0879"
+    checker = endpoint_value(role="checker", version=1)
+    checker["run_id"] = run_id
+    checker["role_instance_id"] = "SLK-RC08-WINDOWS-IDENTITY-CHECKER-R2-01"
+    checker["address"] = {
+        "command": ["D:/OCRV/slk-checker.cmd"],
+        "runtime_root": str(tmp_path / "ocrv"),
+        "timeout_seconds": 30,
+    }
+    (tmp_path / "ocrv").mkdir()
+    payload = {
+        "repository": str(tmp_path),
+        "candidate": {"kind": "commit", "commit": "a3f8f5911bc8dee77ed00333f633ce1a9ba9af68"},
+        "cell_goal": "preserve the existing candidate",
+        "d1_criteria": ["review the same candidate"],
+        "evidence_files": [str(tmp_path / "evidence.json")],
+    }
+    envelope = envelope_value(
+        sender_role="worker",
+        receiver_role="checker",
+        receiver_endpoint_version=1,
+    )
+    envelope.update(
+        {
+            "message_id": candidate_message_id,
+            "token_sequence": 4,
+            "run_id": run_id,
+            "go_id": "LEGACY-GROUP-01",
+            "cell_id": "CELL01",
+            "sender_role_instance_id": "SLK-RC08-WINDOWS-IDENTITY-WORKER-R2-01",
+            "receiver_role_instance_id": checker["role_instance_id"],
+            "payload_type": "CANDIDATE_READY",
+            "payload": payload,
+            "payload_sha256": worker_completion.canonical_json_sha256(payload),
+        }
+    )
+    staged_endpoint = write_json(tmp_path / "staged-endpoint.json", checker)
+    staged_envelope = write_json(tmp_path / "staged-envelope.json", envelope)
+    original_root = tmp_path / "checker-attempts"
+    original_attempt = original_root / run_id / candidate_message_id
+    write_json(original_attempt / "endpoint.json", checker)
+    write_json(original_attempt / "envelope.json", envelope)
+    legacy_bytes = b'{"message_id":"5fe6847d-11bb-5111-8b32-389ea73f0879","status":"started"}\n'
+    (original_attempt / "started.json").write_bytes(legacy_bytes)
+    outcome = {
+        "status": "CHECKER_DELIVERY_READY",
+        "run_id": run_id,
+        "source_message_id": source_message_id,
+        "candidate_message_id": candidate_message_id,
+        "runtime_revision": 16,
+        "checker_token_already_committed": True,
+        "endpoint_path": str(staged_endpoint),
+        "envelope_path": str(staged_envelope),
+        "attempt_root": str(original_root),
+    }
+    continuation = {
+        "method_version": "4.3.5",
+        "run_id": run_id,
+        "go_id": "LEGACY-GROUP-01",
+        "cell_id": "CELL01",
+        "attempt": 1,
+        "plan_revision": 1,
+        "runtime_revision": 16,
+        "source_message_id": source_message_id,
+        "source_attempt_root": str(tmp_path / source_message_id),
+        "worker_role_instance_id": "SLK-RC08-WINDOWS-IDENTITY-WORKER-R2-01",
+        "checker_endpoint": checker,
+        "credential_path": str(tmp_path / "worker.dpapi"),
+        "state_command": ["slk-state"],
+        "transport_command": ["slk-transport"],
+        "token_sequence": 4,
+        "checker_token_already_committed": True,
+        "occurred_at": "2026-10-01T04:48:00+08:00",
+    }
+    commands: list[list[str]] = []
+
+    def run_command(
+        _command: list[str], arguments: list[str], *, credential: str | None
+    ) -> dict[str, object]:
+        assert credential is None
+        commands.append(arguments)
+        recovery_root = Path(arguments[arguments.index("--attempt-root") + 1])
+        assert recovery_root != original_root
+        attempt = recovery_root / run_id / candidate_message_id
+        write_json(attempt / "endpoint.json", checker)
+        write_json(attempt / "envelope.json", envelope)
+        write_json(
+            attempt / "started.json",
+            make_native_start(
+                adapter="ocrv-checker",
+                run_id=run_id,
+                cell_id="CELL01",
+                message_id=candidate_message_id,
+                request_sha256=str(envelope["payload_sha256"]),
+                native_request_sha256="c" * 64,
+                native_task_kind="ocrv-review",
+                native_task_id="review-recovery-1",
+                native_task_status="RUNNING",
+                    pid=os.getpid(),
+            ),
+        )
+        return {
+            "status": "started",
+            "run_id": run_id,
+            "message_id": candidate_message_id,
+            "_slk_command": {"process_exit": 0},
+        }
+
+    monkeypatch.setattr(worker_completion, "_run_json_command", run_command)
+    monkeypatch.setattr(
+        worker_completion,
+        "unprotect_dpapi_hex",
+        lambda _path: pytest.fail("TOKEN is already at Checker; Worker credential must not be used"),
+    )
+
+    activated = _activate_staged_checker(outcome, continuation)
+
+    assert activated["status"] == "CHECKER_STARTED"
+    assert activated["runtime_revision"] == 16
+    assert activated["token_sequence"] == 4
+    assert activated["checker_token_already_committed"] is True
+    assert len(commands) == 1
+    assert (original_attempt / "started.json").read_bytes() == legacy_bytes
+
+
+def test_native_ocrv_result_is_recorded_by_authenticated_checker_without_supervisor_forgery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_attempt = tmp_path / "native-attempt"
+    write_json(
+        native_attempt / "started.json",
+        make_native_start(
+            adapter="ocrv-checker",
+            run_id="RUN-A",
+            cell_id="CELL-001",
+            message_id="candidate-message-1",
+            request_sha256="a" * 64,
+            native_request_sha256="b" * 64,
+            native_task_kind="ocrv-review",
+            native_task_id="review-1",
+            native_task_status="RUNNING",
+            pid=os.getpid(),
+        ),
+    )
+    write_json(
+        native_attempt / "ocrv-result.json",
+        {
+            "schema_version": "slk.ocrv-d1-result/v1",
+            "run_id": "RUN-A",
+            "cell_id": "CELL-001",
+            "review_invocation_id": "review-1",
+            "verdict": "PASS",
+            "reason_codes": ["OCR_COMPLETE_ZERO_FINDINGS"],
+            "findings": [],
+            "review": {
+                "status": "complete",
+                "provider": "dashscope-tokenplan",
+                "model": "qwen3.8-max",
+                "session_id": "ocrv-session-1",
+                "exit_code": 0,
+            },
+            "evidence": [],
+            "request_sha256": "b" * 64,
+            "artifacts": {},
+        },
+    )
+    write_json(
+        native_attempt / "completed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": "candidate-message-1",
+            "run_id": "RUN-A",
+            "adapter": "ocrv-checker",
+            "status": "completed",
+            "native_identity": {
+                "run_id": "RUN-A",
+                "cell_id": "CELL-001",
+                "review_invocation_id": "review-1",
+                "session_id": "ocrv-session-1",
+                "provider": "dashscope-tokenplan",
+                "model": "qwen3.8-max",
+                "verdict": "PASS",
+                "exit_code": 0,
+                "review_segment_count": 0,
+            },
+            "error_code": None,
+            "evidence": ["started.json", "ocrv-result.json"],
+        },
+    )
+    writes: list[tuple[dict[str, object], str | None]] = []
+
+    def run_command(
+        _command: list[str], arguments: list[str], *, credential: str | None
+    ) -> dict[str, object]:
+        request = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        writes.append((request, credential))
+        return {"status": "recorded", "run_id": "RUN-A", "export": "runtime.json"}
+
+    monkeypatch.setattr(worker_completion, "_run_json_command", run_command)
+    monkeypatch.setattr(worker_completion, "unprotect_dpapi_hex", lambda _path: "slk_" + "c" * 64)
+    continuation = {
+        "run_id": "RUN-A",
+        "go_id": "GO-001",
+        "cell_id": "CELL-001",
+        "attempt": 1,
+        "plan_revision": 1,
+        "source_message_id": MESSAGE_ID,
+        "checker_endpoint": endpoint_value(role="checker", version=2),
+        "state_command": ["slk-state"],
+        "occurred_at": "2026-10-01T00:00:00Z",
+    }
+    activation = {
+        "status": "CHECKER_STARTED",
+        "candidate_message_id": "candidate-message-1",
+        "native_attempt_path": str(native_attempt),
+    }
+
+    result = worker_completion._record_checker_d1(
+        activation,
+        continuation,
+        checker_credential_path=tmp_path / "checker.dpapi",
+        timeout_seconds=1,
+    )
+
+    assert result["status"] == "CHECKER_D1_RECORDED"
+    assert result["d1_verdict"] == "PASS"
+    assert [request["event_type"] for request, _ in writes] == ["D1_STARTED", "D1_PASSED"]
+    assert {credential for _, credential in writes} == {"slk_" + "c" * 64}
+    assert writes[1][0]["details"]["native_result_sha256"] == hashlib.sha256(
+        (native_attempt / "ocrv-result.json").read_bytes()
+    ).hexdigest()
+
+
+def test_checker_d1_rejects_terminal_with_wrong_message_or_native_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_attempt = tmp_path / "native-attempt"
+    write_json(
+        native_attempt / "started.json",
+        make_native_start(
+            adapter="ocrv-checker",
+            run_id="RUN-A",
+            cell_id="CELL-001",
+            message_id="candidate-message-1",
+            request_sha256="a" * 64,
+            native_request_sha256="b" * 64,
+            native_task_kind="ocrv-review",
+            native_task_id="review-1",
+            native_task_status="RUNNING",
+            pid=os.getpid(),
+        ),
+    )
+    write_json(
+        native_attempt / "ocrv-result.json",
+        {
+            "schema_version": "slk.ocrv-d1-result/v1",
+            "run_id": "RUN-A",
+            "cell_id": "CELL-001",
+            "review_invocation_id": "review-1",
+            "verdict": "PASS",
+            "reason_codes": ["OCR_COMPLETE_ZERO_FINDINGS"],
+            "findings": [],
+            "review": {
+                "status": "complete",
+                "provider": "dashscope-tokenplan",
+                "model": "qwen3.8-max",
+                "session_id": "ocrv-session-1",
+                "exit_code": 0,
+            },
+            "evidence": [],
+            "request_sha256": "b" * 64,
+            "artifacts": {},
+        },
+    )
+    write_json(
+        native_attempt / "completed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": "different-candidate-message",
+            "run_id": "RUN-A",
+            "adapter": "ocrv-checker",
+            "status": "completed",
+            "native_identity": {
+                "review_invocation_id": "different-review",
+                "verdict": "PASS",
+            },
+            "error_code": None,
+            "evidence": ["started.json", "ocrv-result.json"],
+        },
+    )
+    monkeypatch.setattr(worker_completion, "unprotect_dpapi_hex", lambda _path: "slk_" + "c" * 64)
+    monkeypatch.setattr(
+        worker_completion,
+        "_run_json_command",
+        lambda *_args, **_kwargs: {"status": "recorded", "run_id": "RUN-A"},
+    )
+    continuation = {
+        "run_id": "RUN-A",
+        "go_id": "GO-001",
+        "cell_id": "CELL-001",
+        "attempt": 1,
+        "plan_revision": 1,
+        "source_message_id": MESSAGE_ID,
+        "checker_endpoint": endpoint_value(role="checker", version=2),
+        "state_command": ["slk-state"],
+        "occurred_at": "2026-10-01T00:00:00Z",
+    }
+    activation = {
+        "status": "CHECKER_STARTED",
+        "candidate_message_id": "candidate-message-1",
+        "native_attempt_path": str(native_attempt),
+    }
+
+    with pytest.raises(worker_completion.CompletionError, match="OCRV D1 terminal"):
+        worker_completion._record_checker_d1(
+            activation,
+            continuation,
+            checker_credential_path=tmp_path / "checker.dpapi",
+            timeout_seconds=1,
+        )
+
+
+def test_actual_ocrv_adapter_terminal_is_bound_into_checker_d1(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "ocrv-runtime"
+    runtime_root.mkdir()
+    checker_raw = endpoint_value(role="checker", version=2)
+    checker_raw["address"] = {
+        "command": [sys.executable, str(FAKE_OCRV), "normal"],
+        "runtime_root": str(runtime_root),
+        "timeout_seconds": 5,
+    }
+    checker = Endpoint.from_dict(checker_raw)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    payload = {
+        "repository": str(repository),
+        "candidate": {"kind": "workspace"},
+        "cell_goal": "Verify the actual Checker result binding.",
+        "d1_criteria": ["The actual adapter result remains bound."],
+        "evidence_files": [],
+    }
+    envelope_raw = envelope_value(sender_role="worker", receiver_role="checker")
+    envelope_raw["payload_type"] = "CANDIDATE_READY"
+    envelope_raw["payload"] = payload
+    envelope_raw["payload_sha256"] = canonical_json_sha256(payload)
+    envelope = Envelope.from_dict(envelope_raw)
+    result = dispatch_once(
+        asdict(checker),
+        asdict(envelope),
+        tmp_path / "attempts",
+        adapters={"ocrv-checker": OcrvAdapter()},
+    )
+    assert result.status == "completed"
+    native_attempt = tmp_path / "attempts" / envelope.run_id / envelope.message_id
+    writes: list[dict[str, object]] = []
+
+    def run_command(
+        _command: list[str], arguments: list[str], *, credential: str | None
+    ) -> dict[str, object]:
+        assert credential == "slk_" + "c" * 64
+        writes.append(json.loads(Path(arguments[-1]).read_text(encoding="utf-8")))
+        return {"status": "recorded", "run_id": envelope.run_id}
+
+    monkeypatch.setattr(worker_completion, "_run_json_command", run_command)
+    monkeypatch.setattr(worker_completion, "unprotect_dpapi_hex", lambda _path: "slk_" + "c" * 64)
+    continuation = {
+        "run_id": envelope.run_id,
+        "go_id": envelope.go_id,
+        "cell_id": envelope.cell_id,
+        "attempt": 1,
+        "plan_revision": 1,
+        "source_message_id": MESSAGE_ID,
+        "checker_endpoint": asdict(checker),
+        "state_command": ["slk-state"],
+        "occurred_at": "2026-10-01T00:00:00Z",
+    }
+    recorded = worker_completion._record_checker_d1(
+        {
+            "status": "CHECKER_STARTED",
+            "candidate_message_id": envelope.message_id,
+            "native_attempt_path": str(native_attempt),
+        },
+        continuation,
+        checker_credential_path=tmp_path / "checker.dpapi",
+        timeout_seconds=1,
+    )
+
+    assert recorded["d1_verdict"] == "PASS"
+    assert [item["event_type"] for item in writes] == ["D1_STARTED", "D1_PASSED"]
+    assert writes[1]["details"]["native_result_sha256"] == hashlib.sha256(
+        (native_attempt / "ocrv-result.json").read_bytes()
+    ).hexdigest()
 
 
 def test_missing_worker_repository_uses_authenticated_endpoint_cwd(tmp_path: Path) -> None:

@@ -129,7 +129,9 @@ def test_desktop_owned_writer_recovers_original_unresolved_handoff_without_forgi
     assert (recovery_root / "recovery.json").is_file()
     started = json.loads((recovery_root / "started.json").read_text(encoding="utf-8"))
     assert started["message_id"] == recovered["recovery_message_id"]
-    assert started["recovery_of_message_id"] == envelope["message_id"]
+    assert started["request_sha256"] == envelope["payload_sha256"]
+    assert started["native_request_sha256"] == request["prompt_sha256"]
+    assert started["native_task"]["kind"] == "codex-desktop-turn"
 
     assert prepare_desktop_current_turn(attempts, endpoint, envelope) == request
     assert (

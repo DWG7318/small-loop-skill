@@ -1,4 +1,4 @@
-# Optional Temporal continuity for SLK 4.3.4
+# Optional Temporal continuity for SLK 4.3.5
 
 ## Boundary
 
@@ -26,7 +26,7 @@ The development server is suitable for local evaluation, not a production durabi
 
 ## Startup request
 
-The exact startup schema is enforced by `slk_temporal.contracts.StartSlkRequest`. It binds method version 4.3.4, `run_id`, runtime revision, task queue, acknowledgement timeout, startup idempotency key, exactly one Supervisor/Checker/Worker endpoint and at most one Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, invalid hashes and unsupported versions fail closed.
+The exact startup schema is enforced by `slk_temporal.contracts.StartSlkRequest`. It binds method version 4.3.5, `run_id`, runtime revision, task queue, acknowledgement timeout, startup idempotency key, exactly one Supervisor/Checker/Worker endpoint and at most one Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, invalid hashes and unsupported versions fail closed.
 
 The parent first obtains a hash-bound readiness receipt. It then starts `slk-run-<run_id>` once. A caller may reconnect to the same unchanged parent workflow; a changed request under the same identity is rejected through the frozen startup fingerprint.
 
@@ -34,7 +34,7 @@ The parent first obtains a hash-bound readiness receipt. It then starts `slk-run
 
 1. The authoritative sender requests one delivery with immutable operation/message identity, role endpoints, scope, payload SHA-256 and runtime revision.
 2. The delivery activity invokes the existing transport boundary once.
-3. The receiving native Agent entry records an independently matched native-start ACK.
+3. The thin adapter calls the installed `slk-transport inspect-native-activity` entrance for the exact receipt; it must not implement a second PID/session/legacy-marker heuristic. Only the validated v2 start is converted to the matching ACK, while later continuity keeps `UNKNOWN` distinct from `DEAD`.
 4. The original sender commits the existing SLK delivery-start transaction. Temporal does not commit TOKEN.
 5. If the ACK deadline expires first, the workflow requests exact recovery from the Overwatcher or sender. It does not retry side effects invisibly or alter engineering scope.
 
@@ -45,6 +45,6 @@ Only one unresolved delivery is permitted per serial Run workflow. Duplicate unc
 - SDK/package absent: use normal SLK direct communication.
 - Service unreachable before opt-in readiness: do not start Temporal mode; use direct mode or report a startup blockage.
 - Service becomes unavailable after opt-in: retain the last authoritative SLK state and report continuity as unavailable; do not infer ACK, D1, D2 or progress.
-- Adapter cannot verify a continuation route: return `BLOCKED`; Supervisor decides outside Temporal.
+- Adapter cannot verify the standard native-activity query or continuation route: return `BLOCKED`; Supervisor decides outside Temporal.
 
 No fallback may silently change receiver, model, reasoning effort, role instance, CELL, attempt, payload or acceptance authority.

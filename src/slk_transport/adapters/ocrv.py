@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -21,6 +22,11 @@ from ..contracts import (
     canonical_json_sha256,
 )
 from ..evidence import Attempt
+from ..native_activity import (
+    NativeActivityError,
+    make_native_start,
+    validate_native_start,
+)
 from ..process import windows_no_window_kwargs
 from ..subprocess_watch import finish, spawn
 
@@ -84,6 +90,13 @@ RECOVERY_RESULT_FIELDS = frozenset(
         "authorized_recovery",
         "recovery_invocation_id",
         "request_sha256",
+        "runtime_revision",
+        "token_sequence",
+        "checker_token_already_committed",
+        "native_attempt_path",
+        "d1_verdict",
+        "d1_event_type",
+        "native_result_path",
     }
 )
 EXPECTED_PROVIDER = "dashscope-tokenplan"
@@ -129,10 +142,71 @@ def _nonempty(value: Any, label: str) -> str:
 
 
 def _checker_process_kwargs() -> dict[str, Any]:
-    resumed_dsh = bool(
-        os.environ.get("SLK_DSH_INSTANCE_ID") and os.environ.get("SLK_DSH_SESSION_ID")
+    return windows_no_window_kwargs()
+
+
+def _native_start_context(
+    endpoint: Endpoint,
+    envelope: Envelope,
+    native_request_sha256: str,
+) -> dict[str, str]:
+    return {
+        "adapter": endpoint.adapter,
+        "run_id": envelope.run_id,
+        "cell_id": envelope.cell_id,
+        "message_id": envelope.message_id,
+        "request_sha256": envelope.payload_sha256,
+        "native_request_sha256": native_request_sha256,
+    }
+
+
+def _await_native_start(
+    process: subprocess.Popen[str],
+    receipt_path: Path,
+    endpoint: Endpoint,
+    envelope: Envelope,
+    native_request_sha256: str,
+    timeout: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + min(timeout, 30.0)
+    while time.monotonic() < deadline:
+        if receipt_path.is_file():
+            try:
+                return validate_native_start(
+                    receipt_path,
+                    adapter=endpoint.adapter,
+                    run_id=envelope.run_id,
+                    cell_id=envelope.cell_id,
+                    message_id=envelope.message_id,
+                    request_sha256=envelope.payload_sha256,
+                    native_request_sha256=native_request_sha256,
+                )
+            except NativeActivityError as exc:
+                if "unreadable" not in str(exc) or process.poll() is not None:
+                    raise AdapterError("OCRV_NATIVE_START_INVALID", str(exc)) from exc
+        if process.poll() is not None:
+            break
+        time.sleep(0.01)
+    raise AdapterError(
+        "OCRV_NATIVE_START_UNPROVED",
+        "OCRV child did not publish one matching native-start receipt",
     )
-    return windows_no_window_kwargs(detached=resumed_dsh)
+
+
+def _arm_child_start(
+    environment: dict[str, str],
+    receipt_path: Path,
+    endpoint: Endpoint,
+    envelope: Envelope,
+    native_request_sha256: str,
+) -> None:
+    environment["SLK_NATIVE_START_RECEIPT"] = str(receipt_path)
+    environment["SLK_NATIVE_START_CONTEXT"] = json.dumps(
+        _native_start_context(endpoint, envelope, native_request_sha256),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 class OcrvAdapter:
@@ -190,14 +264,21 @@ class OcrvAdapter:
             "payload": worker_payload,
         }
         next_envelope = Envelope.from_dict(next_raw)
+        request_sha256 = canonical_json_sha256(payload)
         attempt.write_json_once(
             "started.json",
-            {
-                "message_id": envelope.message_id,
-                "run_id": envelope.run_id,
-                "status": "started",
-                "checker_operation": "dispatch",
-            },
+            make_native_start(
+                adapter=endpoint.adapter,
+                run_id=envelope.run_id,
+                cell_id=envelope.cell_id,
+                message_id=envelope.message_id,
+                request_sha256=request_sha256,
+                native_request_sha256=request_sha256,
+                native_task_kind="checker-dispatch",
+                native_task_id=f"dispatch:{envelope.message_id}",
+                native_task_status="RUNNING",
+                pid=os.getpid(),
+            ),
         )
         attempt.write_json_once(
             "checker-result.json",
@@ -549,7 +630,7 @@ class OcrvAdapter:
         transport_command = _string_array(payload["transport_command"], "transport_command")
         return {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "method_version": "4.3.4",
+            "method_version": "4.3.5",
             "recovery_invocation_id": recovery_invocation_id,
             "recovery_envelope_message_id": envelope.message_id,
             "run_id": envelope.run_id,
@@ -582,8 +663,8 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery result is not closed")
         if (
             value["schema_version"] != "slk.ocrv-worker-recovery-result/v1"
-            or value["method_version"] != "4.3.4"
-            or value["status"] != "CHECKER_STARTED"
+            or value["method_version"] != "4.3.5"
+            or value["status"] != "CHECKER_D1_RECORDED"
             or value["run_id"] != envelope.run_id
             or value["cell_id"] != envelope.cell_id
             or value["checker_role_instance_id"] != endpoint.role_instance_id
@@ -592,6 +673,25 @@ class OcrvAdapter:
             or value["authorized_recovery"] is not True
             or value["recovery_invocation_id"] != recovery_invocation_id
             or value["request_sha256"] != hashlib.sha256(request_path.read_bytes()).hexdigest()
+            or isinstance(value["runtime_revision"], bool)
+            or not isinstance(value["runtime_revision"], int)
+            or value["runtime_revision"] < 1
+            or isinstance(value["token_sequence"], bool)
+            or not isinstance(value["token_sequence"], int)
+            or value["token_sequence"] < 1
+            or not isinstance(value["checker_token_already_committed"], bool)
+            or not isinstance(value["native_attempt_path"], str)
+            or not Path(value["native_attempt_path"]).is_absolute()
+            or value["d1_verdict"] not in {"PASS", "FAIL", "INCOMPLETE"}
+            or value["d1_event_type"]
+            != {"PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE"}[
+                value["d1_verdict"]
+            ]
+            or not isinstance(value["native_result_path"], (str, type(None)))
+            or (
+                isinstance(value["native_result_path"], str)
+                and not Path(value["native_result_path"]).is_absolute()
+            )
         ):
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery identity does not match")
         return value
@@ -622,25 +722,32 @@ class OcrvAdapter:
         environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = endpoint.role_instance_id
         environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = recovery_invocation_id
         environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = str(endpoint.endpoint_version)
+        recovery_request_sha256 = hashlib.sha256(request_path.read_bytes()).hexdigest()
+        child_start_path = attempt.root / "native-start.received.json"
+        _arm_child_start(
+            environment,
+            child_start_path,
+            endpoint,
+            envelope,
+            recovery_request_sha256,
+        )
         process = spawn(
             command,
             cwd=str(Path(request["source_attempt_root"])),
             env=environment,
             process_kwargs=_checker_process_kwargs(),
         )
+        child_start = _await_native_start(
+            process,
+            child_start_path,
+            endpoint,
+            envelope,
+            recovery_request_sha256,
+            _positive_seconds(endpoint.address["timeout_seconds"]),
+        )
         attempt.write_json_once(
             "started.json",
-            {
-                "message_id": envelope.message_id,
-                "run_id": envelope.run_id,
-                "status": "started",
-                "checker_operation": "worker_completion_recovery",
-                "checker_role_instance_id": endpoint.role_instance_id,
-                "checker_endpoint_version": endpoint.endpoint_version,
-                "recovery_invocation_id": recovery_invocation_id,
-                "authentication_status": "PENDING",
-                "authorized_recovery": False,
-            },
+            child_start,
         )
         try:
             completed = finish(process, _positive_seconds(endpoint.address["timeout_seconds"]))
@@ -672,6 +779,13 @@ class OcrvAdapter:
                 "worker_session_id": result["worker_session_id"],
                 "checker_authenticated": True,
                 "authorized_recovery": True,
+                "runtime_revision": result["runtime_revision"],
+                "token_sequence": result["token_sequence"],
+                "checker_token_already_committed": result["checker_token_already_committed"],
+                "native_attempt_path": result["native_attempt_path"],
+                "d1_verdict": result["d1_verdict"],
+                "d1_event_type": result["d1_event_type"],
+                "native_result_path": result["native_result_path"],
             },
             error_code=None,
             evidence=(
@@ -689,27 +803,17 @@ class OcrvAdapter:
         envelope: Envelope,
         attempt: Attempt,
     ) -> DeliveryResult:
-        transport_invocation_id = str(uuid.uuid4())
         request = self._candidate_request(envelope)
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
         environment["OCRV_SLK_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
         timeout = _positive_seconds(endpoint.address["timeout_seconds"])
-        attempt.write_json_once(
-            "started.json",
-            {
-                "message_id": envelope.message_id,
-                "run_id": envelope.run_id,
-                "status": "started",
-                "transport_invocation_id": transport_invocation_id,
-            },
-        )
 
         def incomplete(
             planned: int = 0,
             completed_count: int = 0,
-            evidence: tuple[str, ...] = ("started.json",),
+            evidence: tuple[str, ...] = (),
         ) -> DeliveryResult:
             return DeliveryResult(
                 RESULT_SCHEMA,
@@ -743,7 +847,7 @@ class OcrvAdapter:
                 "ocrv-preflight.stderr.txt",
                 exc.stderr if isinstance(exc.stderr, str) else "",
             )
-            return incomplete(evidence=("started.json", "ocrv-preflight-request.json"))
+            return incomplete(evidence=("ocrv-preflight-request.json",))
         attempt.write_text_once("ocrv-preflight.stdout.txt", preflight_process.stdout)
         attempt.write_text_once("ocrv-preflight.stderr.txt", preflight_process.stderr)
         preview = preflight["preview"]
@@ -753,13 +857,22 @@ class OcrvAdapter:
             segments = self._review_segments(request, selected_paths, list(preview["inventory"]))
             if not segments:
                 return incomplete(
-                    evidence=("started.json", "ocrv-preflight-request.json", "ocrv-preflight.json")
+                    evidence=("ocrv-preflight-request.json", "ocrv-preflight.json")
                 )
         if not segments:
             request_path = attempt.write_json_once("ocrv-request.json", request)
             result_path = attempt.root / "ocrv-result.json"
             command = _string_array(endpoint.address["command"], "command")
             command.extend(["--request", str(request_path), "--output", str(result_path)])
+            request_sha256 = hashlib.sha256(request_path.read_bytes()).hexdigest()
+            child_start_path = attempt.root / "native-start.received.json"
+            _arm_child_start(
+                environment,
+                child_start_path,
+                endpoint,
+                envelope,
+                request_sha256,
+            )
             try:
                 process = spawn(
                     command,
@@ -767,6 +880,15 @@ class OcrvAdapter:
                     env=environment,
                     process_kwargs=_checker_process_kwargs(),
                 )
+                child_start = _await_native_start(
+                    process,
+                    child_start_path,
+                    endpoint,
+                    envelope,
+                    request_sha256,
+                    timeout,
+                )
+                attempt.write_json_once("started.json", child_start)
                 completed = finish(process, timeout)
             except subprocess.TimeoutExpired as exc:
                 attempt.write_text_once(
@@ -840,7 +962,7 @@ class OcrvAdapter:
                 )
             except (subprocess.TimeoutExpired, AdapterError):
                 return incomplete(
-                    len(segments), 0, ("started.json", "ocrv-preflight.json")
+                    len(segments), 0, ("ocrv-preflight.json",)
                 )
             proposal_attempt.write_text_once("preflight.stdout.txt", proposal_process.stdout)
             proposal_attempt.write_text_once("preflight.stderr.txt", proposal_process.stderr)
@@ -858,7 +980,7 @@ class OcrvAdapter:
             )
             if not refinements:
                 return incomplete(
-                    len(segments), 0, ("started.json", "ocrv-preflight.json")
+                    len(segments), 0, ("ocrv-preflight.json",)
                 )
             pending_segments = refinements + pending_segments
 
@@ -880,12 +1002,36 @@ class OcrvAdapter:
             segment_result_path = segment_root / "result.json"
             command = _string_array(endpoint.address["command"], "command")
             command.extend(["--request", str(segment_request_path), "--output", str(segment_result_path)])
+            first_segment = not (attempt.root / "started.json").is_file()
+            segment_sha256 = hashlib.sha256(segment_request_path.read_bytes()).hexdigest()
+            child_start_path = (
+                attempt.root / "native-start.received.json"
+                if first_segment
+                else segment_root / "started.json"
+            )
+            _arm_child_start(
+                environment,
+                child_start_path,
+                endpoint,
+                envelope,
+                segment_sha256,
+            )
             process = spawn(
                 command,
                 cwd=str(request["repository"]),
                 env=environment,
                 process_kwargs=_checker_process_kwargs(),
             )
+            child_start = _await_native_start(
+                process,
+                child_start_path,
+                endpoint,
+                envelope,
+                segment_sha256,
+                timeout,
+            )
+            if first_segment:
+                attempt.write_json_once("started.json", child_start)
             try:
                 completed = finish(process, timeout)
             except subprocess.TimeoutExpired as exc:
@@ -937,7 +1083,9 @@ class OcrvAdapter:
                 },
             )
             if segment_result["verdict"] == "INCOMPLETE":
-                return incomplete(len(segments), len(segment_results))
+                return incomplete(
+                    len(segments), len(segment_results), ("started.json",)
+                )
             if self._has_blocking_finding(segment_result):
                 stopped_on_blocker = True
                 break

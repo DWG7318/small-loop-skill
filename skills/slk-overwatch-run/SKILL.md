@@ -53,7 +53,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 
 ## Tool、记录与关闭
 
-- `slk-bi-query` 只读事实；`slk-state` 记录本角色 cycle、observation、cadence/native 状态和合法关闭；`slk-transport` 检查精确投递与原生 start。通讯恢复走 `$slk-recover-communication`，空闲目标可做同一消息的 exact retry。
+- `slk-bi-query` 只读事实；`slk-state` 记录本角色 cycle、observation、cadence/native 状态和合法关闭；每轮用 `slk-transport inspect-native-activity` 检查精确 v2 start 与当前原生任务。缺失、过期、身份不符、权限不足保持 `UNKNOWN`；多段 OCRV 看当前段而非第一段 PID。通讯恢复走 `$slk-recover-communication`，空闲目标可做同一消息的 exact retry。
 - 每轮只追加一条紧凑 cycle；无新鲜原生证据时记录“活动无法证明”。不复制完整日志，不增加 CELL/D1/D2 进度。正常轮次不发可见状态消息。
 - 终态 cycle 的 `native_active_session_evidence_ref` 逐字等于 `evidence_refs` 中一个条目的现存绝对路径 `path`，且该条目的 SHA-256 与文件匹配。例如 `evidence_refs: [{path: 'C:\\evidence\\terminal-active-session.json', sha256: '<64位小写值>'}]` 对应 `native_active_session_evidence_ref: 'C:\\evidence\\terminal-active-session.json'`；不要填 `status_id`、`cycle_id`、URI、哈希值或说明文字。
 - Tool 失败或输出矛盾时，把错误与证据缺口交 Supervisor，不猜测、不伪造、不临时开发新系统。

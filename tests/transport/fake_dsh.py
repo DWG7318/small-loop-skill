@@ -28,6 +28,32 @@ else:
     if MODE == "multiple-sessions":
         (session_root / f"session-{uuid.uuid4()}.json").write_text("{}\n", encoding="utf-8")
 
+activity_path = os.environ.get("SLK_NATIVE_ACTIVITY_PATH")
+activity_context = os.environ.get("SLK_NATIVE_ACTIVITY_CONTEXT")
+if activity_path and activity_context and MODE != "resume-no-native-event":
+    context = json.loads(activity_context)
+    Path(activity_path).write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.native-task-activity/v1",
+                **context,
+                "native_task_id": session_id,
+                "status": "RUNNING",
+                "sequence": 1,
+                "observed_at": __import__("datetime").datetime.now(
+                    __import__("datetime").timezone.utc
+                ).isoformat().replace("+00:00", "Z"),
+                "last_event": {
+                    "kind": "DSH_AGENT_STATUS",
+                    "sequence": 1,
+                    "detail_sha256": "a" * 64,
+                },
+                "waiting_on": "DSH_AGENT",
+            }
+        ),
+        encoding="utf-8",
+    )
+
 time.sleep(0.05)
 
 continuation_match = re.search(
@@ -46,10 +72,14 @@ if continuation_match:
     result_path.write_text(
         json.dumps(
             {
-                "status": "CHECKER_STARTED",
+                "status": "CHECKER_DELIVERY_READY",
                 "run_id": request["run_id"],
                 "source_message_id": request["source_message_id"],
                 "candidate_message_id": str(uuid.uuid5(uuid.NAMESPACE_URL, request_sha256)),
+                "runtime_revision": request["runtime_revision"],
+                "endpoint_path": str(Path(request["source_attempt_root"]) / "worker-continuation" / "checker-endpoint.json"),
+                "envelope_path": str(Path(request["source_attempt_root"]) / "worker-continuation" / "candidate-envelope.json"),
+                "attempt_root": str(Path(request["source_attempt_root"]) / "worker-continuation" / "checker-attempts"),
             }
         ),
         encoding="utf-8",

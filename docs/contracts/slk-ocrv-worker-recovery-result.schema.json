@@ -4,11 +4,11 @@
   "title": "SLK authenticated OCRV Worker-completion recovery result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "method_version", "status", "run_id", "cell_id", "source_message_id", "worker_session_id", "checker_role_instance_id", "checker_endpoint_version", "checker_authenticated", "authorized_recovery", "recovery_invocation_id", "request_sha256"],
+  "required": ["schema_version", "method_version", "status", "run_id", "cell_id", "source_message_id", "worker_session_id", "checker_role_instance_id", "checker_endpoint_version", "checker_authenticated", "authorized_recovery", "recovery_invocation_id", "request_sha256", "runtime_revision", "token_sequence", "checker_token_already_committed", "native_attempt_path", "d1_verdict", "d1_event_type", "native_result_path"],
   "properties": {
     "schema_version": {"const": "slk.ocrv-worker-recovery-result/v1"},
-    "method_version": {"const": "4.3.4"},
-    "status": {"const": "CHECKER_STARTED"},
+    "method_version": {"const": "4.3.5"},
+    "status": {"const": "CHECKER_D1_RECORDED"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "cell_id": {"$ref": "#/$defs/identifier"},
     "source_message_id": {"type": "string", "format": "uuid"},
@@ -18,7 +18,14 @@
     "checker_authenticated": {"const": true},
     "authorized_recovery": {"const": true},
     "recovery_invocation_id": {"type": "string", "format": "uuid"},
-    "request_sha256": {"$ref": "#/$defs/sha256"}
+    "request_sha256": {"$ref": "#/$defs/sha256"},
+    "runtime_revision": {"type": "integer", "minimum": 1},
+    "token_sequence": {"type": "integer", "minimum": 1},
+    "checker_token_already_committed": {"type": "boolean"},
+    "native_attempt_path": {"type": "string", "minLength": 1},
+    "d1_verdict": {"enum": ["PASS", "FAIL", "INCOMPLETE"]},
+    "d1_event_type": {"enum": ["D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"]},
+    "native_result_path": {"type": ["string", "null"]}
   },
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},

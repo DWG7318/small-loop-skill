@@ -17,6 +17,7 @@ from .contracts import (
     parse_delivery,
 )
 from .evidence import Attempt, AttemptStore
+from .native_activity import NativeActivityError, validate_native_start
 
 
 def _plain(value: Endpoint | Envelope) -> dict[str, Any]:
@@ -131,8 +132,21 @@ def dispatch_once(
     except AdapterError as exc:
         result = _failure(endpoint, envelope, exc.error_code, attempt)
 
-    if result.status == "completed" and not (attempt.root / "started.json").is_file():
-        result = _failure(endpoint, envelope, "NATIVE_START_UNPROVED", attempt)
+    if result.status == "completed":
+        started = attempt.root / "started.json"
+        if not started.is_file():
+            result = _failure(endpoint, envelope, "NATIVE_START_UNPROVED", attempt)
+        else:
+            try:
+                validate_native_start(
+                    started,
+                    adapter=endpoint.adapter,
+                    run_id=envelope.run_id,
+                    cell_id=envelope.cell_id,
+                    message_id=envelope.message_id,
+                )
+            except NativeActivityError:
+                result = _failure(endpoint, envelope, "NATIVE_START_INVALID", attempt)
 
     terminal_name = "completed.json" if result.status == "completed" else "failed.json"
     attempt.write_json_once(terminal_name, result.to_dict())

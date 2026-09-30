@@ -14,7 +14,8 @@ $names = @(
     'slk_checker_adapter.py',
     'slk-checker.cmd',
     'slk_checker_recovery.py',
-    'slk-checker-capabilities.json'
+    'slk-checker-capabilities.json',
+    'slk-native-activity-capabilities.json'
 )
 foreach ($name in $names) {
     if (-not (Test-Path -LiteralPath (Join-Path $source $name) -PathType Leaf)) {
@@ -22,8 +23,8 @@ foreach ($name in $names) {
     }
 }
 $timestamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss-fffffff')
-$backup = Join-Path $root ".slk-backups\slk-4.3.4-ocrv-preflight-$timestamp"
-$stage = Join-Path $root ".slk-stage-4.3.4-$timestamp"
+$backup = Join-Path $root ".slk-backups\slk-4.3.5-ocrv-native-activity-$timestamp"
+$stage = Join-Path $root ".slk-stage-4.3.5-$timestamp"
 [void][System.IO.Directory]::CreateDirectory($backup)
 [void][System.IO.Directory]::CreateDirectory($stage)
 $originalExisted = [ordered]@{}
@@ -45,7 +46,7 @@ try {
     $receipt = [ordered]@{
         schema_version = 'slk.ocrv-install/v2'
         status = 'INSTALLED'
-        version = '4.3.4'
+        version = '4.3.5'
         ocrv_root = $root
         backup_root = $backup
         installed_at = [DateTimeOffset]::UtcNow.ToString('o')

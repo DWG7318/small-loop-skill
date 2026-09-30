@@ -56,7 +56,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert installed.returncode == 0, installed.stdout + installed.stderr
     receipt = json.loads(installed.stdout.strip())
     backup = Path(receipt["backup_root"])
-    assert receipt["version"] == "4.3.4"
+    assert receipt["version"] == "4.3.5"
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == (
         INTEGRATION / "slk_checker_adapter.py"
     ).read_bytes()
@@ -67,11 +67,15 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert (ocrv / "slk-checker-capabilities.json").read_bytes() == (
         INTEGRATION / "slk-checker-capabilities.json"
     ).read_bytes()
+    assert (ocrv / "slk-native-activity-capabilities.json").read_bytes() == (
+        INTEGRATION / "slk-native-activity-capabilities.json"
+    ).read_bytes()
     assert set(receipt["installed_sha256"]) == {
         "slk_checker_adapter.py",
         "slk-checker.cmd",
         "slk_checker_recovery.py",
         "slk-checker-capabilities.json",
+        "slk-native-activity-capabilities.json",
     }
 
     rolled_back = run_script(
@@ -87,3 +91,4 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert not (ocrv / "slk_checker_recovery.py").exists()
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == adapter
     assert (ocrv / "slk-checker-capabilities.json").read_bytes() == original_capabilities
+    assert not (ocrv / "slk-native-activity-capabilities.json").exists()

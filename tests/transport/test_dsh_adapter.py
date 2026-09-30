@@ -74,6 +74,10 @@ def test_dsh_first_turn_uses_run_scoped_instance_and_records_session(
     assert str(result.native_identity["session_id"]).startswith("session-")
     assert (attempt.root / "worker-result.json").is_file()
     assert (attempt.root / "started.json").is_file()
+    started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
+    assert started["request_sha256"] == envelope.payload_sha256
+    assert started["native_request_sha256"] != envelope.payload_sha256
+    assert len(started["native_request_sha256"]) == 64
     native = json.loads((attempt.root / "native.stdout.txt").read_text(encoding="utf-8"))
     assert Path(native["result_path"]).is_relative_to(Path(str(endpoint.address["cwd"])))
     assert not (Path(str(endpoint.address["cwd"])) / ".slk-transport").exists()
@@ -134,6 +138,34 @@ def test_dsh_resume_uses_only_the_recorded_session(tmp_path: Path) -> None:
     result = DshAdapter().deliver(endpoint, envelope, attempt)
     assert result.native_identity["session_id"] == session_id
     assert len(list(session_root.glob("session-*.json"))) == 1
+
+
+def test_dsh_resume_old_session_cache_without_current_native_event_never_acks(
+    tmp_path: Path,
+) -> None:
+    session_id = "session-11111111-1111-4111-8111-111111111111"
+    endpoint = worker_endpoint(
+        tmp_path, mode="resume-no-native-event", session_id=session_id
+    )
+    session_root = (
+        Path(str(endpoint.address["runtime_root"]))
+        / "runs"
+        / str(endpoint.address["instance_id"])
+        / "home"
+        / "storages"
+        / "session_projcache"
+        / "sessions"
+    )
+    session_root.mkdir(parents=True, exist_ok=True)
+    (session_root / f"{session_id}.json").write_text("{}\n", encoding="utf-8")
+    envelope = worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    with pytest.raises(AdapterError) as error:
+        DshAdapter().deliver(endpoint, envelope, attempt)
+
+    assert error.value.error_code == "DSH_START_UNPROVED"
+    assert not (attempt.root / "started.json").exists()
 
 
 @pytest.mark.parametrize(

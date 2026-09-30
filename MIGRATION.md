@@ -1,5 +1,15 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.3.4 to 4.3.5
+
+Install the complete 4.3.5 package plus matching DSH and OCRV integrations transactionally. Installation alone does not adopt, resume, dispatch, inspect, change TOKEN or mutate product files. At an Owner-authorized Supervisor boundary, an exact snapshot may adopt `4.3.4 → 4.3.5`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher history, old transport attempts and product changes are preserved.
+
+New delivery starts require `slk.native-start/v2`; a 4.3.4 `started.json` is retained as history but is not reinterpreted. When that legacy receipt already caused TOKEN to reach the exact Checker, the 4.3.5 recovery entrance must reuse the same Run/CELL/candidate/message, keep the old attempt immutable, avoid Worker replay and TOKEN recommit, write actual OCRV native evidence under the deterministic `.native-recovery-v2` path, then let the authenticated Checker record its actual D1 result. If TOKEN did not move, the normal v2 start and atomic commit path applies.
+
+Before dispatch, `preflight-run` must resolve the installed DSH/OCRV native-activity capability files. Overwatcher and an enabled Temporal adapter use `slk-transport inspect-native-activity`; they do not infer activity from old TOKEN, old session cache, a wrapper PID, log growth or a legacy marker. `UNKNOWN` is preserved and escalated rather than normalized to ACTIVE.
+
+No role, model, CELL/D0/D1/D2 authority, BI authority, Temporal default, Docker service, daemon, heartbeat, MCP or product file changes automatically.
+
 ## Current patch migration: 4.3.3 to 4.3.4
 
 Install the complete 4.3.4 package and matching OCRV integration transactionally. Installation alone does not adopt, resume, dispatch, inspect or mutate a Run. At an existing Supervisor boundary, an Owner-authorized exact snapshot may adopt `4.3.3 → 4.3.4`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher state, evidence and product changes are preserved.

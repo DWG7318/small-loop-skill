@@ -93,8 +93,8 @@ class StartSlkRequest:
             "roles",
         }
         source = _closed(value, fields, "SLK startup request")
-        if source["method_version"] != "4.3.4":
-            raise ContractError("method_version must be 4.3.4")
+        if source["method_version"] != "4.3.5":
+            raise ContractError("method_version must be 4.3.5")
         raw_roles = source["roles"]
         if not isinstance(raw_roles, list):
             raise ContractError("roles must be an array")
@@ -110,7 +110,7 @@ class StartSlkRequest:
             raise ContractError("endpoint_ref must be unique")
         return cls(
             run_id=_identifier(source["run_id"], "run_id"),
-            method_version="4.3.4",
+            method_version="4.3.5",
             runtime_revision=_integer(source["runtime_revision"], "runtime_revision"),
             task_queue=_identifier(source["task_queue"], "task_queue"),
             ack_timeout_seconds=_integer(

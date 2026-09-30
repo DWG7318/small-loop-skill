@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -22,33 +23,110 @@ if "SLK_ROLE_CREDENTIAL" in os.environ or "SLK_OVERWATCHER_CREDENTIAL" in os.env
     sys.exit(8)
 
 request = json.loads(args.request.read_text(encoding="utf-8"))
+
+
+def publish_native_start(kind: str, native_id: str) -> None:
+    receipt = os.environ.get("SLK_NATIVE_START_RECEIPT")
+    context_raw = os.environ.get("SLK_NATIVE_START_CONTEXT")
+    if not receipt or not context_raw:
+        return
+    context = json.loads(context_raw)
+    if os.name == "nt":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        handle = kernel32.OpenProcess(0x1000, False, os.getpid())
+        created = ctypes.c_ulonglong()
+        exited = ctypes.c_ulonglong()
+        kernel = ctypes.c_ulonglong()
+        user = ctypes.c_ulonglong()
+        if not handle or not kernel32.GetProcessTimes(
+            handle, ctypes.byref(created), ctypes.byref(exited), ctypes.byref(kernel), ctypes.byref(user)
+        ):
+            sys.exit(11)
+        kernel32.CloseHandle(handle)
+        creation_time = f"win-filetime:{created.value}"
+    else:
+        creation_time = f"proc-start:{Path(f'/proc/{os.getpid()}/stat').read_text(encoding='ascii').split()[21]}"
+    path = Path(receipt)
+    temporary = path.with_suffix(".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary.write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.native-start/v2",
+                "status": "STARTED",
+                "adapter": context["adapter"],
+                "run_id": context["run_id"],
+                "cell_id": context["cell_id"],
+                "message_id": context["message_id"],
+                "request_sha256": context["request_sha256"],
+                "native_request_sha256": context["native_request_sha256"],
+                "observed_at": "2026-10-01T00:00:00Z",
+                "process": {"pid": os.getpid(), "creation_time": creation_time},
+                "native_task": {"kind": kind, "id": native_id, "status": "RUNNING"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+    activity = path.with_name("native-activity.json")
+    activity_temporary = activity.with_suffix(".tmp")
+    activity_temporary.write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.native-task-activity/v1",
+                "adapter": context["adapter"],
+                "run_id": context["run_id"],
+                "cell_id": context["cell_id"],
+                "message_id": context["message_id"],
+                "native_task_id": native_id,
+                "status": "RUNNING",
+                "sequence": 0,
+                "observed_at": "2026-10-01T00:00:00Z",
+                "last_event": {"kind": "OCRV_PROCESS_STARTED", "sequence": 0},
+                "waiting_on": "OCRV_REVIEW",
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.replace(activity_temporary, activity)
 invocations = Path(request.get("repository", args.output.parent)) / ".fake-ocrv-invocations.jsonl"
 with invocations.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps({"preflight": args.preflight, "request": str(args.request)}) + "\n")
 if args.slk_worker_recovery:
+    publish_native_start("ocrv-recovery-wrapper", request["recovery_invocation_id"])
     source_root = Path(request["source_attempt_root"])
     source_envelope = json.loads((source_root / "envelope.json").read_text(encoding="utf-8"))
     source_started = json.loads((source_root / "started.json").read_text(encoding="utf-8"))
+    native_attempt = source_root / "worker-continuation" / "fake-native-attempt"
+    native_attempt.mkdir(parents=True, exist_ok=True)
+    native_result = native_attempt / "ocrv-result.json"
+    native_result.write_text("{}\n", encoding="utf-8")
     result = {
         "schema_version": "slk.ocrv-worker-recovery-result/v1",
-        "method_version": "4.3.4",
-        "status": "CHECKER_STARTED",
+        "method_version": "4.3.5",
+        "status": "CHECKER_D1_RECORDED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
         "source_message_id": source_envelope["message_id"],
-        "worker_session_id": source_started["session_id"],
+        "worker_session_id": source_started["native_task"]["id"],
         "checker_role_instance_id": request["checker_role_instance_id"],
         "checker_endpoint_version": request["checker_endpoint_version"],
         "checker_authenticated": True,
         "authorized_recovery": True,
         "recovery_invocation_id": request["recovery_invocation_id"],
         "request_sha256": hashlib.sha256(args.request.read_bytes()).hexdigest(),
+        "runtime_revision": request["runtime_revision"] + 1,
+        "token_sequence": request["token_sequence"] + 1,
+        "checker_token_already_committed": False,
+        "native_attempt_path": str(native_attempt.resolve()),
+        "d1_verdict": "PASS",
+        "d1_event_type": "D1_PASSED",
+        "native_result_path": str(native_result.resolve()),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result), encoding="utf-8")
     sys.exit(0)
-if args.mode == "delayed-terminal":
-    time.sleep(0.35)
 expected_request_fields_v1 = {
     "schema_version",
     "run_id",
@@ -121,9 +199,13 @@ if args.preflight:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result), encoding="utf-8")
     sys.exit(3 if preflight_incomplete else 0)
+session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uuid4()}"
+review_invocation_id = str(uuid.uuid4())
+publish_native_start("ocrv-review", review_invocation_id)
 if args.mode == "timeout-second" and "segment 2/" in request["cell_goal"]:
     time.sleep(0.35)
-session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uuid4()}"
+if args.mode == "delayed-terminal":
+    time.sleep(0.35)
 is_first_segment = "segment 1/" in request["cell_goal"]
 segment_sentinel = (
     "SEGMENT_FULL_RESULT_MUST_NOT_ENTER_AGGREGATE_" + "Z" * 4_096
@@ -146,7 +228,7 @@ result = {
     "schema_version": "slk.ocrv-d1-result/v1",
     "run_id": request["run_id"],
     "cell_id": request["cell_id"],
-    "review_invocation_id": str(uuid.uuid4()),
+    "review_invocation_id": review_invocation_id,
     "verdict": verdict,
     "reason_codes": (
         ["OCR_STATUS_NOT_COMPLETE"]

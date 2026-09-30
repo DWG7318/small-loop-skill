@@ -28,6 +28,17 @@ ROLE_FIELDS = frozenset(
         "task_context_estimate",
         "required_skills",
         "required_tools",
+        "native_activity_capability",
+    }
+)
+NATIVE_ACTIVITY_CAPABILITY_FIELDS = frozenset(
+    {
+        "schema_version",
+        "method_version",
+        "runtime",
+        "read_only_observation",
+        "model_call_required",
+        "native_events",
     }
 )
 OPTION_FIELDS = frozenset({"name", "decision", "owner_evidence_ref"})
@@ -80,6 +91,37 @@ def _workspace_writable(path: Path) -> bool:
     return True
 
 
+def _native_activity_capability(path_value: Any, runtime: str) -> str | None:
+    if not isinstance(path_value, str) or not path_value.strip():
+        return "NATIVE_ACTIVITY_CAPABILITY_MISSING"
+    path = Path(path_value)
+    if not path.is_absolute() or not path.is_file():
+        return "NATIVE_ACTIVITY_CAPABILITY_MISSING"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(value, Mapping):
+            return "NATIVE_ACTIVITY_CAPABILITY_INVALID"
+        _closed(value, NATIVE_ACTIVITY_CAPABILITY_FIELDS, "native activity capability")
+        events = value["native_events"]
+        if (
+            value["schema_version"] != "slk.native-activity-capability/v1"
+            or value["method_version"] != "4.3.5"
+            or value["runtime"] != runtime
+            or value["read_only_observation"] is not True
+            or value["model_call_required"] is not False
+            or not isinstance(events, list)
+            or not events
+            or len(set(events)) != len(events)
+            or not all(
+                isinstance(item, str) and item and item == item.strip() for item in events
+            )
+        ):
+            return "NATIVE_ACTIVITY_CAPABILITY_INVALID"
+    except (OSError, ValueError, json.JSONDecodeError, TypeError):
+        return "NATIVE_ACTIVITY_CAPABILITY_INVALID"
+    return None
+
+
 def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     _closed(raw, ROLE_FIELDS, "role")
     role = _nonempty(raw["role"], "role")
@@ -94,6 +136,7 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     estimate = _positive_int(raw["task_context_estimate"], "task_context_estimate")
     skills = _string_array(raw["required_skills"], "required_skills")
     tools = _string_array(raw["required_tools"], "required_tools")
+    native_capability = raw["native_activity_capability"]
 
     incompatible: list[str] = []
     repair: list[str] = []
@@ -113,6 +156,15 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
         repair.append("REQUIRED_SKILL_MISSING")
     if any(not _tool_exists(item) for item in tools):
         repair.append("REQUIRED_TOOL_MISSING")
+    if role == "supervisor":
+        if native_capability is not None:
+            repair.append("NATIVE_ACTIVITY_CAPABILITY_INVALID")
+    else:
+        native_capability_error = _native_activity_capability(
+            native_capability, expected_runtime
+        )
+        if native_capability_error is not None:
+            repair.append(native_capability_error)
     reasons = incompatible or repair
     status = "INCOMPATIBLE" if incompatible else "REPAIR_NEEDED" if repair else "READY"
     return {

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts.validate_role_eval import EvalError, load_pack, pack_sha256, validate_response
+from scripts.build_transport_zipapp import build_zipapp
 
 
 ROOT = Path(__file__).parents[2]
@@ -33,7 +36,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.3.4"
+    assert pack["method_version"] == "4.3.5"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -52,6 +55,38 @@ def test_each_role_passes_only_its_eight_exact_runtime_cases(role: str) -> None:
         expected_role=role,
     )
     assert result == {"status": "PASS", "role": role, "case_count": 8}
+
+
+def test_standard_transport_artifact_exposes_role_eval_validator(tmp_path: Path) -> None:
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+    response = tmp_path / "response.json"
+    response.write_text(json.dumps(valid_response()), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(artifact),
+            "validate-role-eval",
+            "--pack",
+            str(PACK),
+            "--response",
+            str(response),
+            "--run-id",
+            "RUN-A",
+            "--project-id",
+            "project-a",
+            "--plan-revision",
+            "3",
+            "--role",
+            "checker",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {"status": "PASS", "role": "checker", "case_count": 8}
 
 
 @pytest.mark.parametrize(
@@ -161,8 +196,8 @@ def test_pack_covers_424_worker_completion_guard_failures() -> None:
     pack = load_pack(PACK)
     case_ids = {case["case_id"] for case in pack["cases"]}
     assert {
-        "CHK-RESUME-SAME-WORKER",
-        "WRK-TERMINAL-IS-NOT-HANDOFF",
+        "CHK-RECOVER-SAME-CANDIDATE",
+        "WRK-TERMINAL-IS-NOT-D1-START",
         "OVW-WORKER-COMPLETION-GUARD",
     } <= case_ids
 
@@ -184,7 +219,7 @@ def test_pack_covers_4210_field_correction_failures() -> None:
     assert {
         "SUP-NO-DELAYED-SELF-WAKE",
         "CHK-LOW-ONLY-NOT-FAIL",
-        "WRK-RESUMED-NATIVE-IDENTITY",
+        "WRK-NO-RECOVERY-REPLAY",
         "OVW-THREE-LEGAL-EXITS",
     } <= case_ids
 

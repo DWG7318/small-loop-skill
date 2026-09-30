@@ -1,6 +1,6 @@
 {
   "schema_version": "slk.ocrv-capabilities/v1",
-  "method_version": "4.3.4",
+  "method_version": "4.3.5",
   "required": ["ocrv-preview"],
   "optional": {
     "probe-cli": {

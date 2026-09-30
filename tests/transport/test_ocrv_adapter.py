@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -15,6 +16,7 @@ from slk_transport.adapters.base import AdapterError
 from slk_transport.adapters.ocrv import OcrvAdapter, _recovery_invocation_id
 from slk_transport.contracts import Endpoint, Envelope, canonical_json_sha256
 from slk_transport.evidence import AttemptStore
+from slk_transport.dispatcher import dispatch_once
 
 from test_contracts import endpoint_value, envelope_value
 from test_worker_completion import completion_fixture
@@ -105,7 +107,7 @@ def test_ocrv_candidate_review_records_run_cell_invocation_and_session(
     assert (attempt.root / "ocrv-result.json").is_file()
 
 
-def test_ocrv_breaks_away_from_a_resumed_dsh_job_while_staying_headless(
+def test_ocrv_never_depends_on_breakaway_from_a_resumed_dsh_job(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -124,7 +126,7 @@ def test_ocrv_breaks_away_from_a_resumed_dsh_job_while_staying_headless(
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
     assert result.status == "completed"
-    assert detached_values == [True, True]
+    assert detached_values and set(detached_values) == {False}
 
 
 def test_ocrv_v2_request_matches_installed_closed_contract(tmp_path: Path) -> None:
@@ -149,8 +151,12 @@ def test_ocrv_v2_request_matches_installed_closed_contract(tmp_path: Path) -> No
     }
     assert request["schema_version"] == "slk.ocrv-d1-request/v2"
     started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
-    assert "transport_invocation_id" in started
-    assert "review_invocation_id" not in started
+    assert started["schema_version"] == "slk.native-start/v2"
+    assert started["request_sha256"] == envelope.payload_sha256
+    assert started["native_request_sha256"] == hashlib.sha256(
+        (attempt.root / "ocrv-request.json").read_bytes()
+    ).hexdigest()
+    assert started["native_task"]["kind"] == "ocrv-review"
     assert result.native_identity["review_invocation_id"]
 
 
@@ -173,9 +179,9 @@ def test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery(
     assert result.native_identity["checker_authenticated"] is True
     assert result.native_identity["authorized_recovery"] is True
     started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
-    assert started["checker_role_instance_id"] == endpoint.role_instance_id
-    assert started["authentication_status"] == "PENDING"
-    assert started["authorized_recovery"] is False
+    assert started["request_sha256"] == envelope.payload_sha256
+    assert started["native_task"]["kind"] == "ocrv-recovery-wrapper"
+    assert len(started["native_request_sha256"]) == 64
     assert (attempt.root / "ocrv-recovery-request.json").is_file()
     assert (attempt.root / "ocrv-recovery-result.json").is_file()
 
@@ -227,7 +233,42 @@ def test_ocrv_recovery_companion_strips_parent_credentials_and_keeps_native_iden
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert json.loads(result_path.read_text(encoding="utf-8"))["status"] == "CHECKER_STARTED"
+    assert json.loads(result_path.read_text(encoding="utf-8"))["status"] == "CHECKER_D1_RECORDED"
+
+
+def test_recovery_wrapper_spawn_failure_is_terminal_and_never_claims_actual_d1(
+    tmp_path: Path,
+) -> None:
+    endpoint_raw = endpoint_value(role="checker", version=2)
+    runtime_root = tmp_path / "ocrv-runtime"
+    runtime_root.mkdir()
+    endpoint_raw["address"] = {
+        "command": [sys.executable, str(RECOVERY_COMPANION)],
+        "runtime_root": str(runtime_root),
+        "timeout_seconds": 5,
+    }
+    envelope = recovery_envelope(tmp_path)
+    envelope_raw = dict(envelope.__dict__)
+    payload = dict(envelope.payload)
+    payload["transport_command"] = [str(tmp_path / "missing-checker-recovery-host.exe")]
+    envelope_raw["payload"] = payload
+    envelope_raw["payload_sha256"] = canonical_json_sha256(payload)
+    root = tmp_path / "attempts"
+
+    result = dispatch_once(
+        endpoint_raw,
+        envelope_raw,
+        root,
+        adapters={"ocrv-checker": OcrvAdapter()},
+    )
+
+    attempt = root / envelope.run_id / envelope.message_id
+    started = json.loads((attempt / "started.json").read_text(encoding="utf-8"))
+    assert result.status == "failed"
+    assert result.error_code == "OCRV_RECOVERY_FAILED"
+    assert (attempt / "failed.json").is_file()
+    assert started["native_task"]["kind"] == "ocrv-recovery-wrapper"
+    assert not (attempt / "ocrv-recovery-result.json").exists()
 
 
 def test_ocrv_records_spawn_start_before_terminal_result(tmp_path: Path) -> None:
@@ -250,6 +291,18 @@ def test_ocrv_records_spawn_start_before_terminal_result(tmp_path: Path) -> None
     assert not (attempt.root / "ocrv-result.json").exists()
     thread.join(5)
     assert outcome and outcome[0].status == "completed"
+
+
+def test_ocrv_preflight_failure_does_not_write_fake_started_receipt(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path, "preflight-incomplete")
+    envelope = candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
+    assert not (attempt.root / "started.json").exists()
 
 
 def test_ocrv_fails_closed_when_session_identity_is_missing(tmp_path: Path) -> None:
@@ -378,6 +431,9 @@ def test_ocrv_large_review_is_split_into_durable_segments_then_aggregated(
     assert progress["completed_segments"] == progress["total_segments"]
     assert (attempt.root / "ocrv-result.json").is_file()
     assert result.native_identity["review_segment_count"] == len(segment_results)
+    for segment in sorted((attempt.root / "review-segments").glob("segment-*"))[1:]:
+        assert (segment / "started.json").is_file()
+        assert (segment / "native-activity.json").is_file()
     segment_sentinel = "SEGMENT_FULL_RESULT_MUST_NOT_ENTER_AGGREGATE_"
     assert segment_sentinel in segment_results[0].read_text(encoding="utf-8")
     for segment in sorted((attempt.root / "review-segments").glob("segment-*")):

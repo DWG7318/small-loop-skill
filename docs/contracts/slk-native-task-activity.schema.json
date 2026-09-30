@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-native-task-activity.schema.json",
+  "title": "SLK read-only native task activity projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "adapter", "run_id", "cell_id", "message_id", "native_task_id", "status", "sequence", "observed_at", "last_event", "waiting_on"],
+  "properties": {
+    "schema_version": {"const": "slk.native-task-activity/v1"},
+    "adapter": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "cell_id": {"type": "string", "minLength": 1},
+    "message_id": {"type": "string", "format": "uuid"},
+    "native_task_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["PENDING", "RUNNING", "IDLE", "COMPLETED", "FAILED"]},
+    "sequence": {"type": "integer", "minimum": 0},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "last_event": {
+      "type": "object",
+      "required": ["kind", "sequence"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1},
+        "sequence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "waiting_on": {"type": ["string", "null"]}
+  }
+}

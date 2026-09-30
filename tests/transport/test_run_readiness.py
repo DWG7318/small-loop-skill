@@ -20,6 +20,26 @@ def _request(tmp_path: Path) -> dict[str, object]:
     endpoint.write_text("{}\n", encoding="utf-8")
     skill = tmp_path / "SKILL.md"
     skill.write_text("# role\n", encoding="utf-8")
+    capabilities = {}
+    for runtime, events in (
+        ("dsh", ["agent/status", "session/event"]),
+        ("ocrv", ["review/progress", "task/status"]),
+    ):
+        capability = tmp_path / f"{runtime}-native-activity.json"
+        capability.write_text(
+            json.dumps(
+                {
+                    "schema_version": "slk.native-activity-capability/v1",
+                    "method_version": "4.3.5",
+                    "runtime": runtime,
+                    "read_only_observation": True,
+                    "model_call_required": False,
+                    "native_events": events,
+                }
+            ),
+            encoding="utf-8",
+        )
+        capabilities[runtime] = str(capability)
     roles = []
     for role, runtime, model in (
         ("supervisor", "codex", "gpt-5.6-sol"),
@@ -40,6 +60,7 @@ def _request(tmp_path: Path) -> dict[str, object]:
                 "task_context_estimate": 10_000,
                 "required_skills": [str(skill)],
                 "required_tools": [sys.executable],
+                "native_activity_capability": capabilities.get(runtime),
             }
         )
     return {
@@ -79,6 +100,30 @@ def test_missing_checker_capability_keeps_run_in_preparation(tmp_path: Path) -> 
     checker = next(item for item in result["roles"] if item["role"] == "checker")
     assert checker["status"] == "REPAIR_NEEDED"
     assert "REQUIRED_TOOL_MISSING" in checker["reason_codes"]
+
+
+def test_missing_or_wrong_native_activity_capability_blocks_worker_and_checker(
+    tmp_path: Path,
+) -> None:
+    missing = _request(tmp_path)
+    missing["roles"][1]["native_activity_capability"] = str(tmp_path / "missing.json")
+
+    result = evaluate_run_readiness(missing)
+
+    assert result["status"] == "REPAIR_NEEDED"
+    worker = next(item for item in result["roles"] if item["role"] == "worker")
+    assert "NATIVE_ACTIVITY_CAPABILITY_MISSING" in worker["reason_codes"]
+
+    wrong = _request(tmp_path)
+    checker_capability = Path(wrong["roles"][2]["native_activity_capability"])
+    value = json.loads(checker_capability.read_text(encoding="utf-8"))
+    value["runtime"] = "dsh"
+    checker_capability.write_text(json.dumps(value), encoding="utf-8")
+
+    result = evaluate_run_readiness(wrong)
+
+    checker = next(item for item in result["roles"] if item["role"] == "checker")
+    assert "NATIVE_ACTIVITY_CAPABILITY_INVALID" in checker["reason_codes"]
 
 
 def test_role_context_smaller_than_task_is_incompatible(tmp_path: Path) -> None:

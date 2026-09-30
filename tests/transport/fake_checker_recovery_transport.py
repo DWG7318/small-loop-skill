@@ -26,6 +26,6 @@ if not all(
 ):
     sys.exit(9)
 request = json.loads(args.request.read_text(encoding="utf-8"))
-result = {"status": "CHECKER_STARTED", "request_sha256": args.sha256}
+result = {"status": "CHECKER_D1_RECORDED", "request_sha256": args.sha256}
 Path(request["result_path"]).write_text(json.dumps(result), encoding="utf-8")
 print(json.dumps(result))

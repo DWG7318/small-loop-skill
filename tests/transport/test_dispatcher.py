@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from slk_transport.adapters.base import AdapterError
 from slk_transport.contracts import ContractError, DeliveryResult, Endpoint, Envelope
 from slk_transport.dispatcher import dispatch_once
 from slk_transport.evidence import Attempt
+from slk_transport.native_activity import make_native_start
 
 from test_contracts import endpoint_value, envelope_value
 
@@ -25,11 +27,18 @@ class CompletingAdapter:
         self.calls += 1
         attempt.write_json_once(
             "started.json",
-            {
-                "message_id": envelope.message_id,
-                "run_id": envelope.run_id,
-                "status": "started",
-            },
+            make_native_start(
+                adapter=endpoint.adapter,
+                run_id=envelope.run_id,
+                cell_id=envelope.cell_id,
+                message_id=envelope.message_id,
+                request_sha256=envelope.payload_sha256,
+                native_request_sha256="b" * 64,
+                native_task_kind="test-native-delivery",
+                native_task_id="native-001",
+                native_task_status="RUNNING",
+                pid=os.getpid(),
+            ),
         )
         return DeliveryResult(
             schema_version="slk.transport-result/v1",

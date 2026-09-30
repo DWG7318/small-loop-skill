@@ -1,0 +1,9 @@
+{
+  "schema_version": "slk.native-activity-capability/v1",
+  "method_version": "4.3.5",
+  "runtime": "dsh",
+  "read_only_observation": true,
+  "model_call_required": false,
+  "native_events": ["agent/status", "session/event"]
+}
+

@@ -105,6 +105,10 @@ class JsonRpcProcess:
         return self._transcript.lines()
 
     @property
+    def pid(self) -> int:
+        return self._process.pid
+
+    @property
     def stderr_lines(self) -> list[str]:
         return self._stderr.lines()
 

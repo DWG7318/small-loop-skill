@@ -1,25 +1,25 @@
-# SLK 4.3.4 Windows 运行环境配置指引
+# SLK 4.3.5 Windows 运行环境配置指引
 
-本指引用于在一台新 Windows 电脑上建立可运行 SLK 4.3.4 的机器环境。它不改变 SLK 方法，也不替代项目内的 15 个 Skill。
+本指引用于在一台新 Windows 电脑上建立可运行 SLK 4.3.5 的机器环境。它不改变 SLK 方法，也不替代项目内的 15 个 Skill。
 
 ## 先分清三个层级
 
 1. **电脑级环境，只配置一次**：DSH、OCRV、`slk-transport`、`slk-state`、`slk-bi-query`，以及它们的凭据和数据目录。多个项目复用这一层。
-2. **项目级部署**：把 SLK 4.3.4 的 15 个 Skill 放入该项目使用的 Skill 根目录。SLK 不因此变成电脑全域工程方法。
+2. **项目级部署**：把 SLK 4.3.5 的 15 个 Skill 放入该项目使用的 Skill 根目录。SLK 不因此变成电脑全域工程方法。
 3. **Run 级绑定**：每个 Run 重新登记 Supervisor、OCRV Checker、DSH Worker 的精确身份、会话和端点，并完成通讯测试；需要旁路保障时再绑定一个专属 Overwatcher Session。
 
 仅完成第 2 层不能启动跨 Agent SLK。
 
 ## 已验收基线
 
-SLK 4.3.4 验收时使用：
+SLK 4.3.5 验收时使用：
 
 - Windows、PowerShell 7、Git、Python 3.10 或更高版本、Node.js/npm 与 Rust/Cargo；
 - `@deepseek-ai/dsh@0.1.5-rc.2`；
 - `@alibaba-group/open-code-review@1.12.7`；
 - DSH：`deepseek-official / deepseek-flash`；
 - OCRV：`dashscope-tokenplan / qwen3.8-max / medium`；
-- SLK 4.3.4 源码，用于构建无第三方依赖的 `slk-transport.pyz`、状态/查询/Cargo CLI 和只读 BI。
+- SLK 4.3.5 源码，用于构建无第三方依赖的 `slk-transport.pyz`、状态/查询/Cargo CLI 和只读 BI。
 
 升级这些版本应重新验证，不把“能够启动”直接当作与上述基线兼容。
 
@@ -149,7 +149,7 @@ OCRV、PowerShell、Codex App Server、DSH 和传输辅助进程默认使用统�
 
 ## 4. 构建 SLK 传输和状态工具
 
-从受信的 SLK 4.3.4 源码构建机器级工具。正式 artifact 入口先用 Tauri production build 嵌入 BI 前端，再构建其余工具；不要用普通 `cargo build --release -p slk-bi-desktop` 生成可发布 BI：
+从受信的 SLK 4.3.5 源码构建机器级工具。正式 artifact 入口先用 Tauri production build 嵌入 BI 前端，再构建其余工具；不要用普通 `cargo build --release -p slk-bi-desktop` 生成可发布 BI：
 
 ```powershell
 Set-Location D:\SLK
@@ -197,7 +197,7 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 
 ## 5. 部署一个项目
 
-把 SLK 4.3.4 `skills\` 下的 15 个目录作为同一已校验包部署到该项目使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
+把 SLK 4.3.5 `skills\` 下的 15 个目录作为同一已校验包部署到该项目使用的 Skill 根目录，并在项目中调用 `$small-loop-skill`。不要因为电脑已配置 DSH/OCRV，就把 SLK 自动应用于其他项目。
 
 首次启动 Run 时：
 
@@ -206,7 +206,7 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 3. DSH Worker 端点记录确定且不超过 64 字符的 `instance_id`、当前 `session_id`、运行根、项目绝对路径和命令；启动前验证 Git worktree/common-dir 存在且可写；
 4. OCRV Checker 端点记录命令、运行根和超时；
 5. 完成 Supervisor → Checker、Checker → Worker 的真实双向通讯测试；
-6. DSH/OCRV 在终态结果前写出匹配 `started.json`；发送者只通过 `slk-state commit-delivery-start` 原子提交启动回执、TOKEN、事件和 runtime revision，不能从退出码或终态结果倒推启动。
+6. DSH/OCRV 在终态结果前写出匹配 `slk.native-start/v2`，并通过安装后的 capability 声明支持 `inspect-native-activity`；发送者只通过 `slk-state commit-delivery-start` 原子提交正常交接，不能从退出码、legacy marker、wrapper PID 或终态结果倒推启动。Worker→Checker 的 DSH 只密封候选包，由独立 OCRV 宿主启动；TOKEN 已在 Checker 的假启动恢复不得重放 Worker 或再次移动 TOKEN。
 7. 如需 Overwatcher，由 Supervisor 与 Owner 确认精确 Session、180–300 秒间隔和前台持续能力；一个 Run 只绑定一次同一 active turn，CELL 仅改变 cycle scope。`LATE` 不等于 inactive；终态最后一轮与匹配 revision 完成后才关闭归档。不得创建 heartbeat、automation、cron、Windows 计划任务、daemon、服务、后台 Agent 或第二观察者；不绑定时原三角色照常运行。
 8. `bind-overwatcher`、`replace-overwatcher` 或 `rotate-overwatcher-credential` 返回时，只把一次性的 `overwatcher_write_credential` 作为写凭证保存并立即用 `authenticate-role` 验证；`overwatcher_credential_id` 只是非秘密身份字段，不能认证。凭证丢失时只允许 Supervisor 针对精确当前 ACTIVE binding 轮换，不替换 Session/turn/binding，不伪造 continuity violation，也不直接编辑状态库。
 
@@ -214,7 +214,7 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 
 ## 6. 新电脑验收清单
 
-以下各项都成立，才把新电脑标记为可运行 SLK 4.3.4：
+以下各项都成立，才把新电脑标记为可运行 SLK 4.3.5：
 
 - DSH 版本命令成功，真实 headless 请求返回预期结果；
 - 两个不同 `instance-id` 的 DSH Worker 不共用 session；
@@ -235,4 +235,4 @@ D:\SLK-RUNTIME\bin\slk-state.exe configure --data-root $dataRoot
 - DSH 外层退出码不能单独证明 Worker 完成；应检查闭合 Worker 结果和命令证据。
 - OCRV 返回 `INCOMPLETE` 时保留事实并修复运行环境，不把它改写成 PASS。
 - 传输未出现原生启动证据时，发送者仍持有原 TOKEN；空闲目标恢复沿用同一消息身份一次，活跃 Supervisor 的当前 D1 FAIL 只用绑定准确 turn 的新消息，其他变化交回 Supervisor。
-- 当前 SLK 4.3.4 源码发布不把 DSH/OCRV 的机器启动配置混入 15 个 Skill，也不读写 LCaS 产品候选。OCRV Checker recovery companion 随包保存在 `integrations/ocrv`，只能对明确指定且已含已验收 adapter/wrapper 的 OCRV root 执行其独立安装脚本；脚本只备份并替换 wrapper/companion，不安装依赖，失败自动恢复。新电脑应从受信的内部配置包或已验收电脑复制其他配置文件，排除 `node_modules`、临时目录、运行状态、日志和任何凭据后，再执行本指引的锁定安装与验收。
+- 当前 SLK 4.3.5 源码发布不把 DSH/OCRV 的机器启动配置混入 15 个 Skill，也不读写 LCaS 产品候选。DSH/OCRV activity integration 与 Checker recovery companion 随包保存在 `integrations`，只能对明确指定且已含已验收 runtime 的 root 执行各自独立安装脚本；脚本只备份并替换已声明文件、不安装依赖，失败自动恢复。新电脑应从受信配置包或已验收电脑复制其他配置文件，排除 `node_modules`、临时目录、运行状态、日志和凭据后，再执行锁定安装与验收。

@@ -23,8 +23,10 @@ from .desktop_current_turn import (
 from .contracts import ContractError, Endpoint, Envelope, parse_delivery
 from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
+from .native_activity import NativeActivityError, inspect_native_activity, validate_native_start
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
+from .role_eval import load_pack, pack_sha256, validate_response
 from .run_readiness import evaluate_run_readiness
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
@@ -36,7 +38,7 @@ from .worker_completion import (
 )
 
 
-VERSION = "4.3.4"
+VERSION = "4.3.5"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -156,6 +158,19 @@ def _send(args: argparse.Namespace) -> int:
             _emit({**value, "job_pid": process.pid})
             return 0
         if started.is_file():
+            try:
+                validate_native_start(
+                    started,
+                    adapter=endpoint.adapter,
+                    run_id=envelope.run_id,
+                    cell_id=envelope.cell_id,
+                    message_id=envelope.message_id,
+                )
+            except NativeActivityError:
+                if process.poll() is not None:
+                    break
+                time.sleep(0.02)
+                continue
             _emit(
                 {
                     "status": "started",
@@ -307,10 +322,44 @@ def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
     return 3 if result["status"] in {"LATE", "CONTINUITY_UNPROVEN"} else 0
 
 
+def _inspect_native_activity(args: argparse.Namespace) -> int:
+    terminals = tuple(path for path in (args.completed, args.failed) if path is not None)
+    result = inspect_native_activity(args.started, terminal_paths=terminals)
+    _emit(result)
+    return 0 if result["status"] in {"ACTIVE", "IDLE", "PENDING", "COMPLETED", "FAILED"} else 3
+
+
 def _preflight_run(args: argparse.Namespace) -> int:
     result = evaluate_run_readiness(_read_object(args.request, "Run readiness request"))
     _emit(result)
     return 0 if result["status"] == "READY" else 3
+
+
+def _validate_role_eval(args: argparse.Namespace) -> int:
+    pack = load_pack(args.pack)
+    if args.check_pack:
+        result = {
+            "status": "PASS",
+            "case_count": len(pack["cases"]),
+            "case_pack_sha256": pack_sha256(args.pack),
+        }
+    else:
+        if not all(
+            [args.response, args.run_id, args.project_id, args.plan_revision, args.role]
+        ):
+            raise ValueError(
+                "role Eval response validation requires frozen Run, project, plan, and role"
+            )
+        result = validate_response(
+            args.pack,
+            _read_object(args.response, "role Eval response"),
+            expected_run_id=args.run_id,
+            expected_project_id=args.project_id,
+            expected_plan_revision=args.plan_revision,
+            expected_role=args.role,
+        )
+    _emit(result)
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -359,11 +408,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     cadence = subparsers.add_parser("inspect-overwatcher-cadence")
     cadence.add_argument("--runtime-projection", required=True, type=Path)
     cadence.add_argument("--observed-at", required=True)
+    native_activity = subparsers.add_parser("inspect-native-activity")
+    native_activity.add_argument("--started", required=True, type=Path)
+    native_activity.add_argument("--completed", type=Path)
+    native_activity.add_argument("--failed", type=Path)
     continuation = subparsers.add_parser("continue-worker")
     continuation.add_argument("--request", required=True, type=Path)
     continuation.add_argument("--sha256", required=True)
     readiness = subparsers.add_parser("preflight-run")
     readiness.add_argument("--request", required=True, type=Path)
+    role_eval = subparsers.add_parser("validate-role-eval")
+    role_eval.add_argument("--pack", required=True, type=Path)
+    role_eval.add_argument("--response", type=Path)
+    role_eval.add_argument("--run-id")
+    role_eval.add_argument("--project-id")
+    role_eval.add_argument("--plan-revision", type=int)
+    role_eval.add_argument("--role", choices=("supervisor", "checker", "worker", "overwatcher"))
+    role_eval.add_argument("--check-pack", action="store_true")
     args = parser.parse_args(argv)
     if getattr(args, "startup_timeout_seconds", 1) <= 0:
         return _rejected("CLI_ARGUMENT_INVALID", "startup timeout must be positive")
@@ -392,10 +453,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _checker_recover_worker(args)
         if args.command == "inspect-overwatcher-cadence":
             return _inspect_overwatcher_cadence(args)
+        if args.command == "inspect-native-activity":
+            return _inspect_native_activity(args)
         if args.command == "continue-worker":
             return _continue_worker(args)
         if args.command == "preflight-run":
             return _preflight_run(args)
+        if args.command == "validate-role-eval":
+            return _validate_role_eval(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")
     except AdapterError as exc:
         return _rejected(exc.error_code, str(exc))
@@ -407,6 +472,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _rejected(exc.error_code, str(exc))
     except OverwatcherContinuityError as exc:
         return _rejected("OVERWATCHER_CADENCE_PROJECTION_INVALID", str(exc))
+    except NativeActivityError as exc:
+        return _rejected("NATIVE_ACTIVITY_INVALID", str(exc))
     except (OSError, ValueError) as exc:
         return _rejected("INPUT_INVALID", str(exc))
 

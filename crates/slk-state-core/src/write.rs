@@ -33,6 +33,37 @@ const TRANSACTION_ATTEMPTS: usize = 3;
 type OverwatchCycleBindingRow = (String, String, i64, String, String, u64, String, String);
 type ActiveOverwatcherGateRow = (Option<i64>, Option<String>, String, u64, String, String);
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeStartReceipt {
+    schema_version: String,
+    status: String,
+    adapter: String,
+    run_id: String,
+    cell_id: String,
+    message_id: String,
+    request_sha256: String,
+    native_request_sha256: String,
+    observed_at: String,
+    process: NativeProcessIdentity,
+    native_task: NativeTaskIdentity,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeProcessIdentity {
+    pid: u32,
+    creation_time: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeTaskIdentity {
+    kind: String,
+    id: String,
+    status: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct StateStore {
     pub(crate) data_root: PathBuf,
@@ -690,7 +721,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1071,6 +1102,11 @@ impl StateStore {
                     "commit-delivery-start requires a revisioned SLK runtime contract".into(),
                 ));
             }
+            let native_start = if method_version == "4.3.5" {
+                Some(validate_native_start_v2(&evidence_bytes, &request)?)
+            } else {
+                None
+            };
             let actor = authorize_event(
                 transaction,
                 &request.run_id,
@@ -1114,9 +1150,9 @@ impl StateStore {
                     expected: current.sequence + 1,
                 });
             }
-            let endpoint_exists: Option<i64> = transaction
+            let endpoint_adapter: Option<String> = transaction
                 .query_row(
-                    "SELECT 1 FROM role_endpoints
+                    "SELECT transport_adapter FROM role_endpoints
                      WHERE run_id=?1 AND role_instance_id=?2 AND endpoint_version=?3
                        AND state='active'",
                     params![
@@ -1127,8 +1163,15 @@ impl StateStore {
                     |row| row.get(0),
                 )
                 .optional()?;
-            if endpoint_exists.is_none() {
+            if endpoint_adapter.is_none() {
                 return Err(StateError::EndpointNotCurrent);
+            }
+            if native_start.as_ref().is_some_and(|receipt| {
+                Some(receipt.adapter.as_str()) != endpoint_adapter.as_deref()
+            }) {
+                return Err(StateError::EvidenceInvalid(
+                    "native start adapter does not match the current target endpoint".into(),
+                ));
             }
             let target_role_text: String = transaction.query_row(
                 "SELECT role FROM role_instances
@@ -1830,6 +1873,7 @@ impl StateStore {
                     | "4.3.2"
                     | "4.3.3"
                     | "4.3.4"
+                    | "4.3.5"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -2223,7 +2267,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2850,6 +2894,7 @@ impl StateStore {
                     | "4.3.2"
                     | "4.3.3"
                     | "4.3.4"
+                    | "4.3.5"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3132,13 +3177,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -4327,6 +4372,7 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
             | "4.3.2"
             | "4.3.3"
             | "4.3.4"
+            | "4.3.5"
     )
 }
 
@@ -4349,7 +4395,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.3.0" && request.to_version == "4.3.1")
             || (request.from_version == "4.3.1" && request.to_version == "4.3.2")
             || (request.from_version == "4.3.2" && request.to_version == "4.3.3")
-            || (request.from_version == "4.3.3" && request.to_version == "4.3.4");
+            || (request.from_version == "4.3.3" && request.to_version == "4.3.4")
+            || (request.from_version == "4.3.4" && request.to_version == "4.3.5");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id
@@ -4406,6 +4453,41 @@ fn validate_delivery_start_request(request: &CommitDeliveryStartRequest) -> Resu
         ));
     }
     validate_admin_timestamp(&request.occurred_at)
+}
+
+fn validate_native_start_v2(
+    evidence_bytes: &[u8],
+    request: &CommitDeliveryStartRequest,
+) -> Result<NativeStartReceipt, StateError> {
+    let receipt: NativeStartReceipt = serde_json::from_slice(evidence_bytes).map_err(|_| {
+        StateError::EvidenceInvalid(
+            "SLK 4.3.5 delivery start requires the closed slk.native-start/v2 receipt".into(),
+        )
+    })?;
+    let canonical = |value: &str| !value.is_empty() && value.trim() == value;
+    if receipt.schema_version != "slk.native-start/v2"
+        || receipt.status != "STARTED"
+        || !canonical(&receipt.adapter)
+        || receipt.run_id != request.run_id
+        || receipt.cell_id != request.cell_id
+        || receipt.message_id != request.message_id
+        || receipt.request_sha256 != request.payload_sha256
+        || !is_lower_sha256(&receipt.native_request_sha256)
+        || validate_admin_timestamp(&receipt.observed_at).is_err()
+        || receipt.process.pid == 0
+        || !canonical(&receipt.process.creation_time)
+        || !canonical(&receipt.native_task.kind)
+        || !canonical(&receipt.native_task.id)
+        || !matches!(
+            receipt.native_task.status.as_str(),
+            "RUNNING" | "PENDING" | "IDLE"
+        )
+    {
+        return Err(StateError::EvidenceInvalid(
+            "native start does not bind the exact delivery, process, and native task".into(),
+        ));
+    }
+    Ok(receipt)
 }
 
 fn validate_owner_authorization(

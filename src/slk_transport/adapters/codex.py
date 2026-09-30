@@ -14,6 +14,7 @@ from .base import AdapterError
 from ..contracts import RESULT_SCHEMA, DeliveryResult, Endpoint, Envelope
 from ..evidence import Attempt
 from ..jsonrpc import JsonRpcProcess
+from ..native_activity import make_native_start
 
 
 ADDRESS_FIELDS = frozenset(
@@ -272,7 +273,7 @@ class CodexAdapter:
                         "clientInfo": {
                             "name": "slk_transport",
                             "title": "SLK Transport",
-                            "version": "4.3.4",
+                            "version": "4.3.5",
                         }
                     },
                     startup_timeout,
@@ -389,13 +390,18 @@ class CodexAdapter:
                 raise AdapterError("CODEX_TURN_START_TIMEOUT", "Codex emitted no exact turn/started event") from exc
             attempt.write_json_once(
                 "started.json",
-                {
-                    "message_id": envelope.message_id,
-                    "run_id": envelope.run_id,
-                    "status": "started",
-                    "thread_id": started["threadId"],
-                    "turn_id": turn_id,
-                },
+                make_native_start(
+                    adapter=endpoint.adapter,
+                    run_id=envelope.run_id,
+                    cell_id=envelope.cell_id,
+                    message_id=envelope.message_id,
+                    request_sha256=envelope.payload_sha256,
+                    native_request_sha256=envelope.payload_sha256,
+                    native_task_kind="codex-turn",
+                    native_task_id=f"{started['threadId']}:{turn_id}",
+                    native_task_status="RUNNING",
+                    pid=client.pid,
+                ),
             )
             try:
                 completed = client.wait_for(

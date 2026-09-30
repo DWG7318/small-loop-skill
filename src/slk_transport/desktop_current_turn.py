@@ -14,6 +14,7 @@ from typing import Any, Mapping
 from .adapters.codex import CodexAdapter
 from .contracts import ContractError, parse_delivery
 from .evidence import Attempt
+from .native_activity import make_native_start, validate_native_start
 
 
 REQUEST_SCHEMA = "slk.transport-desktop-current-turn-request/v1"
@@ -375,16 +376,31 @@ def complete_desktop_current_turn(
         "envelope_sha256": request["envelope_sha256"],
         "status": "started",
     }
-    started = {
-        "message_id": request["recovery_message_id"],
-        "run_id": envelope["run_id"],
-        "status": "started",
-        "thread_id": request["target_thread_id"],
-        "turn_id": after["turn_id"],
-        "platform_item_id": after["platform_item_id"],
-        "recovery_of_message_id": envelope["message_id"],
-    }
     attempt = Attempt(recovery_root)
+    started_path = recovery_root / "started.json"
+    if started_path.is_file():
+        started = validate_native_start(
+            started_path,
+            adapter=str(endpoint["adapter"]),
+            run_id=str(envelope["run_id"]),
+            cell_id=str(envelope["cell_id"]),
+            message_id=str(request["recovery_message_id"]),
+            request_sha256=str(envelope["payload_sha256"]),
+            native_request_sha256=str(request["prompt_sha256"]),
+        )
+    else:
+        started = make_native_start(
+            adapter=str(endpoint["adapter"]),
+            run_id=str(envelope["run_id"]),
+            cell_id=str(envelope["cell_id"]),
+            message_id=str(request["recovery_message_id"]),
+            request_sha256=str(envelope["payload_sha256"]),
+            native_request_sha256=str(request["prompt_sha256"]),
+            native_task_kind="codex-desktop-turn",
+            native_task_id=f"{request['target_thread_id']}:{after['turn_id']}:{after['platform_item_id']}",
+            native_task_status="RUNNING",
+            pid=os.getpid(),
+        )
     _write_or_match(attempt, "host-receipt.json", receipt)
     _write_or_match(attempt, "recovery.json", recovery)
     _write_or_match(attempt, "started.json", started)
