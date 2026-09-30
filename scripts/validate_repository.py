@@ -176,6 +176,7 @@ def validate(root: Path) -> list[str]:
         "integrations/ocrv/slk-checker-capabilities.json",
         "scripts/build_release_artifacts.ps1",
         "scripts/build_local_package.py",
+        "scripts/slk-transport.cmd",
         "scripts/install_local.ps1",
         "scripts/verify_bi_release.py",
         "scripts/verify_local_install.py",

@@ -48,18 +48,20 @@ Addresses are selected by identity, never by conversation title. Secrets stay in
 ## Commands
 
 ```text
-python path\to\slk-transport.pyz validate --endpoint ENDPOINT.json --envelope ENVELOPE.json
-python path\to\slk-transport.pyz send --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
-python path\to\slk-transport.pyz inspect --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
-python path\to\slk-transport.pyz inspect-native-activity --started STARTED.json [--terminal COMPLETED.json] [--terminal FAILED.json]
-python path\to\slk-transport.pyz retry-exact --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
-python path\to\slk-transport.pyz recover-active-writer --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
-python path\to\slk-transport.pyz prepare-desktop-current-turn --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
-python path\to\slk-transport.pyz complete-desktop-current-turn --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT --host-receipt HOST-RECEIPT.json
-python path\to\slk-transport.pyz inspect-worker-completion --source-attempt ATTEMPT --runtime-projection RUN.json --observed-at RFC3339 --cadence-seconds SECONDS --output INSPECTION.json
-python path\to\slk-transport.pyz inspect-overwatcher-cadence --runtime-projection RUN.json --observed-at RFC3339
-python path\to\slk-transport.pyz drill-verify --evidence-root EVIDENCE_ROOT
+slk-transport validate --endpoint ENDPOINT.json --envelope ENVELOPE.json
+slk-transport send --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+slk-transport inspect --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+slk-transport inspect-native-activity --started STARTED.json [--completed COMPLETED.json] [--failed FAILED.json]
+slk-transport retry-exact --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+slk-transport recover-active-writer --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+slk-transport prepare-desktop-current-turn --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
+slk-transport complete-desktop-current-turn --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT --host-receipt HOST-RECEIPT.json
+slk-transport inspect-worker-completion --source-attempt ATTEMPT --runtime-projection RUN.json --observed-at RFC3339 --cadence-seconds SECONDS --output INSPECTION.json
+slk-transport inspect-overwatcher-cadence --runtime-projection RUN.json --observed-at RFC3339
+slk-transport drill-verify --evidence-root EVIDENCE_ROOT
 ```
+
+The managed install places `slk-transport.cmd` beside the hash-bound `slk-transport.pyz`; that launcher is the standard command. A stale user-site Python console script is not an accepted entrance, while explicit `python <managed-slk-transport.pyz>` remains the diagnostic fallback.
 
 `validate` checks closed identities without delivery. `send` returns only on independently observed `slk.native-start/v2`, terminal failure after start, or bounded startup failure. `inspect-native-activity` queries the exact current process/native task without wake or model call; missing, stale, mismatched or permission-blocked evidence is `UNKNOWN`. OCRV segments publish their own start/activity, so an exited first-segment PID cannot mask a live later segment. `inspect` reports immutable evidence without creating work; `inspect-worker-completion` writes one exact observation and rejects conflicting reuse. `retry-exact` is limited to an inactive target and the same identity once. `recover-active-writer` handles the bounded external App Server route. If that exact Checker→Supervisor attempt and retry end as `CODEX_ACTIVE_WRITER_UNRESOLVED`, `prepare-desktop-current-turn` freezes a new identity-bound prompt under the original attempt; the current Codex Desktop host performs read/send/read and records the exact platform item, then `complete-desktop-current-turn` validates the same active target turn and writes separate recovery/start evidence. Visible text, send success, a changed turn or a self-authored receipt never qualifies. Changed, unsupported or unproved recovery returns `SUPERVISOR_DECISION_REQUIRED`, after which only a real Owner/Main activation can continue. `job` is the internal foreground form used by `send`.
 

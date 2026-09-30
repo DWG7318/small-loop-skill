@@ -31,6 +31,9 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
     paths = {entry["path"] for entry in manifest["files"]}
     assert {f"skills/{name}/SKILL.md" for name in EXPECTED_SKILLS} <= paths
     assert {f"tools/slk/bin/{name}" for name in ARTIFACT_NAMES} <= paths
+    assert "tools/slk/bin/slk-transport.cmd" in paths
+    launcher = (package / "tools/slk/bin/slk-transport.cmd").read_text(encoding="utf-8")
+    assert 'python "%~dp0slk-transport.pyz" %*' in launcher
     assert {
         "tools/slk/share/small-loop-skill/docs/state/SLK-STATE.md",
         "tools/slk/share/small-loop-skill/docs/state/SLK-BI.md",

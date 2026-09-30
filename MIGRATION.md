@@ -2,7 +2,7 @@
 
 ## Current patch migration: 4.3.4 to 4.3.5
 
-Install the complete 4.3.5 package plus matching DSH and OCRV integrations transactionally. Installation alone does not adopt, resume, dispatch, inspect, change TOKEN or mutate product files. At an Owner-authorized Supervisor boundary, an exact snapshot may adopt `4.3.4 → 4.3.5`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher history, old transport attempts and product changes are preserved.
+Install the complete 4.3.5 package plus matching DSH and OCRV integrations transactionally. The package installs a hash-bound `slk-transport.cmd` beside the managed pyz; verify the standard command resolves there rather than to an old Python user-site console script. Installation alone does not adopt, resume, dispatch, inspect, change TOKEN or mutate product files. At an Owner-authorized Supervisor boundary, an exact snapshot may adopt `4.3.4 → 4.3.5`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher history, old transport attempts and product changes are preserved.
 
 New delivery starts require `slk.native-start/v2`; a 4.3.4 `started.json` is retained as history but is not reinterpreted. When that legacy receipt already caused TOKEN to reach the exact Checker, the 4.3.5 recovery entrance must reuse the same Run/CELL/candidate/message, keep the old attempt immutable, avoid Worker replay and TOKEN recommit, write actual OCRV native evidence under the deterministic `.native-recovery-v2` path, then let the authenticated Checker record its actual D1 result. If TOKEN did not move, the normal v2 start and atomic commit path applies.
 

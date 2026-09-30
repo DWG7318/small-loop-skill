@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "6f26fc21aa6ccdf47d69cdf12103319144a4a467d31fe236da880269e0ec60bf"
+      "sha256": "c492d2d52cd0b780c14dbf78fbd6efff96bed5259e5d0f26ab382337efaf3d9c"
     },
     {
       "path": "Cargo.lock",
@@ -40,7 +40,7 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "fe695bfd9608eec3aa7fdf6ebc632586c3824eac61f9406b902931db45395232"
+      "sha256": "df6843aee49c644875e667156ab11694befc3cfa9a07f8ec76da30326b088dd1"
     },
     {
       "path": "PRODUCT.md",
@@ -48,15 +48,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "753e4431b648077879110678e7159f15efaa3e4efc2e15079289384290b08863"
+      "sha256": "b95e333cb733640ecb8c0b148d7928840d74560bd31d22828a153f9375f3ee0a"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "9ddcc52aaee3f1d1c41836c0d2f3c1eec17710162a41f001105caad527cbaed6"
+      "sha256": "87b39e6cfd943c3b6ced4a28393c1a79609543f15248d351c8d8c7b6e8b2cd78"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "b301ec3ff0c5be5ef8d9409a0f57dc0fb363dbe1d3de9952e35506e0e2d1b7ed"
+      "sha256": "598ae0bb44042cc7c169bdff051bb70da0eb5342ce3e4dbc877f63840994b5a7"
     },
     {
       "path": "VERSION",
@@ -896,7 +896,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "c03200d8e2689771985d4d8e14de891d2ce36d4e0e22a385c31e120c73062880"
+      "sha256": "f52f59e62ca5fcd0f9d6299fd10a845a9b8565f03cce393e94f5a43935c9c3ba"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -992,7 +992,7 @@
     },
     {
       "path": "scripts/build_local_package.py",
-      "sha256": "9be90ba8f21c4a11e369948e67babbbb2be13d9ea7d53aa153931411ddafb6bc"
+      "sha256": "32585e32a704ec459eac5138a17ade596a198b2068df9fee7a8aeac910669c3b"
     },
     {
       "path": "scripts/build_release_artifacts.ps1",
@@ -1019,8 +1019,12 @@
       "sha256": "d7fec391d4cefb850f744849391a1a7d0896e798488446c8c83bdb89de1b008d"
     },
     {
+      "path": "scripts/slk-transport.cmd",
+      "sha256": "9bdf40ead96a82d42241b88df3781890739c11d8a493cc739b350f7b7d1acf07"
+    },
+    {
       "path": "scripts/validate_repository.py",
-      "sha256": "b2797208b2b5b9474551d612cafdf13f90d8f12dc5ae1fcd375364000dc3628a"
+      "sha256": "cd8bbff32124c0e269fc9e05155ce9cdd46be0898de0def2d3a0d8cf1503988a"
     },
     {
       "path": "scripts/validate_role_eval.py",
@@ -1032,7 +1036,7 @@
     },
     {
       "path": "scripts/verify_local_install.py",
-      "sha256": "bf1c94820d125719183c9c750c46ef9d3ee499e83bb0352ff8051d1f2e6bb7a7"
+      "sha256": "cf5cc2ef7d3c447902d0c04d43ebd610b35bbd82daad3deda29c5c748495de6b"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -1220,7 +1224,7 @@
     },
     {
       "path": "tests/install/test_build_local_package.py",
-      "sha256": "1b42e94cc097c62a528f6f94a3aacf28d7ea9ce965d266417d59cdcc28a8319f"
+      "sha256": "b0679fbd7fe9045892bc0a94a9026dc3dc0ad604e320ba0201126016d69fe0e1"
     },
     {
       "path": "tests/install/test_dsh_integration.py",
@@ -1228,7 +1232,7 @@
     },
     {
       "path": "tests/install/test_local_install.py",
-      "sha256": "5cac1ab8f0deeb0377700c1070e2f4f805bd102f0748418fbcea77b2b8d23e1c"
+      "sha256": "19ac7cf66509fe40eeeee1cd1bcce48ac981de84ade0710a5fed7d193899301c"
     },
     {
       "path": "tests/install/test_ocrv_classification.py",
@@ -1284,7 +1288,7 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "9e4b1ccc7ba77e118b54a0e81e36f6e0579f7934ac3007f4d494c7ff05418f22"
+      "sha256": "b62c5740b0e2cb026e2fef2c2081f1f08101c98f28b6d889b938d62eb68e5911"
     },
     {
       "path": "tests/test_skill_collection_300.py",

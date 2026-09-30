@@ -29,7 +29,7 @@ SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢�
 
 RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Codex 全域只安装一次，但安装不等于获得项目使用授权；每个 Run 仍由 Owner 决定是否启用。SLK 只显式调用，不启用自动 hook、MCP 或额外 Agent；原生命令与原始证据始终可以回退并作为事实依据。
 
-跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。4.3.5 的 `slk.native-start/v2` 分别绑定 envelope payload hash 与原生输入 hash；`inspect-native-activity` 只读返回精确进程/任务事实，不唤醒 Agent、不调用模型。证据缺失、陈旧、身份不符或权限阻断时统一为 `UNKNOWN`，不能猜成 ACTIVE。DSH 只暂存已完成候选；独立 OCRV 宿主启动 D1，并由已认证 Checker 把 `D1_STARTED` 和真实原生裁决写入中央状态。旧伪启动即使已错误把 TOKEN 交给 Checker，也只在独立确定性恢复路径追加 native v2 证据，不覆盖旧 attempt、不重做 Worker、不重复移动 TOKEN。不新增 daemon、heartbeat、MCP、第二 Checker 或角色。详见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
+跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。4.3.5 的标准命令由受管 launcher 转发到同目录哈希绑定 pyz；`slk.native-start/v2` 分别绑定 envelope payload hash 与原生输入 hash，`inspect-native-activity` 只读返回精确进程/任务事实，不唤醒 Agent、不调用模型。证据缺失、陈旧、身份不符或权限阻断时统一为 `UNKNOWN`，不能猜成 ACTIVE。DSH 只暂存已完成候选；独立 OCRV 宿主启动 D1，并由已认证 Checker 把 `D1_STARTED` 和真实原生裁决写入中央状态。旧伪启动即使已错误把 TOKEN 交给 Checker，也只在独立确定性恢复路径追加 native v2 证据，不覆盖旧 attempt、不重做 Worker、不重复移动 TOKEN。不新增 daemon、heartbeat、MCP、第二 Checker 或角色。详见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
 
 4.3.5 继续包含 4.3.0 引入的可选 `SLK.Start` 与 `SLK.Run` Temporal 模板，只保存启动和通讯连续性。它必须按 Run 显式选择并连接现有服务/adapter，不安装 Docker、不成为硬依赖，也不裁决工程状态；薄活动查询复用同一个 native-activity inspector，未启用或不可用时继续原直连。详见 [`docs/runtime/SLK-TEMPORAL.md`](docs/runtime/SLK-TEMPORAL.md)。
 

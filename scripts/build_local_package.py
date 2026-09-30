@@ -24,6 +24,7 @@ ARTIFACT_NAMES = (
     "slk-state.exe",
     "slk-transport.pyz",
 )
+LAUNCHER_NAMES = ("slk-transport.cmd",)
 ROOT_DOCUMENTS = (
     "VERSION",
     "README.md",
@@ -176,6 +177,12 @@ def build_package(repository: Path | str, artifacts: Path | str, output: Path | 
     listed = _load_repository_manifest(repo)
     mappings = _repository_sources(repo, listed)
     mappings.extend((artifact_root / name, Path("tools/slk/bin") / name) for name in ARTIFACT_NAMES)
+    for name in LAUNCHER_NAMES:
+        source = repository / "scripts" / name
+        relative = source.relative_to(repository).as_posix()
+        if listed.get(relative) != sha256(source):
+            raise PackageError(f"launcher is not the current repository manifest entry: {relative}")
+        mappings.append((source, Path("tools/slk/bin") / name))
 
     seen: set[str] = set()
     for _, relative in mappings:

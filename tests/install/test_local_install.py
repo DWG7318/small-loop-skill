@@ -34,7 +34,7 @@ def seed_old_install(codex_home: Path) -> dict[str, bytes]:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         expected[relative.as_posix()] = data
-    for name in ARTIFACT_NAMES:
+    for name in (*ARTIFACT_NAMES, "slk-transport.cmd"):
         relative = Path("tools/slk/bin") / name
         data = f"old-{name}-4.2.2\n".encode()
         target = codex_home / relative
@@ -115,3 +115,6 @@ def test_successful_install_matches_package_manifest(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "PASS SLK_LOCAL_INSTALL 4.3.5" in completed.stdout
     assert (codex_home / "tools/slk/share/small-loop-skill/VERSION").read_text(encoding="utf-8").strip() == "4.3.5"
+    launcher = codex_home / "tools/slk/bin/slk-transport.cmd"
+    assert launcher.is_file()
+    assert 'python "%~dp0slk-transport.pyz" %*' in launcher.read_text(encoding="utf-8")

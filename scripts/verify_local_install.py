@@ -9,10 +9,10 @@ import json
 from pathlib import Path, PurePosixPath
 
 try:
-    from .build_local_package import ARTIFACT_NAMES, MANIFEST_SCHEMA
+    from .build_local_package import ARTIFACT_NAMES, LAUNCHER_NAMES, MANIFEST_SCHEMA
     from .validate_repository import EXPECTED_SKILLS, VERSION
 except ImportError:  # direct script execution
-    from build_local_package import ARTIFACT_NAMES, MANIFEST_SCHEMA
+    from build_local_package import ARTIFACT_NAMES, LAUNCHER_NAMES, MANIFEST_SCHEMA
     from validate_repository import EXPECTED_SKILLS, VERSION
 
 
@@ -79,7 +79,9 @@ def verify(root: Path | str, *, package_mode: bool = False) -> dict[str, object]
 
     if [entry["path"] for entry in manifest["files"]] != sorted(listed):
         raise VerificationError("install manifest file order is not canonical")
-    artifact_paths = {f"tools/slk/bin/{name}" for name in ARTIFACT_NAMES}
+    artifact_paths = {
+        f"tools/slk/bin/{name}" for name in (*ARTIFACT_NAMES, *LAUNCHER_NAMES)
+    }
     if {path for path in listed if path.startswith("tools/slk/bin/")} != artifact_paths:
         raise VerificationError("installed artifact set is not exact")
     for name in EXPECTED_SKILLS:

@@ -265,6 +265,14 @@ def test_ci_validates_repository_tests_and_each_skill_on_windows_and_ubuntu() ->
     assert "validate_serial_plan.py" not in workflow
 
 
+def test_native_activity_documentation_uses_the_real_closed_cli_flags() -> None:
+    transport = read("docs/transport/SLK-TRANSPORT.md")
+    assert "--completed COMPLETED.json" in transport
+    assert "--failed FAILED.json" in transport
+    assert "--terminal COMPLETED.json" not in transport
+    assert "python path\\to\\slk-transport.pyz" not in transport
+
+
 def test_license_and_lf_policy_remain_available() -> None:
     license_text = read("LICENSE")
     assert "The above copyright notice and this permission notice" in license_text

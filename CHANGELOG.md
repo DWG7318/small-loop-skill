@@ -6,7 +6,7 @@
 - Added one read-only `inspect-native-activity` entrance and installed DSH/OCRV capability declarations. Missing, stale, mismatched or permission-blocked evidence returns `UNKNOWN`; Desktop platform turn evidence is authoritative over a short-lived bridge CLI PID.
 - Stopped hosting OCRV D1 inside the one-shot DSH Worker process. DSH stages one immutable candidate package; the authenticated OCRV recovery host starts the real review, records Checker-owned `D1_STARTED` and the actual native PASS/FAIL/INCOMPLETE result, and never asks Supervisor to forge a Checker event.
 - Added exact same-candidate recovery when a legacy false start already moved TOKEN to Checker. The old attempt stays immutable, Worker is not resumed, TOKEN is not moved again, and new native v2 evidence is written under a deterministic recovery path.
-- Added atomic `init-run --credential-out`, a packaged Role Eval validator, headless integration launchers, real DSH event-signature checks, and an adapter-receipt-to-state integration test. No role, daemon, heartbeat, MCP, scheduler, Docker dependency, BI write authority or product method was added.
+- Added atomic `init-run --credential-out`, a packaged Role Eval validator, headless integration launchers, real DSH event-signature checks, an adapter-receipt-to-state integration test, and a hash-bound managed `slk-transport` launcher that supersedes stale user-site console scripts. No role, daemon, heartbeat, MCP, scheduler, Docker dependency, BI write authority or product method was added.
 
 ## 4.3.4
 
