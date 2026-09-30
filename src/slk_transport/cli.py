@@ -36,7 +36,7 @@ from .worker_completion import (
 )
 
 
-VERSION = "4.3.3"
+VERSION = "4.3.4"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),

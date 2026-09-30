@@ -7,7 +7,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 ## 方法身份
 
-SLK 4.3.3 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
+SLK 4.3.4 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
 
 它以 CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，帮助成员判断怎样继续：D1 FAIL 回到同一 CELL 返工，D1 PASS 前进，全部 CELL 处理后由 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌本身不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态事实，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与未来 BI 只读查询。
 
@@ -66,5 +66,5 @@ Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run` 初始化�
 - 不要因协作问题加状态机。上下文压缩或续作后按中央状态、当前 Run 记录、计划和当前 TOKEN 重验 `run_id`、CELL/attempt、下一动作；摘要、旧话题或对话记忆冲突时停止串题。
 - 不要让 Temporal 自动启动、切换模型或重复恢复；缺失走直连或报阻断。
 - 不要反向把跨 Agent 通讯、身份校验、TOKEN 原子流转、中央记录或 BI 一致性退回自由文本约定；这些共享事实与传输边界应继续由小而明确的代码合同保证。
-- 不要在 Run readiness 不是 `READY`、任一角色被提示词替代、任务超过该角色容量，或 Ponytail/Temporal/Overwatcher/RTK/Probe CLI/BoM 任一项仍未获 Owner 明确 ON/OFF 时开始施工；不要把可选工具缺失误写为工程角色不兼容。
+- 不要在 Run readiness 不是 `READY`、任一角色被提示词替代、任务超过该角色容量，或 Ponytail/Temporal/Overwatcher/RTK/Probe CLI 任一项仍未获 Owner 明确 ON/OFF 时开始施工；BoM 不是可配置项，readiness 请求不声明它，出现时先移除；不要把可选工具缺失误写为工程角色不兼容。
 - 不要新增只有作者知道如何运行的一次性脚本或隐藏代码路径；需要长期复用的确定性能力应成为有文档调用规则的标准 Tool，做不到轻量稳定时就不要继续堆代码。

@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.3"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.4"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -242,7 +242,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "独立 headless Checker 传输宿主" in recover
     assert "`slk-state resume-overwatcher-turn`" in overwatch
     assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.3.3" in main
+    assert "4.3.4" in main
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -1386,6 +1386,16 @@ def test_4210_keeps_bom_off_and_worker_flash_without_pro() -> None:
     assert "BoM 保持禁用" in combined
     assert "DeepSeek V4 Flash" in combined
     assert "DeepSeek V4 Pro" not in combined
+
+
+def test_434_bom_is_forbidden_but_not_owner_configurable() -> None:
+    main = read_skill("small-loop-skill")
+    plan = read_skill("slk-plan-run")
+
+    assert "BoM 保持禁用" in main
+    assert "Ponytail/Temporal/Overwatcher/RTK/Probe CLI/BoM" not in main
+    assert "Ponytail、Temporal、Overwatcher、RTK、Probe CLI、BoM" not in plan
+    assert "Ponytail、Temporal、Overwatcher、RTK、Probe CLI 和新增可选项" in plan
 
 
 def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:

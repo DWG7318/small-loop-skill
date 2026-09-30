@@ -1,10 +1,18 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.3.3 to 4.3.4
+
+Install the complete 4.3.4 package and matching OCRV integration transactionally. Installation alone does not adopt, resume, dispatch, inspect or mutate a Run. At an existing Supervisor boundary, an Owner-authorized exact snapshot may adopt `4.3.3 → 4.3.4`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher state, evidence and product changes are preserved.
+
+Before new construction, readiness records Owner ON/OFF decisions only for Ponytail, Temporal, Overwatcher, RTK, Probe CLI and future genuinely optional features. BoM is not configurable and must not appear in a readiness request; any declaration returns `OPTION_FORBIDDEN` and stays outside the normalized result.
+
+No role, model, CELL/D0/D1/D2 authority, TOKEN, BI authority, Temporal default, Docker service, daemon, heartbeat, MCP or product file changes automatically.
+
 ## Current patch migration: 4.3.2 to 4.3.3
 
 Install the complete 4.3.3 package and the four-file OCRV integration transactionally. Installation alone does not adopt, resume, dispatch, inspect or mutate a Run. At an existing Supervisor boundary, an Owner-authorized exact snapshot may adopt `4.3.2 → 4.3.3`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher state, evidence and product changes are preserved.
 
-Before new construction, run the closed three-role readiness preflight and record explicit Owner ON/OFF decisions for Ponytail, Temporal, Overwatcher, RTK, Probe CLI, BoM and any future option. Existing 4.3.2 OCRV attempts remain frozen evidence; do not reinterpret their descriptive segments as scoped review. A new 4.3.3 D1 attempt uses request v2, exact background/capacity metrics and native preview scope. Missing optional RTK/Probe tools use native fallback; missing required role capability remains `REPAIR_NEEDED`, while identity mismatch or task overflow is `INCOMPATIBLE`.
+This historical 4.3.3 preparation rule is superseded by 4.3.4 and should not be used for new construction. Existing 4.3.2 OCRV attempts remain frozen evidence; do not reinterpret their descriptive segments as scoped review. A new 4.3.3 D1 attempt uses request v2, exact background/capacity metrics and native preview scope. Missing optional RTK/Probe tools use native fallback; missing required role capability remains `REPAIR_NEEDED`, while identity mismatch or task overflow is `INCOMPATIBLE`.
 
 No role, model, CELL/D0/D1/D2 authority, TOKEN, BI authority, Temporal default, Docker service, daemon, heartbeat, MCP or product file changes automatically.
 

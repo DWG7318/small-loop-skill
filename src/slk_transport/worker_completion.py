@@ -229,7 +229,7 @@ def build_continuation_request(
             )
         )
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.3.3"
+        or snapshot.get("method_version") != "4.3.4"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -254,7 +254,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.3.3",
+        "method_version": "4.3.4",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -705,7 +705,7 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.3.3":
+    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.3.4":
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
@@ -1115,8 +1115,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.3.3":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.3.3")
+    if request.get("method_version") != "4.3.4":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.3.4")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -1185,7 +1185,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not start Checker D1")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.3.3",
+        "method_version": "4.3.4",
         "status": "CHECKER_STARTED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],

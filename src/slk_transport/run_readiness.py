@@ -32,7 +32,8 @@ ROLE_FIELDS = frozenset(
 )
 OPTION_FIELDS = frozenset({"name", "decision", "owner_evidence_ref"})
 REQUIRED_ROLES = ("supervisor", "worker", "checker")
-REQUIRED_OPTIONS = ("Ponytail", "Temporal", "Overwatcher", "RTK", "Probe CLI", "BoM")
+REQUIRED_OPTIONS = ("Ponytail", "Temporal", "Overwatcher", "RTK", "Probe CLI")
+FORBIDDEN_OPTION_NAMES = frozenset({"bom"})
 
 
 def _closed(value: Mapping[str, Any], fields: frozenset[str], label: str) -> None:
@@ -144,6 +145,7 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_options, list):
         raise ValueError("optional_features must be an array")
     options_by_name: dict[str, dict[str, Any]] = {}
+    forbidden_option_declared = False
     for raw in raw_options:
         if not isinstance(raw, Mapping):
             raise ValueError("optional feature must be an object")
@@ -157,6 +159,9 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
         evidence = raw["owner_evidence_ref"]
         if not isinstance(evidence, str):
             raise ValueError("owner_evidence_ref must be a string")
+        if name.casefold() in FORBIDDEN_OPTION_NAMES:
+            forbidden_option_declared = True
+            continue
         options_by_name[name] = {
             "name": name,
             "decision": decision,
@@ -168,6 +173,8 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
         for code in role["reason_codes"]:
             if code not in reason_codes:
                 reason_codes.append(code)
+    if forbidden_option_declared:
+        reason_codes.append("OPTION_FORBIDDEN")
     missing = [name for name in REQUIRED_OPTIONS if name not in options_by_name]
     if missing:
         reason_codes.append("REQUIRED_OPTION_MISSING")

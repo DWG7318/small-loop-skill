@@ -5,10 +5,12 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from slk_transport.run_readiness import evaluate_run_readiness
 
 
-REQUIRED_OPTIONS = ("Ponytail", "Temporal", "Overwatcher", "RTK", "Probe CLI", "BoM")
+REQUIRED_OPTIONS = ("Ponytail", "Temporal", "Overwatcher", "RTK", "Probe CLI")
 
 
 def _request(tmp_path: Path) -> dict[str, object]:
@@ -130,3 +132,19 @@ def test_future_option_is_allowed_but_still_requires_owner_confirmation(tmp_path
 
     assert result["status"] == "REPAIR_NEEDED"
     assert "OPTION_DECISION_REQUIRED" in result["reason_codes"]
+
+
+@pytest.mark.parametrize("decision", ["ON", "OFF"])
+def test_bom_is_forbidden_instead_of_owner_configurable(
+    tmp_path: Path, decision: str
+) -> None:
+    request = _request(tmp_path)
+    request["optional_features"].append(
+        {"name": "BoM", "decision": decision, "owner_evidence_ref": "owner:legacy"}
+    )
+
+    result = evaluate_run_readiness(request)
+
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "OPTION_FORBIDDEN" in result["reason_codes"]
+    assert all(item["name"] != "BoM" for item in result["optional_features"])

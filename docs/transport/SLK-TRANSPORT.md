@@ -1,6 +1,6 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.3.3` carries one closed delivery into an exact native Agent endpoint and implements deterministic readiness/OCRV preflight without deciding D1. `preflight-run` verifies the concrete Codex Supervisor, DSH Worker and OCRV Checker bindings, capacity, workspace and required capabilities, plus explicit Owner ON/OFF decisions for every option. Worker completion and active-writer recovery keep their existing exact-identity rules; OCRV remains a detached headless Checker host.
+`slk-transport 4.3.4` carries one closed delivery into an exact native Agent endpoint and implements deterministic readiness/OCRV preflight without deciding D1. `preflight-run` verifies the concrete Codex Supervisor, DSH Worker and OCRV Checker bindings, capacity, workspace and required capabilities, plus explicit Owner ON/OFF decisions for every option. Worker completion and active-writer recovery keep their existing exact-identity rules; OCRV remains a detached headless Checker host.
 
 ## Role edges
 

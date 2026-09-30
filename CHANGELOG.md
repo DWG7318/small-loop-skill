@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.3.4
+
+- Removed BoM from the Run-readiness option set and every Owner option surface. A readiness request that declares BoM as either `ON` or `OFF` now returns `REPAIR_NEEDED` with `OPTION_FORBIDDEN` and omits it from the normalized option result.
+- Preserved the existing method-level prohibition: no BoM trigger, route, role or runtime exists. Ponytail, Temporal, Overwatcher, RTK and Probe CLI remain the five explicit per-Run decisions.
+- Kept schema v8, the three engineering roles, direct communication, TOKEN, CELL/D0/D1/D2 authority, OCRV preflight, optional Temporal/Overwatcher behavior and product repositories unchanged.
+
 ## 4.3.3
 
 - Added one closed `preflight-run` gate for the exact Codex Supervisor, DSH Worker and OCRV Checker bindings, context/task capacity, writable workspace, required capabilities and explicit Owner ON/OFF decisions for every option.

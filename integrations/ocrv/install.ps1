@@ -22,8 +22,8 @@ foreach ($name in $names) {
     }
 }
 $timestamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss-fffffff')
-$backup = Join-Path $root ".slk-backups\slk-4.3.3-ocrv-preflight-$timestamp"
-$stage = Join-Path $root ".slk-stage-4.3.3-$timestamp"
+$backup = Join-Path $root ".slk-backups\slk-4.3.4-ocrv-preflight-$timestamp"
+$stage = Join-Path $root ".slk-stage-4.3.4-$timestamp"
 [void][System.IO.Directory]::CreateDirectory($backup)
 [void][System.IO.Directory]::CreateDirectory($stage)
 $originalExisted = [ordered]@{}
@@ -45,7 +45,7 @@ try {
     $receipt = [ordered]@{
         schema_version = 'slk.ocrv-install/v2'
         status = 'INSTALLED'
-        version = '4.3.3'
+        version = '4.3.4'
         ocrv_root = $root
         backup_root = $backup
         installed_at = [DateTimeOffset]::UtcNow.ToString('o')
