@@ -58,4 +58,3 @@ if ($env:SLK_NATIVE_ACTIVITY_PATH -or $env:SLK_NATIVE_ACTIVITY_CONTEXT) {
 
 & (Join-Path $PSScriptRoot 'node_modules\.bin\dsh.cmd') @DshArgs
 exit $LASTEXITCODE
-

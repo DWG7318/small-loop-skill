@@ -1,4 +1,3 @@
 - insert:
     - id: slk-native-activity
       name: './slk_native_activity.mjs'
-

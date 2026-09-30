@@ -900,27 +900,27 @@
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
-      "sha256": "9c62efa1d8121994921d6422cdc5a2208da831143591ec411bdd8de9e38999a5"
+      "sha256": "793a81d51a62b997cdde0743a5cbc6db784d4e19a5bcd325b05e955d9daeb66c"
     },
     {
       "path": "integrations/dsh/install.ps1",
-      "sha256": "1663702dc43bb0e5c1764b9b2e24bb3c8b5ba11fd6f2d7b8228fba4f4b12e7c7"
+      "sha256": "3d624d8ae4bbe6c723f19f992f068015566ece279f1074bf8a9b73f3ebb87286"
     },
     {
       "path": "integrations/dsh/rollback.ps1",
-      "sha256": "fdd6a272fd1893a38ff30ffe82a9b9a717c702521d1e17e3cc118cb90dcb2090"
+      "sha256": "7712c02cc279222ee9e07ba2f11251083ad0ae64e3359820c7cb0a1fa0986175"
     },
     {
       "path": "integrations/dsh/slk-native-activity.patch.yml",
-      "sha256": "8c2ea9c8363297f620375b1274972d623ba67c6272027c4e688fcfcbfbf0a42d"
+      "sha256": "60f7420d01d6f73047eb70ebbcd0adafa6e55b0c3cc14537e4c5bffa7bffe153"
     },
     {
       "path": "integrations/dsh/slk-worker-capabilities.json",
-      "sha256": "e6ec2e9a7c412dc1f1de7c1e833efb4ad59b1608219797f57aea8f615a4ba3f1"
+      "sha256": "3411680750ed31dbfd5c1192e86f17f621866e48431cce61ae5b0dc0eb69b4da"
     },
     {
       "path": "integrations/dsh/slk_native_activity.mjs",
-      "sha256": "10c50a284c1cd999ee28cd189ce1c70b0e59f35987265775059734adb953d071"
+      "sha256": "44c7f608a964134e00abbe42e9026592981378366f4e04e8a46333665cd1967a"
     },
     {
       "path": "integrations/ocrv/install.ps1",
@@ -1224,7 +1224,7 @@
     },
     {
       "path": "tests/install/test_dsh_integration.py",
-      "sha256": "d3ffd595ecd6ad95094c31bd11e6000a0f1cb8b52c1fd704c6d6807f31fa185e"
+      "sha256": "a5c1c02ae8a6832dfab54b3424ee96e0781650c5cd032f47858e9d059426c72f"
     },
     {
       "path": "tests/install/test_local_install.py",
@@ -1232,7 +1232,7 @@
     },
     {
       "path": "tests/install/test_ocrv_classification.py",
-      "sha256": "56d2e249eabaa9c675719db25e1f631124c33f538c45b69c706d2d74473afcd8"
+      "sha256": "cf96baf9333b7ddf8508dc7b0abb71c08290f53d7dcc1976350dfcc3e42d71ad"
     },
     {
       "path": "tests/install/test_ocrv_integration.py",
@@ -1360,7 +1360,7 @@
     },
     {
       "path": "tests/transport/test_native_activity.py",
-      "sha256": "e18ab24d26b4c6ff7f96271a2bd651833f8bae0ca4ab13deb56828d8b7642d19"
+      "sha256": "85c27718f467d2177e80d522a160b42505827e78a94a5ffba94c5f775778f9ff"
     },
     {
       "path": "tests/transport/test_ocrv_adapter.py",

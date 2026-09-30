@@ -12,4 +12,3 @@ foreach ($property in $receipt.original.PSObject.Properties) {
     else { Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue }
 }
 @{ status = 'rolled_back'; version = '4.3.5'; dsh_root = $root } | ConvertTo-Json -Compress
-

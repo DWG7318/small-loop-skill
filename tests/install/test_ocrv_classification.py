@@ -77,4 +77,3 @@ def test_incomplete_coverage_never_passes_even_with_low_observation() -> None:
 
     assert verdict == "INCOMPLETE"
     assert "OCR_COVERAGE_INCOMPLETE" in reasons
-

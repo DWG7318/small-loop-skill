@@ -68,4 +68,3 @@ export function apply(ctx) {
     publish("DSH_SESSION_EVENT", event?.type ?? "unknown");
   });
 }
-

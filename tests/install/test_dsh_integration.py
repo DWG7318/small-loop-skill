@@ -117,4 +117,3 @@ def test_dsh_integration_installs_and_rolls_back_managed_files(tmp_path: Path) -
     assert rolled_back.returncode == 0, rolled_back.stdout + rolled_back.stderr
     assert (dsh / "dsh-slk.ps1").read_bytes() == original
     assert not (dsh / "slk_native_activity.mjs").exists()
-

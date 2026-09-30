@@ -6,4 +6,3 @@
   "model_call_required": false,
   "native_events": ["agent/status", "session/event"]
 }
-

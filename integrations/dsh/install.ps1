@@ -20,4 +20,3 @@ $receipt = @{ version = '4.3.5'; dsh_root = $root; backup_root = $backup; origin
 foreach ($name in $files) { $receipt.installed_sha256[$name] = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $root $name)).Hash.ToLowerInvariant() }
 $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $backup 'receipt.json') -Encoding utf8
 $receipt | ConvertTo-Json -Depth 6 -Compress
-

@@ -352,4 +352,3 @@ def test_later_ocrv_segment_activity_supersedes_exited_first_segment(tmp_path: P
     assert result["status"] == "ACTIVE"
     assert result["native_task"]["id"] == "ocrv-session-segment-two"
     assert probed == [9876]
-
