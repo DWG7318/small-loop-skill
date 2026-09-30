@@ -60,6 +60,15 @@ OCRV_RESULT_FIELDS = frozenset(
     }
 )
 OCRV_REVIEW_FIELDS = frozenset({"status", "provider", "model", "session_id", "exit_code"})
+OCRV_PREFLIGHT_FIELDS = frozenset(
+    {"schema_version", "status", "run_id", "cell_id", "request_sha256", "background", "preview", "scope", "capabilities"}
+)
+OCRV_PREFLIGHT_BACKGROUND_FIELDS = frozenset(
+    {"characters", "bytes", "evidence_bytes", "sha256"}
+)
+OCRV_PREFLIGHT_PREVIEW_FIELDS = frozenset(
+    {"exit_code", "selected_paths", "inventory", "stdout_sha256", "stderr_sha256"}
+)
 RECOVERY_RESULT_FIELDS = frozenset(
     {
         "schema_version",
@@ -80,6 +89,15 @@ RECOVERY_RESULT_FIELDS = frozenset(
 EXPECTED_PROVIDER = "dashscope-tokenplan"
 EXPECTED_MODEL = "qwen3.8-max"
 VERDICT_EXIT_CODES = {"PASS": 0, "FAIL": 2, "INCOMPLETE": 3}
+DEFAULT_REVIEW_CAPACITY = {
+    "max_background_characters": 8_000,
+    "max_background_bytes": 12_000,
+    "max_changed_lines": 800,
+    "max_segment_paths": 2,
+    "max_tokens": 200_000,
+    "max_tokens_budget": 500_000,
+    "timeout_minutes": 15,
+}
 RECOVERY_NAMESPACE = uuid.UUID("9ae86847-8f6f-4b71-9288-18cf7f8f8540")
 
 
@@ -225,8 +243,14 @@ class OcrvAdapter:
             for item in evidence_files
         ):
             raise AdapterError("OCRV_PAYLOAD_INVALID", "evidence_files must contain existing absolute files")
+        scope = {
+            "include_paths": [],
+            "exclude_paths": [],
+            "criterion_ids": [f"D1-{index:03d}" for index in range(1, len(criteria) + 1)],
+        }
+        scope["scope_sha256"] = canonical_json_sha256(scope)
         return {
-            "schema_version": "slk.ocrv-d1-request/v1",
+            "schema_version": "slk.ocrv-d1-request/v2",
             "run_id": envelope.run_id,
             "cell_id": envelope.cell_id,
             "repository": str(repository.resolve()),
@@ -234,6 +258,8 @@ class OcrvAdapter:
             "cell_goal": _nonempty(payload["cell_goal"], "cell_goal"),
             "d1_criteria": [item.strip() for item in criteria],
             "evidence_files": list(evidence_files),
+            "review_scope": scope,
+            "capacity": dict(DEFAULT_REVIEW_CAPACITY),
         }
 
     def _read_ocrv_result(
@@ -281,48 +307,216 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV nested review exit code is invalid")
         return value
 
-    @staticmethod
-    def _changed_paths(request: Mapping[str, Any]) -> list[str]:
-        changed: list[str] = []
-        for raw_path in request["evidence_files"]:
-            try:
-                evidence = json.loads(Path(str(raw_path)).read_text(encoding="utf-8-sig"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if not isinstance(evidence, Mapping):
-                continue
-            next_payload = evidence.get("next_payload")
-            paths = next_payload.get("changed_paths") if isinstance(next_payload, Mapping) else None
-            if isinstance(paths, list):
-                for path in paths:
-                    if isinstance(path, str) and path.strip() and path not in changed:
-                        changed.append(path)
-        return changed
-
-    def _review_segments(self, request: Mapping[str, Any]) -> list[dict[str, Any]]:
-        changed_paths = self._changed_paths(request)
+    def _review_segments(
+        self,
+        request: Mapping[str, Any],
+        selected_paths: list[str],
+        inventory: list[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
         criteria = list(request["d1_criteria"])
-        segment_count = max(len(changed_paths), (len(criteria) + 1) // 2)
-        if segment_count <= 1:
-            return []
+        capacity = request["capacity"]
+        max_paths = int(capacity["max_segment_paths"])
+        max_lines = int(capacity["max_changed_lines"])
+        line_counts = {
+            str(item.get("path")): int(item.get("insertions", 0)) + int(item.get("deletions", 0))
+            for item in inventory
+            if isinstance(item, Mapping) and isinstance(item.get("path"), str)
+        }
+        path_groups: list[list[str]] = []
+        current: list[str] = []
+        current_lines = 0
+        for path in selected_paths:
+            lines = line_counts.get(path, 0)
+            if current and (len(current) >= max_paths or current_lines + lines > max_lines):
+                path_groups.append(current)
+                current = []
+                current_lines = 0
+            current.append(path)
+            current_lines += lines
+        if current:
+            path_groups.append(current)
+        criterion_ids = [f"D1-{ordinal:03d}" for ordinal in range(1, len(criteria) + 1)]
+        segment_count = len(path_groups)
         segments: list[dict[str, Any]] = []
-        for index in range(segment_count):
-            criterion_start = index * 2
-            scoped_criteria = criteria[criterion_start : criterion_start + 2]
-            if not scoped_criteria:
-                scoped_criteria = criteria
-            path_scope = changed_paths[index] if index < len(changed_paths) else "criteria-only"
+        for ordinal, scoped_paths in enumerate(path_groups, start=1):
             segments.append(
-                {
-                    **request,
-                    "cell_goal": (
-                        f"[SLK review segment {index + 1}/{segment_count}] "
-                        f"Changed-path scope: {path_scope}. Original goal: {request['cell_goal']}"
-                    ),
-                    "d1_criteria": scoped_criteria,
-                }
+                self._make_review_segment(
+                    request,
+                    selected_paths,
+                    scoped_paths,
+                    criteria,
+                    criterion_ids,
+                    f"{ordinal}/{segment_count}",
+                )
             )
         return segments
+
+    @staticmethod
+    def _make_review_segment(
+        base_request: Mapping[str, Any],
+        selected_paths: list[str],
+        scoped_paths: list[str],
+        scoped_criteria: list[str],
+        criterion_ids: list[str],
+        label: str,
+    ) -> dict[str, Any]:
+        scope = {
+            "include_paths": scoped_paths,
+            "exclude_paths": [path for path in selected_paths if path not in scoped_paths],
+            "criterion_ids": criterion_ids,
+        }
+        scope["scope_sha256"] = canonical_json_sha256(scope)
+        return {
+            **base_request,
+            "cell_goal": (
+                f"[SLK review segment {label}] Changed-path scope: {', '.join(scoped_paths)}. "
+                f"Original goal: {base_request['cell_goal']}"
+            ),
+            "d1_criteria": scoped_criteria,
+            "review_scope": scope,
+        }
+
+    def _split_review_segment(
+        self,
+        base_request: Mapping[str, Any],
+        selected_paths: list[str],
+        segment: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        scoped_paths = list(segment["review_scope"]["include_paths"])
+        scoped_criteria = list(segment["d1_criteria"])
+        criterion_ids = list(segment["review_scope"]["criterion_ids"])
+        if len(scoped_paths) > 1:
+            midpoint = (len(scoped_paths) + 1) // 2
+            parts = (scoped_paths[:midpoint], scoped_paths[midpoint:])
+            return [
+                self._make_review_segment(
+                    base_request,
+                    selected_paths,
+                    part,
+                    scoped_criteria,
+                    criterion_ids,
+                    "refined",
+                )
+                for part in parts
+            ]
+        if len(scoped_criteria) > 1:
+            midpoint = (len(scoped_criteria) + 1) // 2
+            return [
+                self._make_review_segment(
+                    base_request,
+                    selected_paths,
+                    scoped_paths,
+                    criteria_part,
+                    ids_part,
+                    "refined",
+                )
+                for criteria_part, ids_part in (
+                    (scoped_criteria[:midpoint], criterion_ids[:midpoint]),
+                    (scoped_criteria[midpoint:], criterion_ids[midpoint:]),
+                )
+            ]
+        return []
+
+    def _read_preflight(
+        self,
+        path: Path,
+        request_path: Path,
+        envelope: Envelope,
+    ) -> Mapping[str, Any]:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preflight is missing or invalid") from exc
+        if not isinstance(value, dict) or set(value) != OCRV_PREFLIGHT_FIELDS:
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preflight is not closed")
+        if (
+            value["schema_version"] != "slk.ocrv-d1-preflight/v1"
+            or value["status"] not in {"READY", "INCOMPLETE"}
+            or value["run_id"] != envelope.run_id
+            or value["cell_id"] != envelope.cell_id
+            or value["request_sha256"] != hashlib.sha256(request_path.read_bytes()).hexdigest()
+        ):
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preflight identity mismatch")
+        background = value["background"]
+        preview = value["preview"]
+        if not isinstance(background, dict) or set(background) != OCRV_PREFLIGHT_BACKGROUND_FIELDS:
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preflight background is invalid")
+        if not isinstance(preview, dict) or set(preview) != OCRV_PREFLIGHT_PREVIEW_FIELDS:
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preview is invalid")
+        if not all(
+            isinstance(background[name], int) and not isinstance(background[name], bool) and background[name] >= 0
+            for name in ("characters", "bytes", "evidence_bytes")
+        ):
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV background metrics are invalid")
+        selected = preview["selected_paths"]
+        if not isinstance(selected, list) or not all(isinstance(item, str) and item for item in selected):
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preview selected paths are invalid")
+        if len(selected) != len(set(selected)) or not isinstance(preview["inventory"], list):
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preview inventory is invalid")
+        return value
+
+    def _run_preflight(
+        self,
+        endpoint: Endpoint,
+        envelope: Envelope,
+        request_path: Path,
+        output_path: Path,
+        environment: Mapping[str, str],
+        timeout: float,
+    ) -> tuple[Mapping[str, Any], subprocess.CompletedProcess[str]]:
+        command = _string_array(endpoint.address["command"], "command")
+        command.extend(["--preflight", "--request", str(request_path), "--output", str(output_path)])
+        process = spawn(
+            command,
+            cwd=str(json.loads(request_path.read_text(encoding="utf-8"))["repository"]),
+            env=dict(environment),
+            process_kwargs=_checker_process_kwargs(),
+        )
+        completed = finish(process, timeout)
+        if completed.returncode not in {0, 3}:
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preflight process failed")
+        result = self._read_preflight(output_path, request_path, envelope)
+        expected_status = "READY" if completed.returncode == 0 else "INCOMPLETE"
+        if result["status"] != expected_status:
+            raise AdapterError("OCRV_PREFLIGHT_INVALID", "OCRV preflight status and exit code disagree")
+        return result, completed
+
+    @staticmethod
+    def _preflight_fits(request: Mapping[str, Any], preflight: Mapping[str, Any]) -> bool:
+        background = preflight["background"]
+        preview = preflight["preview"]
+        capacity = request["capacity"]
+        selected = set(preview["selected_paths"])
+        changed_lines = 0
+        inventoried: set[str] = set()
+        for item in preview["inventory"]:
+            if not isinstance(item, Mapping) or item.get("path") not in selected:
+                continue
+            path = str(item["path"])
+            insertions = item.get("insertions", 0)
+            deletions = item.get("deletions", 0)
+            if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in (insertions, deletions)):
+                return False
+            inventoried.add(path)
+            changed_lines += insertions + deletions
+        return bool(
+            preflight["status"] == "READY"
+            and background["characters"] <= capacity["max_background_characters"]
+            and background["bytes"] <= capacity["max_background_bytes"]
+            and len(selected) <= capacity["max_segment_paths"]
+            and changed_lines <= capacity["max_changed_lines"]
+            and inventoried == selected
+        )
+
+    @staticmethod
+    def _has_blocking_finding(result: Mapping[str, Any]) -> bool:
+        for finding in result["findings"]:
+            if not isinstance(finding, Mapping):
+                continue
+            severity = str(finding.get("severity", finding.get("priority", ""))).upper()
+            if severity in {"HIGH", "BLOCKER", "CRITICAL"} or finding.get("blocking") is True:
+                return True
+        return False
 
     def _recovery_request(
         self,
@@ -355,7 +549,7 @@ class OcrvAdapter:
         transport_command = _string_array(payload["transport_command"], "transport_command")
         return {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "method_version": "4.3.2",
+            "method_version": "4.3.3",
             "recovery_invocation_id": recovery_invocation_id,
             "recovery_envelope_message_id": envelope.message_id,
             "run_id": envelope.run_id,
@@ -388,7 +582,7 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery result is not closed")
         if (
             value["schema_version"] != "slk.ocrv-worker-recovery-result/v1"
-            or value["method_version"] != "4.3.2"
+            or value["method_version"] != "4.3.3"
             or value["status"] != "CHECKER_STARTED"
             or value["run_id"] != envelope.run_id
             or value["cell_id"] != envelope.cell_id
@@ -502,7 +696,6 @@ class OcrvAdapter:
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
         environment["OCRV_SLK_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
         timeout = _positive_seconds(endpoint.address["timeout_seconds"])
-        segments = self._review_segments(request)
         attempt.write_json_once(
             "started.json",
             {
@@ -512,141 +705,324 @@ class OcrvAdapter:
                 "transport_invocation_id": transport_invocation_id,
             },
         )
-        segment_results: list[Path] = []
-        if segments:
-            for ordinal, segment_request in enumerate(segments, start=1):
-                segment_root = attempt.root / "review-segments" / f"segment-{ordinal:03d}"
-                segment_root.mkdir(parents=True, exist_ok=False)
-                segment_attempt = Attempt(segment_root)
-                segment_request_path = segment_attempt.write_json_once("request.json", segment_request)
-                segment_result_path = segment_root / "result.json"
-                command = _string_array(endpoint.address["command"], "command")
-                command.extend(
-                    ["--request", str(segment_request_path), "--output", str(segment_result_path)]
+
+        def incomplete(
+            planned: int = 0,
+            completed_count: int = 0,
+            evidence: tuple[str, ...] = ("started.json",),
+        ) -> DeliveryResult:
+            return DeliveryResult(
+                RESULT_SCHEMA,
+                envelope.message_id,
+                envelope.run_id,
+                endpoint.adapter,
+                "failed",
+                {
+                    "run_id": envelope.run_id,
+                    "cell_id": envelope.cell_id,
+                    "review_segment_count": planned,
+                    "completed_review_segments": completed_count,
+                },
+                "OCRV_REVIEW_INCOMPLETE",
+                evidence,
+            )
+
+        preflight_request_path = attempt.write_json_once("ocrv-preflight-request.json", request)
+        preflight_path = attempt.root / "ocrv-preflight.json"
+        try:
+            preflight, preflight_process = self._run_preflight(
+                endpoint,
+                envelope,
+                preflight_request_path,
+                preflight_path,
+                environment,
+                timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            attempt.write_text_once(
+                "ocrv-preflight.stderr.txt",
+                exc.stderr if isinstance(exc.stderr, str) else "",
+            )
+            return incomplete(evidence=("started.json", "ocrv-preflight-request.json"))
+        attempt.write_text_once("ocrv-preflight.stdout.txt", preflight_process.stdout)
+        attempt.write_text_once("ocrv-preflight.stderr.txt", preflight_process.stderr)
+        preview = preflight["preview"]
+        selected_paths = list(preview["selected_paths"])
+        segments = []
+        if not self._preflight_fits(request, preflight):
+            segments = self._review_segments(request, selected_paths, list(preview["inventory"]))
+            if not segments:
+                return incomplete(
+                    evidence=("started.json", "ocrv-preflight-request.json", "ocrv-preflight.json")
                 )
+        if not segments:
+            request_path = attempt.write_json_once("ocrv-request.json", request)
+            result_path = attempt.root / "ocrv-result.json"
+            command = _string_array(endpoint.address["command"], "command")
+            command.extend(["--request", str(request_path), "--output", str(result_path)])
+            try:
                 process = spawn(
                     command,
                     cwd=str(request["repository"]),
                     env=environment,
                     process_kwargs=_checker_process_kwargs(),
                 )
-                try:
-                    completed = finish(process, timeout)
-                except subprocess.TimeoutExpired as exc:
-                    stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-                    stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-                    segment_attempt.write_text_once("native.stdout.txt", stdout)
-                    segment_attempt.write_text_once("native.stderr.txt", stderr)
-                    attempt.write_json_once(
-                        "ocrv-review-progress.json",
-                        {
-                            "schema_version": "slk.ocrv-review-progress/v1",
-                            "run_id": envelope.run_id,
-                            "cell_id": envelope.cell_id,
-                            "status": "INCOMPLETE",
-                            "completed_segments": len(segment_results),
-                            "total_segments": len(segments),
-                            "current_segment": ordinal,
-                        },
-                    )
-                    return DeliveryResult(
-                        schema_version=RESULT_SCHEMA,
-                        message_id=envelope.message_id,
-                        run_id=envelope.run_id,
-                        adapter=endpoint.adapter,
-                        status="failed",
-                        native_identity={
-                            "run_id": envelope.run_id,
-                            "cell_id": envelope.cell_id,
-                            "review_segment_count": len(segments),
-                            "completed_review_segments": len(segment_results),
-                        },
-                        error_code="OCRV_REVIEW_INCOMPLETE",
-                        evidence=("started.json", "ocrv-review-progress.json"),
-                    )
-                segment_attempt.write_text_once("native.stdout.txt", completed.stdout)
-                segment_attempt.write_text_once("native.stderr.txt", completed.stderr)
-                segment_result = self._read_ocrv_result(
-                    segment_result_path,
-                    segment_request_path,
-                    envelope,
-                    completed.returncode,
+                completed = finish(process, timeout)
+            except subprocess.TimeoutExpired as exc:
+                attempt.write_text_once(
+                    "native.stdout.txt", exc.stdout if isinstance(exc.stdout, str) else ""
                 )
-                segment_results.append(segment_result_path)
-                segment_review = segment_result["review"]
-                attempt.write_json_once(
-                    f"ocrv-review-progress-{ordinal:03d}.json",
-                    {
-                        "schema_version": "slk.ocrv-review-progress/v1",
-                        "run_id": envelope.run_id,
-                        "cell_id": envelope.cell_id,
-                        "status": "SEGMENT_COMPLETE",
-                        "completed_segments": len(segment_results),
-                        "total_segments": len(segments),
-                        "current_segment": ordinal,
-                        "request_sha256": hashlib.sha256(
-                            segment_request_path.read_bytes()
-                        ).hexdigest(),
-                        "result_sha256": hashlib.sha256(
-                            segment_result_path.read_bytes()
-                        ).hexdigest(),
-                        "review_invocation_id": segment_result["review_invocation_id"],
-                        "session_id": segment_review["session_id"],
-                        "process_exit_code": completed.returncode,
-                    },
+                attempt.write_text_once(
+                    "native.stderr.txt", exc.stderr if isinstance(exc.stderr, str) else ""
                 )
-            request = {
-                **request,
-                "cell_goal": (
-                    f"[SLK aggregate after {len(segments)} durable review segments] "
-                    f"{request['cell_goal']}"
+                raise AdapterError("OCRV_TIMEOUT", "OCRV Checker did not complete in time") from exc
+            attempt.write_text_once("native.stdout.txt", completed.stdout)
+            attempt.write_text_once("native.stderr.txt", completed.stderr)
+            result = self._read_ocrv_result(
+                result_path, request_path, envelope, completed.returncode
+            )
+            review = result["review"]
+            return DeliveryResult(
+                schema_version=RESULT_SCHEMA,
+                message_id=envelope.message_id,
+                run_id=envelope.run_id,
+                adapter=endpoint.adapter,
+                status="completed",
+                native_identity={
+                    "run_id": envelope.run_id,
+                    "cell_id": envelope.cell_id,
+                    "review_invocation_id": result["review_invocation_id"],
+                    "session_id": review["session_id"],
+                    "provider": review["provider"],
+                    "model": review["model"],
+                    "verdict": result["verdict"],
+                    "exit_code": completed.returncode,
+                    "review_segment_count": 0,
+                },
+                error_code=None,
+                evidence=(
+                    "started.json",
+                    "ocrv-preflight.json",
+                    "ocrv-request.json",
+                    "ocrv-result.json",
+                    "native.stdout.txt",
+                    "native.stderr.txt",
                 ),
-                "evidence_files": [
-                    *request["evidence_files"],
-                    *(str(path.resolve()) for path in segment_results),
-                ],
-            }
+            )
 
-        request_path = attempt.write_json_once("ocrv-request.json", request)
-        result_path = attempt.root / "ocrv-result.json"
-        command = _string_array(endpoint.address["command"], "command")
-        command.extend(["--request", str(request_path), "--output", str(result_path)])
-        try:
+        fitted_segments: list[
+            tuple[dict[str, Any], Mapping[str, Any], subprocess.CompletedProcess[str]]
+        ] = []
+        pending_segments = list(segments)
+        proposal_ordinal = 0
+        while pending_segments:
+            segment_request = pending_segments.pop(0)
+            proposal_ordinal += 1
+            proposal_root = (
+                attempt.root
+                / "review-preflight-proposals"
+                / f"proposal-{proposal_ordinal:03d}"
+            )
+            proposal_root.mkdir(parents=True, exist_ok=False)
+            proposal_attempt = Attempt(proposal_root)
+            proposal_request_path = proposal_attempt.write_json_once(
+                "request.json", segment_request
+            )
+            proposal_preflight_path = proposal_root / "preflight.json"
+            try:
+                proposal_preflight, proposal_process = self._run_preflight(
+                    endpoint,
+                    envelope,
+                    proposal_request_path,
+                    proposal_preflight_path,
+                    environment,
+                    timeout,
+                )
+            except (subprocess.TimeoutExpired, AdapterError):
+                return incomplete(
+                    len(segments), 0, ("started.json", "ocrv-preflight.json")
+                )
+            proposal_attempt.write_text_once("preflight.stdout.txt", proposal_process.stdout)
+            proposal_attempt.write_text_once("preflight.stderr.txt", proposal_process.stderr)
+            scope_matches = (
+                proposal_preflight["preview"]["selected_paths"]
+                == segment_request["review_scope"]["include_paths"]
+            )
+            if scope_matches and self._preflight_fits(segment_request, proposal_preflight):
+                fitted_segments.append((segment_request, proposal_preflight, proposal_process))
+                continue
+            refinements = (
+                self._split_review_segment(request, selected_paths, segment_request)
+                if scope_matches and proposal_preflight["preview"]["exit_code"] == 0
+                else []
+            )
+            if not refinements:
+                return incomplete(
+                    len(segments), 0, ("started.json", "ocrv-preflight.json")
+                )
+            pending_segments = refinements + pending_segments
+
+        segments = [item[0] for item in fitted_segments]
+        segment_results: list[tuple[Path, Mapping[str, Any], int]] = []
+        stopped_on_blocker = False
+        for ordinal, (
+            segment_request,
+            segment_preflight,
+            segment_preflight_process,
+        ) in enumerate(fitted_segments, start=1):
+            segment_root = attempt.root / "review-segments" / f"segment-{ordinal:03d}"
+            segment_root.mkdir(parents=True, exist_ok=False)
+            segment_attempt = Attempt(segment_root)
+            segment_request_path = segment_attempt.write_json_once("request.json", segment_request)
+            segment_attempt.write_json_once("preflight.json", segment_preflight)
+            segment_attempt.write_text_once("preflight.stdout.txt", segment_preflight_process.stdout)
+            segment_attempt.write_text_once("preflight.stderr.txt", segment_preflight_process.stderr)
+            segment_result_path = segment_root / "result.json"
+            command = _string_array(endpoint.address["command"], "command")
+            command.extend(["--request", str(segment_request_path), "--output", str(segment_result_path)])
             process = spawn(
                 command,
                 cwd=str(request["repository"]),
                 env=environment,
                 process_kwargs=_checker_process_kwargs(),
             )
-            completed = finish(process, timeout)
-        except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-            attempt.write_text_once("native.stdout.txt", stdout)
-            attempt.write_text_once("native.stderr.txt", stderr)
-            raise AdapterError("OCRV_TIMEOUT", "OCRV Checker did not complete in time") from exc
-        attempt.write_text_once("native.stdout.txt", completed.stdout)
-        attempt.write_text_once("native.stderr.txt", completed.stderr)
-        result = self._read_ocrv_result(
-            result_path,
-            request_path,
-            envelope,
-            completed.returncode,
-        )
-        if segments:
+            try:
+                completed = finish(process, timeout)
+            except subprocess.TimeoutExpired as exc:
+                segment_attempt.write_text_once(
+                    "native.stdout.txt", exc.stdout if isinstance(exc.stdout, str) else ""
+                )
+                segment_attempt.write_text_once(
+                    "native.stderr.txt", exc.stderr if isinstance(exc.stderr, str) else ""
+                )
+                attempt.write_json_once(
+                    "ocrv-review-progress.json",
+                    {
+                        "schema_version": "slk.ocrv-review-progress/v1",
+                        "run_id": envelope.run_id,
+                        "cell_id": envelope.cell_id,
+                        "status": "INCOMPLETE",
+                        "completed_segments": len(segment_results),
+                        "total_segments": len(segments),
+                        "current_segment": ordinal,
+                    },
+                )
+                return incomplete(
+                    len(segments),
+                    len(segment_results),
+                    ("started.json", "ocrv-review-progress.json"),
+                )
+            segment_attempt.write_text_once("native.stdout.txt", completed.stdout)
+            segment_attempt.write_text_once("native.stderr.txt", completed.stderr)
+            segment_result = self._read_ocrv_result(
+                segment_result_path, segment_request_path, envelope, completed.returncode
+            )
+            segment_results.append((segment_result_path, segment_result, completed.returncode))
+            segment_review = segment_result["review"]
             attempt.write_json_once(
-                "ocrv-review-progress.json",
+                f"ocrv-review-progress-{ordinal:03d}.json",
                 {
                     "schema_version": "slk.ocrv-review-progress/v1",
                     "run_id": envelope.run_id,
                     "cell_id": envelope.cell_id,
-                    "status": "COMPLETE",
+                    "status": "SEGMENT_COMPLETE",
                     "completed_segments": len(segment_results),
                     "total_segments": len(segments),
-                    "current_segment": len(segments),
+                    "current_segment": ordinal,
+                    "request_sha256": hashlib.sha256(segment_request_path.read_bytes()).hexdigest(),
+                    "result_sha256": hashlib.sha256(segment_result_path.read_bytes()).hexdigest(),
+                    "review_invocation_id": segment_result["review_invocation_id"],
+                    "session_id": segment_review["session_id"],
+                    "process_exit_code": completed.returncode,
                 },
             )
-        review = result["review"]
+            if segment_result["verdict"] == "INCOMPLETE":
+                return incomplete(len(segments), len(segment_results))
+            if self._has_blocking_finding(segment_result):
+                stopped_on_blocker = True
+                break
+
+        verdict = "FAIL" if any(item[1]["verdict"] == "FAIL" for item in segment_results) else "PASS"
+        reason_codes: list[str] = []
+        compact_segments: list[dict[str, Any]] = []
+        compact_findings: list[dict[str, Any]] = []
+        for ordinal, (path, value, _exit_code) in enumerate(segment_results, start=1):
+            for code in value["reason_codes"]:
+                if code not in reason_codes:
+                    reason_codes.append(code)
+            for finding in value["findings"]:
+                encoded = json.dumps(finding, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                compact_findings.append(
+                    {
+                        "severity": str(finding.get("severity", "UNKNOWN")) if isinstance(finding, Mapping) else "UNKNOWN",
+                        "finding_sha256": hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+                    }
+                )
+            compact_segments.append(
+                {
+                    "ordinal": ordinal,
+                    "request_sha256": value["request_sha256"],
+                    "result_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "verdict": value["verdict"],
+                    "reason_codes": list(value["reason_codes"]),
+                    "review_invocation_id": value["review_invocation_id"],
+                    "session_id": value["review"]["session_id"],
+                }
+            )
+        aggregate = {
+            "schema_version": "slk.ocrv-d1-aggregate/v1",
+            "run_id": envelope.run_id,
+            "cell_id": envelope.cell_id,
+            "verdict": verdict,
+            "reason_codes": reason_codes,
+            "planned_segment_count": len(segments),
+            "completed_segment_count": len(segment_results),
+            "stopped_on_blocking_finding": stopped_on_blocker,
+            "segments": compact_segments,
+            "findings": compact_findings,
+        }
+        aggregate_path = attempt.write_json_once("ocrv-aggregate.json", aggregate)
+        final_scope = {
+            "include_paths": list(preview["selected_paths"]),
+            "exclude_paths": [],
+            "criterion_ids": [f"D1-{index:03d}" for index in range(1, len(request["d1_criteria"]) + 1)],
+        }
+        final_scope["scope_sha256"] = canonical_json_sha256(final_scope)
+        final_request = {**request, "review_scope": final_scope}
+        request_path = attempt.write_json_once("ocrv-request.json", final_request)
+        formal_exit_code = VERDICT_EXIT_CODES[verdict]
+        result = {
+            "schema_version": "slk.ocrv-d1-result/v1",
+            "run_id": envelope.run_id,
+            "cell_id": envelope.cell_id,
+            "review_invocation_id": str(uuid.uuid4()),
+            "verdict": verdict,
+            "reason_codes": reason_codes,
+            "findings": compact_findings,
+            "review": {
+                "status": "complete",
+                "provider": EXPECTED_PROVIDER,
+                "model": EXPECTED_MODEL,
+                "session_id": f"ocrv-aggregate-{uuid.uuid4()}",
+                "exit_code": formal_exit_code,
+            },
+            "evidence": [hashlib.sha256(aggregate_path.read_bytes()).hexdigest()],
+            "request_sha256": hashlib.sha256(request_path.read_bytes()).hexdigest(),
+            "artifacts": {"aggregate": "ocrv-aggregate.json"},
+        }
+        attempt.write_json_once("ocrv-result.json", result)
+        attempt.write_json_once(
+            "ocrv-review-progress.json",
+            {
+                "schema_version": "slk.ocrv-review-progress/v1",
+                "run_id": envelope.run_id,
+                "cell_id": envelope.cell_id,
+                "status": "BLOCKED" if stopped_on_blocker else "COMPLETE",
+                "completed_segments": len(segment_results),
+                "total_segments": len(segments),
+                "current_segment": len(segment_results),
+            },
+        )
         return DeliveryResult(
             schema_version=RESULT_SCHEMA,
             message_id=envelope.message_id,
@@ -657,20 +1033,21 @@ class OcrvAdapter:
                 "run_id": envelope.run_id,
                 "cell_id": envelope.cell_id,
                 "review_invocation_id": result["review_invocation_id"],
-                "session_id": review["session_id"],
-                "provider": review["provider"],
-                "model": review["model"],
-                "verdict": result["verdict"],
-                "exit_code": completed.returncode,
+                "session_id": result["review"]["session_id"],
+                "provider": EXPECTED_PROVIDER,
+                "model": EXPECTED_MODEL,
+                "verdict": verdict,
+                "exit_code": formal_exit_code,
                 "review_segment_count": len(segment_results),
             },
             error_code=None,
             evidence=(
                 "started.json",
+                "ocrv-preflight.json",
+                "ocrv-aggregate.json",
                 "ocrv-request.json",
                 "ocrv-result.json",
-                "native.stdout.txt",
-                "native.stderr.txt",
+                "ocrv-review-progress.json",
             ),
         )
 

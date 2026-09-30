@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.3.3
+
+- Added one closed `preflight-run` gate for the exact Codex Supervisor, DSH Worker and OCRV Checker bindings, context/task capacity, writable workspace, required capabilities and explicit Owner ON/OFF decisions for every option.
+- Replaced descriptive OCRV segments with executable background/capacity measurement and native `review --preview` scope proof. Every segment excludes the rest of the candidate, runs sequentially and stops after a blocking finding.
+- Removed full segment-result reinjection. One compact aggregate retains verdict/reason/hash provenance while excluding complete result bodies and paths; oversize, preview mismatch and incomplete coverage fail closed before further model work.
+- Added a small optional RTK/Probe capability profile, transactionally installed OCRV adapter/wrapper/recovery/capabilities with hash receipts, and explicit `4.3.2 → 4.3.3` schema-v8 adoption. No role, authority, daemon, MCP, heartbeat, Docker dependency or product mutation was added.
+
 ## 4.3.2
 
 - Added one narrow two-phase Codex Desktop current-turn bridge for an exact Checker→registered Supervisor delivery whose external App Server attempt and one exact retry are preserved but remain blocked by the Desktop active writer.

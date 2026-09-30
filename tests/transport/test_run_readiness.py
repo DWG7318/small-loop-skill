@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import copy
+import json
+import sys
+from pathlib import Path
+
+from slk_transport.run_readiness import evaluate_run_readiness
+
+
+REQUIRED_OPTIONS = ("Ponytail", "Temporal", "Overwatcher", "RTK", "Probe CLI", "BoM")
+
+
+def _request(tmp_path: Path) -> dict[str, object]:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(exist_ok=True)
+    endpoint = tmp_path / "endpoint.json"
+    endpoint.write_text("{}\n", encoding="utf-8")
+    skill = tmp_path / "SKILL.md"
+    skill.write_text("# role\n", encoding="utf-8")
+    roles = []
+    for role, runtime, model in (
+        ("supervisor", "codex", "gpt-5.6-sol"),
+        ("worker", "dsh", "deepseek-v4-flash"),
+        ("checker", "ocrv", "qwen3.8-max"),
+    ):
+        roles.append(
+            {
+                "role": role,
+                "expected_runtime": runtime,
+                "actual_runtime": runtime,
+                "expected_model": model,
+                "actual_model": model,
+                "adapter_command": [sys.executable, "--version"],
+                "endpoint_path": str(endpoint),
+                "workspace_root": str(workspace),
+                "context_capacity": 100_000,
+                "task_context_estimate": 10_000,
+                "required_skills": [str(skill)],
+                "required_tools": [sys.executable],
+            }
+        )
+    return {
+        "schema_version": "slk.run-readiness-request/v1",
+        "run_id": "RUN-READINESS-A",
+        "plan_revision": 1,
+        "roles": roles,
+        "optional_features": [
+            {"name": name, "decision": "OFF", "owner_evidence_ref": f"owner:{name}"}
+            for name in REQUIRED_OPTIONS
+        ],
+    }
+
+
+def test_three_agent_readiness_is_ready_only_when_every_fact_and_option_is_closed(
+    tmp_path: Path,
+) -> None:
+    result = evaluate_run_readiness(_request(tmp_path))
+
+    assert result["status"] == "READY"
+    assert {item["role"] for item in result["roles"]} == {
+        "supervisor",
+        "worker",
+        "checker",
+    }
+    assert {item["status"] for item in result["roles"]} == {"READY"}
+    assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
+
+
+def test_missing_checker_capability_keeps_run_in_preparation(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    request["roles"][2]["required_tools"] = [str(tmp_path / "missing-ocrv")]
+
+    result = evaluate_run_readiness(request)
+
+    assert result["status"] == "REPAIR_NEEDED"
+    checker = next(item for item in result["roles"] if item["role"] == "checker")
+    assert checker["status"] == "REPAIR_NEEDED"
+    assert "REQUIRED_TOOL_MISSING" in checker["reason_codes"]
+
+
+def test_role_context_smaller_than_task_is_incompatible(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    request["roles"][1]["task_context_estimate"] = 100_001
+
+    result = evaluate_run_readiness(request)
+
+    assert result["status"] == "INCOMPATIBLE"
+    worker = next(item for item in result["roles"] if item["role"] == "worker")
+    assert worker["reason_codes"] == ["TASK_EXCEEDS_CONTEXT_CAPACITY"]
+
+
+def test_unconfirmed_or_missing_optional_feature_keeps_run_in_preparation(tmp_path: Path) -> None:
+    unconfirmed = _request(tmp_path)
+    unconfirmed["optional_features"][0] = {
+        "name": "Ponytail",
+        "decision": "UNCONFIRMED",
+        "owner_evidence_ref": "",
+    }
+    result = evaluate_run_readiness(unconfirmed)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "OPTION_DECISION_REQUIRED" in result["reason_codes"]
+
+    missing = _request(tmp_path)
+    missing["optional_features"] = missing["optional_features"][:-1]
+    result = evaluate_run_readiness(missing)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "REQUIRED_OPTION_MISSING" in result["reason_codes"]
+
+
+def test_role_substitution_is_not_repairable_by_prompt(tmp_path: Path) -> None:
+    request = copy.deepcopy(_request(tmp_path))
+    request["roles"][2]["actual_runtime"] = "codex"
+
+    result = evaluate_run_readiness(request)
+
+    assert result["status"] == "INCOMPATIBLE"
+    checker = next(item for item in result["roles"] if item["role"] == "checker")
+    assert "RUNTIME_MISMATCH" in checker["reason_codes"]
+    json.dumps(result)
+
+
+def test_future_option_is_allowed_but_still_requires_owner_confirmation(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    request["optional_features"].append(
+        {"name": "Future Tool", "decision": "UNCONFIRMED", "owner_evidence_ref": ""}
+    )
+
+    result = evaluate_run_readiness(request)
+
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "OPTION_DECISION_REQUIRED" in result["reason_codes"]

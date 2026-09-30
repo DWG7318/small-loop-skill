@@ -1,6 +1,6 @@
 # SLK Temporal continuity templates
 
-This optional package contains the two reusable SLK 4.3.2 templates:
+This optional package contains the two reusable SLK 4.3.3 templates:
 
 - `SLK.Start` (`StartSlkWorkflow`) validates one closed startup identity and starts exactly one deterministic child Run workflow.
 - `SLK.Run` (`RunSlkWorkflow`) records delivery, matching native-start acknowledgement, timeout, recovery request and terminal closure.

@@ -25,14 +25,14 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.3.2 skill collection" in result.stdout
+    assert "PASS: SLK 4.3.3 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.3.2"
+    assert manifest["version"] == "4.3.3"
     assert manifest["skill_count"] == 15
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -166,15 +166,15 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.3.2" in text
+        assert "4.3.3" in text
         assert "14" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text
-    assert "verify fixed role bindings → size initial CELLs" in english
+    assert "verify fixed role bindings/options with `preflight-run` → size initial CELLs" in english
     assert "Supervisor creates Checker → Checker role Eval" in english
     assert "Checker creates Worker" in english
-    assert "核对固定角色绑定 → 划分初始 CELL" in chinese
+    assert "用 `preflight-run` 核对固定角色绑定与可选项 → 划分初始 CELL" in chinese
     assert "Supervisor 创建 Checker → Checker 角色 Eval" in chinese
     assert "Checker 创建 Worker" in chinese
     assert "not standalone methods" in english
@@ -188,11 +188,23 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 4.3.2" in changelog and "## 4.3.1" in changelog and "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.3.3" in changelog and "## 4.3.2" in changelog and "## 4.3.1" in changelog and "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog
     assert "completed work" in changelog
+
+
+def test_433_readiness_and_ocrv_preflight_contracts_are_closed() -> None:
+    readiness = json.loads(read("docs/contracts/slk-run-readiness.schema.json"))
+    ocrv = json.loads(read("docs/contracts/slk-ocrv-d1-preflight.schema.json"))
+    for schema in (readiness, ocrv):
+        assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+        assert len(schema["oneOf"]) == 2
+    for name in ("request", "result"):
+        assert readiness["$defs"][name]["additionalProperties"] is False
+    for name in ("request", "preflight"):
+        assert ocrv["$defs"][name]["additionalProperties"] is False
 
 
 def test_431_consistency_audit_is_complete_and_packaged() -> None:

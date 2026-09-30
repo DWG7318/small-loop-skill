@@ -1237,6 +1237,87 @@ fn adoption_431_to_432_preserves_the_schema_v8_run() {
 }
 
 #[test]
+fn adoption_432_to_433_preserves_the_schema_v8_run() {
+    let fixture = Fixture::new_428();
+    for (receipt_id, from_version, to_version, occurred_at) in [
+        ("adopt-429", "4.2.8", "4.2.9", "2026-09-24T00:09:00Z"),
+        ("adopt-4210", "4.2.9", "4.2.10", "2026-09-25T00:10:00Z"),
+        ("adopt-4211", "4.2.10", "4.2.11", "2026-09-26T00:11:00Z"),
+        ("adopt-430", "4.2.11", "4.3.0", "2026-09-28T00:10:00Z"),
+        ("adopt-431", "4.3.0", "4.3.1", "2026-09-28T00:11:00Z"),
+        ("adopt-432", "4.3.1", "4.3.2", "2026-09-29T00:12:00Z"),
+    ] {
+        fixture
+            .store
+            .adopt_method_contract(
+                &fixture.supervisor,
+                AdoptMethodContractRequest {
+                    receipt_id: receipt_id.into(),
+                    run_id: "run-a".into(),
+                    expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+                    from_version: from_version.into(),
+                    to_version: to_version.into(),
+                    owner_authorization: OwnerAuthorizationEvidence {
+                        source_thread_id: format!("owner-{receipt_id}"),
+                        message_id: format!("message-{receipt_id}"),
+                        content_sha256: "e".repeat(64),
+                        decision: OwnerDecision::ApproveMethodContractAdoption,
+                        occurred_at: occurred_at.into(),
+                    },
+                    reconciliation_receipt_id: None,
+                    compatibility: MethodCompatibilityAssertions {
+                        topology: PreservedAssertion::Preserved,
+                        role_bindings: PreservedAssertion::Preserved,
+                        token: PreservedAssertion::Preserved,
+                        engineering_history: PreservedAssertion::Preserved,
+                        overwatcher: OverwatcherAssertion::Absent,
+                    },
+                    reason: format!("reach {to_version}"),
+                    occurred_at: occurred_at.into(),
+                },
+            )
+            .unwrap();
+    }
+    let before = fixture.store.query_run("run-a").unwrap();
+    let applied = fixture
+        .store
+        .adopt_method_contract(
+            &fixture.supervisor,
+            AdoptMethodContractRequest {
+                receipt_id: "adopt-433".into(),
+                run_id: "run-a".into(),
+                expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+                from_version: "4.3.2".into(),
+                to_version: "4.3.3".into(),
+                owner_authorization: OwnerAuthorizationEvidence {
+                    source_thread_id: "owner-433".into(),
+                    message_id: "message-433".into(),
+                    content_sha256: "f".repeat(64),
+                    decision: OwnerDecision::ApproveMethodContractAdoption,
+                    occurred_at: "2026-09-30T00:10:00Z".into(),
+                },
+                reconciliation_receipt_id: None,
+                compatibility: MethodCompatibilityAssertions {
+                    topology: PreservedAssertion::Preserved,
+                    role_bindings: PreservedAssertion::Preserved,
+                    token: PreservedAssertion::Preserved,
+                    engineering_history: PreservedAssertion::Preserved,
+                    overwatcher: OverwatcherAssertion::Absent,
+                },
+                reason: "adopt deterministic Run and OCRV preflight".into(),
+                occurred_at: "2026-09-30T00:10:01Z".into(),
+            },
+        )
+        .unwrap();
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(applied.effective_version, "4.3.3");
+    assert_eq!(after.summary.slk_version, "4.3.3");
+    assert_eq!(after.events, before.events);
+    assert_eq!(after.token_history, before.token_history);
+    assert_eq!(after.go_nodes, before.go_nodes);
+}
+
+#[test]
 fn native_status_resume_requires_exactly_one_current_eligible_basis() {
     let fixture = Fixture::new_428();
     let issued = fixture

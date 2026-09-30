@@ -25,6 +25,7 @@ from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
+from .run_readiness import evaluate_run_readiness
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
     CompletionError,
@@ -35,7 +36,7 @@ from .worker_completion import (
 )
 
 
-VERSION = "4.3.2"
+VERSION = "4.3.3"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -306,6 +307,12 @@ def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
     return 3 if result["status"] in {"LATE", "CONTINUITY_UNPROVEN"} else 0
 
 
+def _preflight_run(args: argparse.Namespace) -> int:
+    result = evaluate_run_readiness(_read_object(args.request, "Run readiness request"))
+    _emit(result)
+    return 0 if result["status"] == "READY" else 3
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="slk-transport")
     parser.add_argument("--version", action="version", version=f"slk-transport {VERSION}")
@@ -355,6 +362,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     continuation = subparsers.add_parser("continue-worker")
     continuation.add_argument("--request", required=True, type=Path)
     continuation.add_argument("--sha256", required=True)
+    readiness = subparsers.add_parser("preflight-run")
+    readiness.add_argument("--request", required=True, type=Path)
     args = parser.parse_args(argv)
     if getattr(args, "startup_timeout_seconds", 1) <= 0:
         return _rejected("CLI_ARGUMENT_INVALID", "startup timeout must be positive")
@@ -385,6 +394,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _inspect_overwatcher_cadence(args)
         if args.command == "continue-worker":
             return _continue_worker(args)
+        if args.command == "preflight-run":
+            return _preflight_run(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")
     except AdapterError as exc:
         return _rejected(exc.error_code, str(exc))

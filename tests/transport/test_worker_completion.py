@@ -95,7 +95,7 @@ def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.3.2",
+        "method_version": "4.3.3",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -143,7 +143,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.3.2"
+        assert continuation["method_version"] == "4.3.3"
         return {"status": "CHECKER_STARTED"}
 
     result = execute_checker_recovery(
@@ -304,9 +304,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.3.2", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.3.3", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.3.2",
+            "method_version": "4.3.3",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,

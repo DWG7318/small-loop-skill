@@ -124,10 +124,10 @@ def test_ocrv_breaks_away_from_a_resumed_dsh_job_while_staying_headless(
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
     assert result.status == "completed"
-    assert detached_values == [True]
+    assert detached_values == [True, True]
 
 
-def test_ocrv_v1_request_matches_installed_closed_contract(tmp_path: Path) -> None:
+def test_ocrv_v2_request_matches_installed_closed_contract(tmp_path: Path) -> None:
     endpoint = checker_endpoint(tmp_path)
     envelope = candidate_envelope(tmp_path)
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
@@ -144,7 +144,10 @@ def test_ocrv_v1_request_matches_installed_closed_contract(tmp_path: Path) -> No
         "cell_goal",
         "d1_criteria",
         "evidence_files",
+        "review_scope",
+        "capacity",
     }
+    assert request["schema_version"] == "slk.ocrv-d1-request/v2"
     started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
     assert "transport_invocation_id" in started
     assert "review_invocation_id" not in started
@@ -364,7 +367,7 @@ def test_ocrv_large_review_is_split_into_durable_segments_then_aggregated(
 
     assert result.status == "completed"
     segment_results = sorted((attempt.root / "review-segments").glob("segment-*/result.json"))
-    assert len(segment_results) >= 3
+    assert len(segment_results) >= 2
     segment_progress = json.loads(
         (attempt.root / "ocrv-review-progress-001.json").read_text(encoding="utf-8")
     )
@@ -375,6 +378,139 @@ def test_ocrv_large_review_is_split_into_durable_segments_then_aggregated(
     assert progress["completed_segments"] == progress["total_segments"]
     assert (attempt.root / "ocrv-result.json").is_file()
     assert result.native_identity["review_segment_count"] == len(segment_results)
+    segment_sentinel = "SEGMENT_FULL_RESULT_MUST_NOT_ENTER_AGGREGATE_"
+    assert segment_sentinel in segment_results[0].read_text(encoding="utf-8")
+    for segment in sorted((attempt.root / "review-segments").glob("segment-*")):
+        request = json.loads((segment / "request.json").read_text(encoding="utf-8"))
+        preflight = json.loads((segment / "preflight.json").read_text(encoding="utf-8"))
+        assert request["review_scope"]["include_paths"] == preflight["preview"]["selected_paths"]
+
+    aggregate = json.loads((attempt.root / "ocrv-aggregate.json").read_text(encoding="utf-8"))
+    encoded = json.dumps(aggregate)
+    final_request = (attempt.root / "ocrv-request.json").read_text(encoding="utf-8")
+    assert segment_sentinel not in encoded
+    assert segment_sentinel not in final_request
+    assert "review-segments" not in encoded
+    assert "review-segments" not in final_request
+
+
+def test_ocrv_segments_cover_every_selected_path_against_every_criterion(
+    tmp_path: Path,
+) -> None:
+    envelope = _large_candidate_envelope(tmp_path)
+    adapter = OcrvAdapter()
+    request = adapter._candidate_request(envelope)
+    paths = ["src-1.rs", "src-2.rs", "src-3.rs"]
+    inventory = [
+        {"path": path, "insertions": 10, "deletions": 2}
+        for path in paths
+    ]
+
+    segments = adapter._review_segments(request, paths, inventory)
+
+    covered = {
+        (path, criterion_id)
+        for segment in segments
+        for path in segment["review_scope"]["include_paths"]
+        for criterion_id in segment["review_scope"]["criterion_ids"]
+    }
+    expected = {
+        (path, f"D1-{ordinal:03d}")
+        for path in paths
+        for ordinal in range(1, len(request["d1_criteria"]) + 1)
+    }
+    assert covered == expected
+
+
+def test_ocrv_full_over_capacity_preview_is_refined_until_segments_fit(
+    tmp_path: Path,
+) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    envelope = _large_candidate_envelope(tmp_path)
+    raw = dict(envelope.__dict__)
+    payload = dict(envelope.payload)
+    payload["d1_criteria"] = [f"criterion-{ordinal}-" + "x" * 4_500 for ordinal in range(1, 4)]
+    raw["payload"] = payload
+    raw["payload_sha256"] = canonical_json_sha256(payload)
+    envelope = Envelope(**raw)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    segment_roots = sorted((attempt.root / "review-segments").glob("segment-*"))
+    assert len(segment_roots) >= 6
+    for segment in segment_roots:
+        request = json.loads((segment / "request.json").read_text(encoding="utf-8"))
+        preflight = json.loads((segment / "preflight.json").read_text(encoding="utf-8"))
+        assert preflight["background"]["characters"] <= request["capacity"]["max_background_characters"]
+
+
+def test_ocrv_rejects_nominal_segment_when_preview_still_selects_whole_candidate(
+    tmp_path: Path,
+) -> None:
+    endpoint = checker_endpoint(tmp_path, "scope-leak")
+    envelope = _large_candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
+    invocations = (Path(str(envelope.payload["repository"])) / ".fake-ocrv-invocations.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert '"preflight": false' not in invocations
+
+
+def test_ocrv_exact_background_over_limit_fails_before_model_start(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    envelope = candidate_envelope(tmp_path)
+    raw = dict(envelope.__dict__)
+    payload = dict(envelope.payload)
+    payload["cell_goal"] = "x" * 8_100
+    raw["payload"] = payload
+    raw["payload_sha256"] = canonical_json_sha256(payload)
+    envelope = Envelope(**raw)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
+    invocations = (Path(str(envelope.payload["repository"])) / ".fake-ocrv-invocations.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert '"preflight": false' not in invocations
+
+
+def test_ocrv_accepts_preflight_incomplete_exit_as_d1_incomplete(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path, "preflight-incomplete")
+    envelope = candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
+    assert (attempt.root / "ocrv-preflight.json").is_file()
+    invocations = (Path(str(envelope.payload["repository"])) / ".fake-ocrv-invocations.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert '"preflight": false' not in invocations
+
+
+def test_ocrv_blocking_segment_stops_before_next_segment(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path, "blocking-first")
+    envelope = _large_candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    assert result.native_identity["verdict"] == "FAIL"
+    assert (attempt.root / "review-segments" / "segment-001" / "result.json").is_file()
+    assert not (attempt.root / "review-segments" / "segment-002").exists()
 
 
 def test_ocrv_timeout_preserves_completed_segments_and_returns_incomplete(

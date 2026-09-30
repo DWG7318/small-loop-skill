@@ -1,5 +1,13 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.3.2 to 4.3.3
+
+Install the complete 4.3.3 package and the four-file OCRV integration transactionally. Installation alone does not adopt, resume, dispatch, inspect or mutate a Run. At an existing Supervisor boundary, an Owner-authorized exact snapshot may adopt `4.3.2 → 4.3.3`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher state, evidence and product changes are preserved.
+
+Before new construction, run the closed three-role readiness preflight and record explicit Owner ON/OFF decisions for Ponytail, Temporal, Overwatcher, RTK, Probe CLI, BoM and any future option. Existing 4.3.2 OCRV attempts remain frozen evidence; do not reinterpret their descriptive segments as scoped review. A new 4.3.3 D1 attempt uses request v2, exact background/capacity metrics and native preview scope. Missing optional RTK/Probe tools use native fallback; missing required role capability remains `REPAIR_NEEDED`, while identity mismatch or task overflow is `INCOMPATIBLE`.
+
+No role, model, CELL/D0/D1/D2 authority, TOKEN, BI authority, Temporal default, Docker service, daemon, heartbeat, MCP or product file changes automatically.
+
 ## Current patch migration: 4.3.1 to 4.3.2
 
 Install the complete 4.3.2 package. Installation alone does not adopt, resume, dispatch, inspect or mutate an existing Run. At an existing Supervisor-controlled boundary, an Owner-authorized exact snapshot may explicitly adopt `4.3.1 → 4.3.2`; Run ID, plan revision, current CELL/attempt, TOKEN holder/sequence, roles/endpoints, candidate and D0/D1/D2 history, Overwatcher state, transport evidence, product working tree and uncommitted product changes are preserved. Schema remains v8 with migrations `0001.sql` through `0008.sql`.

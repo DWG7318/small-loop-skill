@@ -7,27 +7,39 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = [System.IO.Path]::GetFullPath($OcrvRoot).TrimEnd('\', '/')
-$backup = [System.IO.Path]::GetFullPath($BackupRoot)
+$backup = [System.IO.Path]::GetFullPath($BackupRoot).TrimEnd('\', '/')
 $allowed = (Join-Path $root '.slk-backups').TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 if (-not $backup.StartsWith($allowed, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw 'BackupRoot must be inside the selected OCRV .slk-backups directory'
 }
 $receiptPath = Join-Path $backup 'receipt.json'
-$cmdBackup = Join-Path $backup 'slk-checker.cmd'
-if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf) -or -not (Test-Path -LiteralPath $cmdBackup -PathType Leaf)) {
-    throw 'OCRV recovery backup is incomplete'
+if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
+    throw 'OCRV integration backup receipt is missing'
 }
 $receipt = Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($receipt.schema_version -ne 'slk.ocrv-recovery-install/v1' -or $receipt.ocrv_root -ne $root) {
-    throw 'OCRV recovery backup identity mismatch'
+if ($receipt.schema_version -ne 'slk.ocrv-install/v2' -or $receipt.version -ne '4.3.3' -or $receipt.ocrv_root -ne $root) {
+    throw 'OCRV integration backup identity mismatch'
 }
-Copy-Item -LiteralPath $cmdBackup -Destination (Join-Path $root 'slk-checker.cmd') -Force
-$activeRecovery = Join-Path $root 'slk_checker_recovery.py'
-$recoveryBackup = Join-Path $backup 'slk_checker_recovery.py'
-if ($receipt.original_recovery_existed) {
-    if (-not (Test-Path -LiteralPath $recoveryBackup -PathType Leaf)) { throw 'Original recovery adapter backup is missing' }
-    Copy-Item -LiteralPath $recoveryBackup -Destination $activeRecovery -Force
-} elseif (Test-Path -LiteralPath $activeRecovery) {
-    Remove-Item -LiteralPath $activeRecovery -Force
+$names = @(
+    'slk_checker_adapter.py',
+    'slk-checker.cmd',
+    'slk_checker_recovery.py',
+    'slk-checker-capabilities.json'
+)
+foreach ($name in $names) {
+    $active = Join-Path $root $name
+    $saved = Join-Path $backup $name
+    if ($receipt.original_existed.$name) {
+        if (-not (Test-Path -LiteralPath $saved -PathType Leaf)) {
+            throw "Original OCRV integration backup is missing: $name"
+        }
+        Copy-Item -LiteralPath $saved -Destination $active -Force
+        $actual = (Get-FileHash -LiteralPath $active -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $receipt.original_sha256.$name) {
+            throw "OCRV rollback hash mismatch: $name"
+        }
+    } elseif (Test-Path -LiteralPath $active -PathType Leaf) {
+        Remove-Item -LiteralPath $active -Force
+    }
 }
-[ordered]@{status='ROLLED_BACK'; version='4.3.2'; backup_root=$backup} | ConvertTo-Json -Compress
+[ordered]@{status='ROLLED_BACK'; version='4.3.3'; backup_root=$backup} | ConvertTo-Json -Compress

@@ -11,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "4.3.2"
+VERSION = "4.3.3"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -161,13 +161,19 @@ def validate(root: Path) -> list[str]:
         "docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
         "docs/contracts/slk-overwatcher-cadence-inspection.schema.json",
         "docs/contracts/slk-desktop-current-turn-recovery.schema.json",
+        "docs/contracts/slk-run-readiness.schema.json",
+        "docs/contracts/slk-ocrv-d1-preflight.schema.json",
         "docs/maintenance/2026-09-28-slk-4.3.1-consistency-audit.md",
         "docs/superpowers/specs/2026-09-28-slk-4.3.1-field-corrections-design.md",
         "docs/superpowers/specs/2026-09-29-slk-4.3.2-desktop-current-turn-recovery-design.md",
+        "docs/superpowers/specs/2026-09-30-slk-4.3.3-ocrv-preflight-design.md",
+        "docs/superpowers/plans/2026-09-30-slk-4.3.3-ocrv-preflight.md",
         "integrations/ocrv/install.ps1",
         "integrations/ocrv/rollback.ps1",
         "integrations/ocrv/slk-checker.cmd",
         "integrations/ocrv/slk_checker_recovery.py",
+        "integrations/ocrv/slk_checker_adapter.py",
+        "integrations/ocrv/slk-checker-capabilities.json",
         "scripts/build_release_artifacts.ps1",
         "scripts/build_local_package.py",
         "scripts/install_local.ps1",
@@ -250,7 +256,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 4.3.2 skill collection structure, identity, and Manifest are valid.")
+    print("PASS: SLK 4.3.3 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 

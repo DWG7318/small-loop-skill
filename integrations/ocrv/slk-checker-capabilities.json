@@ -1,0 +1,16 @@
+{
+  "schema_version": "slk.ocrv-capabilities/v1",
+  "method_version": "4.3.3",
+  "required": ["ocrv-preview"],
+  "optional": {
+    "probe-cli": {
+      "purpose": "bounded symbol discovery for multi-file D1 segments",
+      "fallback": "OCRV native review without Probe output"
+    },
+    "rtk": {
+      "purpose": "compress supported high-noise Checker shell output",
+      "fallback": "native command with original log retained"
+    }
+  },
+  "prohibited": ["model-switching", "reasoning-level-change", "background-daemon"]
+}

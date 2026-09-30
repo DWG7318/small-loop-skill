@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slk-temporal-templates"
-version = "4.3.2"
+version = "4.3.3"
 description = "Optional Temporal continuity templates for Small Loop Skill"
 requires-python = ">=3.10"
 dependencies = ["temporalio>=1.33,<2"]

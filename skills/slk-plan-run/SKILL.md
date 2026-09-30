@@ -32,7 +32,7 @@ RTK 用于压缩高噪声终端输出，Probe CLI 用于在精准读取前定位
 3. 依次写出需要完成的工程范围和 CELL 结果，保持单一线性顺序。接手已完成或部分完成项目时，先识别并保留、复用已完成工作，再按“合理最小施工”规划为稳定达到当前目标所需的施工路线、范围和工程活动；这不等于最小代码改动，并应避免重复施工、提前开展无关工作和不必要的全局重构。
 4. 使用 `$slk-guard-resources` 静态确认 Cargo 和其他明显独占资源的隔离、恢复与清理安排；没有相应资源时简要记为无特别安排。
 5. Agent 根据项目目标、现有测试、可观察结果和相关检验 Skill 自行设计分层检查；对依赖 UI、运行时或真实环境的 CELL，注明现有直接证据入口、能取得证据的角色与保存位置。D0提供最低施工信心，D1检查当前 CELL，D2检查成果组合；建议减少重复和过度检验，优先使用现有入口或直接操作取得产品证据，不把搭建检查体系当作开工前提。检查本身不另列为独立 CELL，只有检查发现后确需实施的工程工作才进入 CELL。
-6. 在创建 Supervisor 前使用 `$slk-select-models`，核对 Codex Supervisor、OCRV Checker、DSH Worker 的固定 runtime、model、session 与 adapter 绑定，不按项目临场改成三个 Codex 对话或动态升级模型。
+6. 在创建 Supervisor 前使用 `$slk-select-models`，并以 `slk-transport preflight-run` 核对 Codex Supervisor、OCRV Checker、DSH Worker 的真实 runtime、model、adapter、endpoint、上下文/任务容量、可写工作区及必需 Skill/Tool；同时让 Owner 对 Ponytail、Temporal、Overwatcher、RTK、Probe CLI、BoM 和新增可选项逐项明确 ON/OFF。只有整体 `READY` 才进入施工，不按项目临场改成三个 Codex 对话或动态升级模型。
 7. 若 Owner 为本 Run 显式选择可选 Temporal 连续性，冻结现有服务端点、task queue、角色端点、ACK 超时和启动幂等键，再用 `StartSlkWorkflow` 启动唯一 `RunSlkWorkflow`；Temporal 服务不存在或 readiness 不通过时不要假装已启用，回退原直连或报告阻断。
 8. 根据每项工作的难度、固定 Worker 能力、电脑和累积工程量，把工程工作划分为初始 CELL，并为测试、意外依赖和返工保留余量；这里形成的是开工所需的初始估计。规划 CELL 时应控制单个 CELL 的工程量，并考虑线性推进中依赖与上下文会逐步累积，使越靠后的 CELL——尤其包含衔接或融合工作的 CELL——通常保留更多余量，并在可行时拆得更小。
 9. 说明后续由 Checker 根据前序 CELL 的实际施工事实、D1和返工表现动态校准待派发 CELL，不把初始估计冻结成固定容量。
@@ -47,3 +47,4 @@ RTK 用于压缩高噪声终端输出，Probe CLI 用于在精准读取前定位
 - 不要把检查本身列成施工 CELL，或先搭大型检测体系才开工；不要借接手已完成或部分完成项目默认展开无关全局重构，也不要把“合理最小施工”缩成最小代码 diff；不要把初始 CELL 容量估计冻结成后续不能校准的定额。
 - 不要在已知验收依赖特定运行时、UI 或真实环境时只留下抽象结论而不注明现有证据入口，也不要把代理环境、逻辑视口或代码推断写成未实际执行的目标环境验证。
 - 不要因选择 Temporal 新增角色或改变直连；不要让它决定 D0/D1/D2、移动 `SLK TOKEN`、自动切换模型，或用 delivery success 代替 `native-start ACK`。
+- 不要用“工具应该存在”、提示词自报或缺省开启代替 readiness；`REPAIR_NEEDED` 只修最小本地缺口，`INCOMPATIBLE` 不派工试运气。

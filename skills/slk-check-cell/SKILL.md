@@ -18,12 +18,12 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 ## 建议检查
 
-1. 先做 Checker 本地轻量预检：确认候选对应当前 `CELL n/N`，读取候选元数据、changed paths、验收条件、模型与工具能力以及 D1 验收目标，估算检查面和证据负荷。若一次检查过大，可在同一对话内动态排成顺序 `D1-A/B/C...` 内部检查段；它们共享同一 CELL、candidate、attempt 与 TOKEN，仍只形成一个正式 D1 和一个最终 PASS/FAIL/INCOMPLETE。
+1. 先做 Checker 本地轻量预检：确认候选对应当前 `CELL n/N`，读取候选元数据、changed paths、验收条件、模型与工具能力、已通过的 OCRV runtime/model/adapter/endpoint 与 D1 验收目标。OCRV 先物化最终 background，记录字符/字节/证据量，再执行 `review --preview`；仅按 preview 的真实 reviewable paths、criteria 和容量动态生成顺序 `D1-A/B/C...` 内部段。每段用 `--exclude` 排除其余候选路径，preview 选中路径应与 manifest 完全相同，否则模型启动前返回 `OCRV_REVIEW_INCOMPLETE`。内部段共享同一 CELL、candidate、attempt 与 TOKEN，仍只形成一个正式 D1。
 2. 检查目标结果、相关回归、明显副作用和候选中客观可观察的风险。
 3. 用 `slk-state write` 记录 `D1_STARTED`，优先使用现有测试、构建入口或直接操作，验证目标和真实未覆盖风险，形成独立判断；证据足够时收敛。检查命令遇到独占资源阻塞时按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md)，不把占用误判为 D1 FAIL。
    Owner 已为本次 Run 启用效率工具时，Checker 可用 Probe CLI 独立定位影响范围，用 RTK 压缩高噪声测试或构建输出；核心 diff、关键错误原文和决定 D1 的证据仍直接检查，出现失败、截断或疑义时回退原生命令，不能让压缩摘要替代独立判断。
 4. 随后读取 Worker 的 D0 与施工记录，核对是否出现新的客观事实或遗漏风险；D0 结论不替代 Checker 的独立证据。
-5. 由 Checker 汇总全部内部检查段后给出唯一正式 D1 结果；只有 PASS 或 FAIL 闭合 D1。过程要把 `process exit`、`JSON parse` 与 `business status` 分开，合法非零退出的结构化 INCOMPLETE/FAIL 不退化成“无结果”。OCRV 对大 candidate 按 changed paths 与 criteria 建立有序、可持久化的 review segments，每段保留 request/result/session/process/hash，全部段完成后才做一次 aggregate；segment finding 只是聚合输入，不单独写 D1，段超时保留已完成证据并返回 `OCRV_REVIEW_INCOMPLETE`。缺少关键证明、检查覆盖不完整或检查工具或环境故障记 INCOMPLETE（不写为 PASS），发现绑定验收条件的实质产品缺陷才记 FAIL；完整覆盖下只有低严重性观察时可以 PASS 并保留观察，不能机械判为 FAIL；传输故障固定记 `TRANSPORT_FAILED`。这些情况均保留同一 candidate 与 D1 attempt，INCOMPLETE 不直接算作产品缺陷或增加返工 round；关键验收条件有可追溯直接证据才写 PASS，证据不足时保持 D1 未闭合，优先由 Checker 或当前持续 Supervisor 宿主在同一 attempt 重启检查。OCRV 长审查不由一次性 DSH/Worker 进程托管；确需改变方案时交 Supervisor 协助：
+5. 由 Checker 汇总内部检查段后给出唯一正式 D1 结果；只有 PASS 或 FAIL 闭合 D1。段严格顺序执行，HIGH/BLOCKER/CRITICAL finding 立即停止后继；精确 PASS 复用应同时绑定 candidate、scope 和 criteria 哈希。aggregate 只接收段身份、verdict、reason codes、finding 摘要及 request/result 哈希，不回灌完整段结果或其路径。过程把 `process exit`、`JSON parse` 与 `business status` 分开；段超时、缺少关键证明或覆盖不完整保留证据并返回 `OCRV_REVIEW_INCOMPLETE`，检查工具或环境故障不写为 PASS，也不冒充产品 FAIL。发现绑定验收条件的实质产品缺陷才记 FAIL；完整覆盖下只有低严重性观察时可以 PASS 并保留观察，不能机械判为 FAIL。INCOMPLETE 保留同一 candidate 与 D1 attempt，不增加返工 round；关键验收条件有直接证据才写 PASS。OCRV 长审查不由一次性 DSH/Worker 进程托管；确需改变方案时交 Supervisor 协助：
    - `D1 PASS：CELL n/N`
    - `D1 FAIL：CELL n/N，进入返工`；`D1 INCOMPLETE：CELL n/N，说明未证明项`
 6. D1 FAIL 时形成结构化 `D1_FAILURE_ESCALATION`：绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体差距、复现方式、期望结果和证据引用；把 TOKEN 交给 Supervisor 生成改进指引，不由 Checker 直接启动返工。
