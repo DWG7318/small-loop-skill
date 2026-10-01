@@ -96,6 +96,15 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "checker_token_already_committed", "native_attempt_path", "d1_verdict",
             "d1_event_type", "native_result_path",
         },
+        "docs/contracts/slk-checker-post-d1.schema.json": {
+            "schema_version", "method_version", "post_d1_invocation_id", "run_id",
+            "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision",
+            "token_sequence", "checker_role_instance_id", "d1_failure_event_id",
+            "runtime_projection_path", "native_attempt_path", "supervisor_endpoint_path",
+            "checker_credential_path", "state_command", "transport_command",
+            "escalation_attempt_root", "rework_round", "cell_goal", "acceptance_criteria",
+            "findings", "reproduction_steps", "expected_result", "evidence_refs", "occurred_at",
+        },
         "docs/contracts/slk-native-start.schema.json": {
             "schema_version", "status", "adapter", "run_id", "cell_id", "message_id",
             "request_sha256", "native_request_sha256", "observed_at", "process", "native_task",

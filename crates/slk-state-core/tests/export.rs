@@ -23,7 +23,7 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
                     role: Role::Overwatcher,
                     agent_runtime: "codex".into(),
                     provider: "openai".into(),
-                    model: "gpt-5.6-sol".into(),
+                    model: "gpt-5.6-luna".into(),
                     reasoning: "xhigh".into(),
                     session_id: "thread-overwatcher-a".into(),
                 },

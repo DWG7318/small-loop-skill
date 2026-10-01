@@ -1,7 +1,7 @@
 {
   "schema_version": "slk.ocrv-capabilities/v1",
   "method_version": "4.3.6",
-  "required": ["ocrv-preview"],
+  "required": ["ocrv-preview", "checker-post-d1-failure-suffix"],
   "optional": {
     "probe-cli": {
       "purpose": "bounded symbol discovery for multi-file D1 segments",

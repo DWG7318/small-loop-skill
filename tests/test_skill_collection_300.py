@@ -312,7 +312,11 @@ def test_local_d0_attempts_are_distinct_from_checker_d1_rework() -> None:
 def test_select_models_matches_capability_to_each_visible_role() -> None:
     text = read_skill("slk-select-models")
     for marker in (
-        "`gpt-5.6-sol` + `xhigh`",
+        "Sol 级",
+        "`gpt-5.6-sol`、`gpt-6-sol`、`gpt-6.1-sol`",
+        "Luna 级",
+        "`gpt-5.6-luna`、`gpt-6-luna`",
+        "具体型号由 Owner",
         "Qwen3.8-Max",
         "DeepSeek V4 Flash",
         "ocrv-checker",
@@ -322,7 +326,7 @@ def test_select_models_matches_capability_to_each_visible_role() -> None:
         "Owner 明确修订方法合同",
     ):
         assert marker in text
-    for removed in ("gpt-5.6-terra", "gpt-5.6-luna", "模型升级阶梯"):
+    for removed in ("gpt-5.6-terra", "模型升级阶梯"):
         assert removed not in text.split("## 负面提示词", 1)[0]
     assert "$slk-select-models" in read_skill("slk-plan-run")
     assert "$slk-select-models" not in read_skill("slk-adjust-run")
@@ -1407,3 +1411,14 @@ def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:
         "停止串题",
     ):
         assert marker in main
+
+
+def test_436_checker_post_d1_suffix_is_discoverable_without_expanding_authority() -> None:
+    main = read_skill("small-loop-skill")
+    rework = read_skill("slk-rework-cell")
+
+    assert "--slk-post-d1" in main
+    assert "D:\\OCRV\\slk-checker.cmd --slk-post-d1" in rework
+    assert "DESKTOP_BRIDGE_REQUIRED" in rework
+    assert "密封 Checker 凭据" in rework
+    assert "不覆盖普通空闲 Supervisor" in rework

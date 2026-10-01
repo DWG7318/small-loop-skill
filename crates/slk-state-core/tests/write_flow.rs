@@ -1,4 +1,5 @@
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
@@ -767,6 +768,24 @@ fn fixed_engineering_role_bindings_fail_closed() {
 }
 
 #[test]
+fn owner_selected_supervisor_sol_family_is_not_fixed_to_one_generation() {
+    let root = tempfile::tempdir().unwrap();
+    let store = StateStore::new(root.path());
+    let mut selected = init_request("run-a");
+    selected.supervisor.model = "gpt-6.1-sol".into();
+    store.init_run(selected).unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    let store = StateStore::new(root.path());
+    let mut wrong_class = init_request("run-b");
+    wrong_class.supervisor.model = "gpt-6-luna".into();
+    assert!(matches!(
+        store.init_run(wrong_class),
+        Err(StateError::RoleBindingInvalid { .. })
+    ));
+}
+
+#[test]
 fn d1_incomplete_keeps_checker_token_and_cell_open() {
     let fixture = Fixture::new();
     fixture
@@ -1043,6 +1062,190 @@ fn rework_request_fails_closed_for_wrong_authority_identity_candidate_attempt_or
     ));
 }
 
+#[test]
+fn rework_request_resolves_the_legacy_d1_candidate_through_one_started_handoff() {
+    let (fixture, candidate_sha256) = legacy_d1_candidate_chain(
+        "candidate-message-a",
+        Some("candidate-message-a"),
+        "candidate-message-a",
+    );
+    let mut request = event(
+        "legacy-rework",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"legacy-d1-failed",
+            "failed_candidate_sha256":candidate_sha256,
+            "rework_round":1
+        }),
+    );
+    request.role_instance_id = "supervisor-a".into();
+
+    fixture
+        .store
+        .write_event(&fixture.supervisor, request)
+        .unwrap();
+}
+
+#[test]
+fn legacy_d1_candidate_resolution_rejects_missing_wrong_or_changed_handoff_evidence() {
+    for (candidate_message, start_message, failure_message, changed_hash) in [
+        ("candidate-message-a", None, "candidate-message-a", false),
+        (
+            "candidate-message-a",
+            Some("candidate-message-other"),
+            "candidate-message-a",
+            false,
+        ),
+        (
+            "candidate-message-other",
+            Some("candidate-message-a"),
+            "candidate-message-a",
+            false,
+        ),
+        (
+            "candidate-message-a",
+            Some("candidate-message-a"),
+            "candidate-message-a",
+            true,
+        ),
+    ] {
+        let (fixture, candidate_sha256) =
+            legacy_d1_candidate_chain(candidate_message, start_message, failure_message);
+        let mut request = event(
+            "legacy-rework-rejected",
+            EventType::ReworkRequested,
+            json!({
+                "d1_failure_event_id":"legacy-d1-failed",
+                "failed_candidate_sha256": if changed_hash { "b".repeat(64) } else { candidate_sha256 },
+                "rework_round":1
+            }),
+        );
+        request.role_instance_id = "supervisor-a".into();
+        assert!(matches!(
+            fixture.store.write_event(&fixture.supervisor, request),
+            Err(StateError::WorkEventInvalid(_))
+        ));
+    }
+}
+
+#[test]
+fn legacy_d1_candidate_resolution_rejects_duplicate_or_wrong_attempt_candidate_events() {
+    for (candidate_attempt, duplicate_candidate) in [(2, false), (1, true)] {
+        let (fixture, candidate_sha256) = legacy_d1_candidate_chain_with_shape(
+            "candidate-message-a",
+            Some("candidate-message-a"),
+            "candidate-message-a",
+            candidate_attempt,
+            1,
+            duplicate_candidate,
+        );
+        let mut request = event(
+            "legacy-rework-shape-rejected",
+            EventType::ReworkRequested,
+            json!({
+                "d1_failure_event_id":"legacy-d1-failed",
+                "failed_candidate_sha256":candidate_sha256,
+                "rework_round":1
+            }),
+        );
+        request.role_instance_id = "supervisor-a".into();
+        assert!(matches!(
+            fixture.store.write_event(&fixture.supervisor, request),
+            Err(StateError::WorkEventInvalid(_))
+        ));
+    }
+}
+
+fn legacy_d1_candidate_chain(
+    candidate_message: &str,
+    start_message: Option<&str>,
+    failure_message: &str,
+) -> (Fixture, String) {
+    legacy_d1_candidate_chain_with_shape(
+        candidate_message,
+        start_message,
+        failure_message,
+        1,
+        1,
+        false,
+    )
+}
+
+fn legacy_d1_candidate_chain_with_shape(
+    candidate_message: &str,
+    start_message: Option<&str>,
+    failure_message: &str,
+    candidate_attempt: u32,
+    start_attempt: u32,
+    duplicate_candidate: bool,
+) -> (Fixture, String) {
+    let fixture = Fixture::worker_active();
+    let candidate = json!({"kind":"commit","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"});
+    let candidate_sha256 = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&candidate).unwrap())
+    );
+    let mut candidate_event = event(
+        "legacy-candidate-submitted",
+        EventType::CandidateSubmitted,
+        json!({
+            "candidate":candidate,
+            "source_message_id":"source-message-a",
+            "handoff_message_id":candidate_message
+        }),
+    );
+    candidate_event.attempt = Some(candidate_attempt);
+    fixture
+        .store
+        .write_event(&fixture.worker, candidate_event)
+        .unwrap();
+    if duplicate_candidate {
+        let mut duplicate = event(
+            "legacy-candidate-submitted-duplicate",
+            EventType::CandidateSubmitted,
+            json!({
+                "candidate":candidate,
+                "source_message_id":"source-message-a",
+                "handoff_message_id":candidate_message
+            }),
+        );
+        duplicate.attempt = Some(candidate_attempt);
+        fixture
+            .store
+            .write_event(&fixture.worker, duplicate)
+            .unwrap();
+    }
+    if let Some(message_id) = start_message {
+        let mut started = event(
+            "legacy-transport-started",
+            EventType::TransportStarted,
+            json!({"message_id":message_id}),
+        );
+        started.attempt = Some(start_attempt);
+        fixture.store.write_event(&fixture.worker, started).unwrap();
+    }
+    let mut to_checker = handoff(4, "worker-a", "checker-a");
+    to_checker.payload_type = "CANDIDATE_READY".into();
+    fixture
+        .store
+        .handoff_token(&fixture.worker, to_checker)
+        .unwrap();
+    let mut failed = event(
+        "legacy-d1-failed",
+        EventType::D1Failed,
+        json!({"verdict":"FAIL","candidate_message_id":failure_message}),
+    );
+    failed.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, failed).unwrap();
+    let mut escalation = handoff(5, "checker-a", "supervisor-a");
+    escalation.payload_type = "D1_FAILURE_ESCALATION".into();
+    fixture
+        .store
+        .handoff_token(&fixture.checker, escalation)
+        .unwrap();
+    (fixture, candidate_sha256)
+}
+
 struct Fixture {
     _root: tempfile::TempDir,
     store: StateStore,
@@ -1161,7 +1364,8 @@ fn role(role_instance_id: &str, role: Role) -> RoleIdentity {
         }
         .into(),
         model: match role {
-            Role::Supervisor | Role::Overwatcher => "gpt-5.6-sol",
+            Role::Supervisor => "gpt-5.6-sol",
+            Role::Overwatcher => "gpt-5.6-luna",
             Role::Checker => "qwen3.8-max",
             Role::Worker => "deepseek-v4-flash",
         }

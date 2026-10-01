@@ -10,6 +10,8 @@ Base: `25f6d57` (`v4.3.5`)
 
 SLK 4.3.6 is a schema-v8-compatible recovery correction. It accepts one historical SLK 4.3.4 flat DSH start only after the same completed Worker attempt, immutable transport task, endpoint, envelope, original Session, terminal result, Worker result, candidate, central handoff events and Checker-owned TOKEN all match. It then reuses the already-staged candidate for real OCRV D1 without replaying Worker, moving TOKEN or changing old evidence.
 
+The candidate also closes the post-D1 FAIL suffix: the authenticated OCRV Checker binds the exact failure, candidate and attempt, reuses the existing send/exact-retry/Desktop-current-turn bridge, and commits TOKEN only after the registered Supervisor genuinely starts. Supervisor model binding is now an Owner-frozen canonical Sol family choice rather than one fixed generation; an enabled Overwatcher uses an Owner-frozen canonical Luna family choice. Both remain `xhigh`, and neither role may self-select or silently switch the registered model.
+
 Normal delivery and native-activity inspection still require `slk.native-start/v2`; the flat marker never becomes current activity proof. Supervisor, Checker, Worker, optional whole-Run Overwatcher, serial CELL/D0/D1/D2 topology, direct communication, BI authority and optional Temporal templates are unchanged. No AX, Orca, wmux, BoM, new role, workflow, daemon, heartbeat, MCP, scheduler, Docker dependency or product method was added.
 
 ## Verification evidence
@@ -20,19 +22,20 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - The captured nested-launch failure is a Windows Job access denial on `CREATE_BREAKAWAY_FROM_JOB`; its local-code-page rejection JSON previously triggered an outer UTF-8 reader failure and `stdout=None`. Injected regressions prove the exact WinError 5 retries once without breakaway, unrelated launch failures do not retry, UTF-8 non-ASCII JSON remains parseable, and non-UTF-8 or empty streams fail once with closed error codes.
 - The captured OCRV FAIL proves the nested review process may exit 0 while the outer transport correctly exits 2 for the business verdict. Parametric regressions accept PASS/0, FAIL/2 with nested 0, and INCOMPLETE/3 with a nonzero nested exit, while rejecting a forged Session identity and a wrong outer verdict exit without rerunning OCRV or rewriting original evidence.
 - Existing v2 continuation, missing-result recovery, independent OCRV start and Checker-authored D1 tests remain green.
-- Python suites: 429 passed and two optional modules skipped in ordinary mode; the same 429 passed under `python -O` with only pytest's expected optimized-assertion warning.
-- Rust core packages: 116 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
+- Post-D1 adversarial coverage rejects stale runtime/TOKEN identity, wrong failure/candidate/attempt, missing Supervisor start, unsafe invocation paths, later same-scope PASS/INCOMPLETE and wrong role/model class; a legal later Overwatcher resume does not erase the current D1 FAIL.
+- Python suites: 444 passed and two optional modules skipped in ordinary mode; the same 444 passed under `python -O` with only pytest's expected optimized-assertion warning.
+- Rust workspace: 123 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
 - LE BI: 24 tests passed; TypeScript typecheck, production UI build and isolated headless Tauri release build passed.
 - Role Eval: 75 closed cases, PASS; case-pack SHA-256 `d0625e7561992424e328b4679d39ab481ef4d7feffb84430b4dbe0046ad869b8`.
 - Repository identity, JSON/YAML/schema parsing, deterministic package verification, version/Manifest hashes, root/install mirrors, `git diff --check`, and sensitive/forbidden-scope scans remain completion gates.
 
 ## Candidate artifacts
 
-- `slk-bi-desktop.exe`: `7e19cc7951205d48bc41df5ecf97f43ff11ed4b3dbbce106ce99deb228cc5260`
-- `slk-bi-query.exe`: `f3bcf81165661948595449a8ba4f54e5b103d0fa926335e19b523a338144e8df`
-- `slk-cargo.exe`: `3de29dd7ca97e7768403a4d6bff7b09823cdc626cf81d865f28fb262a01b3dae`
-- `slk-state.exe`: `c10675cc63785752f5dae8709813c79299a0944ec4db2d5572763c1dbe325fb1`
-- `slk-transport.pyz`: `bfe8e82e7d02f986cb5f5c5fd307f09c695906f8a5799a2cfbf634a6b4656250`
+- `slk-bi-desktop.exe`: `bd2ad9f055e2c103779d8f8ada8d79d49da64e403196044da08457a06bf0111a`
+- `slk-bi-query.exe`: `c0fd35a5c9673088b86e224e9426891d99f639fa68fd10bcc241313ff345dbed`
+- `slk-cargo.exe`: `5d43a748adc97efc181046ee50bcd29d69f1ef2a0ea41993ca360a687f219b04`
+- `slk-state.exe`: `1b3fa6fbeae040907f28994ad00f1f09f54c77362879b789a884125c71fd8fc7`
+- `slk-transport.pyz`: `1f209c9921fca60a872db2a9ee604b14664bb8df6ad6b230c1be0263bf31cd66`
 
 ## Migration and deployment boundary
 

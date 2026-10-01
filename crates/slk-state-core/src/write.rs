@@ -696,7 +696,9 @@ impl StateStore {
             || request.identity.agent_runtime.trim().is_empty()
             || request.identity.provider.trim().is_empty()
             || request.identity.model.trim().is_empty()
+            || !is_gpt_capability_family(&request.identity.model, "luna")
             || request.identity.reasoning.trim().is_empty()
+            || request.identity.reasoning != "xhigh"
             || request.identity.session_id.trim().is_empty()
             || request.identity.session_id != request.endpoint.session_id
             || request.endpoint.host_identity.trim().is_empty()
@@ -3827,14 +3829,23 @@ fn validate_engineering_role_binding(
     identity: &crate::model::RoleIdentity,
     endpoint: &crate::model::EndpointIdentity,
 ) -> Result<(), StateError> {
+    if identity.role == Role::Supervisor {
+        let fixed_identity = identity.agent_runtime == "codex"
+            && identity.provider == "openai"
+            && identity.reasoning == "xhigh"
+            && endpoint.transport_adapter == "codex-app-server"
+            && identity.session_id == endpoint.session_id;
+        if !fixed_identity || !is_gpt_capability_family(&identity.model, "sol") {
+            return Err(StateError::RoleBindingInvalid {
+                role: identity.role,
+                reason: "runtime, provider, Owner-selected Sol-class model, reasoning, adapter, and session must match the role contract"
+                    .into(),
+            });
+        }
+        return Ok(());
+    }
     let expected = match identity.role {
-        Role::Supervisor => (
-            "codex",
-            "openai",
-            "gpt-5.6-sol",
-            "xhigh",
-            "codex-app-server",
-        ),
+        Role::Supervisor => unreachable!(),
         Role::Checker => (
             "ocrv",
             "dashscope-tokenplan",
@@ -3866,6 +3877,22 @@ fn validate_engineering_role_binding(
         });
     }
     Ok(())
+}
+
+fn is_gpt_capability_family(model: &str, family: &str) -> bool {
+    if model != model.trim() || model.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return false;
+    }
+    let Some(version) = model
+        .strip_prefix("gpt-")
+        .and_then(|value| value.strip_suffix(&format!("-{family}")))
+    else {
+        return false;
+    };
+    !version.is_empty()
+        && version
+            .split('.')
+            .all(|segment| !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn validate_engineering_endpoint_binding(
@@ -4194,12 +4221,17 @@ fn validate_rework_requested(
         ));
     };
     let latest_details: serde_json::Value = serde_json::from_str(&latest_details_json)?;
+    let bound_candidate = resolve_d1_failed_candidate_sha256(
+        connection,
+        &request.run_id,
+        go_id,
+        cell_id,
+        attempt,
+        &latest_details,
+    )?;
     if latest_type != "D1_FAILED"
         || latest_event_id != failure_event_id
-        || latest_details
-            .get("candidate_sha256")
-            .and_then(|value| value.as_str())
-            != Some(failed_candidate)
+        || bound_candidate.as_deref() != Some(failed_candidate)
     {
         return Err(StateError::WorkEventInvalid(
             "REWORK_REQUESTED does not bind the current D1 failure and candidate".into(),
@@ -4218,6 +4250,78 @@ fn validate_rework_requested(
         )));
     }
     Ok(())
+}
+
+fn resolve_d1_failed_candidate_sha256(
+    connection: &Connection,
+    run_id: &str,
+    go_id: &str,
+    cell_id: &str,
+    attempt: u32,
+    failure_details: &serde_json::Value,
+) -> Result<Option<String>, StateError> {
+    if let Some(explicit) = failure_details.get("candidate_sha256") {
+        return Ok(explicit.as_str().map(str::to_owned));
+    }
+    let Some(message_id) = failure_details
+        .get("candidate_message_id")
+        .and_then(|value| value.as_str())
+        .filter(|value| valid_identifier(value))
+    else {
+        return Ok(None);
+    };
+
+    let mut candidate_statement = connection.prepare(
+        "SELECT details_json, author_role_instance_id FROM work_events
+         WHERE run_id=?1 AND go_id=?2 AND cell_id=?3 AND attempt=?4
+           AND event_type='CANDIDATE_SUBMITTED'",
+    )?;
+    let candidate_rows = candidate_statement
+        .query_map(params![run_id, go_id, cell_id, attempt], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+    let mut candidates = Vec::new();
+    for row in candidate_rows {
+        let (serialized, author) = row?;
+        let details: serde_json::Value = serde_json::from_str(&serialized)?;
+        if details
+            .get("handoff_message_id")
+            .and_then(|value| value.as_str())
+            == Some(message_id)
+        {
+            if let Some(candidate) = details.get("candidate").filter(|value| value.is_object()) {
+                candidates.push((candidate.clone(), author));
+            }
+        }
+    }
+    if candidates.len() != 1 {
+        return Ok(None);
+    }
+
+    let mut start_statement = connection.prepare(
+        "SELECT details_json, author_role_instance_id FROM work_events
+         WHERE run_id=?1 AND go_id=?2 AND cell_id=?3 AND attempt=?4
+           AND event_type='TRANSPORT_STARTED'",
+    )?;
+    let start_rows = start_statement
+        .query_map(params![run_id, go_id, cell_id, attempt], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+    let mut matching_starts = 0_u32;
+    for row in start_rows {
+        let (serialized, author) = row?;
+        let details: serde_json::Value = serde_json::from_str(&serialized)?;
+        if details.get("message_id").and_then(|value| value.as_str()) == Some(message_id)
+            && author == candidates[0].1
+        {
+            matching_starts += 1;
+        }
+    }
+    if matching_starts != 1 {
+        return Ok(None);
+    }
+
+    Ok(Some(sha256_hex(&serde_json::to_vec(&candidates[0].0)?)))
 }
 
 fn projected_cell_state(event: EventType) -> Option<&'static str> {

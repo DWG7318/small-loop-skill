@@ -21,7 +21,7 @@ CELL 派发 → Worker 施工与 D0 → 候选 → Checker 隔离 D1 → 通过/
 → 通讯测试 → 第一个 CELL
 ```
 
-Codex 固定为 Supervisor（`gpt-5.6-sol` + `xhigh`），OCRV 固定为 Checker（Qwen3.8-Max），DSH 固定为 Worker（DeepSeek V4 Flash）；runtime、model、session 和 adapter 身份由工具验证，不从提示词推断。Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。D1 PASS 才增加验收进度；D1 INCOMPLETE 保持 D1 未闭合且 TOKEN 留在 Checker；只有正式 D1 FAIL 可以进入封闭的 `Checker → Supervisor → 同一 Worker` 返工路径，由 Supervisor 生成结构化指引但不重做 D1。一个 Run 还可绑定一个专属且不可复用的 Overwatcher Agent Session；绑定后由同一 Session 保持前台 active turn，每 180–300 秒完成一次固定主动巡查。它不是 heartbeat、定时任务、daemon、后台 Agent或正常通讯中继，不修改 BI/TOKEN，也没有 D0/D1/D2 权限。
+Codex 固定为 Supervisor（由 Owner 选择一款 Sol 级模型，例如 `gpt-5.6-sol`、`gpt-6-sol` 或 `gpt-6.1-sol`，使用 `xhigh`），OCRV 固定为 Checker（Qwen3.8-Max），DSH 固定为 Worker（DeepSeek V4 Flash）；runtime、model、session 和 adapter 身份由工具验证，不从提示词推断。Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。D1 PASS 才增加验收进度；D1 INCOMPLETE 保持 D1 未闭合且 TOKEN 留在 Checker；只有正式 D1 FAIL 可以进入封闭的 `Checker → Supervisor → 同一 Worker` 返工路径，由 Supervisor 生成结构化指引但不重做 D1。一个 Run 还可绑定一个专属且不可复用的 Overwatcher Agent Session，并由 Owner 选择一款 Luna 级模型，例如 `gpt-5.6-luna` 或 `gpt-6-luna`，使用 `xhigh`；绑定后由同一 Session 保持前台 active turn，每 180–300 秒完成一次固定主动巡查。选定的具体型号须冻结在 readiness 中，角色不得自行选型或静默替换。Overwatcher 不是 heartbeat、定时任务、daemon、后台 Agent或正常通讯中继，不修改 BI/TOKEN，也没有 D0/D1/D2 权限。
 
 Run 规划沿用 D0、D1、D2 三层检查，不为检查本身创建独立 CELL。建议优先用现有入口直接验证产品，把检查工具或环境故障与产品缺陷分开，复用仍有效的客观证据，不逐层重复完整验收或先搭建检查体系；证据不足保留未证明，不写成 PASS。SLK 接入已经完成或部分完成的项目时，先保留并复用已完成工作，再选择为可靠达到当前目标所需的合理最小施工路线、范围和工程活动，而不是只追求最小代码差异。
 

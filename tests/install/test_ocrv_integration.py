@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -36,9 +37,68 @@ def run_script(script: Path, *arguments: str) -> subprocess.CompletedProcess[str
 
 def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     wrapper = (INTEGRATION / "slk-checker.cmd").read_text(encoding="utf-8")
+    assert '"%~1"=="--slk-post-d1"' in wrapper
+    assert "slk_checker_post_d1.py" in wrapper
     assert '"%~1"=="--slk-worker-recovery"' in wrapper
     assert "slk_checker_recovery.py" in wrapper
     assert "slk_checker_adapter.py" in wrapper
+
+
+def test_post_d1_wrapper_is_headless_strips_credentials_and_writes_exact_phase_result(
+    tmp_path: Path,
+) -> None:
+    fake = tmp_path / "fake_transport.py"
+    fake.write_text(
+        """import json, os, sys
+assert sys.argv[1] == 'checker-escalate-d1'
+assert 'SLK_ROLE_CREDENTIAL' not in os.environ
+assert 'SLK_OVERWATCHER_CREDENTIAL' not in os.environ
+print(json.dumps({'schema_version':'slk.checker-post-d1-result/v1','status':'DESKTOP_BRIDGE_REQUIRED'}))
+""",
+        encoding="utf-8",
+    )
+    attempt_root = tmp_path / "attempts"
+    attempt_root.mkdir()
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.checker-post-d1-request/v1",
+                "post_d1_invocation_id": "suffix-1",
+                "escalation_attempt_root": str(attempt_root),
+                "transport_command": [sys.executable, str(fake)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = attempt_root / ".checker-post-d1" / "suffix-1" / "prepared-result.json"
+    environment = os.environ.copy()
+    environment["SLK_ROLE_CREDENTIAL"] = "must-not-leak"
+    environment["SLK_OVERWATCHER_CREDENTIAL"] = "must-not-leak"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(INTEGRATION / "slk_checker_post_d1.py"),
+            "--slk-post-d1",
+            "--request",
+            str(request),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=environment,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "DESKTOP_BRIDGE_REQUIRED"
 
 
 def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_path: Path) -> None:
@@ -64,6 +124,9 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert (ocrv / "slk_checker_recovery.py").read_bytes() == (
         INTEGRATION / "slk_checker_recovery.py"
     ).read_bytes()
+    assert (ocrv / "slk_checker_post_d1.py").read_bytes() == (
+        INTEGRATION / "slk_checker_post_d1.py"
+    ).read_bytes()
     assert (ocrv / "slk-checker-capabilities.json").read_bytes() == (
         INTEGRATION / "slk-checker-capabilities.json"
     ).read_bytes()
@@ -73,6 +136,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert set(receipt["installed_sha256"]) == {
         "slk_checker_adapter.py",
         "slk-checker.cmd",
+        "slk_checker_post_d1.py",
         "slk_checker_recovery.py",
         "slk-checker-capabilities.json",
         "slk-native-activity-capabilities.json",
@@ -88,6 +152,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
 
     assert rolled_back.returncode == 0, rolled_back.stdout + rolled_back.stderr
     assert (ocrv / "slk-checker.cmd").read_bytes() == original_wrapper
+    assert not (ocrv / "slk_checker_post_d1.py").exists()
     assert not (ocrv / "slk_checker_recovery.py").exists()
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == adapter
     assert (ocrv / "slk-checker-capabilities.json").read_bytes() == original_capabilities

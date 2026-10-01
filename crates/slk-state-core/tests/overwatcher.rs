@@ -1935,6 +1935,28 @@ fn binding_requires_the_current_supervisor_and_a_dedicated_unreused_session() {
 }
 
 #[test]
+fn owner_selected_overwatcher_luna_family_is_not_fixed_to_one_generation() {
+    let fixture = Fixture::new_427();
+    let mut selected = overwatcher_binding("run-a", "overwatcher-luna", "session-overwatcher-luna");
+    selected.identity.model = "gpt-6-luna".into();
+    fixture
+        .store
+        .bind_overwatcher(&fixture.supervisor, selected)
+        .unwrap();
+
+    let fixture = Fixture::new_427();
+    let mut wrong_class =
+        overwatcher_binding("run-a", "overwatcher-sol", "session-overwatcher-sol");
+    wrong_class.identity.model = "gpt-6-sol".into();
+    assert!(matches!(
+        fixture
+            .store
+            .bind_overwatcher(&fixture.supervisor, wrong_class),
+        Err(StateError::OverwatcherBindingInvalid(_))
+    ));
+}
+
+#[test]
 fn binding_rejects_incomplete_identity_endpoint_and_event_fields() {
     let fixture = Fixture::new();
     let mut missing_event = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
@@ -2891,7 +2913,8 @@ fn role(role_instance_id: &str, role: Role, session_id: &str) -> RoleIdentity {
         }
         .into(),
         model: match role {
-            Role::Supervisor | Role::Overwatcher => "gpt-5.6-sol",
+            Role::Supervisor => "gpt-5.6-sol",
+            Role::Overwatcher => "gpt-5.6-luna",
             Role::Checker => "qwen3.8-max",
             Role::Worker => "deepseek-v4-flash",
         }

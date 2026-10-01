@@ -576,7 +576,7 @@ def test_ocrv_timeout_preserves_completed_segments_and_returns_incomplete(
     endpoint = Endpoint(
         **{
             **endpoint.__dict__,
-            "address": {**endpoint.address, "timeout_seconds": 0.25},
+            "address": {**endpoint.address, "timeout_seconds": 1.0},
         }
     )
     envelope = _large_candidate_envelope(tmp_path)

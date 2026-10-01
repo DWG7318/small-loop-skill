@@ -23,6 +23,7 @@ if ($receipt.schema_version -ne 'slk.ocrv-install/v2' -or $receipt.version -ne '
 $names = @(
     'slk_checker_adapter.py',
     'slk-checker.cmd',
+    'slk_checker_post_d1.py',
     'slk_checker_recovery.py',
     'slk-checker-capabilities.json',
     'slk-native-activity-capabilities.json'

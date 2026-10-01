@@ -203,7 +203,7 @@ session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uu
 review_invocation_id = str(uuid.uuid4())
 publish_native_start("ocrv-review", review_invocation_id)
 if args.mode == "timeout-second" and "segment 2/" in request["cell_goal"]:
-    time.sleep(0.35)
+    time.sleep(2.0)
 if args.mode == "delayed-terminal":
     time.sleep(0.35)
 is_first_segment = "segment 1/" in request["cell_goal"]

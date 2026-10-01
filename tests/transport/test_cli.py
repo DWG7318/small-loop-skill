@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import io
+import hashlib
 import os
 import subprocess
 import sys
@@ -263,6 +264,25 @@ def test_supervisor_cannot_call_worker_continuation_resume_directly(tmp_path: Pa
 
     assert rejected.returncode == 2
     assert "invalid choice" in rejected.stderr
+
+
+def test_checker_post_d1_cli_is_exposed_and_fails_closed_on_an_open_request(tmp_path: Path) -> None:
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+    request = write_json(tmp_path / "post-d1.json", {})
+
+    rejected = run_cli(
+        artifact,
+        "checker-escalate-d1",
+        "--request",
+        str(request),
+        "--sha256",
+        hashlib.sha256(request.read_bytes()).hexdigest(),
+    )
+
+    assert rejected.returncode == 2
+    result = json.loads(rejected.stdout)
+    assert result["status"] == "rejected"
+    assert result["error_code"] == "CHECKER_ESCALATION_REQUEST_INVALID"
 
 
 def test_retry_exact_uses_persisted_identity_and_stops_after_one_attempt(

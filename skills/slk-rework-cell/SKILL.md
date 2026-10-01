@@ -14,7 +14,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 
 ## 建议做法
 
-1. OCRV Checker 写入 `D1_FAILED`，再发送结构化 `D1_FAILURE_ESCALATION` 与 TOKEN 给 Supervisor；载荷绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体 findings 与证据引用。
+1. OCRV Checker 写入 `D1_FAILED`，再发送结构化 `D1_FAILURE_ESCALATION` 与 TOKEN 给 Supervisor；载荷绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体 findings 与证据引用。本次 active Desktop writer 恢复路径使用 `D:\OCRV\slk-checker.cmd --slk-post-d1 --request <闭合请求> --output <...\prepared-result.json>`；仅当结果为 `DESKTOP_BRIDGE_REQUIRED` 时，由 Desktop 宿主原样投递并形成真实 host receipt，再用同一命令增加 `--host-receipt <receipt>`、输出 `committed-result.json`。密封 Checker 凭据只由 Tool 内部解封，Supervisor 与普通 shell 不能读取；只有匹配既有 `D1_FAILED`、candidate、attempt 且真实 Supervisor start 后才能提交 TOKEN。该入口只覆盖普通 `send` 与一次 exact retry 均因当前 Desktop active writer 未解析而失败的恢复，不覆盖普通空闲 Supervisor 交接，也不重跑或重判 D1。详细合同见 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
 2. Supervisor 不重做或接管 D1、不改变验收目标；只基于冻结 CELL 与 OCRV 当前 `D1_FAILED` state event 写入 `REWORK_REQUESTED`，逐字绑定同一 Run/CELL/attempt、失败事件 ID、候选 SHA-256 与下一合法 round，再形成 `D1_REWORK_DIRECTIVE` transport payload，给出一个根因假设、一个最小实验、最小修复边界和回归目标。旧失败、跨 CELL/attempt、错误 candidate、重复 round 或 Checker 自写均失败关闭。
 3. Supervisor 把 `D1_REWORK_DIRECTIVE` 与 TOKEN 直接交给同一 DSH Worker 后结束本轮；这是 `Supervisor → Worker` 唯一合法情形，不构成一般派工通路。
 4. Worker 继续处理同一 `CELL n/N`，自行判断和施工；原因仍不清楚时可调用 Debug Skill，例如 `$superpowers:systematic-debugging`。第三次正式 D1 FAIL 后停止普通重试，由 Checker 与 Supervisor 重新审视当前 CELL；必要时可调用 `$slk-dispatch-cell` 一分为二或另选路线，但不自动替换 Worker。
