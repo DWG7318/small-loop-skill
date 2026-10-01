@@ -21,7 +21,7 @@ function context() {
 function writeAtomic(path, value) {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-  const descriptor = openSync(temporary, "r");
+  const descriptor = openSync(temporary, "r+");
   try {
     fsyncSync(descriptor);
   } finally {

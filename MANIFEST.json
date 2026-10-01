@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "ed6db7166b5c4d2c3e83380fcc22a0de28fb57f3a90bd22d455cd71d4c06b25d"
+      "sha256": "8b08d8b77ab3adcbe56c0845071fd0b96d6ddd2d6c10a6be3481d21d05e76463"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "aa261bb3118fd185bbbf0e1f81e5596b427b9870633c57c453f1ee540eeccff1"
+      "sha256": "e34244396eac8f7d34feb651d49d40b92919b1bb7cb2353562a560efac2035c7"
     },
     {
       "path": "VERSION",
@@ -932,7 +932,7 @@
     },
     {
       "path": "integrations/dsh/slk_native_activity.mjs",
-      "sha256": "44c7f608a964134e00abbe42e9026592981378366f4e04e8a46333665cd1967a"
+      "sha256": "f177a86741a69b094cfc6d40b82d9d65369cf7e36a77c468de321f6660a380e1"
     },
     {
       "path": "integrations/ocrv/install.ps1",
@@ -1152,7 +1152,7 @@
     },
     {
       "path": "src/slk_transport/adapters/dsh.py",
-      "sha256": "6692d3d8b1fa6915c3a217f6a9a5bd2d11149ded1707ab9db4d29712c8854c37"
+      "sha256": "25109c0e7be647844598d17a285a8cdf7bb9126f48e35b82d1e0e5d70d3a990e"
     },
     {
       "path": "src/slk_transport/adapters/ocrv.py",
@@ -1248,7 +1248,7 @@
     },
     {
       "path": "tests/install/test_dsh_integration.py",
-      "sha256": "7f7ece7e5360f266839972b787939f197a887187d6045d800cb2f17c356e8a58"
+      "sha256": "d93f7b0ab5ba136e2ca3720a4b9af7d229ed3671ebb77b16d1e5cf91fd23839f"
     },
     {
       "path": "tests/install/test_local_install.py",
@@ -1372,7 +1372,7 @@
     },
     {
       "path": "tests/transport/test_dsh_adapter.py",
-      "sha256": "08d3eca5654c3144c7403105c12c85579776686004e13cab8ac2f8006fb6b53c"
+      "sha256": "47683c7b665009246f8ad7a9bdfd661ea6dd2f086ab551999487c0d4576f400a"
     },
     {
       "path": "tests/transport/test_evidence.py",

@@ -23,7 +23,8 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - The captured OCRV FAIL proves the nested review process may exit 0 while the outer transport correctly exits 2 for the business verdict. Parametric regressions accept PASS/0, FAIL/2 with nested 0, and INCOMPLETE/3 with a nonzero nested exit, while rejecting a forged Session identity and a wrong outer verdict exit without rerunning OCRV or rewriting original evidence.
 - Existing v2 continuation, missing-result recovery, independent OCRV start and Checker-authored D1 tests remain green.
 - Post-D1 adversarial coverage rejects stale runtime/TOKEN identity, wrong failure/candidate/attempt, missing Supervisor start, unsafe invocation paths, later same-scope PASS/INCOMPLETE and wrong role/model class; a legal later Overwatcher resume does not erase the current D1 FAIL.
-- Python suites: 444 passed and two optional modules skipped in ordinary mode; the same 444 passed under `python -O` with only pytest's expected optimized-assertion warning.
+- A real Windows Node 24 reproduction proved that `fsyncSync` on the read-only temporary-file handle returns `EPERM` and leaves only `.tmp`; the writable-handle correction publishes the final activity atomically without a model call. The DSH instruction regression also proves that task path/hash and the fail-closed reading rules occupy one physical command line.
+- Python suites: 445 passed and two optional modules skipped in ordinary mode; the same 445 passed under `python -O` with only pytest's expected optimized-assertion warning.
 - Rust workspace: 123 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
 - LE BI: 24 tests passed; TypeScript typecheck, production UI build and isolated headless Tauri release build passed.
 - Role Eval: 75 closed cases, PASS; case-pack SHA-256 `d0625e7561992424e328b4679d39ab481ef4d7feffb84430b4dbe0046ad869b8`.
@@ -35,7 +36,7 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - `slk-bi-query.exe`: `c0fd35a5c9673088b86e224e9426891d99f639fa68fd10bcc241313ff345dbed`
 - `slk-cargo.exe`: `5d43a748adc97efc181046ee50bcd29d69f1ef2a0ea41993ca360a687f219b04`
 - `slk-state.exe`: `1b3fa6fbeae040907f28994ad00f1f09f54c77362879b789a884125c71fd8fc7`
-- `slk-transport.pyz`: `1f209c9921fca60a872db2a9ee604b14664bb8df6ad6b230c1be0263bf31cd66`
+- `slk-transport.pyz`: `2747969561bc66427a4a5229fdf0167c5e57a88f77f101d726cf0e9769d23932`
 
 ## Migration and deployment boundary
 

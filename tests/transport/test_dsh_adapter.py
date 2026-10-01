@@ -111,6 +111,8 @@ def test_dsh_command_uses_only_a_short_hashed_task_reference(tmp_path: Path) -> 
     instruction = DshAdapter().task_instruction(tmp_path / "task.json", "a" * 64)
     assert json.dumps(str((tmp_path / "task.json").resolve())) in instruction
     assert "a" * 64 in instruction
+    assert "\n" not in instruction and "\r" not in instruction
+    assert instruction.count("<slk-transport-task ") == 1
     assert envelope.message_id not in instruction
     assert len(instruction) < 600
 

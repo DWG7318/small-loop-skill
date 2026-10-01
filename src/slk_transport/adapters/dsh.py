@@ -138,7 +138,7 @@ class DshAdapter:
         return (
             "Execute only the immutable SLK task file at the absolute path below. Verify its "
             "SHA-256 before reading it; reject any mismatch or unknown field. Write only the "
-            "declared result contract to its result_path.\n"
+            "declared result contract to its result_path. "
             f"<slk-transport-task path={json.dumps(str(task_path.resolve()))} "
             f"sha256={json.dumps(task_sha256)} />"
         )
