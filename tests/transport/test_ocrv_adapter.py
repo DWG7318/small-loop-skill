@@ -197,6 +197,48 @@ def test_checker_recovery_invocation_is_stable_for_exact_message_retry(tmp_path:
     assert request["recovery_invocation_id"] == first
 
 
+def test_worker_completion_recovery_spawns_from_registered_runtime_root_not_long_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint = checker_endpoint(tmp_path, "recovery")
+    envelope = recovery_envelope(tmp_path)
+    long_source = tmp_path / ("source-" + "a" * 120) / ("attempt-" + "b" * 120)
+    long_source.mkdir(parents=True)
+    assert len(str(long_source)) > 260
+    raw = dict(envelope.__dict__)
+    payload = dict(envelope.payload)
+    payload["source_attempt_root"] = str(long_source)
+    raw["payload"] = payload
+    raw["payload_sha256"] = canonical_json_sha256(payload)
+    envelope = Envelope.from_dict(raw)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    captured: dict[str, str] = {}
+
+    class SpawnObserved(Exception):
+        pass
+
+    def observe_spawn(
+        _command: list[str],
+        *,
+        cwd: str,
+        env: dict[str, str],
+        process_kwargs: dict[str, object],
+    ) -> None:
+        assert env["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] == endpoint.role_instance_id
+        assert isinstance(process_kwargs, dict)
+        captured["cwd"] = cwd
+        raise SpawnObserved
+
+    monkeypatch.setattr("slk_transport.adapters.ocrv.spawn", observe_spawn)
+
+    with pytest.raises(SpawnObserved):
+        OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    assert Path(captured["cwd"]).resolve() == Path(str(endpoint.address["runtime_root"])).resolve()
+    assert Path(captured["cwd"]).resolve() != long_source.resolve()
+
+
 def test_ocrv_recovery_companion_strips_parent_credentials_and_keeps_native_identity(
     tmp_path: Path,
 ) -> None:

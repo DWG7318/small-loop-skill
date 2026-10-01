@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "c1681149e34544e24b3cbd9dc2025c054c9380114e760570246b688a2a003d52"
+      "sha256": "b33832fb046f6c3846dfc33261ab371ddd72d11dc6dd5cc9152ab7617a0b3b46"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "2fbffd56887c7a66b4043ebb754e721a116671aa5259b6d91b2fab96b16ef25e"
+      "sha256": "1592c459d5f0fe9a35a2930eb4ae81baeba6d9e8355f753c23c8db54cbfa6e02"
     },
     {
       "path": "VERSION",
@@ -908,7 +908,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "79bc9557e2e220e880ee5394eb93b1adab11509066106ad1dab85ad0eb75c80c"
+      "sha256": "a9fa3b993f50d7f87c5997fc3f51d07f4816b57e024c41c1e5e46b6925946f2c"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1156,7 +1156,7 @@
     },
     {
       "path": "src/slk_transport/adapters/ocrv.py",
-      "sha256": "5e9193480a97b1026cbd650a8f7987c34a23b15376a74f435486fb3d4ecd641e"
+      "sha256": "3ff46d275efc998e8def55820495a0780a9f290fe36cffc2197c18b8e17c7127"
     },
     {
       "path": "src/slk_transport/checker_escalation.py",
@@ -1392,7 +1392,7 @@
     },
     {
       "path": "tests/transport/test_ocrv_adapter.py",
-      "sha256": "562e72685195d71cf0ca759f552507dce9af476cb447c1190910fac0c0b73302"
+      "sha256": "f8d53ef2f59cefc0ffd299b0112f11d8fbdc0b5888a82d4a3849bc4f1c1dba5b"
     },
     {
       "path": "tests/transport/test_overwatcher_continuity.py",

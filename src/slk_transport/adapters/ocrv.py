@@ -733,7 +733,7 @@ class OcrvAdapter:
         )
         process = spawn(
             command,
-            cwd=str(Path(request["source_attempt_root"])),
+            cwd=str(Path(endpoint.address["runtime_root"])),
             env=environment,
             process_kwargs=_checker_process_kwargs(),
         )

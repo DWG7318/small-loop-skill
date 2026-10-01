@@ -19,12 +19,12 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - The real 4.3.4 six-field start shape first reproduced `WORKER_CONTINUATION_NOT_READY`; the focused fix and its ordinary plus optimized-mode checks now pass. A read-only check against the preserved production attempt also returned its exact original Session and `checker_token_already_committed=true` without authenticating, decrypting or activating a role.
 - Positive coverage proves the exact Checker-TOKEN recovery does not call Worker continuation. Negative variants reject a changed task hash, wrong Session, an extra start field, missing candidate event and Worker-owned TOKEN.
 - State regression coverage proves a real schema-v8 4.3.5 Run adopts to 4.3.6 without rewriting engineering history, while 4.3.4 must still adopt to 4.3.5 first. Both 4.3.5 and 4.3.6 reject a legacy start marker and accept only an exact `slk.native-start/v2` receipt for ordinary delivery.
-- The captured nested-launch failure is a Windows Job access denial on `CREATE_BREAKAWAY_FROM_JOB`; its local-code-page rejection JSON previously triggered an outer UTF-8 reader failure and `stdout=None`. Injected regressions prove the exact WinError 5 retries once without breakaway, unrelated launch failures do not retry, UTF-8 non-ASCII JSON remains parseable, and non-UTF-8 or empty streams fail once with closed error codes.
+- The captured nested-launch failure is a Windows Job access denial on `CREATE_BREAKAWAY_FROM_JOB`; its local-code-page rejection JSON previously triggered an outer UTF-8 reader failure and `stdout=None`. Injected regressions prove the exact WinError 5 retries once without breakaway, unrelated launch failures do not retry, UTF-8 non-ASCII JSON remains parseable, and non-UTF-8 or empty streams fail once with closed error codes. A separate 260+ character source-attempt regression proves Worker-completion recovery launches from the registered OCRV runtime root while retaining absolute immutable evidence paths.
 - The captured OCRV FAIL proves the nested review process may exit 0 while the outer transport correctly exits 2 for the business verdict. Parametric regressions accept PASS/0, FAIL/2 with nested 0, and INCOMPLETE/3 with a nonzero nested exit, while rejecting a forged Session identity and a wrong outer verdict exit without rerunning OCRV or rewriting original evidence.
 - Existing v2 continuation, missing-result recovery, independent OCRV start and Checker-authored D1 tests remain green. New adversarial coverage rejects wrong terminal/task/start/raw hashes, repository/commit/parent/path drift, runtime/TOKEN drift, a second supplement, malformed or extra result fields and any engineering fact before complete validation; the preparation command remains state/session read-only.
 - Post-D1 adversarial coverage rejects stale runtime/TOKEN identity, wrong failure/candidate/attempt, missing Supervisor start, unsafe invocation paths, later same-scope PASS/INCOMPLETE and wrong role/model class; a legal later Overwatcher resume does not erase the current D1 FAIL.
 - A real Windows Node 24 reproduction proved that `fsyncSync` on the read-only temporary-file handle returns `EPERM` and leaves only `.tmp`; the writable-handle correction publishes the final activity atomically without a model call. The DSH instruction regression also proves that task path/hash and the fail-closed reading rules occupy one physical command line.
-- Python suites: 467 passed and two optional modules skipped in ordinary mode; the same 467 passed under `python -O` with only pytest's expected optimized-assertion warning.
+- Python suites: 468 passed and two optional modules skipped in ordinary mode; the same 468 passed under `python -O` with only pytest's expected optimized-assertion warning.
 - Rust workspace: 123 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
 - LE BI: 24 tests passed; TypeScript typecheck, production UI build and isolated headless Tauri release build passed.
 - Role Eval: 75 closed cases, PASS; case-pack SHA-256 `d0625e7561992424e328b4679d39ab481ef4d7feffb84430b4dbe0046ad869b8`.
@@ -36,7 +36,7 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - `slk-bi-query.exe`: `c0fd35a5c9673088b86e224e9426891d99f639fa68fd10bcc241313ff345dbed`
 - `slk-cargo.exe`: `5d43a748adc97efc181046ee50bcd29d69f1ef2a0ea41993ca360a687f219b04`
 - `slk-state.exe`: `1b3fa6fbeae040907f28994ad00f1f09f54c77362879b789a884125c71fd8fc7`
-- `slk-transport.pyz`: `70117829643a0787a39245b5a3b982846c6b6d2ef2ed6b7ab3304562b5664f09`
+- `slk-transport.pyz`: `e207ea3aecc089828c8d22a25a9094a65191e378cde067091a512bbf368048c4`
 
 ## Migration and deployment boundary
 
