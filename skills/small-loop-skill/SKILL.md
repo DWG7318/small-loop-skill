@@ -7,7 +7,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 ## 方法身份
 
-SLK 4.3.5 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
+SLK 4.3.6 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
 
 它以 CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，帮助成员判断怎样继续：D1 FAIL 回到同一 CELL 返工，D1 PASS 前进，全部 CELL 处理后由 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌本身不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态事实，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与未来 BI 只读查询。
 
@@ -31,7 +31,7 @@ Supervisor、Checker、Worker、Overwatcher 是 Agent，不是状态机。Worker
 
 原对话与 Owner 选择 SLK，并明确 Run 目标、边界和 Owner 关心的结果。Agent 在创建 Supervisor 前结合项目整理 Run、初始 CELL 与分层检查方案。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
 
-Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run --credential-out` 初始化状态、密封凭证和 `SLK-RUN-<RUN-ID>.md`，再创建 Checker，Checker 创建 Worker。正常通讯保持 `Supervisor ↔ Checker ↔ Worker`；正式 D1 FAIL 才走 `Checker → Supervisor → 同一 Worker`。Supervisor 用 `T001` 交付首 CELL；其后持有者单调增加 TOKEN，以真实激活操作投递到已登记的目标原生 Agent 入口。与消息匹配的原生启动证据才证明流转；4.3.5 使用 v2 且不增加令牌专用回执。正常交接由原发送者原子提交 start、TOKEN、事件和 revision；DSH 只密封候选，外部 headless OCRV 启动 Checker。历史假启动已把 TOKEN 置于 Checker 时，只复用同一 candidate/attempt，在 `.native-recovery-v2` 留下真实 start；不恢复 Worker、不再移动 TOKEN、不改旧证据，标准工具内部使用 Checker 凭证记录实际终态、身份与 result/aggregate 哈希。失败由原角色负责；exact retry 只原样一次，active writer 用绑定当前 turn 的新可审计恢复消息。无已验证入口就等待 Owner/Main 真实激活；旧状态、可见消息或 heartbeat 不证明工作。三工程角色不用正时长 `wait_threads`，完成节点后结束活动。Overwatcher 缺席不阻断；绑定后按前台 active turn 巡查。工具/传输失败留在同一 D1 attempt 并记 INCOMPLETE/`TRANSPORT_FAILED`。边界见 [`docs/state/SLK-STATE.md`](../../docs/state/SLK-STATE.md) 和 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
+Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run --credential-out` 初始化状态、密封凭证和 `SLK-RUN-<RUN-ID>.md`，再创建 Checker，Checker 创建 Worker。正常通讯保持 `Supervisor ↔ Checker ↔ Worker`；正式 D1 FAIL 才走 `Checker → Supervisor → 同一 Worker`。Supervisor 用 `T001` 交付首 CELL；其后持有者单调增加 TOKEN，以真实激活操作投递到已登记的目标原生 Agent 入口。与消息匹配的原生启动证据才证明流转；4.3.6 使用 v2 且不增加令牌专用回执。正常交接由原发送者原子提交 start、TOKEN、事件和 revision；DSH 只密封候选，外部 headless OCRV 启动 Checker。历史假启动已把 TOKEN 置于 Checker 时，只复用同一 candidate/attempt，在 `.native-recovery-v2` 留下真实 start；不恢复 Worker、不再移动 TOKEN、不改旧证据，标准工具内部使用 Checker 凭证记录实际终态、身份与 result/aggregate 哈希。失败由原角色负责；exact retry 只原样一次，active writer 用绑定当前 turn 的新可审计恢复消息。无已验证入口就等待 Owner/Main 真实激活；旧状态、可见消息或 heartbeat 不证明工作。三工程角色不用正时长 `wait_threads`，完成节点后结束活动。Overwatcher 缺席不阻断；绑定后按前台 active turn 巡查。工具/传输失败留在同一 D1 attempt 并记 INCOMPLETE/`TRANSPORT_FAILED`。边界见 [`docs/state/SLK-STATE.md`](../../docs/state/SLK-STATE.md) 和 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
 
 同一实际 Run 应复用其 run_id；历史独立根需要收敛时，只接受 Owner 明确指定的 canonical/source ID、闭合授权证据和精确快照，由 canonical 当前 Supervisor 追加身份对账回执。旧 Run 采用新方法语义需要另有方法采用回执，不能靠标题、提示词或可见对话推断。
 

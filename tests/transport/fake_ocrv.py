@@ -104,7 +104,7 @@ if args.slk_worker_recovery:
     native_result.write_text("{}\n", encoding="utf-8")
     result = {
         "schema_version": "slk.ocrv-worker-recovery-result/v1",
-        "method_version": "4.3.5",
+        "method_version": "4.3.6",
         "status": "CHECKER_D1_RECORDED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],

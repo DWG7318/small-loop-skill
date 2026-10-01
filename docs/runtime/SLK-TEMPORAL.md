@@ -1,4 +1,4 @@
-# Optional Temporal continuity for SLK 4.3.5
+# Optional Temporal continuity for SLK 4.3.6
 
 ## Boundary
 
@@ -26,7 +26,7 @@ The development server is suitable for local evaluation, not a production durabi
 
 ## Startup request
 
-The exact startup schema is enforced by `slk_temporal.contracts.StartSlkRequest`. It binds method version 4.3.5, `run_id`, runtime revision, task queue, acknowledgement timeout, startup idempotency key, exactly one Supervisor/Checker/Worker endpoint and at most one Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, invalid hashes and unsupported versions fail closed.
+The exact startup schema is enforced by `slk_temporal.contracts.StartSlkRequest`. It binds method version 4.3.6, `run_id`, runtime revision, task queue, acknowledgement timeout, startup idempotency key, exactly one Supervisor/Checker/Worker endpoint and at most one Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, invalid hashes and unsupported versions fail closed.
 
 The parent first obtains a hash-bound readiness receipt. It then starts `slk-run-<run_id>` once. A caller may reconnect to the same unchanged parent workflow; a changed request under the same identity is rejected through the frozen startup fingerprint.
 

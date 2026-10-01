@@ -105,7 +105,7 @@ def _native_activity_capability(path_value: Any, runtime: str) -> str | None:
         events = value["native_events"]
         if (
             value["schema_version"] != "slk.native-activity-capability/v1"
-            or value["method_version"] != "4.3.5"
+            or value["method_version"] != "4.3.6"
             or value["runtime"] != runtime
             or value["read_only_observation"] is not True
             or value["model_call_required"] is not False

@@ -30,7 +30,7 @@ def _request(tmp_path: Path) -> dict[str, object]:
             json.dumps(
                 {
                     "schema_version": "slk.native-activity-capability/v1",
-                    "method_version": "4.3.5",
+                    "method_version": "4.3.6",
                     "runtime": runtime,
                     "read_only_observation": True,
                     "model_call_required": False,

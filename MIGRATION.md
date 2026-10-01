@@ -1,5 +1,15 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.3.5 to 4.3.6
+
+Install the complete 4.3.6 package transactionally. Installation alone does not adopt, resume, dispatch, inspect, move TOKEN or mutate product files. At an Owner-authorized Supervisor boundary, an exact snapshot may adopt `4.3.5 → 4.3.6`; schema remains v8 and Run identity, plan, CELL/attempt, roles/endpoints, TOKEN, candidate, D0/D1/D2 history, Overwatcher history, transport attempts and product changes are preserved.
+
+The only new compatibility path applies when a preserved 4.3.4 DSH attempt has a closed flat start, a completed Worker result and terminal receipt, and the exact immutable candidate already owns TOKEN at the registered Checker. The standard tool must match the old start's six-field shape, re-hash `transport-task.json`, bind its endpoint/envelope/result contract, match the original instance/Session and terminal identity, and prove the same candidate's central `CANDIDATE_SUBMITTED` plus Checker handoff `TRANSPORT_STARTED` chain. Missing or changed evidence fails closed. A fresh complete engineering projection is required; a previously trimmed or failed recovery projection is not reused.
+
+After adoption, issue a new outer recovery message and retain every prior failed recovery and the original legacy evidence unchanged. Recovery reuses the staged candidate, starts only the external OCRV review under `.native-recovery-v2`, does not resume Worker or move TOKEN again, and lets the authenticated Checker record the actual D1. The flat marker remains invalid as normal native-start or current-activity evidence.
+
+An already-running 4.3.4 Temporal Workflow keeps its 4.3.4 workflow/contracts package and frozen Start input. Its Worker may be restarted only to load the corrected Run-local thin adapter while that adapter calls the installed 4.3.6 transport query; do not replace the in-flight Workflow package with 4.3.6 or rewrite its fingerprint. No role, model, CELL/D0/D1/D2 authority, BI authority, Docker service, daemon, heartbeat, MCP or product file changes automatically.
+
 ## Current patch migration: 4.3.4 to 4.3.5
 
 Install the complete 4.3.5 package plus matching DSH and OCRV integrations transactionally. The package installs a hash-bound `slk-transport.cmd` beside the managed pyz; verify the standard command resolves there rather than to an old Python user-site console script. Installation alone does not adopt, resume, dispatch, inspect, change TOKEN or mutate product files. At an Owner-authorized Supervisor boundary, an exact snapshot may adopt `4.3.4 → 4.3.5`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher history, old transport attempts and product changes are preserved.

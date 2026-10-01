@@ -11,9 +11,11 @@ from pathlib import Path
 import pytest
 import slk_transport.worker_completion as worker_completion
 
+from slk_transport.adapters.dsh import DshAdapter
 from slk_transport.adapters.ocrv import OcrvAdapter
 from slk_transport.contracts import Endpoint, Envelope, canonical_json_sha256
 from slk_transport.dispatcher import dispatch_once
+from slk_transport.task_file import canonical_task_bytes
 from slk_transport.worker_completion import (
     CompletionError,
     _activate_staged_checker,
@@ -103,7 +105,7 @@ def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.3.5",
+        "method_version": "4.3.6",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -151,7 +153,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.3.5"
+        assert continuation["method_version"] == "4.3.6"
         return {
             "status": "CHECKER_DELIVERY_READY",
             "source_message_id": continuation["source_message_id"],
@@ -165,7 +167,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
     def activate(outcome: dict[str, object], continuation: dict[str, object]) -> dict[str, object]:
         calls.append("activate")
         assert outcome["status"] == "CHECKER_DELIVERY_READY"
-        assert continuation["method_version"] == "4.3.5"
+        assert continuation["method_version"] == "4.3.6"
         return {
             "status": "CHECKER_STARTED",
             "runtime_revision": 11,
@@ -183,7 +185,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
     ) -> dict[str, object]:
         calls.append("record")
         assert activation["status"] == "CHECKER_STARTED"
-        assert continuation["method_version"] == "4.3.5"
+        assert continuation["method_version"] == "4.3.6"
         assert credential.name == "checker.dpapi"
         assert timeout == 30
         return {
@@ -311,6 +313,158 @@ def test_checker_token_recovery_reuses_staged_candidate_without_resuming_worker(
     assert activated_outcomes[0]["attempt_root"] == str(attempt_root.resolve())
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [None, "task-hash", "session", "extra-start-field", "missing-candidate-event", "worker-token"],
+)
+def test_checker_token_legacy_434_start_requires_the_entire_exact_completed_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str | None,
+) -> None:
+    request = checker_recovery_request(tmp_path)
+    source_attempt = Path(str(request["source_attempt_root"]))
+    endpoint = Endpoint.from_dict(json.loads((source_attempt / "endpoint.json").read_text(encoding="utf-8")))
+    envelope = Envelope.from_dict(json.loads((source_attempt / "envelope.json").read_text(encoding="utf-8")))
+    task_path = source_attempt / "transport-task.json"
+    task_bytes = canonical_task_bytes(
+        {
+            "schema_version": "slk.transport-task/v1",
+            "message_id": envelope.message_id,
+            "run_id": envelope.run_id,
+            "go_id": envelope.go_id,
+            "cell_id": envelope.cell_id,
+            "endpoint": asdict(endpoint),
+            "envelope": asdict(envelope),
+            "result_contract": DshAdapter().result_contract(endpoint, envelope),
+            "result_path": str(
+                (
+                    Path(str(endpoint.address["cwd"]))
+                    / ".slk-transport"
+                    / envelope.message_id
+                    / "worker-result.json"
+                ).resolve()
+            ),
+        }
+    )
+    task_path.write_bytes(task_bytes)
+    worker_session_id = str(endpoint.address["session_id"])
+    write_json(
+        source_attempt / "started.json",
+        {
+            "instance_id": endpoint.address["instance_id"],
+            "message_id": envelope.message_id,
+            "run_id": envelope.run_id,
+            "session_id": worker_session_id,
+            "status": "started",
+            "task_sha256": hashlib.sha256(task_bytes).hexdigest(),
+        },
+    )
+    write_json(
+        source_attempt / "completed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": envelope.message_id,
+            "run_id": envelope.run_id,
+            "adapter": "dsh-worker",
+            "status": "completed",
+            "native_identity": {
+                "instance_id": endpoint.address["instance_id"],
+                "session_id": worker_session_id,
+                "exit_code": 0,
+                "worker_outcome": "completed",
+                "blocker_cause": None,
+            },
+            "error_code": None,
+            "evidence": [
+                "started.json",
+                "worker-result.json",
+                "native.stdout.txt",
+                "native.stderr.txt",
+            ],
+        },
+    )
+    projection_path = Path(str(request["runtime_projection_path"]))
+    projection = json.loads(projection_path.read_text(encoding="utf-8"))
+    candidate_message_id = _stable_id(envelope.message_id, "candidate-ready")
+    projection["runtime_snapshot"]["token_holder_role_instance_id"] = request[
+        "checker_role_instance_id"
+    ]
+    projection["runtime_snapshot"]["latest_message_id"] = candidate_message_id
+    projection["events"].extend(current_worker_handoff_events())
+    write_json(projection_path, projection)
+    attempt_root = source_attempt / "worker-continuation" / "checker-attempts"
+    candidate_attempt = attempt_root / envelope.run_id / candidate_message_id
+    write_json(candidate_attempt / "endpoint.json", request["checker_endpoint"])
+    write_json(candidate_attempt / "envelope.json", {"message_id": candidate_message_id})
+    write_json(candidate_attempt / "started.json", {"status": "started"})
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID", str(request["checker_role_instance_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ENDPOINT_VERSION", str(request["checker_endpoint_version"]))
+
+    if mutation is not None:
+        if mutation in {"task-hash", "session", "extra-start-field"}:
+            legacy_start = json.loads((source_attempt / "started.json").read_text(encoding="utf-8"))
+            if mutation == "task-hash":
+                legacy_start["task_sha256"] = "0" * 64
+            elif mutation == "session":
+                legacy_start["session_id"] = "session-22222222-2222-4222-8222-222222222222"
+            else:
+                legacy_start["native_task"] = {"id": worker_session_id}
+            write_json(source_attempt / "started.json", legacy_start)
+        elif mutation == "missing-candidate-event":
+            projection["events"] = [
+                item for item in projection["events"] if item["event_type"] != "CANDIDATE_SUBMITTED"
+            ]
+            write_json(projection_path, projection)
+        else:
+            projection["runtime_snapshot"]["token_holder_role_instance_id"] = endpoint.role_instance_id
+            projection["runtime_snapshot"]["latest_message_id"] = envelope.message_id
+            write_json(projection_path, projection)
+
+    def recover() -> dict[str, object]:
+        return execute_checker_recovery(
+            request,
+            request_sha256="e" * 64,
+            authenticate_checker=lambda run_id, role_id, _path, _command: {
+                "status": "authenticated",
+                "run_id": run_id,
+                "role": "checker",
+                "role_instance_id": role_id,
+                "runtime_revision": 7,
+            },
+            resume_continuation=lambda _continuation: pytest.fail(
+                "legacy completed Worker evidence must not restart or replay Worker"
+            ),
+            activate_checker=lambda outcome, _continuation: {
+                "status": "CHECKER_STARTED",
+                "runtime_revision": 7,
+                "candidate_message_id": outcome["candidate_message_id"],
+                "token_sequence": 14,
+                "checker_token_already_committed": True,
+                "native_attempt_path": str(candidate_attempt),
+            },
+            record_checker_d1=lambda _activation, _continuation, _credential, _timeout: {
+                "status": "CHECKER_D1_RECORDED",
+                "d1_verdict": "PASS",
+                "d1_event_type": "D1_PASSED",
+                "native_result_path": str(candidate_attempt / "ocrv-result.json"),
+            },
+        )
+
+    if mutation is not None:
+        with pytest.raises(CompletionError) as rejected:
+            recover()
+        assert rejected.value.error_code == "WORKER_CONTINUATION_NOT_READY"
+        return
+
+    result = recover()
+
+    assert result["status"] == "CHECKER_D1_RECORDED"
+    assert result["worker_session_id"] == worker_session_id
+    assert result["checker_token_already_committed"] is True
+
+
 def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[str, object]]:
     (tmp_path / "runtime").mkdir()
     (tmp_path / "repository").mkdir()
@@ -350,7 +504,7 @@ def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[st
             "run_id": "RUN-A",
             "cell_id": "CELL-001",
             "message_id": envelope["message_id"],
-            "request_sha256": "a" * 64,
+            "request_sha256": envelope["payload_sha256"],
             "native_request_sha256": "b" * 64,
             "observed_at": "2026-09-23T00:00:00Z",
             "process": {"pid": 1, "creation_time": "fixture:1"},
@@ -426,9 +580,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.3.5", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.3.6", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.3.5",
+            "method_version": "4.3.6",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,
@@ -1058,7 +1212,7 @@ def test_false_legacy_start_with_token_at_checker_recovers_same_candidate_withou
         "attempt_root": str(original_root),
     }
     continuation = {
-        "method_version": "4.3.5",
+        "method_version": "4.3.6",
         "run_id": run_id,
         "go_id": "LEGACY-GROUP-01",
         "cell_id": "CELL01",
@@ -1482,6 +1636,9 @@ def test_rework_acceptance_criteria_become_checker_d1_criteria(tmp_path: Path) -
 
     source["payload_sha256"] = canonical_json_sha256(source["payload"])
     write_json(attempt / "envelope.json", source)
+    started = json.loads((attempt / "started.json").read_text(encoding="utf-8"))
+    started["request_sha256"] = source["payload_sha256"]
+    write_json(attempt / "started.json", started)
     request = build_continuation_request(
         attempt,
         checker,

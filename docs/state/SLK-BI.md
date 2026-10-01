@@ -1,4 +1,4 @@
-# LE BI — SLK 4.3.5 Read-Only View
+# LE BI — SLK 4.3.6 Read-Only View
 
 LE BI presents machine-wide role-authored state plus accepted operational observations. It is a read-only desktop application and does not participate in construction, inspection, transport, recovery, exemption, or closure.
 

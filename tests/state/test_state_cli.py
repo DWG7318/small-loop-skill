@@ -56,7 +56,7 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.3.5"}
+    assert result == {"status": "ok", "version": "4.3.6"}
 
 
 def test_init_run_can_atomically_deliver_credential_without_printing_secret(tmp_path):

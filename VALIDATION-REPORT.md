@@ -1,37 +1,40 @@
-# Validation Report — SLK 4.3.5 Candidate
+# Validation Report — SLK 4.3.6 Candidate
 
 Date: 2026-10-01
 
-Branch: `feature/slk-4.3.5-native-activity`
+Branch: `feature/slk-4.3.6-legacy-worker-recovery`
 
-Base: `02910d9` (`v4.3.4`)
+Base: `25f6d57` (`v4.3.5`)
 
 ## Scope
 
-SLK 4.3.5 is a schema-v8-compatible transport correction. It replaces presence-only start markers with a closed native-start receipt, gives every runtime one read-only native-activity query, separates Worker completion from externally started Checker review, and preserves an exact same-candidate recovery path for a legacy false start. The old attempt, candidate, TOKEN history and product tree remain immutable.
+SLK 4.3.6 is a schema-v8-compatible recovery correction. It accepts one historical SLK 4.3.4 flat DSH start only after the same completed Worker attempt, immutable transport task, endpoint, envelope, original Session, terminal result, Worker result, candidate, central handoff events and Checker-owned TOKEN all match. It then reuses the already-staged candidate for real OCRV D1 without replaying Worker, moving TOKEN or changing old evidence.
 
-The existing Codex Supervisor, OCRV Checker, DSH Worker, optional whole-Run Overwatcher, serial CELL/D0/D1/D2 topology, direct communication, BI authority and optional Temporal templates are unchanged. No AX, Orca, wmux, BoM, new role, daemon, heartbeat, MCP, scheduler, Docker dependency or product method was introduced.
+Normal delivery and native-activity inspection still require `slk.native-start/v2`; the flat marker never becomes current activity proof. Supervisor, Checker, Worker, optional whole-Run Overwatcher, serial CELL/D0/D1/D2 topology, direct communication, BI authority and optional Temporal templates are unchanged. No AX, Orca, wmux, BoM, new role, workflow, daemon, heartbeat, MCP, scheduler, Docker dependency or product method was added.
 
 ## Verification evidence
 
-- Python suites: 414 passed and two optional modules skipped in ordinary mode; the same 414 passed under `python -O` with only pytest's expected optimized-assertion warning. Focused native activity/OCRV/D1/Skill/Eval coverage also passed, including wrong-message and conflicting terminal evidence, current multi-segment OCRV activity, false-start recovery, exact Checker D1 authorship, the managed launcher, and installed DSH/OCRV classifications.
+- The real 4.3.4 six-field start shape first reproduced `WORKER_CONTINUATION_NOT_READY`; the focused fix and its ordinary plus optimized-mode checks now pass. A read-only check against the preserved production attempt also returned its exact original Session and `checker_token_already_committed=true` without authenticating, decrypting or activating a role.
+- Positive coverage proves the exact Checker-TOKEN recovery does not call Worker continuation. Negative variants reject a changed task hash, wrong Session, an extra start field, missing candidate event and Worker-owned TOKEN.
+- Existing v2 continuation, missing-result recovery, independent OCRV start and Checker-authored D1 tests remain green.
+- Python suites: 420 passed and two optional modules skipped in ordinary mode; the same 420 passed under `python -O` with only pytest's expected optimized-assertion warning.
 - Rust core packages: 116 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
-- LE BI: 24 tests passed; TypeScript typecheck and production UI build passed. The production Tauri/Rust release build passed headlessly in a fresh isolated Cargo target.
-- Role Eval: 75 closed cases, PASS; case-pack SHA-256 `05694fb2508602500f05c8a73f7c3d26eafe327e9533277ae3a81ba97874ce1b`.
-- Repository identity, JSON/YAML/schema parsing, root/install package mirrors, deterministic package verification, version/Manifest hashes, `git diff --check`, and sensitive/forbidden-scope scans are release gates. The package has no hard dependency on Temporal, Docker, AX, Orca, wmux, an Overwatcher, or another runtime service.
+- LE BI: 24 tests passed; TypeScript typecheck, production UI build and isolated headless Tauri release build passed.
+- Role Eval: 75 closed cases, PASS; case-pack SHA-256 `d0625e7561992424e328b4679d39ab481ef4d7feffb84430b4dbe0046ad869b8`.
+- Repository identity, JSON/YAML/schema parsing, deterministic package verification, version/Manifest hashes, root/install mirrors, `git diff --check`, and sensitive/forbidden-scope scans remain completion gates.
 
-## Release artifacts
+## Candidate artifacts
 
-- `slk-bi-desktop.exe`: `5b49130d5456dd546f3471bbac54bfa80311e00391cd2795a36711783742f39e`
-- `slk-bi-query.exe`: `78a53719bd450897d8300cb1028c32529696480f163f18038e528d8854d425e2`
-- `slk-cargo.exe`: `35c92572de691425294ae9b58465849dcbd4693e2e75b0348e92762519171f71`
-- `slk-state.exe`: `edd1f17c3526274c01430288dbbdf017e7bd7df6e908ebca2eec4cd462146e86`
-- `slk-transport.pyz`: `9cc177dbca98580f5770ed793892a2bbc0464a3cbf54b8b9e2b863fd7f964cf7`
+- `slk-bi-desktop.exe`: `7e19cc7951205d48bc41df5ecf97f43ff11ed4b3dbbce106ce99deb228cc5260`
+- `slk-bi-query.exe`: `f3bcf81165661948595449a8ba4f54e5b103d0fa926335e19b523a338144e8df`
+- `slk-cargo.exe`: `3de29dd7ca97e7768403a4d6bff7b09823cdc626cf81d865f28fb262a01b3dae`
+- `slk-state.exe`: `b44eb0c35e0e04321c5102ba05c9985664edf21da9fa7e479fd03eeec309cd37`
+- `slk-transport.pyz`: `c55f34abc70bfbf204fa1636178960d6e5a73d3a51f649e851958cf963efc9e4`
 
 ## Migration and deployment boundary
 
-Explicit `4.3.4 → 4.3.5` adoption preserves Run ID, plan revision, current CELL/attempt, TOKEN holder/sequence, role endpoints, candidate, D0/D1/D2 history, Overwatcher binding/incidents, transport evidence and product changes. Installation alone does not adopt, resume, dispatch, inspect or mutate a Run.
+Explicit `4.3.5 → 4.3.6` adoption preserves Run ID, plan revision, current CELL/attempt, TOKEN holder/sequence, role endpoints, candidate, D0/D1/D2 history, Overwatcher state, transport evidence and product changes. Installation alone does not adopt, resume, dispatch, inspect or mutate a Run.
 
-New starts require `slk.native-start/v2`. A preserved legacy receipt is history, not proof. If its TOKEN already reached the exact Checker, recovery reuses the same Run/CELL/candidate/message under `.native-recovery-v2`, does not replay Worker or recommit TOKEN, externally starts OCRV, and lets the authenticated Checker bind and write the actual D1 result. Overwatcher and an enabled Temporal adapter reuse `inspect-native-activity`; missing, stale, mismatched, permission-blocked, wrong-attempt or conflicting terminal evidence remains `UNKNOWN`.
+For the narrow legacy recovery, retain the original Worker attempt and every failed recovery unchanged. Generate one fresh complete engineering projection and one new outer recovery message after adoption. The installed 4.3.6 transport may read the old flat identity only through the closed completed-Worker/Checker-TOKEN branch, writes new OCRV evidence below `.native-recovery-v2`, and leaves ordinary v2/current-activity validation unchanged.
 
-Final completion gates are the refreshed Manifest, deterministic local-package verification, transactional headless integration/global installation with installed hash/version checks, committed-tree review, safe fast-forward/tag identity checks and the formal Release.
+An in-flight 4.3.4 Temporal Workflow keeps its frozen 4.3.4 Workflow package and Start input. Only its Run-local adapter is reloaded in a controlled Worker restart and calls the installed 4.3.6 transport; the old Workflow history is not reinterpreted.

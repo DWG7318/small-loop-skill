@@ -16,6 +16,7 @@ from typing import Any, Callable, Mapping
 
 from .contracts import ENVELOPE_SCHEMA, Endpoint, Envelope, canonical_json_sha256
 from .native_activity import NativeActivityError, validate_native_start
+from .task_file import TaskFileError, verify_task_file
 
 
 INSPECTION_SCHEMA = "slk.worker-completion-inspection/v1"
@@ -23,6 +24,9 @@ CONTINUATION_SCHEMA = "slk.worker-continuation/v1"
 CHECKER_RECOVERY_SCHEMA = "slk.ocrv-worker-recovery-request/v1"
 CHECKER_RECOVERY_RESULT_SCHEMA = "slk.ocrv-worker-recovery-result/v1"
 _NAMESPACE = uuid.UUID("23c8316f-29fe-4f2f-b5c5-90ba4e7b1224")
+_LEGACY_WORKER_START_FIELDS = frozenset(
+    {"instance_id", "message_id", "run_id", "session_id", "status", "task_sha256"}
+)
 
 
 class CompletionError(ValueError):
@@ -160,6 +164,128 @@ def _missing_result_failure(attempt: Path, envelope: Envelope) -> dict[str, Any]
     return failed
 
 
+def _native_v2_worker_session(
+    started_path: Path,
+    endpoint: Endpoint,
+    envelope: Envelope,
+) -> str | None:
+    try:
+        started = validate_native_start(
+            started_path,
+            adapter=endpoint.adapter,
+            run_id=envelope.run_id,
+            cell_id=envelope.cell_id,
+            message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256,
+        )
+    except NativeActivityError:
+        return None
+    native_task = started["native_task"]
+    if native_task["kind"] != "dsh-session":
+        return None
+    session_id = native_task["id"]
+    return session_id if isinstance(session_id, str) else None
+
+
+def _legacy_completed_worker_session(
+    attempt: Path,
+    endpoint: Endpoint,
+    envelope: Envelope,
+    started: Mapping[str, Any],
+    completed: Mapping[str, Any] | None,
+    result: Mapping[str, Any] | None,
+    runtime_projection: Mapping[str, Any],
+    *,
+    attempt_number: int,
+    candidate_message_id: str,
+    checker_token_already_committed: bool,
+) -> str | None:
+    """Read one closed 4.3.4 start only after its completed candidate already owns Checker TOKEN."""
+
+    if (
+        not checker_token_already_committed
+        or completed is None
+        or result is None
+        or set(started) != _LEGACY_WORKER_START_FIELDS
+        or started.get("status") != "started"
+        or started.get("message_id") != envelope.message_id
+        or started.get("run_id") != envelope.run_id
+        or started.get("instance_id") != endpoint.address.get("instance_id")
+    ):
+        return None
+    session_id = started.get("session_id")
+    native_identity = completed.get("native_identity")
+    if (
+        not isinstance(session_id, str)
+        or not session_id.startswith("session-")
+        or set(completed)
+        != {
+            "schema_version",
+            "message_id",
+            "run_id",
+            "adapter",
+            "status",
+            "native_identity",
+            "error_code",
+            "evidence",
+        }
+        or completed.get("schema_version") != "slk.transport-result/v1"
+        or completed.get("message_id") != envelope.message_id
+        or completed.get("run_id") != envelope.run_id
+        or completed.get("adapter") != "dsh-worker"
+        or completed.get("status") != "completed"
+        or completed.get("error_code") is not None
+        or completed.get("evidence")
+        != ["started.json", "worker-result.json", "native.stdout.txt", "native.stderr.txt"]
+        or not isinstance(native_identity, Mapping)
+        or set(native_identity)
+        != {"instance_id", "session_id", "exit_code", "worker_outcome", "blocker_cause"}
+        or native_identity.get("instance_id") != endpoint.address.get("instance_id")
+        or native_identity.get("session_id") != session_id
+        or native_identity.get("exit_code") != 0
+        or native_identity.get("worker_outcome") != "completed"
+        or native_identity.get("blocker_cause") is not None
+    ):
+        return None
+    task_path = attempt / "transport-task.json"
+    try:
+        task = verify_task_file(task_path.resolve(), str(started.get("task_sha256")))
+        task_endpoint = Endpoint.from_dict(task["endpoint"])
+        task_envelope = Envelope.from_dict(task["envelope"])
+        from .adapters.dsh import DshAdapter
+
+        expected_result_path = (
+            Path(str(endpoint.address["cwd"]))
+            / ".slk-transport"
+            / envelope.message_id
+            / "worker-result.json"
+        ).resolve()
+        task_matches = (
+            task_endpoint == endpoint
+            and task_envelope == envelope
+            and task.get("message_id") == envelope.message_id
+            and task.get("run_id") == envelope.run_id
+            and task.get("go_id") == envelope.go_id
+            and task.get("cell_id") == envelope.cell_id
+            and task.get("result_contract") == DshAdapter().result_contract(endpoint, envelope)
+            and task.get("result_path") == str(expected_result_path)
+        )
+    except (KeyError, TypeError, ValueError, TaskFileError):
+        return None
+    candidate = result.get("candidate")
+    if not task_matches or not isinstance(candidate, Mapping):
+        return None
+    candidate_submitted, transport_started = _exact_worker_handoff(
+        runtime_projection,
+        cell_id=envelope.cell_id,
+        attempt=attempt_number,
+        candidate=candidate,
+        source_message_id=envelope.message_id,
+        handoff_message_id=candidate_message_id,
+    )
+    return session_id if candidate_submitted and transport_started else None
+
+
 def build_continuation_request(
     attempt_root: Path | str,
     checker_endpoint_raw: Mapping[str, Any],
@@ -207,9 +333,6 @@ def build_continuation_request(
         )
     attempt_number = _source_attempt(runtime_projection, envelope)
     snapshot = runtime_projection.get("runtime_snapshot")
-    native_task = started.get("native_task")
-    session_id = native_task.get("id") if isinstance(native_task, Mapping) else None
-    configured_session_id = endpoint.address.get("session_id")
     candidate_message_id = _stable_id(envelope.message_id, "candidate-ready")
     checker_token_already_committed = (
         isinstance(snapshot, Mapping)
@@ -221,6 +344,25 @@ def build_continuation_request(
         and snapshot.get("token_holder_role_instance_id") == endpoint.role_instance_id
         and snapshot.get("latest_message_id") == envelope.message_id
     )
+    session_id = (
+        _native_v2_worker_session(started_path, endpoint, envelope)
+        if started.get("schema_version") == "slk.native-start/v2"
+        else _legacy_completed_worker_session(
+            attempt,
+            endpoint,
+            envelope,
+            started,
+            completed,
+            result,
+            runtime_projection,
+            attempt_number=attempt_number,
+            candidate_message_id=candidate_message_id,
+            checker_token_already_committed=checker_token_already_committed,
+        )
+        if recovery_mode == "COMPLETED_RESULT"
+        else None
+    )
+    configured_session_id = endpoint.address.get("session_id")
     if (
         endpoint.role != "worker"
         or envelope.receiver_role != "worker"
@@ -242,7 +384,7 @@ def build_continuation_request(
             )
         )
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.3.5"
+        or snapshot.get("method_version") != "4.3.6"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -268,7 +410,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.3.5",
+        "method_version": "4.3.6",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -724,7 +866,7 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.3.5":
+    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.3.6":
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
@@ -1646,8 +1788,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.3.5":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.3.5")
+    if request.get("method_version") != "4.3.6":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.3.6")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -1741,7 +1883,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "actual OCRV D1 result was not recorded")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.3.5",
+        "method_version": "4.3.6",
         "status": "CHECKER_D1_RECORDED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],

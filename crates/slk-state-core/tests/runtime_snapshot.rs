@@ -73,12 +73,12 @@ fn invalid_start_evidence_rolls_back_every_runtime_fact() {
 }
 
 #[test]
-fn slk_435_rejects_legacy_started_marker_and_accepts_exact_native_v2() {
+fn slk_436_rejects_legacy_started_marker_and_accepts_exact_native_v2() {
     let fixture = Fixture::new_423();
     let connection = slk_state_core::schema::open_database(fixture.root.path()).unwrap();
     connection
         .execute(
-            "UPDATE runs SET slk_version='4.3.5' WHERE run_id='run-a'",
+            "UPDATE runs SET slk_version='4.3.6' WHERE run_id='run-a'",
             [],
         )
         .unwrap();
