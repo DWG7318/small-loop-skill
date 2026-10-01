@@ -799,6 +799,10 @@
       "sha256": "3920bdd13e39d4ef14ab5bf234668d6730d38db2b844cdac0314c5b21ec03c77"
     },
     {
+      "path": "docs/superpowers/plans/2026-10-01-slk-4.3.6-checker-post-d1-suffix.md",
+      "sha256": "e6278d0b758742fb716120d8182aa11bf8242c1dbe4cb18a626f2f496db726f6"
+    },
+    {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
       "sha256": "d26a2d488e8ac2159750b332d8eb1bd02a1187aa9143f0e75a105ad8b601dcfd"
     },
@@ -889,6 +893,10 @@
     {
       "path": "docs/superpowers/specs/2026-09-30-slk-4.3.3-ocrv-preflight-design.md",
       "sha256": "cab40562b03b3391410ab95ac5e462efc904a4a64a3c5c581f3980443b4b09f5"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-01-slk-4.3.6-checker-post-d1-suffix-design.md",
+      "sha256": "f5963681d5645a9910a43af4abc64dbe3b290ec62db7ffd97f0912768502918a"
     },
     {
       "path": "docs/transport/SLK-TRANSPORT-LIVE-ACCEPTANCE.md",
