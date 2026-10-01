@@ -1237,7 +1237,7 @@ fn adoption_431_to_432_preserves_the_schema_v8_run() {
 }
 
 #[test]
-fn adoption_433_to_434_preserves_the_schema_v8_run() {
+fn adoption_433_to_434_to_435_to_436_preserves_the_schema_v8_run() {
     let fixture = Fixture::new_428();
     for (receipt_id, from_version, to_version, occurred_at) in [
         ("adopt-429", "4.2.8", "4.2.9", "2026-09-24T00:09:00Z"),
@@ -1316,6 +1316,80 @@ fn adoption_433_to_434_preserves_the_schema_v8_run() {
     assert_eq!(after.events, before.events);
     assert_eq!(after.token_history, before.token_history);
     assert_eq!(after.go_nodes, before.go_nodes);
+
+    assert!(matches!(
+        fixture.store.adopt_method_contract(
+            &fixture.supervisor,
+            AdoptMethodContractRequest {
+                receipt_id: "adopt-skip-436".into(),
+                run_id: "run-a".into(),
+                expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+                from_version: "4.3.4".into(),
+                to_version: "4.3.6".into(),
+                owner_authorization: OwnerAuthorizationEvidence {
+                    source_thread_id: "owner-skip-436".into(),
+                    message_id: "message-skip-436".into(),
+                    content_sha256: "9".repeat(64),
+                    decision: OwnerDecision::ApproveMethodContractAdoption,
+                    occurred_at: "2026-09-30T00:11:30Z".into(),
+                },
+                reconciliation_receipt_id: None,
+                compatibility: MethodCompatibilityAssertions {
+                    topology: PreservedAssertion::Preserved,
+                    role_bindings: PreservedAssertion::Preserved,
+                    token: PreservedAssertion::Preserved,
+                    engineering_history: PreservedAssertion::Preserved,
+                    overwatcher: OverwatcherAssertion::Absent,
+                },
+                reason: "direct version skip must remain forbidden".into(),
+                occurred_at: "2026-09-30T00:11:30Z".into(),
+            },
+        ),
+        Err(StateError::RunAdministrationInvalid(_))
+    ));
+
+    for (receipt_id, from_version, to_version, occurred_at) in [
+        ("adopt-435", "4.3.4", "4.3.5", "2026-09-30T00:12:00Z"),
+        ("adopt-436", "4.3.5", "4.3.6", "2026-10-01T00:12:00Z"),
+    ] {
+        let before = fixture.store.query_run("run-a").unwrap();
+        let applied = fixture
+            .store
+            .adopt_method_contract(
+                &fixture.supervisor,
+                AdoptMethodContractRequest {
+                    receipt_id: receipt_id.into(),
+                    run_id: "run-a".into(),
+                    expected_snapshot: fixture.store.run_state_snapshot("run-a").unwrap(),
+                    from_version: from_version.into(),
+                    to_version: to_version.into(),
+                    owner_authorization: OwnerAuthorizationEvidence {
+                        source_thread_id: format!("owner-{receipt_id}"),
+                        message_id: format!("message-{receipt_id}"),
+                        content_sha256: "a".repeat(64),
+                        decision: OwnerDecision::ApproveMethodContractAdoption,
+                        occurred_at: occurred_at.into(),
+                    },
+                    reconciliation_receipt_id: None,
+                    compatibility: MethodCompatibilityAssertions {
+                        topology: PreservedAssertion::Preserved,
+                        role_bindings: PreservedAssertion::Preserved,
+                        token: PreservedAssertion::Preserved,
+                        engineering_history: PreservedAssertion::Preserved,
+                        overwatcher: OverwatcherAssertion::Absent,
+                    },
+                    reason: format!("adopt {to_version} without rewriting Run facts"),
+                    occurred_at: occurred_at.into(),
+                },
+            )
+            .unwrap();
+        let after = fixture.store.query_run("run-a").unwrap();
+        assert_eq!(applied.effective_version, to_version);
+        assert_eq!(after.summary.slk_version, to_version);
+        assert_eq!(after.events, before.events);
+        assert_eq!(after.token_history, before.token_history);
+        assert_eq!(after.go_nodes, before.go_nodes);
+    }
 }
 
 #[test]

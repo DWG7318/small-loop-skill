@@ -16,6 +16,7 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 
 - The real 4.3.4 six-field start shape first reproduced `WORKER_CONTINUATION_NOT_READY`; the focused fix and its ordinary plus optimized-mode checks now pass. A read-only check against the preserved production attempt also returned its exact original Session and `checker_token_already_committed=true` without authenticating, decrypting or activating a role.
 - Positive coverage proves the exact Checker-TOKEN recovery does not call Worker continuation. Negative variants reject a changed task hash, wrong Session, an extra start field, missing candidate event and Worker-owned TOKEN.
+- State regression coverage proves a real schema-v8 4.3.5 Run adopts to 4.3.6 without rewriting engineering history, while 4.3.4 must still adopt to 4.3.5 first. Both 4.3.5 and 4.3.6 reject a legacy start marker and accept only an exact `slk.native-start/v2` receipt for ordinary delivery.
 - Existing v2 continuation, missing-result recovery, independent OCRV start and Checker-authored D1 tests remain green.
 - Python suites: 420 passed and two optional modules skipped in ordinary mode; the same 420 passed under `python -O` with only pytest's expected optimized-assertion warning.
 - Rust core packages: 116 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
@@ -28,7 +29,7 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - `slk-bi-desktop.exe`: `7e19cc7951205d48bc41df5ecf97f43ff11ed4b3dbbce106ce99deb228cc5260`
 - `slk-bi-query.exe`: `f3bcf81165661948595449a8ba4f54e5b103d0fa926335e19b523a338144e8df`
 - `slk-cargo.exe`: `3de29dd7ca97e7768403a4d6bff7b09823cdc626cf81d865f28fb262a01b3dae`
-- `slk-state.exe`: `b44eb0c35e0e04321c5102ba05c9985664edf21da9fa7e479fd03eeec309cd37`
+- `slk-state.exe`: `c10675cc63785752f5dae8709813c79299a0944ec4db2d5572763c1dbe325fb1`
 - `slk-transport.pyz`: `c55f34abc70bfbf204fa1636178960d6e5a73d3a51f649e851958cf963efc9e4`
 
 ## Migration and deployment boundary

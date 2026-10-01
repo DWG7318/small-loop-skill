@@ -73,56 +73,58 @@ fn invalid_start_evidence_rolls_back_every_runtime_fact() {
 }
 
 #[test]
-fn slk_436_rejects_legacy_started_marker_and_accepts_exact_native_v2() {
-    let fixture = Fixture::new_423();
-    let connection = slk_state_core::schema::open_database(fixture.root.path()).unwrap();
-    connection
-        .execute(
-            "UPDATE runs SET slk_version='4.3.6' WHERE run_id='run-a'",
-            [],
+fn slk_435_and_436_reject_legacy_started_marker_and_accept_exact_native_v2() {
+    for method_version in ["4.3.5", "4.3.6"] {
+        let fixture = Fixture::new_423();
+        let connection = slk_state_core::schema::open_database(fixture.root.path()).unwrap();
+        connection
+            .execute(
+                "UPDATE runs SET slk_version=?1 WHERE run_id='run-a'",
+                [method_version],
+            )
+            .unwrap();
+        drop(connection);
+        let evidence_path = fixture.root.path().join("started.json");
+        fs::write(&evidence_path, br#"{"status":"started"}"#).unwrap();
+        let before_revision = fixture.runtime_revision();
+
+        assert!(matches!(
+            fixture.store.commit_delivery_start(
+                &fixture.supervisor,
+                start_request(&evidence_path, before_revision)
+            ),
+            Err(StateError::EvidenceInvalid(_))
+        ));
+        assert_eq!(fixture.runtime_revision(), before_revision);
+        assert_eq!(fixture.store.current_token("run-a").unwrap().sequence, 1);
+
+        fs::write(
+            &evidence_path,
+            serde_json::to_vec(&json!({
+                "schema_version": "slk.native-start/v2",
+                "status": "STARTED",
+                "adapter": "ocrv-checker",
+                "run_id": "run-a",
+                "cell_id": "CELL-001",
+                "message_id": "message-2",
+                "request_sha256": "b".repeat(64),
+                "native_request_sha256": "e".repeat(64),
+                "observed_at": "2026-09-22T00:00:02Z",
+                "process": {"pid": 4321, "creation_time": "win-filetime:12345"},
+                "native_task": {"kind": "ocrv-session", "id": "ocrv-task-1", "status": "RUNNING"}
+            }))
+            .unwrap(),
         )
         .unwrap();
-    drop(connection);
-    let evidence_path = fixture.root.path().join("started.json");
-    fs::write(&evidence_path, br#"{"status":"started"}"#).unwrap();
-    let before_revision = fixture.runtime_revision();
-
-    assert!(matches!(
-        fixture.store.commit_delivery_start(
-            &fixture.supervisor,
-            start_request(&evidence_path, before_revision)
-        ),
-        Err(StateError::EvidenceInvalid(_))
-    ));
-    assert_eq!(fixture.runtime_revision(), before_revision);
-    assert_eq!(fixture.store.current_token("run-a").unwrap().sequence, 1);
-
-    fs::write(
-        &evidence_path,
-        serde_json::to_vec(&json!({
-            "schema_version": "slk.native-start/v2",
-            "status": "STARTED",
-            "adapter": "ocrv-checker",
-            "run_id": "run-a",
-            "cell_id": "CELL-001",
-            "message_id": "message-2",
-            "request_sha256": "b".repeat(64),
-            "native_request_sha256": "e".repeat(64),
-            "observed_at": "2026-09-22T00:00:02Z",
-            "process": {"pid": 4321, "creation_time": "win-filetime:12345"},
-            "native_task": {"kind": "ocrv-session", "id": "ocrv-task-1", "status": "RUNNING"}
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    let result = fixture
-        .store
-        .commit_delivery_start(
-            &fixture.supervisor,
-            start_request(&evidence_path, before_revision),
-        )
-        .unwrap();
-    assert_eq!(result.token.sequence, 2);
+        let result = fixture
+            .store
+            .commit_delivery_start(
+                &fixture.supervisor,
+                start_request(&evidence_path, before_revision),
+            )
+            .unwrap();
+        assert_eq!(result.token.sequence, 2);
+    }
 }
 
 #[test]

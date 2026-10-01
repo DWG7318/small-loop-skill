@@ -4,6 +4,7 @@
 
 - Added one fail-closed compatibility reader for a completed SLK 4.3.4 DSH Worker attempt whose legacy flat start already led to the exact immutable candidate and TOKEN at its registered Checker. It re-hashes the preserved transport task and binds the original endpoint, envelope, Session, terminal result, Worker result, candidate and central handoff chain before OCRV recovery may continue.
 - Kept legacy start evidence invalid for normal delivery, native activity and Worker-owned continuation. The compatibility path never restarts Worker, replays construction, moves TOKEN, edits old evidence or treats the historical marker as current activity; absent or mismatched chain evidence remains `WORKER_CONTINUATION_NOT_READY`.
+- Preserved the complete 4.3.5 runtime contract and its strict native-start v2 gate, retained the declared `4.3.4 → 4.3.5` adoption, and added only the adjacent `4.3.5 → 4.3.6` transition; direct version skipping remains invalid.
 - Preserved schema v8, the three technical roles, optional Overwatcher/Temporal boundaries, D0/D1/D2 authority and product state. No new role, workflow, daemon, heartbeat, MCP, Docker dependency or product method was added.
 
 ## 4.3.5

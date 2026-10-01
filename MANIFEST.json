@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "16384cea41753da3f98d5043abc6195eb9772811767920187c1a904b773ef114"
+      "sha256": "67a6a2fb1d5c38a69b20c0192d678ff02a7177e9d5e31ad86a2803d499d45468"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "be7b04792a8c2d1cf922c86ba50a521a82617e3ef6d31e037a5a747c2e248f17"
+      "sha256": "c11819aeefddf84f6ef6f1683ad3415c7e660e5233e85fc92d7d704ed0f785dc"
     },
     {
       "path": "VERSION",
@@ -548,7 +548,7 @@
     },
     {
       "path": "crates/slk-state-core/src/write.rs",
-      "sha256": "4dd9c3dd1d9dd76887bf6f61a792f818312e3713ab805381602cdb5f1dec230d"
+      "sha256": "7e065ec02a1f7f28fa918c33d017886a2e301e110150247f2741bebc24316534"
     },
     {
       "path": "crates/slk-state-core/tests/auth.rs",
@@ -576,7 +576,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/overwatcher.rs",
-      "sha256": "fe3c876bbd987562c325f209c088ef1c9d7c91246f242bf08a89bfc23e7d613e"
+      "sha256": "47367655f21d85fbb5e93376985a90cc251683d994dfe22a78761f74a6e4a8e1"
     },
     {
       "path": "crates/slk-state-core/tests/query.rs",
@@ -588,7 +588,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/runtime_snapshot.rs",
-      "sha256": "7cda33c801a1fb1a372cb3189a37d3e625417c7bca0d01e2167eecd897c9de2d"
+      "sha256": "2f6c7a1ffec621db61a0ab9bf5753d39b30ce028a6649d655323eb70ac328219"
     },
     {
       "path": "crates/slk-state-core/tests/schema.rs",
