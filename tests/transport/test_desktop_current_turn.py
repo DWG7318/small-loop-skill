@@ -66,6 +66,50 @@ def unresolved_delivery(
     return endpoint, envelope, attempts, original
 
 
+def rpc_timeout_delivery(
+    tmp_path: Path, mode: str, *, legacy_full_read: bool = False
+) -> tuple[dict[str, object], dict[str, object], Path, Path]:
+    endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["command"] = [sys.executable, str(FAKE_SERVER), mode]
+    endpoint["address"]["startup_timeout_seconds"] = 0.3
+    attempts = tmp_path / "attempts"
+    result = dispatch_once(
+        endpoint,
+        envelope,
+        attempts,
+        adapters={"codex-app-server": CodexAdapter()},
+    )
+    assert result.error_code == "CODEX_RPC_TIMEOUT"
+    retry = retry_exact(
+        attempts,
+        endpoint,
+        envelope,
+        adapters={"codex-app-server": CodexAdapter()},
+    )
+    assert retry["status"] == "SUPERVISOR_DECISION_REQUIRED"
+    assert retry["reason"] == "EXACT_RETRY_EXHAUSTED"
+    assert retry["result"]["error_code"] == "CODEX_RPC_TIMEOUT"
+    original = attempts / str(envelope["run_id"]) / str(envelope["message_id"])
+    if legacy_full_read:
+        roots = [
+            original,
+            original
+            / "recovery"
+            / "exact-1"
+            / str(envelope["run_id"])
+            / str(envelope["message_id"]),
+        ]
+        for root in roots:
+            transcript = root / "native.stdout.txt"
+            text = transcript.read_text(encoding="utf-8")
+            assert '"includeTurns":false' in text
+            transcript.write_text(
+                text.replace('"includeTurns":false', '"includeTurns":true'),
+                encoding="utf-8",
+            )
+    return endpoint, envelope, attempts, original
+
+
 def host_receipt(request: dict[str, object]) -> dict[str, object]:
     turn_id = "turn-desktop-active"
     return {
@@ -152,6 +196,34 @@ def test_desktop_bridge_requires_the_exhausted_exact_retry(tmp_path: Path) -> No
     )
 
     with pytest.raises(ContractError, match="exact retry"):
+        prepare_desktop_current_turn(attempts, endpoint, envelope)
+
+    assert not (original / "recovery" / "desktop-current-turn").exists()
+
+
+@pytest.mark.parametrize("legacy_full_read", [False, True])
+def test_desktop_bridge_accepts_only_exact_metadata_read_timeout(
+    tmp_path: Path, legacy_full_read: bool
+) -> None:
+    endpoint, envelope, attempts, original = rpc_timeout_delivery(
+        tmp_path, "metadata-rpc-timeout", legacy_full_read=legacy_full_read
+    )
+    failed_before = (original / "failed.json").read_bytes()
+
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+
+    assert request["status"] == "PREPARED"
+    assert request["target_thread_id"] == endpoint["address"]["thread_id"]
+    assert (original / "failed.json").read_bytes() == failed_before
+
+
+@pytest.mark.parametrize("mode", ["initialize-rpc-timeout", "turn-start-rpc-timeout"])
+def test_desktop_bridge_rejects_rpc_timeout_outside_metadata_read(
+    tmp_path: Path, mode: str
+) -> None:
+    endpoint, envelope, attempts, original = rpc_timeout_delivery(tmp_path, mode)
+
+    with pytest.raises(ContractError, match="metadata"):
         prepare_desktop_current_turn(attempts, endpoint, envelope)
 
     assert not (original / "recovery" / "desktop-current-turn").exists()

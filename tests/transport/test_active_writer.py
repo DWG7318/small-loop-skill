@@ -164,6 +164,38 @@ def test_paginated_active_turn_is_resolved_and_recovered_once(tmp_path: Path) ->
         recover_active_writer(attempts, endpoint, envelope)
 
 
+def test_long_history_active_writer_recovery_uses_metadata_and_summary(
+    tmp_path: Path,
+) -> None:
+    endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["command"] = [
+        sys.executable,
+        str(FAKE_SERVER),
+        "long-history-active",
+    ]
+    attempts = tmp_path / "attempts"
+
+    result = dispatch_once(
+        endpoint, envelope, attempts, adapters={"codex-app-server": CodexAdapter()}
+    )
+    assert result.error_code == "CODEX_ACTIVE_WRITER"
+
+    recovered = recover_active_writer(attempts, endpoint, envelope)
+
+    assert recovered["expected_turn_id"] == "turn_active"
+    transcript = (
+        attempts
+        / str(envelope["run_id"])
+        / str(envelope["message_id"])
+        / "recovery"
+        / "active-writer"
+        / "native.stdout.txt"
+    ).read_text(encoding="utf-8")
+    assert '"includeTurns":false' in transcript
+    assert '"method":"thread/turns/list"' in transcript
+    assert '"method":"thread/resume"' not in transcript
+
+
 @pytest.mark.parametrize("mode", ["active-paginated", "active-paginated-omitted"])
 def test_active_turn_pages_are_authoritative_when_embedded_turns_are_empty_or_omitted(
     tmp_path: Path, mode: str

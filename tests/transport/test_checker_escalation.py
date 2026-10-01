@@ -296,6 +296,65 @@ def test_prepare_binds_failure_and_stops_at_desktop_bridge(tmp_path: Path) -> No
     assert all(credential is None for _, _, credential in calls[1:])
 
 
+def test_prepare_routes_matching_metadata_timeouts_to_desktop_validation(
+    tmp_path: Path,
+) -> None:
+    module = load_module()
+    request, request_path = fixture(tmp_path)
+    calls: list[str] = []
+
+    def run(_command: list[str], arguments: list[str], *, credential: str | None):
+        operation = arguments[0]
+        calls.append(operation)
+        if operation == "authenticate-role":
+            return {
+                "status": "authenticated",
+                "run_id": RUN_ID,
+                "role": "checker",
+                "role_instance_id": CHECKER_ID,
+                "runtime_revision": 25,
+            }
+        if operation == "send":
+            return {"status": "failed", "error_code": "CODEX_RPC_TIMEOUT"}
+        if operation == "retry-exact":
+            return {
+                "status": "SUPERVISOR_DECISION_REQUIRED",
+                "reason": "EXACT_RETRY_EXHAUSTED",
+                "result": {"error_code": "CODEX_RPC_TIMEOUT"},
+            }
+        assert operation == "prepare-desktop-current-turn"
+        return {
+            "schema_version": "slk.transport-desktop-current-turn-request/v1",
+            "status": "PREPARED",
+            "run_id": RUN_ID,
+            "go_id": GO_ID,
+            "cell_id": CELL_ID,
+            "original_message_id": module.escalation_message_id(request),
+            "recovery_message_id": "desktop-recovery-timeout",
+            "target_thread_id": "thread-supervisor",
+            "payload_type": "D1_FAILURE_ESCALATION",
+            "payload_sha256": module.escalation_payload_sha256(request),
+            "prompt": "exact desktop bridge prompt",
+            "prompt_sha256": "c" * 64,
+        }
+
+    result = module.execute_checker_escalation(
+        request,
+        request_sha256=request_digest(request_path),
+        request_path=request_path,
+        run_json_command=run,
+        unprotect_credential=lambda _path: "slk_" + "d" * 64,
+    )
+
+    assert result["status"] == "DESKTOP_BRIDGE_REQUIRED"
+    assert calls == [
+        "authenticate-role",
+        "send",
+        "retry-exact",
+        "prepare-desktop-current-turn",
+    ]
+
+
 def test_complete_commits_only_the_proven_desktop_start(tmp_path: Path) -> None:
     module = load_module()
     request, request_path = fixture(tmp_path)
@@ -459,6 +518,42 @@ def test_later_overwatcher_resume_keeps_the_same_current_d1_failure_eligible(
     prepared = module.materialize_escalation(request)
 
     assert prepared["envelope"]["payload"]["d1_failure_event_id"] == FAILURE_EVENT_ID
+
+
+def test_fresh_runtime_request_reuses_the_same_escalation_identity_and_bytes(
+    tmp_path: Path,
+) -> None:
+    module = load_module()
+    request, _request_path = fixture(tmp_path)
+    first = module.materialize_escalation(request)
+    first_endpoint = Path(first["endpoint_path"]).read_bytes()
+    first_envelope = Path(first["envelope_path"]).read_bytes()
+
+    projection_path = Path(str(request["runtime_projection_path"]))
+    projection = json.loads(projection_path.read_text(encoding="utf-8"))
+    projection["events"].append(
+        {
+            "event_id": "overwatcher-turn-resumed-current",
+            "event_type": "OVERWATCHER_TURN_RESUMED",
+            "author_role_instance_id": SUPERVISOR_ID,
+            "details_json": "{}",
+        }
+    )
+    projection["runtime_snapshot"]["runtime_revision"] = 26
+    projection["runtime_snapshot"]["latest_event_id"] = "overwatcher-turn-resumed-current"
+    refreshed_projection = write_json(tmp_path / "runtime-current.json", projection)
+    refreshed = dict(request)
+    refreshed["runtime_revision"] = 26
+    refreshed["runtime_projection_path"] = str(refreshed_projection.resolve())
+    refreshed["occurred_at"] = "2026-10-01T02:00:00Z"
+
+    second = module.materialize_escalation(refreshed)
+
+    assert second["envelope"]["message_id"] == first["envelope"]["message_id"]
+    assert second["envelope"]["payload_sha256"] == first["envelope"]["payload_sha256"]
+    assert second["delivery_path"] == first["delivery_path"]
+    assert Path(second["endpoint_path"]).read_bytes() == first_endpoint
+    assert Path(second["envelope_path"]).read_bytes() == first_envelope
 
 
 @pytest.mark.parametrize("later_type", ["D1_PASSED", "D1_INCOMPLETE"])

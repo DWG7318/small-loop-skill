@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "032171d4c71b74a51b34722f0ee41b5aad4ebcac37f43a12d014c841d7a90450"
+      "sha256": "98e7300bedb6c5c00060112b4ee0e9be2dd73585dfe5f31bf7378002b8ebddff"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "92e19fd0d15d2c9b4d579a9a5e4212723eecfffe97456396df1c9af11936dee0"
+      "sha256": "bfc1290fc4b111410c95976bb39a62b1eaf3b50cffed27a4e599ac9798dff589"
     },
     {
       "path": "VERSION",
@@ -908,7 +908,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "02e71ae3017a0589a688f11a6168abff378ba49b34a8d6dadbda1fa810a232d0"
+      "sha256": "6bc53e270e71ac2aee3c8bd55b6bcba476a88f3aff870b23f84208ccd6d6dd93"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1028,7 +1028,7 @@
     },
     {
       "path": "scripts/run_425_sandbox_drill.py",
-      "sha256": "6ea241187e6c99d70ae7491501a10e100c77c6fef7f90f096d463d57e4e89c17"
+      "sha256": "29802cb8cfdc6e419cab31f8312396933c9e9527d7b8b8479f68b782d357fc3a"
     },
     {
       "path": "scripts/run_transport_drill.py",
@@ -1136,7 +1136,7 @@
     },
     {
       "path": "src/slk_transport/active_writer.py",
-      "sha256": "1a7a92a18b31244bdb01925f4ae24c62df2c5bce7a2a507b2a05ebd9d0590f8f"
+      "sha256": "9494a84746553cc4ab7f69c91d087642937d8417b9fab3b545c39e3b2c6a536d"
     },
     {
       "path": "src/slk_transport/adapters/__init__.py",
@@ -1148,7 +1148,7 @@
     },
     {
       "path": "src/slk_transport/adapters/codex.py",
-      "sha256": "506e39a68af17c40be856ec67e7d5af9ed5f946ea6e837a722646312f0c08b74"
+      "sha256": "aa1305ba595c3d4aa87c8f819c065433b391f03455dd3e08d96333f3fd0aec5f"
     },
     {
       "path": "src/slk_transport/adapters/dsh.py",
@@ -1160,7 +1160,7 @@
     },
     {
       "path": "src/slk_transport/checker_escalation.py",
-      "sha256": "ba0252e7c17d5d94d26c88c9c396704b36b0a97fd70195bf4a72dec4a5be05d0"
+      "sha256": "e1c138267200e031e4bf578fc8482fe42b3916b7f5c6ed780726217d9f370ea5"
     },
     {
       "path": "src/slk_transport/cli.py",
@@ -1172,7 +1172,7 @@
     },
     {
       "path": "src/slk_transport/desktop_current_turn.py",
-      "sha256": "092befd1a8a71f74b5b501536383ff82cfc76ee19b626d9898a8291681a4eced"
+      "sha256": "fcb2c31b5faf7c71bf469b2ad239792726c2005a30a0db4df6ef60a6f304c7b3"
     },
     {
       "path": "src/slk_transport/dispatcher.py",
@@ -1316,7 +1316,7 @@
     },
     {
       "path": "tests/transport/fake_app_server.py",
-      "sha256": "a60f8b2006b575d735fff1be06b29cc8c69c61741241ad9c0f9210ef90441f06"
+      "sha256": "8288608ac9c9ad104c4b1ce5f4f4c89b7f7be0c0aa5e75cad10e88d14a69c7ca"
     },
     {
       "path": "tests/transport/fake_checker_recovery_transport.py",
@@ -1336,11 +1336,11 @@
     },
     {
       "path": "tests/transport/test_active_writer.py",
-      "sha256": "ca65be175b34eed252b9c0dd167fc19edad7fbce104419b9e7c305111c44a292"
+      "sha256": "7387637000b503e146ad8b1e792a3fb2bce5b26cf71b9cc3118ba10772ad1b06"
     },
     {
       "path": "tests/transport/test_checker_escalation.py",
-      "sha256": "4c00b889673d263344566583f6ce95368d88de0f57564e24bf0241d87615a890"
+      "sha256": "e5b9ec2b2adf3f348353573e97ce782b2e0006c4b1d7bcc22f359ee97a62c73c"
     },
     {
       "path": "tests/transport/test_cli.py",
@@ -1348,7 +1348,7 @@
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
-      "sha256": "427ee9b342db2a4991d1e051e2e32b9018921aaead0b235efbf4d0056257cdbd"
+      "sha256": "c68eceb69169a89fc5efbd1164ec0ecf7ec836dd471f11bfe1215bc766d12cb7"
     },
     {
       "path": "tests/transport/test_contracts.py",
@@ -1356,7 +1356,7 @@
     },
     {
       "path": "tests/transport/test_desktop_current_turn.py",
-      "sha256": "05384e69edaea8531ce5c7ce7fb210903f7afac0e8aa62515683e5c02776bbf4"
+      "sha256": "075e48ffec38587642c081582cf6f608820c78c2526f07ff60581a94eb465dc7"
     },
     {
       "path": "tests/transport/test_dispatcher.py",

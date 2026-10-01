@@ -20,6 +20,8 @@ for line in sys.stdin:
     method = message.get("method")
     request_id = message.get("id")
     if method == "initialize":
+        if MODE == "initialize-rpc-timeout":
+            continue
         if MODE in {"initialize-writer-conflict", "initialize-writer-flood-conflict"}:
             if MODE == "initialize-writer-flood-conflict":
                 emit({"method": "diagnostic", "params": {"blob": "x" * (2 * 1024 * 1024)}})
@@ -56,6 +58,8 @@ for line in sys.stdin:
             thread_id = "thr_wrong"
         emit({"id": request_id, "result": {"thread": {"id": thread_id}}})
     elif method == "thread/read":
+        if MODE == "metadata-rpc-timeout":
+            continue
         if MODE in {
             "active",
             "active-resume-conflict",
@@ -63,8 +67,13 @@ for line in sys.stdin:
             "active-paginated-omitted",
             "active-paginated-missing",
             "active-paginated-multiple",
+            "long-history-active",
         }:
-            status = {"type": "active", "activeFlags": []}
+            status = (
+                {"type": "notLoaded"}
+                if MODE == "long-history-active"
+                else {"type": "active", "activeFlags": []}
+            )
             turns = [] if MODE.startswith("active-paginated") else [
                 {"id": "turn_active", "items": [], "status": "inProgress"}
             ]
@@ -84,12 +93,27 @@ for line in sys.stdin:
             turns = []
         read_thread_id = "thr_wrong" if MODE == "wrong-thread" else message["params"]["threadId"]
         thread = {"id": read_thread_id, "status": status, "turns": turns}
-        if MODE == "active-paginated-omitted":
+        if MODE == "active-paginated-omitted" or message["params"].get("includeTurns") is False:
             thread.pop("turns")
         emit({"id": request_id, "result": {"thread": thread}})
     elif method == "thread/turns/list":
         cursor = message["params"].get("cursor")
-        if MODE in {"active-paginated", "active-paginated-omitted", "active-paginated-multiple"} and cursor is None:
+        if MODE in {
+            "active",
+            "active-resume-conflict",
+            "resume-already-active-writer",
+            "long-history-active",
+        } and cursor is None:
+            emit(
+                {
+                    "id": request_id,
+                    "result": {
+                        "data": [{"id": "turn_active", "items": [], "status": "inProgress"}],
+                        "nextCursor": None,
+                    },
+                }
+            )
+        elif MODE in {"active-paginated", "active-paginated-omitted", "active-paginated-multiple"} and cursor is None:
             emit(
                 {
                     "id": request_id,
@@ -125,6 +149,8 @@ for line in sys.stdin:
         else:
             emit({"id": request_id, "result": {"data": [], "nextCursor": None}})
     elif method == "turn/start":
+        if MODE == "turn-start-rpc-timeout":
+            continue
         thread_id = message["params"]["threadId"]
         turn = {"id": "turn_exact", "items": [], "status": "inProgress"}
         emit({"id": request_id, "result": {"turn": turn}})

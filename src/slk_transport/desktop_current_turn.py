@@ -109,6 +109,81 @@ def _text(value: Any, label: str) -> str:
     return value
 
 
+def _metadata_read_timeout(
+    attempt: Path,
+    failed: Mapping[str, Any],
+    endpoint: Mapping[str, Any],
+    envelope: Mapping[str, Any],
+) -> bool:
+    if (
+        failed.get("status") != "failed"
+        or failed.get("adapter") != "codex-app-server"
+        or failed.get("run_id") != envelope.get("run_id")
+        or failed.get("message_id") != envelope.get("message_id")
+        or failed.get("error_code") != "CODEX_RPC_TIMEOUT"
+    ):
+        return False
+    transcript = attempt / "native.stdout.txt"
+    try:
+        data = transcript.read_bytes()
+        if len(data) > 262_144:
+            return False
+        lines = data.decode("utf-8").splitlines()
+        client = [json.loads(line[2:]) for line in lines if line.startswith("C ")]
+        server = [json.loads(line[2:]) for line in lines if line.startswith("S ")]
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if len(client) != 3 or not all(isinstance(item, Mapping) for item in client + server):
+        return False
+    initialize, initialized, read = client
+    initialize_id = initialize.get("id")
+    read_id = read.get("id")
+    if (
+        not isinstance(initialize_id, int)
+        or isinstance(initialize_id, bool)
+        or not isinstance(read_id, int)
+        or isinstance(read_id, bool)
+        or read_id == initialize_id
+        or initialize.get("method") != "initialize"
+        or not isinstance(initialize.get("params"), Mapping)
+        or initialized != {"method": "initialized", "params": {}}
+        or read.get("method") != "thread/read"
+        or read.get("params")
+        not in (
+            {"threadId": endpoint["address"]["thread_id"], "includeTurns": False},
+            {"threadId": endpoint["address"]["thread_id"], "includeTurns": True},
+        )
+    ):
+        return False
+    initialize_responses = [item for item in server if item.get("id") == initialize_id]
+    read_responses = [item for item in server if item.get("id") == read_id]
+    return (
+        len(initialize_responses) == 1
+        and isinstance(initialize_responses[0].get("result"), Mapping)
+        and "error" not in initialize_responses[0]
+        and not read_responses
+    )
+
+
+def _desktop_bridge_failure(
+    attempt: Path,
+    failed: Mapping[str, Any],
+    endpoint: Mapping[str, Any],
+    envelope: Mapping[str, Any],
+) -> str | None:
+    if (
+        failed.get("status") == "failed"
+        and failed.get("adapter") == "codex-app-server"
+        and failed.get("run_id") == envelope.get("run_id")
+        and failed.get("message_id") == envelope.get("message_id")
+        and failed.get("error_code") == "CODEX_ACTIVE_WRITER_UNRESOLVED"
+    ):
+        return "CODEX_ACTIVE_WRITER_UNRESOLVED"
+    if _metadata_read_timeout(attempt, failed, endpoint, envelope):
+        return "CODEX_RPC_TIMEOUT"
+    return None
+
+
 def _original(
     attempt_root: Path | str,
     endpoint_raw: Mapping[str, Any],
@@ -133,9 +208,12 @@ def _original(
     if persisted_endpoint != asdict(endpoint) or persisted_envelope != asdict(envelope):
         raise ContractError("desktop-current-turn recovery changed the original delivery identity")
     failed = _object(failed_path, "failed result")
-    if failed.get("error_code") != "CODEX_ACTIVE_WRITER_UNRESOLVED":
+    failure_kind = _desktop_bridge_failure(
+        original, failed, persisted_endpoint, persisted_envelope
+    )
+    if failure_kind is None:
         raise ContractError(
-            "desktop-current-turn recovery requires an unresolved Desktop writer failure"
+            "desktop-current-turn recovery requires an unresolved writer or exact metadata-read timeout"
         )
     if (original / "started.json").exists() or (original / "active-writer.json").exists():
         raise ContractError("desktop-current-turn recovery requires no prior native start proof")
@@ -152,11 +230,16 @@ def _original(
         raise ContractError(
             "desktop-current-turn recovery requires one exhausted exact retry"
         )
+    retry_endpoint = _object(retry_endpoint_path, "exact retry endpoint")
+    retry_envelope = _object(retry_envelope_path, "exact retry envelope")
+    retry_failed = _object(retry_failed_path, "exact retry failure")
     if (
-        _object(retry_endpoint_path, "exact retry endpoint") != asdict(endpoint)
-        or _object(retry_envelope_path, "exact retry envelope") != asdict(envelope)
-        or _object(retry_failed_path, "exact retry failure").get("error_code")
-        != "CODEX_ACTIVE_WRITER_UNRESOLVED"
+        retry_endpoint != asdict(endpoint)
+        or retry_envelope != asdict(envelope)
+        or _desktop_bridge_failure(
+            exact_retry, retry_failed, retry_endpoint, retry_envelope
+        )
+        != failure_kind
     ):
         raise ContractError(
             "desktop-current-turn exact retry does not match the unresolved delivery"

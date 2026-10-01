@@ -69,6 +69,12 @@ def test_codex_reads_exact_idle_thread_then_starts_turn(tmp_path: Path) -> None:
         "thread/read",
         "turn/start",
     ]
+    thread_read = next(
+        json.loads(line[2:])
+        for line in transcript
+        if line.startswith("C ") and json.loads(line[2:]).get("method") == "thread/read"
+    )
+    assert thread_read["params"] == {"threadId": "thr_exact", "includeTurns": False}
     started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
     assert started["schema_version"] == "slk.native-start/v2"
     assert started["native_task"] == {
@@ -102,15 +108,38 @@ def test_codex_fails_closed_on_unproved_or_wrong_activation(
     assert error.value.error_code == error_code
 
 
-def test_codex_not_loaded_supervisor_is_started_directly(tmp_path: Path) -> None:
+def test_codex_not_loaded_is_not_resumed_or_started_without_current_turn_proof(
+    tmp_path: Path,
+) -> None:
     endpoint = codex_endpoint(tmp_path, "not-loaded")
     envelope = supervisor_envelope()
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
 
-    result = CodexAdapter().deliver(endpoint, envelope, attempt)
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "completed"
-    assert result.native_identity["turn_id"] == "turn_exact"
+    assert error.value.error_code == "CODEX_ACTIVE_WRITER_UNRESOLVED"
+    transcript = (attempt.root / "native.stdout.txt").read_text(encoding="utf-8")
+    assert '"method":"thread/resume"' not in transcript
+    assert '"method":"turn/start"' not in transcript
+
+
+def test_long_history_uses_metadata_and_bounded_turn_summary_without_resume(
+    tmp_path: Path,
+) -> None:
+    endpoint = codex_endpoint(tmp_path, "long-history-active")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    with pytest.raises(AdapterError, match="turn_active") as error:
+        CodexAdapter().deliver(endpoint, envelope, attempt)
+
+    assert error.value.error_code == "CODEX_ACTIVE_WRITER"
+    transcript = (attempt.root / "native.stdout.txt").read_text(encoding="utf-8")
+    assert '"includeTurns":false' in transcript
+    assert '"method":"thread/turns/list"' in transcript
+    assert '"method":"thread/resume"' not in transcript
+    assert '"method":"turn/start"' not in transcript
 
 
 def test_active_writer_records_exact_turn_without_starting_or_waiting(tmp_path: Path) -> None:

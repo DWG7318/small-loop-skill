@@ -109,7 +109,7 @@ def recover_active_writer(
         read = client.request(
             2,
             "thread/read",
-            {"threadId": thread_id, "includeTurns": True},
+            {"threadId": thread_id, "includeTurns": False},
             startup_timeout,
         )
         thread = read.get("thread")

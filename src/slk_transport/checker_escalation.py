@@ -471,7 +471,11 @@ def _prepare(
         ["send", *common],
         credential=None,
     )
-    if sent.get("status") != "failed" or sent.get("error_code") != "CODEX_ACTIVE_WRITER_UNRESOLVED":
+    failure_kind = sent.get("error_code")
+    if sent.get("status") != "failed" or failure_kind not in {
+        "CODEX_ACTIVE_WRITER_UNRESOLVED",
+        "CODEX_RPC_TIMEOUT",
+    }:
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_DELIVERY_INVALID",
             "current correction requires the preserved unresolved Desktop writer result",
@@ -486,7 +490,7 @@ def _prepare(
         retried.get("status") != "SUPERVISOR_DECISION_REQUIRED"
         or retried.get("reason") != "EXACT_RETRY_EXHAUSTED"
         or not isinstance(retry_result, Mapping)
-        or retry_result.get("error_code") != "CODEX_ACTIVE_WRITER_UNRESOLVED"
+        or retry_result.get("error_code") != failure_kind
     ):
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_DELIVERY_INVALID", "exact Desktop writer retry is not exhausted"

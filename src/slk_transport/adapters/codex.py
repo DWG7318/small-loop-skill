@@ -140,12 +140,6 @@ def _active_writer_error(
     )
 
 
-def _is_already_active_writer(error: AdapterError) -> bool:
-    return error.error_code == "CODEX_RPC_ERROR" and "already has an active writer" in str(
-        error
-    ).lower()
-
-
 def _is_initialize_writer_conflict(error: AdapterError, client: JsonRpcProcess) -> bool:
     evidence = f"{error}\n" + "\n".join(client.stderr_lines)
     lowered = evidence.lower()
@@ -293,7 +287,7 @@ class CodexAdapter:
                 result = client.request(
                     request_id,
                     "thread/read",
-                    {"threadId": thread_id, "includeTurns": True},
+                    {"threadId": thread_id, "includeTurns": False},
                     startup_timeout,
                 )
                 request_id += 1
@@ -322,42 +316,14 @@ class CodexAdapter:
                 raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex read a different thread")
             status = thread.get("status")
             status_type = status.get("type") if isinstance(status, Mapping) else None
-            if status_type == "active":
+            if status_type in {"active", "notLoaded"}:
                 raise _active_writer_error(
                     attempt, envelope, thread_id, thread, list_turns=list_turns
                 )
-            if status_type not in {"idle", "notLoaded"}:
+            if status_type != "idle":
                 raise AdapterError(
                     "CODEX_THREAD_TERMINAL", f"Codex target thread has terminal state {status_type}"
                 )
-            if status_type == "notLoaded":
-                request_id += 1
-                try:
-                    resumed = client.request(
-                        request_id - 1,
-                        "thread/resume",
-                        {"threadId": thread_id, "cwd": str(cwd)},
-                        startup_timeout,
-                    )
-                except AdapterError as error:
-                    if not _is_already_active_writer(error):
-                        raise
-                    reread = read_thread()
-                    active_thread = reread.get("thread")
-                    if not isinstance(active_thread, Mapping) or active_thread.get("id") != thread_id:
-                        raise AdapterError(
-                            "CODEX_THREAD_ID_MISMATCH", "Codex read a different thread after resume conflict"
-                        ) from error
-                    raise _active_writer_error(
-                        attempt,
-                        envelope,
-                        thread_id,
-                        active_thread,
-                        list_turns=list_turns,
-                    ) from error
-                resumed_thread = resumed.get("thread")
-                if not isinstance(resumed_thread, Mapping) or resumed_thread.get("id") != thread_id:
-                    raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Codex resumed a different thread")
 
             notification_start = len(client.messages)
             started_response = client.request(

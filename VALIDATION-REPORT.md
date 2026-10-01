@@ -14,6 +14,8 @@ The candidate also closes the post-D1 FAIL suffix: the authenticated OCRV Checke
 
 The final 4.3.6 transport correction closes one observed Worker-to-Checker state-version gap without changing the runtime schema or Rust interface. Worker now re-authenticates after its three engineering events and stages the resulting revision. One commit-only command can repair a preserved older staged handoff by retaining its candidate/message/native-start identity and replacing only the stale expected revision; a separate standard command re-enters the original sealed OCRV Checker host to consume the already completed terminal through the existing D1 recorder, without restarting Worker, sending another delivery or starting another review.
 
+The bounded post-D1 transport correction treats Codex metadata as metadata: ordinary reads use `includeTurns:false` plus the bounded current-turn summary, and neither `notLoaded` nor a missing summary authorizes resume/start. An exact original and exact retry may use the existing Desktop current-turn bridge after `CODEX_RPC_TIMEOUT` only when both transcripts prove initialization succeeded, the final unanswered request was the exact target-thread metadata read, and no resume/start request occurred. Initialization, turn-start, unrelated, malformed or mismatched timeouts fail closed.
+
 Normal delivery and native-activity inspection still require `slk.native-start/v2`; the flat marker never becomes current activity proof. Supervisor, Checker, Worker, optional whole-Run Overwatcher, serial CELL/D0/D1/D2 topology, direct communication, BI authority and optional Temporal templates are unchanged. No AX, Orca, wmux, BoM, new role, workflow, daemon, heartbeat, MCP, scheduler, Docker dependency or product method was added.
 
 ## Verification evidence
@@ -26,8 +28,9 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - Existing v2 continuation, missing-result recovery, independent OCRV start and Checker-authored D1 tests remain green. New adversarial coverage rejects wrong terminal/task/start/raw hashes, repository/commit/parent/path drift, runtime/TOKEN drift, a second supplement, malformed or extra result fields and any engineering fact before complete validation; the preparation command remains state/session read-only.
 - A real isolated temporary `slk-state` Run proves the three Worker events advance the actual central revision before staging. Its existing native-start v2 handoff commits once with that resulting revision; an additional post-stage state write makes the stale commit fail closed. Commit-only coverage preserves the failed request byte-for-byte, accepts only a new original-Worker authentication, changes only `expected_runtime_revision`, reuses the same receipt/candidate/start identities and produces a separately hashed result. The original Checker entry consumes that result and existing OCRV terminal without calling Worker continuation or OCRV activation.
 - Post-D1 adversarial coverage rejects stale runtime/TOKEN identity, wrong failure/candidate/attempt, missing Supervisor start, unsafe invocation paths, later same-scope PASS/INCOMPLETE and wrong role/model class; a legal later Overwatcher resume does not erase the current D1 FAIL.
+- Metadata-timeout adversarial coverage accepts only the exact initialized target-thread read with `includeTurns:false` or the preserved historical `includeTurns:true` transcript, requires the original and retry to bind identical endpoint/envelope/message bytes, and rejects initialize timeout, turn-start timeout, a wrong thread, any extra client request and any read response. A read-only validation of the preserved production attempt returned `ELIGIBLE_READ_ONLY` without writing recovery evidence or touching the live Run.
 - A real Windows Node 24 reproduction proved that `fsyncSync` on the read-only temporary-file handle returns `EPERM` and leaves only `.tmp`; the writable-handle correction publishes the final activity atomically without a model call. The DSH instruction regression also proves that task path/hash and the fail-closed reading rules occupy one physical command line.
-- Python suites: 476 passed and two optional modules skipped in ordinary mode; the same 476 passed under `python -O` with only pytest's expected optimized-assertion warning.
+- Python suites: 484 passed and two optional modules skipped in ordinary mode; the same 484 passed under `python -O` with only pytest's expected optimized-assertion warning.
 - Rust workspace: 123 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
 - LE BI: 24 tests passed; TypeScript typecheck, production UI build and isolated headless Tauri release build passed.
 - Role Eval: 75 closed cases, PASS; case-pack SHA-256 `d0625e7561992424e328b4679d39ab481ef4d7feffb84430b4dbe0046ad869b8`.
@@ -39,7 +42,7 @@ Normal delivery and native-activity inspection still require `slk.native-start/v
 - `slk-bi-query.exe`: `c0fd35a5c9673088b86e224e9426891d99f639fa68fd10bcc241313ff345dbed`
 - `slk-cargo.exe`: `5d43a748adc97efc181046ee50bcd29d69f1ef2a0ea41993ca360a687f219b04`
 - `slk-state.exe`: `1b3fa6fbeae040907f28994ad00f1f09f54c77362879b789a884125c71fd8fc7`
-- `slk-transport.pyz`: `9828018138ab21b2d60f56103b2cd65df6b6e4fbbb0d7da1a9a2b4c2a6554765`
+- `slk-transport.pyz`: `ff6dca184fd41e1c81f8d6b1f37d802099f73383bfdee7d72fb4da1e96238ba1`
 
 ## Migration and deployment boundary
 
