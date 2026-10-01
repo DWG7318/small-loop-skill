@@ -1349,9 +1349,30 @@ def test_false_legacy_start_with_token_at_checker_recovers_same_candidate_withou
     assert (original_attempt / "started.json").read_bytes() == legacy_bytes
 
 
-def test_native_ocrv_result_is_recorded_by_authenticated_checker_without_supervisor_forgery(
+@pytest.mark.parametrize(
+    (
+        "verdict",
+        "review_exit_code",
+        "terminal_exit_code",
+        "terminal_session_id",
+        "expected_event_type",
+    ),
+    [
+        ("PASS", 0, 0, "ocrv-session-1", "D1_PASSED"),
+        ("FAIL", 0, 2, "ocrv-session-1", "D1_FAILED"),
+        ("INCOMPLETE", 7, 3, "ocrv-session-1", "D1_INCOMPLETE"),
+        ("FAIL", 0, 0, "ocrv-session-1", None),
+        ("FAIL", 0, 2, "forged-session", None),
+    ],
+)
+def test_native_ocrv_result_is_recorded_only_with_bound_terminal_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    verdict: str,
+    review_exit_code: int,
+    terminal_exit_code: int,
+    terminal_session_id: str,
+    expected_event_type: str | None,
 ) -> None:
     native_attempt = tmp_path / "native-attempt"
     write_json(
@@ -1376,15 +1397,21 @@ def test_native_ocrv_result_is_recorded_by_authenticated_checker_without_supervi
             "run_id": "RUN-A",
             "cell_id": "CELL-001",
             "review_invocation_id": "review-1",
-            "verdict": "PASS",
-            "reason_codes": ["OCR_COMPLETE_ZERO_FINDINGS"],
+            "verdict": verdict,
+            "reason_codes": [
+                {
+                    "PASS": "OCR_COMPLETE_ZERO_FINDINGS",
+                    "FAIL": "OCR_FINDINGS_PRESENT",
+                    "INCOMPLETE": "OCRV_REVIEW_INCOMPLETE",
+                }[verdict]
+            ],
             "findings": [],
             "review": {
                 "status": "complete",
                 "provider": "dashscope-tokenplan",
                 "model": "qwen3.8-max",
                 "session_id": "ocrv-session-1",
-                "exit_code": 0,
+                "exit_code": review_exit_code,
             },
             "evidence": [],
             "request_sha256": "b" * 64,
@@ -1403,11 +1430,11 @@ def test_native_ocrv_result_is_recorded_by_authenticated_checker_without_supervi
                 "run_id": "RUN-A",
                 "cell_id": "CELL-001",
                 "review_invocation_id": "review-1",
-                "session_id": "ocrv-session-1",
+                "session_id": terminal_session_id,
                 "provider": "dashscope-tokenplan",
                 "model": "qwen3.8-max",
-                "verdict": "PASS",
-                "exit_code": 0,
+                "verdict": verdict,
+                "exit_code": terminal_exit_code,
                 "review_segment_count": 0,
             },
             "error_code": None,
@@ -1442,20 +1469,30 @@ def test_native_ocrv_result_is_recorded_by_authenticated_checker_without_supervi
         "native_attempt_path": str(native_attempt),
     }
 
-    result = worker_completion._record_checker_d1(
-        activation,
-        continuation,
-        checker_credential_path=tmp_path / "checker.dpapi",
-        timeout_seconds=1,
-    )
+    if expected_event_type is None:
+        with pytest.raises(worker_completion.CompletionError, match="OCRV D1 terminal"):
+            worker_completion._record_checker_d1(
+                activation,
+                continuation,
+                checker_credential_path=tmp_path / "checker.dpapi",
+                timeout_seconds=1,
+            )
+        assert [request["event_type"] for request, _ in writes] == ["D1_STARTED"]
+    else:
+        result = worker_completion._record_checker_d1(
+            activation,
+            continuation,
+            checker_credential_path=tmp_path / "checker.dpapi",
+            timeout_seconds=1,
+        )
 
-    assert result["status"] == "CHECKER_D1_RECORDED"
-    assert result["d1_verdict"] == "PASS"
-    assert [request["event_type"] for request, _ in writes] == ["D1_STARTED", "D1_PASSED"]
-    assert {credential for _, credential in writes} == {"slk_" + "c" * 64}
-    assert writes[1][0]["details"]["native_result_sha256"] == hashlib.sha256(
-        (native_attempt / "ocrv-result.json").read_bytes()
-    ).hexdigest()
+        assert result["status"] == "CHECKER_D1_RECORDED"
+        assert result["d1_verdict"] == verdict
+        assert [request["event_type"] for request, _ in writes] == ["D1_STARTED", expected_event_type]
+        assert {credential for _, credential in writes} == {"slk_" + "c" * 64}
+        assert writes[1][0]["details"]["native_result_sha256"] == hashlib.sha256(
+            (native_attempt / "ocrv-result.json").read_bytes()
+        ).hexdigest()
 
 
 def test_checker_d1_rejects_terminal_with_wrong_message_or_native_identity(

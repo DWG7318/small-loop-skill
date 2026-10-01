@@ -1646,7 +1646,8 @@ def _record_checker_d1(
                 or identity.get("model") != review.get("model")
                 or identity.get("verdict") != verdict
                 or identity.get("exit_code") != expected_exit_code
-                or review.get("exit_code") != expected_exit_code
+                or isinstance(review.get("exit_code"), bool)
+                or not isinstance(review.get("exit_code"), int)
                 or not isinstance(segment_count, int)
                 or isinstance(segment_count, bool)
                 or segment_count < 0
