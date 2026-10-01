@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -98,6 +99,73 @@ def test_json_command_preserves_nonzero_valid_stdout_business_status() -> None:
         "json_parse": "PARSED_STDOUT",
         "business_status": "INCOMPLETE",
     }
+
+
+def test_json_command_forces_child_utf8_and_parses_non_ascii_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        assert kwargs.get("text") is not True
+        assert "encoding" not in kwargs
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert environment["PYTHONIOENCODING"] == "utf-8"
+        assert environment["PYTHONUTF8"] == "1"
+        return subprocess.CompletedProcess(
+            command,
+            2,
+            stdout=json.dumps(
+                {"status": "rejected", "error_code": "INPUT_INVALID", "message": "拒绝访问"},
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(worker_completion.subprocess, "run", run)
+
+    result = worker_completion._run_json_command(["tool"], ["send"], credential=None)
+
+    assert result["message"] == "拒绝访问"
+    assert result["_slk_command"]["process_exit"] == 2
+
+
+def test_json_command_rejects_non_utf8_without_secondary_decode_or_none_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        worker_completion.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["tool"],
+            2,
+            stdout=None,
+            stderr='{"status":"rejected","message":"拒绝访问"}'.encode("gbk"),
+        ),
+    )
+
+    with pytest.raises(CompletionError) as rejected:
+        worker_completion._run_json_command(["tool"], ["send"], credential=None)
+
+    assert rejected.value.error_code == "WORKER_CONTINUATION_COMMAND_ENCODING_INVALID"
+    assert "stderr is not UTF-8" in str(rejected.value)
+
+
+def test_json_command_empty_binary_output_has_one_closed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        worker_completion.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["tool"], 2, stdout=None, stderr=None
+        ),
+    )
+
+    with pytest.raises(CompletionError) as rejected:
+        worker_completion._run_json_command(["tool"], ["send"], credential=None)
+
+    assert rejected.value.error_code == "WORKER_CONTINUATION_COMMAND_FAILED"
+    assert "no parseable JSON" in str(rejected.value)
 
 
 def checker_recovery_request(tmp_path: Path) -> dict[str, object]:

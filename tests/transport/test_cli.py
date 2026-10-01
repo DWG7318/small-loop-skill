@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 import subprocess
 import sys
@@ -8,8 +9,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from scripts.build_transport_zipapp import build_zipapp
 from scripts.run_transport_drill import run_drill
+import slk_transport.cli as transport_cli
 
 from test_contracts import endpoint_value, envelope_value, payload_hash
 from test_worker_completion import completion_fixture, runtime_projection
@@ -61,6 +65,72 @@ def run_cli(artifact: Path, *arguments: str) -> subprocess.CompletedProcess[str]
         capture_output=True,
         check=False,
     )
+
+
+def test_nested_windows_send_retries_access_denied_without_breakaway(
+    monkeypatch,
+) -> None:
+    breakaway = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    calls: list[int] = []
+
+    class Process:
+        pid = 436
+
+    class AccessDenied(OSError):
+        winerror = 5
+
+    def popen(_command, **kwargs):
+        calls.append(int(kwargs["creationflags"]))
+        if len(calls) == 1:
+            raise AccessDenied(5, "Access is denied")
+        return Process()
+
+    monkeypatch.setattr(transport_cli.subprocess, "Popen", popen)
+    monkeypatch.setattr(
+        transport_cli,
+        "windows_no_window_kwargs",
+        lambda *, detached: {
+            "creationflags": no_window | breakaway,
+            "startupinfo": object(),
+        },
+    )
+
+    process = transport_cli._spawn_send_job(
+        ["tool", "job"], stdout=io.BytesIO(), stderr=io.BytesIO()
+    )
+
+    assert process.pid == 436
+    assert calls == [no_window | breakaway, no_window]
+
+
+def test_nested_windows_send_does_not_retry_an_unrelated_start_failure(
+    monkeypatch,
+) -> None:
+    breakaway = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
+    calls = 0
+
+    class MissingExecutable(OSError):
+        winerror = 2
+
+    def popen(_command, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise MissingExecutable(2, "The system cannot find the file specified")
+
+    monkeypatch.setattr(transport_cli.subprocess, "Popen", popen)
+    monkeypatch.setattr(
+        transport_cli,
+        "windows_no_window_kwargs",
+        lambda *, detached: {"creationflags": breakaway, "startupinfo": object()},
+    )
+
+    with pytest.raises(MissingExecutable):
+        transport_cli._spawn_send_job(
+            ["missing-tool"], stdout=io.BytesIO(), stderr=io.BytesIO()
+        )
+
+    assert calls == 1
 
 
 def test_validate_and_job_execute_one_closed_delivery(tmp_path: Path) -> None:

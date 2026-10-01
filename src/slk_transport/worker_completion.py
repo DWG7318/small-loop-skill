@@ -1918,21 +1918,37 @@ def _run_json_command(
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
     if credential is not None:
         environment["SLK_ROLE_CREDENTIAL"] = credential
+    environment["PYTHONIOENCODING"] = "utf-8"
+    environment["PYTHONUTF8"] = "1"
     completed = subprocess.run(
         command + arguments,
         stdin=subprocess.DEVNULL,
         capture_output=True,
-        text=True,
-        encoding="utf-8",
         check=False,
         env=environment,
         **windows_no_window_kwargs(),
     )
+    decoded: dict[str, str] = {}
+    for label, raw in (("stdout", completed.stdout), ("stderr", completed.stderr)):
+        data = raw if isinstance(raw, bytes) else b"" if raw is None else None
+        if data is None:
+            raise CompletionError(
+                "WORKER_CONTINUATION_COMMAND_ENCODING_INVALID",
+                f"continuation command {label} did not return bytes",
+            )
+        try:
+            decoded[label] = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            digest = hashlib.sha256(data).hexdigest()
+            raise CompletionError(
+                "WORKER_CONTINUATION_COMMAND_ENCODING_INVALID",
+                f"continuation command {label} is not UTF-8; sha256={digest}",
+            ) from exc
     parsed: tuple[dict[str, Any], str] | None = None
     last_error: json.JSONDecodeError | None = None
     for raw, parse_status in (
-        (completed.stdout, "PARSED_STDOUT"),
-        (completed.stderr, "PARSED_STDERR"),
+        (decoded["stdout"], "PARSED_STDOUT"),
+        (decoded["stderr"], "PARSED_STDERR"),
     ):
         if not raw.strip():
             continue

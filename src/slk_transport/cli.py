@@ -113,6 +113,37 @@ def _self_command() -> list[str]:
     return [sys.executable, "-m", "slk_transport.cli"]
 
 
+def _spawn_send_job(
+    command: list[str], *, stdout: Any, stderr: Any
+) -> subprocess.Popen[Any]:
+    """Start one headless job, falling back only when a containing Windows Job denies breakaway."""
+
+    process_kwargs = windows_no_window_kwargs(detached=True)
+    start_new_session = not process_kwargs
+
+    def start(kwargs: Mapping[str, Any]) -> subprocess.Popen[Any]:
+        return subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
+            close_fds=True,
+            start_new_session=start_new_session,
+            **kwargs,
+        )
+
+    try:
+        return start(process_kwargs)
+    except OSError as exc:
+        breakaway = int(getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
+        flags = int(process_kwargs.get("creationflags", 0))
+        if getattr(exc, "winerror", None) != 5 or not breakaway or not flags & breakaway:
+            raise
+        fallback = dict(process_kwargs)
+        fallback["creationflags"] = flags & ~breakaway
+        return start(fallback)
+
+
 def _send(args: argparse.Namespace) -> int:
     endpoint, envelope = _load_delivery(args.endpoint, args.envelope)
     attempt_root = args.attempt_root.resolve()
@@ -130,20 +161,8 @@ def _send(args: argparse.Namespace) -> int:
         "--attempt-root",
         str(attempt_root),
     ]
-    start_new_session = False
-    process_kwargs = windows_no_window_kwargs(detached=True)
-    if not process_kwargs:
-        start_new_session = True
     with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=stdout,
-            stderr=stderr,
-            close_fds=True,
-            start_new_session=start_new_session,
-            **process_kwargs,
-        )
+        process = _spawn_send_job(command, stdout=stdout, stderr=stderr)
     deadline = time.monotonic() + args.startup_timeout_seconds
     while time.monotonic() < deadline:
         failed = attempt_path / "failed.json"

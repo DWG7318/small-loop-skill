@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "67a6a2fb1d5c38a69b20c0192d678ff02a7177e9d5e31ad86a2803d499d45468"
+      "sha256": "b7f2845b1bcf4f896881af81a2e38bd1dc23c40b9689f9144152456a9c841961"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "c11819aeefddf84f6ef6f1683ad3415c7e660e5233e85fc92d7d704ed0f785dc"
+      "sha256": "953369a4334d86a04eca59857561469db2a8a1f5e9e5e537a3e0c40e2b8917c0"
     },
     {
       "path": "VERSION",
@@ -896,7 +896,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "058fc553810fc0c0684287c522dcc42a6f8c5575926609db619a8397f43ac75e"
+      "sha256": "1833cf0dbe6f58fe76ce0b6dad87f1b2350c831e52b50c226ecfc93f322069b0"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1144,7 +1144,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "51b2eaf4dcf747e5f914336643072ab6a8bc96cf6f2568bb65548b67ac6b9fb3"
+      "sha256": "af0d47fbf667906489b5586203d4a59be54f96eae67d8263b90cc6057abd97a2"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1208,7 +1208,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "d54c33c0472c6c9488f00e1e4d4f403df55f1774aba6e5d77e44a19a1213d54b"
+      "sha256": "7adaa4e5b306a9e9b12bc305d16e241715a286da31951ab128ae477f954afb1b"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1320,7 +1320,7 @@
     },
     {
       "path": "tests/transport/test_cli.py",
-      "sha256": "78c952e0bb1e26245a3a41ec087d97c9d3167db455f32efed7bb742849a0220b"
+      "sha256": "736a8e90fb085f3af904160d75b43cb5fbf6a3b44cb4d10b494ebcfef18d777f"
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
@@ -1396,7 +1396,7 @@
     },
     {
       "path": "tests/transport/test_worker_completion.py",
-      "sha256": "9872c7d354dc0669e1ec61155127ada770d988c3f803dcb7d01820dc7f58c4c5"
+      "sha256": "fd603fb4ceb6a65536aa7aee20bff906da5adb26c09175ea37a4ed6332b56143"
     },
     {
       "path": "tests/transport/test_workspace.py",
