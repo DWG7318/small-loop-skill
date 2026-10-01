@@ -103,7 +103,9 @@ class DshAdapter:
         _positive_seconds(address["timeout_seconds"])
 
     @staticmethod
-    def result_contract(endpoint: Endpoint, envelope: Envelope) -> dict[str, Any]:
+    def legacy_result_contract(endpoint: Endpoint, envelope: Envelope) -> dict[str, Any]:
+        """Return the frozen pre-correction descriptor used by historical attempts."""
+
         return {
             "schema_version": "slk.worker-result-contract/v1",
             "identity": {
@@ -134,11 +136,53 @@ class DshAdapter:
         }
 
     @staticmethod
+    def result_contract(endpoint: Endpoint, envelope: Envelope) -> dict[str, Any]:
+        identity = {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": envelope.message_id,
+            "run_id": envelope.run_id,
+            "role_instance_id": envelope.receiver_role_instance_id,
+        }
+        return {
+            "schema_version": "slk.worker-result-contract/v1",
+            "identity": dict(identity),
+            "allowed_statuses": [
+                "completed",
+                "incomplete",
+                "blocked",
+                "execution_failure",
+                "timed_out",
+            ],
+            "completed": {
+                **identity,
+                "status": "completed",
+                "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
+                "next_payload": {
+                    "candidate_repository": str(Path(str(endpoint.address["cwd"])).resolve())
+                },
+            },
+            "non_completed": {
+                **identity,
+                "status": "incomplete",
+                "candidate": None,
+                "next_payload": None,
+                "blocker": {
+                    "phase": "REPLACE_WITH_PHASE",
+                    "cause": "REPLACE_WITH_CAUSE",
+                    "summary": "REPLACE_WITH_SUMMARY",
+                    "evidence": [],
+                },
+            },
+        }
+
+    @staticmethod
     def task_instruction(task_path: Path, task_sha256: str) -> str:
         return (
             "Execute only the immutable SLK task file at the absolute path below. Verify its "
-            "SHA-256 before reading it; reject any mismatch or unknown field. Write only the "
-            "declared result contract to its result_path. "
+            "SHA-256 before reading it; reject any mismatch or unknown field. The result_contract "
+            "is a descriptor, not an output wrapper: write exactly one flat slk.worker-result/v1 "
+            "instance matching result_contract.completed (7 fields) or result_contract.non_completed "
+            "(8 fields) to result_path. "
             f"<slk-transport-task path={json.dumps(str(task_path.resolve()))} "
             f"sha256={json.dumps(task_sha256)} />"
         )

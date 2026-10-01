@@ -92,8 +92,13 @@
         "completed": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["candidate", "next_payload", "blocker"],
+          "required": ["schema_version", "message_id", "run_id", "role_instance_id", "status", "candidate", "next_payload"],
           "properties": {
+            "schema_version": {"const": "slk.worker-result/v1"},
+            "message_id": {"type": "string", "format": "uuid"},
+            "run_id": {"$ref": "#/$defs/identifier"},
+            "role_instance_id": {"$ref": "#/$defs/identifier"},
+            "status": {"const": "completed"},
             "candidate": {
               "type": "object",
               "additionalProperties": false,
@@ -103,18 +108,32 @@
                 "commit": {"type": "string", "minLength": 1}
               }
             },
-            "next_payload": {"type": "object"},
-            "blocker": {"type": "null"}
+            "next_payload": {"type": "object"}
           }
         },
         "non_completed": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["candidate", "next_payload", "blocker_fields"],
+          "required": ["schema_version", "message_id", "run_id", "role_instance_id", "status", "candidate", "next_payload", "blocker"],
           "properties": {
+            "schema_version": {"const": "slk.worker-result/v1"},
+            "message_id": {"type": "string", "format": "uuid"},
+            "run_id": {"$ref": "#/$defs/identifier"},
+            "role_instance_id": {"$ref": "#/$defs/identifier"},
+            "status": {"const": "incomplete"},
             "candidate": {"type": "null"},
             "next_payload": {"type": "null"},
-            "blocker_fields": {"const": ["phase", "cause", "summary", "evidence"]}
+            "blocker": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "cause", "summary", "evidence"],
+              "properties": {
+                "phase": {"type": "string", "minLength": 1},
+                "cause": {"type": "string", "minLength": 1},
+                "summary": {"type": "string", "minLength": 1},
+                "evidence": {"type": "array", "items": {"type": "string", "minLength": 1}}
+              }
+            }
           }
         }
       }

@@ -245,6 +245,23 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "4.3.6" in main
 
 
+def test_invalid_result_contract_recovery_routes_through_original_roles() -> None:
+    recover = read_skill("slk-recover-communication")
+    for marker in (
+        "INVALID_RESULT_CONTRACT",
+        "prepare-invalid-result-recovery",
+        "旧结果描述器",
+        "`slk.native-start/v2`",
+        "原 Worker Session",
+        "真实 OCRV D1",
+        "Root",
+        "不代写 Worker",
+    ):
+        assert marker in recover
+    assert recover.index("prepare-invalid-result-recovery") < recover.index("原 Worker Session")
+    assert "4.3.4 平铺 start" in recover
+
+
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
     execute = read_skill("slk-execute-cell")
     rework = read_skill("slk-rework-cell")

@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "8b08d8b77ab3adcbe56c0845071fd0b96d6ddd2d6c10a6be3481d21d05e76463"
+      "sha256": "c1681149e34544e24b3cbd9dc2025c054c9380114e760570246b688a2a003d52"
     },
     {
       "path": "Cargo.lock",
@@ -48,15 +48,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "82004b832e15f7e0f0fcd82dcff4aea28ca4075b9c9f9516313adfca549f766b"
+      "sha256": "c739045fd2e15787b62e4d3bd4e80e98207780e68a650d41fdb9596acfd80803"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "424c38b54d166a0dccdcea56f3941cb39b5436836ebc2d75a6c555906fe3260a"
+      "sha256": "03b0036bbc5063fea9aaee59411381550f896f49c9ef4b084f9e652af4ee33ef"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "e34244396eac8f7d34feb651d49d40b92919b1bb7cb2353562a560efac2035c7"
+      "sha256": "2fbffd56887c7a66b4043ebb754e721a116671aa5259b6d91b2fab96b16ef25e"
     },
     {
       "path": "VERSION",
@@ -652,7 +652,7 @@
     },
     {
       "path": "docs/contracts/slk-transport-task.schema.json",
-      "sha256": "c1d78a6e9cebbf931753c717b83ebd14b46aee550aa47ed3b84407b4cdbc469f"
+      "sha256": "7e0e3ecb85cf794c91171ce7d2f6c1acdc68c8192b9d49d4d72d64990365cecc"
     },
     {
       "path": "docs/contracts/slk-worker-completion-inspection.schema.json",
@@ -660,7 +660,7 @@
     },
     {
       "path": "docs/contracts/slk-worker-continuation.schema.json",
-      "sha256": "b39ddbf0dd677240ceebc1d26e0387c23c265417d392b206b0b9e578d5b94e65"
+      "sha256": "f91f31b1981ac5d66017a99daea0a41830544d3d9bd31fc48ccd74701f08b06e"
     },
     {
       "path": "docs/maintenance/2026-09-22-slk-4.2.2-cell02-field-trial-review.md",
@@ -908,7 +908,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "6d38297255ce4eac482ba3823c04d4ee20bc19d1d09ea1ab62fed9c6205411af"
+      "sha256": "79bc9557e2e220e880ee5394eb93b1adab11509066106ad1dab85ad0eb75c80c"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1108,7 +1108,7 @@
     },
     {
       "path": "skills/slk-recover-communication/SKILL.md",
-      "sha256": "bea514347888c641e4de9d8a267c9b23c2abae91103ec689ea3a105dbb271b6b"
+      "sha256": "5a11da036d519adcc4153ca04b65e0b3c84139d59235f7b8f7e960d57977df84"
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
@@ -1152,7 +1152,7 @@
     },
     {
       "path": "src/slk_transport/adapters/dsh.py",
-      "sha256": "25109c0e7be647844598d17a285a8cdf7bb9126f48e35b82d1e0e5d70d3a990e"
+      "sha256": "13df66df8133fb9d913abede0c124e1a8d7de9e06a09aaa5ccc45668760b14ee"
     },
     {
       "path": "src/slk_transport/adapters/ocrv.py",
@@ -1164,7 +1164,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "df3fdb657a1a22affe09aaf844338ccd55ed39dc30352e6c45d10cf4272068cf"
+      "sha256": "7a0fb849c0e7df60db296a87bbcb020f6e0b157377261a131f38841408f33566"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1228,7 +1228,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "b91d0ab1651449bdc85efab2cbdb033ecbca69fdf46fd58d5fb5b9079e42511a"
+      "sha256": "dad283dd8b5f53b8e8f05d3bf96c3553c3537c7f0ca67cd34756b5a5e18b7b96"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1308,11 +1308,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "ec8ea106bafd5623fedcea0d8197d1aeadc436c2e992555b3c12a9f13340dc0a"
+      "sha256": "611dc11ffa93a970dae669b2daa65f7e7305b8ad11f879de1af2c16021a41440"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "fa1b317544f0309762b577ad4d56ce919900e13fc7dbd1fc6267fa08f44c7f96"
+      "sha256": "1c1867192a23f2a9d14979f268275f887fe742543aeb4acf7316ffed03f2d4b8"
     },
     {
       "path": "tests/transport/fake_app_server.py",
@@ -1344,7 +1344,7 @@
     },
     {
       "path": "tests/transport/test_cli.py",
-      "sha256": "a7b637d8a9f52a201ec6289b74aa15eaed80d3a6fa7f8681a9b4a5fa11847b7c"
+      "sha256": "d2eb30a19b0c96e68c644c0e6527d22d40895866aabdd26b2dbcb534d0060d0b"
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
@@ -1416,11 +1416,11 @@
     },
     {
       "path": "tests/transport/test_task_file.py",
-      "sha256": "41ca0ac13c5b5f9a299dfb3cb0b06baadf55e782d4cb629a79dbf82c7e4618ab"
+      "sha256": "1a21b3707053b720f8011d1598078ebdf60c2f90b67bed8e1e0fe0c45556c160"
     },
     {
       "path": "tests/transport/test_worker_completion.py",
-      "sha256": "fa23c1268973db36fa392e2c294cc2ecdbc719dadbc4afd7c558dff3b6cf04de"
+      "sha256": "8174ee121f645f3369525719baffd7a2fe11fbbfb159ab4372f3233c865533d7"
     },
     {
       "path": "tests/transport/test_workspace.py",

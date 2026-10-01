@@ -36,6 +36,7 @@ from .worker_completion import (
     execute_checker_recovery,
     execute_worker_continuation,
     inspect_worker_completion,
+    prepare_invalid_result_recovery_envelope,
 )
 
 
@@ -333,6 +334,26 @@ def _checker_recover_worker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prepare_invalid_result_recovery(args: argparse.Namespace) -> int:
+    result = prepare_invalid_result_recovery_envelope(
+        args.source_attempt,
+        _read_object(args.checker_endpoint, "Checker endpoint"),
+        args.runtime_projection,
+        supervisor_role_instance_id=args.supervisor_role_instance_id,
+        plan_revision=args.plan_revision,
+        runtime_revision=args.runtime_revision,
+        token_sequence=args.token_sequence,
+        worker_credential_path=args.worker_credential,
+        checker_credential_path=args.checker_credential,
+        state_command=list(args.state_command),
+        transport_command=list(args.transport_command),
+        occurred_at=args.occurred_at,
+        output_path=args.output,
+    )
+    _emit(result)
+    return 0
+
+
 def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
     result = inspect_overwatcher_cadence(
         _read_object(args.runtime_projection, "runtime projection"),
@@ -437,6 +458,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     checker_recovery = subparsers.add_parser("checker-recover-worker")
     checker_recovery.add_argument("--request", required=True, type=Path)
     checker_recovery.add_argument("--sha256", required=True)
+    invalid_result_recovery = subparsers.add_parser("prepare-invalid-result-recovery")
+    invalid_result_recovery.add_argument("--source-attempt", required=True, type=Path)
+    invalid_result_recovery.add_argument("--checker-endpoint", required=True, type=Path)
+    invalid_result_recovery.add_argument("--runtime-projection", required=True, type=Path)
+    invalid_result_recovery.add_argument("--supervisor-role-instance-id", required=True)
+    invalid_result_recovery.add_argument("--plan-revision", required=True, type=int)
+    invalid_result_recovery.add_argument("--runtime-revision", required=True, type=int)
+    invalid_result_recovery.add_argument("--token-sequence", required=True, type=int)
+    invalid_result_recovery.add_argument("--worker-credential", required=True, type=Path)
+    invalid_result_recovery.add_argument("--checker-credential", required=True, type=Path)
+    invalid_result_recovery.add_argument("--state-command", required=True, nargs="+")
+    invalid_result_recovery.add_argument("--transport-command", required=True, nargs="+")
+    invalid_result_recovery.add_argument("--occurred-at", required=True)
+    invalid_result_recovery.add_argument("--output", required=True, type=Path)
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
@@ -487,6 +522,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _inspect_worker_completion(args)
         if args.command == "checker-recover-worker":
             return _checker_recover_worker(args)
+        if args.command == "prepare-invalid-result-recovery":
+            return _prepare_invalid_result_recovery(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
         if args.command == "inspect-overwatcher-cadence":

@@ -27,6 +27,78 @@ _NAMESPACE = uuid.UUID("23c8316f-29fe-4f2f-b5c5-90ba4e7b1224")
 _LEGACY_WORKER_START_FIELDS = frozenset(
     {"instance_id", "message_id", "run_id", "session_id", "status", "task_sha256"}
 )
+INVALID_SUPPLEMENT_RESULT_CONTRACT = {
+    "worker_result_fields": [
+        "schema_version",
+        "message_id",
+        "run_id",
+        "role_instance_id",
+        "status",
+        "candidate",
+        "next_payload",
+    ],
+    "next_payload_fields": [
+        "attempt",
+        "candidate_repository",
+        "cell_id",
+        "changed_paths",
+        "d0",
+        "suffix_blocker",
+        "unproved",
+    ],
+    "d0_fields": [
+        "baseline_commit",
+        "branch",
+        "candidate_commit",
+        "changed_paths",
+        "evidence_files",
+        "focused_command",
+        "frozen_command",
+        "frozen_command_result",
+        "green",
+        "red",
+        "unproved",
+    ],
+}
+CONTINUATION_FIELDS = {
+    "schema_version",
+    "method_version",
+    "run_id",
+    "go_id",
+    "cell_id",
+    "attempt",
+    "plan_revision",
+    "runtime_revision",
+    "source_message_id",
+    "source_attempt_root",
+    "continuation_result_path",
+    "source_endpoint_sha256",
+    "source_envelope_sha256",
+    "source_runtime_projection_sha256",
+    "source_runtime_snapshot",
+    "recovery_mode",
+    "worker_result_path",
+    "worker_result_sha256",
+    "source_terminal_sha256",
+    "source_task_sha256",
+    "source_started_sha256",
+    "source_invalid_result_sha256",
+    "source_candidate",
+    "source_candidate_parent",
+    "source_repository",
+    "source_changed_paths",
+    "supplement_result_contract",
+    "worker_role_instance_id",
+    "worker_instance_id",
+    "worker_session_id",
+    "checker_endpoint",
+    "credential_path",
+    "state_command",
+    "transport_command",
+    "token_sequence",
+    "checker_token_already_committed",
+    "occurred_at",
+}
 
 
 class CompletionError(ValueError):
@@ -164,6 +236,185 @@ def _missing_result_failure(attempt: Path, envelope: Envelope) -> dict[str, Any]
     return failed
 
 
+def _git_text(repository: Path, *arguments: str) -> str:
+    from .process import windows_no_window_kwargs
+
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        capture_output=True,
+        check=False,
+        **windows_no_window_kwargs(),
+    )
+    if completed.returncode != 0:
+        raise CompletionError(
+            "WORKER_CONTINUATION_NOT_READY",
+            f"candidate repository cannot prove git {' '.join(arguments)}",
+        )
+    return completed.stdout.strip()
+
+
+def _candidate_repository_snapshot(repository: Path) -> dict[str, Any]:
+    repository = repository.resolve()
+    if not repository.is_dir():
+        raise CompletionError("WORKER_CONTINUATION_NOT_READY", "candidate repository is unavailable")
+    root = Path(_git_text(repository, "rev-parse", "--show-toplevel")).resolve()
+    if root != repository:
+        raise CompletionError("WORKER_CONTINUATION_NOT_READY", "candidate repository root changed")
+    status = _git_text(repository, "status", "--porcelain=v1", "--untracked-files=all")
+    if status:
+        raise CompletionError("WORKER_CONTINUATION_NOT_READY", "candidate repository is not clean")
+    head = _git_text(repository, "rev-parse", "HEAD")
+    parent = _git_text(repository, "rev-parse", "HEAD^")
+    changed_paths = sorted(
+        item for item in _git_text(repository, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").splitlines()
+        if item
+    )
+    if (
+        len(head) != 40
+        or len(parent) != 40
+        or any(character not in "0123456789abcdef" for character in head + parent)
+        or not changed_paths
+    ):
+        raise CompletionError("WORKER_CONTINUATION_NOT_READY", "candidate git identity is invalid")
+    return {
+        "repository": str(repository),
+        "head": head,
+        "parent": parent,
+        "changed_paths": changed_paths,
+    }
+
+
+def _invalid_result_contract_source(
+    attempt: Path,
+    endpoint: Endpoint,
+    envelope: Envelope,
+    started: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    failed_path = attempt / "failed.json"
+    invalid_path = attempt / "worker-result.invalid.txt"
+    task_path = attempt / "transport-task.json"
+    if (
+        not failed_path.is_file()
+        or not invalid_path.is_file()
+        or not task_path.is_file()
+        or (attempt / "completed.json").exists()
+        or (attempt / "worker-result.json").exists()
+    ):
+        return None
+    failed = _read_object(failed_path, "Worker failed result")
+    terminal_fields = {
+        "schema_version", "message_id", "run_id", "adapter", "status",
+        "native_identity", "error_code", "evidence",
+    }
+    if (
+        set(failed) != terminal_fields
+        or failed.get("schema_version") != "slk.transport-result/v1"
+        or failed.get("message_id") != envelope.message_id
+        or failed.get("run_id") != envelope.run_id
+        or failed.get("adapter") != "dsh-worker"
+        or failed.get("status") != "failed"
+        or failed.get("error_code") != "DSH_RESULT_INVALID"
+        or not isinstance(failed.get("native_identity"), Mapping)
+        or not isinstance(failed.get("evidence"), list)
+        or "worker-result.invalid.txt" not in failed["evidence"]
+    ):
+        return None
+    task_digest = started.get("native_request_sha256")
+    if not isinstance(task_digest, str):
+        return None
+    try:
+        task = verify_task_file(task_path.resolve(), task_digest)
+        task_endpoint = Endpoint.from_dict(task["endpoint"])
+        task_envelope = Envelope.from_dict(task["envelope"])
+        from .adapters.dsh import DshAdapter
+
+        expected_result_path = (
+            Path(str(endpoint.address["cwd"]))
+            / ".slk-transport"
+            / envelope.message_id
+            / "worker-result.json"
+        ).resolve()
+        task_matches = (
+            task_endpoint == endpoint
+            and task_envelope == envelope
+            and task.get("message_id") == envelope.message_id
+            and task.get("run_id") == envelope.run_id
+            and task.get("go_id") == envelope.go_id
+            and task.get("cell_id") == envelope.cell_id
+            and task.get("result_contract") == DshAdapter.legacy_result_contract(endpoint, envelope)
+            and task.get("result_path") == str(expected_result_path)
+        )
+    except (KeyError, TypeError, ValueError, TaskFileError, CompletionError):
+        return None
+    if not task_matches:
+        return None
+    invalid = _read_object(invalid_path, "invalid Worker result")
+    identity = invalid.get("identity")
+    completed = invalid.get("completed")
+    if (
+        set(invalid) != {"schema_version", "identity", "status", "completed"}
+        or invalid.get("schema_version") != "slk.worker-result-contract/v1"
+        or invalid.get("status") != "completed"
+        or not isinstance(identity, Mapping)
+        or set(identity) != {"schema_version", "message_id", "run_id", "role_instance_id"}
+        or identity.get("schema_version") != "slk.worker-result/v1"
+        or identity.get("message_id") != envelope.message_id
+        or identity.get("run_id") != envelope.run_id
+        or identity.get("role_instance_id") != endpoint.role_instance_id
+        or not isinstance(completed, Mapping)
+        or set(completed) != {"candidate", "next_payload", "blocker", "evidence"}
+        or completed.get("blocker") is not None
+    ):
+        return None
+    candidate = completed.get("candidate")
+    next_payload = completed.get("next_payload")
+    evidence = completed.get("evidence")
+    if (
+        not isinstance(candidate, Mapping)
+        or set(candidate) != {"kind", "commit"}
+        or candidate.get("kind") != "commit"
+        or not isinstance(candidate.get("commit"), str)
+        or len(str(candidate["commit"])) != 40
+        or any(character not in "0123456789abcdef" for character in str(candidate["commit"]))
+        or not isinstance(next_payload, Mapping)
+        or set(next_payload) != {"candidate_repository"}
+        or not isinstance(next_payload.get("candidate_repository"), str)
+        or not isinstance(evidence, Mapping)
+    ):
+        return None
+    repository = Path(str(next_payload["candidate_repository"])).resolve()
+    if repository != Path(str(endpoint.address["cwd"])).resolve():
+        return None
+    snapshot = _candidate_repository_snapshot(repository)
+    raw_changed_paths = evidence.get("changed_paths")
+    if (
+        snapshot["head"] != candidate["commit"]
+        or evidence.get("candidate_commit") != candidate["commit"]
+        or evidence.get("candidate_parent") != snapshot["parent"]
+        or not isinstance(raw_changed_paths, list)
+        or sorted(raw_changed_paths) != snapshot["changed_paths"]
+    ):
+        return None
+    return {
+        "failed": failed,
+        "candidate": dict(candidate),
+        **snapshot,
+    }
+
+
+def _continuation_root(request: Mapping[str, Any]) -> Path:
+    name = (
+        "invalid-result-supplement"
+        if request.get("recovery_mode") == "INVALID_RESULT_CONTRACT"
+        else "worker-continuation"
+    )
+    return Path(str(request["source_attempt_root"])) / name
+
+
 def _native_v2_worker_session(
     started_path: Path,
     endpoint: Endpoint,
@@ -267,7 +518,11 @@ def _legacy_completed_worker_session(
             and task.get("run_id") == envelope.run_id
             and task.get("go_id") == envelope.go_id
             and task.get("cell_id") == envelope.cell_id
-            and task.get("result_contract") == DshAdapter().result_contract(endpoint, envelope)
+            and json.dumps(task.get("result_contract"), sort_keys=True)
+            in {
+                json.dumps(DshAdapter().result_contract(endpoint, envelope), sort_keys=True),
+                json.dumps(DshAdapter().legacy_result_contract(endpoint, envelope), sort_keys=True),
+            }
             and task.get("result_path") == str(expected_result_path)
         )
     except (KeyError, TypeError, ValueError, TaskFileError):
@@ -312,6 +567,15 @@ def build_continuation_request(
     checker = Endpoint.from_dict(checker_endpoint_raw)
     started = _read_object(started_path, "Worker started evidence")
     missing_result_failure = _missing_result_failure(attempt, envelope)
+    invalid_result_source = _invalid_result_contract_source(attempt, endpoint, envelope, started)
+    source_task_sha256: str | None = None
+    source_started_sha256: str | None = None
+    source_invalid_result_sha256: str | None = None
+    source_candidate: dict[str, Any] | None = None
+    source_candidate_parent: str | None = None
+    source_repository: str | None = None
+    source_changed_paths: list[str] | None = None
+    supplement_result_contract: dict[str, Any] | None = None
     if result_path.is_file() and completed_path.is_file():
         recovery_mode = "COMPLETED_RESULT"
         result = _read_object(result_path, "Worker result")
@@ -326,10 +590,27 @@ def build_continuation_request(
         continuation_result_path = attempt / "worker-continuation" / "recovered-worker-result.json"
         worker_result_sha256 = None
         source_terminal_path = attempt / "failed.json"
+    elif invalid_result_source is not None:
+        recovery_mode = "INVALID_RESULT_CONTRACT"
+        result = None
+        completed = None
+        continuation_result_path = (
+            attempt / "invalid-result-supplement" / "recovered-worker-result.json"
+        )
+        worker_result_sha256 = None
+        source_terminal_path = attempt / "failed.json"
+        source_task_sha256 = _sha256(attempt / "transport-task.json")
+        source_started_sha256 = _sha256(started_path)
+        source_invalid_result_sha256 = _sha256(attempt / "worker-result.invalid.txt")
+        source_candidate = dict(invalid_result_source["candidate"])
+        source_candidate_parent = str(invalid_result_source["parent"])
+        source_repository = str(invalid_result_source["repository"])
+        source_changed_paths = list(invalid_result_source["changed_paths"])
+        supplement_result_contract = dict(INVALID_SUPPLEMENT_RESULT_CONTRACT)
     else:
         raise CompletionError(
             "WORKER_CONTINUATION_NOT_READY",
-            "Worker attempt has neither a completed result nor the exact recoverable missing-result terminal",
+            "Worker attempt has no exact recoverable completed, missing, or invalid-result source",
         )
     attempt_number = _source_attempt(runtime_projection, envelope)
     snapshot = runtime_projection.get("runtime_snapshot")
@@ -344,6 +625,21 @@ def build_continuation_request(
         and snapshot.get("token_holder_role_instance_id") == endpoint.role_instance_id
         and snapshot.get("latest_message_id") == envelope.message_id
     )
+    if recovery_mode == "INVALID_RESULT_CONTRACT":
+        source_event_types = _event_types(
+            runtime_projection,
+            cell_id=envelope.cell_id,
+            attempt=attempt_number,
+        )
+        if (
+            not worker_holds_source_token
+            or checker_token_already_committed
+            or source_event_types & {"WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"}
+        ):
+            raise CompletionError(
+                "WORKER_CONTINUATION_NOT_READY",
+                "invalid-result supplement requires the original Worker TOKEN and no Worker engineering facts",
+            )
     session_id = (
         _native_v2_worker_session(started_path, endpoint, envelope)
         if started.get("schema_version") == "slk.native-start/v2"
@@ -419,13 +715,37 @@ def build_continuation_request(
         "runtime_revision": runtime_revision,
         "source_message_id": envelope.message_id,
         "source_attempt_root": str(attempt),
-        "continuation_result_path": str(attempt / "worker-continuation" / "result.json"),
+        "continuation_result_path": str(
+            attempt
+            / ("invalid-result-supplement" if recovery_mode == "INVALID_RESULT_CONTRACT" else "worker-continuation")
+            / "result.json"
+        ),
         "source_endpoint_sha256": _sha256(endpoint_path),
         "source_envelope_sha256": _sha256(envelope_path),
+        "source_runtime_projection_sha256": canonical_json_sha256(runtime_projection),
+        "source_runtime_snapshot": {
+            field: snapshot.get(field)
+            for field in (
+                "method_version",
+                "plan_revision",
+                "runtime_revision",
+                "token_sequence",
+                "token_holder_role_instance_id",
+                "latest_message_id",
+            )
+        },
         "recovery_mode": recovery_mode,
         "worker_result_path": str(continuation_result_path.resolve()),
         "worker_result_sha256": worker_result_sha256,
         "source_terminal_sha256": _sha256(source_terminal_path),
+        "source_task_sha256": source_task_sha256,
+        "source_started_sha256": source_started_sha256,
+        "source_invalid_result_sha256": source_invalid_result_sha256,
+        "source_candidate": source_candidate,
+        "source_candidate_parent": source_candidate_parent,
+        "source_repository": source_repository,
+        "source_changed_paths": source_changed_paths,
+        "supplement_result_contract": supplement_result_contract,
         "worker_role_instance_id": endpoint.role_instance_id,
         "worker_instance_id": str(endpoint.address["instance_id"]),
         "worker_session_id": session_id,
@@ -445,9 +765,166 @@ def continuation_request_bytes(request: Mapping[str, Any]) -> bytes:
     )
 
 
+def _validate_continuation_request(request: Mapping[str, Any]) -> None:
+    if (
+        set(request) != CONTINUATION_FIELDS
+        or request.get("schema_version") != CONTINUATION_SCHEMA
+        or request.get("method_version") != "4.3.6"
+    ):
+        raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation request is not closed")
+    snapshot = request.get("source_runtime_snapshot")
+    snapshot_fields = {
+        "method_version",
+        "plan_revision",
+        "runtime_revision",
+        "token_sequence",
+        "token_holder_role_instance_id",
+        "latest_message_id",
+    }
+    if (
+        not isinstance(snapshot, Mapping)
+        or set(snapshot) != snapshot_fields
+        or snapshot.get("method_version") != "4.3.6"
+        or snapshot.get("plan_revision") != request.get("plan_revision")
+        or snapshot.get("runtime_revision") != request.get("runtime_revision")
+        or snapshot.get("token_sequence") != request.get("token_sequence")
+    ):
+        raise CompletionError("WORKER_CONTINUATION_INVALID", "frozen runtime snapshot is inconsistent")
+    if request.get("recovery_mode") == "INVALID_RESULT_CONTRACT":
+        if (
+            snapshot.get("token_holder_role_instance_id") != request.get("worker_role_instance_id")
+            or snapshot.get("latest_message_id") != request.get("source_message_id")
+            or request.get("checker_token_already_committed") is not False
+            or request.get("supplement_result_contract") != INVALID_SUPPLEMENT_RESULT_CONTRACT
+            or not all(
+                request.get(field) is not None
+                for field in (
+                    "source_task_sha256",
+                    "source_started_sha256",
+                    "source_invalid_result_sha256",
+                    "source_candidate",
+                    "source_candidate_parent",
+                    "source_repository",
+                    "source_changed_paths",
+                )
+            )
+        ):
+            raise CompletionError(
+                "WORKER_CONTINUATION_INVALID",
+                "invalid-result supplement does not bind the original Worker snapshot",
+            )
+    elif request.get("recovery_mode") in {"COMPLETED_RESULT", "MISSING_RESULT"}:
+        if request.get("supplement_result_contract") is not None:
+            raise CompletionError("WORKER_CONTINUATION_INVALID", "ordinary continuation has supplement fields")
+    else:
+        raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation recovery mode is invalid")
+
+
+def prepare_invalid_result_recovery_envelope(
+    source_attempt_root: Path | str,
+    checker_endpoint_raw: Mapping[str, Any],
+    runtime_projection_path: Path | str,
+    *,
+    supervisor_role_instance_id: str,
+    plan_revision: int,
+    runtime_revision: int,
+    token_sequence: int,
+    worker_credential_path: Path | str,
+    checker_credential_path: Path | str,
+    state_command: list[str],
+    transport_command: list[str],
+    occurred_at: str,
+    output_path: Path | str,
+) -> dict[str, Any]:
+    """Read-only preflight that materializes one authenticated Checker recovery envelope."""
+
+    projection_path = Path(runtime_projection_path).resolve()
+    projection = _read_object(projection_path, "runtime projection")
+    checker = Endpoint.from_dict(checker_endpoint_raw)
+    worker_credential = Path(worker_credential_path).resolve()
+    checker_credential = Path(checker_credential_path).resolve()
+    if (
+        checker.role != "checker"
+        or not worker_credential.is_file()
+        or not checker_credential.is_file()
+        or not projection_path.is_file()
+    ):
+        raise CompletionError(
+            "WORKER_CONTINUATION_NOT_READY",
+            "active Checker, runtime projection, and sealed role credentials are required",
+        )
+    continuation = build_continuation_request(
+        source_attempt_root,
+        checker_endpoint_raw,
+        projection,
+        plan_revision=plan_revision,
+        runtime_revision=runtime_revision,
+        token_sequence=token_sequence,
+        credential_path=worker_credential,
+        state_command=state_command,
+        transport_command=transport_command,
+        occurred_at=occurred_at,
+    )
+    if continuation.get("recovery_mode") != "INVALID_RESULT_CONTRACT":
+        raise CompletionError(
+            "WORKER_CONTINUATION_NOT_READY",
+            "prepare entry accepts only an exact invalid-result contract source",
+        )
+    source_message_id = str(continuation["source_message_id"])
+    payload = {
+        "source_attempt_root": str(Path(source_attempt_root).resolve()),
+        "runtime_projection_path": str(projection_path),
+        "plan_revision": plan_revision,
+        "runtime_revision": runtime_revision,
+        "token_sequence": token_sequence,
+        "worker_credential_path": str(worker_credential),
+        "checker_credential_path": str(checker_credential),
+        "state_command": list(state_command),
+        "transport_command": list(transport_command),
+        "occurred_at": occurred_at,
+    }
+    envelope = {
+        "schema_version": ENVELOPE_SCHEMA,
+        "message_id": _stable_id(source_message_id, "invalid-result-contract-recovery"),
+        "token_sequence": token_sequence,
+        "run_id": continuation["run_id"],
+        "go_id": continuation["go_id"],
+        "cell_id": continuation["cell_id"],
+        "sender_role": "supervisor",
+        "sender_role_instance_id": supervisor_role_instance_id,
+        "receiver_role": "checker",
+        "receiver_role_instance_id": checker.role_instance_id,
+        "receiver_endpoint_version": checker.endpoint_version,
+        "payload_type": "WORKER_COMPLETION_RECOVERY",
+        "payload_sha256": canonical_json_sha256(payload),
+        "payload": payload,
+    }
+    Envelope.from_dict(envelope)
+    destination = Path(output_path).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    _write_or_reuse_stable_request(destination, envelope)
+    return {
+        "schema_version": "slk.invalid-result-recovery-readiness/v1",
+        "method_version": "4.3.6",
+        "status": "INVALID_RESULT_RECOVERY_READY",
+        "run_id": continuation["run_id"],
+        "cell_id": continuation["cell_id"],
+        "source_message_id": source_message_id,
+        "recovery_message_id": envelope["message_id"],
+        "recovery_mode": continuation["recovery_mode"],
+        "candidate": continuation["source_candidate"],
+        "worker_session_id": continuation["worker_session_id"],
+        "runtime_revision": runtime_revision,
+        "token_sequence": token_sequence,
+        "envelope_path": str(destination),
+        "envelope_sha256": _sha256(destination),
+    }
+
+
 def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     """Resume exactly the recorded DSH Session and let it execute one bounded suffix."""
 
+    _validate_continuation_request(request)
     from .adapters.dsh import DshAdapter, _positive_seconds
     from .process import windows_no_window_kwargs
     from .subprocess_watch import finish, spawn
@@ -467,8 +944,12 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             "immutable Worker endpoint or envelope changed before continuation",
         )
     recovery_mode = request.get("recovery_mode")
-    terminal_path = attempt / ("failed.json" if recovery_mode == "MISSING_RESULT" else "completed.json")
-    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT"} or (
+    terminal_path = attempt / (
+        "failed.json"
+        if recovery_mode in {"MISSING_RESULT", "INVALID_RESULT_CONTRACT"}
+        else "completed.json"
+    )
+    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT"} or (
         _sha256(terminal_path) != request.get("source_terminal_sha256")
     ):
         raise CompletionError(
@@ -490,7 +971,33 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
         }
     )
     adapter.validate_address(resumed_endpoint)
-    continuation_root = attempt / "worker-continuation"
+    continuation_root = _continuation_root(request)
+    if recovery_mode == "INVALID_RESULT_CONTRACT":
+        if continuation_root.exists():
+            raise CompletionError(
+                "WORKER_INVALID_RESULT_SUPPLEMENT_ALREADY_ATTEMPTED",
+                "the one allowed invalid-result supplement already has evidence",
+            )
+        if (
+            _sha256(attempt / "transport-task.json") != request.get("source_task_sha256")
+            or _sha256(attempt / "started.json") != request.get("source_started_sha256")
+            or _sha256(attempt / "worker-result.invalid.txt")
+            != request.get("source_invalid_result_sha256")
+        ):
+            raise CompletionError(
+                "WORKER_CONTINUATION_SOURCE_CHANGED",
+                "invalid-result source evidence changed before supplement",
+            )
+        snapshot = _candidate_repository_snapshot(Path(str(request["source_repository"])))
+        if (
+            snapshot["head"] != request.get("source_candidate", {}).get("commit")
+            or snapshot["parent"] != request.get("source_candidate_parent")
+            or snapshot["changed_paths"] != request.get("source_changed_paths")
+        ):
+            raise CompletionError(
+                "WORKER_CONTINUATION_SOURCE_CHANGED",
+                "candidate repository changed before result-only supplement",
+            )
     continuation_root.mkdir(parents=True, exist_ok=True)
     request_path = continuation_root / "request.json"
     data = continuation_request_bytes(request)
@@ -507,11 +1014,23 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             "the existing CELL handoff. Do not redo or expand the implementation. Verify the immutable request "
             "SHA-256, inspect the frozen source envelope and current repository candidate, then write one closed "
             "slk.worker-result/v1 JSON object to the request's worker_result_path. It must contain exactly "
-            "schema_version, message_id, run_id, role_instance_id, status, candidate, next_payload, and blocker; "
-            "status must be completed, blocker must be null, and the identity must match the source attempt. "
+            "schema_version, message_id, run_id, role_instance_id, status, candidate, and next_payload; "
+            "status must be completed and the identity must match the source attempt. "
             "After writing it, execute the request's transport_command with "
             f"`continue-worker --request {json.dumps(str(request_path))} --sha256 {digest}`. "
-            "Do not read, print, copy, or return credential plaintext.\n"
+            "Do not read, print, copy, or return credential plaintext. "
+            f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
+        )
+    elif recovery_mode == "INVALID_RESULT_CONTRACT":
+        instruction = (
+            "Resume this exact SLK Worker Session for one result-only contract correction. Do not edit product "
+            "files, change commits, rerun construction, or create a rework round. Verify the immutable request "
+            "SHA-256, inspect the frozen invalid result and unchanged candidate, then author one flat completed "
+            "slk.worker-result/v1 object at worker_result_path using exactly the worker_result_fields, "
+            "next_payload_fields, and d0_fields frozen in supplement_result_contract. Reuse the Worker's real rich "
+            "D0 and evidence; the Tool must not transform the old nested object or invent a new schema. Then execute "
+            f"the request's transport_command with `continue-worker --request {json.dumps(str(request_path))} "
+            f"--sha256 {digest}`. Do not read, print, copy, or return credential plaintext. "
             f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
         )
     else:
@@ -519,7 +1038,7 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             "Resume this exact SLK Worker Session only to finish its already-completed CELL handoff. "
             "Verify the immutable request SHA-256, then execute its transport_command with "
             f"`continue-worker --request {json.dumps(str(request_path))} --sha256 {digest}`. "
-            "Do not read, print, copy, or return credential plaintext.\n"
+            "Do not read, print, copy, or return credential plaintext. "
             f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
         )
     command = adapter.command(resumed_endpoint, instruction)
@@ -574,6 +1093,17 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     (continuation_root / "native.stderr.txt").write_text(completed.stderr, encoding="utf-8")
     if completed.returncode != 0:
         raise CompletionError("WORKER_CONTINUATION_FAILED", f"resumed Worker exited with {completed.returncode}")
+    if recovery_mode == "INVALID_RESULT_CONTRACT":
+        snapshot = _candidate_repository_snapshot(Path(str(request["source_repository"])))
+        if (
+            snapshot["head"] != request.get("source_candidate", {}).get("commit")
+            or snapshot["parent"] != request.get("source_candidate_parent")
+            or snapshot["changed_paths"] != request.get("source_changed_paths")
+        ):
+            raise CompletionError(
+                "WORKER_CONTINUATION_SOURCE_CHANGED",
+                "candidate repository changed during result-only supplement",
+            )
     result = _read_object(Path(str(request["continuation_result_path"])), "continuation result")
     if result.get("status") != "CHECKER_DELIVERY_READY" or result.get("source_message_id") != request.get(
         "source_message_id"
@@ -866,21 +1396,29 @@ def run_worker_continuation(
 ) -> dict[str, Any]:
     """Execute the bounded Worker-owned D0/candidate/checker handoff suffix."""
 
-    if request.get("schema_version") != CONTINUATION_SCHEMA or request.get("method_version") != "4.3.6":
-        raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation contract version is invalid")
+    _validate_continuation_request(request)
     run_id = str(request["run_id"])
     role_instance_id = str(request["worker_role_instance_id"])
-    authenticate(run_id, role_instance_id)
+    fresh_runtime_revision = authenticate(run_id, role_instance_id)
+    if isinstance(fresh_runtime_revision, bool) or not isinstance(fresh_runtime_revision, int) or fresh_runtime_revision < 1:
+        raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "fresh runtime revision is unavailable")
     attempt = Path(str(request["source_attempt_root"]))
     recovery_mode = request.get("recovery_mode")
-    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT"}:
+    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT"}:
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation recovery mode is invalid")
+    if recovery_mode == "INVALID_RESULT_CONTRACT" and fresh_runtime_revision != request.get("runtime_revision"):
+        raise CompletionError(
+            "WORKER_RUNTIME_REVISION_INVALID",
+            "invalid-result supplement requires the frozen Worker runtime revision",
+        )
     result_path = Path(str(request.get("worker_result_path", ""))).resolve()
-    expected_result_path = (
-        attempt / "worker-continuation" / "recovered-worker-result.json"
-        if recovery_mode == "MISSING_RESULT"
-        else attempt / "worker-result.json"
-    ).resolve()
+    if recovery_mode == "MISSING_RESULT":
+        expected_result_path = attempt / "worker-continuation" / "recovered-worker-result.json"
+    elif recovery_mode == "INVALID_RESULT_CONTRACT":
+        expected_result_path = attempt / "invalid-result-supplement" / "recovered-worker-result.json"
+    else:
+        expected_result_path = attempt / "worker-result.json"
+    expected_result_path = expected_result_path.resolve()
     if result_path != expected_result_path:
         raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker result path is not exact")
     if recovery_mode == "COMPLETED_RESULT":
@@ -890,20 +1428,38 @@ def run_worker_continuation(
             or _sha256(attempt / "completed.json") != request.get("source_terminal_sha256")
         ):
             raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker result hash changed")
+    elif recovery_mode == "MISSING_RESULT":
+        if (
+            request.get("worker_result_sha256") is not None
+            or _missing_result_failure(
+                attempt,
+                Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope")),
+            )
+            is None
+            or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "missing-result recovery source is not exact",
+            )
     elif (
         request.get("worker_result_sha256") is not None
-        or _missing_result_failure(attempt, Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))) is None
         or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")
+        or _sha256(attempt / "transport-task.json") != request.get("source_task_sha256")
+        or _sha256(attempt / "started.json") != request.get("source_started_sha256")
+        or _sha256(attempt / "worker-result.invalid.txt")
+        != request.get("source_invalid_result_sha256")
     ):
         raise CompletionError(
             "WORKER_COMPLETION_EVIDENCE_INVALID",
-            "missing-result recovery source is not exact",
+            "invalid-result supplement source is not exact",
         )
     worker_result = _read_object(result_path, "Worker result")
     endpoint_path = attempt / "endpoint.json"
     source_endpoint = Endpoint.from_dict(_read_object(endpoint_path, "Worker endpoint"))
     if (
         _sha256(endpoint_path) != request.get("source_endpoint_sha256")
+        or _sha256(attempt / "envelope.json") != request.get("source_envelope_sha256")
         or source_endpoint.role != "worker"
         or source_endpoint.run_id != run_id
         or source_endpoint.role_instance_id != role_instance_id
@@ -923,21 +1479,87 @@ def run_worker_continuation(
         "candidate",
         "next_payload",
     }
-    valid_result_fields = {frozenset(completed_result_fields | {"blocker"})}
-    if recovery_mode == "COMPLETED_RESULT":
-        valid_result_fields.add(frozenset(completed_result_fields))
     if (
-        frozenset(worker_result) not in valid_result_fields
+        frozenset(worker_result) != frozenset(completed_result_fields)
         or worker_result.get("schema_version") != "slk.worker-result/v1"
         or worker_result.get("message_id") != request.get("source_message_id")
         or worker_result.get("run_id") != run_id
         or worker_result.get("role_instance_id") != role_instance_id
         or worker_result.get("status") != "completed"
         or not isinstance(worker_result.get("candidate"), Mapping)
+        or set(worker_result["candidate"]) != {"kind", "commit"}
+        or worker_result["candidate"].get("kind") != "commit"
+        or not isinstance(worker_result["candidate"].get("commit"), str)
+        or len(str(worker_result["candidate"]["commit"])) != 40
         or not isinstance(next_payload, Mapping)
-        or ("blocker" in worker_result and worker_result.get("blocker") is not None)
     ):
         raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "Worker next_payload is invalid")
+    d0 = next_payload.get("d0")
+    changed_paths = next_payload.get("changed_paths", [])
+    unproved = next_payload.get("unproved", [])
+    repository_value = next_payload.get("candidate_repository", source_endpoint.address.get("cwd"))
+    repository = Path(str(repository_value)).resolve()
+    if not repository.is_dir():
+        raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "candidate repository is unavailable")
+    if recovery_mode == "INVALID_RESULT_CONTRACT":
+        required_payload_fields = set(INVALID_SUPPLEMENT_RESULT_CONTRACT["next_payload_fields"])
+        required_d0_fields = set(INVALID_SUPPLEMENT_RESULT_CONTRACT["d0_fields"])
+        suffix_blocker = next_payload.get("suffix_blocker")
+        if (
+            request.get("supplement_result_contract") != INVALID_SUPPLEMENT_RESULT_CONTRACT
+            or set(next_payload) != required_payload_fields
+            or next_payload.get("attempt") != request.get("attempt")
+            or next_payload.get("cell_id") != request.get("cell_id")
+            or not isinstance(next_payload.get("candidate_repository"), str)
+            or not isinstance(changed_paths, list)
+            or not changed_paths
+            or not all(isinstance(item, str) and item.strip() for item in changed_paths)
+            or not isinstance(unproved, list)
+            or not all(isinstance(item, str) and item.strip() for item in unproved)
+            or not isinstance(d0, Mapping)
+            or set(d0) != required_d0_fields
+            or not isinstance(d0.get("baseline_commit"), str)
+            or len(str(d0["baseline_commit"])) != 40
+            or not isinstance(d0.get("branch"), str)
+            or not str(d0["branch"]).strip()
+            or d0.get("candidate_commit") != worker_result["candidate"]["commit"]
+            or sorted(d0.get("changed_paths", [])) != request.get("source_changed_paths")
+            or not isinstance(d0.get("evidence_files"), list)
+            or not d0["evidence_files"]
+            or not all(isinstance(item, str) and item.strip() for item in d0["evidence_files"])
+            or not isinstance(d0.get("focused_command"), str)
+            or not str(d0["focused_command"]).strip()
+            or not isinstance(d0.get("frozen_command"), str)
+            or not str(d0["frozen_command"]).strip()
+            or not isinstance(d0.get("frozen_command_result"), Mapping)
+            or not isinstance(d0.get("green"), Mapping)
+            or not isinstance(d0.get("red"), Mapping)
+            or d0.get("unproved") != unproved
+            or (
+                suffix_blocker is not None
+                and (
+                    not isinstance(suffix_blocker, Mapping)
+                    or set(suffix_blocker) != {"phase", "cause", "summary", "evidence"}
+                )
+            )
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "invalid-result supplement lacks the closed D0, changed-path, or evidence fields",
+            )
+        snapshot = _candidate_repository_snapshot(repository)
+        if (
+            worker_result["candidate"] != request.get("source_candidate")
+            or str(repository) != request.get("source_repository")
+            or snapshot["head"] != worker_result["candidate"]["commit"]
+            or snapshot["parent"] != request.get("source_candidate_parent")
+            or snapshot["changed_paths"] != sorted(changed_paths)
+            or snapshot["changed_paths"] != request.get("source_changed_paths")
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "corrected Worker result does not bind the frozen candidate",
+            )
     source_message_id = str(request["source_message_id"])
     handoff_message_id = _stable_id(source_message_id, "candidate-ready")
     checker_token_already_committed = request.get("checker_token_already_committed") is True
@@ -951,43 +1573,6 @@ def run_worker_continuation(
         "corrects_event_id": None,
         "occurred_at": request["occurred_at"],
     }
-    for suffix, event_type, details in (
-        ("work-started", "WORK_STARTED", {"source_message_id": source_message_id, "resumed_session_id": request["worker_session_id"]}),
-        (
-            "d0-completed",
-            "D0_COMPLETED",
-            {
-                "candidate": worker_result["candidate"],
-                "d0": next_payload.get("d0"),
-                "changed_paths": next_payload.get("changed_paths", []),
-                "unproved": next_payload.get("unproved", []),
-            },
-        ),
-        (
-            "candidate-submitted",
-            "CANDIDATE_SUBMITTED",
-            {
-                "candidate": worker_result["candidate"],
-                "checker_endpoint_version": request["checker_endpoint"]["endpoint_version"],
-                "source_message_id": source_message_id,
-                "handoff_message_id": handoff_message_id,
-            },
-        ),
-    ):
-        write_event(
-            {
-                **common,
-                "event_id": _stable_id(source_message_id, suffix),
-                "event_type": event_type,
-                "details": details,
-            }
-        )
-    fresh_runtime_revision = authenticate(run_id, role_instance_id)
-    if isinstance(fresh_runtime_revision, bool) or not isinstance(fresh_runtime_revision, int) or fresh_runtime_revision < 1:
-        raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "fresh runtime revision is unavailable")
-    repository = next_payload.get("candidate_repository", next_payload.get("repository"))
-    if repository is None:
-        repository = source_endpoint.address.get("cwd")
     cell_goal = source_envelope.payload.get("cell_goal", next_payload.get("cell_goal"))
     d1_criteria = source_envelope.payload.get("d1_criteria")
     acceptance_criteria = source_envelope.payload.get("acceptance_criteria")
@@ -998,7 +1583,11 @@ def run_worker_continuation(
             "WORKER_COMPLETION_EVIDENCE_INVALID",
             "d1_criteria and acceptance_criteria conflict",
         )
-    source_terminal_path = attempt / ("failed.json" if recovery_mode == "MISSING_RESULT" else "completed.json")
+    source_terminal_path = attempt / (
+        "failed.json"
+        if recovery_mode in {"MISSING_RESULT", "INVALID_RESULT_CONTRACT"}
+        else "completed.json"
+    )
     raw_evidence = [
         path
         for path in (
@@ -1009,7 +1598,7 @@ def run_worker_continuation(
         )
         if path.is_file()
     ]
-    evidence_index_path = attempt / "worker-continuation" / "checker-evidence-index.json"
+    evidence_index_path = _continuation_root(request) / "checker-evidence-index.json"
     evidence_index_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_index = {
         "schema_version": "slk.checker-evidence-index/v1",
@@ -1035,10 +1624,7 @@ def run_worker_continuation(
         if path.is_file()
     ]
     if (
-        not isinstance(repository, str)
-        or not Path(repository).is_absolute()
-        or not Path(repository).is_dir()
-        or not isinstance(cell_goal, str)
+        not isinstance(cell_goal, str)
         or not cell_goal.strip()
         or not isinstance(d1_criteria, list)
         or not d1_criteria
@@ -1050,7 +1636,7 @@ def run_worker_continuation(
             "frozen repository, CELL goal, D1 criteria, and immutable evidence are required",
         )
     candidate_payload = {
-        "repository": str(Path(repository).resolve()),
+        "repository": str(repository),
         "candidate": worker_result["candidate"],
         "cell_goal": cell_goal.strip(),
         "d1_criteria": [item.strip() for item in d1_criteria],
@@ -1076,6 +1662,37 @@ def run_worker_continuation(
         "payload": candidate_payload,
     }
     Envelope.from_dict(envelope)
+    for suffix, event_type, details in (
+        ("work-started", "WORK_STARTED", {"source_message_id": source_message_id, "resumed_session_id": request["worker_session_id"]}),
+        (
+            "d0-completed",
+            "D0_COMPLETED",
+            {
+                "candidate": worker_result["candidate"],
+                "d0": d0,
+                "changed_paths": changed_paths,
+                "unproved": unproved,
+            },
+        ),
+        (
+            "candidate-submitted",
+            "CANDIDATE_SUBMITTED",
+            {
+                "candidate": worker_result["candidate"],
+                "checker_endpoint_version": request["checker_endpoint"]["endpoint_version"],
+                "source_message_id": source_message_id,
+                "handoff_message_id": handoff_message_id,
+            },
+        ),
+    ):
+        write_event(
+            {
+                **common,
+                "event_id": _stable_id(source_message_id, suffix),
+                "event_type": event_type,
+                "details": details,
+            }
+        )
     start = dict(start_checker(dict(request["checker_endpoint"]), envelope))
     if defer_checker_start:
         if start.get("status") != "delivery_ready":
@@ -1427,8 +2044,7 @@ def _activate_staged_checker(
         committed = _run_json_command(
             list(continuation["state_command"]),
             ["commit-delivery-start", "--request", str(_write_or_reuse_stable_request(
-                Path(str(continuation["source_attempt_root"]))
-                / "worker-continuation"
+                _continuation_root(continuation)
                 / f"commit-delivery-start-{commit_request['transport_receipt_id']}.json",
                 commit_request,
             ))],
@@ -1994,7 +2610,7 @@ def execute_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
         )
     state_command = list(request["state_command"])
     credential = unprotect_dpapi_hex(str(request["credential_path"]))
-    request_root = Path(str(request["source_attempt_root"])) / "worker-continuation"
+    request_root = _continuation_root(request)
     request_root.mkdir(parents=True, exist_ok=True)
 
     def state_request(command_name: str, value: Mapping[str, Any]) -> dict[str, Any]:

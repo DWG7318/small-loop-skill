@@ -17,7 +17,11 @@ from scripts.run_transport_drill import run_drill
 import slk_transport.cli as transport_cli
 
 from test_contracts import endpoint_value, envelope_value, payload_hash
-from test_worker_completion import completion_fixture, runtime_projection
+from test_worker_completion import (
+    completion_fixture,
+    invalid_result_contract_fixture,
+    runtime_projection,
+)
 
 
 TESTS = Path(__file__).parent
@@ -283,6 +287,62 @@ def test_checker_post_d1_cli_is_exposed_and_fails_closed_on_an_open_request(tmp_
     result = json.loads(rejected.stdout)
     assert result["status"] == "rejected"
     assert result["error_code"] == "CHECKER_ESCALATION_REQUEST_INVALID"
+
+
+def test_prepare_invalid_result_recovery_is_read_only_and_emits_closed_checker_envelope(
+    tmp_path: Path,
+) -> None:
+    attempt, _worker, checker, candidate, _baseline = invalid_result_contract_fixture(tmp_path)
+    checker_path = write_json(tmp_path / "checker-endpoint.json", checker)
+    projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
+    worker_credential = tmp_path / "worker.dpapi"
+    checker_credential = tmp_path / "checker.dpapi"
+    worker_credential.write_text("sealed-worker", encoding="utf-8")
+    checker_credential.write_text("sealed-checker", encoding="utf-8")
+    output = tmp_path / "invalid-result-recovery-envelope.json"
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+
+    prepared = run_cli(
+        artifact,
+        "prepare-invalid-result-recovery",
+        "--source-attempt",
+        str(attempt),
+        "--checker-endpoint",
+        str(checker_path),
+        "--runtime-projection",
+        str(projection_path),
+        "--supervisor-role-instance-id",
+        "RUN-A-supervisor-001",
+        "--plan-revision",
+        "1",
+        "--runtime-revision",
+        "7",
+        "--token-sequence",
+        "14",
+        "--worker-credential",
+        str(worker_credential),
+        "--checker-credential",
+        str(checker_credential),
+        "--state-command",
+        "slk-state",
+        "--transport-command",
+        "python",
+        "slk-transport.pyz",
+        "--occurred-at",
+        "2026-09-23T00:00:00Z",
+        "--output",
+        str(output),
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    readiness = json.loads(prepared.stdout)
+    envelope = json.loads(output.read_text(encoding="utf-8"))
+    assert readiness["status"] == "INVALID_RESULT_RECOVERY_READY"
+    assert readiness["candidate"] == {"kind": "commit", "commit": candidate}
+    assert envelope["payload_type"] == "WORKER_COMPLETION_RECOVERY"
+    assert envelope["sender_role"] == "supervisor"
+    assert envelope["receiver_role"] == "checker"
+    assert not (attempt / "invalid-result-supplement").exists()
 
 
 def test_retry_exact_uses_persisted_identity_and_stops_after_one_attempt(

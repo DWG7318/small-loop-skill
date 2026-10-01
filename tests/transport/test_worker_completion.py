@@ -404,7 +404,7 @@ def test_checker_token_legacy_434_start_requires_the_entire_exact_completed_chai
             "cell_id": envelope.cell_id,
             "endpoint": asdict(endpoint),
             "envelope": asdict(envelope),
-            "result_contract": DshAdapter().result_contract(endpoint, envelope),
+            "result_contract": DshAdapter().legacy_result_contract(endpoint, envelope),
             "result_path": str(
                 (
                     Path(str(endpoint.address["cwd"]))
@@ -600,7 +600,6 @@ def completion_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[st
                 "d0": {"commands_and_outcomes": ["pytest: pass"], "not_run": []},
                 "unproved": [],
             },
-            "blocker": None,
         },
     )
     write_json(
@@ -986,6 +985,14 @@ def test_resume_worker_continuation_uses_exact_session_and_strips_parent_credent
         transport_command=["slk-transport"],
         occurred_at="2026-09-23T00:00:00Z",
     )
+    instructions: list[str] = []
+    original_command = DshAdapter.command
+
+    def capture_command(self: DshAdapter, exact_endpoint: Endpoint, instruction: str) -> list[str]:
+        instructions.append(instruction)
+        return original_command(self, exact_endpoint, instruction)
+
+    monkeypatch.setattr(DshAdapter, "command", capture_command)
     monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "slk_must_not_escape")
     monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "slk_must_not_escape")
 
@@ -993,6 +1000,8 @@ def test_resume_worker_continuation_uses_exact_session_and_strips_parent_credent
 
     assert result["status"] == "CHECKER_DELIVERY_READY"
     assert result["source_message_id"] == request["source_message_id"]
+    assert len(instructions) == 1
+    assert "\r" not in instructions[0] and "\n" not in instructions[0]
     started = json.loads((attempt / "worker-continuation" / "started.json").read_text(encoding="utf-8"))
     assert started["session_id"] == session_id
 
@@ -1078,6 +1087,54 @@ def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path:
     index = json.loads(index_path.read_text(encoding="utf-8"))
     assert index["schema_version"] == "slk.checker-evidence-index/v1"
     assert {entry["name"] for entry in index["entries"]} >= {"native.stdout.txt", "native.stderr.txt"}
+
+
+def test_invalid_worker_payload_is_rejected_before_any_engineering_fact(tmp_path: Path) -> None:
+    attempt, endpoint, checker, candidate, _baseline = invalid_result_contract_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    write_json(
+        Path(str(request["worker_result_path"])),
+        {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": MESSAGE_ID,
+            "run_id": "RUN-A",
+            "role_instance_id": endpoint["role_instance_id"],
+            "status": "completed",
+            "candidate": {"kind": "commit", "commit": candidate},
+            "next_payload": {
+                "attempt": 1,
+                "candidate_repository": str(endpoint["address"]["cwd"]),
+                "cell_id": "CELL-001",
+                "changed_paths": ["example.txt"],
+                "suffix_blocker": None,
+                "unproved": [],
+            },
+        },
+    )
+    events: list[dict[str, object]] = []
+
+    with pytest.raises(CompletionError) as rejected:
+        run_worker_continuation(
+            request,
+            authenticate=lambda *_args: 7,
+            write_event=lambda event: events.append(event) or "RECORDED",
+            start_checker=lambda *_args: pytest.fail("invalid result must not reach Checker"),
+            commit_start=lambda *_args: pytest.fail("invalid result must not move TOKEN"),
+        )
+
+    assert rejected.value.error_code == "WORKER_COMPLETION_EVIDENCE_INVALID"
+    assert events == []
 
 
 def test_dsh_worker_only_stages_checker_delivery_and_never_hosts_ocrv(tmp_path: Path) -> None:
@@ -1970,6 +2027,424 @@ def legacy_missing_result_fixture(
     return attempt, worker, checker
 
 
+def invalid_result_contract_fixture(
+    tmp_path: Path,
+) -> tuple[Path, dict[str, object], dict[str, object], str, str]:
+    attempt, worker, checker = completion_fixture(tmp_path)
+    repository = Path(str(worker["address"]["cwd"]))
+
+    def git(*arguments: str) -> str:
+        completed = subprocess.run(
+            ["git", *arguments],
+            cwd=repository,
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            check=True,
+        )
+        return completed.stdout.strip()
+
+    git("init")
+    git("config", "user.name", "SLK Test")
+    git("config", "user.email", "slk-test@example.invalid")
+    (repository / "example.txt").write_text("baseline\n", encoding="utf-8")
+    git("add", "example.txt")
+    git("commit", "-m", "baseline")
+    baseline = git("rev-parse", "HEAD")
+    (repository / "example.txt").write_text("candidate\n", encoding="utf-8")
+    git("add", "example.txt")
+    git("commit", "-m", "candidate")
+    candidate = git("rev-parse", "HEAD")
+
+    envelope = json.loads((attempt / "envelope.json").read_text(encoding="utf-8"))
+    endpoint = Endpoint.from_dict(worker)
+    legacy_contract = {
+        "schema_version": "slk.worker-result-contract/v1",
+        "identity": {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": envelope["message_id"],
+            "run_id": envelope["run_id"],
+            "role_instance_id": envelope["receiver_role_instance_id"],
+        },
+        "allowed_statuses": [
+            "completed", "incomplete", "blocked", "execution_failure", "timed_out",
+        ],
+        "completed": {
+            "candidate": {"kind": "commit", "commit": "REPLACE_WITH_EXACT_COMMIT"},
+            "next_payload": {"candidate_repository": str(repository.resolve())},
+            "blocker": None,
+        },
+        "non_completed": {
+            "candidate": None,
+            "next_payload": None,
+            "blocker_fields": ["phase", "cause", "summary", "evidence"],
+        },
+    }
+    task = {
+        "schema_version": "slk.transport-task/v1",
+        "message_id": envelope["message_id"],
+        "run_id": envelope["run_id"],
+        "go_id": envelope["go_id"],
+        "cell_id": envelope["cell_id"],
+        "endpoint": worker,
+        "envelope": envelope,
+        "result_contract": legacy_contract,
+        "result_path": str(
+            (repository / ".slk-transport" / str(envelope["message_id"]) / "worker-result.json").resolve()
+        ),
+    }
+    task_bytes = canonical_task_bytes(task)
+    (attempt / "transport-task.json").write_bytes(task_bytes)
+    started = json.loads((attempt / "started.json").read_text(encoding="utf-8"))
+    started["native_request_sha256"] = hashlib.sha256(task_bytes).hexdigest()
+    write_json(attempt / "started.json", started)
+    (attempt / "completed.json").unlink()
+    (attempt / "worker-result.json").unlink()
+    invalid = {
+        "schema_version": "slk.worker-result-contract/v1",
+        "identity": legacy_contract["identity"],
+        "status": "completed",
+        "completed": {
+            "candidate": {"kind": "commit", "commit": candidate},
+            "next_payload": {"candidate_repository": str(repository.resolve())},
+            "blocker": None,
+            "evidence": {
+                "candidate_commit": candidate,
+                "candidate_parent": baseline,
+                "changed_paths": ["example.txt"],
+            },
+        },
+    }
+    (attempt / "worker-result.invalid.txt").write_text(
+        json.dumps(invalid, sort_keys=True), encoding="utf-8"
+    )
+    write_json(
+        attempt / "failed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": envelope["message_id"],
+            "run_id": envelope["run_id"],
+            "adapter": "dsh-worker",
+            "status": "failed",
+            "native_identity": {},
+            "error_code": "DSH_RESULT_INVALID",
+            "evidence": [
+                "started.json", "transport-task.json", "worker-result.invalid.txt",
+            ],
+        },
+    )
+    return attempt, worker, checker, candidate, baseline
+
+
+def write_valid_invalid_result_supplement(
+    attempt: Path,
+    worker: dict[str, object],
+    request: dict[str, object],
+    candidate: str,
+    baseline: str,
+) -> Path:
+    next_payload = {
+        "attempt": request["attempt"],
+        "candidate_repository": str(Path(str(worker["address"]["cwd"])).resolve()),
+        "cell_id": request["cell_id"],
+        "changed_paths": ["example.txt"],
+        "d0": {
+            "baseline_commit": baseline,
+            "branch": "test-branch",
+            "candidate_commit": candidate,
+            "changed_paths": ["example.txt"],
+            "evidence_files": [str((attempt / "worker-result.invalid.txt").resolve())],
+            "focused_command": "pytest focused",
+            "frozen_command": "pytest full",
+            "frozen_command_result": {"status": "passed"},
+            "green": {"status": "passed"},
+            "red": {"status": "failed-before"},
+            "unproved": [],
+        },
+        "suffix_blocker": None,
+        "unproved": [],
+    }
+    return write_json(
+        Path(str(request["worker_result_path"])),
+        {
+            "schema_version": "slk.worker-result/v1",
+            "message_id": MESSAGE_ID,
+            "run_id": "RUN-A",
+            "role_instance_id": worker["role_instance_id"],
+            "status": "completed",
+            "candidate": {"kind": "commit", "commit": candidate},
+            "next_payload": next_payload,
+        },
+    )
+
+
+def test_checker_recovery_builds_one_invalid_result_contract_supplement(tmp_path: Path) -> None:
+    attempt, worker, checker, candidate, baseline = invalid_result_contract_fixture(tmp_path)
+
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+
+    assert request["recovery_mode"] == "INVALID_RESULT_CONTRACT"
+    assert request["worker_result_path"] == str(
+        (attempt / "invalid-result-supplement" / "recovered-worker-result.json").resolve()
+    )
+    assert request["source_candidate"] == {"kind": "commit", "commit": candidate}
+    assert request["source_candidate_parent"] == baseline
+    assert request["source_repository"] == str(Path(str(worker["address"]["cwd"])).resolve())
+    assert request["source_changed_paths"] == ["example.txt"]
+    assert request["source_invalid_result_sha256"] == worker_completion._sha256(
+        attempt / "worker-result.invalid.txt"
+    )
+    assert request["source_task_sha256"] == worker_completion._sha256(attempt / "transport-task.json")
+    assert request["source_started_sha256"] == worker_completion._sha256(attempt / "started.json")
+    assert request["supplement_result_contract"] == worker_completion.INVALID_SUPPLEMENT_RESULT_CONTRACT
+    assert "slk_" not in json.dumps(request)
+
+
+def test_invalid_result_contract_supplement_validates_before_worker_events(tmp_path: Path) -> None:
+    attempt, worker, checker, candidate, baseline = invalid_result_contract_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    write_valid_invalid_result_supplement(attempt, worker, request, candidate, baseline)
+    events: list[dict[str, object]] = []
+    staged: list[dict[str, object]] = []
+
+    def start_checker(endpoint_raw: dict[str, object], envelope_raw: dict[str, object]) -> dict[str, object]:
+        staged.append(envelope_raw)
+        root = attempt / "invalid-result-supplement"
+        return {
+            "status": "delivery_ready",
+            "endpoint_path": str(write_json(root / "checker-endpoint.json", endpoint_raw)),
+            "envelope_path": str(write_json(root / "candidate-envelope.json", envelope_raw)),
+            "attempt_root": str(root / "checker-attempts"),
+        }
+
+    result = run_worker_continuation(
+        request,
+        authenticate=lambda *_args: 7,
+        write_event=lambda event: events.append(event) or "RECORDED",
+        start_checker=start_checker,
+        commit_start=lambda *_args: pytest.fail("DSH must only stage Checker"),
+        defer_checker_start=True,
+    )
+
+    assert result["status"] == "CHECKER_DELIVERY_READY"
+    assert [event["event_type"] for event in events] == [
+        "WORK_STARTED",
+        "D0_COMPLETED",
+        "CANDIDATE_SUBMITTED",
+    ]
+    assert staged[0]["payload"]["candidate"] == {"kind": "commit", "commit": candidate}
+
+
+@pytest.mark.parametrize(
+    "field,mutated",
+    [
+        ("source_terminal_sha256", "0" * 64),
+        ("source_task_sha256", "0" * 64),
+        ("source_started_sha256", "0" * 64),
+        ("source_invalid_result_sha256", "0" * 64),
+        ("source_candidate", {"kind": "commit", "commit": "0" * 40}),
+        ("source_candidate_parent", "0" * 40),
+        ("token_sequence", 15),
+        ("runtime_revision", 8),
+    ],
+)
+def test_invalid_result_contract_supplement_rejects_frozen_source_drift(
+    tmp_path: Path,
+    field: str,
+    mutated: object,
+) -> None:
+    attempt, worker, checker, candidate, baseline = invalid_result_contract_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    write_valid_invalid_result_supplement(attempt, worker, request, candidate, baseline)
+    request[field] = mutated
+    events: list[dict[str, object]] = []
+
+    with pytest.raises(CompletionError):
+        run_worker_continuation(
+            request,
+            authenticate=lambda *_args: 7,
+            write_event=lambda event: events.append(event) or "RECORDED",
+            start_checker=lambda *_args: pytest.fail("drift must not reach Checker"),
+            commit_start=lambda *_args: pytest.fail("drift must not move TOKEN"),
+        )
+
+    assert events == []
+
+
+def test_invalid_result_contract_supplement_is_one_shot(tmp_path: Path) -> None:
+    attempt, _worker, checker, _candidate, _baseline = invalid_result_contract_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    (attempt / "invalid-result-supplement").mkdir()
+
+    with pytest.raises(CompletionError) as rejected:
+        resume_worker_continuation(request)
+
+    assert rejected.value.error_code == "WORKER_INVALID_RESULT_SUPPLEMENT_ALREADY_ATTEMPTED"
+
+
+def test_invalid_result_contract_resume_instruction_is_one_physical_line_and_exact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt, _worker, checker, _candidate, _baseline = invalid_result_contract_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    instructions: list[str] = []
+
+    def capture(_self: DshAdapter, _endpoint: Endpoint, instruction: str) -> list[str]:
+        instructions.append(instruction)
+        raise CompletionError("TEST_COMMAND_CAPTURED", "stop before model start")
+
+    monkeypatch.setattr(DshAdapter, "command", capture)
+
+    with pytest.raises(CompletionError) as stopped:
+        resume_worker_continuation(request)
+
+    assert stopped.value.error_code == "TEST_COMMAND_CAPTURED"
+    assert len(instructions) == 1
+    assert "\r" not in instructions[0] and "\n" not in instructions[0]
+    assert "supplement_result_contract" in instructions[0]
+    assert json.dumps(str(attempt / "invalid-result-supplement" / "request.json")) in instructions[0]
+
+
+@pytest.mark.parametrize("mutation", ["session", "commit"])
+def test_invalid_result_contract_supplement_rejects_session_or_commit_drift_before_resume(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    attempt, worker, checker, _candidate, _baseline = invalid_result_contract_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    if mutation == "session":
+        request["worker_session_id"] = "session-22222222-2222-4222-8222-222222222222"
+    else:
+        repository = Path(str(worker["address"]["cwd"]))
+        (repository / "example.txt").write_text("third commit\n", encoding="utf-8")
+        subprocess.run(["git", "add", "example.txt"], cwd=repository, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=SLK Test", "-c", "user.email=slk-test@example.invalid", "commit", "-m", "drift"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+        )
+
+    with pytest.raises(CompletionError):
+        resume_worker_continuation(request)
+
+    assert not (attempt / "invalid-result-supplement").exists()
+
+
+@pytest.mark.parametrize("event_type", ["WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"])
+def test_invalid_result_contract_supplement_rejects_existing_worker_facts(
+    tmp_path: Path,
+    event_type: str,
+) -> None:
+    attempt, _worker, checker, _candidate, _baseline = invalid_result_contract_fixture(tmp_path)
+    projection = runtime_projection(event_types=[event_type])
+
+    with pytest.raises(CompletionError) as rejected:
+        build_continuation_request(
+            attempt,
+            checker,
+            projection,
+            plan_revision=1,
+            runtime_revision=7,
+            token_sequence=14,
+            credential_path=tmp_path / "worker.dpapi",
+            state_command=["slk-state"],
+            transport_command=["slk-transport"],
+            occurred_at="2026-09-23T00:00:00Z",
+        )
+
+    assert rejected.value.error_code == "WORKER_CONTINUATION_NOT_READY"
+
+
+def test_invalid_result_contract_rejects_candidate_repository_drift(tmp_path: Path) -> None:
+    attempt, worker, checker, _candidate, _baseline = invalid_result_contract_fixture(tmp_path)
+    repository = Path(str(worker["address"]["cwd"]))
+    (repository / "unexpected.txt").write_text("drift\n", encoding="utf-8")
+
+    with pytest.raises(CompletionError) as rejected:
+        build_continuation_request(
+            attempt,
+            checker,
+            runtime_projection(),
+            plan_revision=1,
+            runtime_revision=7,
+            token_sequence=14,
+            credential_path=tmp_path / "worker.dpapi",
+            state_command=["slk-state"],
+            transport_command=["slk-transport"],
+            occurred_at="2026-09-23T00:00:00Z",
+        )
+
+    assert rejected.value.error_code == "WORKER_CONTINUATION_NOT_READY"
+
+
 def test_inspector_reports_legacy_missing_result_as_recoverable_incomplete(
     tmp_path: Path,
 ) -> None:
@@ -2070,13 +2545,11 @@ def test_worker_owned_missing_result_continuation_uses_recovered_result(
             "candidate": {"kind": "commit", "commit": "c" * 40},
             "next_payload": {
                 "candidate_repository": str(tmp_path / "repository"),
-                "cell_goal": "finish one bounded change",
                 "candidate_baseline": "a" * 40,
                 "changed_paths": ["src/example.py"],
                 "d0": {"commands_and_outcomes": ["pytest: pass"], "not_run": []},
                 "unproved": [],
             },
-            "blocker": None,
         },
     )
     sent: list[dict[str, object]] = []
@@ -2119,6 +2592,54 @@ def test_worker_owned_missing_result_continuation_uses_recovered_result(
         "commit": "c" * 40,
     }
     assert str(request["worker_result_path"]) in sent[0]["payload"]["evidence_files"]
+
+
+def test_missing_result_recovery_rejects_completed_blocker_field_before_events(
+    tmp_path: Path,
+) -> None:
+    attempt, endpoint, checker = legacy_missing_result_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    recovered = {
+        "schema_version": "slk.worker-result/v1",
+        "message_id": MESSAGE_ID,
+        "run_id": "RUN-A",
+        "role_instance_id": endpoint["role_instance_id"],
+        "status": "completed",
+        "candidate": {"kind": "commit", "commit": "c" * 40},
+        "next_payload": {
+            "candidate_repository": str(tmp_path / "repository"),
+            "candidate_baseline": "a" * 40,
+            "changed_paths": ["src/example.py"],
+            "d0": {"commands_and_outcomes": ["pytest: pass"], "not_run": []},
+            "unproved": [],
+        },
+        "blocker": None,
+    }
+    write_json(Path(str(request["worker_result_path"])), recovered)
+    events: list[dict[str, object]] = []
+
+    with pytest.raises(CompletionError) as rejected:
+        run_worker_continuation(
+            request,
+            authenticate=lambda *_args: 7,
+            write_event=lambda event: events.append(event) or "RECORDED",
+            start_checker=lambda *_args: pytest.fail("invalid result must not reach Checker"),
+            commit_start=lambda *_args: pytest.fail("invalid result must not move TOKEN"),
+        )
+
+    assert rejected.value.error_code == "WORKER_COMPLETION_EVIDENCE_INVALID"
+    assert events == []
 
 
 @pytest.mark.parametrize(
