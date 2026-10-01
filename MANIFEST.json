@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "b33832fb046f6c3846dfc33261ab371ddd72d11dc6dd5cc9152ab7617a0b3b46"
+      "sha256": "032171d4c71b74a51b34722f0ee41b5aad4ebcac37f43a12d014c841d7a90450"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "1592c459d5f0fe9a35a2930eb4ae81baeba6d9e8355f753c23c8db54cbfa6e02"
+      "sha256": "92e19fd0d15d2c9b4d579a9a5e4212723eecfffe97456396df1c9af11936dee0"
     },
     {
       "path": "VERSION",
@@ -908,7 +908,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "a9fa3b993f50d7f87c5997fc3f51d07f4816b57e024c41c1e5e46b6925946f2c"
+      "sha256": "02e71ae3017a0589a688f11a6168abff378ba49b34a8d6dadbda1fa810a232d0"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -948,7 +948,7 @@
     },
     {
       "path": "integrations/ocrv/slk-checker.cmd",
-      "sha256": "8165c8d04f86609d949da91465ff374d395ccc613dfa18ec7e6a8e2e7932ae9c"
+      "sha256": "490fe1690fef3ef53094862c4768d375be7ebb4c7eb57019a5cf338ac9634303"
     },
     {
       "path": "integrations/ocrv/slk-native-activity-capabilities.json",
@@ -964,7 +964,7 @@
     },
     {
       "path": "integrations/ocrv/slk_checker_recovery.py",
-      "sha256": "8ca90505c9b3fff9dc0393bd592b5b37c87bda23ce949c7d3803d9582a435e62"
+      "sha256": "9067e2b7b0327f030b06534a6f23b3557a73bc9e5c4da9510f185aec54bc7e8a"
     },
     {
       "path": "integrations/temporal/README.md",
@@ -1108,7 +1108,7 @@
     },
     {
       "path": "skills/slk-recover-communication/SKILL.md",
-      "sha256": "5a11da036d519adcc4153ca04b65e0b3c84139d59235f7b8f7e960d57977df84"
+      "sha256": "63409cda1cb9cdfe54c024e29fbf5b7bd0a31553e396df9fc0d56bcf5129a11b"
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
@@ -1164,7 +1164,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "7a0fb849c0e7df60db296a87bbcb020f6e0b157377261a131f38841408f33566"
+      "sha256": "5f868eaa6f78091b6c9b2265d8265b3b25cb08ba21f0b335a998e8f7dabb76ba"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1228,7 +1228,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "dad283dd8b5f53b8e8f05d3bf96c3553c3537c7f0ca67cd34756b5a5e18b7b96"
+      "sha256": "2a50df022adbabb44bbc325ce4195fff3b13bdb952a6ab902a0c739aefa88f23"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1260,7 +1260,7 @@
     },
     {
       "path": "tests/install/test_ocrv_integration.py",
-      "sha256": "38c9eaba505e3ee07b430d7dc9a2c73c846573668951dae2b3c66ef4f061c434"
+      "sha256": "fb52a58edde0d2416dc23ea7426de244e9887551da24a7c81192f18158da7867"
     },
     {
       "path": "tests/install/test_ocrv_preflight.py",
@@ -1312,7 +1312,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "1c1867192a23f2a9d14979f268275f887fe742543aeb4acf7316ffed03f2d4b8"
+      "sha256": "77510e051c265ec29ce42b300bd8eee3a86704fe4a62f06ea2ee694cc74db42d"
     },
     {
       "path": "tests/transport/fake_app_server.py",
@@ -1344,7 +1344,7 @@
     },
     {
       "path": "tests/transport/test_cli.py",
-      "sha256": "d2eb30a19b0c96e68c644c0e6527d22d40895866aabdd26b2dbcb534d0060d0b"
+      "sha256": "5fa397dbd8f4606126e5a6777f35ff796aff6c0d5a5fe513f486109a0d3bd5f7"
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
@@ -1420,7 +1420,7 @@
     },
     {
       "path": "tests/transport/test_worker_completion.py",
-      "sha256": "8174ee121f645f3369525719baffd7a2fe11fbbfb159ab4372f3233c865533d7"
+      "sha256": "e0e767309e91709d0e55adfa363e74838967eed72a9b703b9f11a59d916c34dd"
     },
     {
       "path": "tests/transport/test_workspace.py",

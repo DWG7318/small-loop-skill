@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +52,250 @@ def commit_result(request: dict[str, object], *, status: str = "committed") -> d
         "token_sequence": request["token_sequence"],
         "message_id": request["message_id"],
     }
+
+
+def actual_state_call(
+    state_binary: Path,
+    config_path: Path,
+    arguments: list[object],
+    *,
+    credential: str | None = None,
+) -> dict[str, object]:
+    environment = os.environ.copy()
+    environment["SLK_CONFIG_PATH"] = str(config_path)
+    environment.pop("SLK_ROLE_CREDENTIAL", None)
+    if credential is not None:
+        environment["SLK_ROLE_CREDENTIAL"] = credential
+    completed = subprocess.run(
+        [str(state_binary), *map(str, arguments)],
+        env=environment,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(completed.stdout or completed.stderr)
+    value = json.loads(completed.stdout)
+    assert isinstance(value, dict)
+    return value
+
+
+def actual_worker_state(
+    tmp_path: Path,
+) -> tuple[Path, Path, str, str, int]:
+    suffix = ".exe" if os.name == "nt" else ""
+    state_binary = Path(__file__).parents[2] / "target" / "debug" / f"slk-state{suffix}"
+    if not state_binary.is_file():
+        pytest.skip("build slk-state before the real revision integration test")
+    config_path = tmp_path / "state-config" / "config.json"
+    actual_state_call(
+        state_binary,
+        config_path,
+        ["configure", "--data-root", tmp_path / "state-data"],
+    )
+    initialized = actual_state_call(
+        state_binary,
+        config_path,
+        [
+            "init-run",
+            "--request",
+            write_json(
+                tmp_path / "init-run.json",
+                {
+                    "project": {
+                        "project_id": "project-a",
+                        "name": "Project A",
+                        "repository_url": None,
+                        "last_known_path": str(tmp_path),
+                    },
+                    "run_id": "RUN-A",
+                    "goal": "prove Worker handoff revision closure",
+                    "boundaries": {},
+                    "go_nodes": [
+                        {
+                            "go_id": "GO-001",
+                            "ordinal": 1,
+                            "title": "GO",
+                            "objective": "Objective",
+                        }
+                    ],
+                    "cell_nodes": [
+                        {
+                            "go_id": "GO-001",
+                            "cell_id": "CELL-001",
+                            "ordinal": 1,
+                            "title": "CELL",
+                            "objective": "Objective",
+                        }
+                    ],
+                    "supervisor": {
+                        "role_instance_id": "RUN-A-supervisor-001",
+                        "role": "supervisor",
+                        "agent_runtime": "codex",
+                        "provider": "openai",
+                        "model": "gpt-5.6-sol",
+                        "reasoning": "xhigh",
+                        "session_id": "thread-a",
+                    },
+                    "supervisor_endpoint": {
+                        "endpoint_version": 1,
+                        "transport_adapter": "codex-app-server",
+                        "host_identity": "host-a",
+                        "session_id": "thread-a",
+                        "native_address": {"thread_id": "thread-a"},
+                    },
+                    "occurred_at": "2026-09-23T00:00:00Z",
+                },
+            ),
+        ],
+    )
+    supervisor_credential = str(initialized["supervisor_credential"])
+
+    def role_request(role: str) -> dict[str, object]:
+        role_instance_id = f"RUN-A-{role}-001"
+        checker = role == "checker"
+        return {
+            "event_id": f"register-{role}",
+            "run_id": "RUN-A",
+            "identity": {
+                "role_instance_id": role_instance_id,
+                "role": role,
+                "agent_runtime": "ocrv" if checker else "dsh",
+                "provider": "dashscope-tokenplan" if checker else "deepseek",
+                "model": "qwen3.8-max" if checker else "deepseek-v4-flash",
+                "reasoning": "provider-default",
+                "session_id": f"session-{role}",
+            },
+            "endpoint": {
+                "endpoint_version": 1,
+                "transport_adapter": "ocrv-checker" if checker else "dsh-worker",
+                "host_identity": "host-a",
+                "session_id": f"session-{role}",
+                "native_address": {"session_id": f"session-{role}"},
+            },
+            "occurred_at": "2026-09-23T00:00:01Z",
+        }
+
+    checker = actual_state_call(
+        state_binary,
+        config_path,
+        ["register-role", "--request", write_json(tmp_path / "register-checker.json", role_request("checker"))],
+        credential=supervisor_credential,
+    )
+    checker_credential = str(checker["role_credential"])
+    worker = actual_state_call(
+        state_binary,
+        config_path,
+        ["register-role", "--request", write_json(tmp_path / "register-worker.json", role_request("worker"))],
+        credential=checker_credential,
+    )
+    worker_credential = str(worker["role_credential"])
+
+    def commit_start(
+        *,
+        suffix_name: str,
+        sender_role: str,
+        sender_id: str,
+        sender_credential: str,
+        receiver_role: str,
+        receiver_id: str,
+        adapter: str,
+        message_id: str,
+        token_sequence: int,
+        expected_runtime_revision: int,
+    ) -> dict[str, object]:
+        payload = {"stage": suffix_name}
+        payload_sha = canonical_json_sha256(payload)
+        evidence_root = tmp_path / f"start-{suffix_name}"
+        endpoint_path = write_json(evidence_root / "endpoint.json", {"receiver": receiver_id})
+        envelope_path = write_json(evidence_root / "envelope.json", payload)
+        started_path = write_json(
+            evidence_root / "started.json",
+            make_native_start(
+                adapter=adapter,
+                run_id="RUN-A",
+                cell_id="CELL-001",
+                message_id=message_id,
+                request_sha256=payload_sha,
+                native_request_sha256="c" * 64,
+                native_task_kind="ocrv-review" if receiver_role == "checker" else "dsh-session",
+                native_task_id=f"native-{suffix_name}",
+                native_task_status="RUNNING",
+                pid=os.getpid(),
+            ),
+        )
+        request = {
+            "event_id": f"transport-started-{suffix_name}",
+            "transport_receipt_id": f"transport-receipt-{suffix_name}",
+            "run_id": "RUN-A",
+            "go_id": "GO-001",
+            "cell_id": "CELL-001",
+            "attempt": 1,
+            "plan_revision": 1,
+            "expected_runtime_revision": expected_runtime_revision,
+            "message_id": message_id,
+            "token_sequence": token_sequence,
+            "from_role_instance_id": sender_id,
+            "to_role_instance_id": receiver_id,
+            "endpoint_version": 1,
+            "payload_type": "CELL_DISPATCH" if sender_role == "supervisor" else "WORKER_TASK",
+            "payload_sha256": payload_sha,
+            "start_evidence": {
+                "evidence_id": f"native-start-{suffix_name}",
+                "stored_path": str(started_path.resolve()),
+                "sha256": hashlib.sha256(started_path.read_bytes()).hexdigest(),
+                "message_id": message_id,
+                "endpoint_sha256": hashlib.sha256(endpoint_path.read_bytes()).hexdigest(),
+                "envelope_sha256": hashlib.sha256(envelope_path.read_bytes()).hexdigest(),
+                "native_status": "STARTED",
+            },
+            "occurred_at": "2026-09-23T00:00:02Z",
+        }
+        return actual_state_call(
+            state_binary,
+            config_path,
+            ["commit-delivery-start", "--request", write_json(tmp_path / f"commit-{suffix_name}.json", request)],
+            credential=sender_credential,
+        )
+
+    supervisor_auth = actual_state_call(
+        state_binary,
+        config_path,
+        ["authenticate-role", "--run-id", "RUN-A", "--role-instance-id", "RUN-A-supervisor-001"],
+        credential=supervisor_credential,
+    )
+    checker_start = commit_start(
+        suffix_name="checker",
+        sender_role="supervisor",
+        sender_id="RUN-A-supervisor-001",
+        sender_credential=supervisor_credential,
+        receiver_role="checker",
+        receiver_id="RUN-A-checker-001",
+        adapter="ocrv-checker",
+        message_id=str(uuid.uuid4()),
+        token_sequence=2,
+        expected_runtime_revision=int(supervisor_auth["runtime_revision"]),
+    )
+    worker_start = commit_start(
+        suffix_name="worker",
+        sender_role="checker",
+        sender_id="RUN-A-checker-001",
+        sender_credential=checker_credential,
+        receiver_role="worker",
+        receiver_id="RUN-A-worker-001",
+        adapter="dsh-worker",
+        message_id=MESSAGE_ID,
+        token_sequence=3,
+        expected_runtime_revision=int(checker_start["runtime_revision"]),
+    )
+    return (
+        state_binary,
+        config_path,
+        worker_credential,
+        checker_credential,
+        int(worker_start["runtime_revision"]),
+    )
 
 
 @pytest.mark.parametrize(
@@ -275,6 +520,111 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
     assert calls == ["authenticate", "resume", "activate", "record"]
     assert result["status"] == "CHECKER_D1_RECORDED"
     assert result["checker_role_instance_id"] == request["checker_role_instance_id"]
+
+
+def test_original_checker_path_consumes_commit_only_activation_without_restarting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = checker_recovery_request(tmp_path)
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID", str(request["checker_role_instance_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ENDPOINT_VERSION", str(request["checker_endpoint_version"]))
+    calls: list[str] = []
+
+    def load_activation(continuation: dict[str, object], revision: int) -> dict[str, object]:
+        calls.append("load-commit-only")
+        assert revision == 14
+        return {
+            "status": "CHECKER_STARTED",
+            "runtime_revision": 14,
+            "token_sequence": 15,
+            "candidate_message_id": _stable_id(str(continuation["source_message_id"]), "candidate-ready"),
+            "checker_token_already_committed": False,
+            "native_attempt_path": str(tmp_path / "existing-ocrv-attempt"),
+        }
+
+    result = execute_checker_recovery(
+        request,
+        request_sha256="e" * 64,
+        authenticate_checker=lambda *_args: {
+            "status": "authenticated",
+            "role": "checker",
+            "role_instance_id": request["checker_role_instance_id"],
+            "runtime_revision": 14,
+        },
+        resume_continuation=lambda _request: pytest.fail("Worker must not restart"),
+        activate_checker=lambda *_args: pytest.fail("OCRV must not restart"),
+        load_committed_activation=load_activation,
+        record_checker_d1=lambda *_args: calls.append("record-d1")
+        or {
+            "status": "CHECKER_D1_RECORDED",
+            "d1_verdict": "FAIL",
+            "d1_event_type": "D1_FAILED",
+            "native_result_path": str(tmp_path / "existing-ocrv-attempt" / "ocrv-result.json"),
+        },
+    )
+
+    assert calls == ["load-commit-only", "record-d1"]
+    assert result["d1_verdict"] == "FAIL"
+    assert result["runtime_revision"] == 14
+
+
+def test_standard_terminal_consumer_restores_original_checker_host_without_starting_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = checker_recovery_request(tmp_path)
+    request_path = write_json(tmp_path / "original-checker-recovery.json", request)
+    request_sha256 = hashlib.sha256(request_path.read_bytes()).hexdigest()
+    recovery_root = tmp_path / "commit-only-root"
+    write_json(
+        recovery_root / "commit-only-recovery" / "result.json",
+        {"runtime_revision": 14},
+    )
+    monkeypatch.setattr(worker_completion, "build_continuation_request", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(worker_completion, "_continuation_root", lambda _continuation: recovery_root)
+    monkeypatch.setattr(
+        worker_completion,
+        "_load_commit_only_checker_activation",
+        lambda _continuation, revision: {"runtime_revision": revision},
+    )
+    monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "must-not-leak")
+    monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "must-not-leak")
+    monkeypatch.setenv("SLK_NATIVE_START_RECEIPT", "must-not-publish")
+    monkeypatch.setenv("SLK_NATIVE_START_CONTEXT", "must-not-publish")
+    captured: dict[str, object] = {}
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        captured["command"] = command
+        captured["cwd"] = kwargs["cwd"]
+        captured["environment"] = kwargs["env"]
+        value = {
+            "schema_version": "slk.ocrv-worker-recovery-result/v1",
+            "status": "CHECKER_D1_RECORDED",
+            "run_id": request["run_id"],
+            "checker_role_instance_id": request["checker_role_instance_id"],
+            "request_sha256": request_sha256,
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(value).encode(), b"")
+
+    monkeypatch.setattr(worker_completion.subprocess, "run", run)
+
+    result = worker_completion.consume_staged_checker_terminal(
+        request_path,
+        request_sha256=request_sha256,
+    )
+
+    assert result["status"] == "CHECKER_D1_RECORDED"
+    assert "--slk-existing-terminal" in captured["command"]
+    environment = captured["environment"]
+    assert isinstance(environment, dict)
+    assert environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] == request["checker_role_instance_id"]
+    assert environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] == request["recovery_invocation_id"]
+    assert "SLK_ROLE_CREDENTIAL" not in environment
+    assert "SLK_OVERWATCHER_CREDENTIAL" not in environment
+    assert "SLK_NATIVE_START_RECEIPT" not in environment
+    assert "SLK_NATIVE_START_CONTEXT" not in environment
 
 
 def test_checker_recovery_rejects_supervisor_direct_call_and_wrong_checker(
@@ -1182,6 +1532,48 @@ def test_dsh_worker_only_stages_checker_delivery_and_never_hosts_ocrv(tmp_path: 
     assert staged[0]["payload_type"] == "CANDIDATE_READY"
 
 
+def test_worker_stages_fresh_revision_after_three_state_events(tmp_path: Path) -> None:
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    revisions = iter((10, 13))
+    authentication_calls: list[tuple[str, str]] = []
+
+    def authenticate(run_id: str, role_instance_id: str) -> int:
+        authentication_calls.append((run_id, role_instance_id))
+        return next(revisions)
+
+    result = run_worker_continuation(
+        request,
+        authenticate=authenticate,
+        write_event=lambda _event: "RECORDED",
+        start_checker=lambda endpoint, envelope: {
+            "status": "delivery_ready",
+            "endpoint_path": str(write_json(tmp_path / "staged-endpoint.json", endpoint)),
+            "envelope_path": str(write_json(tmp_path / "staged-envelope.json", envelope)),
+            "attempt_root": str(tmp_path / "checker-attempts"),
+        },
+        commit_start=lambda _request: pytest.fail("DSH must not commit Checker start"),
+        defer_checker_start=True,
+    )
+
+    assert authentication_calls == [
+        ("RUN-A", "RUN-A-worker-001"),
+        ("RUN-A", "RUN-A-worker-001"),
+    ]
+    assert result["runtime_revision"] == 13
+
+
 def test_external_recovery_host_starts_ocrv_then_commits_exact_native_v2(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1273,6 +1665,258 @@ def test_external_recovery_host_starts_ocrv_then_commits_exact_native_v2(
     assert [arguments[0] for _, arguments, _ in commands] == ["send", "commit-delivery-start"]
     assert commands[0][2] is None
     assert commands[1][2] == VALID_CREDENTIAL
+
+
+def test_commit_only_recovery_reuses_existing_start_and_changes_only_revision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    continuation = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+
+    def stage_checker(
+        endpoint_raw: dict[str, object], envelope_raw: dict[str, object]
+    ) -> dict[str, object]:
+        root = attempt / "worker-continuation"
+        return {
+            "status": "delivery_ready",
+            "endpoint_path": str(write_json(root / "checker-endpoint.json", endpoint_raw)),
+            "envelope_path": str(write_json(root / "candidate-envelope.json", envelope_raw)),
+            "attempt_root": str(root / "checker-attempts"),
+        }
+
+    outcome = run_worker_continuation(
+        continuation,
+        authenticate=lambda *_: 10,
+        write_event=lambda _event: "RECORDED",
+        start_checker=stage_checker,
+        commit_start=lambda _request: pytest.fail("DSH must not commit Checker start"),
+        defer_checker_start=True,
+    )
+    write_json(Path(str(continuation["continuation_result_path"])), outcome)
+    endpoint_raw = json.loads(Path(str(outcome["endpoint_path"])).read_text(encoding="utf-8"))
+    envelope_raw = json.loads(Path(str(outcome["envelope_path"])).read_text(encoding="utf-8"))
+    native_attempt = (
+        Path(str(outcome["attempt_root"]))
+        / str(envelope_raw["run_id"])
+        / str(envelope_raw["message_id"])
+    )
+    write_json(native_attempt / "endpoint.json", endpoint_raw)
+    write_json(native_attempt / "envelope.json", envelope_raw)
+    write_json(
+        native_attempt / "started.json",
+        make_native_start(
+            adapter=str(endpoint_raw["adapter"]),
+            run_id=str(envelope_raw["run_id"]),
+            cell_id=str(envelope_raw["cell_id"]),
+            message_id=str(envelope_raw["message_id"]),
+            request_sha256=str(envelope_raw["payload_sha256"]),
+            native_request_sha256="b" * 64,
+            native_task_kind="ocrv-review",
+            native_task_id="review-1",
+            native_task_status="RUNNING",
+            pid=os.getpid(),
+        ),
+    )
+    monkeypatch.setattr(worker_completion, "unprotect_dpapi_hex", lambda _path: VALID_CREDENTIAL)
+    monkeypatch.setattr(
+        worker_completion,
+        "_run_json_command",
+        lambda _command, arguments, credential: {
+            "status": "rejected",
+            "error_code": "WORKER_RUNTIME_REVISION_INVALID",
+            "_slk_command": {"process_exit": 2},
+        },
+    )
+    with pytest.raises(CompletionError):
+        _activate_staged_checker(outcome, continuation)
+    failed_request_path = next(
+        (attempt / "worker-continuation").glob("commit-delivery-start-*.json")
+    )
+    failed_bytes = failed_request_path.read_bytes()
+    failed_request = json.loads(failed_bytes)
+    commands: list[str] = []
+
+    def recover_command(
+        _command: list[str], arguments: list[str], *, credential: str | None
+    ) -> dict[str, object]:
+        commands.append(arguments[0])
+        assert credential == VALID_CREDENTIAL
+        if arguments[0] == "authenticate-role":
+            return {
+                "status": "authenticated",
+                "role": "worker",
+                "role_instance_id": continuation["worker_role_instance_id"],
+                "runtime_revision": 13,
+                "_slk_command": {"process_exit": 0},
+            }
+        recovery_request = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        assert recovery_request == {**failed_request, "expected_runtime_revision": 13}
+        return {
+            "status": "committed",
+            "runtime_revision": 14,
+            "token_sequence": recovery_request["token_sequence"],
+            "message_id": recovery_request["message_id"],
+            "_slk_command": {"process_exit": 0},
+        }
+
+    monkeypatch.setattr(worker_completion, "_run_json_command", recover_command)
+
+    recovered = worker_completion.recover_staged_checker_commit(
+        continuation,
+        outcome,
+        failed_request_path=failed_request_path,
+    )
+
+    assert commands == ["authenticate-role", "commit-delivery-start"]
+    assert failed_request_path.read_bytes() == failed_bytes
+    assert recovered["status"] == "CHECKER_START_COMMITTED"
+    assert recovered["runtime_revision"] == 14
+    assert Path(str(recovered["recovery_request_path"])).parent.name == "commit-only-recovery"
+    assert Path(str(recovered["result_path"])).is_file()
+    activation = worker_completion._load_commit_only_checker_activation(continuation, 14)
+    assert activation["status"] == "CHECKER_STARTED"
+    assert activation["native_attempt_path"] == str(native_attempt.resolve())
+
+
+@pytest.mark.parametrize("competing_write", [False, True])
+def test_real_state_revision_closes_handoff_and_rejects_post_stage_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    competing_write: bool,
+) -> None:
+    state_binary, config_path, worker_credential, _checker_credential, initial_revision = (
+        actual_worker_state(tmp_path)
+    )
+    monkeypatch.setenv("SLK_CONFIG_PATH", str(config_path))
+    monkeypatch.setattr(worker_completion, "unprotect_dpapi_hex", lambda _path: worker_credential)
+    completion_root = tmp_path / "completion"
+    completion_root.mkdir()
+    attempt, _worker_endpoint, checker = completion_fixture(completion_root)
+    checker["endpoint_version"] = 1
+    envelope_path = attempt / "envelope.json"
+    source_envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    source_envelope["token_sequence"] = 3
+    write_json(envelope_path, source_envelope)
+    projection = runtime_projection(token_owner="RUN-A-worker-001")
+    projection["runtime_snapshot"].update(
+        runtime_revision=initial_revision,
+        token_sequence=3,
+    )
+    continuation = build_continuation_request(
+        attempt,
+        checker,
+        projection,
+        plan_revision=1,
+        runtime_revision=initial_revision,
+        token_sequence=3,
+        credential_path=tmp_path / "worker.dpapi",
+        state_command=[str(state_binary)],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:03Z",
+    )
+    event_root = tmp_path / "worker-events"
+
+    def state_request(command: str, value: dict[str, object]) -> dict[str, object]:
+        return actual_state_call(
+            state_binary,
+            config_path,
+            [command, "--request", write_json(event_root / f"{value['event_id']}.json", value)],
+            credential=worker_credential,
+        )
+
+    def authenticate(run_id: str, role_instance_id: str) -> int:
+        value = actual_state_call(
+            state_binary,
+            config_path,
+            ["authenticate-role", "--run-id", run_id, "--role-instance-id", role_instance_id],
+            credential=worker_credential,
+        )
+        return int(value["runtime_revision"])
+
+    def stage_checker(
+        endpoint_raw: dict[str, object], envelope_raw: dict[str, object]
+    ) -> dict[str, object]:
+        root = attempt / "worker-continuation"
+        return {
+            "status": "delivery_ready",
+            "endpoint_path": str(write_json(root / "checker-endpoint.json", endpoint_raw)),
+            "envelope_path": str(write_json(root / "candidate-envelope.json", envelope_raw)),
+            "attempt_root": str(root / "checker-attempts"),
+        }
+
+    outcome = run_worker_continuation(
+        continuation,
+        authenticate=authenticate,
+        write_event=lambda event: str(state_request("write", event)["status"]),
+        start_checker=stage_checker,
+        commit_start=lambda _request: pytest.fail("DSH must not commit Checker start"),
+        defer_checker_start=True,
+    )
+    assert outcome["runtime_revision"] == initial_revision + 3
+    assert authenticate("RUN-A", "RUN-A-worker-001") == initial_revision + 3
+    endpoint_raw = json.loads(Path(str(outcome["endpoint_path"])).read_text(encoding="utf-8"))
+    envelope_raw = json.loads(Path(str(outcome["envelope_path"])).read_text(encoding="utf-8"))
+    native_attempt = (
+        Path(str(outcome["attempt_root"]))
+        / str(envelope_raw["run_id"])
+        / str(envelope_raw["message_id"])
+    )
+    write_json(native_attempt / "endpoint.json", endpoint_raw)
+    write_json(native_attempt / "envelope.json", envelope_raw)
+    write_json(
+        native_attempt / "started.json",
+        make_native_start(
+            adapter="ocrv-checker",
+            run_id="RUN-A",
+            cell_id="CELL-001",
+            message_id=str(envelope_raw["message_id"]),
+            request_sha256=str(envelope_raw["payload_sha256"]),
+            native_request_sha256="d" * 64,
+            native_task_kind="ocrv-review",
+            native_task_id="integration-review",
+            native_task_status="RUNNING",
+            pid=os.getpid(),
+        ),
+    )
+    if competing_write:
+        state_request(
+            "write",
+            {
+                "event_id": "post-stage-competing-write",
+                "run_id": "RUN-A",
+                "go_id": "GO-001",
+                "cell_id": "CELL-001",
+                "attempt": 1,
+                "plan_revision": 1,
+                "role_instance_id": "RUN-A-worker-001",
+                "event_type": "WORK_STARTED",
+                "details": {"reason": "race probe"},
+                "corrects_event_id": None,
+                "occurred_at": "2026-09-23T00:00:04Z",
+            },
+        )
+        with pytest.raises(CompletionError) as rejected:
+            _activate_staged_checker(outcome, continuation)
+        assert rejected.value.error_code == "WORKER_RUNTIME_REVISION_INVALID"
+        assert authenticate("RUN-A", "RUN-A-worker-001") == initial_revision + 4
+        return
+
+    activated = _activate_staged_checker(outcome, continuation)
+    assert activated["status"] == "CHECKER_STARTED"
+    assert activated["runtime_revision"] == initial_revision + 4
+    assert activated["token_sequence"] == 4
 
 
 def test_false_legacy_start_with_token_at_checker_recovers_same_candidate_without_recommit(

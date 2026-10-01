@@ -89,7 +89,9 @@ def _publish_start(native_request_sha256: str, invocation_id: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--slk-worker-recovery", action="store_true", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--slk-worker-recovery", action="store_true")
+    mode.add_argument("--slk-existing-terminal", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -113,14 +115,18 @@ def main() -> int:
     environment = os.environ.copy()
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
-    try:
-        _publish_start(
-            hashlib.sha256(data).hexdigest(),
-            str(request.get("recovery_invocation_id", "")),
-        )
-    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
-        print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
-        return 4
+    if args.slk_existing_terminal:
+        environment.pop("SLK_NATIVE_START_RECEIPT", None)
+        environment.pop("SLK_NATIVE_START_CONTEXT", None)
+    if args.slk_worker_recovery:
+        try:
+            _publish_start(
+                hashlib.sha256(data).hexdigest(),
+                str(request.get("recovery_invocation_id", "")),
+            )
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
+            return 4
     try:
         completed = subprocess.run(
             command

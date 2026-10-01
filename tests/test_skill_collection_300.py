@@ -256,6 +256,9 @@ def test_invalid_result_contract_recovery_routes_through_original_roles() -> Non
         "真实 OCRV D1",
         "Root",
         "不代写 Worker",
+        "recover-staged-checker-commit",
+        "consume-staged-checker-terminal",
+        "不重新启动 Worker 或 OCRV",
     ):
         assert marker in recover
     assert recover.index("prepare-invalid-result-recovery") < recover.index("原 Worker Session")

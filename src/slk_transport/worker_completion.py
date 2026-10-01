@@ -1693,6 +1693,16 @@ def run_worker_continuation(
                 "details": details,
             }
         )
+    handoff_runtime_revision = authenticate(run_id, role_instance_id)
+    if (
+        isinstance(handoff_runtime_revision, bool)
+        or not isinstance(handoff_runtime_revision, int)
+        or handoff_runtime_revision < fresh_runtime_revision
+    ):
+        raise CompletionError(
+            "WORKER_RUNTIME_REVISION_INVALID",
+            "post-event runtime revision is unavailable or moved backwards",
+        )
     start = dict(start_checker(dict(request["checker_endpoint"]), envelope))
     if defer_checker_start:
         if start.get("status") != "delivery_ready":
@@ -1723,7 +1733,7 @@ def run_worker_continuation(
             "run_id": run_id,
             "source_message_id": source_message_id,
             "candidate_message_id": envelope["message_id"],
-            "runtime_revision": fresh_runtime_revision,
+            "runtime_revision": handoff_runtime_revision,
             "checker_token_already_committed": checker_token_already_committed,
             "endpoint_path": str(endpoint_path),
             "envelope_path": str(envelope_path),
@@ -1756,7 +1766,7 @@ def run_worker_continuation(
         "cell_id": request["cell_id"],
         "attempt": request["attempt"],
         "plan_revision": request["plan_revision"],
-        "expected_runtime_revision": fresh_runtime_revision,
+        "expected_runtime_revision": handoff_runtime_revision,
         "message_id": envelope["message_id"],
         "token_sequence": envelope["token_sequence"],
         "from_role_instance_id": role_instance_id,
@@ -1781,7 +1791,7 @@ def run_worker_continuation(
         committed.get("status") not in {"committed", "idempotent_replay"}
         or isinstance(committed_revision, bool)
         or not isinstance(committed_revision, int)
-        or committed_revision <= fresh_runtime_revision
+        or committed_revision <= handoff_runtime_revision
         or committed.get("token_sequence") != envelope["token_sequence"]
         or committed.get("message_id") != envelope["message_id"]
     ):
@@ -1883,6 +1893,7 @@ CheckerAuthenticate = Callable[[str, str, Path, list[str]], Mapping[str, Any]]
 ResumeContinuation = Callable[[Mapping[str, Any]], Mapping[str, Any]]
 ActivateChecker = Callable[[Mapping[str, Any], Mapping[str, Any]], Mapping[str, Any]]
 RecordCheckerD1 = Callable[[Mapping[str, Any], Mapping[str, Any], Path, float], Mapping[str, Any]]
+LoadCommittedActivation = Callable[[Mapping[str, Any], int], Mapping[str, Any]]
 
 
 def _default_checker_authenticate(
@@ -1902,6 +1913,8 @@ def _default_checker_authenticate(
 def _activate_staged_checker(
     outcome: Mapping[str, Any],
     continuation: Mapping[str, Any],
+    *,
+    failed_commit_request_path: Path | None = None,
 ) -> Mapping[str, Any]:
     """Start OCRV outside DSH, validate native v2 evidence, then commit the handoff."""
 
@@ -1962,6 +1975,11 @@ def _activate_staged_checker(
         if not all(path.is_file() for path in (started_path, persisted_endpoint_path, persisted_envelope_path)):
             raise CompletionError("CHECKER_START_UNPROVED", "Checker attempt has incomplete immutable evidence")
     else:
+        if failed_commit_request_path is not None:
+            raise CompletionError(
+                "CHECKER_START_UNPROVED",
+                "commit-only recovery requires the already proven Checker native start",
+            )
         transport_command = continuation.get("transport_command")
         if not isinstance(transport_command, list) or not transport_command:
             raise CompletionError("WORKER_CONTINUATION_INVALID", "transport command is unavailable")
@@ -2004,6 +2022,11 @@ def _activate_staged_checker(
     except NativeActivityError as exc:
         raise CompletionError("CHECKER_START_UNPROVED", "OCRV native-start v2 evidence is invalid") from exc
     if checker_token_already_committed:
+        if failed_commit_request_path is not None:
+            raise CompletionError(
+                "WORKER_COMMIT_RECOVERY_NOT_REQUIRED",
+                "Checker TOKEN was already committed before commit-only recovery",
+            )
         return {
             "status": "CHECKER_STARTED",
             "runtime_revision": staged_revision,
@@ -2041,13 +2064,67 @@ def _activate_staged_checker(
     }
     worker_credential = unprotect_dpapi_hex(str(continuation["credential_path"]))
     try:
+        commit_request_path = (
+            _continuation_root(continuation)
+            / f"commit-delivery-start-{commit_request['transport_receipt_id']}.json"
+        )
+        failed_request_sha256: str | None = None
+        if failed_commit_request_path is not None:
+            failed_path = failed_commit_request_path.resolve()
+            if failed_path != commit_request_path.resolve() or not failed_path.is_file():
+                raise CompletionError(
+                    "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+                    "commit-only recovery requires the exact preserved failed request",
+                )
+            failed_request = _read_object(failed_path, "failed Checker start commit request")
+            if failed_request != commit_request:
+                raise CompletionError(
+                    "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+                    "failed commit request changed the staged delivery identity",
+                )
+            authentication = _run_json_command(
+                list(continuation["state_command"]),
+                [
+                    "authenticate-role",
+                    "--run-id",
+                    str(continuation["run_id"]),
+                    "--role-instance-id",
+                    str(continuation["worker_role_instance_id"]),
+                ],
+                credential=worker_credential,
+            )
+            current_revision = authentication.get("runtime_revision")
+            if (
+                authentication.get("status") != "authenticated"
+                or authentication.get("role") != "worker"
+                or authentication.get("role_instance_id")
+                != continuation.get("worker_role_instance_id")
+                or isinstance(current_revision, bool)
+                or not isinstance(current_revision, int)
+                or current_revision <= staged_revision
+            ):
+                raise CompletionError(
+                    "WORKER_COMMIT_RECOVERY_AUTHENTICATION_FAILED",
+                    "original Worker does not prove a newer current runtime revision",
+                )
+            failed_request_sha256 = _sha256(failed_path)
+            commit_request = {
+                **commit_request,
+                "expected_runtime_revision": current_revision,
+            }
+            commit_request_path = (
+                _continuation_root(continuation)
+                / "commit-only-recovery"
+                / f"commit-delivery-start-{commit_request['transport_receipt_id']}.json"
+            )
+            commit_request_path.parent.mkdir(parents=True, exist_ok=True)
+        commit_request_path = _write_or_reuse_stable_request(
+            commit_request_path,
+            commit_request,
+        )
         committed = _run_json_command(
             list(continuation["state_command"]),
-            ["commit-delivery-start", "--request", str(_write_or_reuse_stable_request(
-                _continuation_root(continuation)
-                / f"commit-delivery-start-{commit_request['transport_receipt_id']}.json",
-                commit_request,
-            ))],
+            ["commit-delivery-start", "--request", str(commit_request_path)],
             credential=worker_credential,
         )
     finally:
@@ -2057,12 +2134,12 @@ def _activate_staged_checker(
         committed.get("status") not in {"committed", "idempotent_replay"}
         or isinstance(committed_revision, bool)
         or not isinstance(committed_revision, int)
-        or committed_revision <= staged_revision
+        or committed_revision <= commit_request["expected_runtime_revision"]
         or committed.get("token_sequence") != envelope.token_sequence
         or committed.get("message_id") != envelope.message_id
     ):
         raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "Checker start commit is not exact")
-    return {
+    activation = {
         "status": "CHECKER_STARTED",
         "runtime_revision": committed_revision,
         "token_sequence": envelope.token_sequence,
@@ -2070,6 +2147,324 @@ def _activate_staged_checker(
         "checker_token_already_committed": False,
         "native_attempt_path": str(attempt),
     }
+    if failed_commit_request_path is None:
+        return activation
+    recovery_result_path = _continuation_root(continuation) / "commit-only-recovery" / "result.json"
+    recovery_result = {
+        "schema_version": "slk.worker-checker-commit-recovery/v1",
+        "method_version": "4.3.6",
+        **activation,
+        "status": "CHECKER_START_COMMITTED",
+        "run_id": continuation["run_id"],
+        "cell_id": continuation["cell_id"],
+        "source_message_id": continuation["source_message_id"],
+        "worker_role_instance_id": continuation["worker_role_instance_id"],
+        "checker_role_instance_id": endpoint.role_instance_id,
+        "transport_receipt_id": commit_request["transport_receipt_id"],
+        "failed_request_path": str(failed_commit_request_path.resolve()),
+        "failed_request_sha256": failed_request_sha256,
+        "recovery_request_path": str(commit_request_path.resolve()),
+        "recovery_request_sha256": _sha256(commit_request_path),
+    }
+    _write_or_reuse_stable_request(recovery_result_path, recovery_result)
+    return {**recovery_result, "result_path": str(recovery_result_path.resolve())}
+
+
+def recover_staged_checker_commit(
+    continuation: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+    *,
+    failed_request_path: Path,
+) -> Mapping[str, Any]:
+    """Commit one already-started Checker delivery after a proven revision-only conflict."""
+
+    return _activate_staged_checker(
+        outcome,
+        continuation,
+        failed_commit_request_path=failed_request_path,
+    )
+
+
+def _load_commit_only_checker_activation(
+    continuation: Mapping[str, Any],
+    current_runtime_revision: int,
+) -> Mapping[str, Any]:
+    """Validate a completed commit-only recovery for the original Checker path."""
+
+    root = _continuation_root(continuation)
+    result_path = root / "commit-only-recovery" / "result.json"
+    result = _read_object(result_path, "commit-only recovery result")
+    fields = {
+        "schema_version",
+        "method_version",
+        "status",
+        "runtime_revision",
+        "token_sequence",
+        "candidate_message_id",
+        "checker_token_already_committed",
+        "native_attempt_path",
+        "run_id",
+        "cell_id",
+        "source_message_id",
+        "worker_role_instance_id",
+        "checker_role_instance_id",
+        "transport_receipt_id",
+        "failed_request_path",
+        "failed_request_sha256",
+        "recovery_request_path",
+        "recovery_request_sha256",
+    }
+    if (
+        set(result) != fields
+        or result.get("schema_version") != "slk.worker-checker-commit-recovery/v1"
+        or result.get("method_version") != "4.3.6"
+        or result.get("status") != "CHECKER_START_COMMITTED"
+        or result.get("runtime_revision") != current_runtime_revision
+        or result.get("run_id") != continuation.get("run_id")
+        or result.get("cell_id") != continuation.get("cell_id")
+        or result.get("source_message_id") != continuation.get("source_message_id")
+        or result.get("worker_role_instance_id") != continuation.get("worker_role_instance_id")
+        or result.get("checker_role_instance_id")
+        != continuation["checker_endpoint"].get("role_instance_id")
+        or result.get("candidate_message_id")
+        != _stable_id(str(continuation["source_message_id"]), "candidate-ready")
+        or result.get("token_sequence") != int(continuation["token_sequence"]) + 1
+        or result.get("checker_token_already_committed") is not False
+    ):
+        raise CompletionError(
+            "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+            "commit-only recovery result does not bind the original Checker delivery",
+        )
+    failed_path = Path(str(result["failed_request_path"])).resolve()
+    recovery_path = Path(str(result["recovery_request_path"])).resolve()
+    if (
+        failed_path
+        != (
+            root
+            / f"commit-delivery-start-{result['transport_receipt_id']}.json"
+        ).resolve()
+        or recovery_path
+        != (
+            root
+            / "commit-only-recovery"
+            / f"commit-delivery-start-{result['transport_receipt_id']}.json"
+        ).resolve()
+        or not failed_path.is_file()
+        or not recovery_path.is_file()
+        or result.get("failed_request_sha256") != _sha256(failed_path)
+        or result.get("recovery_request_sha256") != _sha256(recovery_path)
+    ):
+        raise CompletionError(
+            "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+            "commit-only request evidence is missing or changed",
+        )
+    failed_request = _read_object(failed_path, "failed Checker start commit request")
+    recovery_request = _read_object(recovery_path, "recovered Checker start commit request")
+    failed_without_revision = dict(failed_request)
+    recovery_without_revision = dict(recovery_request)
+    failed_revision = failed_without_revision.pop("expected_runtime_revision", None)
+    recovery_revision = recovery_without_revision.pop("expected_runtime_revision", None)
+    if (
+        failed_without_revision != recovery_without_revision
+        or failed_request.get("transport_receipt_id") != result.get("transport_receipt_id")
+        or isinstance(failed_revision, bool)
+        or not isinstance(failed_revision, int)
+        or isinstance(recovery_revision, bool)
+        or not isinstance(recovery_revision, int)
+        or recovery_revision <= failed_revision
+        or current_runtime_revision != recovery_revision + 1
+    ):
+        raise CompletionError(
+            "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+            "commit-only recovery changed more than the authenticated runtime revision",
+        )
+    outcome_path = Path(str(continuation["continuation_result_path"])).resolve()
+    outcome = _read_object(outcome_path, "staged Checker delivery result")
+    if (
+        outcome.get("status") != "CHECKER_DELIVERY_READY"
+        or outcome.get("candidate_message_id") != result.get("candidate_message_id")
+        or outcome.get("run_id") != continuation.get("run_id")
+        or outcome.get("source_message_id") != continuation.get("source_message_id")
+    ):
+        raise CompletionError(
+            "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+            "staged Checker delivery no longer matches the recovered commit",
+        )
+    endpoint_path = Path(str(outcome["endpoint_path"])).resolve()
+    envelope_path = Path(str(outcome["envelope_path"])).resolve()
+    endpoint = Endpoint.from_dict(_read_object(endpoint_path, "staged Checker endpoint"))
+    envelope = Envelope.from_dict(_read_object(envelope_path, "staged Checker envelope"))
+    native_attempt = Path(str(result["native_attempt_path"])).resolve()
+    expected_attempt = (
+        Path(str(outcome["attempt_root"])).resolve()
+        / envelope.run_id
+        / envelope.message_id
+    )
+    if (
+        endpoint != Endpoint.from_dict(continuation["checker_endpoint"])
+        or envelope.message_id != result.get("candidate_message_id")
+        or native_attempt != expected_attempt
+        or _read_object(native_attempt / "endpoint.json", "Checker delivery endpoint")
+        != _read_object(endpoint_path, "staged Checker endpoint")
+        or _read_object(native_attempt / "envelope.json", "Checker delivery envelope")
+        != _read_object(envelope_path, "staged Checker envelope")
+    ):
+        raise CompletionError(
+            "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+            "existing Checker native attempt does not match the staged delivery",
+        )
+    try:
+        validate_native_start(
+            native_attempt / "started.json",
+            adapter=endpoint.adapter,
+            run_id=envelope.run_id,
+            cell_id=envelope.cell_id,
+            message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256,
+        )
+    except NativeActivityError as exc:
+        raise CompletionError(
+            "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+            "existing Checker native start is invalid",
+        ) from exc
+    return {
+        "status": "CHECKER_STARTED",
+        "runtime_revision": current_runtime_revision,
+        "token_sequence": result["token_sequence"],
+        "candidate_message_id": result["candidate_message_id"],
+        "checker_token_already_committed": False,
+        "native_attempt_path": str(native_attempt),
+    }
+
+
+def consume_staged_checker_terminal(
+    request_path: Path,
+    *,
+    request_sha256: str,
+) -> Mapping[str, Any]:
+    """Re-enter the original sealed OCRV host only to consume an existing terminal."""
+
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError(
+            "CHECKER_RECOVERY_REQUEST_MISMATCH",
+            "Checker recovery request hash mismatch",
+        )
+    request = _read_object(request_path, "Checker recovery request")
+    if (
+        request.get("schema_version") != CHECKER_RECOVERY_SCHEMA
+        or request.get("method_version") != "4.3.6"
+    ):
+        raise CompletionError(
+            "CHECKER_RECOVERY_REQUEST_INVALID",
+            "existing-terminal consumption requires the original 4.3.6 Checker request",
+        )
+    try:
+        endpoint = Endpoint.from_dict(request["checker_endpoint"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CompletionError(
+            "CHECKER_RECOVERY_REQUEST_INVALID",
+            "original Checker endpoint is invalid",
+        ) from exc
+    if (
+        endpoint.role != "checker"
+        or endpoint.role_instance_id != request.get("checker_role_instance_id")
+        or endpoint.endpoint_version != request.get("checker_endpoint_version")
+        or endpoint.run_id != request.get("run_id")
+    ):
+        raise CompletionError(
+            "CHECKER_RECOVERY_IDENTITY_MISMATCH",
+            "original Checker endpoint identity is not exact",
+        )
+    projection = _read_object(Path(str(request["runtime_projection_path"])), "runtime projection")
+    continuation = build_continuation_request(
+        str(request["source_attempt_root"]),
+        request["checker_endpoint"],
+        projection,
+        plan_revision=int(request["plan_revision"]),
+        runtime_revision=int(request["runtime_revision"]),
+        token_sequence=int(request["token_sequence"]),
+        credential_path=str(request["worker_credential_path"]),
+        state_command=list(request["state_command"]),
+        transport_command=list(request["transport_command"]),
+        occurred_at=str(request["occurred_at"]),
+    )
+    commit_result = _read_object(
+        _continuation_root(continuation) / "commit-only-recovery" / "result.json",
+        "commit-only recovery result",
+    )
+    current_revision = commit_result.get("runtime_revision")
+    if isinstance(current_revision, bool) or not isinstance(current_revision, int):
+        raise CompletionError(
+            "WORKER_COMMIT_RECOVERY_EVIDENCE_INVALID",
+            "commit-only recovery runtime revision is invalid",
+        )
+    _load_commit_only_checker_activation(continuation, current_revision)
+    command = endpoint.address.get("command")
+    runtime_root = Path(str(endpoint.address.get("runtime_root", ""))).resolve()
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(item, str) and item for item in command)
+        or not runtime_root.is_dir()
+    ):
+        raise CompletionError(
+            "CHECKER_RECOVERY_REQUEST_INVALID",
+            "registered OCRV host command or runtime root is unavailable",
+        )
+    environment = os.environ.copy()
+    for name in (
+        "SLK_ROLE_CREDENTIAL",
+        "SLK_OVERWATCHER_CREDENTIAL",
+        "SLK_NATIVE_START_RECEIPT",
+        "SLK_NATIVE_START_CONTEXT",
+    ):
+        environment.pop(name, None)
+    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = endpoint.role_instance_id
+    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = str(request["recovery_invocation_id"])
+    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = str(endpoint.endpoint_version)
+    from .process import windows_no_window_kwargs
+
+    completed = subprocess.run(
+        list(command)
+        + [
+            "--slk-existing-terminal",
+            "--request",
+            str(request_path.resolve()),
+            "--output",
+            str(Path(str(request["result_path"])).resolve()),
+        ],
+        cwd=str(runtime_root),
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        **windows_no_window_kwargs(detached=False),
+    )
+    try:
+        stdout = (completed.stdout or b"").decode("utf-8", errors="strict")
+        stderr = (completed.stderr or b"").decode("utf-8", errors="strict")
+        value = json.loads(stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CompletionError(
+            "CHECKER_RECOVERY_COMMAND_FAILED",
+            "original Checker terminal consumer returned no valid UTF-8 JSON",
+        ) from exc
+    if (
+        completed.returncode != 0
+        or not isinstance(value, dict)
+        or value.get("schema_version") != CHECKER_RECOVERY_RESULT_SCHEMA
+        or value.get("status") != "CHECKER_D1_RECORDED"
+        or value.get("run_id") != request.get("run_id")
+        or value.get("checker_role_instance_id") != endpoint.role_instance_id
+        or value.get("request_sha256") != request_sha256
+    ):
+        raise CompletionError(
+            "CHECKER_RECOVERY_COMMAND_FAILED",
+            stderr.strip() or "original Checker terminal consumer failed",
+        )
+    return value
 
 
 def _reuse_committed_checker_delivery(continuation: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -2377,6 +2772,7 @@ def execute_checker_recovery(
     resume_continuation: ResumeContinuation = resume_worker_continuation,
     activate_checker: ActivateChecker = _activate_staged_checker,
     record_checker_d1: RecordCheckerD1 = _default_record_checker_d1,
+    load_committed_activation: LoadCommittedActivation = _load_commit_only_checker_activation,
 ) -> dict[str, Any]:
     """Authenticate the exact OCRV Checker before resuming one Worker completion suffix."""
 
@@ -2447,15 +2843,17 @@ def execute_checker_recovery(
         Path(str(request["checker_credential_path"])),
         list(state_command),
     )
+    authenticated_revision = authentication.get("runtime_revision")
     if (
         authentication.get("status") != "authenticated"
         or authentication.get("role") != "checker"
         or authentication.get("role_instance_id") != role_instance_id
-        or authentication.get("runtime_revision") != request.get("runtime_revision")
+        or isinstance(authenticated_revision, bool)
+        or not isinstance(authenticated_revision, int)
     ):
         raise CompletionError(
             "CHECKER_RECOVERY_AUTHENTICATION_FAILED",
-            "credential does not prove the current Checker at the requested runtime revision",
+            "credential does not prove the current Checker",
         )
     projection = _read_object(Path(str(request["runtime_projection_path"])), "runtime projection")
     continuation = build_continuation_request(
@@ -2470,19 +2868,27 @@ def execute_checker_recovery(
         transport_command=list(transport_command),
         occurred_at=str(request["occurred_at"]),
     )
-    outcome = (
-        _reuse_committed_checker_delivery(continuation)
-        if continuation.get("checker_token_already_committed") is True
-        else resume_continuation(continuation)
-    )
-    if outcome.get("status") != "CHECKER_DELIVERY_READY":
-        raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not stage Checker D1")
-    activated = activate_checker(outcome, continuation)
-    if (
-        activated.get("status") != "CHECKER_STARTED"
-        or activated.get("candidate_message_id") != outcome.get("candidate_message_id")
-    ):
-        raise CompletionError("CHECKER_RECOVERY_FAILED", "external OCRV host did not start Checker D1")
+    if authenticated_revision == request.get("runtime_revision"):
+        outcome = (
+            _reuse_committed_checker_delivery(continuation)
+            if continuation.get("checker_token_already_committed") is True
+            else resume_continuation(continuation)
+        )
+        if outcome.get("status") != "CHECKER_DELIVERY_READY":
+            raise CompletionError("CHECKER_RECOVERY_FAILED", "Worker continuation did not stage Checker D1")
+        activated = activate_checker(outcome, continuation)
+        if (
+            activated.get("status") != "CHECKER_STARTED"
+            or activated.get("candidate_message_id") != outcome.get("candidate_message_id")
+        ):
+            raise CompletionError("CHECKER_RECOVERY_FAILED", "external OCRV host did not start Checker D1")
+    else:
+        activated = load_committed_activation(continuation, authenticated_revision)
+        if activated.get("status") != "CHECKER_STARTED":
+            raise CompletionError(
+                "CHECKER_RECOVERY_AUTHENTICATION_FAILED",
+                "newer Checker revision lacks an exact commit-only recovery",
+            )
     timeout_seconds = checker.address.get("timeout_seconds")
     if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker timeout is invalid")

@@ -40,6 +40,7 @@ def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     assert '"%~1"=="--slk-post-d1"' in wrapper
     assert "slk_checker_post_d1.py" in wrapper
     assert '"%~1"=="--slk-worker-recovery"' in wrapper
+    assert '"%~1"=="--slk-existing-terminal"' in wrapper
     assert "slk_checker_recovery.py" in wrapper
     assert "slk_checker_adapter.py" in wrapper
 
@@ -99,6 +100,71 @@ print(json.dumps({'schema_version':'slk.checker-post-d1-result/v1','status':'DES
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == "DESKTOP_BRIDGE_REQUIRED"
+
+
+def test_existing_terminal_wrapper_reuses_checker_command_without_publishing_new_start(
+    tmp_path: Path,
+) -> None:
+    fake = tmp_path / "fake_transport.py"
+    fake.write_text(
+        """import json, os, sys
+assert sys.argv[1] == 'checker-recover-worker'
+assert os.environ['SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID'] == 'checker-a'
+assert os.environ['SLK_OCRV_RECOVERY_INVOCATION_ID'] == 'recovery-a'
+assert os.environ['SLK_OCRV_RECOVERY_ENDPOINT_VERSION'] == '2'
+assert 'SLK_ROLE_CREDENTIAL' not in os.environ
+assert 'SLK_NATIVE_START_RECEIPT' not in os.environ
+assert 'SLK_NATIVE_START_CONTEXT' not in os.environ
+print(json.dumps({'schema_version':'slk.ocrv-worker-recovery-result/v1','status':'CHECKER_D1_RECORDED'}))
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "checker-result.json"
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+            "schema_version": "slk.ocrv-worker-recovery-request/v1",
+            "recovery_invocation_id": "recovery-a",
+            "result_path": str(output),
+            "transport_command": [sys.executable, str(fake)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = "checker-a"
+    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = "recovery-a"
+    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = "2"
+    environment["SLK_ROLE_CREDENTIAL"] = "must-not-leak"
+    start_receipt = tmp_path / "must-not-exist.json"
+    environment["SLK_NATIVE_START_RECEIPT"] = str(start_receipt)
+    environment["SLK_NATIVE_START_CONTEXT"] = "{}"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(INTEGRATION / "slk_checker_recovery.py"),
+            "--slk-existing-terminal",
+            "--request",
+            str(request),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=environment,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert json.loads(completed.stdout)["status"] == "CHECKER_D1_RECORDED"
+    assert not start_receipt.exists()
 
 
 def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_path: Path) -> None:

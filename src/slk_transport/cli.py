@@ -32,11 +32,13 @@ from .run_readiness import evaluate_run_readiness
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
     CompletionError,
+    consume_staged_checker_terminal,
     continuation_request_bytes,
     execute_checker_recovery,
     execute_worker_continuation,
     inspect_worker_completion,
     prepare_invalid_result_recovery_envelope,
+    recover_staged_checker_commit,
 )
 
 
@@ -354,6 +356,26 @@ def _prepare_invalid_result_recovery(args: argparse.Namespace) -> int:
     return 0
 
 
+def _recover_staged_checker_commit(args: argparse.Namespace) -> int:
+    result = recover_staged_checker_commit(
+        _read_object(args.continuation, "Worker continuation request"),
+        _read_object(args.outcome, "staged Checker delivery result"),
+        failed_request_path=args.failed_request,
+    )
+    _emit(result)
+    return 0
+
+
+def _consume_staged_checker_terminal(args: argparse.Namespace) -> int:
+    _emit(
+        consume_staged_checker_terminal(
+            args.request,
+            request_sha256=args.sha256,
+        )
+    )
+    return 0
+
+
 def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
     result = inspect_overwatcher_cadence(
         _read_object(args.runtime_projection, "runtime projection"),
@@ -472,6 +494,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     invalid_result_recovery.add_argument("--transport-command", required=True, nargs="+")
     invalid_result_recovery.add_argument("--occurred-at", required=True)
     invalid_result_recovery.add_argument("--output", required=True, type=Path)
+    commit_recovery = subparsers.add_parser("recover-staged-checker-commit")
+    commit_recovery.add_argument("--continuation", required=True, type=Path)
+    commit_recovery.add_argument("--outcome", required=True, type=Path)
+    commit_recovery.add_argument("--failed-request", required=True, type=Path)
+    terminal_consumer = subparsers.add_parser("consume-staged-checker-terminal")
+    terminal_consumer.add_argument("--request", required=True, type=Path)
+    terminal_consumer.add_argument("--sha256", required=True)
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
@@ -524,6 +553,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _checker_recover_worker(args)
         if args.command == "prepare-invalid-result-recovery":
             return _prepare_invalid_result_recovery(args)
+        if args.command == "recover-staged-checker-commit":
+            return _recover_staged_checker_commit(args)
+        if args.command == "consume-staged-checker-terminal":
+            return _consume_staged_checker_terminal(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
         if args.command == "inspect-overwatcher-cadence":
