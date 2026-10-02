@@ -480,8 +480,21 @@ def test_recovered_terminal_reuses_the_existing_committed_validator_and_d1_recor
         (recovery / target_name).write_bytes((source / source_name).read_bytes())
     terminal = json.loads((recovery / "completed.json").read_text(encoding="utf-8"))
     terminal["evidence"] = ["started.json", "ocrv-resume-request.json", "ocrv-result.json"]
+    terminal["native_identity"]["review_invocation_id"] = "review-fresh"
+    terminal["native_identity"]["session_id"] = "ocrv-session-fresh"
     write_json(recovery / "completed.json", terminal)
+    started = json.loads((recovery / "started.json").read_text(encoding="utf-8"))
+    started["native_task"]["id"] = "review-fresh"
+    write_json(recovery / "started.json", started)
+    recovered_result = json.loads((recovery / "ocrv-result.json").read_text(encoding="utf-8"))
+    recovered_result["review_invocation_id"] = "review-fresh"
+    recovered_result["review"]["session_id"] = "ocrv-session-fresh"
+    write_json(recovery / "ocrv-result.json", recovered_result)
     raw = Path(str(request["raw_review_path"]))
+    raw_review = json.loads(raw.read_text(encoding="utf-8"))
+    raw_review["session_id"] = "ocrv-session-fresh"
+    raw_review["manifest"]["run_id"] = "ocrv-session-fresh"
+    write_json(raw, raw_review)
     request["immutable_sha256"] = {
         name: sha256(source / name) for name in (
             "endpoint.json", "envelope.json", "started.json", "ocrv-request.json",
@@ -507,6 +520,8 @@ def test_recovered_terminal_reuses_the_existing_committed_validator_and_d1_recor
     )
 
     assert Path(str(result["native_attempt_path"])) == recovery
+    assert terminal["native_identity"]["review_invocation_id"] == "review-fresh"
+    assert terminal["native_identity"]["session_id"] == "ocrv-session-fresh"
 
 
 @pytest.mark.parametrize(

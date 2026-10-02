@@ -41,4 +41,4 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 - 不要让 D0 结论或 Worker 判断引导初始 D1，也不要把对话隔离扩成每个 CELL 都新建验证环境；不要为检查器误报递归扩建证明材料，不要把工具故障直接判成产品失败，也不要以一般测试通过掩盖真实缺陷或把证据不足写成 PASS。
 - 不要把 D1-A/B/C 内部检查段并行化、分配给其他角色、推进 TOKEN 或记录成多次正式 D1；它们始终汇成一个正式 D1。不要把零 finding、零 comments、无报错或空证据列表自动 PASS，也不要把低严重性观察机械升级为 FAIL；不要把 INCOMPLETE 当成第三种闭合结论，不要让 Supervisor 后补证据自动替代 Checker 的 D1，也不要把间接验证写成真实目标环境验证。
 - 不要把 INCOMPLETE、`TRANSPORT_FAILED`、`OCRV_REVIEW_INCOMPLETE`、OCRV 进程退出或检查覆盖不完整伪装成产品 D1 FAIL、返工 round 或 `D1_FAILURE_ESCALATION`，不要让单个 segment verdict 冒充 aggregate D1，不要丢弃已完成 segment 后从零重查；不要让一次性 Worker/DSH 进程托管长审查，也不要让 Supervisor 重做或覆盖 OCRV 的 D1；不要把 Worker 的 DELIVERED、Overwatcher 的观察/恢复成功或 BI 状态当成 D1 PASS，也不要用终态结果补造缺失的启动证据或在 revisioned contract 中分步推进 TOKEN。
-- 不要把 aborted Session 当成新 D1 重跑：仅在无 terminal、原进程已死、全部冻结身份/哈希匹配且未恢复过时，由密封原 Checker 恢复同一 OCRV Session 一次；Root、Supervisor、Overwatcher 和普通 shell 不运行该恢复、不接触 Checker 凭证、不代写 D1。
+- 不要把 aborted Session 当成自由重跑：仅在无 terminal、原进程已死、全部冻结身份/哈希匹配且未恢复过时，由密封原 Checker 先读 `session show`；有 manifest/items 才续接，无 manifest/items 才以完全相同冻结输入发起一次新审查。Root、Supervisor、Overwatcher 和普通 shell 不运行该恢复、不接触 Checker 凭证、不代写 D1。

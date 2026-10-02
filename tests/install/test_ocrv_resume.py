@@ -17,7 +17,13 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_sealed_resume_uses_same_session_then_delegates_to_committed_terminal(tmp_path: Path) -> None:
+def _run_recovery(
+    tmp_path: Path,
+    *,
+    show_payload: object,
+    show_exit: int = 0,
+    new_session_id: str = "ocrv-session-1",
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]], dict[str, object], Path, Path, Path]:
     original, _output, repository = _request(tmp_path)
     original_value = json.loads(original.read_text(encoding="utf-8"))
     original_value["candidate"] = {"kind": "commit", "commit": "b" * 40}
@@ -73,15 +79,19 @@ def test_sealed_resume_uses_same_session_then_delegates_to_committed_terminal(tm
         "if args[:2]==['session','list']:\n print(json.dumps([{'session_id':'ocrv-session-1','repo_dir':os.environ['FAKE_REPO'].replace('\\\\','/'),"
         "'diff_commit':'" + "b" * 40 + "','model':'qwen3.8-max','review_mode':'commit',"
         "'start_time':'2026-10-02T07:21:32Z','aborted':True,'selected_files':0,'completed_files':0}]))\n sys.exit(0)\n"
+        "if args[:2]==['session','show']:\n print(os.environ['FAKE_SHOW_JSON'])\n sys.exit(int(os.environ['FAKE_SHOW_EXIT']))\n"
         "out=Path(args[args.index('--output')+1]);out.write_text(json.dumps({'status':'complete',"
-        "'session_id':'ocrv-session-1','llm':{'provider':'dashscope-tokenplan','model':'qwen3.8-max'},"
+        "'session_id':os.environ['FAKE_NEW_SESSION'],'llm':{'provider':'dashscope-tokenplan','model':'qwen3.8-max'},"
         "'manifest':{'terminal_state':'complete','coverage':{'selected':[{'item_id':'a'}],"
         "'completed':[{'item_id':'a'}],'failed':[],'waived':[]}},'tool_calls':{'failure':0},'comments':[]}),encoding='utf-8')\n",
         encoding="utf-8",
     )
     environment = os.environ.copy()
     environment.update({
-        "OCRV_SLK_COMMAND_JSON": json.dumps([sys.executable, str(fake_ocr)]), "FAKE_LOG": str(log), "FAKE_REPO": str(repository.resolve()),
+        "OCRV_SLK_COMMAND_JSON": json.dumps([sys.executable, str(fake_ocr)]),
+        "FAKE_LOG": str(log), "FAKE_REPO": str(repository.resolve()),
+        "FAKE_SHOW_JSON": json.dumps(show_payload), "FAKE_SHOW_EXIT": str(show_exit),
+        "FAKE_NEW_SESSION": new_session_id,
         "SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID": "checker-1", "SLK_OCRV_RECOVERY_INVOCATION_ID": "recovery-1",
         "SLK_OCRV_RECOVERY_ENDPOINT_VERSION": "1",
     })
@@ -92,10 +102,63 @@ def test_sealed_resume_uses_same_session_then_delegates_to_committed_terminal(tm
         errors="replace", check=False, env=environment,
         creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
     )
+    calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    return completed, calls, request, request_path, background, recovery_root
+
+
+def _recoverable_show_payload() -> dict[str, object]:
+    return {
+        "summary": {
+            "session_id": "ocrv-session-1",
+            "run_manifest": {"terminal_state": "running", "coverage": {"selected": [{"item_id": "a"}]}},
+        },
+        "items": [{"item_id": "a", "type": "pending"}],
+    }
+
+
+def test_recoverable_session_resumes_same_session_then_delegates_to_committed_terminal(tmp_path: Path) -> None:
+    completed, calls, _request_value, request_path, background, recovery_root = _run_recovery(
+        tmp_path, show_payload=_recoverable_show_payload()
+    )
 
     assert completed.returncode == 0, completed.stderr
-    calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-    assert calls[1][calls[1].index("--resume") + 1] == "ocrv-session-1"
-    assert calls[1][calls[1].index("--background-file") + 1] == str(background)
+    assert calls[1][:2] == ["session", "show"]
+    assert calls[2][calls[2].index("--resume") + 1] == "ocrv-session-1"
+    assert calls[2][calls[2].index("--background-file") + 1] == str(background)
     assert (recovery_root / "committed-terminal.json").is_file()
-    assert json.loads(output.read_text(encoding="utf-8"))["request_sha256"] == sha256(request_path)
+    assert json.loads((recovery_root / "result.json").read_text(encoding="utf-8"))["request_sha256"] == sha256(request_path)
+
+
+def test_session_without_manifest_or_items_starts_fresh_from_the_frozen_original_input(tmp_path: Path) -> None:
+    completed, calls, request, _request_path, background, recovery_root = _run_recovery(
+        tmp_path,
+        show_payload={"summary": {"session_id": "ocrv-session-1", "run_manifest": None}, "items": None},
+        new_session_id="ocrv-session-fresh",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    review = calls[2]
+    assert "--resume" not in review
+    assert review[review.index("--commit") + 1] == request["candidate_commit"]
+    assert review[review.index("--background-file") + 1] == str(background)
+    assert review[review.index("--provider") + 1] == "dashscope-tokenplan"
+    assert review[review.index("--model") + 1] == "qwen3.8-max"
+    assert review[review.index("--effort") + 1] == "medium"
+    native_attempt = recovery_root / "native-attempt"
+    terminal = json.loads((native_attempt / "completed.json").read_text(encoding="utf-8"))
+    result = json.loads((native_attempt / "ocrv-result.json").read_text(encoding="utf-8"))
+    assert terminal["native_identity"]["review_invocation_id"] == result["review_invocation_id"]
+    assert terminal["native_identity"]["review_invocation_id"] != "ocrv-session-1"
+    assert terminal["native_identity"]["session_id"] == "ocrv-session-fresh"
+
+
+def test_session_show_error_does_not_consume_the_one_shot_marker(tmp_path: Path) -> None:
+    completed, calls, _request_value, _request_path, _background, recovery_root = _run_recovery(
+        tmp_path, show_payload={}, show_exit=9
+    )
+
+    assert completed.returncode == 5
+    assert calls[1][:2] == ["session", "show"]
+    assert len(calls) == 2
+    assert not (recovery_root / "resume-consumed.json").exists()
+    assert not (recovery_root / "native-attempt").exists()
