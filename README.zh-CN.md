@@ -29,7 +29,7 @@ SLK 的指导帮助成员判断怎样继续。返工、通讯恢复、成员恢�
 
 RTK、Probe CLI 与 Ponytail 是可选的外部效率工具。它们可以在 Codex 全域只安装一次，但安装不等于获得项目使用授权；每个 Run 仍由 Owner 决定是否启用。SLK 只显式调用，不启用自动 hook、MCP 或额外 Agent；原生命令与原始证据始终可以回退并作为事实依据。
 
-跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。4.3.6 的受管 launcher 使用同目录哈希绑定 pyz；native-start v2 分别绑定 payload 和原生输入 hash。`inspect-native-activity` 只读、不唤醒 Agent、不调用模型；缺失或不可查询的证据仍为 UNKNOWN。DSH 暂存候选，独立 OCRV 宿主启动并记录 D1；旧启动/结果纠正保留原证据、候选和 TOKEN。`resume-incomplete-checker` 还可接受封闭的三段首段 budget-partial 续查：原密封 Checker 在开工前确认已有 checkpoint 可复用，OCRV 真实生成父子 Session，然后只运行冻结的剩余未启动段。此路径禁止重新全量审查、提高预算/模型、重复启动或新角色；`--prepare-only` 仅验证源证据，不启动宿主或模型，其回执不是 D1 完成。详见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
+跨 Agent 交接使用已验收的 `slk-transport`、精确角色端点和原生 Agent 激活。4.3.6 的受管 launcher 使用同目录哈希绑定 pyz；native-start v2 分别绑定 payload 和原生输入 hash。`inspect-native-activity` 只读、不唤醒 Agent、不调用模型；缺失或不可查询的证据仍为 UNKNOWN。DSH 暂存候选，独立 OCRV 宿主启动并记录 D1；旧启动/结果纠正保留原证据、候选和 TOKEN。封闭 partial 路径会核对可复用 checkpoint，并且最多一次续接准确的后续 budget-partial 段；已完成指纹必须复用、旧 findings 不得丢失，再次 partial 时不聚合、不写 D1。此路径禁止重新全量审查、提高预算/模型、重复启动或新角色；`--prepare-only` 仅验证源证据，不启动宿主或模型，其回执不是 D1 完成。详见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
 
 4.3.6 继续包含 4.3.0 引入的可选 `SLK.Start` 与 `SLK.Run` Temporal 模板，只保存启动和通讯连续性。它必须按 Run 显式选择并连接现有服务/adapter，不安装 Docker、不成为硬依赖，也不裁决工程状态；薄活动查询复用同一个 native-activity inspector，未启用或不可用时继续原直连。详见 [`docs/runtime/SLK-TEMPORAL.md`](docs/runtime/SLK-TEMPORAL.md)。
 

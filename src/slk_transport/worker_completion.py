@@ -4177,6 +4177,44 @@ def continue_consumed_partial_checker(
         request_path, request, validated['checker'], request_sha256=request_sha256,
         mode='--slk-continue-consumed-partial', result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
         error_code='CHECKER_PARTIAL_CONTINUE_COMMAND_FAILED')
+
+
+def resume_consumed_partial_checker(
+    request_path: Path, *, request_sha256: str, prepare_only: bool = False
+) -> Mapping[str, Any]:
+    """Resume only the failed item of the already-started second frozen segment."""
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError('CHECKER_PARTIAL_SEGMENT_RESUME_REQUEST_MISMATCH', 'resume request hash mismatch')
+    request = _read_object(request_path, 'later partial Checker request')
+    validated = _validate_incomplete_resume(request, consumed=True)
+    try:
+        from .partial_review import validate_consumed_partial_resume_attempt
+        partial = validate_consumed_partial_resume_attempt(request, request_sha256)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CompletionError('CHECKER_PARTIAL_SEGMENT_RESUME_EVIDENCE_INVALID', str(exc)) from exc
+    current_projection = _default_load_current_projection(str(request['run_id']), list(request['state_command']))
+    current_runtime = current_projection.get('runtime_snapshot')
+    current_revision = current_runtime.get('runtime_revision') if isinstance(current_runtime, Mapping) else None
+    if isinstance(current_revision, bool) or not isinstance(current_revision, int):
+        _committed_terminal_drift_invalid()
+    if current_revision != request['runtime_revision']:
+        current_revision = _rebind_overwatcher_only_committed_boundary(
+            request, validated['frozen_projection'], current_projection, current_revision)
+    coverage = partial['partial_manifest']['coverage']
+    if prepare_only:
+        return {'schema_version':'slk.ocrv-partial-segment-resume-preflight/v1',
+                'status':'READY_TO_RESUME_PARTIAL_SEGMENT_2', 'request_sha256':request_sha256,
+                'partial_session_id':partial['partial_raw']['session_id'],
+                'failed_paths':[item['path'] for item in coverage['failed']],
+                'reused_paths':[item['path'] for item in coverage['completed']],
+                **{key:request[key] for key in ('run_id','go_id','cell_id','attempt','candidate_message_id',
+                    'runtime_revision','token_sequence','checker_role_instance_id','checker_endpoint_version')},
+                'current_runtime_revision':current_revision}
+    return _run_sealed_checker_terminal(
+        request_path, request, validated['checker'], request_sha256=request_sha256,
+        mode='--slk-resume-consumed-partial', result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
+        error_code='CHECKER_PARTIAL_SEGMENT_RESUME_COMMAND_FAILED')
 def _run_json_command(
     command: list[str],
     arguments: list[str],

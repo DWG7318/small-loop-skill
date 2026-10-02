@@ -241,7 +241,8 @@ def _resume_incomplete(request: dict[str, object], request_path: Path, command: 
 
 
 def _resume_partial(
-    request: dict[str, object], request_path: Path, command: list[str], *, consumed: bool = False
+    request: dict[str, object], request_path: Path, command: list[str], *, consumed: bool = False,
+    resume_later: bool = False,
 ) -> int:
     # The installed zipapp owns admission. This host alone handles its sealed role credential.
     sys.path.insert(0, command[-1])
@@ -263,6 +264,8 @@ def _resume_partial(
     if authentication.get('runtime_revision') != request['runtime_revision']:
         wc._rebind_overwatcher_only_committed_boundary(request, validated['frozen_projection'],
             wc._default_load_current_projection(request['run_id'], request['state_command']), authentication['runtime_revision'])
+    if resume_later:
+        return _resume_later_partial(request, request_path, command)
     basis = validate_partial_source(request, consumed=consumed)
     root = Path(request['recovery_root']).resolve()
     if consumed:
@@ -345,7 +348,17 @@ def _resume_partial(
             validate_resumed_raw(basis, raw, lineage[0])
         values.append(value)
         if OcrvAdapter._has_blocking_finding(value): break
+    return _finish_partial_terminal(request, request_path, command, attempt, values)
+
+
+def _finish_partial_terminal(
+    request: dict[str, object], request_path: Path, command: list[str], attempt: Path,
+    values: list[dict[str, object]],
+) -> int:
+    from slk_transport import worker_completion as wc
+    from slk_transport.partial_review import digest, publish_aggregate
     publish_aggregate(attempt, request, values)
+    root = Path(request['recovery_root']).resolve()
     committed = {k:v for k,v in request.items() if k not in {'background_path','ocrv_session','recovery_root','partial_review'}}
     committed.update(schema_version=wc.COMMITTED_TERMINAL_SCHEMA, raw_review_path='unused',
         immutable_sha256={n:request['immutable_sha256'][n] for n in ('endpoint.json','envelope.json','started.json','ocrv-request.json')},
@@ -368,6 +381,110 @@ def _resume_partial(
     sys.stderr.buffer.write(completed.stderr)
     return completed.returncode
 
+
+def _resume_later_partial(
+    request: dict[str, object], request_path: Path, command: list[str]
+) -> int:
+    from slk_transport import worker_completion as wc
+    from slk_transport.partial_review import (digest, read, records,
+        validate_completed_segment_resume, validate_consumed_partial_resume_attempt,
+        validate_incomplete_segment_resume, validate_manifest)
+    from slk_transport.adapters.ocrv import OcrvAdapter
+    partial = validate_consumed_partial_resume_attempt(request, digest(request_path))
+    root, attempt, second = partial['root'], partial['attempt'], partial['second']
+    one_shot = root / 'resume-partial-segment-002'
+    one_shot.mkdir(exist_ok=False)
+    consumed = {
+        'schema_version': 'slk.ocrv-partial-segment-resume-consumed/v1',
+        'request_sha256': digest(request_path), 'segment_ordinal': 2,
+        'partial_session_id': partial['partial_raw']['session_id'],
+        'partial_result_sha256': digest(second / 'result.json'),
+        'partial_raw_review_sha256': digest(second / 'ocrv-review.json'),
+        'partial_native_session_sha256': digest(partial['partial_session_path']),
+    }
+    consumed_path = one_shot / 'consumed.json'
+    consumed_path.write_text(json.dumps(consumed, sort_keys=True)+'\n', encoding='utf-8')
+    input_path = second / 'request.json'
+    invocation = str(uuid.uuid4())
+    os.environ['SLK_NATIVE_START_RECEIPT'] = str(one_shot / 'started.json')
+    os.environ['SLK_NATIVE_START_CONTEXT'] = json.dumps({'adapter':'ocrv-checker',
+        'run_id':request['run_id'],'cell_id':request['cell_id'],'message_id':request['candidate_message_id'],
+        'request_sha256':request['payload_sha256'],'native_request_sha256':digest(input_path)})
+    code = checker_adapter.run(
+        input_path, one_shot / 'result.json', invocation_override=invocation,
+        background_override=second / 'd1-background.md',
+        resume_session=partial['partial_raw']['session_id'])
+    value = read(one_shot / 'result.json')
+    envelope = wc.parse_delivery(
+        read(partial['basis']['source'] / 'endpoint.json'),
+        read(partial['basis']['source'] / 'envelope.json')).envelope
+    OcrvAdapter().validate_existing_result(one_shot / 'result.json', input_path, envelope, code)
+    start = wc.validate_native_start(one_shot / 'started.json', adapter='ocrv-checker',
+        run_id=request['run_id'], cell_id=request['cell_id'], message_id=request['candidate_message_id'],
+        request_sha256=request['payload_sha256'], native_request_sha256=digest(input_path))
+    if start['native_task']['kind'] != 'ocrv-review' or start['native_task']['id'] != value['review_invocation_id']:
+        raise ValueError('later partial continuation wrapper is not a native review start')
+    raw = read(Path(value['artifacts']['raw_review']))
+    child_detail = _run_ocrv_json(['session','show','--json','--repo',request['candidate_repository'],
+                                   value['review']['session_id']])
+    child_path = Path(child_detail['summary']['file_path']).resolve()
+    expected_path = Path(request['ocrv_session']['session_record_path']).parent / (value['review']['session_id']+'.jsonl')
+    if child_path != expected_path:
+        raise ValueError('later partial child checkpoint is outside the frozen repository session store')
+    native_copy = one_shot / 'native-session.jsonl'
+    native_copy.write_bytes(child_path.read_bytes())
+    lineage = [row for row in records(native_copy) if row.get('type') == 'resume_lineage']
+    if len(lineage) != 1:
+        raise ValueError('later partial native child lineage is absent or duplicated')
+    scope = read(input_path)['review_scope']['include_paths']
+    if value['verdict'] == 'INCOMPLETE':
+        validate_manifest(request, raw, scope, complete=False)
+        validate_incomplete_segment_resume(partial, raw, lineage[0])
+        receipt = {**consumed, 'schema_version':'slk.ocrv-partial-segment-resume-result/v1',
+            'status':'INCOMPLETE', 'child_session_id':value['review']['session_id'],
+            'reason_codes':value['reason_codes'], 'resumed_result_sha256':digest(one_shot / 'result.json'),
+            'resumed_raw_review_sha256':digest(one_shot / 'ocrv-review.json'),
+            'resumed_native_session_sha256':digest(native_copy)}
+        (one_shot / 'incomplete.json').write_text(json.dumps(receipt, sort_keys=True)+'\n', encoding='utf-8')
+        raise ValueError('bounded segment 2 continuation remains incomplete; one-shot is consumed')
+    validate_manifest(request, raw, scope, complete=True)
+    validate_completed_segment_resume(partial, raw, lineage[0])
+    complete = {**consumed, 'schema_version':'slk.ocrv-partial-segment-resume-result/v1',
+        'status':'COMPLETE', 'child_session_id':value['review']['session_id'],
+        'resumed_result_sha256':digest(one_shot / 'result.json'),
+        'resumed_raw_review_sha256':digest(one_shot / 'ocrv-review.json'),
+        'resumed_start_sha256':digest(one_shot / 'started.json'),
+        'resumed_native_session_sha256':digest(native_copy)}
+    complete_path = one_shot / 'complete.json'
+    complete_path.write_text(json.dumps(complete, sort_keys=True)+'\n', encoding='utf-8')
+    correction = attempt / 'review-corrections/segment-002'
+    correction.mkdir(parents=True, exist_ok=False)
+    for name in ('ocrv-review.json','started.json','native-activity.json','ocrv.stdout.txt','ocrv.stderr.txt','native-session.jsonl'):
+        (correction / name).write_bytes((one_shot / name).read_bytes())
+    (correction / 'd1-background.md').write_bytes((second / 'd1-background.md').read_bytes())
+    corrected = {**value, 'artifacts':{**value['artifacts'],
+        'raw_review':str(correction / 'ocrv-review.json'), 'stdout':str(correction / 'ocrv.stdout.txt'),
+        'stderr':str(correction / 'ocrv.stderr.txt'), 'background':str(correction / 'd1-background.md')}}
+    corrected_path = correction / 'result.json'
+    corrected_path.write_text(json.dumps(corrected, sort_keys=True)+'\n', encoding='utf-8')
+    correction_receipt = {
+        'schema_version':'slk.ocrv-partial-segment-resume-correction/v1',
+        'cause':'BUDGET_PARTIAL_SEGMENT_RESUMED',
+        'original_partial_result_sha256':digest(second / 'result.json'),
+        'original_partial_raw_review_sha256':digest(second / 'ocrv-review.json'),
+        'original_partial_native_session_sha256':digest(partial['partial_session_path']),
+        'one_shot_receipt_sha256':digest(complete_path),
+        'resumed_native_result_sha256':digest(one_shot / 'result.json'),
+        'resumed_raw_review_sha256':digest(one_shot / 'ocrv-review.json'),
+        'resumed_start_sha256':digest(one_shot / 'started.json'),
+        'corrected_result_sha256':digest(corrected_path),
+        'native_session_sha256':digest(correction / 'native-session.jsonl'),
+    }
+    (correction / 'correction.json').write_text(json.dumps(correction_receipt, sort_keys=True)+'\n', encoding='utf-8')
+    OcrvAdapter().validate_existing_result(corrected_path, input_path, envelope, {'PASS':0,'FAIL':2}[corrected['verdict']])
+    return _finish_partial_terminal(
+        request, request_path, command, attempt, [partial['corrected_first'], corrected])
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -376,6 +493,7 @@ def main() -> int:
     mode.add_argument("--slk-committed-terminal", action="store_true")
     mode.add_argument("--slk-resume-incomplete-checker", action="store_true")
     mode.add_argument("--slk-continue-consumed-partial", action="store_true")
+    mode.add_argument("--slk-resume-consumed-partial", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -388,6 +506,7 @@ def main() -> int:
     expected_schema = (
         "slk.ocrv-incomplete-checker-resume-request/v1"
         if args.slk_resume_incomplete_checker or args.slk_continue_consumed_partial
+        or args.slk_resume_consumed_partial
         else "slk.ocrv-committed-terminal-request/v1"
         if args.slk_committed_terminal
         else "slk.ocrv-worker-recovery-request/v1"
@@ -407,7 +526,7 @@ def main() -> int:
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
     if (args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker
-        or args.slk_continue_consumed_partial):
+        or args.slk_continue_consumed_partial or args.slk_resume_consumed_partial):
         environment.pop("SLK_NATIVE_START_RECEIPT", None)
         environment.pop("SLK_NATIVE_START_CONTEXT", None)
     if args.slk_worker_recovery:
@@ -420,6 +539,8 @@ def main() -> int:
             print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
             return 4
     try:
+        if args.slk_resume_consumed_partial:
+            return _resume_partial(request, args.request.resolve(), command, consumed=True, resume_later=True)
         if args.slk_continue_consumed_partial:
             return _resume_partial(request, args.request.resolve(), command, consumed=True)
         if args.slk_resume_incomplete_checker:

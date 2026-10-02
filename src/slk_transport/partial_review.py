@@ -200,7 +200,24 @@ def validate_resumed_raw(basis: Mapping[str, Any], raw: Mapping[str, Any], linea
         raise ValueError('resumed native result did not reuse the frozen completed fingerprints')
 
 
-def validate_consumed_partial_attempt(request: Mapping[str, Any], request_sha256: str) -> dict[str, Any]:
+def _complete_verdict(comments: object) -> tuple[str, list[str]]:
+    if not isinstance(comments, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get('severity'), str)
+        or item['severity'].strip().upper() not in {'INFO','LOW','MEDIUM','HIGH','BLOCKER','CRITICAL'}
+        for item in comments
+    ):
+        raise ValueError('completed native findings are invalid')
+    if any(item['severity'].strip().upper() in {'MEDIUM','HIGH','BLOCKER','CRITICAL'} for item in comments):
+        return 'FAIL', ['OCR_BLOCKING_FINDINGS_PRESENT']
+    if comments:
+        return 'PASS', ['OCR_COMPLETE_LOW_SEVERITY_OBSERVATIONS']
+    return 'PASS', ['OCR_COMPLETE_ZERO_FINDINGS']
+
+
+def validate_consumed_partial_attempt(
+    request: Mapping[str, Any], request_sha256: str, *, advanced: bool = False,
+    terminal: bool = False,
+) -> dict[str, Any]:
     """Admit the one real segment already completed before the mapper failed."""
     basis = validate_partial_source(request, consumed=True)
     root = Path(str(request['recovery_root'])).resolve()
@@ -210,9 +227,14 @@ def validate_consumed_partial_attempt(request: Mapping[str, Any], request_sha256
     if (read(marker) != {'recovery_invocation_id': request['recovery_invocation_id'],
                          'request_sha256': request_sha256}
         or (root / 'resume-consumed.json').read_text(encoding='ascii').strip() != request_sha256
-        or (root / 'continue-consumed.json').exists()
-        or any((attempt / 'review-segments' / f'segment-{n:03d}').exists() for n in (2, 3))
-        or any((attempt / name).exists() for name in ('ocrv-result.json', 'ocrv-aggregate.json', 'completed.json'))):
+        or ((root / 'continue-consumed.json').exists() != advanced)
+        or ((attempt / 'review-segments/segment-002').exists() != advanced)
+        or (attempt / 'review-segments/segment-003').exists()
+        or ((root / 'resume-partial-segment-002').exists() != terminal)
+        or ((not terminal and any((attempt / name).exists()
+                                  for name in ('ocrv-result.json','ocrv-aggregate.json','completed.json')))
+            or (terminal and not all((attempt / name).is_file()
+                                     for name in ('ocrv-result.json','ocrv-aggregate.json','completed.json'))))):
         raise ValueError('consumed continuation identity is absent, repeated, or already advanced')
     required = ('request.json', 'result.json', 'ocrv-review.json', 'started.json',
                 'native-activity.json', 'ocrv.stdout.txt', 'ocrv.stderr.txt')
@@ -259,8 +281,135 @@ def validate_consumed_partial_attempt(request: Mapping[str, Any], request_sha256
     if len(ends) != 1 or ends[0].get('run_manifest') != manifest or len(lineage) != 1:
         raise ValueError('completed first segment native child record is incomplete')
     validate_resumed_raw(basis, raw, lineage[0])
-    return {'basis': basis, 'root': root, 'attempt': attempt, 'first': first,
-            'result': result, 'raw': raw, 'child_path': child_path}
+    value = {'basis': basis, 'root': root, 'attempt': attempt, 'first': first,
+             'result': result, 'raw': raw, 'child_path': child_path}
+    if not advanced:
+        return value
+    if read(root / 'continue-consumed.json') != {
+        'request_sha256': request_sha256,
+        'existing_native_task_id': result['review_invocation_id'],
+    }:
+        raise ValueError('consumed continuation marker does not bind the completed first segment')
+    correction = attempt / 'review-corrections/segment-001'
+    if not all((correction / name).is_file() for name in ('result.json','native-session.jsonl','correction.json')):
+        raise ValueError('first segment normalization correction is incomplete')
+    corrected = read(correction / 'result.json')
+    verdict, reasons = _complete_verdict(raw['comments'])
+    if corrected != {**result, 'verdict': verdict, 'reason_codes': reasons, 'findings': raw['comments']}:
+        raise ValueError('first segment correction changed preserved native evidence')
+    if read(correction / 'correction.json') != {
+        'schema_version': 'slk.ocrv-normalization-correction/v1',
+        'cause': 'COMPLETED_REUSED_COVERAGE_WAS_OMITTED',
+        'original_result_sha256': digest(first / 'result.json'),
+        'raw_review_sha256': digest(first / 'ocrv-review.json'),
+        'corrected_result_sha256': digest(correction / 'result.json'),
+        'native_session_sha256': digest(correction / 'native-session.jsonl'),
+    } or digest(correction / 'native-session.jsonl') != digest(child_path):
+        raise ValueError('first segment correction receipt or native session drift')
+    value['corrected_first'] = corrected
+    return value
+
+
+def validate_consumed_partial_resume_attempt(
+    request: Mapping[str, Any], request_sha256: str, *, terminal: bool = False
+) -> dict[str, Any]:
+    """Admit the exact later segment that stopped only on its frozen token budget."""
+    existing = validate_consumed_partial_attempt(
+        request, request_sha256, advanced=True, terminal=terminal)
+    basis, attempt = existing['basis'], existing['attempt']
+    second = attempt / 'review-segments/segment-002'
+    required = ('request.json','result.json','ocrv-review.json','started.json','native-activity.json',
+                'ocrv.stdout.txt','ocrv.stderr.txt','d1-background.md')
+    if (not all((second / name).is_file() for name in required)
+        or digest(second / 'request.json') != digest(basis['segments'][1])):
+        raise ValueError('second segment partial evidence is incomplete or outside the frozen scope')
+    result, raw = read(second / 'result.json'), read(second / 'ocrv-review.json')
+    if Path(str(result.get('artifacts', {}).get('raw_review', ''))).resolve() != (second / 'ocrv-review.json').resolve():
+        raise ValueError('second segment raw review escaped its sealed evidence root')
+    manifest = validate_manifest(
+        request, raw, read(second / 'request.json')['review_scope']['include_paths'], complete=False)
+    coverage, comments = manifest['coverage'], raw.get('comments')
+    if (result.get('schema_version') != 'slk.ocrv-d1-result/v1'
+        or result.get('run_id') != request['run_id'] or result.get('cell_id') != request['cell_id']
+        or result.get('verdict') != 'INCOMPLETE'
+        or result.get('reason_codes') != ['OCR_STATUS_NOT_COMPLETE','OCR_COVERAGE_INCOMPLETE']
+        or result.get('request_sha256') != digest(second / 'request.json')
+        or result.get('findings') != comments or not isinstance(comments, list)
+        or result.get('review') != {'status':'partial','provider':'dashscope-tokenplan',
+            'model':'qwen3.8-max','session_id':raw.get('session_id'),'exit_code':0}
+        or raw.get('llm') != {'provider':'dashscope-tokenplan','model':'qwen3.8-max'}
+        or raw.get('tool_calls', {}).get('failure') != 0
+        or not coverage['completed'] or coverage['reused'] or not coverage['failed']
+        or any(item.get('classification') != 'budget' for item in coverage['failed'])
+        or identities(coverage['completed']) | identities(coverage['failed']) != identities(coverage['selected'])):
+        raise ValueError('second segment is not the exact budget-partial native result')
+    start, activity = read(second / 'started.json'), read(second / 'native-activity.json')
+    expected_start = {'schema_version':'slk.native-start/v2','status':'STARTED','adapter':'ocrv-checker',
+        'run_id':request['run_id'],'cell_id':request['cell_id'],'message_id':request['candidate_message_id'],
+        'request_sha256':request['payload_sha256'],'native_request_sha256':digest(second / 'request.json')}
+    if (any(start.get(k) != v for k,v in expected_start.items())
+        or start.get('native_task', {}).get('kind') != 'ocrv-review'
+        or start.get('native_task', {}).get('id') != result.get('review_invocation_id')
+        or activity.get('schema_version') != 'slk.native-task-activity/v1'
+        or any(activity.get(k) != v for k,v in {'adapter':'ocrv-checker','run_id':request['run_id'],
+            'cell_id':request['cell_id'],'message_id':request['candidate_message_id']}.items())
+        or activity.get('native_task_id') != result.get('review_invocation_id')
+        or activity.get('status') != 'COMPLETED'
+        or activity.get('last_event', {}).get('kind') != 'OCRV_PROCESS_EXITED'
+        or activity.get('last_event', {}).get('exit_code') != 0):
+        raise ValueError('second segment native start or terminal activity is not exact')
+    session_path = Path(str(request['ocrv_session']['session_record_path'])).resolve().parent / f"{raw['session_id']}.jsonl"
+    rows = records(session_path)
+    ends = [row for row in rows if row.get('type') == 'session_end']
+    completed_rows = {(row.get('filePath'),row.get('fingerprint')):row for row in rows if row.get('type') == 'review_item_done'}
+    failed_rows = {(row.get('filePath'),row.get('fingerprint')):row for row in rows if row.get('type') == 'review_item_failed'}
+    if (len(ends) != 1 or ends[0].get('run_manifest') != manifest
+        or any(row.get('sessionId') != raw['session_id'] or not isinstance(row.get('comments'), list)
+               for item in coverage['completed'] for row in [completed_rows.get((item['path'],item['fingerprint']), {})])
+        or any(row.get('sessionId') != raw['session_id']
+               for item in coverage['failed'] for row in [failed_rows.get((item['path'],item['fingerprint']), {})])
+        or any(row.get('type') == 'resume_lineage' for row in rows)):
+        raise ValueError('second segment native partial session does not match its manifest')
+    return {**existing, 'second': second, 'partial_result': result, 'partial_raw': raw,
+            'partial_manifest': manifest, 'partial_session_path': session_path}
+
+
+def _validate_segment_resume_common(
+    partial: Mapping[str, Any], raw: Mapping[str, Any], lineage: Mapping[str, Any]
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    validate_resumed_raw({'manifest': partial['partial_manifest']}, raw, lineage)
+    old_coverage, new_coverage = partial['partial_manifest']['coverage'], raw['manifest']['coverage']
+    old_findings = {canonical_json_sha256(item) for item in partial['partial_raw']['comments']}
+    new_comments = raw.get('comments')
+    if not isinstance(new_comments, list) or not old_findings <= {
+        canonical_json_sha256(item) for item in new_comments if isinstance(item, dict)
+    }:
+        raise ValueError('segment resume dropped a preserved native finding')
+    return old_coverage, new_coverage
+
+
+def validate_completed_segment_resume(
+    partial: Mapping[str, Any], raw: Mapping[str, Any], lineage: Mapping[str, Any]
+) -> None:
+    """Require a completed resume to review only old failures and reuse every old completion."""
+    old_coverage, new_coverage = _validate_segment_resume_common(partial, raw, lineage)
+    if (identities(new_coverage['completed']) != identities(old_coverage['failed'])
+        or identities(new_coverage['reused']) != identities(old_coverage['completed'])
+        or new_coverage['failed'] or new_coverage['waived']):
+        raise ValueError('segment resume did not review only the failed item and reuse every completion')
+
+
+def validate_incomplete_segment_resume(
+    partial: Mapping[str, Any], raw: Mapping[str, Any], lineage: Mapping[str, Any]
+) -> None:
+    """Require a second partial to preserve reuse and fail only the same frozen item."""
+    old_coverage, new_coverage = _validate_segment_resume_common(partial, raw, lineage)
+    if (new_coverage['completed']
+        or identities(new_coverage['reused']) != identities(old_coverage['completed'])
+        or identities(new_coverage['failed']) != identities(old_coverage['failed'])
+        or new_coverage['waived']
+        or any(item.get('classification') != 'budget' for item in new_coverage['failed'])):
+        raise ValueError('incomplete segment resume changed the frozen failed/reused partition')
 
 
 def effective_segment_root(root: Path, ordinal: int) -> Path:
@@ -337,6 +486,12 @@ def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError('partial terminal evidence or one-shot lineage drift')
     envelope = wc.parse_delivery(read(basis['source'] / 'endpoint.json'), read(basis['source'] / 'envelope.json')).envelope
     aggregate, values = read(root / 'ocrv-aggregate.json'), []
+    later_root = root / 'review-corrections/segment-002'
+    one_shot = Path(original['recovery_root']) / 'resume-partial-segment-002'
+    if one_shot.exists() != later_root.is_dir():
+        raise ValueError('later partial one-shot and correction are not paired')
+    later_partial = (validate_consumed_partial_resume_attempt(
+        original, digest(resume_path), terminal=True) if later_root.is_dir() else None)
     for n, segment in enumerate(aggregate['segments'], 1):
         source_root = root / 'review-segments' / f'segment-{n:03d}'
         item_root = effective_segment_root(root, n)
@@ -344,14 +499,60 @@ def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
         if digest(input_path) != digest(basis['segments'][n-1]) or segment['result_sha256'] != digest(result_path):
             raise ValueError('continuation segment request or result drift')
         result = read(result_path)
+        resumed_correction = False
         if item_root != source_root:
             correction = read(item_root / 'correction.json')
-            if correction != {'schema_version': 'slk.ocrv-normalization-correction/v1',
-                'cause': 'COMPLETED_REUSED_COVERAGE_WAS_OMITTED',
-                'original_result_sha256': digest(source_root / 'result.json'),
-                'raw_review_sha256': digest(source_root / 'ocrv-review.json'),
-                'corrected_result_sha256': digest(result_path),
-                'native_session_sha256': digest(item_root / 'native-session.jsonl')}:
+            if correction.get('schema_version') == 'slk.ocrv-normalization-correction/v1':
+                expected_correction = {'schema_version':'slk.ocrv-normalization-correction/v1',
+                    'cause':'COMPLETED_REUSED_COVERAGE_WAS_OMITTED',
+                    'original_result_sha256':digest(source_root / 'result.json'),
+                    'raw_review_sha256':digest(source_root / 'ocrv-review.json'),
+                    'corrected_result_sha256':digest(result_path),
+                    'native_session_sha256':digest(item_root / 'native-session.jsonl')}
+            elif n == 2 and later_partial is not None:
+                consumed = {'schema_version':'slk.ocrv-partial-segment-resume-consumed/v1',
+                    'request_sha256':digest(resume_path),'segment_ordinal':2,
+                    'partial_session_id':later_partial['partial_raw']['session_id'],
+                    'partial_result_sha256':digest(source_root / 'result.json'),
+                    'partial_raw_review_sha256':digest(source_root / 'ocrv-review.json'),
+                    'partial_native_session_sha256':digest(later_partial['partial_session_path'])}
+                complete_path = one_shot / 'complete.json'
+                native_result = read(one_shot / 'result.json')
+                expected_complete = {**consumed,
+                    'schema_version':'slk.ocrv-partial-segment-resume-result/v1','status':'COMPLETE',
+                    'child_session_id':native_result['review']['session_id'],
+                    'resumed_result_sha256':digest(one_shot / 'result.json'),
+                    'resumed_raw_review_sha256':digest(one_shot / 'ocrv-review.json'),
+                    'resumed_start_sha256':digest(one_shot / 'started.json'),
+                    'resumed_native_session_sha256':digest(one_shot / 'native-session.jsonl')}
+                expected_result = {**native_result, 'artifacts':{**native_result['artifacts'],
+                    'raw_review':str(item_root / 'ocrv-review.json'),
+                    'stdout':str(item_root / 'ocrv.stdout.txt'),
+                    'stderr':str(item_root / 'ocrv.stderr.txt'),
+                    'background':str(item_root / 'd1-background.md')}}
+                expected_correction = {
+                    'schema_version':'slk.ocrv-partial-segment-resume-correction/v1',
+                    'cause':'BUDGET_PARTIAL_SEGMENT_RESUMED',
+                    'original_partial_result_sha256':digest(source_root / 'result.json'),
+                    'original_partial_raw_review_sha256':digest(source_root / 'ocrv-review.json'),
+                    'original_partial_native_session_sha256':digest(later_partial['partial_session_path']),
+                    'one_shot_receipt_sha256':digest(complete_path),
+                    'resumed_native_result_sha256':digest(one_shot / 'result.json'),
+                    'resumed_raw_review_sha256':digest(one_shot / 'ocrv-review.json'),
+                    'resumed_start_sha256':digest(one_shot / 'started.json'),
+                    'corrected_result_sha256':digest(result_path),
+                    'native_session_sha256':digest(item_root / 'native-session.jsonl')}
+                copied = ('ocrv-review.json','started.json','native-activity.json','ocrv.stdout.txt',
+                          'ocrv.stderr.txt','native-session.jsonl')
+                if (read(one_shot / 'consumed.json') != consumed or read(complete_path) != expected_complete
+                    or result != expected_result
+                    or any((item_root / name).read_bytes() != (one_shot / name).read_bytes() for name in copied)
+                    or (item_root / 'd1-background.md').read_bytes() != (source_root / 'd1-background.md').read_bytes()):
+                    raise ValueError('later partial correction does not preserve its one-shot native evidence')
+                resumed_correction = True
+            else:
+                expected_correction = {}
+            if correction != expected_correction:
                 raise ValueError('normalization correction receipt does not bind preserved evidence')
         OcrvAdapter().validate_existing_result(result_path, input_path, envelope, {'PASS':0,'FAIL':2}[result['verdict']])
         raw = read(Path(result['artifacts']['raw_review']))
@@ -366,10 +567,11 @@ def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
             or result['verdict'] != ('FAIL' if any(str(c['severity']).strip().upper() in
                     {'MEDIUM','HIGH','BLOCKER','CRITICAL'} for c in comments) else 'PASS')):
             raise ValueError('native findings, model or verdict were altered before D1 consumption')
-        wc.validate_native_start(source_root / 'started.json', adapter='ocrv-checker', run_id=original['run_id'],
+        start_root = item_root if resumed_correction else source_root
+        wc.validate_native_start(start_root / 'started.json', adapter='ocrv-checker', run_id=original['run_id'],
             cell_id=original['cell_id'], message_id=original['candidate_message_id'], request_sha256=original['payload_sha256'],
             native_request_sha256=digest(input_path))
-        start = read(source_root / 'started.json')
+        start = read(start_root / 'started.json')
         if start['native_task']['kind'] != 'ocrv-review' or start['native_task']['id'] != result['review_invocation_id']:
             raise ValueError('aggregate contains a wrapper or mismatched native start')
         native_path = Path(original['ocrv_session']['session_record_path']).parent / (result['review']['session_id'] + '.jsonl')
@@ -383,7 +585,14 @@ def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
             lineage = [row for row in child_rows if row.get('type') == 'resume_lineage']
             if len(lineage) != 1: raise ValueError('native resume lineage is absent or duplicated')
             validate_resumed_raw(basis, raw, lineage[0])
+        elif resumed_correction:
+            lineage = [row for row in child_rows if row.get('type') == 'resume_lineage']
+            if len(lineage) != 1:
+                raise ValueError('later partial native resume lineage is absent or duplicated')
+            validate_completed_segment_resume(later_partial, raw, lineage[0])
         values.append(result)
+    if later_partial is not None and len(values) < 2:
+        raise ValueError('later partial correction is not indexed by the aggregate')
     if not values or len(values) > 3 or (len(values) != 3 and not OcrvAdapter._has_blocking_finding(values[-1])):
         raise ValueError('partial continuation has unfinished coverage')
     if digest(root / 'started.json') != digest(root / 'review-segments/segment-001/started.json'):

@@ -207,6 +207,278 @@ def consumed_partial_fixture(tmp_path: Path):
     return request, path, basis, child_record
 
 
+def later_partial_fixture(tmp_path: Path):
+    request, path, basis, child_record = consumed_partial_fixture(tmp_path)
+    root = Path(request['recovery_root'])
+    attempt = root / 'native-attempt'
+    first = attempt / 'review-segments/segment-001'
+    correction = attempt / 'review-corrections/segment-001'
+    correction.mkdir(parents=True)
+    first_result = json.loads((first / 'result.json').read_text())
+    corrected = {**first_result, 'verdict': 'FAIL',
+                 'reason_codes': ['OCR_BLOCKING_FINDINGS_PRESENT']}
+    write_json(correction / 'result.json', corrected)
+    (correction / 'native-session.jsonl').write_bytes(child_record.read_bytes())
+    write_json(correction / 'correction.json', {
+        'schema_version': 'slk.ocrv-normalization-correction/v1',
+        'cause': 'COMPLETED_REUSED_COVERAGE_WAS_OMITTED',
+        'original_result_sha256': sha256(first / 'result.json'),
+        'raw_review_sha256': sha256(first / 'ocrv-review.json'),
+        'corrected_result_sha256': sha256(correction / 'result.json'),
+        'native_session_sha256': sha256(correction / 'native-session.jsonl'),
+    })
+    write_json(root / 'continue-consumed.json', {
+        'request_sha256': sha256(path),
+        'existing_native_task_id': first_result['review_invocation_id'],
+    })
+    second = attempt / 'review-segments/segment-002'
+    second.mkdir(parents=True)
+    (second / 'request.json').write_bytes(basis['segments'][1].read_bytes())
+    (second / 'd1-background.md').write_text('frozen segment 2 background\n', encoding='utf-8')
+    segment_request = json.loads((second / 'request.json').read_text())
+    selected = [
+        {'item_id': 'item-c', 'path': segment_request['review_scope']['include_paths'][0],
+         'fingerprint': 'c' * 64},
+        {'item_id': 'item-d', 'path': segment_request['review_scope']['include_paths'][1],
+         'fingerprint': 'd' * 64},
+    ]
+    session_id = 'segment-2-partial'
+    manifest = copy.deepcopy(basis['manifest'])
+    manifest.update(run_id=session_id, terminal_state='partial')
+    manifest['input']['source_artifact_sha256'] = 'f' * 64
+    manifest['coverage'].update(
+        selected=selected, completed=[selected[1]], reused=[],
+        failed=[{**selected[0], 'classification': 'budget',
+                 'reason': 'reached the aggregate token budget before finishing'}], waived=[])
+    findings = [
+        {'severity': 'high', 'message': 'preserved database finding'},
+        {'severity': 'low', 'message': 'preserved observation'},
+    ]
+    raw = write_json(second / 'ocrv-review.json', {
+        'status': 'partial', 'session_id': session_id, 'manifest': manifest,
+        'comments': findings, 'llm': {'provider': 'dashscope-tokenplan', 'model': 'qwen3.8-max'},
+        'tool_calls': {'failure': 0},
+    })
+    result = write_json(second / 'result.json', {
+        'schema_version': 'slk.ocrv-d1-result/v1', 'run_id': request['run_id'],
+        'cell_id': request['cell_id'], 'review_invocation_id': 'segment-2-task',
+        'verdict': 'INCOMPLETE',
+        'reason_codes': ['OCR_STATUS_NOT_COMPLETE', 'OCR_COVERAGE_INCOMPLETE'],
+        'findings': findings, 'evidence': [], 'request_sha256': sha256(second / 'request.json'),
+        'review': {'status': 'partial', 'provider': 'dashscope-tokenplan',
+                   'model': 'qwen3.8-max', 'session_id': session_id, 'exit_code': 0},
+        'artifacts': {'raw_review': str(raw), 'background': str(second / 'd1-background.md'),
+                      'stdout': str(second / 'ocrv.stdout.txt'), 'stderr': str(second / 'ocrv.stderr.txt')},
+    })
+    (second / 'ocrv.stdout.txt').write_text('', encoding='utf-8')
+    (second / 'ocrv.stderr.txt').write_text('budget partial\n', encoding='utf-8')
+    from slk_transport.native_activity import make_native_start
+    import os
+    write_json(second / 'started.json', make_native_start(
+        adapter='ocrv-checker', run_id=request['run_id'], cell_id=request['cell_id'],
+        message_id=request['candidate_message_id'], request_sha256=request['payload_sha256'],
+        native_request_sha256=sha256(second / 'request.json'), native_task_kind='ocrv-review',
+        native_task_id='segment-2-task', native_task_status='RUNNING', pid=os.getpid()))
+    write_json(second / 'native-activity.json', {
+        'schema_version': 'slk.native-task-activity/v1', 'adapter': 'ocrv-checker',
+        'run_id': request['run_id'], 'cell_id': request['cell_id'],
+        'message_id': request['candidate_message_id'], 'native_task_id': 'segment-2-task',
+        'status': 'COMPLETED', 'sequence': 2, 'observed_at': '2026-10-03T00:00:00Z',
+        'last_event': {'kind': 'OCRV_PROCESS_EXITED', 'sequence': 2, 'exit_code': 0},
+        'waiting_on': None,
+    })
+    session_path = Path(request['ocrv_session']['session_record_path']).parent / f'{session_id}.jsonl'
+    session_path.write_text('\n'.join(json.dumps(row) for row in [
+        {'type': 'review_item_failed', 'sessionId': session_id,
+         'filePath': selected[0]['path'], 'fingerprint': selected[0]['fingerprint']},
+        {'type': 'review_item_done', 'sessionId': session_id,
+         'filePath': selected[1]['path'], 'fingerprint': selected[1]['fingerprint'],
+         'comments': findings},
+        {'type': 'session_end', 'sessionId': session_id, 'run_manifest': manifest},
+    ]) + '\n', encoding='utf-8')
+    return request, path, basis, second, result, session_path
+
+
+def test_later_partial_prepare_only_accepts_exact_real_shape_without_launch(tmp_path, monkeypatch):
+    from slk_transport import worker_completion as wc
+    from test_incomplete_checker_resume import dead_activity
+    request, path, _basis, _second, _result, _session = later_partial_fixture(tmp_path)
+    monkeypatch.setattr(wc, 'inspect_native_activity', dead_activity)
+    monkeypatch.setattr(wc, '_default_load_current_projection',
+                        lambda *a: json.loads(Path(request['runtime_projection_path']).read_text()))
+    monkeypatch.setattr(wc, '_run_sealed_checker_terminal',
+                        lambda *a, **k: pytest.fail('prepare-only must not launch'))
+
+    result = wc.resume_consumed_partial_checker(path, request_sha256=sha256(path), prepare_only=True)
+
+    assert result['status'] == 'READY_TO_RESUME_PARTIAL_SEGMENT_2'
+    assert result['partial_session_id'] == 'segment-2-partial'
+    assert result['failed_paths'] == ['src/c.py']
+    assert result['reused_paths'] == ['src/d.py']
+    assert not (Path(request['recovery_root']) / 'resume-partial-segment-002').exists()
+
+
+@pytest.mark.parametrize('mutation', ['continue-marker', 'segment-request', 'session', 'segment-3', 'one-shot'])
+def test_later_partial_admission_rejects_drift_or_second_use(tmp_path, monkeypatch, mutation):
+    from slk_transport import worker_completion as wc
+    from test_incomplete_checker_resume import dead_activity
+    request, path, _basis, second, _result, session = later_partial_fixture(tmp_path)
+    root = Path(request['recovery_root'])
+    if mutation == 'continue-marker':
+        write_json(root / 'continue-consumed.json', {'request_sha256': '0' * 64,
+                                                     'existing_native_task_id': 'segment-1-task'})
+    elif mutation == 'segment-request':
+        (second / 'request.json').write_text('{}\n', encoding='utf-8')
+    elif mutation == 'session':
+        session.write_text('{}\n', encoding='utf-8')
+    elif mutation == 'segment-3':
+        (root / 'native-attempt/review-segments/segment-003').mkdir(parents=True)
+    else:
+        (root / 'resume-partial-segment-002').mkdir()
+    monkeypatch.setattr(wc, 'inspect_native_activity', dead_activity)
+    monkeypatch.setattr(wc, '_run_sealed_checker_terminal',
+                        lambda *a, **k: pytest.fail('invalid evidence must not launch'))
+    with pytest.raises(wc.CompletionError):
+        wc.resume_consumed_partial_checker(path, request_sha256=sha256(path))
+
+
+@pytest.mark.parametrize('outcome', ['complete', 'partial'])
+def test_later_partial_resume_is_one_shot_preserves_findings_and_never_starts_segment_3(
+    tmp_path, monkeypatch, capsys, outcome
+):
+    import importlib
+    import os
+    import subprocess
+    from slk_transport import worker_completion as wc
+    from slk_transport.native_activity import make_native_start
+    from slk_transport.partial_review import read
+    from test_incomplete_checker_resume import dead_activity
+    request, path, _basis, second, _result, _session = later_partial_fixture(tmp_path)
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.syspath_prepend(str(root / 'integrations/ocrv'))
+    recovery = importlib.import_module('slk_checker_recovery')
+    monkeypatch.setattr(wc, 'inspect_native_activity', dead_activity)
+    for key, value in {'SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID': request['checker_role_instance_id'],
+        'SLK_OCRV_RECOVERY_ENDPOINT_VERSION': str(request['checker_endpoint_version']),
+        'SLK_OCRV_RECOVERY_INVOCATION_ID': request['recovery_invocation_id']}.items():
+        monkeypatch.setenv(key, value)
+    authentication = lambda *a: {'status':'authenticated', 'role':'checker',
+        'role_instance_id':request['checker_role_instance_id'], 'runtime_revision':request['runtime_revision']}
+    monkeypatch.setattr(wc, '_default_checker_authenticate', authentication)
+    launched, records = [], {}
+
+    def native_run(input_path, output_path, **kwargs):
+        launched.append((read(input_path), kwargs))
+        old_raw = read(second / 'ocrv-review.json')
+        manifest = copy.deepcopy(old_raw['manifest'])
+        session_id = f'segment-2-{outcome}-child'
+        manifest.update(run_id=session_id, terminal_state=outcome)
+        selected = manifest['coverage']['selected']
+        if outcome == 'complete':
+            manifest['coverage'].update(completed=[selected[0]], reused=[selected[1]], failed=[], waived=[])
+            status, verdict, reasons, adapter_code = 'complete', 'FAIL', ['OCR_BLOCKING_FINDINGS_PRESENT'], 2
+        else:
+            manifest['coverage'].update(completed=[], reused=[selected[1]],
+                failed=[{**selected[0], 'classification':'budget',
+                         'reason':'reached the aggregate token budget before finishing'}], waived=[])
+            status, verdict, reasons, adapter_code = 'partial', 'INCOMPLETE', [
+                'OCR_STATUS_NOT_COMPLETE','OCR_COVERAGE_INCOMPLETE'], 3
+        raw_path = write_json(output_path.parent / 'ocrv-review.json', {
+            'status':status, 'session_id':session_id, 'manifest':manifest,
+            'comments':old_raw['comments'],
+            'llm':{'provider':'dashscope-tokenplan','model':'qwen3.8-max'},
+            'tool_calls':{'failure':0}})
+        write_json(output_path, {'schema_version':'slk.ocrv-d1-result/v1',
+            'run_id':request['run_id'],'cell_id':request['cell_id'],
+            'review_invocation_id':kwargs['invocation_override'],'verdict':verdict,
+            'reason_codes':reasons,'findings':old_raw['comments'],'evidence':[],
+            'request_sha256':sha256(input_path),
+            'review':{'status':status,'provider':'dashscope-tokenplan','model':'qwen3.8-max',
+                      'session_id':session_id,'exit_code':0},
+            'artifacts':{'raw_review':str(raw_path),'background':str(kwargs['background_override']),
+                         'stdout':str(output_path.parent / 'ocrv.stdout.txt'),
+                         'stderr':str(output_path.parent / 'ocrv.stderr.txt')}})
+        write_json(Path(os.environ['SLK_NATIVE_START_RECEIPT']), make_native_start(
+            adapter='ocrv-checker',run_id=request['run_id'],cell_id=request['cell_id'],
+            message_id=request['candidate_message_id'],request_sha256=request['payload_sha256'],
+            native_request_sha256=sha256(input_path),native_task_kind='ocrv-review',
+            native_task_id=kwargs['invocation_override'],native_task_status='RUNNING',pid=os.getpid()))
+        write_json(output_path.parent / 'native-activity.json', {
+            'schema_version':'slk.native-task-activity/v1','adapter':'ocrv-checker',
+            'run_id':request['run_id'],'cell_id':request['cell_id'],'message_id':request['candidate_message_id'],
+            'native_task_id':kwargs['invocation_override'],'status':'COMPLETED','sequence':1,
+            'observed_at':'2026-10-03T00:00:00Z',
+            'last_event':{'kind':'OCRV_PROCESS_EXITED','sequence':1,'exit_code':0},'waiting_on':None})
+        (output_path.parent / 'ocrv.stdout.txt').write_text('', encoding='utf-8')
+        (output_path.parent / 'ocrv.stderr.txt').write_text('bounded resume\n', encoding='utf-8')
+        native_path = Path(request['ocrv_session']['session_record_path']).parent / f'{session_id}.jsonl'
+        lineage = {'type':'resume_lineage','schema_version':'ocr.resume-lineage/v1',
+            'parent_run_id':'segment-2-partial','run_id':session_id,
+            'source_provider':'dashscope-tokenplan','source_model':'qwen3.8-max',
+            'target_provider':'dashscope-tokenplan','target_model':'qwen3.8-max'}
+        native_path.write_text('\n'.join(json.dumps(row) for row in [lineage,
+            {'type':'session_end','sessionId':session_id,'run_manifest':manifest}])+'\n', encoding='utf-8')
+        records[session_id] = native_path
+        return adapter_code
+
+    monkeypatch.setattr(recovery.checker_adapter, 'run', native_run)
+    monkeypatch.setattr(recovery, '_run_ocrv_json',
+        lambda args: {'summary':{'file_path':str(records[args[-1]])},'items':[]})
+    writes = []
+    monkeypatch.setattr(wc, 'unprotect_dpapi_hex', lambda *a:'test-only')
+    monkeypatch.setattr(wc, '_run_json_command', lambda command, args, **kwargs:
+        writes.append(read(Path(args[args.index('--request')+1]))) or {'status':'recorded','run_id':request['run_id']})
+
+    def terminal_host(args, **kwargs):
+        terminal_path = Path(args[args.index('--request')+1])
+        result = wc.execute_committed_checker_terminal(
+            read(terminal_path), request_sha256=sha256(terminal_path), authenticate_checker=authentication)
+        return subprocess.CompletedProcess(args, 0, json.dumps(result).encode(), b'')
+
+    monkeypatch.setattr(recovery.subprocess, 'run', terminal_host)
+    if outcome == 'partial':
+        with pytest.raises(ValueError, match='one-shot is consumed'):
+            recovery._resume_partial(request, path, request['transport_command'], consumed=True, resume_later=True)
+        receipt = Path(request['recovery_root']) / 'resume-partial-segment-002/incomplete.json'
+        assert read(receipt)['status'] == 'INCOMPLETE'
+        assert not (Path(request['recovery_root']) / 'native-attempt/review-corrections/segment-002').exists()
+        assert not (Path(request['recovery_root']) / 'native-attempt/ocrv-aggregate.json').exists()
+        assert writes == []
+    else:
+        assert recovery._resume_partial(
+            request, path, request['transport_command'], consumed=True, resume_later=True) == 0
+        capsys.readouterr()
+        assert read(Path(request['recovery_root']) / 'resume-partial-segment-002/complete.json')['status'] == 'COMPLETE'
+        assert read(Path(request['recovery_root']) / 'native-attempt/ocrv-aggregate.json')['completed_segment_count'] == 2
+        assert [item['event_type'] for item in writes] == ['D1_FAILED']
+    assert len(launched) == 1
+    assert launched[0][1]['resume_session'] == 'segment-2-partial'
+    assert launched[0][0]['capacity']['max_tokens_budget'] == 500000
+    assert not (Path(request['recovery_root']) / 'native-attempt/review-segments/segment-003').exists()
+
+
+@pytest.mark.parametrize('mutation', ['drop-finding', 'recheck-completed'])
+def test_completed_later_resume_rejects_lost_finding_or_duplicate_review(tmp_path, mutation):
+    from slk_transport.partial_review import (
+        validate_completed_segment_resume, validate_consumed_partial_resume_attempt)
+    request, path, _basis, _second, _result, _session = later_partial_fixture(tmp_path)
+    partial = validate_consumed_partial_resume_attempt(request, sha256(path))
+    raw = copy.deepcopy(partial['partial_raw'])
+    raw.update(status='complete', session_id='segment-2-child')
+    raw['manifest'].update(run_id='segment-2-child', terminal_state='complete')
+    selected = raw['manifest']['coverage']['selected']
+    raw['manifest']['coverage'].update(completed=[selected[0]], reused=[selected[1]], failed=[], waived=[])
+    lineage = {'schema_version':'ocr.resume-lineage/v1','parent_run_id':'segment-2-partial',
+        'run_id':'segment-2-child','source_provider':'dashscope-tokenplan','source_model':'qwen3.8-max',
+        'target_provider':'dashscope-tokenplan','target_model':'qwen3.8-max'}
+    if mutation == 'drop-finding':
+        raw['comments'] = raw['comments'][1:]
+    else:
+        raw['manifest']['coverage'].update(completed=selected, reused=[])
+    with pytest.raises(ValueError):
+        validate_completed_segment_resume(partial, raw, lineage)
+
+
 def test_consumed_partial_prepare_only_accepts_exact_completed_native_child_without_launch(tmp_path, monkeypatch):
     from slk_transport import worker_completion as wc
     from test_incomplete_checker_resume import dead_activity
