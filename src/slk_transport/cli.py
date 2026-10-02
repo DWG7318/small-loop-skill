@@ -32,8 +32,10 @@ from .run_readiness import evaluate_run_readiness
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
     CompletionError,
+    consume_committed_checker_terminal,
     consume_staged_checker_terminal,
     continuation_request_bytes,
+    execute_committed_checker_terminal,
     execute_checker_recovery,
     execute_worker_continuation,
     inspect_worker_completion,
@@ -336,6 +338,32 @@ def _checker_recover_worker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _checker_record_committed_terminal(args: argparse.Namespace) -> int:
+    data = args.request.read_bytes()
+    digest = __import__("hashlib").sha256(data).hexdigest()
+    if digest != args.sha256:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_MISMATCH",
+            "committed-terminal request hash mismatch",
+        )
+    request = _read_object(args.request, "committed-terminal request")
+    result = execute_committed_checker_terminal(request, request_sha256=digest)
+    destination = Path(str(request["result_path"]))
+    encoded = continuation_request_bytes(result)
+    if destination.exists() and destination.read_bytes() != encoded:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_CONFLICT",
+            "committed-terminal result conflicts",
+        )
+    if not destination.exists():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_bytes(encoded)
+        temporary.replace(destination)
+    _emit(result)
+    return 0
+
+
 def _prepare_invalid_result_recovery(args: argparse.Namespace) -> int:
     result = prepare_invalid_result_recovery_envelope(
         args.source_attempt,
@@ -369,6 +397,16 @@ def _recover_staged_checker_commit(args: argparse.Namespace) -> int:
 def _consume_staged_checker_terminal(args: argparse.Namespace) -> int:
     _emit(
         consume_staged_checker_terminal(
+            args.request,
+            request_sha256=args.sha256,
+        )
+    )
+    return 0
+
+
+def _consume_committed_checker_terminal(args: argparse.Namespace) -> int:
+    _emit(
+        consume_committed_checker_terminal(
             args.request,
             request_sha256=args.sha256,
         )
@@ -480,6 +518,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     checker_recovery = subparsers.add_parser("checker-recover-worker")
     checker_recovery.add_argument("--request", required=True, type=Path)
     checker_recovery.add_argument("--sha256", required=True)
+    committed_checker = subparsers.add_parser("checker-record-committed-terminal")
+    committed_checker.add_argument("--request", required=True, type=Path)
+    committed_checker.add_argument("--sha256", required=True)
     invalid_result_recovery = subparsers.add_parser("prepare-invalid-result-recovery")
     invalid_result_recovery.add_argument("--source-attempt", required=True, type=Path)
     invalid_result_recovery.add_argument("--checker-endpoint", required=True, type=Path)
@@ -501,6 +542,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     terminal_consumer = subparsers.add_parser("consume-staged-checker-terminal")
     terminal_consumer.add_argument("--request", required=True, type=Path)
     terminal_consumer.add_argument("--sha256", required=True)
+    committed_consumer = subparsers.add_parser("consume-committed-checker-terminal")
+    committed_consumer.add_argument("--request", required=True, type=Path)
+    committed_consumer.add_argument("--sha256", required=True)
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
@@ -551,12 +595,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _inspect_worker_completion(args)
         if args.command == "checker-recover-worker":
             return _checker_recover_worker(args)
+        if args.command == "checker-record-committed-terminal":
+            return _checker_record_committed_terminal(args)
         if args.command == "prepare-invalid-result-recovery":
             return _prepare_invalid_result_recovery(args)
         if args.command == "recover-staged-checker-commit":
             return _recover_staged_checker_commit(args)
         if args.command == "consume-staged-checker-terminal":
             return _consume_staged_checker_terminal(args)
+        if args.command == "consume-committed-checker-terminal":
+            return _consume_committed_checker_terminal(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
         if args.command == "inspect-overwatcher-cadence":

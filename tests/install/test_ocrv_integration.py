@@ -41,6 +41,7 @@ def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     assert "slk_checker_post_d1.py" in wrapper
     assert '"%~1"=="--slk-worker-recovery"' in wrapper
     assert '"%~1"=="--slk-existing-terminal"' in wrapper
+    assert '"%~1"=="--slk-committed-terminal"' in wrapper
     assert "slk_checker_recovery.py" in wrapper
     assert "slk_checker_adapter.py" in wrapper
 
@@ -165,6 +166,62 @@ print(json.dumps({'schema_version':'slk.ocrv-worker-recovery-result/v1','status'
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert json.loads(completed.stdout)["status"] == "CHECKER_D1_RECORDED"
     assert not start_receipt.exists()
+
+
+def test_committed_terminal_wrapper_uses_the_dedicated_internal_consumer(
+    tmp_path: Path,
+) -> None:
+    fake = tmp_path / "fake_transport.py"
+    fake.write_text(
+        """import json, os, sys
+assert sys.argv[1] == 'checker-record-committed-terminal'
+assert 'SLK_ROLE_CREDENTIAL' not in os.environ
+assert 'SLK_NATIVE_START_RECEIPT' not in os.environ
+assert 'SLK_NATIVE_START_CONTEXT' not in os.environ
+print(json.dumps({'schema_version':'slk.ocrv-committed-terminal-result/v1','status':'CHECKER_D1_RECORDED'}))
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "checker-result.json"
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.ocrv-committed-terminal-request/v1",
+                "result_path": str(output),
+                "transport_command": [sys.executable, str(fake)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = "checker-a"
+    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = "recovery-a"
+    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = "2"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(INTEGRATION / "slk_checker_recovery.py"),
+            "--slk-committed-terminal",
+            "--request",
+            str(request),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=environment,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert json.loads(completed.stdout)["status"] == "CHECKER_D1_RECORDED"
 
 
 def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_path: Path) -> None:

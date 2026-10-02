@@ -92,6 +92,7 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--slk-worker-recovery", action="store_true")
     mode.add_argument("--slk-existing-terminal", action="store_true")
+    mode.add_argument("--slk-committed-terminal", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -101,9 +102,14 @@ def main() -> int:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
         return 4
+    expected_schema = (
+        "slk.ocrv-committed-terminal-request/v1"
+        if args.slk_committed_terminal
+        else "slk.ocrv-worker-recovery-request/v1"
+    )
     if (
         not isinstance(request, dict)
-        or request.get("schema_version") != "slk.ocrv-worker-recovery-request/v1"
+        or request.get("schema_version") != expected_schema
         or Path(str(request.get("result_path", ""))).resolve() != args.output.resolve()
     ):
         print("SLK_OCRV_RECOVERY_INVALID: request identity mismatch", file=sys.stderr)
@@ -115,7 +121,7 @@ def main() -> int:
     environment = os.environ.copy()
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
-    if args.slk_existing_terminal:
+    if args.slk_existing_terminal or args.slk_committed_terminal:
         environment.pop("SLK_NATIVE_START_RECEIPT", None)
         environment.pop("SLK_NATIVE_START_CONTEXT", None)
     if args.slk_worker_recovery:
@@ -128,10 +134,15 @@ def main() -> int:
             print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
             return 4
     try:
+        internal_command = (
+            "checker-record-committed-terminal"
+            if args.slk_committed_terminal
+            else "checker-recover-worker"
+        )
         completed = subprocess.run(
             command
             + [
-                "checker-recover-worker",
+                internal_command,
                 "--request",
                 str(args.request.resolve()),
                 "--sha256",

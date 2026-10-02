@@ -80,6 +80,7 @@ def test_cli_exposes_one_commit_only_checker_recovery_entry(tmp_path: Path) -> N
     assert result.returncode == 0
     assert "recover-staged-checker-commit" in result.stdout
     assert "consume-staged-checker-terminal" in result.stdout
+    assert "consume-committed-checker-terminal" in result.stdout
 
 
 def test_nested_windows_send_retries_access_denied_without_breakaway(

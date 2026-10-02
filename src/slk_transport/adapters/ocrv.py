@@ -388,6 +388,17 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV nested review exit code is invalid")
         return value
 
+    def validate_existing_result(
+        self,
+        path: Path,
+        request_path: Path,
+        envelope: Envelope,
+        process_exit_code: int,
+    ) -> Mapping[str, Any]:
+        """Reuse the ordinary OCRV closed-result validator for preserved evidence."""
+
+        return self._read_ocrv_result(path, request_path, envelope, process_exit_code)
+
     def _review_segments(
         self,
         request: Mapping[str, Any],

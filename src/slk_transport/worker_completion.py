@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import time
 import uuid
 import ctypes
@@ -14,7 +15,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from .contracts import ENVELOPE_SCHEMA, Endpoint, Envelope, canonical_json_sha256
+from .adapters.base import AdapterError
+from .adapters.ocrv import OcrvAdapter, VERDICT_EXIT_CODES
+from .contracts import (
+    ENVELOPE_SCHEMA,
+    ContractError,
+    DeliveryResult,
+    Endpoint,
+    Envelope,
+    canonical_json_sha256,
+    parse_delivery,
+)
 from .native_activity import NativeActivityError, validate_native_start
 from .task_file import TaskFileError, verify_task_file
 
@@ -23,6 +34,17 @@ INSPECTION_SCHEMA = "slk.worker-completion-inspection/v1"
 CONTINUATION_SCHEMA = "slk.worker-continuation/v1"
 CHECKER_RECOVERY_SCHEMA = "slk.ocrv-worker-recovery-request/v1"
 CHECKER_RECOVERY_RESULT_SCHEMA = "slk.ocrv-worker-recovery-result/v1"
+COMMITTED_TERMINAL_SCHEMA = "slk.ocrv-committed-terminal-request/v1"
+COMMITTED_TERMINAL_RESULT_SCHEMA = "slk.ocrv-committed-terminal-result/v1"
+COMMITTED_TERMINAL_RESULT_FIELDS = frozenset(
+    {
+        "schema_version", "method_version", "status", "run_id", "cell_id", "attempt",
+        "candidate_message_id", "checker_role_instance_id", "checker_endpoint_version",
+        "checker_authenticated", "authorized_existing_terminal", "recovery_invocation_id",
+        "request_sha256", "runtime_revision", "token_sequence", "native_attempt_path",
+        "d1_verdict", "d1_event_type", "native_result_path",
+    }
+)
 _NAMESPACE = uuid.UUID("23c8316f-29fe-4f2f-b5c5-90ba4e7b1224")
 _LEGACY_WORKER_START_FIELDS = frozenset(
     {"instance_id", "message_id", "run_id", "session_id", "status", "task_sha256"}
@@ -2337,6 +2359,67 @@ def _load_commit_only_checker_activation(
     }
 
 
+def _run_sealed_checker_terminal(
+    request_path: Path,
+    request: Mapping[str, Any],
+    endpoint: Endpoint,
+    *,
+    request_sha256: str,
+    mode: str,
+    result_schema: str,
+    error_code: str,
+) -> Mapping[str, Any]:
+    """Use the one registered headless OCRV host for an existing terminal."""
+
+    command = endpoint.address.get("command")
+    runtime_root = Path(str(endpoint.address.get("runtime_root", ""))).resolve()
+    if not _nonempty_strings(command) or not runtime_root.is_dir():
+        raise CompletionError(error_code, "registered OCRV host command or runtime root is unavailable")
+    environment = os.environ.copy()
+    for name in (
+        "SLK_ROLE_CREDENTIAL",
+        "SLK_OVERWATCHER_CREDENTIAL",
+        "SLK_NATIVE_START_RECEIPT",
+        "SLK_NATIVE_START_CONTEXT",
+    ):
+        environment.pop(name, None)
+    environment.update({
+        "SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID": endpoint.role_instance_id,
+        "SLK_OCRV_RECOVERY_INVOCATION_ID": str(request["recovery_invocation_id"]),
+        "SLK_OCRV_RECOVERY_ENDPOINT_VERSION": str(endpoint.endpoint_version),
+    })
+    from .process import windows_no_window_kwargs
+
+    completed = subprocess.run(
+        [*command, mode, "--request", str(request_path.resolve()), "--output", str(Path(str(request["result_path"])).resolve())],
+        cwd=str(runtime_root),
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        **windows_no_window_kwargs(detached=False),
+    )
+    try:
+        stdout = (completed.stdout or b"").decode("utf-8", errors="strict")
+        stderr = (completed.stderr or b"").decode("utf-8", errors="strict")
+        value = json.loads(stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CompletionError(error_code, "original Checker terminal consumer returned no valid UTF-8 JSON") from exc
+    if (
+        completed.returncode != 0
+        or not _matches(value, {
+            "schema_version": result_schema,
+            "status": "CHECKER_D1_RECORDED",
+            "run_id": request["run_id"],
+            "checker_role_instance_id": endpoint.role_instance_id,
+            "request_sha256": request_sha256,
+        })
+    ):
+        raise CompletionError(error_code, stderr.strip() or "original Checker terminal consumer failed")
+    return value
+
+
 def consume_staged_checker_terminal(
     request_path: Path,
     *,
@@ -2400,71 +2483,15 @@ def consume_staged_checker_terminal(
             "commit-only recovery runtime revision is invalid",
         )
     _load_commit_only_checker_activation(continuation, current_revision)
-    command = endpoint.address.get("command")
-    runtime_root = Path(str(endpoint.address.get("runtime_root", ""))).resolve()
-    if (
-        not isinstance(command, list)
-        or not command
-        or not all(isinstance(item, str) and item for item in command)
-        or not runtime_root.is_dir()
-    ):
-        raise CompletionError(
-            "CHECKER_RECOVERY_REQUEST_INVALID",
-            "registered OCRV host command or runtime root is unavailable",
-        )
-    environment = os.environ.copy()
-    for name in (
-        "SLK_ROLE_CREDENTIAL",
-        "SLK_OVERWATCHER_CREDENTIAL",
-        "SLK_NATIVE_START_RECEIPT",
-        "SLK_NATIVE_START_CONTEXT",
-    ):
-        environment.pop(name, None)
-    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = endpoint.role_instance_id
-    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = str(request["recovery_invocation_id"])
-    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = str(endpoint.endpoint_version)
-    from .process import windows_no_window_kwargs
-
-    completed = subprocess.run(
-        list(command)
-        + [
-            "--slk-existing-terminal",
-            "--request",
-            str(request_path.resolve()),
-            "--output",
-            str(Path(str(request["result_path"])).resolve()),
-        ],
-        cwd=str(runtime_root),
-        env=environment,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        **windows_no_window_kwargs(detached=False),
+    return _run_sealed_checker_terminal(
+        request_path,
+        request,
+        endpoint,
+        request_sha256=request_sha256,
+        mode="--slk-existing-terminal",
+        result_schema=CHECKER_RECOVERY_RESULT_SCHEMA,
+        error_code="CHECKER_RECOVERY_COMMAND_FAILED",
     )
-    try:
-        stdout = (completed.stdout or b"").decode("utf-8", errors="strict")
-        stderr = (completed.stderr or b"").decode("utf-8", errors="strict")
-        value = json.loads(stdout)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CompletionError(
-            "CHECKER_RECOVERY_COMMAND_FAILED",
-            "original Checker terminal consumer returned no valid UTF-8 JSON",
-        ) from exc
-    if (
-        completed.returncode != 0
-        or not isinstance(value, dict)
-        or value.get("schema_version") != CHECKER_RECOVERY_RESULT_SCHEMA
-        or value.get("status") != "CHECKER_D1_RECORDED"
-        or value.get("run_id") != request.get("run_id")
-        or value.get("checker_role_instance_id") != endpoint.role_instance_id
-        or value.get("request_sha256") != request_sha256
-    ):
-        raise CompletionError(
-            "CHECKER_RECOVERY_COMMAND_FAILED",
-            stderr.strip() or "original Checker terminal consumer failed",
-        )
-    return value
 
 
 def _reuse_committed_checker_delivery(continuation: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -2926,6 +2953,747 @@ def execute_checker_recovery(
         "d1_event_type": d1["d1_event_type"],
         "native_result_path": d1["native_result_path"],
     }
+
+
+def _exact_digest(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _positive_integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def _exact_commit(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 40 and all(
+        character in "0123456789abcdef" for character in value
+    )
+
+
+def _nonempty_strings(value: Any) -> bool:
+    return isinstance(value, list) and bool(value) and all(
+        isinstance(item, str) and bool(item) for item in value
+    )
+
+
+def _matches(value: Any, expected: Mapping[str, Any]) -> bool:
+    return isinstance(value, Mapping) and all(value.get(name) == item for name, item in expected.items())
+
+
+def _committed_event_details(event: Mapping[str, Any]) -> Mapping[str, Any]:
+    try:
+        value = json.loads(str(event.get("details_json", "")))
+    except json.JSONDecodeError as exc:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "central event details are invalid",
+        ) from exc
+    if not isinstance(value, Mapping):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "central event details are not an object",
+        )
+    return value
+
+
+def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str, Any]:
+    fields = {
+        "schema_version",
+        "method_version",
+        "recovery_invocation_id",
+        "run_id",
+        "go_id",
+        "cell_id",
+        "attempt",
+        "plan_revision",
+        "runtime_revision",
+        "token_sequence",
+        "worker_role_instance_id",
+        "checker_role_instance_id",
+        "checker_endpoint_version",
+        "checker_endpoint",
+        "runtime_projection_path",
+        "runtime_projection_sha256",
+        "candidate_repository",
+        "candidate_commit",
+        "candidate_parent",
+        "candidate_message_id",
+        "payload_sha256",
+        "candidate_submitted_event_id",
+        "transport_started_event_id",
+        "commit_request_path",
+        "commit_request_sha256",
+        "native_attempt_path",
+        "raw_review_path",
+        "immutable_sha256",
+        "checker_credential_path",
+        "state_command",
+        "transport_command",
+        "result_path",
+    }
+    if (
+        set(request) != fields
+        or request.get("schema_version") != COMMITTED_TERMINAL_SCHEMA
+        or request.get("method_version") != "4.3.6"
+        or not all(
+            _positive_integer(request.get(name))
+            for name in (
+                "attempt", "plan_revision", "runtime_revision", "token_sequence",
+                "checker_endpoint_version",
+            )
+        )
+        or not all(
+            isinstance(request.get(name), str) and bool(request.get(name))
+            for name in (
+                "recovery_invocation_id",
+                "run_id",
+                "go_id",
+                "cell_id",
+                "worker_role_instance_id",
+                "checker_role_instance_id",
+                "candidate_repository",
+                "candidate_message_id",
+                "candidate_submitted_event_id",
+                "transport_started_event_id",
+                "checker_credential_path",
+                "result_path",
+            )
+        )
+        or not all(_nonempty_strings(request.get(name)) for name in ("state_command", "transport_command"))
+        or not all(_exact_commit(request.get(name)) for name in ("candidate_commit", "candidate_parent"))
+        or not all(
+            _exact_digest(request.get(name))
+            for name in (
+                "runtime_projection_sha256",
+                "payload_sha256",
+                "commit_request_sha256",
+            )
+        )
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID",
+            "committed-terminal request is not closed",
+        )
+    try:
+        checker = Endpoint.from_dict(request["checker_endpoint"])
+    except (TypeError, ValueError) as exc:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID",
+            "Checker endpoint is invalid",
+        ) from exc
+    if (
+        checker.role != "checker"
+        or checker.agent_runtime != "ocrv"
+        or checker.adapter != "ocrv-checker"
+        or checker.state != "active"
+        or checker.run_id != request["run_id"]
+        or checker.role_instance_id != request["checker_role_instance_id"]
+        or checker.endpoint_version != request["checker_endpoint_version"]
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_IDENTITY_MISMATCH",
+            "registered Checker identity is not exact",
+        )
+    if not Path(str(request["checker_credential_path"])).resolve().is_file():
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID",
+            "sealed Checker credential is unavailable",
+        )
+    state_command = request["state_command"]
+    transport_command = request["transport_command"]
+    state_path = Path(state_command[0]).resolve()
+    python_path = Path(transport_command[0]).resolve()
+    transport_path = Path(transport_command[-1]).resolve()
+    if (
+        len(state_command) != 1
+        or state_path.name.lower() != "slk-state.exe"
+        or not state_path.is_file()
+        or len(transport_command) != 2
+        or python_path != Path(sys.executable).resolve()
+        or transport_path.name.lower() != "slk-transport.pyz"
+        or not transport_path.is_file()
+        or state_path.parent != transport_path.parent
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID",
+            "state or transport command is not the installed closed runtime",
+        )
+
+    projection_path = Path(str(request["runtime_projection_path"])).resolve()
+    if not projection_path.is_file() or _sha256(projection_path) != request["runtime_projection_sha256"]:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "runtime projection is missing or changed",
+        )
+    projection = _read_object(projection_path, "committed-terminal runtime projection")
+    summary = projection.get("summary")
+    administrative = projection.get("administrative_snapshot")
+    runtime = projection.get("runtime_snapshot")
+    events = projection.get("events")
+    roles = projection.get("roles")
+    token_history = projection.get("token_history")
+    shared_state = {"run_id": request["run_id"], "state": "active", "closure_state": "open"}
+    if (
+        not _matches(projection, {"schema_version": "slk.bi.run/v1", "run_id": request["run_id"]})
+        or not _matches(summary, {
+            **shared_state, "slk_version": "4.3.6",
+            "current_plan_revision": request["plan_revision"],
+        })
+        or not _matches(administrative, {
+            **shared_state, "latest_event_id": request["transport_started_event_id"],
+        })
+        or not _matches(runtime, {
+            "run_id": request["run_id"], "method_version": "4.3.6",
+            "plan_revision": request["plan_revision"],
+            "runtime_revision": request["runtime_revision"],
+            "token_sequence": request["token_sequence"],
+            "token_holder_role_instance_id": request["checker_role_instance_id"],
+            "latest_message_id": request["candidate_message_id"],
+        })
+        or not all(isinstance(value, list) for value in (events, roles, token_history))
+        or not token_history
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+            "current Run no longer exposes the exact committed Checker boundary",
+        )
+    checker_roles = [
+        role
+        for role in roles
+        if isinstance(role, Mapping)
+        and role.get("role") == "checker"
+        and role.get("role_instance_id") == request["checker_role_instance_id"]
+    ]
+    worker_roles = [
+        role
+        for role in roles
+        if isinstance(role, Mapping)
+        and role.get("role") == "worker"
+        and role.get("role_instance_id") == request["worker_role_instance_id"]
+    ]
+    if len(checker_roles) != 1 or len(worker_roles) != 1:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_IDENTITY_MISMATCH",
+            "current Worker or Checker role identity is missing or duplicated",
+        )
+    checker_role = checker_roles[0]
+    worker_role = worker_roles[0]
+    endpoint_rows = checker_role.get("endpoints")
+    matching_endpoint = [
+        row
+        for row in endpoint_rows
+        if isinstance(row, Mapping)
+        and row.get("endpoint_version") == checker.endpoint_version
+        and row.get("transport_adapter") == checker.adapter
+        and row.get("state") == "active"
+        and row.get("retired_at") is None
+    ] if isinstance(endpoint_rows, list) else []
+    if (
+        checker_role.get("agent_runtime") != "ocrv"
+        or checker_role.get("lifecycle") != "active"
+        or len(matching_endpoint) != 1
+        or worker_role.get("agent_runtime") != "dsh"
+        or worker_role.get("lifecycle") != "active"
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_IDENTITY_MISMATCH",
+            "current Worker or Checker role is not active and exact",
+        )
+
+    candidate_matches = []
+    transport_matches = []
+    for event in events:
+        if not isinstance(event, Mapping):
+            continue
+        if (
+            event.get("cell_id") == request["cell_id"]
+            and event.get("attempt") == request["attempt"]
+            and event.get("event_type") in {"D1_STARTED", "D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"}
+        ):
+            raise CompletionError(
+                "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+                "the target attempt already has a D1 event",
+            )
+        event_type = event.get("event_type")
+        if event_type not in {"CANDIDATE_SUBMITTED", "TRANSPORT_STARTED"}:
+            continue
+        details = _committed_event_details(event)
+        if (
+            event_type == "CANDIDATE_SUBMITTED"
+            and details.get("handoff_message_id") == request["candidate_message_id"]
+        ):
+            candidate_matches.append((event, details))
+        if (
+            event_type == "TRANSPORT_STARTED"
+            and details.get("message_id") == request["candidate_message_id"]
+        ):
+            transport_matches.append((event, details))
+    if len(candidate_matches) != 1 or len(transport_matches) != 1:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "candidate submission or committed transport event is missing or duplicated",
+        )
+    candidate_event, candidate_details = candidate_matches[0]
+    transport_event, transport_details = transport_matches[0]
+    expected_scope = (
+        request["go_id"],
+        request["cell_id"],
+        request["attempt"],
+        request["worker_role_instance_id"],
+    )
+    if (
+        candidate_event.get("event_id") != request["candidate_submitted_event_id"]
+        or transport_event.get("event_id") != request["transport_started_event_id"]
+        or tuple(candidate_event.get(name) for name in ("go_id", "cell_id", "attempt", "author_role_instance_id"))
+        != expected_scope
+        or tuple(transport_event.get(name) for name in ("go_id", "cell_id", "attempt", "author_role_instance_id"))
+        != expected_scope
+        or candidate_details.get("candidate")
+        != {"kind": "commit", "commit": request["candidate_commit"]}
+        or candidate_details.get("checker_endpoint_version") != checker.endpoint_version
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "central candidate or handoff identity does not match the request",
+        )
+    last_token = token_history[-1]
+    if (
+        not isinstance(last_token, Mapping)
+        or last_token.get("event_type") != "TOKEN_HANDED_OFF"
+        or last_token.get("from_role_instance_id") != request["worker_role_instance_id"]
+        or last_token.get("to_role_instance_id") != request["checker_role_instance_id"]
+        or last_token.get("go_id") != request["go_id"]
+        or last_token.get("cell_id") != request["cell_id"]
+        or last_token.get("message_id") != request["candidate_message_id"]
+        or last_token.get("token_sequence") != request["token_sequence"]
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+            "TOKEN history no longer ends at the exact Checker handoff",
+        )
+
+    commit_path = Path(str(request["commit_request_path"])).resolve()
+    if not commit_path.is_file() or _sha256(commit_path) != request["commit_request_sha256"]:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "commit-delivery-start request is missing or changed",
+        )
+    commit = _read_object(commit_path, "commit-delivery-start request")
+    commit_fields = {
+        "event_id",
+        "transport_receipt_id",
+        "run_id",
+        "go_id",
+        "cell_id",
+        "attempt",
+        "plan_revision",
+        "expected_runtime_revision",
+        "message_id",
+        "token_sequence",
+        "from_role_instance_id",
+        "to_role_instance_id",
+        "endpoint_version",
+        "payload_type",
+        "payload_sha256",
+        "start_evidence",
+        "occurred_at",
+    }
+    start_evidence = commit.get("start_evidence")
+    native_attempt = Path(str(request["native_attempt_path"])).resolve()
+    started_path = native_attempt / "started.json"
+    if (
+        set(commit) != commit_fields
+        or commit.get("event_id") != request["transport_started_event_id"]
+        or commit.get("run_id") != request["run_id"]
+        or commit.get("go_id") != request["go_id"]
+        or commit.get("cell_id") != request["cell_id"]
+        or commit.get("attempt") != request["attempt"]
+        or commit.get("plan_revision") != request["plan_revision"]
+        or isinstance(commit.get("expected_runtime_revision"), bool)
+        or not isinstance(commit.get("expected_runtime_revision"), int)
+        or commit.get("expected_runtime_revision") >= request["runtime_revision"]
+        or commit.get("message_id") != request["candidate_message_id"]
+        or commit.get("token_sequence") != request["token_sequence"]
+        or commit.get("from_role_instance_id") != request["worker_role_instance_id"]
+        or commit.get("to_role_instance_id") != request["checker_role_instance_id"]
+        or commit.get("endpoint_version") != checker.endpoint_version
+        or commit.get("payload_type") != "CANDIDATE_READY"
+        or commit.get("payload_sha256") != request["payload_sha256"]
+        or not isinstance(start_evidence, Mapping)
+        or Path(str(start_evidence.get("stored_path", ""))).resolve() != started_path
+        or start_evidence.get("message_id") != request["candidate_message_id"]
+        or start_evidence.get("native_status") != "STARTED"
+        or transport_details.get("transport_receipt_id") != commit.get("transport_receipt_id")
+        or transport_details.get("start_evidence_id") != start_evidence.get("evidence_id")
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "commit-delivery-start does not bind the current candidate handoff",
+        )
+
+    immutable = request.get("immutable_sha256")
+    expected_names = {
+        "endpoint.json",
+        "envelope.json",
+        "started.json",
+        "ocrv-request.json",
+        "completed.json",
+        "ocrv-result.json",
+        "raw_review",
+    }
+    if (
+        not isinstance(immutable, Mapping)
+        or set(immutable) != expected_names
+        or not all(_exact_digest(value) for value in immutable.values())
+        or native_attempt.name != request["candidate_message_id"]
+        or native_attempt.parent.name != request["run_id"]
+        or (native_attempt / "failed.json").exists()
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "immutable OCRV evidence index is invalid",
+        )
+    evidence_paths = {
+        name: native_attempt / name
+        for name in expected_names
+        if name != "raw_review"
+    }
+    raw_review_path = Path(str(request["raw_review_path"])).resolve()
+    evidence_paths["raw_review"] = raw_review_path
+    if any(
+        not path.is_file() or _sha256(path) != immutable[name]
+        for name, path in evidence_paths.items()
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "immutable OCRV evidence is missing or changed",
+        )
+    if (
+        start_evidence.get("sha256") != immutable["started.json"]
+        or start_evidence.get("endpoint_sha256") != immutable["endpoint.json"]
+        or start_evidence.get("envelope_sha256") != immutable["envelope.json"]
+        or transport_details.get("start_evidence_sha256") != immutable["started.json"]
+        or transport_details.get("endpoint_sha256") != immutable["endpoint.json"]
+        or transport_details.get("envelope_sha256") != immutable["envelope.json"]
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "central commit hashes do not match immutable OCRV evidence",
+        )
+    adapter = OcrvAdapter()
+    try:
+        delivery = parse_delivery(
+            _read_object(evidence_paths["endpoint.json"], "OCRV endpoint"),
+            _read_object(evidence_paths["envelope.json"], "OCRV envelope"),
+        )
+        adapter.validate_address(delivery.endpoint)
+        started = validate_native_start(
+            evidence_paths["started.json"],
+            adapter=checker.adapter,
+            run_id=str(request["run_id"]),
+            cell_id=str(request["cell_id"]),
+            message_id=str(request["candidate_message_id"]),
+            request_sha256=str(request["payload_sha256"]),
+        )
+    except (AdapterError, ContractError, NativeActivityError, TypeError, ValueError) as exc:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "OCRV endpoint, envelope or native start is invalid",
+        ) from exc
+    persisted_endpoint = delivery.endpoint
+    envelope = delivery.envelope
+    payload = envelope.payload
+    if (
+        persisted_endpoint != checker
+        or envelope.run_id != request["run_id"]
+        or envelope.go_id != request["go_id"]
+        or envelope.cell_id != request["cell_id"]
+        or envelope.message_id != request["candidate_message_id"]
+        or envelope.sender_role != "worker"
+        or envelope.sender_role_instance_id != request["worker_role_instance_id"]
+        or envelope.receiver_role != "checker"
+        or envelope.receiver_role_instance_id != request["checker_role_instance_id"]
+        or envelope.receiver_endpoint_version != checker.endpoint_version
+        or envelope.token_sequence != request["token_sequence"]
+        or envelope.payload_type != "CANDIDATE_READY"
+        or envelope.payload_sha256 != request["payload_sha256"]
+        or not isinstance(payload, Mapping)
+        or payload.get("candidate") != {"kind": "commit", "commit": request["candidate_commit"]}
+        or Path(str(payload.get("repository", ""))).resolve()
+        != Path(str(request["candidate_repository"])).resolve()
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "OCRV delivery identity does not match the committed candidate",
+        )
+    ocrv_request = _read_object(evidence_paths["ocrv-request.json"], "OCRV request")
+    if (
+        ocrv_request.get("schema_version") != "slk.ocrv-d1-request/v2"
+        or ocrv_request.get("run_id") != request["run_id"]
+        or ocrv_request.get("cell_id") != request["cell_id"]
+        or ocrv_request.get("candidate")
+        != {"kind": "commit", "commit": request["candidate_commit"]}
+        or Path(str(ocrv_request.get("repository", ""))).resolve()
+        != Path(str(request["candidate_repository"])).resolve()
+        or started.get("native_task", {}).get("kind") != "ocrv-review"
+        or started.get("native_request_sha256") != immutable["ocrv-request.json"]
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "OCRV native request does not bind the committed candidate",
+        )
+    try:
+        terminal = DeliveryResult.from_dict(
+            _read_object(evidence_paths["completed.json"], "OCRV terminal")
+        )
+        raw_result = _read_object(evidence_paths["ocrv-result.json"], "OCRV result")
+        verdict = raw_result.get("verdict")
+        if verdict not in VERDICT_EXIT_CODES:
+            raise AdapterError("OCRV_RESULT_INVALID", "OCRV verdict is invalid")
+        result = adapter.validate_existing_result(
+            evidence_paths["ocrv-result.json"],
+            evidence_paths["ocrv-request.json"],
+            envelope,
+            VERDICT_EXIT_CODES[str(verdict)],
+        )
+    except (AdapterError, ContractError) as exc:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "OCRV terminal or result is invalid",
+        ) from exc
+    identity = terminal.native_identity
+    review = result["review"]
+    identity_fields = {
+        "run_id", "cell_id", "review_invocation_id", "session_id", "provider",
+        "model", "verdict", "exit_code", "review_segment_count",
+    }
+    if (
+        terminal.status != "completed"
+        or terminal.adapter != checker.adapter
+        or terminal.run_id != request["run_id"]
+        or terminal.message_id != request["candidate_message_id"]
+        or terminal.error_code is not None
+        or not {"started.json", "ocrv-request.json", "ocrv-result.json"}.issubset(terminal.evidence)
+        or set(identity) != identity_fields
+        or identity.get("review_segment_count") != 0
+        or review.get("status") != "complete"
+        or identity.get("run_id") != request["run_id"]
+        or identity.get("cell_id") != request["cell_id"]
+        or identity.get("review_invocation_id") != started["native_task"]["id"]
+        or identity.get("review_invocation_id") != result["review_invocation_id"]
+        or identity.get("session_id") != review["session_id"]
+        or identity.get("provider") != review["provider"]
+        or identity.get("model") != review["model"]
+        or identity.get("verdict") != result["verdict"]
+        or identity.get("exit_code") != VERDICT_EXIT_CODES[str(result["verdict"])]
+        or Path(str(result["artifacts"].get("raw_review", ""))).resolve() != raw_review_path
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "OCRV terminal and result do not form one completed review",
+        )
+    raw_review = _read_object(raw_review_path, "OCRV raw review")
+    manifest = raw_review.get("manifest")
+    coverage = manifest.get("coverage") if isinstance(manifest, Mapping) else None
+    manifest_input = manifest.get("input") if isinstance(manifest, Mapping) else None
+    execution = manifest.get("execution") if isinstance(manifest, Mapping) else None
+    selected = coverage.get("selected") if isinstance(coverage, Mapping) else None
+    completed = coverage.get("completed") if isinstance(coverage, Mapping) else None
+    reused = coverage.get("reused") if isinstance(coverage, Mapping) else None
+    failed = coverage.get("failed") if isinstance(coverage, Mapping) else None
+    waived = coverage.get("waived") if isinstance(coverage, Mapping) else None
+    if (
+        raw_review.get("status") != "complete"
+        or raw_review.get("session_id") != review.get("session_id")
+        or not isinstance(manifest, Mapping)
+        or manifest.get("schema_version") != "ocr.run-manifest/v1"
+        or manifest.get("run_id") != review.get("session_id")
+        or manifest.get("operation") != "review"
+        or manifest.get("terminal_state") != "complete"
+        or not isinstance(manifest_input, Mapping)
+        or manifest_input.get("requested_head") != request["candidate_commit"]
+        or manifest_input.get("resolved_head") != request["candidate_commit"]
+        or manifest_input.get("resolved_base") != request["candidate_parent"]
+        or manifest_input.get("exact_range")
+        != f"{request['candidate_parent']}..{request['candidate_commit']}"
+        or not isinstance(execution, Mapping)
+        or execution.get("provider") != review.get("provider")
+        or execution.get("model") != review.get("model")
+        or not isinstance(selected, list)
+        or not selected
+        or not isinstance(completed, list)
+        or not isinstance(reused, list)
+        or failed != []
+        or waived != []
+        or {json.dumps(item, sort_keys=True) for item in selected}
+        != {json.dumps(item, sort_keys=True) for item in [*completed, *reused]}
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+            "OCRV raw review manifest does not prove complete candidate coverage",
+        )
+    continuation = {
+        "run_id": request["run_id"],
+        "go_id": request["go_id"],
+        "cell_id": request["cell_id"],
+        "attempt": request["attempt"],
+        "plan_revision": request["plan_revision"],
+        "source_message_id": request["candidate_message_id"],
+        "checker_endpoint": request["checker_endpoint"],
+        "state_command": request["state_command"],
+        "occurred_at": str(started["observed_at"]),
+    }
+    activation = {
+        "status": "CHECKER_STARTED",
+        "runtime_revision": request["runtime_revision"],
+        "token_sequence": request["token_sequence"],
+        "candidate_message_id": request["candidate_message_id"],
+        "checker_token_already_committed": True,
+        "native_attempt_path": str(native_attempt),
+    }
+    return {
+        "checker": checker,
+        "continuation": continuation,
+        "activation": activation,
+    }
+
+
+def execute_committed_checker_terminal(
+    request: Mapping[str, Any],
+    *,
+    request_sha256: str,
+    authenticate_checker: CheckerAuthenticate = _default_checker_authenticate,
+    record_checker_d1: RecordCheckerD1 = _default_record_checker_d1,
+) -> dict[str, Any]:
+    """Authenticate the original Checker and record one already-complete native D1."""
+
+    if not _exact_digest(request_sha256):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID", "request SHA-256 is invalid"
+        )
+    validated = _validate_committed_terminal_request(request)
+    checker: Endpoint = validated["checker"]
+    if (
+        os.environ.get("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID") != checker.role_instance_id
+        or os.environ.get("SLK_OCRV_RECOVERY_INVOCATION_ID")
+        != request["recovery_invocation_id"]
+        or os.environ.get("SLK_OCRV_RECOVERY_ENDPOINT_VERSION")
+        != str(checker.endpoint_version)
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_NATIVE_IDENTITY_UNPROVEN",
+            "terminal consumption is not running inside the exact OCRV Checker host",
+        )
+    authentication = authenticate_checker(
+        str(request["run_id"]),
+        checker.role_instance_id,
+        Path(str(request["checker_credential_path"])),
+        list(request["state_command"]),
+    )
+    authenticated_revision = authentication.get("runtime_revision")
+    if (
+        authentication.get("status") != "authenticated"
+        or authentication.get("role") != "checker"
+        or authentication.get("role_instance_id") != checker.role_instance_id
+        or isinstance(authenticated_revision, bool)
+        or not isinstance(authenticated_revision, int)
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_AUTHENTICATION_FAILED",
+            "sealed credential does not prove the current Checker",
+        )
+    if authenticated_revision != request["runtime_revision"]:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+            "current runtime revision no longer matches the frozen terminal request",
+        )
+    timeout_seconds = checker.address.get("timeout_seconds")
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or timeout_seconds <= 0
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID", "Checker timeout is invalid"
+        )
+    d1 = record_checker_d1(
+        validated["activation"],
+        validated["continuation"],
+        Path(str(request["checker_credential_path"])),
+        float(timeout_seconds),
+    )
+    verdict = d1.get("d1_verdict")
+    if (
+        d1.get("status") != "CHECKER_D1_RECORDED"
+        or verdict not in {"PASS", "FAIL", "INCOMPLETE"}
+        or d1.get("d1_event_type") != {
+            "PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE",
+        }[str(verdict)]
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_RECORD_FAILED", "existing OCRV D1 was not recorded"
+        )
+    return {
+        "schema_version": COMMITTED_TERMINAL_RESULT_SCHEMA,
+        "method_version": "4.3.6",
+        "status": "CHECKER_D1_RECORDED",
+        "run_id": request["run_id"],
+        "cell_id": request["cell_id"],
+        "attempt": request["attempt"],
+        "candidate_message_id": request["candidate_message_id"],
+        "checker_role_instance_id": checker.role_instance_id,
+        "checker_endpoint_version": checker.endpoint_version,
+        "checker_authenticated": True,
+        "authorized_existing_terminal": True,
+        "recovery_invocation_id": request["recovery_invocation_id"],
+        "request_sha256": request_sha256,
+        "runtime_revision": authenticated_revision,
+        "token_sequence": request["token_sequence"],
+        "native_attempt_path": request["native_attempt_path"],
+        "d1_verdict": d1["d1_verdict"],
+        "d1_event_type": d1["d1_event_type"],
+        "native_result_path": d1["native_result_path"],
+    }
+
+
+def consume_committed_checker_terminal(
+    request_path: Path,
+    *,
+    request_sha256: str,
+) -> Mapping[str, Any]:
+    """Launch the sealed Checker host only after the committed terminal chain is complete."""
+
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_REQUEST_MISMATCH",
+            "committed-terminal request hash mismatch",
+        )
+    request = _read_object(request_path, "committed-terminal request")
+    validated = _validate_committed_terminal_request(request)
+    checker: Endpoint = validated["checker"]
+    value = _run_sealed_checker_terminal(
+        request_path,
+        request,
+        checker,
+        request_sha256=request_sha256,
+        mode="--slk-committed-terminal",
+        result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
+        error_code="CHECKER_COMMITTED_TERMINAL_COMMAND_FAILED",
+    )
+    if (
+        set(value) != COMMITTED_TERMINAL_RESULT_FIELDS
+        or value.get("method_version") != "4.3.6"
+        or value.get("d1_verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_COMMAND_FAILED",
+            "original Checker terminal consumer returned an invalid result",
+        )
+    return value
 
 
 def _run_json_command(

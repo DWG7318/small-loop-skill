@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-ocrv-committed-terminal-result.schema.json",
+  "title": "SLK committed OCRV terminal consumption result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method_version", "status", "run_id", "cell_id", "attempt", "candidate_message_id", "checker_role_instance_id", "checker_endpoint_version", "checker_authenticated", "authorized_existing_terminal", "recovery_invocation_id", "request_sha256", "runtime_revision", "token_sequence", "native_attempt_path", "d1_verdict", "d1_event_type", "native_result_path"],
+  "properties": {
+    "schema_version": {"const": "slk.ocrv-committed-terminal-result/v1"},
+    "method_version": {"const": "4.3.6"},
+    "status": {"const": "CHECKER_D1_RECORDED"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "cell_id": {"$ref": "#/$defs/identifier"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "candidate_message_id": {"type": "string", "format": "uuid"},
+    "checker_role_instance_id": {"$ref": "#/$defs/identifier"},
+    "checker_endpoint_version": {"type": "integer", "minimum": 1},
+    "checker_authenticated": {"const": true},
+    "authorized_existing_terminal": {"const": true},
+    "recovery_invocation_id": {"type": "string", "format": "uuid"},
+    "request_sha256": {"$ref": "#/$defs/sha256"},
+    "runtime_revision": {"type": "integer", "minimum": 1},
+    "token_sequence": {"type": "integer", "minimum": 1},
+    "native_attempt_path": {"type": "string", "minLength": 1},
+    "d1_verdict": {"enum": ["PASS", "FAIL", "INCOMPLETE"]},
+    "d1_event_type": {"enum": ["D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"]},
+    "native_result_path": {"type": ["string", "null"]}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
