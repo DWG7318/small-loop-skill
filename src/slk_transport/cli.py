@@ -41,6 +41,7 @@ from .worker_completion import (
     inspect_worker_completion,
     prepare_invalid_result_recovery_envelope,
     recover_staged_checker_commit,
+    resume_incomplete_checker,
 )
 
 
@@ -414,6 +415,11 @@ def _consume_committed_checker_terminal(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resume_incomplete_checker(args: argparse.Namespace) -> int:
+    _emit(resume_incomplete_checker(args.request, request_sha256=args.sha256))
+    return 0
+
+
 def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
     result = inspect_overwatcher_cadence(
         _read_object(args.runtime_projection, "runtime projection"),
@@ -545,6 +551,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     committed_consumer = subparsers.add_parser("consume-committed-checker-terminal")
     committed_consumer.add_argument("--request", required=True, type=Path)
     committed_consumer.add_argument("--sha256", required=True)
+    incomplete_consumer = subparsers.add_parser("resume-incomplete-checker")
+    incomplete_consumer.add_argument("--request", required=True, type=Path)
+    incomplete_consumer.add_argument("--sha256", required=True)
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
@@ -605,6 +614,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _consume_staged_checker_terminal(args)
         if args.command == "consume-committed-checker-terminal":
             return _consume_committed_checker_terminal(args)
+        if args.command == "resume-incomplete-checker":
+            return _resume_incomplete_checker(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
         if args.command == "inspect-overwatcher-cadence":

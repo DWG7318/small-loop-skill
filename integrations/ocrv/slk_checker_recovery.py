@@ -13,6 +13,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+import slk_checker_adapter as checker_adapter
 
 
 def windows_no_window_kwargs() -> dict[str, object]:
@@ -87,12 +88,109 @@ def _publish_start(native_request_sha256: str, invocation_id: str) -> None:
             os.unlink(temporary)
 
 
+def _sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _resume_incomplete(request: dict[str, object], request_path: Path, command: list[str]) -> int:
+    checker, session = request["checker_endpoint"], request["ocrv_session"]
+    if not isinstance(checker, dict) or not isinstance(session, dict):
+        raise ValueError("resume identity is invalid")
+    if (
+        os.environ.get("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID") != request["checker_role_instance_id"]
+        or os.environ.get("SLK_OCRV_RECOVERY_ENDPOINT_VERSION") != str(request["checker_endpoint_version"])
+    ):
+        raise ValueError("resume is outside the exact Checker host")
+    root = Path(str(request["recovery_root"])).resolve(); root.mkdir(parents=True, exist_ok=True)
+    with (root / "resume-consumed.json").open("x", encoding="ascii") as stream: stream.write(_sha256(request_path) + "\n")
+    attempt = root / "native-attempt"
+    attempt.mkdir()
+    original = Path(str(request["native_attempt_path"])).resolve() / "ocrv-request.json"
+    background = Path(str(request["background_path"])).resolve()
+    resume = {
+        "schema_version": "slk.ocrv-d1-resume-request/v1", "run_id": request["run_id"],
+        "cell_id": request["cell_id"], "message_id": request["candidate_message_id"],
+        "payload_sha256": request["payload_sha256"], "original_request_path": str(original),
+        "original_request_sha256": _sha256(original), "background_path": str(background),
+        "background_sha256": _sha256(background),
+        "session": {key: session[key] for key in (
+            "session_id", "repo_dir", "diff_commit", "model", "review_mode", "start_time",
+            "aborted", "selected_files", "completed_files",
+        )},
+    }
+    resume_path = attempt / "ocrv-resume-request.json"
+    resume_path.write_text(json.dumps(resume, sort_keys=True) + "\n", encoding="utf-8")
+    os.environ["SLK_NATIVE_START_RECEIPT"] = str(attempt / "native-start.received.json")
+    os.environ["SLK_NATIVE_START_CONTEXT"] = json.dumps({"adapter": "ocrv-checker", "run_id": request["run_id"],
+        "cell_id": request["cell_id"], "message_id": request["candidate_message_id"],
+        "request_sha256": request["payload_sha256"], "native_request_sha256": _sha256(resume_path)}, sort_keys=True, separators=(",", ":"))
+    listed = subprocess.run(checker_adapter._ocr_command() + ["session", "list", "--json", "--repo", str(request["candidate_repository"])],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+        **windows_no_window_kwargs())
+    rows = json.loads(listed.stdout)
+    matches = [row for row in rows if isinstance(row, dict) and row.get("session_id") == session["session_id"]]
+    session_facts = ("diff_commit", "model", "review_mode", "start_time", "aborted", "selected_files", "completed_files")
+    if listed.returncode or len(matches) != 1 or str(matches[0].get("repo_dir", "")).replace("\\", "/") != str(session["repo_dir"]).replace("\\", "/") or any(matches[0].get(key) != session[key] for key in session_facts):
+        raise ValueError("OCRV session is no longer the exact aborted session")
+    code = checker_adapter.run(original, attempt / "ocrv-result.json", invocation_override=str(session["session_id"]),
+        background_override=background, resume_session=str(session["session_id"]), result_request_path=resume_path)
+    result = json.loads((attempt / "ocrv-result.json").read_text(encoding="utf-8"))
+    if result.get("review", {}).get("session_id") != session["session_id"]:
+        raise ValueError("OCRV resumed a different session")
+    started = json.loads((attempt / "native-start.received.json").read_text(encoding="utf-8")); (attempt / "started.json").write_text(json.dumps(started, sort_keys=True) + "\n", encoding="utf-8")
+    review = result["review"]
+    terminal = {
+        "schema_version": "slk.transport-result/v1", "message_id": request["candidate_message_id"],
+        "run_id": request["run_id"], "adapter": "ocrv-checker", "status": "completed",
+        "native_identity": {"run_id": request["run_id"], "cell_id": request["cell_id"],
+            "review_invocation_id": session["session_id"], "session_id": review["session_id"],
+            "provider": review["provider"], "model": review["model"], "verdict": result["verdict"],
+            "exit_code": code, "review_segment_count": 0},
+        "error_code": None, "evidence": ["started.json", "ocrv-resume-request.json", "ocrv-result.json"],
+    }
+    (attempt / "completed.json").write_text(json.dumps(terminal, sort_keys=True) + "\n", encoding="utf-8")
+    raw = attempt / "ocrv-review.json"
+    committed = {key: value for key, value in request.items() if key not in {
+        "schema_version", "background_path", "ocrv_session", "recovery_root",
+    }}
+    committed.update({
+        "schema_version": "slk.ocrv-committed-terminal-request/v1", "raw_review_path": str(raw),
+        "result_path": str(root / "committed-terminal-result.json"),
+        "immutable_sha256": {name: request["immutable_sha256"][name] for name in (
+            "endpoint.json", "envelope.json", "started.json", "ocrv-request.json",
+        )},
+        "recovery_terminal": {
+            "native_attempt_path": str(attempt), "started_sha256": _sha256(attempt / "started.json"),
+            "completed_sha256": _sha256(attempt / "completed.json"),
+            "ocrv_result_sha256": _sha256(attempt / "ocrv-result.json"),
+            "resume_request_sha256": _sha256(resume_path), "raw_review_sha256": _sha256(raw),
+        },
+    })
+    committed_path = root / "committed-terminal.json"
+    committed_path.write_text(json.dumps(committed, sort_keys=True) + "\n", encoding="utf-8")
+    committed_sha256 = _sha256(committed_path)
+    completed = subprocess.run(command + ["checker-record-committed-terminal", "--request", str(committed_path),
+        "--sha256", committed_sha256], stdin=subprocess.DEVNULL, capture_output=True, check=False,
+        env=os.environ.copy(), **windows_no_window_kwargs())
+    if completed.returncode == 0:
+        outer = json.loads(completed.stdout)
+        if outer.get("request_sha256") != committed_sha256:
+            raise ValueError("committed terminal result is not bound to its request")
+        outer["request_sha256"] = _sha256(request_path)
+        encoded = (json.dumps(outer, sort_keys=True) + "\n").encode("utf-8")
+        Path(str(request["result_path"])).write_bytes(encoded)
+        sys.stdout.buffer.write(encoded)
+    else:
+        sys.stdout.buffer.write(completed.stdout)
+    sys.stderr.buffer.write(completed.stderr)
+    return completed.returncode
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--slk-worker-recovery", action="store_true")
     mode.add_argument("--slk-existing-terminal", action="store_true")
     mode.add_argument("--slk-committed-terminal", action="store_true")
+    mode.add_argument("--slk-resume-incomplete-checker", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -103,7 +201,9 @@ def main() -> int:
         print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
         return 4
     expected_schema = (
-        "slk.ocrv-committed-terminal-request/v1"
+        "slk.ocrv-incomplete-checker-resume-request/v1"
+        if args.slk_resume_incomplete_checker
+        else "slk.ocrv-committed-terminal-request/v1"
         if args.slk_committed_terminal
         else "slk.ocrv-worker-recovery-request/v1"
     )
@@ -121,7 +221,7 @@ def main() -> int:
     environment = os.environ.copy()
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
-    if args.slk_existing_terminal or args.slk_committed_terminal:
+    if args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker:
         environment.pop("SLK_NATIVE_START_RECEIPT", None)
         environment.pop("SLK_NATIVE_START_CONTEXT", None)
     if args.slk_worker_recovery:
@@ -134,6 +234,8 @@ def main() -> int:
             print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
             return 4
     try:
+        if args.slk_resume_incomplete_checker:
+            return _resume_incomplete(request, args.request.resolve(), command)
         internal_command = (
             "checker-record-committed-terminal"
             if args.slk_committed_terminal
@@ -157,7 +259,7 @@ def main() -> int:
             env=environment,
             **windows_no_window_kwargs(),
         )
-    except OSError as exc:
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"SLK_OCRV_RECOVERY_HOST_FAILED: {exc}", file=sys.stderr)
         return 5
     if completed.stdout:

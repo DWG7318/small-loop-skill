@@ -1,12 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-ocrv-committed-terminal.schema.json",
-  "title": "SLK committed OCRV terminal consumption request",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-ocrv-incomplete-checker-resume.schema.json",
+  "title": "SLK incomplete OCRV Checker resume request",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision", "token_sequence", "worker_role_instance_id", "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint", "runtime_projection_path", "runtime_projection_sha256", "candidate_repository", "candidate_commit", "candidate_parent", "candidate_message_id", "payload_sha256", "candidate_submitted_event_id", "transport_started_event_id", "commit_request_path", "commit_request_sha256", "native_attempt_path", "raw_review_path", "immutable_sha256", "checker_credential_path", "state_command", "transport_command", "result_path"],
+  "required": [
+    "schema_version", "method_version", "recovery_invocation_id",
+    "run_id", "go_id", "cell_id", "attempt", "plan_revision",
+    "runtime_revision", "token_sequence", "worker_role_instance_id",
+    "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint",
+    "runtime_projection_path", "runtime_projection_sha256",
+    "candidate_repository", "candidate_commit", "candidate_parent",
+    "candidate_message_id", "payload_sha256", "candidate_submitted_event_id",
+    "transport_started_event_id", "commit_request_path", "commit_request_sha256",
+    "native_attempt_path", "checker_credential_path", "state_command",
+    "transport_command", "immutable_sha256", "result_path", "background_path",
+    "ocrv_session", "recovery_root"
+  ],
   "properties": {
-    "schema_version": {"const": "slk.ocrv-committed-terminal-request/v1"},
+    "schema_version": {"const": "slk.ocrv-incomplete-checker-resume/v1"},
     "method_version": {"const": "4.3.6"},
     "recovery_invocation_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/identifier"},
@@ -22,7 +34,10 @@
     "checker_endpoint": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "run_id", "role", "role_instance_id", "agent_runtime", "adapter", "host_id", "endpoint_version", "state", "address"],
+      "required": [
+        "schema_version", "run_id", "role", "role_instance_id", "agent_runtime",
+        "adapter", "host_id", "endpoint_version", "state", "address"
+      ],
       "properties": {
         "schema_version": {"const": "slk.transport-endpoint/v1"},
         "run_id": {"$ref": "#/$defs/identifier"},
@@ -48,44 +63,61 @@
     "commit_request_path": {"$ref": "#/$defs/path"},
     "commit_request_sha256": {"$ref": "#/$defs/sha256"},
     "native_attempt_path": {"$ref": "#/$defs/path"},
-    "raw_review_path": {"$ref": "#/$defs/path"},
+    "checker_credential_path": {"$ref": "#/$defs/path"},
+    "state_command": {"$ref": "#/$defs/command"},
+    "transport_command": {"$ref": "#/$defs/command"},
     "immutable_sha256": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["endpoint.json", "envelope.json", "started.json", "ocrv-request.json"],
+      "required": [
+        "endpoint.json", "envelope.json", "started.json", "ocrv-request.json",
+        "ocrv-preflight.json", "d1-background.md", "native-activity.json", "session-record"
+      ],
       "properties": {
         "endpoint.json": {"$ref": "#/$defs/sha256"},
         "envelope.json": {"$ref": "#/$defs/sha256"},
         "started.json": {"$ref": "#/$defs/sha256"},
         "ocrv-request.json": {"$ref": "#/$defs/sha256"},
-        "completed.json": {"$ref": "#/$defs/sha256"},
-        "ocrv-result.json": {"$ref": "#/$defs/sha256"},
-        "raw_review": {"$ref": "#/$defs/sha256"}
+        "ocrv-preflight.json": {"$ref": "#/$defs/sha256"},
+        "d1-background.md": {"$ref": "#/$defs/sha256"},
+        "native-activity.json": {"$ref": "#/$defs/sha256"},
+        "session-record": {"$ref": "#/$defs/sha256"}
       }
     },
-    "recovery_terminal": {
+    "result_path": {"$ref": "#/$defs/path"},
+    "background_path": {"$ref": "#/$defs/path"},
+    "ocrv_session": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["native_attempt_path", "started_sha256", "completed_sha256", "ocrv_result_sha256", "resume_request_sha256", "raw_review_sha256"],
+      "required": [
+        "session_id", "session_record_path", "session_record_sha256", "repo_dir",
+        "diff_commit", "model", "review_mode", "start_time", "aborted",
+        "selected_files", "completed_files"
+      ],
       "properties": {
-        "native_attempt_path": {"$ref": "#/$defs/path"},
-        "started_sha256": {"$ref": "#/$defs/sha256"},
-        "completed_sha256": {"$ref": "#/$defs/sha256"},
-        "ocrv_result_sha256": {"$ref": "#/$defs/sha256"},
-        "resume_request_sha256": {"$ref": "#/$defs/sha256"},
-        "raw_review_sha256": {"$ref": "#/$defs/sha256"}
+        "session_id": {"$ref": "#/$defs/identifier"},
+        "session_record_path": {"$ref": "#/$defs/path"},
+        "session_record_sha256": {"$ref": "#/$defs/sha256"},
+        "repo_dir": {"$ref": "#/$defs/path"},
+        "diff_commit": {"$ref": "#/$defs/commit"},
+        "model": {"const": "qwen3.8-max"},
+        "review_mode": {"const": "commit"},
+        "start_time": {"type": "string", "format": "date-time"},
+        "aborted": {"const": true},
+        "selected_files": {"const": 0},
+        "completed_files": {"const": 0}
       }
     },
-    "checker_credential_path": {"$ref": "#/$defs/path"},
-    "state_command": {"$ref": "#/$defs/command"},
-    "transport_command": {"$ref": "#/$defs/command"},
-    "result_path": {"$ref": "#/$defs/path"}
+    "recovery_root": {"$ref": "#/$defs/path"}
   },
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
     "path": {"type": "string", "minLength": 1},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-    "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+    "command": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
   }
 }

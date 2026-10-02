@@ -82,6 +82,30 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
         "cell_id": cell_id,
         "repository": str(repository.resolve()),
         "candidate": {"kind": "commit", "commit": candidate_commit},
+        "cell_goal": payload["cell_goal"],
+        "d1_criteria": payload["d1_criteria"],
+        "evidence_files": [],
+        "review_scope": {
+            "include_paths": ["src/example.py"],
+            "exclude_paths": [],
+            "criterion_ids": ["D1-001"],
+            "scope_sha256": canonical_json_sha256(
+                {
+                    "include_paths": ["src/example.py"],
+                    "exclude_paths": [],
+                    "criterion_ids": ["D1-001"],
+                }
+            ),
+        },
+        "capacity": {
+            "max_background_characters": 8000,
+            "max_background_bytes": 12000,
+            "max_changed_lines": 800,
+            "max_segment_paths": 2,
+            "max_tokens": 200000,
+            "max_tokens_budget": 500000,
+            "timeout_minutes": 15,
+        },
     }
     ocrv_request_path = write_json(native_attempt / "ocrv-request.json", ocrv_request)
     started_path = write_json(
@@ -442,6 +466,49 @@ def test_checker_host_authenticates_current_revision_and_reuses_existing_d1_reco
     assert result["runtime_revision"] == 155
 
 
+def test_recovered_terminal_reuses_the_existing_committed_validator_and_d1_recorder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, request_path = fixture(tmp_path)
+    source = Path(str(request["native_attempt_path"]))
+    recovery = source / "resume-incomplete-checker" / str(request["recovery_invocation_id"]) / "native-attempt"
+    recovery.mkdir(parents=True)
+    for source_name, target_name in (
+        ("started.json", "started.json"), ("completed.json", "completed.json"),
+        ("ocrv-result.json", "ocrv-result.json"), ("ocrv-request.json", "ocrv-resume-request.json"),
+    ):
+        (recovery / target_name).write_bytes((source / source_name).read_bytes())
+    terminal = json.loads((recovery / "completed.json").read_text(encoding="utf-8"))
+    terminal["evidence"] = ["started.json", "ocrv-resume-request.json", "ocrv-result.json"]
+    write_json(recovery / "completed.json", terminal)
+    raw = Path(str(request["raw_review_path"]))
+    request["immutable_sha256"] = {
+        name: sha256(source / name) for name in (
+            "endpoint.json", "envelope.json", "started.json", "ocrv-request.json",
+        )
+    }
+    request["recovery_terminal"] = {
+        "native_attempt_path": str(recovery), "started_sha256": sha256(recovery / "started.json"),
+        "completed_sha256": sha256(recovery / "completed.json"),
+        "ocrv_result_sha256": sha256(recovery / "ocrv-result.json"),
+        "resume_request_sha256": sha256(recovery / "ocrv-resume-request.json"),
+        "raw_review_sha256": sha256(raw),
+    }
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID", str(request["checker_role_instance_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"]))
+    monkeypatch.setenv("SLK_OCRV_RECOVERY_ENDPOINT_VERSION", str(request["checker_endpoint_version"]))
+    result = worker_completion.execute_committed_checker_terminal(
+        request, request_sha256=sha256(request_path),
+        authenticate_checker=lambda *_args: {"status": "authenticated", "role": "checker",
+            "role_instance_id": request["checker_role_instance_id"], "runtime_revision": request["runtime_revision"]},
+        record_checker_d1=lambda activation, *_args: {"status": "CHECKER_D1_RECORDED",
+            "d1_verdict": "FAIL", "d1_event_type": "D1_FAILED",
+            "native_result_path": str(Path(str(activation["native_attempt_path"])) / "ocrv-result.json")},
+    )
+
+    assert Path(str(result["native_attempt_path"])) == recovery
+
+
 @pytest.mark.parametrize(
     ("name", "mutate"),
     [
@@ -477,6 +544,7 @@ def test_checker_host_authenticates_current_revision_and_reuses_existing_d1_reco
             "already-advanced",
             lambda request: _append_d1_event(Path(str(request["runtime_projection_path"]))),
         ),
+        ("non-checker-token", lambda request: _move_token_to_worker(request)),
     ],
 )
 def test_closed_chain_rejects_missing_tampered_advanced_or_mixed_evidence_before_host_start(
@@ -521,6 +589,14 @@ def _append_d1_event(path: Path) -> None:
     )
     value["administrative_snapshot"]["latest_event_id"] = "later-d1"
     write_json(path, value)
+
+
+def _move_token_to_worker(request: dict[str, object]) -> None:
+    path = Path(str(request["runtime_projection_path"]))
+    value = json.loads(path.read_text(encoding="utf-8"))
+    value["runtime_snapshot"]["token_holder_role_instance_id"] = request["worker_role_instance_id"]
+    write_json(path, value)
+    request["runtime_projection_sha256"] = sha256(path)
 
 
 def test_duplicate_consume_is_rejected_when_checker_revision_has_advanced(

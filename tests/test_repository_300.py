@@ -109,8 +109,21 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "candidate_parent", "candidate_message_id", "payload_sha256",
             "candidate_submitted_event_id", "transport_started_event_id",
             "commit_request_path", "commit_request_sha256", "native_attempt_path",
-            "raw_review_path", "immutable_sha256", "checker_credential_path",
+            "raw_review_path", "immutable_sha256", "recovery_terminal", "checker_credential_path",
             "state_command", "transport_command", "result_path",
+        },
+        "docs/contracts/slk-ocrv-incomplete-checker-resume.schema.json": {
+            "schema_version", "method_version", "recovery_invocation_id",
+            "run_id", "go_id", "cell_id", "attempt", "plan_revision",
+            "runtime_revision", "token_sequence", "worker_role_instance_id",
+            "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint",
+            "runtime_projection_path", "runtime_projection_sha256", "candidate_repository",
+            "candidate_commit", "candidate_parent", "candidate_message_id", "payload_sha256",
+            "candidate_submitted_event_id", "transport_started_event_id",
+            "commit_request_path", "commit_request_sha256", "native_attempt_path",
+            "checker_credential_path", "state_command", "transport_command",
+            "immutable_sha256", "result_path", "background_path", "ocrv_session",
+            "recovery_root",
         },
         "docs/contracts/slk-ocrv-committed-terminal-result.schema.json": {
             "schema_version", "method_version", "status", "run_id", "cell_id",
@@ -167,6 +180,8 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
                 "last_anomaly_cycle_id",
                 "last_native_status_id",
             }
+        elif relative.endswith("slk-ocrv-committed-terminal.schema.json"):
+            assert set(schema["required"]) == required - {"recovery_terminal"}
         else:
             assert set(schema["required"]) == required
 

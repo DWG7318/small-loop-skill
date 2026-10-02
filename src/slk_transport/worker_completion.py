@@ -26,7 +26,7 @@ from .contracts import (
     canonical_json_sha256,
     parse_delivery,
 )
-from .native_activity import NativeActivityError, validate_native_start
+from .native_activity import NativeActivityError, inspect_native_activity, validate_native_start
 from .task_file import TaskFileError, verify_task_file
 
 
@@ -36,6 +36,7 @@ CHECKER_RECOVERY_SCHEMA = "slk.ocrv-worker-recovery-request/v1"
 CHECKER_RECOVERY_RESULT_SCHEMA = "slk.ocrv-worker-recovery-result/v1"
 COMMITTED_TERMINAL_SCHEMA = "slk.ocrv-committed-terminal-request/v1"
 COMMITTED_TERMINAL_RESULT_SCHEMA = "slk.ocrv-committed-terminal-result/v1"
+INCOMPLETE_RESUME_SCHEMA = "slk.ocrv-incomplete-checker-resume-request/v1"
 COMMITTED_TERMINAL_RESULT_FIELDS = frozenset(
     {
         "schema_version", "method_version", "status", "run_id", "cell_id", "attempt",
@@ -2999,7 +3000,7 @@ def _committed_event_details(event: Mapping[str, Any]) -> Mapping[str, Any]:
     return value
 
 
-def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str, Any]:
+def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_only: bool = False) -> dict[str, Any]:
     fields = {
         "schema_version",
         "method_version",
@@ -3034,6 +3035,9 @@ def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str
         "transport_command",
         "result_path",
     }
+    recovery_terminal = request.get("recovery_terminal")
+    if recovery_terminal is not None:
+        fields.add("recovery_terminal")
     if (
         set(request) != fields
         or request.get("schema_version") != COMMITTED_TERMINAL_SCHEMA
@@ -3335,15 +3339,14 @@ def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str
         )
 
     immutable = request.get("immutable_sha256")
-    expected_names = {
-        "endpoint.json",
-        "envelope.json",
-        "started.json",
-        "ocrv-request.json",
-        "completed.json",
-        "ocrv-result.json",
-        "raw_review",
-    }
+    expected_names = (
+        {"endpoint.json", "envelope.json", "started.json", "ocrv-request.json"}
+        if recovery_terminal is not None or source_only
+        else {
+            "endpoint.json", "envelope.json", "started.json", "ocrv-request.json",
+            "completed.json", "ocrv-result.json", "raw_review",
+        }
+    )
     if (
         not isinstance(immutable, Mapping)
         or set(immutable) != expected_names
@@ -3362,7 +3365,8 @@ def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str
         if name != "raw_review"
     }
     raw_review_path = Path(str(request["raw_review_path"])).resolve()
-    evidence_paths["raw_review"] = raw_review_path
+    if recovery_terminal is None and not source_only:
+        evidence_paths["raw_review"] = raw_review_path
     if any(
         not path.is_file() or _sha256(path) != immutable[name]
         for name, path in evidence_paths.items()
@@ -3445,6 +3449,59 @@ def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str
             "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
             "OCRV native request does not bind the committed candidate",
         )
+    if source_only: return {"checker": checker}
+    terminal_attempt = native_attempt
+    result_request_path = evidence_paths["ocrv-request.json"]
+    terminal_request_name = "ocrv-request.json"
+    if recovery_terminal is not None:
+        if not isinstance(recovery_terminal, Mapping):
+            raise CompletionError(
+                "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID", "recovery terminal is not an object"
+            )
+        recovery_fields = {
+            "native_attempt_path", "started_sha256", "completed_sha256",
+            "ocrv_result_sha256", "resume_request_sha256", "raw_review_sha256",
+        }
+        terminal_attempt = Path(str(recovery_terminal.get("native_attempt_path", ""))).resolve()
+        recovered = {
+            "started.json": recovery_terminal.get("started_sha256"),
+            "completed.json": recovery_terminal.get("completed_sha256"),
+            "ocrv-result.json": recovery_terminal.get("ocrv_result_sha256"),
+            "ocrv-resume-request.json": recovery_terminal.get("resume_request_sha256"),
+            "raw_review": recovery_terminal.get("raw_review_sha256"),
+        }
+        recovered_paths = {
+            "started.json": terminal_attempt / "started.json",
+            "completed.json": terminal_attempt / "completed.json",
+            "ocrv-result.json": terminal_attempt / "ocrv-result.json",
+            "ocrv-resume-request.json": terminal_attempt / "ocrv-resume-request.json",
+            "raw_review": raw_review_path,
+        }
+        if (
+            set(recovery_terminal) != recovery_fields
+            or terminal_attempt.parent.parent != native_attempt / "resume-incomplete-checker"
+            or any(not _exact_digest(value) for value in recovered.values())
+            or any(not path.is_file() or _sha256(path) != recovered[name]
+                   for name, path in recovered_paths.items())
+        ):
+            raise CompletionError(
+                "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID", "recovery terminal evidence is invalid"
+            )
+        try:
+            started = validate_native_start(
+                recovered_paths["started.json"], adapter=checker.adapter,
+                run_id=str(request["run_id"]), cell_id=str(request["cell_id"]),
+                message_id=str(request["candidate_message_id"]),
+                request_sha256=str(request["payload_sha256"]),
+                native_request_sha256=str(recovered["ocrv-resume-request.json"]),
+            )
+        except NativeActivityError as exc:
+            raise CompletionError(
+                "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID", "recovery OCRV start is invalid"
+            ) from exc
+        evidence_paths.update(recovered_paths)
+        result_request_path = recovered_paths["ocrv-resume-request.json"]
+        terminal_request_name = "ocrv-resume-request.json"
     try:
         terminal = DeliveryResult.from_dict(
             _read_object(evidence_paths["completed.json"], "OCRV terminal")
@@ -3455,7 +3512,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str
             raise AdapterError("OCRV_RESULT_INVALID", "OCRV verdict is invalid")
         result = adapter.validate_existing_result(
             evidence_paths["ocrv-result.json"],
-            evidence_paths["ocrv-request.json"],
+            result_request_path,
             envelope,
             VERDICT_EXIT_CODES[str(verdict)],
         )
@@ -3476,7 +3533,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str
         or terminal.run_id != request["run_id"]
         or terminal.message_id != request["candidate_message_id"]
         or terminal.error_code is not None
-        or not {"started.json", "ocrv-request.json", "ocrv-result.json"}.issubset(terminal.evidence)
+        or not {"started.json", terminal_request_name, "ocrv-result.json"}.issubset(terminal.evidence)
         or set(identity) != identity_fields
         or identity.get("review_segment_count") != 0
         or review.get("status") != "complete"
@@ -3552,7 +3609,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any]) -> dict[str
         "token_sequence": request["token_sequence"],
         "candidate_message_id": request["candidate_message_id"],
         "checker_token_already_committed": True,
-        "native_attempt_path": str(native_attempt),
+        "native_attempt_path": str(terminal_attempt),
     }
     return {
         "checker": checker,
@@ -3652,7 +3709,7 @@ def execute_committed_checker_terminal(
         "request_sha256": request_sha256,
         "runtime_revision": authenticated_revision,
         "token_sequence": request["token_sequence"],
-        "native_attempt_path": request["native_attempt_path"],
+        "native_attempt_path": validated["activation"]["native_attempt_path"],
         "d1_verdict": d1["d1_verdict"],
         "d1_event_type": d1["d1_event_type"],
         "native_result_path": d1["native_result_path"],
@@ -3696,6 +3753,79 @@ def consume_committed_checker_terminal(
     return value
 
 
+def _validate_incomplete_resume(request: Mapping[str, Any]) -> dict[str, Any]:
+    required = {
+        "schema_version", "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id",
+        "attempt", "plan_revision", "runtime_revision", "token_sequence", "worker_role_instance_id",
+        "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint",
+        "runtime_projection_path", "runtime_projection_sha256", "candidate_repository",
+        "candidate_commit", "candidate_parent", "candidate_message_id", "payload_sha256",
+        "candidate_submitted_event_id", "transport_started_event_id", "commit_request_path",
+        "commit_request_sha256", "native_attempt_path", "checker_credential_path", "state_command",
+        "transport_command", "immutable_sha256", "result_path", "background_path", "ocrv_session",
+        "recovery_root",
+    }
+    try:
+        checker = Endpoint.from_dict(request["checker_endpoint"])
+        session = request["ocrv_session"]
+        attempt = Path(str(request["native_attempt_path"])).resolve()
+        recovery = Path(str(request["recovery_root"])).resolve()
+        started_path = attempt / "started.json"
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CompletionError("CHECKER_INCOMPLETE_RESUME_REQUEST_INVALID", "resume request is invalid") from exc
+    if (
+        set(request) != required or request.get("schema_version") != INCOMPLETE_RESUME_SCHEMA
+        or request.get("method_version") != "4.3.6" or not isinstance(session, Mapping)
+        or recovery != attempt / "resume-incomplete-checker" / str(request["recovery_invocation_id"])
+        or Path(str(request["result_path"])).resolve() != recovery / "result.json"
+        or any((attempt / name).exists() for name in ("completed.json", "failed.json", "ocrv-result.json"))
+        or (recovery / "resume-consumed.json").exists()
+        or session.get("diff_commit") != request.get("candidate_commit")
+        or session.get("model") != "qwen3.8-max" or session.get("review_mode") != "commit"
+        or session.get("aborted") is not True or session.get("selected_files") != 0
+        or session.get("completed_files") != 0
+    ):
+        raise CompletionError("CHECKER_INCOMPLETE_RESUME_REQUEST_INVALID", "resume identity is invalid or already consumed")
+    try:
+        started = validate_native_start(
+            started_path, adapter=checker.adapter, run_id=str(request["run_id"]),
+            cell_id=str(request["cell_id"]), message_id=str(request["candidate_message_id"]),
+            request_sha256=str(request["payload_sha256"]),
+        )
+    except NativeActivityError as exc:
+        raise CompletionError("CHECKER_INCOMPLETE_RESUME_EVIDENCE_INVALID", "original OCRV start is invalid") from exc
+    if inspect_native_activity(
+        started_path, terminal_paths=(attempt / "completed.json", attempt / "failed.json")
+    ).get("status") != "DEAD_WITHOUT_TERMINAL":
+        raise CompletionError("CHECKER_INCOMPLETE_RESUME_EVIDENCE_INVALID", "original OCRV process is not dead")
+    names = {"endpoint.json", "envelope.json", "started.json", "ocrv-request.json", "ocrv-preflight.json",
+             "d1-background.md", "native-activity.json", "session-record"}
+    paths = {name: attempt / name for name in names}
+    paths["d1-background.md"] = Path(str(request["background_path"])).resolve()
+    paths["session-record"] = Path(str(session.get("session_record_path", ""))).resolve()
+    immutable = request["immutable_sha256"]
+    if not isinstance(immutable, Mapping) or set(immutable) != names or any(
+        not path.is_file() or _sha256(path) != immutable.get(name) for name, path in paths.items()
+    ) or session.get("session_record_sha256") != immutable.get("session-record"):
+        raise CompletionError("CHECKER_INCOMPLETE_RESUME_EVIDENCE_INVALID", "resume input is missing")
+    preflight = _read_object(paths["ocrv-preflight.json"], "OCRV preflight")
+    if (preflight.get("status") != "READY" or preflight.get("request_sha256") != immutable["ocrv-request.json"]
+        or not _matches(preflight.get("background"), {"sha256": immutable["d1-background.md"]})):
+        raise CompletionError("CHECKER_INCOMPLETE_RESUME_EVIDENCE_INVALID", "OCRV preflight is not exact")
+    source = {key: value for key, value in request.items() if key not in {"background_path", "ocrv_session", "recovery_root"}}
+    source.update({"schema_version": COMMITTED_TERMINAL_SCHEMA, "raw_review_path": "unused", "immutable_sha256": {name: immutable[name] for name in ("endpoint.json", "envelope.json", "started.json", "ocrv-request.json")}})
+    return {**_validate_committed_terminal_request(source, source_only=True), "paths": paths, "session": dict(session), "recovery_root": recovery}
+def resume_incomplete_checker(request_path: Path, *, request_sha256: str) -> Mapping[str, Any]:
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError("CHECKER_INCOMPLETE_RESUME_REQUEST_MISMATCH", "resume request hash mismatch")
+    request = _read_object(request_path, "incomplete Checker resume request")
+    validated = _validate_incomplete_resume(request)
+    return _run_sealed_checker_terminal(
+        request_path, request, validated["checker"], request_sha256=request_sha256,
+        mode="--slk-resume-incomplete-checker", result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
+        error_code="CHECKER_INCOMPLETE_RESUME_COMMAND_FAILED",
+    )
 def _run_json_command(
     command: list[str],
     arguments: list[str],

@@ -510,16 +510,21 @@ def _classify(review: dict[str, Any] | None, exit_code: int) -> tuple[str, list[
     return "PASS", ["OCR_COMPLETE_LOW_SEVERITY_OBSERVATIONS"]
 
 
-def run(request_path: Path, output_path: Path) -> int:
+def run(
+    request_path: Path, output_path: Path, *, invocation_override: str | None = None,
+    background_override: Path | None = None, resume_session: str | None = None,
+    result_request_path: Path | None = None,
+) -> int:
     request = _validate_request(_read_json(request_path))
-    invocation, root = _artifact_root(request)
-    capabilities = _discover_capabilities(request, root)
-    background_path = root / "d1-background.md"
-    background_path.write_text(_background(request, capabilities), encoding="utf-8", newline="\n")
+    invocation, root = (invocation_override, output_path.resolve().parent) if invocation_override else _artifact_root(request)
+    background_path = background_override or root / "d1-background.md"
+    if background_override is None:
+        background_path.write_text(_background(request, _discover_capabilities(request, root)), encoding="utf-8", newline="\n")
     raw_path = root / "ocrv-review.json"
     stdout_path, stderr_path = root / "ocrv.stdout.txt", root / "ocrv.stderr.txt"
+    command = _review_args(request, background_path, raw_path) + (["--resume", resume_session] if resume_session else [])
     process = subprocess.Popen(
-        _review_args(request, background_path, raw_path), cwd=request["repository"],
+        command, cwd=request["repository"],
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace", **_no_window_kwargs(),
     )
@@ -610,7 +615,7 @@ def run(request_path: Path, output_path: Path) -> int:
             "session_id": review.get("session_id") if isinstance(review, dict) else None,
             "exit_code": returncode,
         },
-        "evidence": request["evidence"], "request_sha256": _sha256(request_path),
+        "evidence": request["evidence"], "request_sha256": _sha256(result_request_path or request_path),
         "artifacts": {
             "background": str(background_path), "raw_review": str(raw_path),
             "stdout": str(stdout_path), "stderr": str(stderr_path),
