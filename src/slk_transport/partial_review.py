@@ -200,6 +200,74 @@ def validate_resumed_raw(basis: Mapping[str, Any], raw: Mapping[str, Any], linea
         raise ValueError('resumed native result did not reuse the frozen completed fingerprints')
 
 
+def validate_consumed_partial_attempt(request: Mapping[str, Any], request_sha256: str) -> dict[str, Any]:
+    """Admit the one real segment already completed before the mapper failed."""
+    basis = validate_partial_source(request, consumed=True)
+    root = Path(str(request['recovery_root'])).resolve()
+    attempt = root / 'native-attempt'
+    first = attempt / 'review-segments/segment-001'
+    marker = root.parent / 'partial-consumed.json'
+    if (read(marker) != {'recovery_invocation_id': request['recovery_invocation_id'],
+                         'request_sha256': request_sha256}
+        or (root / 'resume-consumed.json').read_text(encoding='ascii').strip() != request_sha256
+        or (root / 'continue-consumed.json').exists()
+        or any((attempt / 'review-segments' / f'segment-{n:03d}').exists() for n in (2, 3))
+        or any((attempt / name).exists() for name in ('ocrv-result.json', 'ocrv-aggregate.json', 'completed.json'))):
+        raise ValueError('consumed continuation identity is absent, repeated, or already advanced')
+    required = ('request.json', 'result.json', 'ocrv-review.json', 'started.json',
+                'native-activity.json', 'ocrv.stdout.txt', 'ocrv.stderr.txt')
+    if (not all((first / name).is_file() for name in required)
+        or digest(first / 'request.json') != digest(basis['segments'][0])):
+        raise ValueError('completed first segment evidence is incomplete')
+    result = read(first / 'result.json')
+    raw_path = Path(str(result.get('artifacts', {}).get('raw_review', ''))).resolve()
+    if raw_path != (first / 'ocrv-review.json').resolve():
+        raise ValueError('completed first segment raw review escaped its sealed evidence root')
+    raw = read(raw_path)
+    manifest = validate_manifest(request, raw, read(first / 'request.json')['review_scope']['include_paths'], complete=True)
+    comments = raw.get('comments')
+    if (result.get('schema_version') != 'slk.ocrv-d1-result/v1'
+        or result.get('run_id') != request['run_id'] or result.get('cell_id') != request['cell_id']
+        or result.get('verdict') != 'INCOMPLETE' or result.get('reason_codes') != ['OCR_COVERAGE_INCOMPLETE']
+        or result.get('request_sha256') != digest(first / 'request.json')
+        or result.get('findings') != comments or not isinstance(comments, list)
+        or result.get('review') != {'status': 'complete', 'provider': 'dashscope-tokenplan',
+            'model': 'qwen3.8-max', 'session_id': raw.get('session_id'), 'exit_code': 0}
+        or raw.get('llm') != {'provider': 'dashscope-tokenplan', 'model': 'qwen3.8-max'}
+        or raw.get('tool_calls', {}).get('failure') != 0):
+        raise ValueError('completed first segment was not solely misclassified by the reused coverage bug')
+    start = read(first / 'started.json')
+    activity = read(first / 'native-activity.json')
+    expected_start = {'schema_version': 'slk.native-start/v2', 'status': 'STARTED', 'adapter': 'ocrv-checker',
+        'run_id': request['run_id'], 'cell_id': request['cell_id'], 'message_id': request['candidate_message_id'],
+        'request_sha256': request['payload_sha256'], 'native_request_sha256': digest(first / 'request.json')}
+    if (any(start.get(k) != v for k, v in expected_start.items())
+        or start.get('native_task', {}).get('kind') != 'ocrv-review'
+        or start.get('native_task', {}).get('id') != result.get('review_invocation_id')
+        or activity.get('schema_version') != 'slk.native-task-activity/v1'
+        or any(activity.get(k) != v for k, v in {'adapter': 'ocrv-checker', 'run_id': request['run_id'],
+            'cell_id': request['cell_id'], 'message_id': request['candidate_message_id']}.items())
+        or activity.get('native_task_id') != result.get('review_invocation_id')
+        or activity.get('status') != 'COMPLETED'
+        or activity.get('last_event', {}).get('kind') != 'OCRV_PROCESS_EXITED'
+        or activity.get('last_event', {}).get('exit_code') != 0):
+        raise ValueError('completed first segment native start or terminal activity is not exact')
+    child_path = Path(str(request['ocrv_session']['session_record_path'])).resolve().parent / f"{raw['session_id']}.jsonl"
+    child_rows = records(child_path)
+    ends = [row for row in child_rows if row.get('type') == 'session_end']
+    lineage = [row for row in child_rows if row.get('type') == 'resume_lineage']
+    if len(ends) != 1 or ends[0].get('run_manifest') != manifest or len(lineage) != 1:
+        raise ValueError('completed first segment native child record is incomplete')
+    validate_resumed_raw(basis, raw, lineage[0])
+    return {'basis': basis, 'root': root, 'attempt': attempt, 'first': first,
+            'result': result, 'raw': raw, 'child_path': child_path}
+
+
+def effective_segment_root(root: Path, ordinal: int) -> Path:
+    correction = root / 'review-corrections' / f'segment-{ordinal:03d}'
+    return correction if correction.is_dir() else root / 'review-segments' / f'segment-{ordinal:03d}'
+
+
 def publish_aggregate(root: Path, request: Mapping[str, Any], segment_results: list[Mapping[str, Any]]) -> None:
     """Use the existing aggregate evidence format; never promote partial coverage."""
     from .adapters.ocrv import OcrvAdapter
@@ -209,8 +277,9 @@ def publish_aggregate(root: Path, request: Mapping[str, Any], segment_results: l
             if code not in reasons: reasons.append(code)
         findings.extend({'severity': str(item.get('severity', 'UNKNOWN')),
                          'finding_sha256': canonical_json_sha256(item)} for item in value['findings'])
+        item_root = effective_segment_root(root, ordinal)
         compact.append({'ordinal': ordinal, 'request_sha256': value['request_sha256'],
-            'result_sha256': digest(root / 'review-segments' / f'segment-{ordinal:03d}/result.json'),
+            'result_sha256': digest(item_root / 'result.json'),
             'verdict': value['verdict'], 'reason_codes': value['reason_codes'],
             'review_invocation_id': value['review_invocation_id'], 'session_id': value['review']['session_id']})
     stopped = OcrvAdapter._has_blocking_finding(segment_results[-1])
@@ -269,11 +338,21 @@ def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
     envelope = wc.parse_delivery(read(basis['source'] / 'endpoint.json'), read(basis['source'] / 'envelope.json')).envelope
     aggregate, values = read(root / 'ocrv-aggregate.json'), []
     for n, segment in enumerate(aggregate['segments'], 1):
-        item_root = root / 'review-segments' / f'segment-{n:03d}'
-        input_path, result_path = item_root / 'request.json', item_root / 'result.json'
+        source_root = root / 'review-segments' / f'segment-{n:03d}'
+        item_root = effective_segment_root(root, n)
+        input_path, result_path = source_root / 'request.json', item_root / 'result.json'
         if digest(input_path) != digest(basis['segments'][n-1]) or segment['result_sha256'] != digest(result_path):
             raise ValueError('continuation segment request or result drift')
         result = read(result_path)
+        if item_root != source_root:
+            correction = read(item_root / 'correction.json')
+            if correction != {'schema_version': 'slk.ocrv-normalization-correction/v1',
+                'cause': 'COMPLETED_REUSED_COVERAGE_WAS_OMITTED',
+                'original_result_sha256': digest(source_root / 'result.json'),
+                'raw_review_sha256': digest(source_root / 'ocrv-review.json'),
+                'corrected_result_sha256': digest(result_path),
+                'native_session_sha256': digest(item_root / 'native-session.jsonl')}:
+                raise ValueError('normalization correction receipt does not bind preserved evidence')
         OcrvAdapter().validate_existing_result(result_path, input_path, envelope, {'PASS':0,'FAIL':2}[result['verdict']])
         raw = read(Path(result['artifacts']['raw_review']))
         validate_manifest(original, raw, read(input_path)['review_scope']['include_paths'], complete=True)
@@ -287,10 +366,10 @@ def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
             or result['verdict'] != ('FAIL' if any(str(c['severity']).strip().upper() in
                     {'MEDIUM','HIGH','BLOCKER','CRITICAL'} for c in comments) else 'PASS')):
             raise ValueError('native findings, model or verdict were altered before D1 consumption')
-        wc.validate_native_start(item_root / 'started.json', adapter='ocrv-checker', run_id=original['run_id'],
+        wc.validate_native_start(source_root / 'started.json', adapter='ocrv-checker', run_id=original['run_id'],
             cell_id=original['cell_id'], message_id=original['candidate_message_id'], request_sha256=original['payload_sha256'],
             native_request_sha256=digest(input_path))
-        start = read(item_root / 'started.json')
+        start = read(source_root / 'started.json')
         if start['native_task']['kind'] != 'ocrv-review' or start['native_task']['id'] != result['review_invocation_id']:
             raise ValueError('aggregate contains a wrapper or mismatched native start')
         native_path = Path(original['ocrv_session']['session_record_path']).parent / (result['review']['session_id'] + '.jsonl')

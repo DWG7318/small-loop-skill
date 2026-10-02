@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -272,3 +273,15 @@ def test_second_resume_is_rejected_by_the_consumed_recovery_marker(
         worker_completion.resume_incomplete_checker(
             request_path, request_sha256=sha256(request_path)
         )
+
+
+def test_sealed_terminal_nonzero_preserves_the_native_stderr_reason(tmp_path, monkeypatch) -> None:
+    request, request_path = resume_fixture(tmp_path)
+    endpoint = worker_completion.Endpoint.from_dict(request['checker_endpoint'])
+    monkeypatch.setattr(worker_completion.subprocess, 'run', lambda *a, **k:
+        subprocess.CompletedProcess(a, 5, b'', b'bounded continuation remains incomplete'))
+
+    with pytest.raises(CompletionError, match='bounded continuation remains incomplete'):
+        worker_completion._run_sealed_checker_terminal(
+            request_path, request, endpoint, request_sha256=sha256(request_path),
+            mode='--slk-resume-incomplete-checker', result_schema='unused', error_code='TEST_FAILED')

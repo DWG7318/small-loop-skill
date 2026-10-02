@@ -41,6 +41,7 @@ from .worker_completion import (
     inspect_worker_completion,
     prepare_invalid_result_recovery_envelope,
     recover_staged_checker_commit,
+    continue_consumed_partial_checker,
     resume_incomplete_checker,
 )
 
@@ -420,6 +421,12 @@ def _resume_incomplete_checker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _continue_consumed_partial_checker(args: argparse.Namespace) -> int:
+    _emit(continue_consumed_partial_checker(
+        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
+    return 0
+
+
 def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
     result = inspect_overwatcher_cadence(
         _read_object(args.runtime_projection, "runtime projection"),
@@ -555,6 +562,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     incomplete_consumer.add_argument("--request", required=True, type=Path)
     incomplete_consumer.add_argument("--sha256", required=True)
     incomplete_consumer.add_argument("--prepare-only", action="store_true")
+    consumed_partial = subparsers.add_parser("continue-consumed-partial")
+    consumed_partial.add_argument("--request", required=True, type=Path)
+    consumed_partial.add_argument("--sha256", required=True)
+    consumed_partial.add_argument("--prepare-only", action="store_true")
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
@@ -617,6 +628,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _consume_committed_checker_terminal(args)
         if args.command == "resume-incomplete-checker":
             return _resume_incomplete_checker(args)
+        if args.command == "continue-consumed-partial":
+            return _continue_consumed_partial_checker(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
         if args.command == "inspect-overwatcher-cadence":

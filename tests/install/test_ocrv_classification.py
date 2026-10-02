@@ -77,3 +77,23 @@ def test_incomplete_coverage_never_passes_even_with_low_observation() -> None:
 
     assert verdict == "INCOMPLETE"
     assert "OCR_COVERAGE_INCOMPLETE" in reasons
+
+
+def test_complete_coverage_counts_native_reused_items() -> None:
+    review = _complete_review([{"severity": "MEDIUM", "message": "material finding"}])
+    selected = [
+        {"item_id": "criterion-1", "path": "src/lib.rs", "fingerprint": "a" * 64},
+        {"item_id": "criterion-2", "path": "src/paths.rs", "fingerprint": "b" * 64},
+    ]
+    review["manifest"]["coverage"] = {  # type: ignore[index]
+        "selected": selected,
+        "completed": [selected[0]],
+        "reused": [selected[1]],
+        "failed": [],
+        "waived": [],
+    }
+
+    verdict, reasons = _module()._classify(review, 0)
+
+    assert verdict == "FAIL"
+    assert reasons == ["OCR_BLOCKING_FINDINGS_PRESENT"]

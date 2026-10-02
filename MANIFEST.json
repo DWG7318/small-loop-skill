@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "528ad878325a14aee7e0f2a5891180294fa985d4985ed3fbd4290b467d74ed93"
+      "sha256": "c6298bae2ea30c773911066ac170238e89b7c3ec3bc1e23d4ab545e2f5088ae4"
     },
     {
       "path": "VERSION",
@@ -688,7 +688,7 @@
     },
     {
       "path": "docs/maintenance/4.3.6-budget-partial-continuation-20261003.md",
-      "sha256": "17b25da6087c05b4b00c53b2ba62202a4a2feff213b1503c837df77a36de68ed"
+      "sha256": "76d3a0d642300e3e27538f2acc8d1167a3ce7d3d1323a5f9f60ce5135fd5061a"
     },
     {
       "path": "docs/runtime/SLK-TEMPORAL.md",
@@ -924,7 +924,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "d75aa94662b53f9a1b5ddc12b1bf15055467a59dfbbe29f6e83dc1932c90bd6f"
+      "sha256": "540fbfa58e28bf0acd5f5a1ba82dcf1c68c291c521a26726ca52854782bf078b"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -964,7 +964,7 @@
     },
     {
       "path": "integrations/ocrv/slk-checker.cmd",
-      "sha256": "814a5b6899ac47291ccce80198d374f11fbdf5dc8add675c1cd407137a25d406"
+      "sha256": "fcb435d82d27167798ef02bd832c6b3194fdc0be994f3ad14b00d30a7e04ea9b"
     },
     {
       "path": "integrations/ocrv/slk-native-activity-capabilities.json",
@@ -972,7 +972,7 @@
     },
     {
       "path": "integrations/ocrv/slk_checker_adapter.py",
-      "sha256": "eb60564286fc27f429828a106b1cb011d43bf5a7ab35e780ddf2b3a6e9f5a239"
+      "sha256": "39b89efdc1e26bda1bba9afec42d3f1cc5096b6016b2cc9e91446da482a3c209"
     },
     {
       "path": "integrations/ocrv/slk_checker_post_d1.py",
@@ -980,7 +980,7 @@
     },
     {
       "path": "integrations/ocrv/slk_checker_recovery.py",
-      "sha256": "4bf81a9e8c5e9c1252c1d11ba840036c44734289587255aaf06cf5c200c3733b"
+      "sha256": "3f85e6a13a02985cf72ffd40d455d42701ef67152b2ae5b13f46a23b401c2f18"
     },
     {
       "path": "integrations/temporal/README.md",
@@ -1180,7 +1180,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "105c7a5af74310cc2de3097a301e852acd71ba731c8b46c2011b8fe3832828c6"
+      "sha256": "a8d3c8df83df8438464d7a20ec01e06cc7b3916a07352261ba202135566c3e18"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1220,7 +1220,7 @@
     },
     {
       "path": "src/slk_transport/partial_review.py",
-      "sha256": "14fa6fb968e15d833bbc0cb88e67b2e20267258e493942278731c77e18818912"
+      "sha256": "6e91abf65ddb189bc82067d6a70cc76abbf28b7a58af5af9dae4567e457223ce"
     },
     {
       "path": "src/slk_transport/process.py",
@@ -1248,7 +1248,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "b7f85d31078333e1061f34898b72e79f1667a2493d26a9a3139dc5b9eb7f01c2"
+      "sha256": "e1400951b801b8aadd3ce8534c0448cc3e297cf65d8b2baa36d1c666cf640ab0"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1276,11 +1276,11 @@
     },
     {
       "path": "tests/install/test_ocrv_classification.py",
-      "sha256": "cf96baf9333b7ddf8508dc7b0abb71c08290f53d7dcc1976350dfcc3e42d71ad"
+      "sha256": "d8d9af48288a367b9150d904df7d2b4bef71360dab4be1b086c55282cee834d5"
     },
     {
       "path": "tests/install/test_ocrv_integration.py",
-      "sha256": "7e863c8817f07a4e153f39d798db1e402754e32e29cf69b7bed3733eac76c07e"
+      "sha256": "7b516127943ac1f25fae7089fc1b77b315772ff46fccb35ce90b1e72611d8381"
     },
     {
       "path": "tests/install/test_ocrv_preflight.py",
@@ -1408,7 +1408,7 @@
     },
     {
       "path": "tests/transport/test_incomplete_checker_resume.py",
-      "sha256": "abae139a52b7ea962a3bfdbd7f15c6b3a02606a3d8f8c6f63a8dadd402eddd72"
+      "sha256": "42e7d351a01c631e40747e21d6619968d2dfea955ca8b321556c6ab7d88a080f"
     },
     {
       "path": "tests/transport/test_instance_id.py",
@@ -1432,7 +1432,7 @@
     },
     {
       "path": "tests/transport/test_partial_checker_resume.py",
-      "sha256": "42193666f0a780eaf0f7d5fdeb05cbb76fa3c6c9887c5fd78a62c899b5dd8034"
+      "sha256": "241e9ae8dcc5a573d3ceff33f735186a39b62c9cf7c5c39b55c0493cf66909bd"
     },
     {
       "path": "tests/transport/test_process.py",

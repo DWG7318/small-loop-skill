@@ -2432,12 +2432,16 @@ def _run_sealed_checker_terminal(
     try:
         stdout = (completed.stdout or b"").decode("utf-8", errors="strict")
         stderr = (completed.stderr or b"").decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise CompletionError(error_code, "original Checker terminal consumer returned invalid UTF-8") from exc
+    if completed.returncode != 0:
+        raise CompletionError(error_code, stderr.strip() or stdout.strip() or "original Checker terminal consumer failed")
+    try:
         value = json.loads(stdout)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CompletionError(error_code, "original Checker terminal consumer returned no valid UTF-8 JSON") from exc
+    except json.JSONDecodeError as exc:
+        raise CompletionError(error_code, "original Checker terminal consumer returned no valid JSON") from exc
     if (
-        completed.returncode != 0
-        or not _matches(value, {
+        not _matches(value, {
             "schema_version": result_schema,
             "status": "CHECKER_D1_RECORDED",
             "run_id": request["run_id"],
@@ -2756,12 +2760,11 @@ def _record_checker_d1(
                         "OCRV D1 aggregate evidence does not bind the terminal result",
                     )
                 for ordinal, segment in enumerate(segments, start=1):
+                    segment_root = native_attempt / "review-segments" / f"segment-{ordinal:03d}"
+                    correction_root = native_attempt / "review-corrections" / f"segment-{ordinal:03d}"
                     segment_result_path = (
-                        native_attempt
-                        / "review-segments"
-                        / f"segment-{ordinal:03d}"
-                        / "result.json"
-                    )
+                        correction_root if correction_root.is_dir() else segment_root
+                    ) / "result.json"
                     if (
                         not isinstance(segment, Mapping)
                         or segment.get("ordinal") != ordinal
@@ -3927,7 +3930,7 @@ def consume_committed_checker_terminal(
     return value
 
 
-def _validate_incomplete_resume(request: Mapping[str, Any]) -> dict[str, Any]:
+def _validate_incomplete_resume(request: Mapping[str, Any], *, consumed: bool = False) -> dict[str, Any]:
     required = {
         "schema_version", "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id",
         "attempt", "plan_revision", "runtime_revision", "token_sequence", "worker_role_instance_id",
@@ -3944,7 +3947,7 @@ def _validate_incomplete_resume(request: Mapping[str, Any]) -> dict[str, Any]:
         required.add('partial_review')
         from .partial_review import validate_partial_source
         try:
-            validate_partial_source(request)
+            validate_partial_source(request, consumed=consumed)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise CompletionError('CHECKER_INCOMPLETE_RESUME_EVIDENCE_INVALID', str(exc)) from exc
     try:
@@ -3961,7 +3964,7 @@ def _validate_incomplete_resume(request: Mapping[str, Any]) -> dict[str, Any]:
         or recovery != attempt / "resume-incomplete-checker" / str(request["recovery_invocation_id"])
         or Path(str(request["result_path"])).resolve() != recovery / "result.json"
         or (partial is None and any((attempt / name).exists() for name in ("completed.json", "failed.json", "ocrv-result.json")))
-        or (recovery / "resume-consumed.json").exists()
+        or ((recovery / "resume-consumed.json").exists() != consumed)
         or session.get("diff_commit") != request.get("candidate_commit")
         or session.get("model") != "qwen3.8-max" or session.get("review_mode") != "commit"
         or (partial is None and (session.get("aborted") is not True or session.get("selected_files") != 0
@@ -4017,6 +4020,33 @@ def resume_incomplete_checker(request_path: Path, *, request_sha256: str, prepar
         mode="--slk-resume-incomplete-checker", result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
         error_code="CHECKER_INCOMPLETE_RESUME_COMMAND_FAILED",
     )
+
+
+def continue_consumed_partial_checker(
+    request_path: Path, *, request_sha256: str, prepare_only: bool = False
+) -> Mapping[str, Any]:
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError("CHECKER_PARTIAL_CONTINUE_REQUEST_MISMATCH", "resume request hash mismatch")
+    request = _read_object(request_path, "consumed partial Checker request")
+    validated = _validate_incomplete_resume(request, consumed=True)
+    try:
+        from .partial_review import validate_consumed_partial_attempt
+        consumed = validate_consumed_partial_attempt(request, request_sha256)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CompletionError("CHECKER_PARTIAL_CONTINUE_EVIDENCE_INVALID", str(exc)) from exc
+    if prepare_only:
+        return {'schema_version': 'slk.ocrv-consumed-partial-preflight/v1',
+                'status': 'READY_TO_CONSUME_COMPLETED_SEGMENT_1', 'request_sha256': request_sha256,
+                'completed_segment_count': 1,
+                **{key: request[key] for key in ('run_id', 'go_id', 'cell_id', 'attempt',
+                    'candidate_message_id', 'runtime_revision', 'token_sequence',
+                    'checker_role_instance_id', 'checker_endpoint_version')},
+                'native_child_session_id': consumed['raw']['session_id']}
+    return _run_sealed_checker_terminal(
+        request_path, request, validated['checker'], request_sha256=request_sha256,
+        mode='--slk-continue-consumed-partial', result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
+        error_code='CHECKER_PARTIAL_CONTINUE_COMMAND_FAILED')
 def _run_json_command(
     command: list[str],
     arguments: list[str],

@@ -466,12 +466,26 @@ def _coverage_complete(review: dict[str, Any]) -> bool:
     coverage = manifest.get("coverage") if isinstance(manifest, dict) else None
     if not isinstance(manifest, dict) or manifest.get("terminal_state") != "complete" or not isinstance(coverage, dict):
         return False
-    selected, completed = coverage.get("selected"), coverage.get("completed")
-    if not isinstance(selected, list) or not selected or not isinstance(completed, list):
+    selected, completed, reused = (
+        coverage.get("selected"), coverage.get("completed"), coverage.get("reused", [])
+    )
+    if (
+        not isinstance(selected, list)
+        or not selected
+        or not isinstance(completed, list)
+        or not isinstance(reused, list)
+    ):
         return False
     selected_ids = {item.get("item_id") for item in selected if isinstance(item, dict)}
     completed_ids = {item.get("item_id") for item in completed if isinstance(item, dict)}
-    return None not in selected_ids and selected_ids == completed_ids and not coverage.get("failed") and not coverage.get("waived")
+    reused_ids = {item.get("item_id") for item in reused if isinstance(item, dict)}
+    return (
+        None not in selected_ids
+        and not completed_ids & reused_ids
+        and selected_ids == completed_ids | reused_ids
+        and not coverage.get("failed")
+        and not coverage.get("waived")
+    )
 
 
 def _classify(review: dict[str, Any] | None, exit_code: int) -> tuple[str, list[str]]:

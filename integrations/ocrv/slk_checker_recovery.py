@@ -240,14 +240,16 @@ def _resume_incomplete(request: dict[str, object], request_path: Path, command: 
     return completed.returncode
 
 
-def _resume_partial(request: dict[str, object], request_path: Path, command: list[str]) -> int:
+def _resume_partial(
+    request: dict[str, object], request_path: Path, command: list[str], *, consumed: bool = False
+) -> int:
     # The installed zipapp owns admission. This host alone handles its sealed role credential.
     sys.path.insert(0, command[-1])
     from slk_transport import worker_completion as wc
     from slk_transport.partial_review import (digest, read, records, validate_partial_source,
-        validate_manifest, validate_resumed_raw, publish_aggregate)
+        validate_consumed_partial_attempt, validate_manifest, validate_resumed_raw, publish_aggregate)
     from slk_transport.adapters.ocrv import OcrvAdapter
-    validated = wc._validate_incomplete_resume(request)
+    validated = wc._validate_incomplete_resume(request, consumed=consumed)
     checker = validated['checker']
     if (os.environ.get('SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID') != checker.role_instance_id
         or os.environ.get('SLK_OCRV_RECOVERY_ENDPOINT_VERSION') != str(checker.endpoint_version)
@@ -261,23 +263,52 @@ def _resume_partial(request: dict[str, object], request_path: Path, command: lis
     if authentication.get('runtime_revision') != request['runtime_revision']:
         wc._rebind_overwatcher_only_committed_boundary(request, validated['frozen_projection'],
             wc._default_load_current_projection(request['run_id'], request['state_command']), authentication['runtime_revision'])
-    basis = validate_partial_source(request)
-    mode, detail = _session_resume_mode(request, request['ocrv_session'])
-    if (mode != 'RESUME_SESSION' or detail['summary'].get('run_manifest') != basis['manifest']
-        or Path(str(detail['summary'].get('file_path',''))).resolve() != Path(request['ocrv_session']['session_record_path']).resolve()):
-        raise ValueError('partial resume has no exact reusable native parent; fresh review is forbidden')
+    basis = validate_partial_source(request, consumed=consumed)
     root = Path(request['recovery_root']).resolve()
-    root.mkdir(parents=True, exist_ok=False)
-    (root / 'session-show.json').write_text(json.dumps(detail, sort_keys=True)+'\n', encoding='utf-8')
-    # One consumed marker covers all recovery IDs for this original partial, not just this invocation.
-    marker = root.parent / 'partial-consumed.json'
-    with marker.open('x', encoding='utf-8') as stream:
-        json.dump({'recovery_invocation_id': request['recovery_invocation_id'], 'request_sha256': digest(request_path)}, stream, sort_keys=True)
-    (root / 'resume-consumed.json').write_text(digest(request_path)+'\n', encoding='ascii')
-    attempt = root / 'native-attempt'
-    attempt.mkdir()
-    values = []
-    for ordinal, source_request in enumerate(basis['segments'], 1):
+    if consumed:
+        existing = validate_consumed_partial_attempt(request, digest(request_path))
+        attempt = existing['attempt']
+        with (root / 'continue-consumed.json').open('x', encoding='utf-8') as stream:
+            json.dump({'request_sha256': digest(request_path),
+                       'existing_native_task_id': existing['result']['review_invocation_id']}, stream, sort_keys=True)
+        correction = attempt / 'review-corrections/segment-001'
+        correction.mkdir(parents=True, exist_ok=False)
+        verdict, reasons = checker_adapter._classify(existing['raw'], 0)
+        if verdict == 'INCOMPLETE':
+            raise ValueError('completed first segment cannot be corrected from its preserved native evidence')
+        corrected = {**existing['result'], 'verdict': verdict, 'reason_codes': reasons,
+                     'findings': existing['raw']['comments']}
+        corrected_path = correction / 'result.json'
+        corrected_path.write_text(json.dumps(corrected, sort_keys=True)+'\n', encoding='utf-8')
+        (correction / 'native-session.jsonl').write_bytes(existing['child_path'].read_bytes())
+        receipt = {'schema_version': 'slk.ocrv-normalization-correction/v1',
+            'cause': 'COMPLETED_REUSED_COVERAGE_WAS_OMITTED',
+            'original_result_sha256': digest(existing['first'] / 'result.json'),
+            'raw_review_sha256': digest(existing['first'] / 'ocrv-review.json'),
+            'corrected_result_sha256': digest(corrected_path),
+            'native_session_sha256': digest(correction / 'native-session.jsonl')}
+        (correction / 'correction.json').write_text(json.dumps(receipt, sort_keys=True)+'\n', encoding='utf-8')
+        envelope = wc.parse_delivery(read(basis['source'] / 'endpoint.json'), read(basis['source'] / 'envelope.json')).envelope
+        OcrvAdapter().validate_existing_result(
+            corrected_path, existing['first'] / 'request.json', envelope, {'PASS': 0, 'FAIL': 2}[verdict])
+        values = [corrected]
+        pending = list(enumerate(basis['segments'][1:], 2))
+    else:
+        mode, detail = _session_resume_mode(request, request['ocrv_session'])
+        if (mode != 'RESUME_SESSION' or detail['summary'].get('run_manifest') != basis['manifest']
+            or Path(str(detail['summary'].get('file_path',''))).resolve() != Path(request['ocrv_session']['session_record_path']).resolve()):
+            raise ValueError('partial resume has no exact reusable native parent; fresh review is forbidden')
+        root.mkdir(parents=True, exist_ok=False)
+        (root / 'session-show.json').write_text(json.dumps(detail, sort_keys=True)+'\n', encoding='utf-8')
+        marker = root.parent / 'partial-consumed.json'
+        with marker.open('x', encoding='utf-8') as stream:
+            json.dump({'recovery_invocation_id': request['recovery_invocation_id'], 'request_sha256': digest(request_path)}, stream, sort_keys=True)
+        (root / 'resume-consumed.json').write_text(digest(request_path)+'\n', encoding='ascii')
+        attempt = root / 'native-attempt'
+        attempt.mkdir()
+        values = []
+        pending = list(enumerate(basis['segments'], 1))
+    for ordinal, source_request in pending:
         item = attempt / 'review-segments' / f'segment-{ordinal:03d}'
         item.mkdir(parents=True)
         input_path = item / 'request.json'
@@ -344,6 +375,7 @@ def main() -> int:
     mode.add_argument("--slk-existing-terminal", action="store_true")
     mode.add_argument("--slk-committed-terminal", action="store_true")
     mode.add_argument("--slk-resume-incomplete-checker", action="store_true")
+    mode.add_argument("--slk-continue-consumed-partial", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -355,7 +387,7 @@ def main() -> int:
         return 4
     expected_schema = (
         "slk.ocrv-incomplete-checker-resume-request/v1"
-        if args.slk_resume_incomplete_checker
+        if args.slk_resume_incomplete_checker or args.slk_continue_consumed_partial
         else "slk.ocrv-committed-terminal-request/v1"
         if args.slk_committed_terminal
         else "slk.ocrv-worker-recovery-request/v1"
@@ -374,7 +406,8 @@ def main() -> int:
     environment = os.environ.copy()
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
-    if args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker:
+    if (args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker
+        or args.slk_continue_consumed_partial):
         environment.pop("SLK_NATIVE_START_RECEIPT", None)
         environment.pop("SLK_NATIVE_START_CONTEXT", None)
     if args.slk_worker_recovery:
@@ -387,6 +420,8 @@ def main() -> int:
             print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
             return 4
     try:
+        if args.slk_continue_consumed_partial:
+            return _resume_partial(request, args.request.resolve(), command, consumed=True)
         if args.slk_resume_incomplete_checker:
             return _resume_incomplete(request, args.request.resolve(), command)
         internal_command = (
