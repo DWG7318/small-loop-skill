@@ -1240,7 +1240,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "090bd314dbd35c22ecf086fa43f207fc4c983efede79bbe026765f778349eff8"
+      "sha256": "c9ee82663f37a06df9ff2e895c6e8f543cbb7cf9690f37779d6421618c2a8b2b"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1368,7 +1368,7 @@
     },
     {
       "path": "tests/transport/test_committed_checker_terminal.py",
-      "sha256": "e018b83e0d19f146bff49cf014cbc521b41f6a647822d45fe6b8bc7e033f85c6"
+      "sha256": "0afaaa18b010c38bb335b3acbf769e506c17ac53a8218e653cf94813abcb4587"
     },
     {
       "path": "tests/transport/test_contracts.py",

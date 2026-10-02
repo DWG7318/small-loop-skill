@@ -39,6 +39,7 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     receipt_id = "44444444-4444-4444-8444-444444444444"
     worker_id = "RUN-A-worker-001"
     checker_id = "RUN-A-checker-001"
+    overwatcher_id = "RUN-A-overwatcher-001"
     repository = tmp_path / "repository"
     repository.mkdir()
     runtime_root = tmp_path / "ocrv-runtime"
@@ -256,7 +257,11 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
             "runtime_revision": 155,
             "token_sequence": 31,
             "token_holder_role_instance_id": checker_id,
+            "latest_event_id": transport_event_id,
             "latest_message_id": message_id,
+            "overwatcher_binding_revision": 1,
+            "overwatcher_status": "ACTIVE",
+            "committed_at": "2026-10-01T23:09:41Z",
         },
         "roles": [
             {
@@ -279,6 +284,14 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
                         "retired_at": None,
                     }
                 ],
+            },
+            {
+                "role": "overwatcher",
+                "role_instance_id": overwatcher_id,
+                "agent_runtime": "codex",
+                "lifecycle": "active",
+                "session_id": "overwatcher-session-1",
+                "endpoints": [],
             },
         ],
         "events": [
@@ -319,6 +332,26 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
                 "cell_id": cell_id,
                 "message_id": message_id,
                 "token_sequence": 31,
+            }
+        ],
+        "overwatch_cycles": [],
+        "overwatcher_native_status_receipts": [],
+        "overwatcher_incident_transitions": [],
+        "overwatcher_binding_transitions": [],
+        "operational_observations": [
+            {
+                "observation_id": "overwatcher-existing-observation",
+                "overwatcher_role_instance_id": overwatcher_id,
+                "go_id": go_id,
+                "cell_id": cell_id,
+                "attempt": attempt,
+                "plan_revision": 2,
+                "kind": "ACTIVITY_UNPROVEN",
+                "related_event_id": transport_event_id,
+                "message_id": message_id,
+                "evidence_refs_json": "[]",
+                "details_json": '"existing observation"',
+                "occurred_at": "2026-10-01T23:13:41Z",
             }
         ],
     }
@@ -639,6 +672,209 @@ def test_duplicate_consume_is_rejected_when_checker_revision_has_advanced(
                 "runtime_revision": 157,
             },
             record_checker_d1=lambda *_args: pytest.fail("duplicate must not record D1"),
+        )
+
+    assert rejected.value.error_code == "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED"
+
+
+def _set_committed_terminal_identity(
+    monkeypatch: pytest.MonkeyPatch, request: dict[str, object]
+) -> None:
+    monkeypatch.setenv(
+        "SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID", str(request["checker_role_instance_id"])
+    )
+    monkeypatch.setenv(
+        "SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"])
+    )
+    monkeypatch.setenv(
+        "SLK_OCRV_RECOVERY_ENDPOINT_VERSION", str(request["checker_endpoint_version"])
+    )
+
+
+def _current_projection_after_overwatcher_pause(request: dict[str, object]) -> dict[str, object]:
+    frozen = json.loads(
+        Path(str(request["runtime_projection_path"])).read_text(encoding="utf-8")
+    )
+    status_id = "overwatcher-native-paused-after-terminal"
+    overwatcher_id = "RUN-A-overwatcher-001"
+    frozen["runtime_snapshot"].update(
+        {
+            "runtime_revision": int(request["runtime_revision"]) + 1,
+            "latest_event_id": status_id,
+            "overwatcher_status": "VIOLATION",
+            "committed_at": "2026-10-01T23:11:41Z",
+        }
+    )
+    frozen["overwatcher_native_status_receipts"].append(
+        {
+            "status_id": status_id,
+            "binding_revision": 1,
+            "role_instance_id": overwatcher_id,
+            "session_id": "overwatcher-session-1",
+            "foreground_turn_id": "overwatcher-turn-2",
+            "native_liveness": "COMPLETED",
+            "evidence_path": "D:/evidence/overwatcher-paused.json",
+            "evidence_sha256": "d" * 64,
+            "observed_at": "2026-10-01T23:11:41Z",
+        }
+    )
+    frozen["overwatcher_incident_transitions"].append(
+        {
+            "transition_id": f"incident-open-{status_id}",
+            "incident_id": f"continuity-RUN-A-1-{status_id}",
+            "binding_revision": 1,
+            "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION",
+            "state": "OPEN",
+            "evidence_path": "D:/evidence/overwatcher-paused.json",
+            "evidence_sha256": "d" * 64,
+            "occurred_at": "2026-10-01T23:11:41Z",
+        }
+    )
+    frozen["operational_observations"].insert(
+        0,
+        {
+            "observation_id": "overwatcher-correction-after-terminal",
+            "overwatcher_role_instance_id": overwatcher_id,
+            "go_id": request["go_id"],
+            "cell_id": request["cell_id"],
+            "attempt": request["attempt"],
+            "plan_revision": request["plan_revision"],
+            "kind": "RECORD_CONFLICT",
+            "related_event_id": request["transport_started_event_id"],
+            "message_id": request["candidate_message_id"],
+            "evidence_refs_json": "[]",
+            "details_json": '"correction only"',
+            "occurred_at": "2026-10-01T23:12:41Z",
+        },
+    )
+    return frozen
+
+
+def test_checker_host_rebinds_one_authenticated_overwatcher_only_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, request_path = fixture(tmp_path)
+    _set_committed_terminal_identity(monkeypatch, request)
+    current = _current_projection_after_overwatcher_pause(request)
+    captured: dict[str, object] = {}
+
+    result = worker_completion.execute_committed_checker_terminal(
+        request,
+        request_sha256=sha256(request_path),
+        authenticate_checker=lambda *_args: {
+            "status": "authenticated",
+            "role": "checker",
+            "role_instance_id": request["checker_role_instance_id"],
+            "runtime_revision": 156,
+        },
+        load_current_projection=lambda *_args: current,
+        record_checker_d1=lambda activation, *_args: captured.update(activation)
+        or {
+            "status": "CHECKER_D1_RECORDED",
+            "d1_verdict": "FAIL",
+            "d1_event_type": "D1_FAILED",
+            "native_result_path": str(
+                Path(str(request["native_attempt_path"])) / "ocrv-result.json"
+            ),
+        },
+    )
+
+    assert captured["runtime_revision"] == 156
+    assert result["runtime_revision"] == 156
+
+
+@pytest.mark.parametrize(
+    ("name", "mutate"),
+    [
+        (
+            "d1",
+            lambda current, request: current["events"].append(
+                {
+                    "event_id": "later-d1",
+                    "event_type": "D1_FAILED",
+                    "author_role_instance_id": request["checker_role_instance_id"],
+                    "go_id": request["go_id"],
+                    "cell_id": request["cell_id"],
+                    "attempt": request["attempt"],
+                    "details_json": "{}",
+                }
+            ),
+        ),
+        (
+            "token",
+            lambda current, request: current["runtime_snapshot"].update(
+                {"token_sequence": int(request["token_sequence"]) + 1}
+            ),
+        ),
+        (
+            "business-event",
+            lambda current, request: current["events"].append(
+                {
+                    "event_id": "later-business-event",
+                    "event_type": "WORK_PROGRESS",
+                    "author_role_instance_id": request["worker_role_instance_id"],
+                    "go_id": request["go_id"],
+                    "cell_id": request["cell_id"],
+                    "attempt": request["attempt"],
+                    "details_json": "{}",
+                }
+            ),
+        ),
+        (
+            "unknown-drift",
+            lambda current, _request: current["runtime_snapshot"].update(
+                {"latest_event_id": "unknown-runtime-event"}
+            ),
+        ),
+        (
+            "plan",
+            lambda current, _request: current["summary"].update(
+                {"current_plan_revision": 3}
+            ),
+        ),
+        (
+            "role",
+            lambda current, _request: current["roles"][0].update(
+                {"lifecycle": "exited"}
+            ),
+        ),
+        (
+            "message",
+            lambda current, _request: current["runtime_snapshot"].update(
+                {"latest_message_id": "different-message"}
+            ),
+        ),
+        (
+            "candidate",
+            lambda current, _request: current["events"][0].update(
+                {"details_json": "{}"}
+            ),
+        ),
+    ],
+)
+def test_checker_host_rejects_non_overwatcher_or_authority_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    mutate: object,
+) -> None:
+    request, request_path = fixture(tmp_path)
+    _set_committed_terminal_identity(monkeypatch, request)
+    current = _current_projection_after_overwatcher_pause(request)
+    mutate(current, request)  # type: ignore[operator]
+
+    with pytest.raises(CompletionError) as rejected:
+        worker_completion.execute_committed_checker_terminal(
+            request,
+            request_sha256=sha256(request_path),
+            authenticate_checker=lambda *_args: {
+                "status": "authenticated",
+                "role": "checker",
+                "role_instance_id": request["checker_role_instance_id"],
+                "runtime_revision": 156,
+            },
+            load_current_projection=lambda *_args: current,
+            record_checker_d1=lambda *_args: pytest.fail(f"{name} drift must not record D1"),
         )
 
     assert rejected.value.error_code == "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED"

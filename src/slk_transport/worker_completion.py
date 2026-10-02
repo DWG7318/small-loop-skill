@@ -1917,6 +1917,7 @@ ResumeContinuation = Callable[[Mapping[str, Any]], Mapping[str, Any]]
 ActivateChecker = Callable[[Mapping[str, Any], Mapping[str, Any]], Mapping[str, Any]]
 RecordCheckerD1 = Callable[[Mapping[str, Any], Mapping[str, Any], Path, float], Mapping[str, Any]]
 LoadCommittedActivation = Callable[[Mapping[str, Any], int], Mapping[str, Any]]
+LoadCurrentProjection = Callable[[str, list[str]], Mapping[str, Any]]
 
 
 def _default_checker_authenticate(
@@ -1931,6 +1932,33 @@ def _default_checker_authenticate(
         ["authenticate-role", "--run-id", run_id, "--role-instance-id", role_instance_id],
         credential=credential,
     )
+
+
+def _default_load_current_projection(
+    run_id: str, state_command: list[str]
+) -> Mapping[str, Any]:
+    query_path = Path(state_command[0]).resolve().with_name("slk-bi-query.exe")
+    if not query_path.is_file():
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+            "current Run projection cannot be authenticated",
+        )
+    try:
+        value = _run_json_command(
+            [str(query_path)], ["run", "--run-id", run_id], credential=None
+        )
+    except CompletionError as exc:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+            "current Run projection cannot be authenticated",
+        ) from exc
+    command = value.pop("_slk_command", None)
+    if not isinstance(command, Mapping) or command.get("process_exit") != 0:
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+            "current Run projection cannot be authenticated",
+        )
+    return value
 
 
 def _activate_staged_checker(
@@ -3615,7 +3643,128 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
         "checker": checker,
         "continuation": continuation,
         "activation": activation,
+        "frozen_projection": projection,
     }
+
+
+def _committed_terminal_drift_invalid() -> None:
+    raise CompletionError(
+        "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+        "current runtime drift is not one authenticated Overwatcher-only update",
+    )
+
+
+def _projection_additions(
+    frozen: Mapping[str, Any], current: Mapping[str, Any], name: str, identity: str
+) -> list[Mapping[str, Any]]:
+    before, after = frozen.get(name), current.get(name)
+    if not isinstance(before, list) or not isinstance(after, list):
+        _committed_terminal_drift_invalid()
+    before_by_id = {row.get(identity): row for row in before if isinstance(row, Mapping)}
+    after_by_id = {row.get(identity): row for row in after if isinstance(row, Mapping)}
+    if (
+        len(before_by_id) != len(before)
+        or len(after_by_id) != len(after)
+        or any(not isinstance(item, str) or not item for item in after_by_id)
+        or any(after_by_id.get(item) != row for item, row in before_by_id.items())
+    ):
+        _committed_terminal_drift_invalid()
+    return [row for item, row in after_by_id.items() if item not in before_by_id]
+
+
+def _rebind_overwatcher_only_committed_boundary(
+    request: Mapping[str, Any], frozen: Mapping[str, Any], current: Mapping[str, Any],
+    authenticated_revision: int,
+) -> int:
+    """Accept one revision only when it is a closed Overwatcher status update."""
+
+    old_runtime, now_runtime = frozen.get("runtime_snapshot"), current.get("runtime_snapshot")
+    if not isinstance(old_runtime, Mapping) or not isinstance(now_runtime, Mapping):
+        _committed_terminal_drift_invalid()
+    revision = old_runtime.get("runtime_revision")
+    exact_fields = (
+        "summary", "administrative_snapshot", "boundaries_json", "go_nodes", "roles",
+        "plan_revisions", "events", "token_history", "evidence",
+        "reconciliation_receipts", "method_adoption_receipts",
+    )
+    runtime_ow_fields = {"runtime_revision", "latest_event_id", "overwatcher_status", "committed_at"}
+    old_stable = {key: value for key, value in old_runtime.items() if key not in runtime_ow_fields}
+    now_stable = {key: value for key, value in now_runtime.items() if key not in runtime_ow_fields}
+    if (
+        isinstance(revision, bool) or not isinstance(revision, int)
+        or authenticated_revision != revision + 1
+        or now_runtime.get("runtime_revision") != authenticated_revision
+        or current.get("schema_version") != "slk.bi.run/v1"
+        or current.get("run_id") != request["run_id"]
+        or old_stable != now_stable
+        or any(current.get(name) != frozen.get(name) for name in exact_fields)
+    ):
+        _committed_terminal_drift_invalid()
+
+    roles = current.get("roles")
+    watchers = [row for row in roles if isinstance(row, Mapping) and row.get("role") == "overwatcher"
+                and row.get("lifecycle") == "active"] if isinstance(roles, list) else []
+    additions = {
+        "status": _projection_additions(
+            frozen, current, "overwatcher_native_status_receipts", "status_id"
+        ),
+        "incident": _projection_additions(
+            frozen, current, "overwatcher_incident_transitions", "transition_id"
+        ),
+        "observation": _projection_additions(
+            frozen, current, "operational_observations", "observation_id"
+        ),
+        "cycle": _projection_additions(frozen, current, "overwatch_cycles", "cycle_id"),
+        "binding": _projection_additions(
+            frozen, current, "overwatcher_binding_transitions", "transition_id"
+        ),
+    }
+    if (
+        len(watchers) != 1 or len(additions["status"]) != 1
+        or additions["cycle"] or additions["binding"]
+    ):
+        _committed_terminal_drift_invalid()
+    watcher, status = watchers[0], additions["status"][0]
+    status_id, liveness = status.get("status_id"), status.get("native_liveness")
+    if (
+        now_runtime.get("latest_event_id") != status_id
+        or status.get("role_instance_id") != watcher.get("role_instance_id")
+        or status.get("session_id") != watcher.get("session_id")
+        or status.get("binding_revision") != now_runtime.get("overwatcher_binding_revision")
+        or liveness not in {"IN_PROGRESS", "COMPLETED", "MISSING", "MISMATCHED"}
+        or not _exact_digest(status.get("evidence_sha256"))
+        or status.get("observed_at") != now_runtime.get("committed_at")
+    ):
+        _committed_terminal_drift_invalid()
+
+    expected_incidents = 0 if liveness == "IN_PROGRESS" else 1
+    if len(additions["incident"]) != expected_incidents:
+        _committed_terminal_drift_invalid()
+    if expected_incidents:
+        incident = additions["incident"][0]
+        if not _matches(incident, {
+            "transition_id": f"incident-open-{status_id}",
+            "binding_revision": status.get("binding_revision"),
+            "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION", "state": "OPEN",
+            "evidence_path": status.get("evidence_path"),
+            "evidence_sha256": status.get("evidence_sha256"),
+            "occurred_at": status.get("observed_at"),
+        }) or now_runtime.get("overwatcher_status") != "VIOLATION":
+            _committed_terminal_drift_invalid()
+    elif now_runtime.get("overwatcher_status") != old_runtime.get("overwatcher_status"):
+        _committed_terminal_drift_invalid()
+
+    allowed_kinds = {
+        "DELIVERY_UNCONFIRMED", "DELIVERY_RETRYING", "ACTIVITY_UNPROVEN", "RECORD_CONFLICT",
+        "RECOVERY_ESCALATED", "PROJECTION_REFRESH_REQUESTED", "WORKER_COMPLETION_HANDOFF_MISSING",
+    }
+    if any(
+        row.get("overwatcher_role_instance_id") != watcher.get("role_instance_id")
+        or row.get("kind") not in allowed_kinds
+        for row in additions["observation"]
+    ):
+        _committed_terminal_drift_invalid()
+    return authenticated_revision
 
 
 def execute_committed_checker_terminal(
@@ -3624,6 +3773,7 @@ def execute_committed_checker_terminal(
     request_sha256: str,
     authenticate_checker: CheckerAuthenticate = _default_checker_authenticate,
     record_checker_d1: RecordCheckerD1 = _default_record_checker_d1,
+    load_current_projection: LoadCurrentProjection = _default_load_current_projection,
 ) -> dict[str, Any]:
     """Authenticate the original Checker and record one already-complete native D1."""
 
@@ -3662,10 +3812,16 @@ def execute_committed_checker_terminal(
             "CHECKER_COMMITTED_TERMINAL_AUTHENTICATION_FAILED",
             "sealed credential does not prove the current Checker",
         )
+    activation = dict(validated["activation"])
     if authenticated_revision != request["runtime_revision"]:
-        raise CompletionError(
-            "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
-            "current runtime revision no longer matches the frozen terminal request",
+        current_projection = load_current_projection(
+            str(request["run_id"]), list(request["state_command"])
+        )
+        activation["runtime_revision"] = _rebind_overwatcher_only_committed_boundary(
+            request,
+            validated["frozen_projection"],
+            current_projection,
+            authenticated_revision,
         )
     timeout_seconds = checker.address.get("timeout_seconds")
     if (
@@ -3677,7 +3833,7 @@ def execute_committed_checker_terminal(
             "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID", "Checker timeout is invalid"
         )
     d1 = record_checker_d1(
-        validated["activation"],
+        activation,
         validated["continuation"],
         Path(str(request["checker_credential_path"])),
         float(timeout_seconds),
