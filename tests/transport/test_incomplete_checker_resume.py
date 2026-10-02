@@ -11,6 +11,8 @@ from slk_transport.worker_completion import CompletionError
 from test_committed_checker_terminal import fixture as committed_fixture
 from test_committed_checker_terminal import sha256, write_json
 
+ROOT = Path(__file__).resolve().parents[2]
+
 
 def dead_activity(*_args: object, **_kwargs: object) -> dict[str, object]:
     return {
@@ -169,6 +171,18 @@ def resume_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     )
     request_path = write_json(tmp_path / "resume-request.json", request)
     return request, request_path
+
+
+def test_resume_schema_identity_matches_runtime_and_valid_request(tmp_path: Path) -> None:
+    schema = json.loads(
+        (ROOT / "docs/contracts/slk-ocrv-incomplete-checker-resume.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    request, _request_path = resume_fixture(tmp_path)
+
+    assert schema["properties"]["schema_version"]["const"] == worker_completion.INCOMPLETE_RESUME_SCHEMA
+    assert request["schema_version"] == worker_completion.INCOMPLETE_RESUME_SCHEMA
 
 
 def test_outer_resume_validates_closed_incomplete_review_then_enters_sealed_checker(

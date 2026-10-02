@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "4454c41b62992af119008d847522ff72f9650ca1c87f0d6d21032132912d85a6"
+      "sha256": "2a0901ba42d465b9049dd728426ff6b119a9cc750713372df0c97675b64a65eb"
     },
     {
       "path": "VERSION",
@@ -628,7 +628,7 @@
     },
     {
       "path": "docs/contracts/slk-ocrv-incomplete-checker-resume.schema.json",
-      "sha256": "aa2fc4058cd4301e504feb96474cf77c9ff00402ef6cccd783ded1f06f216b81"
+      "sha256": "def87944b20f6672b1ddcc40e2eda55c9906e1d43cbef3c76cb89f4c362d3565"
     },
     {
       "path": "docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
@@ -1400,7 +1400,7 @@
     },
     {
       "path": "tests/transport/test_incomplete_checker_resume.py",
-      "sha256": "2703c72c93b5a9030967673c94b57800ec418f050478a9361c134aaa5c430fae"
+      "sha256": "abae139a52b7ea962a3bfdbd7f15c6b3a02606a3d8f8c6f63a8dadd402eddd72"
     },
     {
       "path": "tests/transport/test_instance_id.py",
