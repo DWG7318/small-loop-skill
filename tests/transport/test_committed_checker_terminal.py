@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import copy
 import json
 import os
 import subprocess
@@ -748,6 +749,249 @@ def _current_projection_after_overwatcher_pause(request: dict[str, object]) -> d
         },
     )
     return frozen
+
+
+def _two_revision_overwatcher_resume_and_status(
+    request: dict[str, object],
+) -> tuple[dict[str, object], dict[str, object]]:
+    frozen = json.loads(
+        Path(str(request["runtime_projection_path"])).read_text(encoding="utf-8")
+    )
+    watcher = next(row for row in frozen["roles"] if row["role"] == "overwatcher")
+    supervisor = {
+        "role": "supervisor", "role_instance_id": "RUN-A-supervisor-001",
+        "agent_runtime": "codex", "lifecycle": "active", "session_id": "supervisor-session-1",
+        "endpoints": [],
+    }
+    frozen["roles"].append(supervisor)
+    old_status_id = "overwatcher-paused-old"
+    old_time = "2026-10-02T17:20:00Z"
+    old_evidence = {"path": "D:/evidence/old-paused.json", "sha256": "a" * 64}
+    frozen["runtime_snapshot"].update(
+        {"latest_event_id": old_status_id, "overwatcher_status": "VIOLATION", "committed_at": old_time}
+    )
+    frozen["administrative_snapshot"]["event_count"] = len(frozen["events"])
+    frozen["overwatcher_native_status_receipts"].append(
+        {"status_id": old_status_id, "binding_revision": 1,
+         "role_instance_id": watcher["role_instance_id"], "session_id": watcher["session_id"],
+         "foreground_turn_id": "ow-turn-old", "native_liveness": "COMPLETED",
+         "evidence_path": old_evidence["path"], "evidence_sha256": old_evidence["sha256"],
+         "observed_at": old_time}
+    )
+    old_incident_id = f"continuity-{request['run_id']}-1-{old_status_id}"
+    frozen["overwatcher_incident_transitions"].append(
+        {"transition_id": f"incident-open-{old_status_id}", "incident_id": old_incident_id,
+         "binding_revision": 1, "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION",
+         "state": "OPEN", "evidence_path": old_evidence["path"],
+         "evidence_sha256": old_evidence["sha256"], "occurred_at": old_time}
+    )
+    current = copy.deepcopy(frozen)
+    resume_id = "resume-overwatcher-after-maintenance"
+    resume_time = "2026-10-02T17:29:50Z"
+    status_id = "overwatcher-completed-new"
+    status_time = "2026-10-02T17:30:12Z"
+    resume_evidence = {"path": "D:/evidence/native-active.json", "sha256": "b" * 64}
+    status_evidence = {"path": "D:/evidence/completed.json", "sha256": "c" * 64}
+    current["events"].append(
+        {"event_id": resume_id, "event_type": "OVERWATCHER_TURN_RESUMED",
+         "author_role_instance_id": supervisor["role_instance_id"], "go_id": None, "cell_id": None,
+         "attempt": None, "corrects_event_id": None, "occurred_at": resume_time,
+         "details_json": json.dumps({"binding_revision": 1, "foreground_turn_id": "ow-turn-new",
+             "last_anomaly_cycle_id": None, "last_native_status_id": old_status_id,
+             "native_active_session_evidence": resume_evidence,
+             "previous_foreground_turn_id": "ow-turn-old", "reason": "resume exact OW",
+             "resume_basis": "NATIVE_STATUS", "role_instance_id": watcher["role_instance_id"],
+             "session_id": watcher["session_id"]}, sort_keys=True)}
+    )
+    current["administrative_snapshot"].update(
+        {"event_count": frozen["administrative_snapshot"]["event_count"] + 1,
+         "latest_event_id": resume_id}
+    )
+    current["runtime_snapshot"].update(
+        {"runtime_revision": int(frozen["runtime_snapshot"]["runtime_revision"]) + 2,
+         "latest_event_id": status_id, "overwatcher_status": "VIOLATION", "committed_at": status_time}
+    )
+    current["overwatcher_native_status_receipts"].append(
+        {"status_id": status_id, "binding_revision": 1,
+         "role_instance_id": watcher["role_instance_id"], "session_id": watcher["session_id"],
+         "foreground_turn_id": "ow-turn-new", "native_liveness": "COMPLETED",
+         "evidence_path": status_evidence["path"], "evidence_sha256": status_evidence["sha256"],
+         "observed_at": status_time}
+    )
+    current["overwatcher_incident_transitions"].extend([
+        {"transition_id": f"incident-resolved-{resume_id}", "incident_id": old_incident_id,
+         "binding_revision": 1, "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION",
+         "state": "RESOLVED", "evidence_path": resume_evidence["path"],
+         "evidence_sha256": resume_evidence["sha256"], "occurred_at": resume_time},
+        {"transition_id": f"incident-open-{status_id}",
+         "incident_id": f"continuity-{request['run_id']}-1-{status_id}",
+         "binding_revision": 1, "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION",
+         "state": "OPEN", "evidence_path": status_evidence["path"],
+         "evidence_sha256": status_evidence["sha256"], "occurred_at": status_time},
+    ])
+    for ordinal in (1, 2):
+        current["operational_observations"].append(
+            {"observation_id": f"ow-recovery-{ordinal}",
+             "overwatcher_role_instance_id": watcher["role_instance_id"], "go_id": request["go_id"],
+             "cell_id": request["cell_id"], "attempt": request["attempt"],
+             "plan_revision": request["plan_revision"], "kind": "RECOVERY_ESCALATED",
+             "related_event_id": resume_id if ordinal == 1 else status_id,
+             "message_id": request["candidate_message_id"], "evidence_refs_json": "[]",
+             "details_json": f'"observation {ordinal}"', "occurred_at": status_time}
+        )
+    return frozen, current
+
+
+def _append_overwatcher_resume_cycle_status(
+    request: dict[str, object], current: dict[str, object]
+) -> dict[str, object]:
+    advanced = copy.deepcopy(current)
+    watcher = next(row for row in advanced["roles"] if row["role"] == "overwatcher")
+    supervisor = next(row for row in advanced["roles"] if row["role"] == "supervisor")
+    prior_status = advanced["overwatcher_native_status_receipts"][-1]
+    resume_id = "resume-overwatcher-after-paid-review"
+    resume_time = "2026-10-02T18:00:00Z"
+    status_id = "overwatcher-completed-after-paid-review"
+    status_time = "2026-10-02T18:05:00Z"
+    resume_evidence = {"path": "D:/evidence/native-active-2.json", "sha256": "e" * 64}
+    status_evidence = {"path": "D:/evidence/completed-2.json", "sha256": "f" * 64}
+    previous_revision = advanced["runtime_snapshot"]["runtime_revision"]
+    advanced["events"].append(
+        {"event_id": resume_id, "event_type": "OVERWATCHER_TURN_RESUMED",
+         "author_role_instance_id": supervisor["role_instance_id"], "go_id": None,
+         "cell_id": None, "attempt": None, "corrects_event_id": None,
+         "occurred_at": resume_time,
+         "details_json": json.dumps({"binding_revision": 1,
+             "foreground_turn_id": "ow-turn-after-paid-review",
+             "last_anomaly_cycle_id": None, "last_native_status_id": prior_status["status_id"],
+             "native_active_session_evidence": resume_evidence,
+             "previous_foreground_turn_id": prior_status["foreground_turn_id"],
+             "reason": "resume the same Overwatcher during the paid review",
+             "resume_basis": "NATIVE_STATUS", "role_instance_id": watcher["role_instance_id"],
+             "session_id": watcher["session_id"]}, sort_keys=True)}
+    )
+    advanced["administrative_snapshot"].update(
+        {"event_count": advanced["administrative_snapshot"]["event_count"] + 1,
+         "latest_event_id": resume_id}
+    )
+    advanced["overwatcher_incident_transitions"].append(
+        {"transition_id": f"incident-resolved-{resume_id}",
+         "incident_id": f"continuity-{request['run_id']}-1-{prior_status['status_id']}",
+         "binding_revision": 1, "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION",
+         "state": "RESOLVED", "evidence_path": resume_evidence["path"],
+         "evidence_sha256": resume_evidence["sha256"], "occurred_at": resume_time}
+    )
+    advanced["overwatch_cycles"].append(
+        {"cycle_id": "cycle-after-paid-review", "overwatcher_role_instance_id": watcher["role_instance_id"],
+         "session_id": watcher["session_id"], "foreground_turn_id": "ow-turn-after-paid-review",
+         "cycle_sequence": 1, "cadence_seconds": 240, "plan_revision": request["plan_revision"],
+         "go_id": request["go_id"], "cell_id": request["cell_id"], "attempt": request["attempt"],
+         "token_sequence": request["token_sequence"],
+         "token_holder_role_instance_id": request["checker_role_instance_id"],
+         "latest_event_id": resume_id, "latest_message_id": request["candidate_message_id"],
+         "checklist_json": "[]", "anomaly_codes_json": "[]",
+         "evidence_refs_json": json.dumps([resume_evidence], sort_keys=True),
+         "native_active_session_evidence_ref": resume_evidence["path"],
+         "started_at": "2026-10-02T18:00:01Z", "completed_at": "2026-10-02T18:00:02Z",
+         "next_cycle_at": "2026-10-02T18:04:02Z", "binding_revision": 1,
+         "runtime_revision": previous_revision + 1, "native_liveness": "IN_PROGRESS",
+         "cadence_health": "ON_TIME", "cost_metrics_json": None}
+    )
+    advanced["overwatcher_native_status_receipts"].append(
+        {"status_id": status_id, "binding_revision": 1,
+         "role_instance_id": watcher["role_instance_id"], "session_id": watcher["session_id"],
+         "foreground_turn_id": "ow-turn-after-paid-review", "native_liveness": "COMPLETED",
+         "evidence_path": status_evidence["path"], "evidence_sha256": status_evidence["sha256"],
+         "observed_at": status_time}
+    )
+    advanced["overwatcher_incident_transitions"].append(
+        {"transition_id": f"incident-open-{status_id}",
+         "incident_id": f"continuity-{request['run_id']}-1-{status_id}",
+         "binding_revision": 1, "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION",
+         "state": "OPEN", "evidence_path": status_evidence["path"],
+         "evidence_sha256": status_evidence["sha256"], "occurred_at": status_time}
+    )
+    advanced["runtime_snapshot"].update(
+        {"runtime_revision": previous_revision + 2, "latest_event_id": status_id,
+         "overwatcher_status": "VIOLATION", "committed_at": status_time}
+    )
+    return advanced
+
+
+def test_rebind_accepts_exact_two_revision_supervisor_resume_then_overwatcher_status(tmp_path: Path) -> None:
+    request, _ = fixture(tmp_path)
+    frozen, current = _two_revision_overwatcher_resume_and_status(request)
+    assert worker_completion._rebind_overwatcher_only_committed_boundary(
+        request, frozen, current, int(request["runtime_revision"]) + 2
+    ) == int(request["runtime_revision"]) + 2
+
+
+def test_rebind_accepts_repeated_authenticated_overwatcher_resume_cycle_status(
+    tmp_path: Path,
+) -> None:
+    request, _ = fixture(tmp_path)
+    frozen, current = _two_revision_overwatcher_resume_and_status(request)
+    current = _append_overwatcher_resume_cycle_status(request, current)
+
+    assert worker_completion._rebind_overwatcher_only_committed_boundary(
+        request, frozen, current, int(request["runtime_revision"]) + 4
+    ) == int(request["runtime_revision"]) + 4
+
+
+def test_committed_terminal_rebinds_from_original_boundary_after_repeated_ow_updates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, request_path = fixture(tmp_path)
+    frozen, current = _two_revision_overwatcher_resume_and_status(request)
+    current = _append_overwatcher_resume_cycle_status(request, current)
+    projection_path = write_json(Path(str(request["runtime_projection_path"])), frozen)
+    request["runtime_projection_sha256"] = sha256(projection_path)
+    write_json(request_path, request)
+    _set_committed_terminal_identity(monkeypatch, request)
+    captured: dict[str, object] = {}
+
+    result = worker_completion.execute_committed_checker_terminal(
+        request,
+        request_sha256=sha256(request_path),
+        authenticate_checker=lambda *_args: {
+            "status": "authenticated", "role": "checker",
+            "role_instance_id": request["checker_role_instance_id"],
+            "runtime_revision": int(request["runtime_revision"]) + 4,
+        },
+        load_current_projection=lambda *_args: current,
+        record_checker_d1=lambda activation, *_args: captured.update(activation) or {
+            "status": "CHECKER_D1_RECORDED", "d1_verdict": "FAIL",
+            "d1_event_type": "D1_FAILED",
+            "native_result_path": str(Path(str(request["native_attempt_path"])) / "ocrv-result.json"),
+        },
+    )
+
+    assert captured["runtime_revision"] == int(request["runtime_revision"]) + 4
+    assert result["runtime_revision"] == int(request["runtime_revision"]) + 4
+
+
+@pytest.mark.parametrize(
+    "drift", ["revision", "token", "role", "candidate", "business-event", "plan", "incident"]
+)
+def test_two_revision_overwatcher_rebind_rejects_engineering_or_identity_drift(
+    tmp_path: Path, drift: str
+) -> None:
+    request, _ = fixture(tmp_path)
+    frozen, current = _two_revision_overwatcher_resume_and_status(request)
+    authenticated = int(request["runtime_revision"]) + 2
+    if drift == "revision": authenticated += 1
+    elif drift == "token": current["runtime_snapshot"]["token_sequence"] += 1
+    elif drift == "role": current["roles"][0]["lifecycle"] = "exited"
+    elif drift == "candidate": current["events"][0]["details_json"] = "{}"
+    elif drift == "business-event": current["events"].append(
+        {"event_id": "business", "event_type": "D1_FAILED", "author_role_instance_id": request["checker_role_instance_id"]}
+    )
+    elif drift == "plan": current["summary"]["current_plan_revision"] = 3
+    else: current["overwatcher_incident_transitions"][-1]["transition_id"] = "unrelated-incident"
+    with pytest.raises(CompletionError):
+        worker_completion._rebind_overwatcher_only_committed_boundary(
+            request, frozen, current, authenticated
+        )
 
 
 def test_checker_host_rebinds_one_authenticated_overwatcher_only_revision(

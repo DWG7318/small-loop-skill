@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "c6298bae2ea30c773911066ac170238e89b7c3ec3bc1e23d4ab545e2f5088ae4"
+      "sha256": "be3a15b58f8c55699db06060e49b515d73cb5df8dbae1554f27f5f9093df8137"
     },
     {
       "path": "VERSION",
@@ -688,7 +688,7 @@
     },
     {
       "path": "docs/maintenance/4.3.6-budget-partial-continuation-20261003.md",
-      "sha256": "76d3a0d642300e3e27538f2acc8d1167a3ce7d3d1323a5f9f60ce5135fd5061a"
+      "sha256": "dea9fc468daaf4872448a5af8c15bde955ea3711d5fd33d0e8aa26a3ac8aabb8"
     },
     {
       "path": "docs/runtime/SLK-TEMPORAL.md",
@@ -924,7 +924,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "540fbfa58e28bf0acd5f5a1ba82dcf1c68c291c521a26726ca52854782bf078b"
+      "sha256": "df98f9267894e3206a967447712b2499ccd9edad7466eba19f0c7c45eff2a918"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1248,7 +1248,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "e1400951b801b8aadd3ce8534c0448cc3e297cf65d8b2baa36d1c666cf640ab0"
+      "sha256": "c6b5d7e6dee06fe1204cabc699b8356d21e3998bf56e1f00c6a20b5a7308b134"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1376,7 +1376,7 @@
     },
     {
       "path": "tests/transport/test_committed_checker_terminal.py",
-      "sha256": "0afaaa18b010c38bb335b3acbf769e506c17ac53a8218e653cf94813abcb4587"
+      "sha256": "ba439c5dc579588d18fafba1a07577bdc939edafed7f30ceac4e45a98ec3ee4d"
     },
     {
       "path": "tests/transport/test_contracts.py",
@@ -1432,7 +1432,7 @@
     },
     {
       "path": "tests/transport/test_partial_checker_resume.py",
-      "sha256": "241e9ae8dcc5a573d3ceff33f735186a39b62c9cf7c5c39b55c0493cf66909bd"
+      "sha256": "3232211bb4277d8db2544a0e872a41e2566dfdc36084a438394cf3ca1cb71da9"
     },
     {
       "path": "tests/transport/test_process.py",

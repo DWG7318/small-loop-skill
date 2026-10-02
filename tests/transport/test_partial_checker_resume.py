@@ -213,11 +213,64 @@ def test_consumed_partial_prepare_only_accepts_exact_completed_native_child_with
     request, path, _basis, _child = consumed_partial_fixture(tmp_path)
     monkeypatch.setattr(wc, 'inspect_native_activity', dead_activity)
     monkeypatch.setattr(wc, '_run_sealed_checker_terminal', lambda *a, **k: pytest.fail('preflight must not launch'))
+    current = copy.deepcopy(json.loads(Path(request['runtime_projection_path']).read_text()))
+    current['runtime_snapshot']['runtime_revision'] = request['runtime_revision'] + 2
+    monkeypatch.setattr(wc, '_default_load_current_projection', lambda *a: current)
+    checked = []
+    monkeypatch.setattr(wc, '_rebind_overwatcher_only_committed_boundary',
+        lambda _request, _frozen, _current, revision: checked.append(revision) or revision)
 
     result = wc.continue_consumed_partial_checker(path, request_sha256=sha256(path), prepare_only=True)
 
     assert result['status'] == 'READY_TO_CONSUME_COMPLETED_SEGMENT_1'
     assert result['completed_segment_count'] == 1
+    assert result['current_runtime_revision'] == request['runtime_revision'] + 2
+    assert checked == [request['runtime_revision'] + 2]
+    assert not (Path(request['recovery_root']) / 'continue-consumed.json').exists()
+
+
+def test_consumed_partial_sealed_start_rebinds_before_paid_work(tmp_path, monkeypatch):
+    import importlib
+    import os
+    from slk_transport import partial_review
+    from slk_transport import worker_completion as wc
+    from test_incomplete_checker_resume import dead_activity
+
+    request, path, _basis, _child = consumed_partial_fixture(tmp_path)
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.syspath_prepend(str(root / 'integrations/ocrv'))
+    recovery = importlib.import_module('slk_checker_recovery')
+    monkeypatch.setattr(wc, 'inspect_native_activity', dead_activity)
+    for key, value in {
+        'SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID': request['checker_role_instance_id'],
+        'SLK_OCRV_RECOVERY_ENDPOINT_VERSION': str(request['checker_endpoint_version']),
+        'SLK_OCRV_RECOVERY_INVOCATION_ID': request['recovery_invocation_id'],
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(wc, '_default_checker_authenticate', lambda *a: {
+        'status': 'authenticated', 'role': 'checker',
+        'role_instance_id': request['checker_role_instance_id'],
+        'runtime_revision': request['runtime_revision'] + 2,
+    })
+    current = copy.deepcopy(json.loads(Path(request['runtime_projection_path']).read_text()))
+    current['runtime_snapshot']['runtime_revision'] = request['runtime_revision'] + 2
+    monkeypatch.setattr(wc, '_default_load_current_projection', lambda *a: current)
+    checked = []
+    monkeypatch.setattr(wc, '_rebind_overwatcher_only_committed_boundary',
+        lambda _request, _frozen, _current, revision: checked.append(revision) or revision)
+
+    class StopBeforePaidWork(RuntimeError):
+        pass
+
+    monkeypatch.setattr(partial_review, 'validate_consumed_partial_attempt',
+        lambda *a: (_ for _ in ()).throw(StopBeforePaidWork()))
+    monkeypatch.setattr(recovery.checker_adapter, 'run',
+        lambda *a, **k: pytest.fail('paid work must not start before current-boundary validation'))
+
+    with pytest.raises(StopBeforePaidWork):
+        recovery._resume_partial(request, path, request['transport_command'], consumed=True)
+
+    assert checked == [request['runtime_revision'] + 2]
     assert not (Path(request['recovery_root']) / 'continue-consumed.json').exists()
 
 

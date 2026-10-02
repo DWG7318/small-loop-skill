@@ -3671,7 +3671,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
 def _committed_terminal_drift_invalid() -> None:
     raise CompletionError(
         "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
-        "current runtime drift is not one authenticated Overwatcher-only update",
+        "current runtime drift is not authenticated Overwatcher-only observation history",
     )
 
 
@@ -3697,35 +3697,37 @@ def _rebind_overwatcher_only_committed_boundary(
     request: Mapping[str, Any], frozen: Mapping[str, Any], current: Mapping[str, Any],
     authenticated_revision: int,
 ) -> int:
-    """Accept one revision only when it is a closed Overwatcher status update."""
+    """Accept authenticated projection drift only when engineering truth is unchanged."""
 
     old_runtime, now_runtime = frozen.get("runtime_snapshot"), current.get("runtime_snapshot")
     if not isinstance(old_runtime, Mapping) or not isinstance(now_runtime, Mapping):
         _committed_terminal_drift_invalid()
     revision = old_runtime.get("runtime_revision")
-    exact_fields = (
-        "summary", "administrative_snapshot", "boundaries_json", "go_nodes", "roles",
-        "plan_revisions", "events", "token_history", "evidence",
-        "reconciliation_receipts", "method_adoption_receipts",
-    )
     runtime_ow_fields = {"runtime_revision", "latest_event_id", "overwatcher_status", "committed_at"}
-    old_stable = {key: value for key, value in old_runtime.items() if key not in runtime_ow_fields}
-    now_stable = {key: value for key, value in now_runtime.items() if key not in runtime_ow_fields}
+    mutable_top = {
+        "administrative_snapshot", "runtime_snapshot", "events", "overwatch_cycles",
+        "overwatcher_native_status_receipts", "overwatcher_incident_transitions",
+        "overwatcher_binding_transitions", "operational_observations",
+    }
     if (
         isinstance(revision, bool) or not isinstance(revision, int)
-        or authenticated_revision != revision + 1
+        or isinstance(authenticated_revision, bool) or not isinstance(authenticated_revision, int)
+        or authenticated_revision <= revision
         or now_runtime.get("runtime_revision") != authenticated_revision
-        or current.get("schema_version") != "slk.bi.run/v1"
-        or current.get("run_id") != request["run_id"]
-        or old_stable != now_stable
-        or any(current.get(name) != frozen.get(name) for name in exact_fields)
+        or set(current) != set(frozen)
+        or {key: value for key, value in old_runtime.items() if key not in runtime_ow_fields}
+        != {key: value for key, value in now_runtime.items() if key not in runtime_ow_fields}
+        or any(current.get(name) != frozen.get(name) for name in frozen if name not in mutable_top)
     ):
         _committed_terminal_drift_invalid()
 
     roles = current.get("roles")
     watchers = [row for row in roles if isinstance(row, Mapping) and row.get("role") == "overwatcher"
                 and row.get("lifecycle") == "active"] if isinstance(roles, list) else []
+    supervisors = [row for row in roles if isinstance(row, Mapping) and row.get("role") == "supervisor"
+                   and row.get("lifecycle") == "active"] if isinstance(roles, list) else []
     additions = {
+        "event": _projection_additions(frozen, current, "events", "event_id"),
         "status": _projection_additions(
             frozen, current, "overwatcher_native_status_receipts", "status_id"
         ),
@@ -3741,47 +3743,163 @@ def _rebind_overwatcher_only_committed_boundary(
         ),
     }
     if (
-        len(watchers) != 1 or len(additions["status"]) != 1
-        or additions["cycle"] or additions["binding"]
+        len(watchers) != 1 or additions["binding"]
+        or authenticated_revision - revision
+        != len(additions["status"]) + len(additions["event"])
     ):
         _committed_terminal_drift_invalid()
-    watcher, status = watchers[0], additions["status"][0]
-    status_id, liveness = status.get("status_id"), status.get("native_liveness")
-    if (
-        now_runtime.get("latest_event_id") != status_id
-        or status.get("role_instance_id") != watcher.get("role_instance_id")
-        or status.get("session_id") != watcher.get("session_id")
-        or status.get("binding_revision") != now_runtime.get("overwatcher_binding_revision")
-        or liveness not in {"IN_PROGRESS", "COMPLETED", "MISSING", "MISMATCHED"}
-        or not _exact_digest(status.get("evidence_sha256"))
-        or status.get("observed_at") != now_runtime.get("committed_at")
-    ):
+    watcher = watchers[0]
+    watcher_id, watcher_session = watcher.get("role_instance_id"), watcher.get("session_id")
+    binding_revision = now_runtime.get("overwatcher_binding_revision")
+    if not all((watcher_id, watcher_session, binding_revision)):
         _committed_terminal_drift_invalid()
 
-    expected_incidents = 0 if liveness == "IN_PROGRESS" else 1
-    if len(additions["incident"]) != expected_incidents:
-        _committed_terminal_drift_invalid()
-    if expected_incidents:
-        incident = additions["incident"][0]
-        if not _matches(incident, {
-            "transition_id": f"incident-open-{status_id}",
-            "binding_revision": status.get("binding_revision"),
-            "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION", "state": "OPEN",
-            "evidence_path": status.get("evidence_path"),
-            "evidence_sha256": status.get("evidence_sha256"),
-            "occurred_at": status.get("observed_at"),
-        }) or now_runtime.get("overwatcher_status") != "VIOLATION":
+    all_statuses = current.get("overwatcher_native_status_receipts")
+    statuses = {row.get("status_id"): row for row in all_statuses if isinstance(row, Mapping)} \
+        if isinstance(all_statuses, list) else {}
+    all_cycles = current.get("overwatch_cycles")
+    cycles = {row.get("cycle_id"): row for row in all_cycles if isinstance(row, Mapping)} \
+        if isinstance(all_cycles, list) else {}
+    expected_incidents: dict[str, Mapping[str, Any]] = {}
+    revision_items: dict[str, tuple[Any, str]] = {}
+    for status in additions["status"]:
+        status_id, liveness = status.get("status_id"), status.get("native_liveness")
+        if (
+            not isinstance(status_id, str) or not status_id
+            or status.get("role_instance_id") != watcher_id
+            or status.get("session_id") != watcher_session
+            or status.get("binding_revision") != binding_revision
+            or liveness not in {"IN_PROGRESS", "COMPLETED", "MISSING", "MISMATCHED"}
+            or not _exact_digest(status.get("evidence_sha256"))
+            or not isinstance(status.get("observed_at"), str)
+        ):
             _committed_terminal_drift_invalid()
-    elif now_runtime.get("overwatcher_status") != old_runtime.get("overwatcher_status"):
+        revision_items[status_id] = (
+            status.get("observed_at"), "ACTIVE" if liveness == "IN_PROGRESS" else "VIOLATION"
+        )
+        if liveness != "IN_PROGRESS":
+            expected_incidents[f"incident-open-{status_id}"] = {
+                "transition_id": f"incident-open-{status_id}",
+                "incident_id": f"continuity-{request['run_id']}-{binding_revision}-{status_id}",
+                "binding_revision": binding_revision,
+                "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION", "state": "OPEN",
+                "evidence_path": status.get("evidence_path"),
+                "evidence_sha256": status.get("evidence_sha256"),
+                "occurred_at": status.get("observed_at"),
+            }
+
+    if additions["event"] and len(supervisors) != 1:
+        _committed_terminal_drift_invalid()
+    supervisor_id = supervisors[0].get("role_instance_id") if supervisors else None
+    for event in additions["event"]:
+        try:
+            details = json.loads(str(event.get("details_json")))
+        except json.JSONDecodeError:
+            _committed_terminal_drift_invalid()
+        evidence = details.get("native_active_session_evidence") if isinstance(details, Mapping) else None
+        event_id = event.get("event_id")
+        if (
+            event.get("event_type") != "OVERWATCHER_TURN_RESUMED"
+            or event.get("author_role_instance_id") != supervisor_id
+            or any(event.get(name) is not None for name in ("go_id", "cell_id", "attempt"))
+            or not isinstance(event_id, str) or not isinstance(details, Mapping)
+            or details.get("role_instance_id") != watcher_id
+            or details.get("session_id") != watcher_session
+            or details.get("binding_revision") != binding_revision
+            or not isinstance(evidence, Mapping) or not _exact_digest(evidence.get("sha256"))
+            or not isinstance(event.get("occurred_at"), str)
+        ):
+            _committed_terminal_drift_invalid()
+        last_status, last_cycle = details.get("last_native_status_id"), details.get("last_anomaly_cycle_id")
+        if details.get("resume_basis") == "NATIVE_STATUS" and last_cycle is None:
+            basis = statuses.get(last_status)
+            if (
+                not isinstance(basis, Mapping) or basis.get("role_instance_id") != watcher_id
+                or basis.get("session_id") != watcher_session
+                or basis.get("binding_revision") != binding_revision
+                or basis.get("native_liveness") == "IN_PROGRESS"
+            ):
+                _committed_terminal_drift_invalid()
+            expected_incidents[f"incident-resolved-{event_id}"] = {
+                "transition_id": f"incident-resolved-{event_id}",
+                "incident_id": f"continuity-{request['run_id']}-{binding_revision}-{last_status}",
+                "binding_revision": binding_revision,
+                "incident_code": "OVERWATCHER_CONTINUITY_VIOLATION", "state": "RESOLVED",
+                "evidence_path": evidence.get("path"), "evidence_sha256": evidence.get("sha256"),
+                "occurred_at": event.get("occurred_at"),
+            }
+        elif details.get("resume_basis") == "ANOMALY_CYCLE" and last_status is None:
+            basis = cycles.get(last_cycle)
+            if (
+                not isinstance(basis, Mapping)
+                or basis.get("overwatcher_role_instance_id") != watcher_id
+                or basis.get("session_id") != watcher_session
+                or basis.get("binding_revision") != binding_revision
+                or basis.get("anomaly_codes_json") in {None, "[]"}
+            ):
+                _committed_terminal_drift_invalid()
+        else:
+            _committed_terminal_drift_invalid()
+        revision_items[event_id] = (event.get("occurred_at"), "ACTIVE")
+
+    if any(
+        row.get("overwatcher_role_instance_id") != watcher_id
+        or row.get("session_id") != watcher_session
+        or row.get("binding_revision") != binding_revision
+        or row.get("plan_revision") != request.get("plan_revision")
+        or row.get("token_sequence") != request.get("token_sequence")
+        or row.get("latest_message_id") != request.get("candidate_message_id")
+        or row.get("native_liveness") != "IN_PROGRESS"
+        or isinstance(row.get("runtime_revision"), bool)
+        or not isinstance(row.get("runtime_revision"), int)
+        or not revision <= row.get("runtime_revision") <= authenticated_revision
+        for row in additions["cycle"]
+    ):
+        _committed_terminal_drift_invalid()
+    if (
+        len(additions["incident"]) != len(expected_incidents)
+        or any(
+            str(row.get("transition_id")) not in expected_incidents
+            or not _matches(row, expected_incidents[str(row.get("transition_id"))])
+            for row in additions["incident"]
+        )
+    ):
         _committed_terminal_drift_invalid()
 
+    old_admin, now_admin = frozen.get("administrative_snapshot"), current.get("administrative_snapshot")
+    if not isinstance(old_admin, Mapping) or not isinstance(now_admin, Mapping):
+        _committed_terminal_drift_invalid()
+    dynamic_admin = {"event_count", "latest_event_id"}
+    if (
+        {key: value for key, value in old_admin.items() if key not in dynamic_admin}
+        != {key: value for key, value in now_admin.items() if key not in dynamic_admin}
+    ):
+        _committed_terminal_drift_invalid()
+    if additions["event"]:
+        if (
+            isinstance(old_admin.get("event_count"), bool)
+            or not isinstance(old_admin.get("event_count"), int)
+            or now_admin.get("event_count") != old_admin.get("event_count") + len(additions["event"])
+            or now_admin.get("latest_event_id") != additions["event"][-1].get("event_id")
+        ):
+            _committed_terminal_drift_invalid()
+    elif now_admin != old_admin:
+        _committed_terminal_drift_invalid()
+
+    latest = revision_items.get(str(now_runtime.get("latest_event_id")))
+    if (
+        latest is None or latest[0] != now_runtime.get("committed_at")
+        or latest[1] != now_runtime.get("overwatcher_status")
+    ):
+        _committed_terminal_drift_invalid()
     allowed_kinds = {
         "DELIVERY_UNCONFIRMED", "DELIVERY_RETRYING", "ACTIVITY_UNPROVEN", "RECORD_CONFLICT",
         "RECOVERY_ESCALATED", "PROJECTION_REFRESH_REQUESTED", "WORKER_COMPLETION_HANDOFF_MISSING",
     }
     if any(
-        row.get("overwatcher_role_instance_id") != watcher.get("role_instance_id")
+        row.get("overwatcher_role_instance_id") != watcher_id
         or row.get("kind") not in allowed_kinds
+        or row.get("plan_revision") != request.get("plan_revision")
         for row in additions["observation"]
     ):
         _committed_terminal_drift_invalid()
@@ -4035,6 +4153,17 @@ def continue_consumed_partial_checker(
         consumed = validate_consumed_partial_attempt(request, request_sha256)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise CompletionError("CHECKER_PARTIAL_CONTINUE_EVIDENCE_INVALID", str(exc)) from exc
+    current_projection = _default_load_current_projection(
+        str(request["run_id"]), list(request["state_command"])
+    )
+    current_runtime = current_projection.get("runtime_snapshot")
+    current_revision = current_runtime.get("runtime_revision") if isinstance(current_runtime, Mapping) else None
+    if isinstance(current_revision, bool) or not isinstance(current_revision, int):
+        _committed_terminal_drift_invalid()
+    if current_revision != request["runtime_revision"]:
+        current_revision = _rebind_overwatcher_only_committed_boundary(
+            request, validated["frozen_projection"], current_projection, current_revision
+        )
     if prepare_only:
         return {'schema_version': 'slk.ocrv-consumed-partial-preflight/v1',
                 'status': 'READY_TO_CONSUME_COMPLETED_SEGMENT_1', 'request_sha256': request_sha256,
@@ -4042,6 +4171,7 @@ def continue_consumed_partial_checker(
                 **{key: request[key] for key in ('run_id', 'go_id', 'cell_id', 'attempt',
                     'candidate_message_id', 'runtime_revision', 'token_sequence',
                     'checker_role_instance_id', 'checker_endpoint_version')},
+                'current_runtime_revision': current_revision,
                 'native_child_session_id': consumed['raw']['session_id']}
     return _run_sealed_checker_terminal(
         request_path, request, validated['checker'], request_sha256=request_sha256,
