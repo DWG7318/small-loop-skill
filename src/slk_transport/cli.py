@@ -416,7 +416,7 @@ def _consume_committed_checker_terminal(args: argparse.Namespace) -> int:
 
 
 def _resume_incomplete_checker(args: argparse.Namespace) -> int:
-    _emit(resume_incomplete_checker(args.request, request_sha256=args.sha256))
+    _emit(resume_incomplete_checker(args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
     return 0
 
 
@@ -554,6 +554,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     incomplete_consumer = subparsers.add_parser("resume-incomplete-checker")
     incomplete_consumer.add_argument("--request", required=True, type=Path)
     incomplete_consumer.add_argument("--sha256", required=True)
+    incomplete_consumer.add_argument("--prepare-only", action="store_true")
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)

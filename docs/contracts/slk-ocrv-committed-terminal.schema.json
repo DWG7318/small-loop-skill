@@ -76,11 +76,21 @@
         "raw_review_sha256": {"$ref": "#/$defs/sha256"}
       }
     },
+    "partial_terminal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["resume_request_path", "resume_request_sha256", "evidence_sha256"],
+      "properties": {
+        "resume_request_path": {"$ref": "#/$defs/path"},
+        "resume_request_sha256": {"$ref": "#/$defs/sha256"},
+        "evidence_sha256": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/sha256"}}
+      }
+    },
     "checker_credential_path": {"$ref": "#/$defs/path"},
     "state_command": {"$ref": "#/$defs/command"},
     "transport_command": {"$ref": "#/$defs/command"},
     "result_path": {"$ref": "#/$defs/path"}
   },
+  "not": {"required": ["partial_terminal", "recovery_terminal"]},
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
     "path": {"type": "string", "minLength": 1},

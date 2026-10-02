@@ -115,6 +115,8 @@ def process_creation_time(pid: int) -> str:
                 ctypes.byref(user),
             ):
                 raise NativeActivityError("native process creation time is unavailable")
+            if exited.value:
+                raise ProcessMissingError('native process has exited; retained handle is not liveness')
             return f"win-filetime:{created.value}"
         finally:
             kernel32.CloseHandle(handle)

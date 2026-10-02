@@ -103,13 +103,36 @@
         "model": {"const": "qwen3.8-max"},
         "review_mode": {"const": "commit"},
         "start_time": {"type": "string", "format": "date-time"},
-        "aborted": {"const": true},
-        "selected_files": {"const": 0},
-        "completed_files": {"const": 0}
+        "aborted": {"type": "boolean"},
+        "selected_files": {"type": "integer", "minimum": 0},
+        "completed_files": {"type": "integer", "minimum": 0}
       }
     },
-    "recovery_root": {"$ref": "#/$defs/path"}
+    "recovery_root": {"$ref": "#/$defs/path"},
+    "partial_review": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "planned_segment_count", "d1_started_event_id", "d1_incomplete_event_id", "manifest_sha256", "source_sha256"],
+      "properties": {
+        "schema_version": {"const": "slk.ocrv-partial-continuation/v1"},
+        "planned_segment_count": {"const": 3},
+        "d1_started_event_id": {"$ref": "#/$defs/identifier"},
+        "d1_incomplete_event_id": {"$ref": "#/$defs/identifier"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "source_sha256": {
+          "type": "object", "minProperties": 13, "maxProperties": 13,
+          "propertyNames": {"enum": ["failed.json", "ocrv-preflight-request.json", "ocrv-preflight.json", "raw_review",
+            "review-segments/segment-001/request.json", "review-segments/segment-001/preflight.json", "review-segments/segment-001/result.json",
+            "review-preflight-proposals/proposal-001/request.json", "review-preflight-proposals/proposal-001/preflight.json",
+            "review-preflight-proposals/proposal-002/request.json", "review-preflight-proposals/proposal-002/preflight.json",
+            "review-preflight-proposals/proposal-003/request.json", "review-preflight-proposals/proposal-003/preflight.json"]},
+          "additionalProperties": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    }
   },
+  "allOf": [{"if": {"required": ["partial_review"]},
+    "then": {"properties": {"ocrv_session": {"properties": {"aborted": {"const": false}, "selected_files": {"const": 2}, "completed_files": {"const": 1}}}}},
+    "else": {"properties": {"ocrv_session": {"properties": {"aborted": {"const": true}, "selected_files": {"const": 0}, "completed_files": {"const": 0}}}}}}],
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
     "path": {"type": "string", "minLength": 1},

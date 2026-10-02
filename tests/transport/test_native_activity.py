@@ -12,6 +12,23 @@ from slk_transport.native_activity import (
 )
 
 
+def test_windows_retained_handle_of_exited_process_is_not_alive(monkeypatch):
+    import os
+    import types
+    import slk_transport.native_activity as activity
+    if os.name != 'nt': pytest.skip('Windows kernel identity contract')
+    closed = []
+    def times(handle, created, exited, kernel, user):
+        created._obj.value = 123
+        exited._obj.value = 456
+        return True
+    kernel = types.SimpleNamespace(OpenProcess=lambda *a:7, GetProcessTimes=times,
+                                   CloseHandle=lambda handle:closed.append(handle))
+    monkeypatch.setattr(activity.ctypes, 'WinDLL', lambda *a,**k:kernel)
+    assert activity.process_probe(7, 'win-filetime:123') == {'exists':False,'identity_matches':False}
+    assert closed == [7]
+
+
 def _start_receipt(tmp_path: Path, *, native_task_kind: str = "ocrv-session") -> Path:
     path = tmp_path / "started.json"
     path.write_text(

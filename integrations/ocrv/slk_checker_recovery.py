@@ -137,6 +137,8 @@ def _session_resume_mode(request: dict[str, object], session: dict[str, object])
 
 
 def _resume_incomplete(request: dict[str, object], request_path: Path, command: list[str]) -> int:
+    if 'partial_review' in request:
+        return _resume_partial(request, request_path, command)
     checker, session = request["checker_endpoint"], request["ocrv_session"]
     if not isinstance(checker, dict) or not isinstance(session, dict):
         raise ValueError("resume identity is invalid")
@@ -234,6 +236,104 @@ def _resume_incomplete(request: dict[str, object], request_path: Path, command: 
         sys.stdout.buffer.write(encoded)
     else:
         sys.stdout.buffer.write(completed.stdout)
+    sys.stderr.buffer.write(completed.stderr)
+    return completed.returncode
+
+
+def _resume_partial(request: dict[str, object], request_path: Path, command: list[str]) -> int:
+    # The installed zipapp owns admission. This host alone handles its sealed role credential.
+    sys.path.insert(0, command[-1])
+    from slk_transport import worker_completion as wc
+    from slk_transport.partial_review import (digest, read, records, validate_partial_source,
+        validate_manifest, validate_resumed_raw, publish_aggregate)
+    from slk_transport.adapters.ocrv import OcrvAdapter
+    validated = wc._validate_incomplete_resume(request)
+    checker = validated['checker']
+    if (os.environ.get('SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID') != checker.role_instance_id
+        or os.environ.get('SLK_OCRV_RECOVERY_ENDPOINT_VERSION') != str(checker.endpoint_version)
+        or os.environ.get('SLK_OCRV_RECOVERY_INVOCATION_ID') != request['recovery_invocation_id']):
+        raise ValueError('partial resume is outside the original sealed Checker')
+    authentication = wc._default_checker_authenticate(request['run_id'], checker.role_instance_id,
+        Path(request['checker_credential_path']), request['state_command'])
+    if (authentication.get('status') != 'authenticated' or authentication.get('role') != 'checker'
+        or authentication.get('role_instance_id') != checker.role_instance_id):
+        raise ValueError('partial resume Checker authentication failed before model start')
+    if authentication.get('runtime_revision') != request['runtime_revision']:
+        wc._rebind_overwatcher_only_committed_boundary(request, validated['frozen_projection'],
+            wc._default_load_current_projection(request['run_id'], request['state_command']), authentication['runtime_revision'])
+    basis = validate_partial_source(request)
+    mode, detail = _session_resume_mode(request, request['ocrv_session'])
+    if (mode != 'RESUME_SESSION' or detail['summary'].get('run_manifest') != basis['manifest']
+        or Path(str(detail['summary'].get('file_path',''))).resolve() != Path(request['ocrv_session']['session_record_path']).resolve()):
+        raise ValueError('partial resume has no exact reusable native parent; fresh review is forbidden')
+    root = Path(request['recovery_root']).resolve()
+    root.mkdir(parents=True, exist_ok=False)
+    (root / 'session-show.json').write_text(json.dumps(detail, sort_keys=True)+'\n', encoding='utf-8')
+    # One consumed marker covers all recovery IDs for this original partial, not just this invocation.
+    marker = root.parent / 'partial-consumed.json'
+    with marker.open('x', encoding='utf-8') as stream:
+        json.dump({'recovery_invocation_id': request['recovery_invocation_id'], 'request_sha256': digest(request_path)}, stream, sort_keys=True)
+    (root / 'resume-consumed.json').write_text(digest(request_path)+'\n', encoding='ascii')
+    attempt = root / 'native-attempt'
+    attempt.mkdir()
+    values = []
+    for ordinal, source_request in enumerate(basis['segments'], 1):
+        item = attempt / 'review-segments' / f'segment-{ordinal:03d}'
+        item.mkdir(parents=True)
+        input_path = item / 'request.json'
+        input_path.write_bytes(source_request.read_bytes())
+        invocation = str(uuid.uuid4())
+        os.environ['SLK_NATIVE_START_RECEIPT'] = str(item / 'started.json')
+        os.environ['SLK_NATIVE_START_CONTEXT'] = json.dumps({'adapter': 'ocrv-checker', 'run_id': request['run_id'],
+            'cell_id': request['cell_id'], 'message_id': request['candidate_message_id'],
+            'request_sha256': request['payload_sha256'], 'native_request_sha256': digest(input_path)})
+        code = checker_adapter.run(input_path, item / 'result.json', invocation_override=invocation,
+            background_override=Path(request['background_path']) if ordinal == 1 else None,
+            resume_session=request['ocrv_session']['session_id'] if ordinal == 1 else None)
+        value = read(item / 'result.json')
+        envelope = wc.parse_delivery(read(basis['source'] / 'endpoint.json'), read(basis['source'] / 'envelope.json')).envelope
+        OcrvAdapter().validate_existing_result(item / 'result.json', input_path, envelope, code)
+        start = wc.validate_native_start(item / 'started.json', adapter='ocrv-checker', run_id=request['run_id'],
+            cell_id=request['cell_id'], message_id=request['candidate_message_id'], request_sha256=request['payload_sha256'],
+            native_request_sha256=digest(input_path))
+        if start['native_task']['kind'] != 'ocrv-review' or start['native_task']['id'] != value['review_invocation_id']:
+            raise ValueError('partial continuation wrapper is not a native review start')
+        if ordinal == 1: (attempt / 'started.json').write_bytes((item / 'started.json').read_bytes())
+        if value['verdict'] == 'INCOMPLETE':
+            raise ValueError('bounded partial continuation remains incomplete; no automatic retry or budget increase')
+        raw = read(Path(value['artifacts']['raw_review']))
+        validate_manifest(request, raw, read(input_path)['review_scope']['include_paths'], complete=True)
+        child_detail = _run_ocrv_json(['session','show','--json','--repo',request['candidate_repository'],value['review']['session_id']])
+        child_path = Path(child_detail['summary']['file_path']).resolve()
+        if child_path != Path(request['ocrv_session']['session_record_path']).parent / (value['review']['session_id'] + '.jsonl'):
+            raise ValueError('native child checkpoint is outside the frozen repository session store')
+        (item / 'native-session.jsonl').write_bytes(child_path.read_bytes())
+        if ordinal == 1:
+            lineage = [row for row in records(item / 'native-session.jsonl') if row.get('type') == 'resume_lineage']
+            if len(lineage) != 1: raise ValueError('native child lineage is absent or duplicated')
+            validate_resumed_raw(basis, raw, lineage[0])
+        values.append(value)
+        if OcrvAdapter._has_blocking_finding(value): break
+    publish_aggregate(attempt, request, values)
+    committed = {k:v for k,v in request.items() if k not in {'background_path','ocrv_session','recovery_root','partial_review'}}
+    committed.update(schema_version=wc.COMMITTED_TERMINAL_SCHEMA, raw_review_path='unused',
+        immutable_sha256={n:request['immutable_sha256'][n] for n in ('endpoint.json','envelope.json','started.json','ocrv-request.json')},
+        partial_terminal={'resume_request_path': str(request_path), 'resume_request_sha256': digest(request_path),
+            'evidence_sha256': {p.relative_to(attempt).as_posix(): digest(p) for p in attempt.rglob('*') if p.is_file()}})
+    committed_path = root / 'committed-terminal.json'
+    committed_path.write_text(json.dumps(committed, sort_keys=True)+'\n', encoding='utf-8')
+    # All original hashes are checked again before consuming the formal verdict.
+    wc._validate_committed_terminal_request(committed)
+    completed = subprocess.run(command + ['checker-record-committed-terminal','--request',str(committed_path),'--sha256',digest(committed_path)],
+        stdin=subprocess.DEVNULL, capture_output=True, check=False, env=os.environ.copy(), **windows_no_window_kwargs())
+    if completed.returncode == 0:
+        outer = json.loads(completed.stdout)
+        if outer.get('request_sha256') != digest(committed_path): raise ValueError('partial terminal response hash mismatch')
+        outer['request_sha256'] = digest(request_path)
+        encoded = (json.dumps(outer, sort_keys=True)+'\n').encode('utf-8')
+        Path(request['result_path']).write_bytes(encoded)
+        sys.stdout.buffer.write(encoded)
+    else: sys.stdout.buffer.write(completed.stdout)
     sys.stderr.buffer.write(completed.stderr)
     return completed.returncode
 

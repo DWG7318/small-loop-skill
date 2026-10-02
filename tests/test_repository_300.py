@@ -174,7 +174,9 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
         schema = json.loads(read(relative))
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         assert schema["additionalProperties"] is False
-        assert set(schema["properties"]) == required
+        optional_partial = ({'partial_terminal'} if relative.endswith('slk-ocrv-committed-terminal.schema.json')
+                            else {'partial_review'} if relative.endswith('slk-ocrv-incomplete-checker-resume.schema.json') else set())
+        assert set(schema["properties"]) == required | optional_partial
         if relative.endswith("slk-overwatcher-turn-resume.schema.json"):
             assert set(schema["required"]) == required - {
                 "last_anomaly_cycle_id",
@@ -182,6 +184,10 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             }
         elif relative.endswith("slk-ocrv-committed-terminal.schema.json"):
             assert set(schema["required"]) == required - {"recovery_terminal"}
+            partial = schema['properties']['partial_terminal']
+            assert partial['additionalProperties'] is False
+            assert set(partial['required']) == set(partial['properties']) == {
+                'resume_request_path','resume_request_sha256','evidence_sha256'}
         else:
             assert set(schema["required"]) == required
 
