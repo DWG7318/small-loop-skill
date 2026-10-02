@@ -451,6 +451,16 @@ def test_later_partial_resume_is_one_shot_preserves_findings_and_never_starts_se
         assert read(Path(request['recovery_root']) / 'resume-partial-segment-002/complete.json')['status'] == 'COMPLETE'
         assert read(Path(request['recovery_root']) / 'native-attempt/ocrv-aggregate.json')['completed_segment_count'] == 2
         assert [item['event_type'] for item in writes] == ['D1_FAILED']
+        from slk_transport.partial_review import validate_partial_terminal
+        committed = read(Path(request['recovery_root']) / 'committed-terminal.json')
+        validated = validate_partial_terminal(committed, recorded_d1=writes[0])
+        assert Path(validated['activation']['native_attempt_path']) == Path(request['recovery_root']) / 'native-attempt'
+        corrupted = {**writes[0], 'event_id': 'different-event'}
+        with pytest.raises(ValueError):
+            validate_partial_terminal(committed, recorded_d1=corrupted)
+        write_json(Path(request['recovery_root']) / 'native-attempt/extra.json', {})
+        with pytest.raises(ValueError):
+            validate_partial_terminal(committed, recorded_d1=writes[0])
     assert len(launched) == 1
     assert launched[0][1]['resume_session'] == 'segment-2-partial'
     assert launched[0][0]['capacity']['max_tokens_budget'] == 500000

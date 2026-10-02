@@ -15,6 +15,38 @@ from slk_transport.native_activity import make_native_start
 from test_contracts import endpoint_value, envelope_value
 
 
+@pytest.mark.parametrize('proof', ['valid', 'corrupt', 'wrong-root'])
+def test_sealed_partial_failure_reads_original_identity_without_changing_aggregate(tmp_path, monkeypatch, proof):
+    from slk_transport import checker_escalation as escalation, partial_review
+
+    request, _ = fixture(tmp_path)
+    native = Path(request['native_attempt_path'])
+    source = tmp_path / 'original-delivery'
+    source.mkdir()
+    for name in ('endpoint.json', 'envelope.json'):
+        (native / name).rename(source / name)
+    committed = {'native_attempt_path': str(source)}
+    write_json(native.parent / 'committed-terminal.json', committed)
+    original = {p.name: p.read_bytes() for p in native.iterdir() if p.is_file()}
+
+    # The full native proof is exercised by the existing partial-terminal tests;
+    # isolate only its accepted/rejected outcome at this reader boundary.
+    def validate(value, **kwargs):
+        assert value == committed
+        if proof == 'corrupt':
+            raise ValueError('native proof hash mismatch')
+        return {'activation': {'native_attempt_path': str(native if proof == 'valid' else source)}}
+
+    monkeypatch.setattr(partial_review, 'validate_partial_terminal', validate)
+    if proof == 'valid':
+        result = escalation._validate_failure(request)
+        assert result['candidate']['commit'] == CANDIDATE_COMMIT
+    else:
+        with pytest.raises(escalation.CheckerEscalationError):
+            escalation._validate_failure(request)
+    assert {p.name: p.read_bytes() for p in native.iterdir() if p.is_file()} == original
+
+
 RUN_ID = "RUN-A"
 GO_ID = "GO-001"
 CELL_ID = "CELL-001"

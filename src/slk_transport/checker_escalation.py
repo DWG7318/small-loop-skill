@@ -283,6 +283,33 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     native = Path(str(request["native_attempt_path"])).resolve()
     endpoint_path = native / "endpoint.json"
     envelope_path = native / "envelope.json"
+    if not endpoint_path.exists() and not envelope_path.exists():
+        # A closed partial-review aggregate preserves identity in its original
+        # delivery. Authenticate that lineage without changing the hashed aggregate.
+        from .partial_review import validate_partial_terminal
+
+        committed = _read_object(native.parent / "committed-terminal.json", "partial terminal")
+        try:
+            recorded_d1 = {
+                **{key: event.get(key) for key in (
+                    "event_id", "event_type", "go_id", "cell_id", "attempt",
+                    "corrects_event_id", "occurred_at"
+                )},
+                "run_id": request["run_id"],
+                "plan_revision": request["plan_revision"],
+                "role_instance_id": request["checker_role_instance_id"],
+                "details": dict(details),
+            }
+            proof = validate_partial_terminal(committed, recorded_d1=recorded_d1)
+            if Path(proof["activation"]["native_attempt_path"]).resolve() != native:
+                raise ValueError("partial terminal does not bind this aggregate")
+            source = Path(committed["native_attempt_path"]).resolve()
+        except (ValueError, KeyError, TypeError, OSError) as exc:
+            raise CheckerEscalationError(
+                "CHECKER_ESCALATION_D1_MISMATCH", "partial terminal lineage is invalid"
+            ) from exc
+        endpoint_path = source / "endpoint.json"
+        envelope_path = source / "envelope.json"
     started_path = native / "started.json"
     result_path = native / "ocrv-result.json"
     terminal_path = native / "completed.json"

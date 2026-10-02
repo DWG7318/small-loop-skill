@@ -1176,7 +1176,7 @@
     },
     {
       "path": "src/slk_transport/checker_escalation.py",
-      "sha256": "e1c138267200e031e4bf578fc8482fe42b3916b7f5c6ed780726217d9f370ea5"
+      "sha256": "9f6e73ae413cb7b0092c48df64805c4c7845bb8969f86b0f11ec4e53de1d599c"
     },
     {
       "path": "src/slk_transport/cli.py",
@@ -1220,7 +1220,7 @@
     },
     {
       "path": "src/slk_transport/partial_review.py",
-      "sha256": "bdae2dfe3235b7c18ff2910027dc99873f3ffe3f788f8bc57dbea8820fc6960c"
+      "sha256": "a6a0f0778b223ed07f3c5a17c9ad3aeda68991e44ff6e0da15b95b70c19be463"
     },
     {
       "path": "src/slk_transport/process.py",
@@ -1364,7 +1364,7 @@
     },
     {
       "path": "tests/transport/test_checker_escalation.py",
-      "sha256": "e5b9ec2b2adf3f348353573e97ce782b2e0006c4b1d7bcc22f359ee97a62c73c"
+      "sha256": "1d3c09fb62ded23f8feaa52b3acb075e908fc383c139398bb9807539bd7804e2"
     },
     {
       "path": "tests/transport/test_cli.py",
@@ -1432,7 +1432,7 @@
     },
     {
       "path": "tests/transport/test_partial_checker_resume.py",
-      "sha256": "39c694e7ff4aa1846ba5747f0b1614395bad998064aff4eb11dc614c9cc581e0"
+      "sha256": "a94956cbee101a40d177774160f389ffdf500d80010b700639f42c524c8fbdaa"
     },
     {
       "path": "tests/transport/test_process.py",

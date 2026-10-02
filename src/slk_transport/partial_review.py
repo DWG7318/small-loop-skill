@@ -463,7 +463,7 @@ def publish_aggregate(root: Path, request: Mapping[str, Any], segment_results: l
         'evidence': ['started.json', 'ocrv-request.json', 'ocrv-result.json', 'ocrv-aggregate.json']})
 
 
-def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
+def validate_partial_terminal(request: Mapping[str, Any], *, recorded_d1: Mapping[str, Any] | None = None) -> dict[str, Any]:
     from . import worker_completion as wc
     from .adapters.ocrv import OcrvAdapter
     resume_path = Path(request['partial_terminal']['resume_request_path']).resolve()
@@ -481,6 +481,16 @@ def validate_partial_terminal(request: Mapping[str, Any]) -> dict[str, Any]:
     root = Path(original['recovery_root']) / 'native-attempt'
     hashes = request['partial_terminal']['evidence_sha256']
     actual = {p.relative_to(root).as_posix(): digest(p) for p in root.rglob('*') if p.is_file()}
+    if recorded_d1 is not None:
+        # The sealed writer appends this receipt after consuming the immutable
+        # review. Only the exact centrally recorded event may be outside its seal.
+        receipt = f"slk-state/d1-partial-{original['recovery_invocation_id']}.json"
+        if (receipt in hashes or read(root / receipt) != recorded_d1
+            or recorded_d1.get('run_id') != original['run_id']
+            or recorded_d1.get('cell_id') != original['cell_id']
+            or recorded_d1.get('corrects_event_id') != original['partial_review']['d1_incomplete_event_id']):
+            raise ValueError('partial terminal recorded D1 receipt drift')
+        actual.pop(receipt, None)
     if hashes != actual or read(Path(original['recovery_root']).parent / 'partial-consumed.json') != {
         'recovery_invocation_id': original['recovery_invocation_id'], 'request_sha256': digest(resume_path)}:
         raise ValueError('partial terminal evidence or one-shot lineage drift')
