@@ -3,7 +3,7 @@
 ## BI 1.1.0 (candidate)
 
 - Versioned desktop BI and WebBI together as 1.1.0 without changing the SLK 4.3.5 method contract.
-- Added exact Agent-authored message projection, local unread markers, a complete Overwatcher identity card, stable device attribution, and a bounded 30-second HTTPS uploader with no local sidecar or hard cloud dependency.
+- Added exact Agent-authored message projection, local unread markers, a complete Overwatcher identity card, stable device attribution, and a bounded 30-second HTTPS uploader with no local sidecar or hard cloud dependency. Current Checker session recovery and Supervisor role closure are recognized; unsupported historical events remain in the Run but cannot become notifications or block BI.
 - Added a responsive Cloudflare Worker/D1 WebBI archive with active/archived Run views and per-device isolation; archived Runs are retained rather than deleted.
 - Added server-side encrypted ntfy settings and exact catalog filtering. BI/WebBI never infer a message type, expose stored credentials, or turn polling/duration changes into notifications.
 

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { runFixture } from "../test/fixtures";
+import { MESSAGE_CATALOG } from "./catalog";
 import {
   projectAuthoritativeMessages,
+  projectSupportedAuthoritativeMessages,
   type MessageCatalogEntry,
 } from "./messageFeed";
 
@@ -89,6 +91,73 @@ describe("Agent-authored BI message projection", () => {
       events: [{ ...runFixture.events[0]!, event_type: "D1_PASSED" }],
     };
     expect(() => projectAuthoritativeMessages(run, catalog)).toThrow(
+      "SLK_BI_MESSAGE_ROLE_INVALID",
+    );
+  });
+
+  it("accepts current Checker session recovery and Supervisor role closure facts", () => {
+    const run = {
+      ...runFixture,
+      events: [
+        {
+          ...runFixture.events[0]!,
+          event_id: "session-rebound",
+          event_type: "SESSION_REBOUND",
+          author_role_instance_id: "checker-a",
+        },
+        {
+          ...runFixture.events[0]!,
+          event_id: "role-closed",
+          event_type: "ROLE_CLOSED",
+          author_role_instance_id: "supervisor-a",
+          occurred_at: "2026-09-20T00:00:05Z",
+        },
+      ],
+    };
+
+    expect(
+      projectAuthoritativeMessages(run, MESSAGE_CATALOG).map(({ message_type }) => message_type),
+    ).toEqual(["SESSION_REBOUND", "ROLE_CLOSED"]);
+  });
+
+  it("omits an unsupported historical event without hiding valid Agent-authored messages", () => {
+    const run = {
+      ...runFixture,
+      summary: {
+        ...runFixture.summary,
+        slk_version: "4.0.0",
+      },
+      events: [
+        ...runFixture.events,
+        {
+          ...runFixture.events[0]!,
+          event_id: "legacy-checker-rework",
+          event_type: "REWORK_REQUESTED",
+          author_role_instance_id: "checker-a",
+        },
+      ],
+    };
+
+    expect(
+      projectSupportedAuthoritativeMessages(run, MESSAGE_CATALOG).map(({ message_id }) => message_id),
+    ).toEqual(["EVENT:work-started"]);
+  });
+
+  it("does not hide the same wrong-role event from a current Run", () => {
+    const run = {
+      ...runFixture,
+      events: [
+        ...runFixture.events,
+        {
+          ...runFixture.events[0]!,
+          event_id: "current-checker-rework",
+          event_type: "REWORK_REQUESTED",
+          author_role_instance_id: "checker-a",
+        },
+      ],
+    };
+
+    expect(() => projectSupportedAuthoritativeMessages(run, MESSAGE_CATALOG)).toThrow(
       "SLK_BI_MESSAGE_ROLE_INVALID",
     );
   });

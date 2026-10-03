@@ -1,6 +1,6 @@
 import type { SlkSnapshot } from "../useSlkData";
 import { MESSAGE_CATALOG } from "../messages/catalog";
-import { projectAuthoritativeMessages } from "../messages/messageFeed";
+import { projectSupportedAuthoritativeMessages } from "../messages/messageFeed";
 import type { WebBiUploadEnvelope } from "./contracts";
 
 function orderedRuns(snapshot: SlkSnapshot) {
@@ -28,7 +28,7 @@ export function buildUploadEnvelope(
     },
     runs: orderedRuns(snapshot).map((run) => ({
       run,
-      messages: projectAuthoritativeMessages(run, MESSAGE_CATALOG).filter(
+      messages: projectSupportedAuthoritativeMessages(run, MESSAGE_CATALOG).filter(
         ({ message_id }) => !uploadedMessageIds.has(message_id),
       ),
     })),

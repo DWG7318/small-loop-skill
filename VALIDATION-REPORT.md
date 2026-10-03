@@ -16,7 +16,7 @@ The existing Codex Supervisor, OCRV Checker, DSH Worker, optional whole-Run Over
 
 - Python suites: 414 passed and two optional modules skipped in ordinary mode; the same 414 passed under `python -O` with only pytest's expected optimized-assertion warning. Focused native activity/OCRV/D1/Skill/Eval coverage also passed, including wrong-message and conflicting terminal evidence, current multi-segment OCRV activity, false-start recovery, exact Checker D1 authorship, the managed launcher, and installed DSH/OCRV classifications.
 - Rust core packages: 116 integration tests passed; unit and documentation targets passed. `cargo fmt --all -- --check` passed.
-- LE BI: 24 tests passed; TypeScript typecheck and production UI build passed. The production Tauri/Rust release build passed headlessly in a fresh isolated Cargo target.
+- LE BI/WebBI 1.1.0: 61 tests passed; TypeScript typecheck and production UI build passed. Real retained Runs proved that current Checker session recovery and Supervisor role closure remain eligible messages, while unsupported historical role/type pairs cannot become notifications or block the desktop surface or upload.
 - Role Eval: 75 closed cases, PASS; case-pack SHA-256 `05694fb2508602500f05c8a73f7c3d26eafe327e9533277ae3a81ba97874ce1b`.
 - Repository identity, JSON/YAML/schema parsing, root/install package mirrors, deterministic package verification, version/Manifest hashes, `git diff --check`, and sensitive/forbidden-scope scans are release gates. The package has no hard dependency on Temporal, Docker, AX, Orca, wmux, an Overwatcher, or another runtime service.
 

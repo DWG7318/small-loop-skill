@@ -73,4 +73,36 @@ describe("desktop BI WebBI upload", () => {
     );
     expect(second.runs.every(({ messages }) => messages.length === 0)).toBe(true);
   });
+
+  it("keeps a historical invalid event out of notifications without blocking Run upload", () => {
+    const current = snapshot();
+    const withLegacyMismatch: SlkSnapshot = {
+      ...current,
+      runDetails: current.runDetails.map((run, index) => index ? run : {
+        ...run,
+        summary: {
+          ...run.summary,
+          slk_version: "4.0.0",
+        },
+        events: [
+          ...run.events,
+          {
+            ...run.events[0]!,
+            event_id: "legacy-checker-rework",
+            event_type: "REWORK_REQUESTED",
+            author_role_instance_id: "checker-a",
+          },
+        ],
+      }),
+    };
+
+    const envelope = buildUploadEnvelope(
+      withLegacyMismatch,
+      "upload-legacy",
+      "2026-10-04T00:02:00Z",
+    );
+    expect(envelope.runs[0]?.messages.map(({ message_id }) => message_id)).toEqual([
+      "EVENT:work-started",
+    ]);
+  });
 });

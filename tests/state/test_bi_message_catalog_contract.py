@@ -24,6 +24,11 @@ def test_bi_message_catalog_exactly_covers_state_core_event_and_observation_type
     )
 
     event_seed_block = catalog.split("const EVENT_SEEDS", 1)[1].split(
+        "const SPECIALIZED_EVENT_SEEDS", 1
+    )[0]
+    specialized_event_seed_block = catalog.split(
+        "const SPECIALIZED_EVENT_SEEDS", 1
+    )[1].split(
         "const OBSERVATION_SEEDS", 1
     )[0]
     observation_seed_block = catalog.split("const OBSERVATION_SEEDS", 1)[1].split(
@@ -35,6 +40,9 @@ def test_bi_message_catalog_exactly_covers_state_core_event_and_observation_type
     )
 
     assert catalog_types == state_types
+    assert set(
+        re.findall(r'\["([A-Z][A-Z0-9_]+)"', specialized_event_seed_block)
+    ) == {"ROLE_CLOSED"}
     assert catalog_observations == state_observations
     assert "进度变化" not in catalog
 
