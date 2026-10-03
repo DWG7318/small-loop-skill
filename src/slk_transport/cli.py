@@ -43,6 +43,7 @@ from .worker_completion import (
     recover_staged_checker_commit,
     continue_consumed_partial_checker,
     consume_existing_partial_checker,
+    refine_consumed_partial_checker,
     resume_consumed_partial_checker,
     resume_incomplete_checker,
 )
@@ -435,6 +436,12 @@ def _resume_consumed_partial_checker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _refine_consumed_partial_checker(args: argparse.Namespace) -> int:
+    _emit(refine_consumed_partial_checker(
+        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
+    return 0
+
+
 def _consume_existing_partial_checker(args: argparse.Namespace) -> int:
     _emit(consume_existing_partial_checker(
         args.request, request_sha256=args.sha256, evidence_root=args.evidence_root,
@@ -585,6 +592,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     resumed_partial.add_argument("--request", required=True, type=Path)
     resumed_partial.add_argument("--sha256", required=True)
     resumed_partial.add_argument("--prepare-only", action="store_true")
+    refined_partial = subparsers.add_parser("refine-consumed-partial")
+    refined_partial.add_argument("--request", required=True, type=Path)
+    refined_partial.add_argument("--sha256", required=True)
+    refined_partial.add_argument("--prepare-only", action="store_true")
     existing_partial = subparsers.add_parser("consume-existing-partial")
     existing_partial.add_argument("--request", required=True, type=Path)
     existing_partial.add_argument("--sha256", required=True)
@@ -656,6 +667,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _continue_consumed_partial_checker(args)
         if args.command == "resume-consumed-partial":
             return _resume_consumed_partial_checker(args)
+        if args.command == "refine-consumed-partial":
+            return _refine_consumed_partial_checker(args)
         if args.command == "consume-existing-partial":
             return _consume_existing_partial_checker(args)
         if args.command == "checker-escalate-d1":

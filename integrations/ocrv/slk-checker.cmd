@@ -13,6 +13,8 @@ if /I "%~1"=="--slk-post-d1" (
   python "%~dp0slk_checker_recovery.py" %*
 ) else if /I "%~1"=="--slk-resume-consumed-partial" (
   python "%~dp0slk_checker_recovery.py" %*
+) else if /I "%~1"=="--slk-refine-consumed-partial" (
+  python "%~dp0slk_checker_recovery.py" %*
 ) else if /I "%~1"=="--slk-consume-existing-partial" (
   python "%~dp0slk_checker_recovery.py" %*
 ) else (

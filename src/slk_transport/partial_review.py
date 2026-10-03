@@ -1,6 +1,7 @@
 """Evidence-only admission for the existing sealed OCRV partial continuation."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import shutil
@@ -45,6 +46,46 @@ def identities(items: object) -> set[tuple[str, str, str]]:
             raise ValueError('native coverage item is duplicated')
         result.add(identity)
     return result
+
+
+def build_refined_single_path_requests(
+    base_request: Mapping[str, Any], failed_items: object,
+) -> list[dict[str, Any]]:
+    """Split one zero-complete budget boundary without changing candidate or capacity."""
+    scope = base_request.get('review_scope')
+    if not isinstance(scope, dict):
+        raise ValueError('refinement base scope is invalid')
+    include = scope.get('include_paths')
+    excluded = scope.get('exclude_paths')
+    if (not isinstance(include, list) or not include or len(include) != len(set(include))
+        or not all(isinstance(path, str) and path for path in include)
+        or not isinstance(excluded, list)
+        or not all(isinstance(path, str) and path for path in excluded)):
+        raise ValueError('refinement base paths are invalid')
+    failed = identities(failed_items)
+    failed_paths = [item.get('path') for item in failed_items] if isinstance(failed_items, list) else []
+    if (not failed_paths or len(failed_paths) != len(set(failed_paths))
+        or set(failed_paths) != {identity[1] for identity in failed}
+        or not set(failed_paths) <= set(include)
+        or any(not isinstance(item, dict) or item.get('classification') != 'budget'
+               for item in failed_items)):
+        raise ValueError('refinement failures are empty, duplicated, non-budget, or out of scope')
+    output: list[dict[str, Any]] = []
+    for ordinal, path in enumerate(failed_paths, 1):
+        value = copy.deepcopy(dict(base_request))
+        value['cell_goal'] = (
+            f"[SLK refined path {ordinal}/{len(failed_paths)}] Changed-path scope: {path}. "
+            f"Original goal: {base_request.get('cell_goal', '')}"
+        )
+        refined_scope = copy.deepcopy(scope)
+        refined_scope['include_paths'] = [path]
+        refined_scope['exclude_paths'] = sorted(set(excluded) | (set(include) - {path}))
+        refined_scope['scope_sha256'] = canonical_json_sha256({
+            key: item for key, item in refined_scope.items() if key != 'scope_sha256'
+        })
+        value['review_scope'] = refined_scope
+        output.append(value)
+    return output
 
 
 def validate_manifest(request: Mapping[str, Any], raw: Mapping[str, Any], scope: list[str], *, complete: bool) -> dict[str, Any]:
@@ -532,6 +573,180 @@ def _validate_existing_native_piece(
             'manifest': manifest, 'coverage': coverage, 'session_path': session_path}
 
 
+def validate_zero_complete_refinement_attempt(
+    request: Mapping[str, Any], request_sha256: str, *, terminal: bool = False,
+    final_partial: bool = False,
+) -> dict[str, Any]:
+    """Admit one consumed continuation whose next frozen segment completed no path."""
+    if terminal and final_partial:
+        raise ValueError('zero-complete refinement phase is ambiguous')
+    basis = validate_partial_source(request, consumed=True)
+    root = Path(str(request['recovery_root'])).resolve()
+    attempt = root / 'native-attempt'
+    marker = root.parent / 'partial-consumed.json'
+    one_shot = root / 'refine-zero-complete-segment-002'
+    correction = attempt / 'review-corrections/segment-002'
+    advanced = terminal or final_partial
+    aggregate_names = ('ocrv-result.json','ocrv-aggregate.json','completed.json')
+    if (read(marker) != {'recovery_invocation_id': request['recovery_invocation_id'],
+                         'request_sha256': request_sha256}
+        or (root / 'resume-consumed.json').read_text(encoding='ascii').strip() != request_sha256
+        or (one_shot.exists() != advanced) or (correction.exists() != advanced)
+        or ((attempt / 'review-segments/segment-003').exists() != advanced)
+        or (not terminal and any((attempt / name).exists() for name in aggregate_names))
+        or (terminal and not all((attempt / name).is_file() for name in aggregate_names))):
+        raise ValueError('zero-complete refinement identity is absent, repeated, or already advanced')
+    first_root = attempt / 'review-segments/segment-001'
+    second_root = attempt / 'review-segments/segment-002'
+    if (digest(first_root / 'request.json') != digest(basis['segments'][0])
+        or digest(second_root / 'request.json') != digest(basis['segments'][1])):
+        raise ValueError('zero-complete refinement changed a frozen segment request')
+    first = _validate_existing_native_piece(
+        request, basis['segments'][0], first_root, terminal='complete',
+        parent_session_id=basis['manifest']['run_id'])
+    lineage = [row for row in records(first['session_path']) if row.get('type') == 'resume_lineage']
+    if len(lineage) != 1:
+        raise ValueError('completed first continuation has no exact resume lineage')
+    validate_resumed_raw(basis, first['raw'], lineage[0])
+    second = _validate_existing_native_piece(
+        request, basis['segments'][1], second_root, terminal='failed', parent_session_id=None)
+    coverage = second['coverage']
+    if (coverage['completed'] or coverage['reused'] or len(coverage['failed']) < 2
+        or any(item.get('classification') != 'budget' for item in coverage['failed'])
+        or identities(coverage['failed']) != identities(coverage['selected'])):
+        raise ValueError('second segment is not a zero-complete multi-path budget boundary')
+    refined_requests = build_refined_single_path_requests(
+        read(second_root / 'request.json'), coverage['failed'])
+    consumed = {
+        'schema_version':'slk.ocrv-zero-complete-refinement-consumed/v1',
+        'request_sha256':request_sha256, 'segment_ordinal':2,
+        'original_result_sha256':digest(second_root / 'result.json'),
+        'original_raw_review_sha256':digest(second_root / 'ocrv-review.json'),
+        'original_native_session_sha256':digest(second['session_path']),
+        'failed_paths':[item['path'] for item in coverage['failed']],
+    }
+    value = {**basis, 'root': root, 'attempt': attempt, 'first': first, 'second': second,
+             'one_shot': one_shot, 'correction': correction,
+             'refined_requests': refined_requests, 'consumed': consumed}
+    if not advanced:
+        return value
+    if read(one_shot / 'consumed.json') != consumed:
+        raise ValueError('zero-complete refinement consumed receipt drift')
+    pieces, index_rows = [], []
+    failed_by_path = {item['path']: item for item in coverage['failed']}
+    for ordinal, refined_request in enumerate(refined_requests, 1):
+        item_root = one_shot / f'item-{ordinal:03d}'
+        input_path = item_root / 'request.json'
+        if read(input_path) != refined_request:
+            raise ValueError('zero-complete refinement changed a derived single-path request')
+        piece = _validate_existing_native_piece(
+            request, input_path, item_root, terminal='complete', parent_session_id=None)
+        failed_identity = identities([failed_by_path[refined_request['review_scope']['include_paths'][0]]])
+        if (identities(piece['coverage']['selected']) != failed_identity
+            or identities(piece['coverage']['completed']) != failed_identity
+            or piece['coverage']['reused'] or piece['coverage']['failed']):
+            raise ValueError('refined native review did not complete exactly one frozen failed path')
+        local_session = item_root / 'native-session.jsonl'
+        if not local_session.is_file() or digest(local_session) != digest(piece['session_path']):
+            raise ValueError('refined native session copy drift')
+        pieces.append(piece)
+        index_rows.append({
+            'ordinal':ordinal, 'path':refined_request['review_scope']['include_paths'][0],
+            'request_sha256':digest(input_path), 'result_sha256':digest(item_root / 'result.json'),
+            'raw_review_sha256':digest(item_root / 'ocrv-review.json'),
+            'start_sha256':digest(item_root / 'started.json'),
+            'activity_sha256':digest(item_root / 'native-activity.json'),
+            'native_session_sha256':digest(local_session),
+        })
+    index = {'schema_version':'slk.ocrv-zero-complete-refinement-index/v1',
+             'segment_ordinal':2, 'items':index_rows}
+    index_path = correction / 'evidence-index.json'
+    if read(index_path) != index:
+        raise ValueError('zero-complete refinement evidence index drift')
+    findings = _dedupe_findings(second['findings'], *(piece['findings'] for piece in pieces))
+    verdict, reasons = _complete_verdict(findings)
+    composite = {
+        'schema_version':'slk.ocrv-d1-result/v1', 'run_id':request['run_id'],
+        'cell_id':request['cell_id'],
+        'review_invocation_id':f"refined-{request['recovery_invocation_id']}-segment-002",
+        'verdict':verdict, 'reason_codes':reasons, 'findings':findings,
+        'evidence':[digest(index_path)], 'request_sha256':digest(second_root / 'request.json'),
+        'review':{'status':'complete','provider':'dashscope-tokenplan','model':'qwen3.8-max',
+                  'session_id':f"refined-{request['recovery_invocation_id']}-segment-002",
+                  'exit_code':{'PASS':0,'FAIL':2}[verdict]},
+        'artifacts':{'refinement_index':str(index_path)},
+    }
+    result_path = correction / 'result.json'
+    correction_receipt = {
+        'schema_version':'slk.ocrv-zero-complete-refinement-correction/v1',
+        'cause':'ZERO_COMPLETE_MULTI_PATH_BUDGET_REFINED_TO_SINGLE_PATHS',
+        **{key:consumed[key] for key in (
+            'original_result_sha256','original_raw_review_sha256','original_native_session_sha256')},
+        'one_shot_consumed_sha256':digest(one_shot / 'consumed.json'),
+        'evidence_index_sha256':digest(index_path),
+        'corrected_result_sha256':digest(result_path),
+    }
+    if read(result_path) != composite or read(correction / 'correction.json') != correction_receipt:
+        raise ValueError('zero-complete refinement composite or correction receipt drift')
+    value.update(refined_pieces=pieces, refinement_index=index,
+                 composite=composite, correction_receipt=correction_receipt)
+    if final_partial:
+        third_root = attempt / 'review-segments/segment-003'
+        if digest(third_root / 'request.json') != digest(basis['segments'][2]):
+            raise ValueError('final partial changed the frozen segment 3 request')
+        third = _validate_existing_native_piece(
+            request, basis['segments'][2], third_root, terminal='partial',
+            parent_session_id=None)
+        coverage = third['coverage']
+        if (not coverage['completed'] or not coverage['failed'] or coverage['reused']
+            or any(item.get('classification') != 'budget' for item in coverage['failed'])):
+            raise ValueError('final partial is not a completed-plus-budget boundary')
+        verdict, _reasons = _complete_verdict(third['findings'])
+        completed_paths = {item['path'] for item in coverage['completed']}
+        finding_paths = {item.get('path') for item in third['findings']}
+        if verdict != 'FAIL' or not finding_paths or not finding_paths <= completed_paths:
+            raise ValueError('final partial has no blocking finding proven by completed coverage')
+        value.update(third=third, blocking_paths=sorted(finding_paths))
+    return value
+
+
+def partial_blocking_failure_artifacts(
+    request: Mapping[str, Any], partial: Mapping[str, Any], correction_root: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build a deterministic FAIL correction from findings on completed partial coverage."""
+    third = partial['third']
+    source_root = third['root']
+    verdict, reasons = _complete_verdict(third['findings'])
+    if verdict != 'FAIL':
+        raise ValueError('partial blocking correction requires a blocking finding')
+    result = {
+        'schema_version':'slk.ocrv-d1-result/v1', 'run_id':request['run_id'],
+        'cell_id':request['cell_id'],
+        'review_invocation_id':f"partial-blocking-{request['recovery_invocation_id']}-segment-003",
+        'verdict':'FAIL', 'reason_codes':reasons, 'findings':third['findings'],
+        'evidence':[digest(source_root / 'result.json'), digest(source_root / 'ocrv-review.json')],
+        'request_sha256':digest(source_root / 'request.json'),
+        'review':{'status':'complete','provider':'dashscope-tokenplan','model':'qwen3.8-max',
+                  'session_id':f"partial-blocking-{request['recovery_invocation_id']}-segment-003",
+                  'exit_code':2},
+        'artifacts':{'partial_source_result':str(source_root / 'result.json'),
+                     'partial_source_review':str(source_root / 'ocrv-review.json')},
+    }
+    result_bytes = (json.dumps(result, sort_keys=True)+'\n').encode('utf-8')
+    receipt = {
+        'schema_version':'slk.ocrv-partial-blocking-failure-correction/v1',
+        'cause':'COMPLETED_PARTIAL_COVERAGE_PROVED_BLOCKING_FINDING',
+        'segment_ordinal':3,
+        'original_result_sha256':digest(source_root / 'result.json'),
+        'original_raw_review_sha256':digest(source_root / 'ocrv-review.json'),
+        'original_native_session_sha256':digest(third['session_path']),
+        'completed_paths':sorted(item['path'] for item in third['coverage']['completed']),
+        'blocking_paths':list(partial['blocking_paths']),
+        'corrected_result_sha256':hashlib.sha256(result_bytes).hexdigest(),
+    }
+    return result, receipt
+
+
 def _validate_narrowed_request(base_path: Path, narrowed_path: Path, failed_path: str, *, raised: bool) -> None:
     base, narrowed = read(base_path), read(narrowed_path)
     for key in set(base) - {'cell_goal', 'review_scope', 'capacity'}:
@@ -904,11 +1119,30 @@ def validate_partial_terminal(request: Mapping[str, Any], *, recorded_d1: Mappin
     envelope = wc.parse_delivery(read(basis['source'] / 'endpoint.json'), read(basis['source'] / 'envelope.json')).envelope
     aggregate, values = read(root / 'ocrv-aggregate.json'), []
     later_root = root / 'review-corrections/segment-002'
+    final_root = root / 'review-corrections/segment-003'
     one_shot = Path(original['recovery_root']) / 'resume-partial-segment-002'
-    if one_shot.exists() != later_root.is_dir():
+    refinement_one_shot = Path(original['recovery_root']) / 'refine-zero-complete-segment-002'
+    refinement_receipt = (read(later_root / 'correction.json')
+                          if later_root.is_dir() and (later_root / 'correction.json').is_file() else {})
+    is_refinement = (refinement_receipt.get('schema_version')
+                     == 'slk.ocrv-zero-complete-refinement-correction/v1')
+    final_receipt = (read(final_root / 'correction.json')
+                     if final_root.is_dir() and (final_root / 'correction.json').is_file() else {})
+    is_partial_blocking_failure = (final_receipt.get('schema_version')
+                                   == 'slk.ocrv-partial-blocking-failure-correction/v1')
+    if one_shot.exists() and refinement_one_shot.exists():
+        raise ValueError('multiple later-segment recovery modes are present')
+    if one_shot.exists() != (later_root.is_dir() and not is_refinement):
         raise ValueError('later partial one-shot and correction are not paired')
+    if refinement_one_shot.exists() != (later_root.is_dir() and is_refinement):
+        raise ValueError('zero-complete refinement and correction are not paired')
+    if final_root.exists() and (not is_refinement or not is_partial_blocking_failure):
+        raise ValueError('final partial failure correction is outside zero-complete refinement')
     later_partial = (validate_consumed_partial_resume_attempt(
-        original, digest(resume_path), terminal=True) if later_root.is_dir() else None)
+        original, digest(resume_path), terminal=True)
+        if later_root.is_dir() and not is_refinement else None)
+    refined_partial = (validate_zero_complete_refinement_attempt(
+        original, digest(resume_path), terminal=True) if is_refinement else None)
     for n, segment in enumerate(aggregate['segments'], 1):
         source_root = root / 'review-segments' / f'segment-{n:03d}'
         item_root = effective_segment_root(root, n)
@@ -917,6 +1151,8 @@ def validate_partial_terminal(request: Mapping[str, Any], *, recorded_d1: Mappin
             raise ValueError('continuation segment request or result drift')
         result = read(result_path)
         resumed_correction = False
+        refined_correction = False
+        partial_blocking_correction = False
         if item_root != source_root:
             correction = read(item_root / 'correction.json')
             if correction.get('schema_version') == 'slk.ocrv-normalization-correction/v1':
@@ -926,6 +1162,13 @@ def validate_partial_terminal(request: Mapping[str, Any], *, recorded_d1: Mappin
                     'raw_review_sha256':digest(source_root / 'ocrv-review.json'),
                     'corrected_result_sha256':digest(result_path),
                     'native_session_sha256':digest(item_root / 'native-session.jsonl')}
+            elif n == 2 and refined_partial is not None:
+                expected_correction = refined_partial['correction_receipt']
+                if (result != refined_partial['composite']
+                    or correction != expected_correction
+                    or read(item_root / 'evidence-index.json') != refined_partial['refinement_index']):
+                    raise ValueError('zero-complete refinement does not preserve its native single-path evidence')
+                refined_correction = True
             elif n == 2 and later_partial is not None:
                 consumed = {'schema_version':'slk.ocrv-partial-segment-resume-consumed/v1',
                     'request_sha256':digest(resume_path),'segment_ordinal':2,
@@ -967,10 +1210,32 @@ def validate_partial_terminal(request: Mapping[str, Any], *, recorded_d1: Mappin
                     or (item_root / 'd1-background.md').read_bytes() != (source_root / 'd1-background.md').read_bytes()):
                     raise ValueError('later partial correction does not preserve its one-shot native evidence')
                 resumed_correction = True
+            elif n == 3 and is_partial_blocking_failure:
+                third = _validate_existing_native_piece(
+                    original, input_path, source_root, terminal='partial', parent_session_id=None)
+                completed_paths = {item['path'] for item in third['coverage']['completed']}
+                finding_paths = {item.get('path') for item in third['findings']}
+                verdict, _reasons = _complete_verdict(third['findings'])
+                if (verdict != 'FAIL' or not finding_paths or not finding_paths <= completed_paths
+                    or not third['coverage']['failed'] or third['coverage']['reused']
+                    or any(item.get('classification') != 'budget'
+                           for item in third['coverage']['failed'])):
+                    raise ValueError('final partial correction lacks completed blocking evidence')
+                expected_result, expected_correction = partial_blocking_failure_artifacts(
+                    original, {'third':third, 'blocking_paths':sorted(finding_paths)}, item_root)
+                if result != expected_result:
+                    raise ValueError('final partial failure result changed its completed finding')
+                partial_blocking_correction = True
             else:
                 expected_correction = {}
             if correction != expected_correction:
                 raise ValueError('normalization correction receipt does not bind preserved evidence')
+        if refined_correction:
+            values.append(result)
+            continue
+        if partial_blocking_correction:
+            values.append(result)
+            continue
         OcrvAdapter().validate_existing_result(result_path, input_path, envelope, {'PASS':0,'FAIL':2}[result['verdict']])
         raw = read(Path(result['artifacts']['raw_review']))
         validate_manifest(original, raw, read(input_path)['review_scope']['include_paths'], complete=True)
@@ -1008,7 +1273,7 @@ def validate_partial_terminal(request: Mapping[str, Any], *, recorded_d1: Mappin
                 raise ValueError('later partial native resume lineage is absent or duplicated')
             validate_completed_segment_resume(later_partial, raw, lineage[0])
         values.append(result)
-    if later_partial is not None and len(values) < 2:
+    if (later_partial is not None or refined_partial is not None) and len(values) < 2:
         raise ValueError('later partial correction is not indexed by the aggregate')
     if not values or len(values) > 3 or (len(values) != 3 and not OcrvAdapter._has_blocking_finding(values[-1])):
         raise ValueError('partial continuation has unfinished coverage')

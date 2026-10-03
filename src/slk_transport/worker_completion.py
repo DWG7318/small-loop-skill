@@ -4219,6 +4219,58 @@ def resume_consumed_partial_checker(
         error_code='CHECKER_PARTIAL_SEGMENT_RESUME_COMMAND_FAILED')
 
 
+def refine_consumed_partial_checker(
+    request_path: Path, *, request_sha256: str, prepare_only: bool = False,
+) -> Mapping[str, Any]:
+    """Refine a zero-complete multi-path budget boundary into single-path reviews."""
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError('CHECKER_PARTIAL_REFINEMENT_REQUEST_MISMATCH',
+                              'partial refinement request hash mismatch')
+    request = _read_object(request_path, 'zero-complete partial Checker request')
+    validated = _validate_incomplete_resume(request, consumed=True)
+    try:
+        from .partial_review import validate_zero_complete_refinement_attempt
+        attempt = Path(str(request['recovery_root'])) / 'native-attempt'
+        final_partial = (attempt / 'review-segments/segment-003/result.json').is_file()
+        partial = validate_zero_complete_refinement_attempt(
+            request, request_sha256, final_partial=final_partial)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CompletionError('CHECKER_PARTIAL_REFINEMENT_EVIDENCE_INVALID', str(exc)) from exc
+    current_projection = _default_load_current_projection(
+        str(request['run_id']), list(request['state_command']))
+    current_runtime = current_projection.get('runtime_snapshot')
+    current_revision = current_runtime.get('runtime_revision') if isinstance(current_runtime, Mapping) else None
+    if isinstance(current_revision, bool) or not isinstance(current_revision, int):
+        _committed_terminal_drift_invalid()
+    if current_revision != request['runtime_revision']:
+        current_revision = _rebind_overwatcher_only_committed_boundary(
+            request, validated['frozen_projection'], current_projection, current_revision)
+    failed_paths = [item['path'] for item in partial['second']['coverage']['failed']]
+    if prepare_only:
+        if final_partial:
+            return {'schema_version':'slk.ocrv-partial-blocking-failure-preflight/v1',
+                    'status':'READY_TO_FAIL_FROM_REFINED_FINAL_PARTIAL',
+                    'request_sha256':request_sha256, 'segment_ordinal':3,
+                    'blocking_paths':partial['blocking_paths'],
+                    **{key:request[key] for key in ('run_id','go_id','cell_id','attempt',
+                        'candidate_message_id','runtime_revision','token_sequence',
+                        'checker_role_instance_id','checker_endpoint_version')},
+                    'current_runtime_revision':current_revision}
+        return {'schema_version':'slk.ocrv-zero-complete-refinement-preflight/v1',
+                'status':'READY_TO_REFINE_ZERO_COMPLETE_SEGMENT_2',
+                'request_sha256':request_sha256, 'segment_ordinal':2,
+                'failed_paths':failed_paths, 'refined_review_count':len(failed_paths),
+                **{key:request[key] for key in ('run_id','go_id','cell_id','attempt',
+                    'candidate_message_id','runtime_revision','token_sequence',
+                    'checker_role_instance_id','checker_endpoint_version')},
+                'current_runtime_revision':current_revision}
+    return _run_sealed_checker_terminal(
+        request_path, request, validated['checker'], request_sha256=request_sha256,
+        mode='--slk-refine-consumed-partial', result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
+        error_code='CHECKER_PARTIAL_REFINEMENT_COMMAND_FAILED')
+
+
 def consume_existing_partial_checker(
     request_path: Path, *, request_sha256: str, evidence_root: Path,
     prepare_only: bool = False,

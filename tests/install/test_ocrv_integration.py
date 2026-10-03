@@ -45,6 +45,7 @@ def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     assert '"%~1"=="--slk-resume-incomplete-checker"' in wrapper
     assert '"%~1"=="--slk-continue-consumed-partial"' in wrapper
     assert '"%~1"=="--slk-resume-consumed-partial"' in wrapper
+    assert '"%~1"=="--slk-refine-consumed-partial"' in wrapper
     assert '"%~1"=="--slk-consume-existing-partial"' in wrapper
     assert "slk_checker_recovery.py" in wrapper
     assert "slk_checker_adapter.py" in wrapper
