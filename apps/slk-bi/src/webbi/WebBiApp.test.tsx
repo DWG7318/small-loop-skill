@@ -60,8 +60,8 @@ const settings: PublicNotificationSettings = {
   enabled: true,
   server_url: "https://ntfy.example.test",
   topic: "slk",
-  auth_mode: "token",
-  username: null,
+  auth_mode: "password",
+  username: "DWG",
   has_secret: true,
   selection_mode: "selected",
   selected_message_types: ["EVENT:WORK_STARTED"],
@@ -144,7 +144,10 @@ describe("WebBI 1.1 browser UI", () => {
     render(<WebBiApp api={api()} />);
     fireEvent.click(await screen.findByRole("link", { name: "手机通知" }));
     expect(await screen.findByRole("heading", { name: "手机通知" })).toBeInTheDocument();
-    expect(screen.getByLabelText("ntfy 服务器")).toHaveValue("https://ntfy.example.test");
+    expect(screen.getByLabelText("服务器地址")).toHaveValue("https://ntfy.example.test");
+    expect(screen.getByLabelText("用户名")).toHaveValue("DWG");
+    expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText("Topic 名称")).toHaveValue("slk");
     expect(screen.getByText("已保存凭据；留空即保留")).toBeInTheDocument();
     expect(screen.queryByDisplayValue("private-token")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /Worker 开始工作/ })).toBeChecked();

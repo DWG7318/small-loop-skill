@@ -1,5 +1,7 @@
+import json
 import re
 import sqlite3
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 
@@ -62,3 +64,26 @@ def test_webbi_d1_migration_is_valid_sql_and_has_no_delete_path():
     }
     assert {"devices", "runs", "messages", "notification_settings", "notification_deliveries"} <= tables
     assert "DELETE FROM" not in store.upper()
+
+
+def test_webbi_migration_script_targets_the_configured_d1_database():
+    package = json.loads(
+        (ROOT / "apps" / "slk-bi" / "package.json").read_text(encoding="utf-8")
+    )
+    wrangler = json.loads(
+        (ROOT / "apps" / "slk-bi" / "wrangler.jsonc").read_text(encoding="utf-8")
+    )
+    database_name = wrangler["d1_databases"][0]["database_name"]
+
+    assert package["scripts"]["migrate:webbi"] == (
+        f"pnpm dlx wrangler@4.147.0 d1 migrations apply {database_name} --remote"
+    )
+
+
+def test_webbi_worker_compatibility_date_is_not_in_the_cloudflare_utc_future():
+    wrangler = json.loads(
+        (ROOT / "apps" / "slk-bi" / "wrangler.jsonc").read_text(encoding="utf-8")
+    )
+    configured = date.fromisoformat(wrangler["compatibility_date"])
+
+    assert configured <= datetime.now(timezone.utc).date()

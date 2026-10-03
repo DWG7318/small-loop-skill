@@ -10,7 +10,7 @@
     "build:webbi": "pnpm build:ui",
     "dev:webbi": "pnpm build:webbi && pnpm dlx wrangler@4.147.0 dev",
     "deploy:webbi": "pnpm build:webbi && pnpm dlx wrangler@4.147.0 deploy",
-    "migrate:webbi": "pnpm dlx wrangler@4.147.0 d1 migrations apply SLK_WEBBI --remote",
+    "migrate:webbi": "pnpm dlx wrangler@4.147.0 d1 migrations apply slk-webbi --remote",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "tauri": "tauri"
