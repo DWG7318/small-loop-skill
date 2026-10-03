@@ -436,11 +436,11 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/WebBiApp.test.tsx",
-      "sha256": "734dc7d1dd6e0ad87e01c5504fe0844cc72212363a87243f69732da8614b3b26"
+      "sha256": "aa89fa6409a4fc34347c79c4b86d07518ccd289bbb498427de2fb2c205847a35"
     },
     {
       "path": "apps/slk-bi/src/webbi/WebBiApp.tsx",
-      "sha256": "06d9ef2fec7e32f2704e4050d3f0a5a784446bb69f1b92855fc9eae6c7990aea"
+      "sha256": "24bfdad508eb2c6265b39bfefcc87b0f0787d303a2d2cd248db6c7dbad40effd"
     },
     {
       "path": "apps/slk-bi/src/webbi/cloudflare.ts",

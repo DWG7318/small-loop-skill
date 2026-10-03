@@ -319,11 +319,11 @@ function SettingsPage({ api }: { api: WebBiApi }) {
       <form className="webbi-settings" onSubmit={(event) => void submit(event)}>
         <label className="webbi-toggle"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /><span>启用 ntfy 通知</span></label>
         <div className="webbi-form-grid">
-          <label>ntfy 服务器<input aria-label="ntfy 服务器" value={draft.server_url} onChange={(event) => setDraft({ ...draft, server_url: event.target.value })} /></label>
-          <label>Topic<input value={draft.topic} onChange={(event) => setDraft({ ...draft, topic: event.target.value })} /></label>
+          <label>服务器地址<input aria-label="服务器地址" value={draft.server_url} onChange={(event) => setDraft({ ...draft, server_url: event.target.value })} /></label>
+          <label>Topic 名称<input aria-label="Topic 名称" value={draft.topic} onChange={(event) => setDraft({ ...draft, topic: event.target.value })} /></label>
           <label>认证方式<select value={draft.auth_mode} onChange={(event) => setDraft({ ...draft, auth_mode: event.target.value as NotificationSettingsInput["auth_mode"] })}><option value="none">无</option><option value="token">Token</option><option value="password">账号密码</option></select></label>
-          {draft.auth_mode === "password" ? <label>账号<input value={draft.username ?? ""} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label> : null}
-          {draft.auth_mode !== "none" ? <label>凭据<input type="password" value={draft.secret ?? ""} onChange={(event) => setDraft({ ...draft, secret: event.target.value || undefined })} placeholder={stored.has_secret ? "留空即保留" : "请输入凭据"} /><small>{stored.has_secret ? "已保存凭据；留空即保留" : "尚未保存凭据"}</small></label> : null}
+          {draft.auth_mode === "password" ? <label>用户名<input aria-label="用户名" value={draft.username ?? ""} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label> : null}
+          {draft.auth_mode !== "none" ? <label>{draft.auth_mode === "password" ? "密码" : "Token"}<input aria-label={draft.auth_mode === "password" ? "密码" : "Token"} type="password" value={draft.secret ?? ""} onChange={(event) => setDraft({ ...draft, secret: event.target.value || undefined })} placeholder={stored.has_secret ? "留空即保留" : draft.auth_mode === "password" ? "请输入密码" : "请输入 Token"} /><small>{stored.has_secret ? "已保存凭据；留空即保留" : "尚未保存凭据"}</small></label> : null}
         </div>
         <fieldset>
           <legend>发送范围</legend>
