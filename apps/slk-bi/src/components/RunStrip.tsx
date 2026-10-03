@@ -5,6 +5,8 @@ import { formatDuration, type RunStripCell, type RunStripView } from "../runPres
 interface RunStripProps {
   view: RunStripView;
   archived?: boolean;
+  unread?: boolean;
+  onOpen?: () => void;
 }
 
 const MARK = {
@@ -55,7 +57,7 @@ function CellRow({ cell }: { cell: RunStripCell }) {
   );
 }
 
-export function RunStrip({ view, archived = false }: RunStripProps) {
+export function RunStrip({ view, archived = false, unread = false, onOpen }: RunStripProps) {
   const [open, setOpen] = useState(false);
   const progressTone = view.statusTone === "done" ? "done" : view.statusTone === "active" ? "active" : "wait";
   const tone = groupTone(view.sourceGroupKey);
@@ -67,7 +69,11 @@ export function RunStrip({ view, archived = false }: RunStripProps) {
         type="button"
         aria-expanded={open}
         aria-label={`${open ? "收起" : "展开"} ${view.runName}`}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen((value) => {
+          const next = !value;
+          if (next) onOpen?.();
+          return next;
+        })}
       >
         <time dateTime={view.startDate}>{view.startDate}</time>
         <span className={`source source-${view.source.kind}`}>{view.source.label}</span>
@@ -85,12 +91,13 @@ export function RunStrip({ view, archived = false }: RunStripProps) {
           <span aria-hidden="true">{MARK[view.statusTone]}</span> {view.status}
         </span>
         <code className="slk-version">SLK {view.slkVersion}</code>
+        {unread ? <span className="unread-dot" aria-label="有新消息" title="有新消息" /> : <span className="unread-dot-slot" />}
         <span className={`chevron${open ? " is-open" : ""}`} aria-hidden="true">▾</span>
       </button>
 
       {open ? (
         <div className="run-details">
-          <dl className="role-strip" aria-label="参与角色">
+          <dl className="role-strip" data-role-count={view.roles.length} aria-label="参与角色">
             {view.roles.map((role) => (
               <div key={role.role}>
                 <dt>{role.role.toUpperCase()}</dt>

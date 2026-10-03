@@ -1,4 +1,6 @@
-use slk_bi_desktop_lib::commands::{projects_from, runs_from, REGISTERED_READ_COMMANDS};
+use slk_bi_desktop_lib::commands::{
+    metadata, projects_from, runs_from, validate_sync_payload, REGISTERED_READ_COMMANDS,
+};
 use slk_state_core::config::configure_at;
 use slk_state_core::model::{
     CellDefinition, EndpointIdentity, GoDefinition, InitRunRequest, ProjectIdentity, Role,
@@ -23,10 +25,45 @@ fn desktop_commands_read_the_configured_global_store_without_credentials() {
 }
 
 #[test]
-fn desktop_registers_only_the_eight_read_commands() {
+fn desktop_registers_the_nine_read_only_projection_commands() {
     assert_eq!(
         REGISTERED_READ_COMMANDS,
-        ["projects", "runs", "run", "graph", "roles", "plans", "events", "evidence"]
+        ["metadata", "projects", "runs", "run", "graph", "roles", "plans", "events", "evidence"]
+    );
+}
+
+#[test]
+fn metadata_exposes_bi_version_and_a_nonempty_device_identity_without_secrets() {
+    let value = metadata().unwrap();
+    assert_eq!(value["schema_version"], "slk.bi.metadata/v1");
+    assert_eq!(value["bi_version"], "1.1.0");
+    assert!(value["device_id"].as_str().unwrap().len() >= 3);
+    assert!(value["device_name"].as_str().unwrap().len() >= 1);
+    let serialized = value.to_string().to_ascii_lowercase();
+    assert!(!serialized.contains("token"));
+    assert!(!serialized.contains("password"));
+}
+
+#[test]
+fn upload_payload_is_version_and_device_bound_before_network_use() {
+    let valid = serde_json::json!({
+        "schema_version":"slk.bi.upload/v1",
+        "bi_version":"1.1.0",
+        "upload_id":"upload-a",
+        "generated_at":"2026-10-04T00:00:00Z",
+        "device":{"device_id":"device-a","device_name":"Workstation A"},
+        "runs":[]
+    });
+    assert!(validate_sync_payload(&valid, "device-a").is_ok());
+    assert_eq!(
+        validate_sync_payload(&valid, "device-b").unwrap_err(),
+        "SLK_WEBBI_DEVICE_INVALID"
+    );
+    let mut extra = valid.clone();
+    extra["raw_logs"] = serde_json::json!(["secret"]);
+    assert_eq!(
+        validate_sync_payload(&extra, "device-a").unwrap_err(),
+        "SLK_WEBBI_UPLOAD_INVALID"
     );
 }
 

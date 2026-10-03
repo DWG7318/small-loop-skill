@@ -6,6 +6,20 @@ import { AppState, type AppStateValue } from "./components/AppState";
 import { RunStrip } from "./components/RunStrip";
 import { archivedRunSummaries, buildRunStripView, visibleRunSummaries } from "./runPresentation";
 import { useSlkData } from "./useSlkData";
+import { MESSAGE_CATALOG } from "./messages/catalog";
+import { projectSupportedAuthoritativeMessages } from "./messages/messageFeed";
+import {
+  acknowledgeDisplayedMessages,
+  bootstrapReadMarker,
+  hasUnreadMessages,
+  mergeReadMarker,
+  parseReadMarker,
+  type ReadMarker,
+} from "./messages/readMarkers";
+import { BI_VERSION } from "./version";
+import { useWebBiSync } from "./webbi/useWebBiSync";
+import "./styles/tokens.css";
+import "./styles/app.css";
 
 interface AppProps {
   api?: SlkApi;
@@ -25,6 +39,18 @@ export function App({ api = tauriApi }: AppProps) {
   const [pinned, setPinned] = useState(false);
   const shell = useRef<HTMLDivElement>(null);
   const { snapshot, staleReason, loading } = useSlkData(api);
+  useWebBiSync(api, snapshot);
+  const [readMarkers, setReadMarkers] = useState<Record<string, ReadMarker>>({});
+
+  const messagesByRun = useMemo(
+    () => new Map(
+      (snapshot?.runDetails ?? []).map((run) => [
+        run.run_id,
+        projectSupportedAuthoritativeMessages(run, MESSAGE_CATALOG),
+      ]),
+    ),
+    [snapshot],
+  );
 
   const { activeRows, archivedRows } = useMemo(() => {
     if (!snapshot) return { activeRows: [], archivedRows: [] };
@@ -42,6 +68,45 @@ export function App({ api = tauriApi }: AppProps) {
       archivedRows: build(archivedRunSummaries(snapshot.runs.runs)),
     };
   }, [snapshot]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    setReadMarkers((current) => {
+      const next = { ...current };
+      for (const [runId, messages] of messagesByRun) {
+        const ids = messages.map((message) => message.message_id);
+        const key = `le-bi:1.1:read:${snapshot.metadata.device_id}:${runId}`;
+        const stored = next[runId] ?? parseReadMarker(window.localStorage.getItem(key));
+        next[runId] = stored ? mergeReadMarker(stored, ids) : bootstrapReadMarker(ids);
+        window.localStorage.setItem(key, JSON.stringify(next[runId]));
+      }
+      return next;
+    });
+  }, [messagesByRun, snapshot]);
+
+  function acknowledgeRun(runId: string) {
+    if (!snapshot) return;
+    const ids = (messagesByRun.get(runId) ?? []).map((message) => message.message_id);
+    const key = `le-bi:1.1:read:${snapshot.metadata.device_id}:${runId}`;
+    setReadMarkers((current) => {
+      const acknowledged = acknowledgeDisplayedMessages(
+        current[runId] ?? bootstrapReadMarker([]),
+        ids,
+      );
+      window.localStorage.setItem(key, JSON.stringify(acknowledged));
+      return { ...current, [runId]: acknowledged };
+    });
+  }
+
+  function unread(runId: string) {
+    const marker = readMarkers[runId];
+    return marker
+      ? hasUnreadMessages(
+          marker,
+          (messagesByRun.get(runId) ?? []).map((message) => message.message_id),
+        )
+      : false;
+  }
 
   useEffect(() => {
     if (!isTauri() || !shell.current || typeof ResizeObserver === "undefined") return;
@@ -82,7 +147,12 @@ export function App({ api = tauriApi }: AppProps) {
     <div className="app-shell" ref={shell}>
       <header className="control-bar" onPointerDown={dragWindow}>
         <span className="product-name">LE BI</span>
-        <code className="product-version">1.0</code>
+        <code className="product-version">{BI_VERSION}</code>
+        {snapshot ? (
+          <code className="device-identity" title={snapshot.metadata.device_id}>
+            {snapshot.metadata.device_name} · {snapshot.metadata.device_id}
+          </code>
+        ) : null}
         {staleReason ? <span className="stale-notice" title={staleReason}>STALE</span> : null}
         <div className="window-controls">
           <button
@@ -127,7 +197,14 @@ export function App({ api = tauriApi }: AppProps) {
               data-run-count={activeRows.length}
               aria-label="进行中的 SLK Runs"
             >
-              {activeRows.map((view) => <RunStrip key={view.runId} view={view} />)}
+              {activeRows.map((view) => (
+                <RunStrip
+                  key={view.runId}
+                  view={view}
+                  unread={unread(view.runId)}
+                  onOpen={() => acknowledgeRun(view.runId)}
+                />
+              ))}
             </ol>
           ) : (
             <p className="quiet-empty">当前没有进行中的 SLK</p>
@@ -138,7 +215,15 @@ export function App({ api = tauriApi }: AppProps) {
               <header><strong>归档箱</strong><span>{archivedRows.length} 条归档 SLK</span></header>
               {archivedRows.length ? (
                 <ol className="run-strips archive-strips" aria-label="已归档的 SLK Runs">
-                  {archivedRows.map((view) => <RunStrip key={view.runId} view={view} archived />)}
+                  {archivedRows.map((view) => (
+                    <RunStrip
+                      key={view.runId}
+                      view={view}
+                      archived
+                      unread={unread(view.runId)}
+                      onOpen={() => acknowledgeRun(view.runId)}
+                    />
+                  ))}
                 </ol>
               ) : <p className="quiet-empty">还没有归档记录</p>}
             </section>

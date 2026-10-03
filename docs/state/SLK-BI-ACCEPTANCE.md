@@ -1,5 +1,30 @@
 # SLK BI Acceptance
 
+## BI / WebBI 1.1.0 local candidate
+
+Date: 2026-10-04
+Result: PASS for the local source candidate; Cloudflare production deployment remains a separate remote action.
+
+- Desktop and browser use the single BI version `1.1.0`; historical Run method versions remain unchanged.
+- The closed message catalog exactly matches all current state-core event and operational-observation types. Unknown categories, wrong-role authorship, duplicate identities, excess fields, and unsupported versions fail closed.
+- The first snapshot is a silent history bootstrap. Only a later immutable Agent-authored message identity creates a green unread mark or eligible ntfy delivery; polling, elapsed time, repeat upload, and ordinary Overwatcher cycles do not.
+- Desktop upload is built into the existing Tauri process, has no Node sidecar or listener, is disabled without all four per-device settings, accepts HTTPS/localhost only, caps an envelope at 10 MiB, and times out after 15 seconds.
+- WebBI keeps same-named Runs isolated by device ID, rejects stale snapshot overwrite, defaults to `进行中`, permanently retains terminal Runs under `已归档`, and exposes no top-level `全部` or device mode.
+- ntfy secrets remain server-side and are AES-GCM encrypted in D1. The browser receives only `has_secret`; blank reuse is allowed only for the same auth mode, and a new mode requires a new credential.
+- Desktop details show a registered Overwatcher as the fourth complete role while retaining the separate non-authoritative operational status strip.
+
+Automated and build evidence:
+
+- Frontend Vitest: 15 files, 57 tests, PASS.
+- Strict TypeScript: PASS.
+- Vite production build: PASS; development fixtures and Vite client markers absent.
+- Rust workspace: 125 tests, PASS, including 4 BI desktop integration tests.
+- Full Python suite: 561 passed, 20 skipped.
+- Wrangler 4.147.0 dry-run: PASS; static assets and D1/Assets bindings recognized, no deployment performed.
+- Real browser layout check: desktop and 390 px phone list/detail/settings, PASS with no horizontal overflow.
+
+Release boundary: `apps/slk-bi/wrangler.jsonc` intentionally retains a deployment placeholder. Creating the D1 database, setting Worker secrets, applying the remote migration, binding `slk.lcsp.work`, and deploying are not claimed by this local acceptance.
+
 ## 4.2.6 production cold-start and display repair
 
 Date: 2026-09-23

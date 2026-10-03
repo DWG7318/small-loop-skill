@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { SlkApi } from "./api";
+import type { BiMetadata, SlkApi } from "./api";
 import type { ProjectsView, RunsView, RunView } from "./contracts";
 
 export interface SlkSnapshot {
+  metadata: BiMetadata;
   projects: ProjectsView;
   runs: RunsView;
   runDetails: RunView[];
@@ -18,7 +19,8 @@ export function useSlkData(api: SlkApi) {
 
   const refresh = useCallback(async () => {
     try {
-      const [projects, runs] = await Promise.all([
+      const [metadata, projects, runs] = await Promise.all([
+        api.metadata(),
         api.projects(),
         api.runs(),
       ]);
@@ -26,7 +28,7 @@ export function useSlkData(api: SlkApi) {
         runs.runs.map((run) => api.run(run.run_id)),
       );
       if (!mounted.current) return;
-      setSnapshot({ projects, runs, runDetails });
+      setSnapshot({ metadata, projects, runs, runDetails });
       setStaleReason(undefined);
       setLastUpdatedAt(new Date().toISOString());
     } catch (error) {

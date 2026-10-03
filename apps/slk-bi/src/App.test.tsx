@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { SlkApi } from "./api";
 import { App } from "./App";
@@ -29,6 +29,7 @@ function activeRunApi(count: number): SlkApi {
   };
 }
 
+beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
 
 describe("LE BI shell", () => {
@@ -64,5 +65,70 @@ describe("LE BI shell", () => {
     expect(list).toHaveClass("active-run-strips");
     if (scrollable) expect(list).toHaveClass("is-scrollable");
     else expect(list).not.toHaveClass("is-scrollable");
+  });
+
+  it("shows BI 1.1.0 and the exact local device identity in the header", async () => {
+    render(<App api={fixtureApi} />);
+
+    expect(await screen.findByText("1.1.0")).toBeVisible();
+    expect(screen.getByText("Workstation A · device-a")).toBeVisible();
+  });
+
+  it("shows a registered Overwatcher as a complete fourth role", async () => {
+    const api: SlkApi = {
+      ...fixtureApi,
+      run: async () => ({
+        ...runFixture,
+        roles: [
+          ...runFixture.roles,
+          {
+            ...runFixture.roles[0]!,
+            role: "overwatcher",
+            role_instance_id: "overwatcher-a",
+            agent_runtime: "LCaS",
+            model: "gpt-6-luna",
+            reasoning: "high",
+            session_id: "overwatcher-session-a",
+          },
+        ],
+      }),
+    };
+    const user = userEvent.setup();
+    render(<App api={api} />);
+    await user.click(await screen.findByRole("button", { name: "展开 Close flow" }));
+    expect(screen.getByText("OVERWATCHER")).toBeVisible();
+    expect(screen.getByText("LCaS")).toBeVisible();
+    expect(screen.getByText(/gpt-6-luna/)).toBeVisible();
+  });
+
+  it("creates a compact green dot only after a new authoritative message and clears it on open", async () => {
+    const user = userEvent.setup();
+    let current = runFixture;
+    const api: SlkApi = {
+      ...fixtureApi,
+      run: async () => current,
+    };
+    render(<App api={api} />);
+
+    await screen.findByText("Close flow");
+    expect(screen.queryByLabelText("有新消息")).not.toBeInTheDocument();
+
+    current = {
+      ...runFixture,
+      events: [
+        ...runFixture.events,
+        {
+          ...runFixture.events[0]!,
+          event_id: "work-progress",
+          event_type: "WORK_PROGRESS",
+          occurred_at: "2026-09-20T00:00:04Z",
+        },
+      ],
+    };
+    window.dispatchEvent(new Event("focus"));
+    expect(await screen.findByLabelText("有新消息")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "展开 Close flow" }));
+    expect(screen.queryByLabelText("有新消息")).not.toBeInTheDocument();
   });
 });

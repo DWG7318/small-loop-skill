@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "slk-webbi",
+  "main": "src/webbi/cloudflare.ts",
+  "compatibility_date": "2026-10-03",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    {
+      "pattern": "slk.lcsp.work",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "slk-webbi",
+      "database_id": "a1fec528-7297-41e3-8725-e3df0f4c0b60",
+      "migrations_dir": "webbi/migrations"
+    }
+  ],
+  "observability": { "enabled": false }
+}
