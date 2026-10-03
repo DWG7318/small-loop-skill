@@ -20,11 +20,11 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "c492d2d52cd0b780c14dbf78fbd6efff96bed5259e5d0f26ab382337efaf3d9c"
+      "sha256": "f4f49eabb318d35924cca28607fe821c50969f5635685063948d38fc573d707f"
     },
     {
       "path": "Cargo.lock",
-      "sha256": "566e30c542b3efc058242f6844b3be9c102a8e0438c84e9fc8350fd559ac2819"
+      "sha256": "2568d334c43a18e38926283e5e4a6a547459e8c75972a502376182285a8b71a3"
     },
     {
       "path": "Cargo.toml",
@@ -48,7 +48,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "b95e333cb733640ecb8c0b148d7928840d74560bd31d22828a153f9375f3ee0a"
+      "sha256": "a3910f8187afe49aba2995de308e28a19dbbf5fcf53d591bcb5c452e427d5d25"
     },
     {
       "path": "README.zh-CN.md",
@@ -68,7 +68,7 @@
     },
     {
       "path": "apps/slk-bi/package.json",
-      "sha256": "34660213f7bd1e681aa77cfc9186dd073548e6d361f7a8947f7fb1b369607396"
+      "sha256": "bf81bc06a9a31cb66d7fc2b18b90da78e4c18971f6d64c43fd7d5141d9b67b26"
     },
     {
       "path": "apps/slk-bi/pnpm-lock.yaml",
@@ -76,7 +76,7 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/Cargo.toml",
-      "sha256": "e5fea8207a364d3b0edc225f8716440a48bc72a68238e02285e8bddd83b03bf2"
+      "sha256": "e475a844ab24904219202761d7de710d1cb7ba3ca694014dcf92a1306247de6f"
     },
     {
       "path": "apps/slk-bi/src-tauri/build.rs",
@@ -316,11 +316,11 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/src/commands.rs",
-      "sha256": "cfe057b0297d366654415c8e05c7cea5a7f50ee257b03e800728a2c6a4dfae06"
+      "sha256": "4c68914472b64c86a0bd46ded832fb919f33a37d812bc18af58e4b863d1479e4"
     },
     {
       "path": "apps/slk-bi/src-tauri/src/lib.rs",
-      "sha256": "4982265c6f16224604865553879577226a19e222303cffa83db3ffd0c701ef03"
+      "sha256": "43d43ef3d7eef2a7134f808978e4de1908e27d3c9a7d55c19ea159d5000469fc"
     },
     {
       "path": "apps/slk-bi/src-tauri/src/main.rs",
@@ -328,19 +328,19 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/tauri.conf.json",
-      "sha256": "d0a9f76b308b26e59c79e3f5b795adb94640481aa12cc80451d421b7ac4637fd"
+      "sha256": "e206863e38a02bf06dec460c72e5d70a19a8b4f6f3f1e1aa2224a5a67a1549de"
     },
     {
       "path": "apps/slk-bi/src-tauri/tests/read_commands.rs",
-      "sha256": "7639ea3319f92de0f007fa105c4c53181c4d9533916785817e0462bb8a558c59"
+      "sha256": "7e11e26826076218191400fb2787f1cedf32519a07f3eee2620589092b8a9f00"
     },
     {
       "path": "apps/slk-bi/src/App.test.tsx",
-      "sha256": "1df0786e15af7ca7c7dd22509eb93f37860bdcaa3c6aaa3d955f0a0248bfa8f7"
+      "sha256": "c7cd8c1cc53409a4e1ead5d1c7e0ff109d2d7d36b6a36bef1267b5f34c63b810"
     },
     {
       "path": "apps/slk-bi/src/App.tsx",
-      "sha256": "dd3568c1abbe892ff1c9a5a85eda466c260a94ce417360780de555233dbbaeea"
+      "sha256": "ce07c3cd9e3411d831f32d59bc2c72c256c23c2c255e3b4eab36a29f738947b5"
     },
     {
       "path": "apps/slk-bi/src/a11y.test.tsx",
@@ -348,7 +348,7 @@
     },
     {
       "path": "apps/slk-bi/src/api.ts",
-      "sha256": "fe6f900a0edaebd9b9bc9bbe8cae1162ec0858c2c52a889fb83b9f1ea31609cb"
+      "sha256": "6259cccc409e7d1f1e415052626da7e411963503434cea521497687f7575b254"
     },
     {
       "path": "apps/slk-bi/src/components/AppState.test.tsx",
@@ -364,7 +364,7 @@
     },
     {
       "path": "apps/slk-bi/src/components/RunStrip.tsx",
-      "sha256": "23dfe3b50704a65ff20061a137eb5af870eadadaa4abaed71f05f3bcb5b27831"
+      "sha256": "d9fdbeba7bff2d63228254a91fa62b4380f0a9725cedee24be8bf7dc651766bd"
     },
     {
       "path": "apps/slk-bi/src/contracts.test.ts",
@@ -376,7 +376,27 @@
     },
     {
       "path": "apps/slk-bi/src/main.tsx",
-      "sha256": "344fa9a39334a04196b570fd22c220ba4884400c513834801a27eef389943ae3"
+      "sha256": "4cd758056350ebd9501f69c61cda48cfc6b3aca1ffe4e0baa59f00fa614d7f1c"
+    },
+    {
+      "path": "apps/slk-bi/src/messages/catalog.ts",
+      "sha256": "50efe6943d1f96d21c49af0d7fa3088e2f498d8085a8262cdff110ad415f2db2"
+    },
+    {
+      "path": "apps/slk-bi/src/messages/messageFeed.test.ts",
+      "sha256": "d034fdf1293d39e8de32efab9f66581f681e19550c3ead67d409b059731a618d"
+    },
+    {
+      "path": "apps/slk-bi/src/messages/messageFeed.ts",
+      "sha256": "a3d2a568879e837751c2ba2df1f40fc7c11582da14fce7877dcabc5d30d967c2"
+    },
+    {
+      "path": "apps/slk-bi/src/messages/readMarkers.test.ts",
+      "sha256": "af1b7c551dbd2e7aefdc70b99d747eb0a1b2b63c51960408d1b9da51e2f5564c"
+    },
+    {
+      "path": "apps/slk-bi/src/messages/readMarkers.ts",
+      "sha256": "4f3eba495a31526e113798c6258a4287bef5c3f35c5a660a85cb079bda2ff8df"
     },
     {
       "path": "apps/slk-bi/src/runPresentation.test.ts",
@@ -384,11 +404,11 @@
     },
     {
       "path": "apps/slk-bi/src/runPresentation.ts",
-      "sha256": "b4c5e9e95208c94c3e3f83efe90f009fd1be91927cb0d3d64f74f27d105aecf1"
+      "sha256": "61286aaf725f81aadb0d2ae82f222d5a216f498dc740e9de6ce5bf0e3e515a4b"
     },
     {
       "path": "apps/slk-bi/src/styles/app.css",
-      "sha256": "bd9d94cabbd58c16b1d50db04bbf73c762ccf219bd0045accb52f66038e45b0f"
+      "sha256": "c79a48ac0e68dd69cde98a35cd7fe9204a269544ff95ce9bb37f4e38d891b3da"
     },
     {
       "path": "apps/slk-bi/src/styles/tokens.css",
@@ -396,7 +416,7 @@
     },
     {
       "path": "apps/slk-bi/src/test/fixtures.ts",
-      "sha256": "3112201f90b0b0665cd9424184448e1df72e5d18b423ece346a61e9985d532f3"
+      "sha256": "d9601fa3667f690ff6f36dd0731200f5c0cec2d83de1ee0ff3743eaf1ad7bf86"
     },
     {
       "path": "apps/slk-bi/src/test/setup.ts",
@@ -404,11 +424,87 @@
     },
     {
       "path": "apps/slk-bi/src/useSlkData.test.tsx",
-      "sha256": "a8477cc171129d58f8129492dd844b7efecabc6e45e5f7e76b9498b9f7c9bc72"
+      "sha256": "8d798a0d8562d88853f1b2ced4cb1c7a8ffc3d73f5854db9ee0077ea21a0ff99"
     },
     {
       "path": "apps/slk-bi/src/useSlkData.ts",
-      "sha256": "80b4bf065d34f4a6d324800b5a7a15a23c43023fa1faae6b3b2fcb5128c0803b"
+      "sha256": "4448fe048a1d0ede48d3d7009b9217f66f65861576bbf2018ffaaba44e3a1573"
+    },
+    {
+      "path": "apps/slk-bi/src/version.ts",
+      "sha256": "aeeb5ccd80fc09648fd05047cefb1c59ebcd7227fff15fd92f5b92ef1a9fe5d4"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/WebBiApp.test.tsx",
+      "sha256": "734dc7d1dd6e0ad87e01c5504fe0844cc72212363a87243f69732da8614b3b26"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/WebBiApp.tsx",
+      "sha256": "06d9ef2fec7e32f2704e4050d3f0a5a784446bb69f1b92855fc9eae6c7990aea"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/cloudflare.ts",
+      "sha256": "50680b3304d05a4a22880ac2ca32f6810267fef3acbabdbcc9c99dec1c56b109"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/contracts.test.ts",
+      "sha256": "caee596fd106bbe8be5d18c72ddaf9366dc5c3b5ec4df8f7a1ec17ea37862ca8"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/contracts.ts",
+      "sha256": "73b1a256b45a2f044603f2f943c1f588bbd5baa2734fc29ea01eee88d3626920"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/d1Store.ts",
+      "sha256": "ccbc31bb8beeb808e0437a88e3a65cef33793d826af76d9d40d071df8e19ed41"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/notifications.test.ts",
+      "sha256": "eea0e9c8622d47e1ee9d941408a3adbbee4b480137b62f8e48e42ec13184d5ca"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/notifications.ts",
+      "sha256": "9c20355b8673978bacdf4b6f8ac83f9b0f3b338d5b02bbd73b6fb2e0fb2bc668"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/ntfy.test.ts",
+      "sha256": "5b3e529818465995dca314bb194ab9d4d378a437fcbd5f723fe8d2c7f7cec90b"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/ntfy.ts",
+      "sha256": "87dac138eeea9168f3b0d916ec269c6dc51d713a40b4e643231fc45b35b7ebd1"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/sync.test.ts",
+      "sha256": "ba63189291bb677c3262bca941220e5138bf80cc22de18d83ef152ee3bc2d78f"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/sync.ts",
+      "sha256": "ad76b94d7376e6d4916ba484639b6a0bda558e7970a76493bc9d249067c82485"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/testFixtures.ts",
+      "sha256": "5adf45c12143dfd5f72db756797b9d189d1d4fdf9cee0404df33fe59919a3606"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/useWebBiSync.ts",
+      "sha256": "a07422c05857032e6c9c931a8e4420331654fc629d0e9b721732973ba1d525f6"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/webApi.ts",
+      "sha256": "875496870ee5697ff73e6d4503d13683a4102f9ed73f850871108ebfcfbeca7f"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/webbi.css",
+      "sha256": "07d70b4aa6949c6e3f5b269b56ae4311f81ba0ecc0e38ca7e15bb105f3df08e3"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/worker.test.ts",
+      "sha256": "72596c00a3b57e347a24567cf9093ec5fa223e90df19f629250d061a00f17e39"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/worker.ts",
+      "sha256": "636ba13843e573e15add4e0bb6541c321ca95edece23f79c68a7e2a13cb2276e"
     },
     {
       "path": "apps/slk-bi/tsconfig.json",
@@ -417,6 +513,14 @@
     {
       "path": "apps/slk-bi/vite.config.ts",
       "sha256": "5e7a978cece480e1fec2b350d0e24fb2c1c8f5eebb2faddb910a3c4ed350bbec"
+    },
+    {
+      "path": "apps/slk-bi/webbi/migrations/0001.sql",
+      "sha256": "db961f5aac1c18eca9b23be8e0bf685b44362c1dfbb8cc5a93f3e46e75685e15"
+    },
+    {
+      "path": "apps/slk-bi/wrangler.jsonc",
+      "sha256": "d95f2c6d84d725ba4fa7f5d3511c5b4f0f6e72bb22ca0f7c7a512f15afae02e8"
     },
     {
       "path": "crates/slk-bi-query/Cargo.toml",
@@ -680,11 +784,11 @@
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
-      "sha256": "e82e0da7d4567dd8fc4e4de6a0b70b0c28e8ed3f8e46efbb84d09e1c08ad55b1"
+      "sha256": "385c29eae8ea62d42beef6e3d062e64de063b78d51a78eed353177b187112add"
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "c83391dda9fb7cfc350f8b4e25478b012ddfe4fd7e787bbf056f8c32aecc0cb7"
+      "sha256": "e6aa0fd5fbfcbde2b96de04a47f66ce62dc901e48cdc84778ad4063a89f8fe8e"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",
@@ -799,6 +903,10 @@
       "sha256": "3920bdd13e39d4ef14ab5bf234668d6730d38db2b844cdac0314c5b21ec03c77"
     },
     {
+      "path": "docs/superpowers/plans/2026-10-03-slk-4.4.0-upgrade.md",
+      "sha256": "56d3d9c271312c63bf019962405f539c846425ced8fa9ffabf7eae9fb3451cb2"
+    },
+    {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",
       "sha256": "d26a2d488e8ac2159750b332d8eb1bd02a1187aa9143f0e75a105ad8b601dcfd"
     },
@@ -889,6 +997,10 @@
     {
       "path": "docs/superpowers/specs/2026-09-30-slk-4.3.3-ocrv-preflight-design.md",
       "sha256": "cab40562b03b3391410ab95ac5e462efc904a4a64a3c5c581f3980443b4b09f5"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-04-slk-4.4.0-agent-authored-bi-messages-design.md",
+      "sha256": "da88ed80bd26bbb8d0a393aca78bac5cadf66022988425a678289c9f554f1af7"
     },
     {
       "path": "docs/transport/SLK-TRANSPORT-LIVE-ACCEPTANCE.md",
@@ -1252,7 +1364,11 @@
     },
     {
       "path": "tests/state/test_bi_desktop_contract.py",
-      "sha256": "1c5f1fe964c4fe9105128dab5e18f0dfdf1f1d8b2d635b551089cd74c469b610"
+      "sha256": "dc636d5185919f95a3536e12c3553c652a7f0d5ecf196c9048b0b8216fd6c993"
+    },
+    {
+      "path": "tests/state/test_bi_message_catalog_contract.py",
+      "sha256": "9b46d3533e784c488d1472bf07a7a4e8304fc3d3bf997a85c489fb5e3af784da"
     },
     {
       "path": "tests/state/test_query_cli.py",

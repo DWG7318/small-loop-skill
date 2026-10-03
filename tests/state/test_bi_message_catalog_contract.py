@@ -1,4 +1,5 @@
 import re
+import sqlite3
 from pathlib import Path
 
 
@@ -42,3 +43,22 @@ def test_webbi_d1_upserts_cannot_replace_a_newer_run_snapshot():
     )
     assert "WHERE excluded.updated_at > runs.updated_at" in store
     assert "WHERE excluded.last_seen_at > devices.last_seen_at" in store
+
+
+def test_webbi_d1_migration_is_valid_sql_and_has_no_delete_path():
+    store = (ROOT / "apps" / "slk-bi" / "src" / "webbi" / "d1Store.ts").read_text(
+        encoding="utf-8"
+    )
+    migration = (
+        ROOT / "apps" / "slk-bi" / "webbi" / "migrations" / "0001.sql"
+    ).read_text(encoding="utf-8")
+    database = sqlite3.connect(":memory:")
+    database.executescript(migration)
+    tables = {
+        row[0]
+        for row in database.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    assert {"devices", "runs", "messages", "notification_settings", "notification_deliveries"} <= tables
+    assert "DELETE FROM" not in store.upper()
