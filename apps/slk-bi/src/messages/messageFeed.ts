@@ -96,3 +96,19 @@ export function projectAuthoritativeMessages(
       || left.message_id.localeCompare(right.message_id),
   );
 }
+
+export function projectSupportedAuthoritativeMessages(
+  run: RunView,
+  catalog: readonly MessageCatalogEntry[],
+): AuthoritativeMessage[] {
+  const knownLegacyAuthorityMismatch = (event: RunView["events"][number]) =>
+    run.summary.slk_version === "4.0.0"
+    && event.event_type === "REWORK_REQUESTED"
+    && run.roles.find(({ role_instance_id }) =>
+      role_instance_id === event.author_role_instance_id)?.role === "checker";
+
+  return projectAuthoritativeMessages({
+    ...run,
+    events: run.events.filter((event) => !knownLegacyAuthorityMismatch(event)),
+  }, catalog);
+}

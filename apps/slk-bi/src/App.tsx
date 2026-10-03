@@ -7,7 +7,7 @@ import { RunStrip } from "./components/RunStrip";
 import { archivedRunSummaries, buildRunStripView, visibleRunSummaries } from "./runPresentation";
 import { useSlkData } from "./useSlkData";
 import { MESSAGE_CATALOG } from "./messages/catalog";
-import { projectAuthoritativeMessages } from "./messages/messageFeed";
+import { projectSupportedAuthoritativeMessages } from "./messages/messageFeed";
 import {
   acknowledgeDisplayedMessages,
   bootstrapReadMarker,
@@ -46,7 +46,7 @@ export function App({ api = tauriApi }: AppProps) {
     () => new Map(
       (snapshot?.runDetails ?? []).map((run) => [
         run.run_id,
-        projectAuthoritativeMessages(run, MESSAGE_CATALOG),
+        projectSupportedAuthoritativeMessages(run, MESSAGE_CATALOG),
       ]),
     ),
     [snapshot],

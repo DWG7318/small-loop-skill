@@ -4,6 +4,7 @@ type CatalogSeed = readonly [messageType: string, labelZh: string, roles: readon
 
 const SUPERVISOR: readonly SlkRole[] = ["supervisor"];
 const CHECKER: readonly SlkRole[] = ["checker"];
+const CONTROL: readonly SlkRole[] = ["supervisor", "checker"];
 const WORKER: readonly SlkRole[] = ["worker"];
 const OVERWATCHER: readonly SlkRole[] = ["overwatcher"];
 const TECHNICAL: readonly SlkRole[] = ["supervisor", "checker", "worker"];
@@ -16,7 +17,7 @@ const EVENT_SEEDS: readonly CatalogSeed[] = [
   ["ROLE_REGISTERED", "角色已登记", ["supervisor", "checker"]],
   ["ROLE_REPLACED", "角色已替换", ["supervisor", "checker"]],
   ["MODEL_CHANGED", "模型绑定已变更", SUPERVISOR],
-  ["SESSION_REBOUND", "Session 已重新绑定", SUPERVISOR],
+  ["SESSION_REBOUND", "Session 已重新绑定", CONTROL],
   ["OVERWATCHER_TURN_RESUMED", "Overwatcher turn 已恢复", SUPERVISOR],
   ["EXEMPTION_GRANTED", "豁免已批准", SUPERVISOR],
   ["D2_STARTED", "D2 已开始", SUPERVISOR],
@@ -47,6 +48,10 @@ const EVENT_SEEDS: readonly CatalogSeed[] = [
   ["TRANSPORT_STARTED", "接收方原生工作已启动", TECHNICAL],
 ];
 
+const SPECIALIZED_EVENT_SEEDS: readonly CatalogSeed[] = [
+  ["ROLE_CLOSED", "角色已归档", SUPERVISOR],
+];
+
 const OBSERVATION_SEEDS: readonly CatalogSeed[] = [
   ["DELIVERY_UNCONFIRMED", "投递未确认", OVERWATCHER],
   ["DELIVERY_RETRYING", "投递正在重试", OVERWATCHER],
@@ -70,6 +75,7 @@ function entries(sourceKind: MessageSourceKind, seeds: readonly CatalogSeed[]) {
 
 export const MESSAGE_CATALOG: readonly MessageCatalogEntry[] = Object.freeze([
   ...entries("EVENT", EVENT_SEEDS),
+  ...entries("EVENT", SPECIALIZED_EVENT_SEEDS),
   ...entries("OW_OBSERVATION", OBSERVATION_SEEDS),
 ]);
 

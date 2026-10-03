@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "bc0e5fd0b21f3e7dc3991bcba9c9eb9ab419049c824533714247d73ee936eb82"
+      "sha256": "a00fe03630d2067d15a7a48a11aa42048eaec94f9acc72e62800943e65a6d04a"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "95c2526c46b04dbfddb9b7a004eba8255d9356e0438b0d7b5b06975f9c18f306"
+      "sha256": "f7bce810fb8c219497a4acd503e66160ee2ec32b32f26e109316911046d4e523"
     },
     {
       "path": "VERSION",
@@ -340,7 +340,7 @@
     },
     {
       "path": "apps/slk-bi/src/App.tsx",
-      "sha256": "ce07c3cd9e3411d831f32d59bc2c72c256c23c2c255e3b4eab36a29f738947b5"
+      "sha256": "d35399e45f173f2925b5e7f2a9eb6c3f1b558ff2bc41c885da89ac15465c6199"
     },
     {
       "path": "apps/slk-bi/src/a11y.test.tsx",
@@ -380,15 +380,15 @@
     },
     {
       "path": "apps/slk-bi/src/messages/catalog.ts",
-      "sha256": "50efe6943d1f96d21c49af0d7fa3088e2f498d8085a8262cdff110ad415f2db2"
+      "sha256": "9a9fefcf5a924b5f16f79b1aa238fca62b0a5cffb452a7b75b705f77a3bcaf7d"
     },
     {
       "path": "apps/slk-bi/src/messages/messageFeed.test.ts",
-      "sha256": "d034fdf1293d39e8de32efab9f66581f681e19550c3ead67d409b059731a618d"
+      "sha256": "e0215ea5964527d5ef89e0fc366174a0b0b098f54ffc7e5f90cbac8448746909"
     },
     {
       "path": "apps/slk-bi/src/messages/messageFeed.ts",
-      "sha256": "a3d2a568879e837751c2ba2df1f40fc7c11582da14fce7877dcabc5d30d967c2"
+      "sha256": "515822f0690043f6362909fb97b0c02449e02faf71eb1c1bf6f27563b553414f"
     },
     {
       "path": "apps/slk-bi/src/messages/readMarkers.test.ts",
@@ -476,11 +476,11 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/sync.test.ts",
-      "sha256": "ba63189291bb677c3262bca941220e5138bf80cc22de18d83ef152ee3bc2d78f"
+      "sha256": "c3ecfbff83073811645e4975746f383c029e719e0018743d6ab3950da5f92bbc"
     },
     {
       "path": "apps/slk-bi/src/webbi/sync.ts",
-      "sha256": "ad76b94d7376e6d4916ba484639b6a0bda558e7970a76493bc9d249067c82485"
+      "sha256": "550397dc00c90bac7ac20cee11e95cd8f8925788751c1cbe20edbb0595d6795f"
     },
     {
       "path": "apps/slk-bi/src/webbi/testFixtures.ts",
@@ -1412,7 +1412,7 @@
     },
     {
       "path": "tests/state/test_bi_message_catalog_contract.py",
-      "sha256": "9b46d3533e784c488d1472bf07a7a4e8304fc3d3bf997a85c489fb5e3af784da"
+      "sha256": "36112d2a12e7cf1345e417b13412743f0d914ddfb0e0de90c7b299ef6865ed3d"
     },
     {
       "path": "tests/state/test_query_cli.py",
