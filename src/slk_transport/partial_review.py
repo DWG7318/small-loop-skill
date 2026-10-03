@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -412,6 +413,273 @@ def validate_incomplete_segment_resume(
         raise ValueError('incomplete segment resume changed the frozen failed/reused partition')
 
 
+def _validate_existing_native_piece(
+    request: Mapping[str, Any], input_path: Path, root: Path, *, terminal: str,
+    parent_session_id: str | None,
+) -> dict[str, Any]:
+    """Validate one already-finished OCRV process without starting or normalizing it."""
+    required = ('result.json', 'ocrv-review.json', 'started.json', 'native-activity.json',
+                'ocrv.stdout.txt', 'ocrv.stderr.txt')
+    if not input_path.is_file() or not all((root / name).is_file() for name in required):
+        raise ValueError('existing OCRV segment evidence is incomplete')
+    result, raw = read(root / 'result.json'), read(root / 'ocrv-review.json')
+    scope = read(input_path).get('review_scope', {}).get('include_paths')
+    if not isinstance(scope, list) or not scope or any(not isinstance(path, str) or not path for path in scope):
+        raise ValueError('existing OCRV segment scope is invalid')
+    manifest = raw.get('manifest')
+    execution = manifest.get('execution') if isinstance(manifest, dict) else None
+    input_value = manifest.get('input') if isinstance(manifest, dict) else None
+    coverage = manifest.get('coverage') if isinstance(manifest, dict) else None
+    if (not isinstance(manifest, dict) or raw.get('status') != terminal
+        or manifest.get('terminal_state') != terminal
+        or manifest.get('schema_version') != 'ocr.run-manifest/v1'
+        or manifest.get('operation') != 'review' or manifest.get('run_id') != raw.get('session_id')
+        or not isinstance(execution, dict) or execution.get('provider') != 'dashscope-tokenplan'
+        or execution.get('model') != 'qwen3.8-max' or not isinstance(input_value, dict)
+        or input_value.get('mode') != 'commit'
+        or input_value.get('requested_head') != request['candidate_commit']
+        or input_value.get('resolved_head') != request['candidate_commit']
+        or input_value.get('resolved_base') != request['candidate_parent']
+        or input_value.get('exact_range') != f"{request['candidate_parent']}..{request['candidate_commit']}"
+        or not isinstance(coverage, dict)):
+        raise ValueError('existing OCRV manifest candidate, model or terminal identity drift')
+    selected = identities(coverage.get('selected'))
+    completed = identities(coverage.get('completed'))
+    reused = identities(coverage.get('reused'))
+    failed = identities(coverage.get('failed'))
+    if ({row[1] for row in selected} != set(scope) or coverage.get('waived') != []
+        or completed & reused or not (completed | reused | failed) <= selected):
+        raise ValueError('existing OCRV path or fingerprint coverage drift')
+    if terminal == 'complete' and (failed or completed | reused != selected):
+        raise ValueError('existing complete OCRV segment has unfinished coverage')
+    if terminal in {'partial', 'failed'} and (not failed or completed | reused | failed != selected):
+        raise ValueError('existing incomplete OCRV segment does not partition its scope')
+    if terminal == 'failed' and any(
+        item.get('classification') != 'budget' for item in coverage.get('failed', [])
+    ):
+        raise ValueError('existing failed OCRV checkpoint is not a budget boundary')
+    comments = raw.get('comments')
+    if comments is None and terminal == 'failed':
+        comments = []
+    if not isinstance(comments, list) or any(not isinstance(item, dict) for item in comments):
+        raise ValueError('existing OCRV findings are invalid')
+    expected_verdict, expected_reasons = _complete_verdict(comments)
+    if terminal == 'complete':
+        verdict_ok = result.get('verdict') == expected_verdict and result.get('reason_codes') == expected_reasons
+    else:
+        verdict_ok = (result.get('verdict') == 'INCOMPLETE'
+                      and 'OCR_COVERAGE_INCOMPLETE' in result.get('reason_codes', []))
+    expected_exit = 1 if terminal == 'failed' else 0
+    expected_activity = 'FAILED' if terminal == 'failed' else 'COMPLETED'
+    if (result.get('schema_version') != 'slk.ocrv-d1-result/v1'
+        or result.get('run_id') != request['run_id'] or result.get('cell_id') != request['cell_id']
+        or not verdict_ok or result.get('request_sha256') != digest(input_path)
+        or ([] if result.get('findings') is None and terminal == 'failed'
+            else result.get('findings')) != comments
+        or result.get('review') != {'status': terminal, 'provider': 'dashscope-tokenplan',
+            'model': 'qwen3.8-max', 'session_id': raw.get('session_id'), 'exit_code': expected_exit}
+        or Path(str(result.get('artifacts', {}).get('raw_review', ''))).resolve()
+            != (root / 'ocrv-review.json').resolve()
+        or raw.get('llm') != {'provider': 'dashscope-tokenplan', 'model': 'qwen3.8-max'}
+        or raw.get('tool_calls', {}).get('failure') != 0):
+        raise ValueError('existing OCRV result changed its native verdict or findings')
+    start, activity = read(root / 'started.json'), read(root / 'native-activity.json')
+    task_id = result.get('review_invocation_id')
+    expected_start = {'schema_version': 'slk.native-start/v2', 'status': 'STARTED',
+        'adapter': 'ocrv-checker', 'run_id': request['run_id'], 'cell_id': request['cell_id'],
+        'message_id': request['candidate_message_id'], 'request_sha256': request['payload_sha256'],
+        'native_request_sha256': digest(input_path)}
+    if (any(start.get(key) != value for key, value in expected_start.items())
+        or start.get('native_task', {}).get('kind') != 'ocrv-review'
+        or start.get('native_task', {}).get('id') != task_id
+        or activity.get('schema_version') != 'slk.native-task-activity/v1'
+        or any(activity.get(key) != value for key, value in {
+            'adapter': 'ocrv-checker', 'run_id': request['run_id'], 'cell_id': request['cell_id'],
+            'message_id': request['candidate_message_id'], 'native_task_id': task_id,
+            'status': expected_activity}.items())
+        or activity.get('last_event', {}).get('kind') != 'OCRV_PROCESS_EXITED'
+        or activity.get('last_event', {}).get('exit_code') != expected_exit):
+        raise ValueError('existing OCRV start or terminal activity drift')
+    session_path = (Path(str(request['ocrv_session']['session_record_path'])).resolve().parent
+                    / f"{raw['session_id']}.jsonl")
+    session_rows = records(session_path)
+    endings = [row for row in session_rows if row.get('type') == 'session_end']
+    lineages = [row for row in session_rows if row.get('type') == 'resume_lineage']
+    if len(endings) != 1 or endings[0].get('run_manifest') != manifest:
+        raise ValueError('existing OCRV native session terminal manifest drift')
+    if parent_session_id is None:
+        if lineages:
+            raise ValueError('fresh existing OCRV segment unexpectedly claims resume lineage')
+    else:
+        expected_lineage = {'schema_version': 'ocr.resume-lineage/v1',
+            'parent_run_id': parent_session_id, 'run_id': raw['session_id'],
+            'source_provider': 'dashscope-tokenplan', 'source_model': 'qwen3.8-max',
+            'target_provider': 'dashscope-tokenplan', 'target_model': 'qwen3.8-max'}
+        if len(lineages) != 1 or any(lineages[0].get(key) != value for key, value in expected_lineage.items()):
+            raise ValueError('existing OCRV native resume lineage drift')
+    checkpoint_identities = {
+        (row.get('filePath'), row.get('fingerprint'))
+        for row in session_rows if row.get('type') in {
+            'review_item_done', 'review_item_reused', 'review_item_failed'}
+    }
+    # Reused identities are proven by the parent manifest/lineage.  The child
+    # session must itself checkpoint every item it completed or failed.
+    if any((path, fingerprint) not in checkpoint_identities
+           for _, path, fingerprint in completed | failed):
+        raise ValueError('existing OCRV manifest lacks native per-path checkpoints')
+    return {'root': root, 'input_path': input_path, 'result': result, 'raw': raw,
+            'findings': comments,
+            'manifest': manifest, 'coverage': coverage, 'session_path': session_path}
+
+
+def _validate_narrowed_request(base_path: Path, narrowed_path: Path, failed_path: str, *, raised: bool) -> None:
+    base, narrowed = read(base_path), read(narrowed_path)
+    for key in set(base) - {'cell_goal', 'review_scope', 'capacity'}:
+        if narrowed.get(key) != base.get(key):
+            raise ValueError('narrowed OCRV request changed the frozen candidate or criteria')
+    scope = narrowed.get('review_scope')
+    base_scope = base.get('review_scope')
+    expected_excluded = (set(base_scope.get('exclude_paths', [])) if raised and isinstance(base_scope, dict)
+                         else (set(base_scope.get('exclude_paths', []))
+                               | (set(base_scope.get('include_paths', [])) - {failed_path}))
+                         if isinstance(base_scope, dict) else set())
+    if (not isinstance(scope, dict) or not isinstance(base_scope, dict)
+        or scope.get('include_paths') != [failed_path]
+        or set(scope.get('exclude_paths', [])) != expected_excluded
+        or scope.get('criterion_ids') != base_scope.get('criterion_ids')
+        or scope.get('scope_sha256') != canonical_json_sha256(
+            {key: value for key, value in scope.items() if key != 'scope_sha256'})):
+        raise ValueError('narrowed OCRV request does not isolate the exact failed path')
+    base_capacity, capacity = base.get('capacity'), narrowed.get('capacity')
+    if not isinstance(base_capacity, dict) or not isinstance(capacity, dict):
+        raise ValueError('narrowed OCRV capacity is invalid')
+    comparable = dict(capacity)
+    comparable['max_tokens_budget'] = base_capacity.get('max_tokens_budget')
+    if comparable != base_capacity:
+        raise ValueError('narrowed OCRV request changed capacity semantics beyond the token ceiling')
+    old_budget, new_budget = base_capacity.get('max_tokens_budget'), capacity.get('max_tokens_budget')
+    if (not isinstance(old_budget, int) or isinstance(old_budget, bool)
+        or not isinstance(new_budget, int) or isinstance(new_budget, bool)
+        or (raised and new_budget <= old_budget) or (not raised and new_budget != old_budget)):
+        raise ValueError('narrowed OCRV token ceiling does not match the preserved attempt chain')
+
+
+def _dedupe_findings(*groups: object) -> list[dict[str, Any]]:
+    output, seen = [], set()
+    for group in groups:
+        if not isinstance(group, list):
+            raise ValueError('existing OCRV findings are not lists')
+        for item in group:
+            if not isinstance(item, dict):
+                raise ValueError('existing OCRV finding is invalid')
+            identity = canonical_json_sha256(item)
+            if identity not in seen:
+                seen.add(identity)
+                output.append(item)
+    return output
+
+
+def validate_existing_partial_completion(
+    request: Mapping[str, Any], request_sha256: str, evidence_root: Path,
+) -> dict[str, Any]:
+    """Admit the closed on-disk chain produced before the standard consumer existed."""
+    basis = validate_partial_source(request, consumed=True)
+    root = Path(str(request['recovery_root'])).resolve()
+    attempt = root / 'native-attempt'
+    marker = root.parent / 'partial-consumed.json'
+    if (read(marker) != {'recovery_invocation_id': request['recovery_invocation_id'],
+                         'request_sha256': request_sha256}
+        or (root / 'resume-consumed.json').read_text(encoding='ascii').strip() != request_sha256
+        or (root / 'continue-consumed.json').exists()
+        or (attempt / 'review-segments/segment-003').exists()
+        or any((attempt / name).exists() for name in ('ocrv-result.json', 'ocrv-aggregate.json', 'completed.json'))):
+        raise ValueError('existing partial chain is not at the admitted consumed boundary')
+    evidence_root = evidence_root.resolve()
+    if not evidence_root.is_dir():
+        raise ValueError('existing completion evidence root is unavailable')
+    first = _validate_existing_native_piece(
+        request, basis['segments'][0], attempt / 'review-segments/segment-001',
+        terminal='complete', parent_session_id=basis['manifest']['run_id'])
+    validate_resumed_raw(basis, first['raw'], [row for row in records(first['session_path'])
+                                               if row.get('type') == 'resume_lineage'][0])
+    second = _validate_existing_native_piece(
+        request, basis['segments'][1], attempt / 'review-segments/segment-002',
+        terminal='partial', parent_session_id=None)
+    second_coverage = second['coverage']
+    if (not second_coverage['completed'] or not second_coverage['failed']
+        or second_coverage['reused']
+        or any(item.get('classification') != 'budget' for item in second_coverage['failed'])):
+        raise ValueError('original second segment is not the exact budget-partial boundary')
+    resumed = _validate_existing_native_piece(
+        request, basis['segments'][1], evidence_root / 'segment-002-resume',
+        terminal='partial', parent_session_id=second['raw']['session_id'])
+    if (identities(resumed['coverage']['reused']) != identities(second_coverage['completed'])
+        or identities(resumed['coverage']['failed']) != identities(second_coverage['failed'])
+        or resumed['coverage']['completed']
+        or not {canonical_json_sha256(item) for item in second['raw']['comments']} <= {
+            canonical_json_sha256(item) for item in resumed['raw']['comments']}):
+        raise ValueError('second-segment resume lost completed fingerprints or findings')
+    failed_identity = next(iter(identities(second_coverage['failed'])))
+    failed_path = failed_identity[1]
+    narrowed_root = evidence_root / 'segment-002-mod'
+    narrowed_request = narrowed_root / 'request.json'
+    _validate_narrowed_request(basis['segments'][1], narrowed_request, failed_path, raised=False)
+    narrowed = _validate_existing_native_piece(
+        request, narrowed_request, narrowed_root, terminal='failed', parent_session_id=None)
+    if identities(narrowed['coverage']['selected']) != {failed_identity}:
+        raise ValueError('narrowed failed attempt changed the frozen path fingerprint')
+    completed_root = evidence_root / 'segment-002-mod-resume'
+    completed_request = completed_root / 'request.json'
+    _validate_narrowed_request(narrowed_request, completed_request, failed_path, raised=True)
+    completed = _validate_existing_native_piece(
+        request, completed_request, completed_root,
+        terminal='complete', parent_session_id=narrowed['raw']['session_id'])
+    if (identities(completed['coverage']['selected']) != {failed_identity}
+        or identities(completed['coverage']['completed']) != {failed_identity}
+        or completed['coverage']['reused'] or completed['coverage']['failed']):
+        raise ValueError('completed narrowed attempt changed the frozen path fingerprint')
+    third = _validate_existing_native_piece(
+        request, basis['segments'][2], evidence_root / 'segment-003',
+        terminal='complete', parent_session_id=None)
+    second_findings = _dedupe_findings(
+        second['findings'], resumed['findings'], narrowed['findings'], completed['findings'])
+    second_verdict, second_reasons = _complete_verdict(second_findings)
+    composite = {
+        'schema_version': 'slk.ocrv-d1-result/v1', 'run_id': request['run_id'],
+        'cell_id': request['cell_id'],
+        'review_invocation_id': f"composite-{request['recovery_invocation_id']}-segment-002",
+        'verdict': second_verdict, 'reason_codes': second_reasons, 'findings': second_findings,
+        'evidence': [], 'request_sha256': digest(basis['segments'][1]),
+        'review': {'status': 'complete', 'provider': 'dashscope-tokenplan',
+            'model': 'qwen3.8-max', 'session_id': completed['raw']['session_id'], 'exit_code': 0},
+        'artifacts': {'composite_evidence': 'evidence-index.json'},
+    }
+    pieces = {'segment-001': first, 'segment-002-parent': second,
+              'segment-002-resume': resumed, 'segment-002-mod': narrowed,
+              'segment-002-mod-resume': completed, 'segment-003': third}
+    verdict = 'FAIL' if any(value['verdict'] == 'FAIL'
+                            for value in (first['result'], composite, third['result'])) else 'PASS'
+    return {'basis': basis, 'root': root, 'attempt': attempt, 'evidence_root': evidence_root,
+            'pieces': pieces, 'segment_results': [first['result'], composite, third['result']],
+            'verdict': verdict}
+
+
+def existing_evidence_index(validated: Mapping[str, Any]) -> dict[str, Any]:
+    rows, seen = [], set()
+    for label, piece in validated['pieces'].items():
+        paths = [path for path in Path(piece['root']).rglob('*') if path.is_file()]
+        paths.extend((Path(piece['session_path']), Path(piece['input_path'])))
+        for path in paths:
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            rows.append({'label': label, 'path': str(resolved), 'sha256': digest(resolved)})
+    rows.sort(key=lambda item: (item['label'], item['path']))
+    return {'schema_version': 'slk.ocrv-existing-partial-evidence-index/v1',
+            'source_evidence_root': str(validated['evidence_root']), 'files': rows}
+
+
 def effective_segment_root(root: Path, ordinal: int) -> Path:
     correction = root / 'review-corrections' / f'segment-{ordinal:03d}'
     return correction if correction.is_dir() else root / 'review-segments' / f'segment-{ordinal:03d}'
@@ -463,9 +731,148 @@ def publish_aggregate(root: Path, request: Mapping[str, Any], segment_results: l
         'evidence': ['started.json', 'ocrv-request.json', 'ocrv-result.json', 'ocrv-aggregate.json']})
 
 
+def materialize_existing_partial_terminal(
+    request: Mapping[str, Any], request_path: Path, evidence_root: Path, attempt: Path,
+) -> dict[str, Any]:
+    """Build one derived terminal package while leaving every native source immutable."""
+    validated = validate_existing_partial_completion(request, digest(request_path), evidence_root)
+    if attempt.exists():
+        raise ValueError('existing partial terminal destination is already present')
+    attempt.mkdir(parents=True)
+    index = existing_evidence_index(validated)
+    (attempt / 'evidence-index.json').write_text(
+        json.dumps(index, sort_keys=True) + '\n', encoding='utf-8')
+    sources = [validated['pieces']['segment-001']['input_path'],
+               validated['pieces']['segment-002-parent']['input_path'],
+               validated['pieces']['segment-003']['input_path']]
+    result_sources = [validated['pieces']['segment-001']['root'] / 'result.json', None,
+                      validated['pieces']['segment-003']['root'] / 'result.json']
+    for ordinal, (source_request, value, source_result) in enumerate(
+        zip(sources, validated['segment_results'], result_sources), 1
+    ):
+        segment = attempt / 'review-segments' / f'segment-{ordinal:03d}'
+        segment.mkdir(parents=True)
+        shutil.copyfile(source_request, segment / 'request.json')
+        if source_result is not None:
+            shutil.copyfile(source_result, segment / 'result.json')
+        else:
+            (segment / 'result.json').write_text(
+                json.dumps(value, sort_keys=True) + '\n', encoding='utf-8')
+    shutil.copyfile(validated['pieces']['segment-001']['root'] / 'started.json',
+                    attempt / 'started.json')
+    publish_aggregate(attempt, request, validated['segment_results'])
+    return validated
+
+
+def _expected_existing_aggregate(
+    request: Mapping[str, Any], attempt: Path, values: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    from .adapters.ocrv import OcrvAdapter
+    reasons, findings, segments = [], [], []
+    for ordinal, value in enumerate(values, 1):
+        for code in value['reason_codes']:
+            if code not in reasons:
+                reasons.append(code)
+        findings.extend({'severity': str(item.get('severity', 'UNKNOWN')),
+                         'finding_sha256': canonical_json_sha256(item)} for item in value['findings'])
+        segments.append({'ordinal': ordinal, 'request_sha256': value['request_sha256'],
+            'result_sha256': digest(attempt / 'review-segments' / f'segment-{ordinal:03d}' / 'result.json'),
+            'verdict': value['verdict'], 'reason_codes': value['reason_codes'],
+            'review_invocation_id': value['review_invocation_id'],
+            'session_id': value['review']['session_id']})
+    verdict = 'FAIL' if any(value['verdict'] == 'FAIL' for value in values) else 'PASS'
+    return {'schema_version': 'slk.ocrv-d1-aggregate/v1', 'run_id': request['run_id'],
+            'cell_id': request['cell_id'], 'verdict': verdict, 'reason_codes': reasons,
+            'planned_segment_count': 3, 'completed_segment_count': 3,
+            'stopped_on_blocking_finding': OcrvAdapter._has_blocking_finding(values[-1]),
+            'segments': segments, 'findings': findings}
+
+
+def validate_existing_partial_terminal(
+    request: Mapping[str, Any], *, recorded_d1: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Revalidate the source chain and its derived immutable terminal before D1."""
+    from . import worker_completion as wc
+    terminal = request.get('partial_terminal')
+    fields = {'mode', 'resume_request_path', 'resume_request_sha256', 'source_evidence_root',
+              'evidence_index_sha256', 'evidence_sha256'}
+    if not isinstance(terminal, dict) or set(terminal) != fields or terminal.get('mode') != 'EXISTING_PARTIAL_EVIDENCE':
+        raise ValueError('existing partial terminal descriptor is not closed')
+    resume_path = Path(str(terminal['resume_request_path'])).resolve()
+    if digest(resume_path) != terminal['resume_request_sha256']:
+        raise ValueError('existing partial terminal request hash drift')
+    original = read(resume_path)
+    source_root = Path(str(terminal['source_evidence_root'])).resolve()
+    validated = validate_existing_partial_completion(
+        original, terminal['resume_request_sha256'], source_root)
+    source_request = {key: value for key, value in original.items()
+                      if key not in {'background_path', 'ocrv_session', 'recovery_root', 'partial_review'}}
+    source_request.update(schema_version=wc.COMMITTED_TERMINAL_SCHEMA, raw_review_path='unused',
+        immutable_sha256={name: original['immutable_sha256'][name]
+                          for name in ('endpoint.json', 'envelope.json', 'started.json', 'ocrv-request.json')})
+    common = wc._validate_committed_terminal_request(
+        source_request, source_only=True, partial_review=original['partial_review'])
+    if request != {**source_request, 'partial_terminal': terminal}:
+        raise ValueError('existing partial terminal altered the admitted scope')
+    attempt = Path(original['recovery_root']).resolve() / 'consume-existing-partial' / 'native-attempt'
+    hashes = terminal['evidence_sha256']
+    actual = {path.relative_to(attempt).as_posix(): digest(path)
+              for path in attempt.rglob('*') if path.is_file()}
+    if recorded_d1 is not None:
+        receipt = f"slk-state/d1-partial-{original['recovery_invocation_id']}.json"
+        if (receipt in hashes or read(attempt / receipt) != recorded_d1
+            or recorded_d1.get('run_id') != original['run_id']
+            or recorded_d1.get('cell_id') != original['cell_id']
+            or recorded_d1.get('corrects_event_id')
+                != original['partial_review']['d1_incomplete_event_id']):
+            raise ValueError('existing partial recorded D1 receipt drift')
+        actual.pop(receipt, None)
+    if hashes != actual:
+        raise ValueError('existing partial derived terminal evidence drift')
+    expected_index = existing_evidence_index(validated)
+    if (read(attempt / 'evidence-index.json') != expected_index
+        or digest(attempt / 'evidence-index.json') != terminal['evidence_index_sha256']):
+        raise ValueError('existing partial source evidence index drift')
+    values = validated['segment_results']
+    source_requests = [validated['pieces']['segment-001']['input_path'],
+                       validated['pieces']['segment-002-parent']['input_path'],
+                       validated['pieces']['segment-003']['input_path']]
+    for ordinal, (source_request_path, value) in enumerate(zip(source_requests, values), 1):
+        segment = attempt / 'review-segments' / f'segment-{ordinal:03d}'
+        if ((segment / 'request.json').read_bytes() != Path(source_request_path).read_bytes()
+            or read(segment / 'result.json') != value):
+            raise ValueError('existing partial derived segment changed its source verdict')
+    if ((attempt / 'started.json').read_bytes()
+        != (validated['pieces']['segment-001']['root'] / 'started.json').read_bytes()):
+        raise ValueError('existing partial aggregate start drift')
+    aggregate = _expected_existing_aggregate(original, attempt, values)
+    if read(attempt / 'ocrv-aggregate.json') != aggregate:
+        raise ValueError('existing partial aggregate does not match source verdicts')
+    result = read(attempt / 'ocrv-result.json')
+    completed = read(attempt / 'completed.json')
+    if (result.get('verdict') != aggregate['verdict']
+        or result.get('reason_codes') != aggregate['reason_codes']
+        or result.get('findings') != aggregate['findings']
+        or result.get('evidence') != [digest(attempt / 'ocrv-aggregate.json')]
+        or result.get('request_sha256') != digest(attempt / 'ocrv-request.json')
+        or completed.get('status') != 'completed'
+        or completed.get('native_identity', {}).get('verdict') != aggregate['verdict']
+        or completed.get('native_identity', {}).get('review_segment_count') != 3):
+        raise ValueError('existing partial formal result or terminal drift')
+    return {**common, 'activation': {'native_attempt_path': str(attempt),
+        'candidate_message_id': original['candidate_message_id'],
+        'runtime_revision': original['runtime_revision'], 'token_sequence': original['token_sequence']},
+        'continuation': {**{key: original[key] for key in
+            ('run_id', 'go_id', 'cell_id', 'attempt', 'plan_revision', 'checker_endpoint', 'state_command')},
+            'partial_correction_event_id': original['partial_review']['d1_incomplete_event_id'],
+            'partial_recovery_invocation_id': original['recovery_invocation_id']}}
+
+
 def validate_partial_terminal(request: Mapping[str, Any], *, recorded_d1: Mapping[str, Any] | None = None) -> dict[str, Any]:
     from . import worker_completion as wc
     from .adapters.ocrv import OcrvAdapter
+    if request.get('partial_terminal', {}).get('mode') == 'EXISTING_PARTIAL_EVIDENCE':
+        return validate_existing_partial_terminal(request, recorded_d1=recorded_d1)
     resume_path = Path(request['partial_terminal']['resume_request_path']).resolve()
     if digest(resume_path) != request['partial_terminal']['resume_request_sha256']:
         raise ValueError('partial terminal resume request hash drift')

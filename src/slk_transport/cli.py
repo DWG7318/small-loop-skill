@@ -42,6 +42,7 @@ from .worker_completion import (
     prepare_invalid_result_recovery_envelope,
     recover_staged_checker_commit,
     continue_consumed_partial_checker,
+    consume_existing_partial_checker,
     resume_consumed_partial_checker,
     resume_incomplete_checker,
 )
@@ -434,6 +435,13 @@ def _resume_consumed_partial_checker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _consume_existing_partial_checker(args: argparse.Namespace) -> int:
+    _emit(consume_existing_partial_checker(
+        args.request, request_sha256=args.sha256, evidence_root=args.evidence_root,
+        prepare_only=args.prepare_only))
+    return 0
+
+
 def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
     result = inspect_overwatcher_cadence(
         _read_object(args.runtime_projection, "runtime projection"),
@@ -577,6 +585,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     resumed_partial.add_argument("--request", required=True, type=Path)
     resumed_partial.add_argument("--sha256", required=True)
     resumed_partial.add_argument("--prepare-only", action="store_true")
+    existing_partial = subparsers.add_parser("consume-existing-partial")
+    existing_partial.add_argument("--request", required=True, type=Path)
+    existing_partial.add_argument("--sha256", required=True)
+    existing_partial.add_argument("--evidence-root", required=True, type=Path)
+    existing_partial.add_argument("--prepare-only", action="store_true")
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
@@ -643,6 +656,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _continue_consumed_partial_checker(args)
         if args.command == "resume-consumed-partial":
             return _resume_consumed_partial_checker(args)
+        if args.command == "consume-existing-partial":
+            return _consume_existing_partial_checker(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
         if args.command == "inspect-overwatcher-cadence":

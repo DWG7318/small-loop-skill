@@ -382,6 +382,74 @@ def _finish_partial_terminal(
     return completed.returncode
 
 
+def _consume_existing_partial(
+    request: dict[str, object], request_path: Path, command: list[str], evidence_root: Path,
+) -> int:
+    """Authenticate the original Checker, then derive D1 only from existing native terminals."""
+    sys.path.insert(0, command[-1])
+    from slk_transport import worker_completion as wc
+    from slk_transport.partial_review import (
+        digest, materialize_existing_partial_terminal, validate_existing_partial_completion)
+    validated_request = wc._validate_incomplete_resume(request, consumed=True)
+    checker = validated_request['checker']
+    if (os.environ.get('SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID') != checker.role_instance_id
+        or os.environ.get('SLK_OCRV_RECOVERY_ENDPOINT_VERSION') != str(checker.endpoint_version)
+        or os.environ.get('SLK_OCRV_RECOVERY_INVOCATION_ID') != request['recovery_invocation_id']):
+        raise ValueError('existing partial consumption is outside the original sealed Checker')
+    authentication = wc._default_checker_authenticate(
+        request['run_id'], checker.role_instance_id,
+        Path(request['checker_credential_path']), request['state_command'])
+    if (authentication.get('status') != 'authenticated' or authentication.get('role') != 'checker'
+        or authentication.get('role_instance_id') != checker.role_instance_id):
+        raise ValueError('existing partial Checker authentication failed before evidence consumption')
+    if authentication.get('runtime_revision') != request['runtime_revision']:
+        wc._rebind_overwatcher_only_committed_boundary(
+            request, validated_request['frozen_projection'],
+            wc._default_load_current_projection(request['run_id'], request['state_command']),
+            authentication['runtime_revision'])
+    # Admission is repeated inside the sealed host before the first write.
+    validate_existing_partial_completion(request, digest(request_path), evidence_root)
+    root = Path(request['recovery_root']).resolve() / 'consume-existing-partial'
+    if root.exists():
+        raise ValueError('existing partial consumption is one-shot and already materialized')
+    staging = root.with_name(root.name + '.staging-' + str(uuid.uuid4()))
+    attempt = staging / 'native-attempt'
+    materialize_existing_partial_terminal(request, request_path, evidence_root, attempt)
+    staging.rename(root)
+    attempt = root / 'native-attempt'
+    committed = {key: value for key, value in request.items()
+                 if key not in {'background_path', 'ocrv_session', 'recovery_root', 'partial_review'}}
+    committed.update(schema_version=wc.COMMITTED_TERMINAL_SCHEMA, raw_review_path='unused',
+        immutable_sha256={name: request['immutable_sha256'][name]
+                          for name in ('endpoint.json', 'envelope.json', 'started.json', 'ocrv-request.json')},
+        partial_terminal={'mode': 'EXISTING_PARTIAL_EVIDENCE',
+            'resume_request_path': str(request_path), 'resume_request_sha256': digest(request_path),
+            'source_evidence_root': str(evidence_root.resolve()),
+            'evidence_index_sha256': digest(attempt / 'evidence-index.json'),
+            'evidence_sha256': {path.relative_to(attempt).as_posix(): digest(path)
+                                for path in attempt.rglob('*') if path.is_file()}})
+    committed_path = root / 'committed-terminal.json'
+    committed_path.write_text(json.dumps(committed, sort_keys=True) + '\n', encoding='utf-8')
+    wc._validate_committed_terminal_request(committed)
+    completed = subprocess.run(
+        command + ['checker-record-committed-terminal', '--request', str(committed_path),
+                   '--sha256', digest(committed_path)],
+        stdin=subprocess.DEVNULL, capture_output=True, check=False, env=os.environ.copy(),
+        **windows_no_window_kwargs())
+    if completed.returncode == 0:
+        outer = json.loads(completed.stdout)
+        if outer.get('request_sha256') != digest(committed_path):
+            raise ValueError('existing partial terminal response hash mismatch')
+        outer['request_sha256'] = digest(request_path)
+        encoded = (json.dumps(outer, sort_keys=True) + '\n').encode('utf-8')
+        Path(request['result_path']).write_bytes(encoded)
+        sys.stdout.buffer.write(encoded)
+    else:
+        sys.stdout.buffer.write(completed.stdout)
+    sys.stderr.buffer.write(completed.stderr)
+    return completed.returncode
+
+
 def _resume_later_partial(
     request: dict[str, object], request_path: Path, command: list[str]
 ) -> int:
@@ -494,8 +562,10 @@ def main() -> int:
     mode.add_argument("--slk-resume-incomplete-checker", action="store_true")
     mode.add_argument("--slk-continue-consumed-partial", action="store_true")
     mode.add_argument("--slk-resume-consumed-partial", action="store_true")
+    mode.add_argument("--slk-consume-existing-partial", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--evidence-root", type=Path)
     args = parser.parse_args()
     try:
         data = args.request.read_bytes()
@@ -506,7 +576,7 @@ def main() -> int:
     expected_schema = (
         "slk.ocrv-incomplete-checker-resume-request/v1"
         if args.slk_resume_incomplete_checker or args.slk_continue_consumed_partial
-        or args.slk_resume_consumed_partial
+        or args.slk_resume_consumed_partial or args.slk_consume_existing_partial
         else "slk.ocrv-committed-terminal-request/v1"
         if args.slk_committed_terminal
         else "slk.ocrv-worker-recovery-request/v1"
@@ -526,7 +596,8 @@ def main() -> int:
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
     if (args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker
-        or args.slk_continue_consumed_partial or args.slk_resume_consumed_partial):
+        or args.slk_continue_consumed_partial or args.slk_resume_consumed_partial
+        or args.slk_consume_existing_partial):
         environment.pop("SLK_NATIVE_START_RECEIPT", None)
         environment.pop("SLK_NATIVE_START_CONTEXT", None)
     if args.slk_worker_recovery:
@@ -539,6 +610,11 @@ def main() -> int:
             print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
             return 4
     try:
+        if args.slk_consume_existing_partial:
+            if args.evidence_root is None:
+                raise ValueError('existing partial evidence root is required')
+            return _consume_existing_partial(
+                request, args.request.resolve(), command, args.evidence_root.resolve())
         if args.slk_resume_consumed_partial:
             return _resume_partial(request, args.request.resolve(), command, consumed=True, resume_later=True)
         if args.slk_continue_consumed_partial:

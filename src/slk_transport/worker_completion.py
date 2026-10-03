@@ -2397,6 +2397,7 @@ def _run_sealed_checker_terminal(
     mode: str,
     result_schema: str,
     error_code: str,
+    extra_args: tuple[str, ...] = (),
 ) -> Mapping[str, Any]:
     """Use the one registered headless OCRV host for an existing terminal."""
 
@@ -2420,7 +2421,8 @@ def _run_sealed_checker_terminal(
     from .process import windows_no_window_kwargs
 
     completed = subprocess.run(
-        [*command, mode, "--request", str(request_path.resolve()), "--output", str(Path(str(request["result_path"])).resolve())],
+        [*command, mode, "--request", str(request_path.resolve()), "--output",
+         str(Path(str(request["result_path"])).resolve()), *extra_args],
         cwd=str(runtime_root),
         env=environment,
         stdin=subprocess.DEVNULL,
@@ -4215,6 +4217,51 @@ def resume_consumed_partial_checker(
         request_path, request, validated['checker'], request_sha256=request_sha256,
         mode='--slk-resume-consumed-partial', result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
         error_code='CHECKER_PARTIAL_SEGMENT_RESUME_COMMAND_FAILED')
+
+
+def consume_existing_partial_checker(
+    request_path: Path, *, request_sha256: str, evidence_root: Path,
+    prepare_only: bool = False,
+) -> Mapping[str, Any]:
+    """Consume a fully terminal legacy partial chain without another model call."""
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError('CHECKER_EXISTING_PARTIAL_REQUEST_MISMATCH',
+                              'existing partial request hash mismatch')
+    request = _read_object(request_path, 'existing partial Checker request')
+    validated = _validate_incomplete_resume(request, consumed=True)
+    try:
+        from .partial_review import validate_existing_partial_completion
+        existing = validate_existing_partial_completion(
+            request, request_sha256, Path(evidence_root))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CompletionError('CHECKER_EXISTING_PARTIAL_EVIDENCE_INVALID', str(exc)) from exc
+    current_projection = _default_load_current_projection(
+        str(request['run_id']), list(request['state_command']))
+    current_runtime = current_projection.get('runtime_snapshot')
+    current_revision = current_runtime.get('runtime_revision') if isinstance(current_runtime, Mapping) else None
+    if isinstance(current_revision, bool) or not isinstance(current_revision, int):
+        _committed_terminal_drift_invalid()
+    if current_revision != request['runtime_revision']:
+        current_revision = _rebind_overwatcher_only_committed_boundary(
+            request, validated['frozen_projection'], current_projection, current_revision)
+    if prepare_only:
+        return {'schema_version': 'slk.ocrv-existing-partial-consumption-preflight/v1',
+                'status': 'READY_TO_CONSUME_EXISTING_PARTIAL_EVIDENCE',
+                'request_sha256': request_sha256, 'verdict': existing['verdict'],
+                'completed_segment_count': len(existing['segment_results']),
+                **{key: request[key] for key in ('run_id', 'go_id', 'cell_id', 'attempt',
+                    'candidate_message_id', 'runtime_revision', 'token_sequence',
+                    'checker_role_instance_id', 'checker_endpoint_version')},
+                'current_runtime_revision': current_revision,
+                'evidence_root': str(Path(evidence_root).resolve())}
+    return _run_sealed_checker_terminal(
+        request_path, request, validated['checker'], request_sha256=request_sha256,
+        mode='--slk-consume-existing-partial', result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
+        error_code='CHECKER_EXISTING_PARTIAL_CONSUMPTION_FAILED',
+        extra_args=('--evidence-root', str(Path(evidence_root).resolve())))
+
+
 def _run_json_command(
     command: list[str],
     arguments: list[str],
