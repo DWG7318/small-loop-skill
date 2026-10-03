@@ -6,7 +6,7 @@ ROOT = Path(__file__).parents[2]
 BI_ROOT = ROOT / "apps" / "slk-bi"
 
 
-def test_bi_is_a_read_only_tauri_surface():
+def test_bi_has_no_slk_state_mutation_surface():
     package = json.loads((BI_ROOT / "package.json").read_text(encoding="utf-8"))
     capability = json.loads(
         (BI_ROOT / "src-tauri" / "capabilities" / "default.json").read_text(
@@ -15,6 +15,7 @@ def test_bi_is_a_read_only_tauri_surface():
     )
 
     assert package["name"] == "slk-bi"
+    assert package["version"] == "1.1.0"
     assert set(capability["permissions"]) == {
         "core:default",
         "core:window:allow-start-dragging",
@@ -44,6 +45,15 @@ def test_bi_is_a_read_only_tauri_surface():
     ):
         assert forbidden not in source
 
+    commands = (BI_ROOT / "src-tauri" / "src" / "commands.rs").read_text(
+        encoding="utf-8"
+    )
+    assert 'const BI_VERSION: &str = "1.1.0"' in commands
+    assert "sync_webbi" in commands
+    assert "SLK_WEBBI_UPLOAD_TOKEN" in commands
+    assert '"webbi_sync_enabled"' in commands
+    assert '"token"' not in commands.split('"webbi_sync_enabled"', 1)[0].split("pub fn metadata", 1)[-1]
+
 
 def test_bi_window_is_compact_and_not_maximizable():
     config = json.loads(
@@ -57,6 +67,7 @@ def test_bi_window_is_compact_and_not_maximizable():
     assert window["closable"] is True
     assert window["decorations"] is False
     assert window["title"] == "LE BI"
+    assert config["version"] == "1.1.0"
 
 
 def test_desktop_and_agent_read_surfaces_share_all_projection_methods():

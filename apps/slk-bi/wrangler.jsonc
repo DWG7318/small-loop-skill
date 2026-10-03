@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "slk-webbi",
+  "main": "src/webbi/cloudflare.ts",
+  "compatibility_date": "2026-10-04",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "slk-webbi",
+      "database_id": "SET_DURING_DEPLOYMENT",
+      "migrations_dir": "webbi/migrations"
+    }
+  ],
+  "observability": { "enabled": false }
+}

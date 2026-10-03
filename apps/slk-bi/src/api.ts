@@ -18,8 +18,10 @@ import {
   parseRunProjection,
   parseRunsProjection,
 } from "./contracts";
+import type { WebBiUploadEnvelope } from "./webbi/contracts";
 
 export interface SlkApi {
+  metadata(): Promise<BiMetadata>;
   projects(): Promise<ProjectsView>;
   runs(projectId?: string): Promise<RunsView>;
   run(runId: string): Promise<RunView>;
@@ -28,9 +30,24 @@ export interface SlkApi {
   plans(runId: string): Promise<PlansView>;
   events(runId: string): Promise<EventsView>;
   evidence(runId: string): Promise<EvidenceView>;
+  syncWebBi(payload: WebBiUploadEnvelope): Promise<WebBiSyncResult>;
+}
+
+export interface WebBiSyncResult {
+  status: "disabled" | "uploaded";
+  upload_id: string | null;
+}
+
+export interface BiMetadata {
+  schema_version: "slk.bi.metadata/v1";
+  bi_version: "1.1.0";
+  device_id: string;
+  device_name: string;
+  webbi_sync_enabled: boolean;
 }
 
 export const tauriApi: SlkApi = {
+  metadata: async () => await invoke<BiMetadata>("metadata"),
   projects: async () => parseProjectsProjection(await invoke("projects")),
   runs: async (projectId) =>
     parseRunsProjection(await invoke("runs", { projectId: projectId ?? null })),
@@ -40,4 +57,5 @@ export const tauriApi: SlkApi = {
   plans: async (runId) => parsePlansProjection(await invoke("plans", { runId })),
   events: async (runId) => parseEventsProjection(await invoke("events", { runId })),
   evidence: async (runId) => parseEvidenceProjection(await invoke("evidence", { runId })),
+  syncWebBi: async (payload) => await invoke<WebBiSyncResult>("sync_webbi", { payload }),
 };
