@@ -723,7 +723,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1877,6 +1877,7 @@ impl StateStore {
                     | "4.3.4"
                     | "4.3.5"
                     | "4.3.6"
+                    | "4.4.0"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -2458,7 +2459,8 @@ impl StateStore {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
             if uses_revisioned_runtime_contract(&method_version) {
-                if closure_state == "open" {
+                let preclose_terminal = closure_state == "open" && method_version == "4.4.0";
+                if closure_state == "open" && !preclose_terminal {
                     return Err(StateError::OverwatcherObservationInvalid(
                         "a whole-Run Overwatcher cannot close at a CELL or GO boundary".into(),
                     ));
@@ -2479,12 +2481,12 @@ impl StateStore {
                         "terminal close requires the final observation cycle".into(),
                     )
                 })?;
-                let final_cycle: Option<(String, u64)> = transaction
+                let final_cycle: Option<(String, u64, String)> = transaction
                     .query_row(
-                        "SELECT cycle_id, runtime_revision FROM overwatch_cycles
+                        "SELECT cycle_id, runtime_revision, latest_event_id FROM overwatch_cycles
                          WHERE run_id=?1 ORDER BY cycle_sequence DESC LIMIT 1",
                         [&request.run_id],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                     )
                     .optional()?;
                 if final_cycle.as_ref().map(|item| item.0.as_str()) != Some(final_cycle_id)
@@ -2494,6 +2496,25 @@ impl StateStore {
                         "terminal close must cite the latest cycle at the same runtime revision"
                             .into(),
                     ));
+                }
+                if preclose_terminal {
+                    let d2_passed: Option<String> = transaction
+                        .query_row(
+                            "SELECT event_id FROM work_events
+                             WHERE run_id=?1 AND event_type='D2_PASSED'
+                             ORDER BY rowid DESC LIMIT 1",
+                            [&request.run_id],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    if d2_passed.as_deref()
+                        != final_cycle.as_ref().map(|item| item.2.as_str())
+                    {
+                        return Err(StateError::OverwatcherObservationInvalid(
+                            "pre-close final cycle must bind the exact latest D2_PASSED snapshot"
+                                .into(),
+                        ));
+                    }
                 }
             }
             let revision = current_plan_revision(transaction, &request.run_id)?;
@@ -3181,13 +3202,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -4480,6 +4501,7 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
             | "4.3.4"
             | "4.3.5"
             | "4.3.6"
+            | "4.4.0"
     )
 }
 

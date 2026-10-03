@@ -49,9 +49,9 @@ Overwatcher 的一次性完整写凭证丢失、或调用方误存非秘密 `ove
 
 ## 收尾归档
 
-D2 通过、Run 已进入终态且最终记录完整后，归档 Worker、Checker 的中央事实由 Supervisor 写入：对同一 Run 的准确 Worker、Checker 身份分别执行 `slk-state close-role --request <json>`；目标仍持有 TOKEN、身份或角色不匹配、Run 未终结、凭证错误时均被拒绝。成功事务只追加 `ROLE_CLOSED`、令角色 `lifecycle=exited`、退役 `active endpoint` 并撤销其凭证，不创建继任者、不移动 TOKEN、不改写 D1/D2/`RUN_CLOSED`；完全相同请求可安全重放。随后用 `slk-bi-query roles` 确认 Worker/Checker 均为 `display_state=archived`。Supervisor 保留。
+D2 通过后先按 `$slk-close-run` 的固定顺序完成 terminal snapshot、OW final cycle 与 `close-overwatcher`，再写 `RUN_CLOSED`。Run 已进入终态且最终记录完整后，归档 Worker、Checker 的中央事实由 Supervisor 写入：对同一 Run 的准确 Worker、Checker 身份分别执行 `slk-state close-role --request <json>`；目标仍持有 TOKEN、身份或角色不匹配、Run 未终结、凭证错误时均被拒绝。成功事务只追加 `ROLE_CLOSED`、令角色 `lifecycle=exited`、退役 `active endpoint` 并撤销其凭证，不创建继任者、不移动 TOKEN、不改写 D1/D2/`RUN_CLOSED`；完全相同请求可安全重放。随后用 `slk-bi-query roles` 确认 Worker/Checker 均为 `display_state=archived`。Supervisor 保留。
 
-Overwatcher 继续使用独立的 `close-overwatcher`：先记录最后 cycle，再以同一 runtime revision 关闭并归档自身 Session，不在普通 CELL 边界关闭或转给下一 Run。计划更换与连续性恢复都由 Supervisor 以显式证据执行非重叠 replacement，并保留旧绑定历史。
+Overwatcher 继续使用独立的 `close-overwatcher`：在 `D2_PASSED` 后、`RUN_CLOSED` 前先记录最后 cycle，再以同一 runtime revision 关闭并归档自身 Session，不在普通 CELL 边界关闭或转给下一 Run。计划更换与连续性恢复都由 Supervisor 以显式证据执行非重叠 replacement，并保留旧绑定历史。
 
 ## 完成后
 

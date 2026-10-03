@@ -58,7 +58,7 @@ Overwatcher 结合最新原生证据、角色职责、任务难度、当前节�
 - 终态 cycle 的 `native_active_session_evidence_ref` 逐字等于 `evidence_refs` 中一个条目的现存绝对路径 `path`，且该条目的 SHA-256 与文件匹配。例如 `evidence_refs: [{path: 'C:\\evidence\\terminal-active-session.json', sha256: '<64位小写值>'}]` 对应 `native_active_session_evidence_ref: 'C:\\evidence\\terminal-active-session.json'`；不要填 `status_id`、`cycle_id`、URI、哈希值或说明文字。
 - Tool 失败或输出矛盾时，把错误与证据缺口交 Supervisor，不猜测、不伪造、不临时开发新系统。
 - 若绑定后完整写凭证丢失或误把 `overwatcher_credential_id` 当作凭证，不伪造 cycle/continuity violation，也不更换角色、Session、turn 或 binding；由当前 Supervisor 以精确身份和证据执行 `rotate-overwatcher-credential`，一次性保存 `overwatcher_write_credential` 并立即 `authenticate-role` 后，原 Session 才继续记录。
-- Run 终结后记录最后一轮，再用同一 revision 和 cycle ID 调用 `close-overwatcher`，停止前台 turn 并归档本 Session。开放 Run 不关闭；异常暂停不归档、不更换、不复用，意外失活保持 `CONTINUITY_RECOVERY_REQUIRED`。
+- Supervisor 写入 `D2_PASSED` 后，以该 `terminal snapshot` 的同一 revision 让 OW 在 `RUN_CLOSED 前`记录最后一轮；当前 turn 恰好结束时只恢复同一 Session，再用同一 revision 和 cycle ID 调用 `close-overwatcher`，停止前台 turn并归档本 Session，随后才允许 Supervisor 写 `RUN_CLOSED`。D2 前不关闭；异常暂停不归档、不更换、不复用，意外失活保持 `CONTINUITY_RECOVERY_REQUIRED`。
 
 ## 负面提示词
 

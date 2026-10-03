@@ -1051,6 +1051,16 @@ def test_terminal_engineering_roles_require_central_close_evidence_before_archiv
     assert "Overwatcher" in combined and "close-overwatcher" in combined
 
 
+def test_440_terminal_order_closes_overwatcher_before_run_and_engineering_roles() -> None:
+    close = read_skill("slk-close-run")
+    overwatch = read_skill("slk-overwatch-run")
+    assert (
+        "D2_PASSED → terminal snapshot → OW final cycle → close-overwatcher → "
+        "RUN_CLOSED → close-role"
+    ) in close
+    assert "D2_PASSED" in overwatch and "RUN_CLOSED 前" in overwatch
+
+
 def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
     main = read_skill("small-loop-skill")
     dispatch = read_skill("slk-dispatch-cell")

@@ -311,6 +311,248 @@ fn a_423_overwatcher_is_not_closed_at_a_cell_boundary() {
 }
 
 #[test]
+fn a_440_overwatcher_cannot_close_before_d2_passes() {
+    let fixture = Fixture::new_440();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+
+    let result = fixture.store.close_overwatcher(
+        &issued.credential,
+        CloseOverwatcherRequest {
+            event_id: "premature-440-overwatcher-close".into(),
+            run_id: "run-a".into(),
+            archive_evidence_ref: "codex:thread-archived:overwatcher-a".into(),
+            final_cycle_id: None,
+            runtime_revision: None,
+            occurred_at: "2026-10-04T00:01:00Z".into(),
+        },
+    );
+    assert!(matches!(
+        result,
+        Err(StateError::OverwatcherObservationInvalid(_))
+    ));
+}
+
+#[test]
+fn a_440_d2_snapshot_closes_overwatcher_before_run_without_changing_engineering_state() {
+    let fixture = Fixture::new_440();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    fixture
+        .store
+        .write_event(
+            &fixture.supervisor,
+            WriteRequest {
+                event_id: "d2-passed-440".into(),
+                run_id: "run-a".into(),
+                go_id: None,
+                cell_id: None,
+                attempt: None,
+                plan_revision: 1,
+                role_instance_id: "supervisor-a".into(),
+                event_type: EventType::D2Passed,
+                details: json!({"verdict":"PASS"}),
+                corrects_event_id: None,
+                occurred_at: "2026-10-04T00:01:00Z".into(),
+            },
+        )
+        .unwrap();
+    let before = fixture.store.query_run("run-a").unwrap();
+    let snapshot = before.runtime_snapshot.unwrap();
+    let token = fixture.store.current_token("run-a").unwrap();
+    let mut final_cycle = overwatch_cycle(1);
+    final_cycle.runtime_revision = snapshot.runtime_revision;
+    final_cycle.latest_event_id = snapshot.latest_event_id;
+    final_cycle.latest_message_id = snapshot.latest_message_id;
+    final_cycle.token_sequence = token.sequence;
+    final_cycle.token_holder_role_instance_id = token.owner_role_instance_id.clone();
+    final_cycle.checklist.terminal_closure = OverwatchCheckResult::Clear;
+    final_cycle.evidence_refs = vec![fixture.evidence_ref("cycle-final-440.json", b"d2 terminal snapshot")];
+    final_cycle.native_active_session_evidence_ref = final_cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, final_cycle)
+        .unwrap();
+    fixture
+        .store
+        .close_overwatcher(
+            &issued.credential,
+            CloseOverwatcherRequest {
+                event_id: "terminal-overwatcher-close-440".into(),
+                run_id: "run-a".into(),
+                archive_evidence_ref: "codex:thread-archived:overwatcher-a".into(),
+                final_cycle_id: Some("cycle-1".into()),
+                runtime_revision: Some(snapshot.runtime_revision),
+                occurred_at: "2026-10-04T00:01:02Z".into(),
+            },
+        )
+        .unwrap();
+    let after_overwatcher = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(after_overwatcher.summary.closure_state, "open");
+    assert!(after_overwatcher.role("overwatcher").is_none());
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), token);
+    fixture
+        .store
+        .write_event(
+            &fixture.supervisor,
+            WriteRequest {
+                event_id: "run-closed-440".into(),
+                run_id: "run-a".into(),
+                go_id: None,
+                cell_id: None,
+                attempt: None,
+                plan_revision: 1,
+                role_instance_id: "supervisor-a".into(),
+                event_type: EventType::RunClosed,
+                details: json!({"reason":"validated terminal state"}),
+                corrects_event_id: None,
+                occurred_at: "2026-10-04T00:01:03Z".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        fixture.store.query_run("run-a").unwrap().summary.closure_state,
+        "closed"
+    );
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), token);
+}
+
+#[test]
+fn a_440_terminal_race_resumes_same_session_then_finalizes_before_run_close() {
+    let fixture = Fixture::new_440();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+    fixture
+        .store
+        .record_overwatcher_status(
+            &issued.credential,
+            RecordOverwatcherStatusRequest {
+                status_id: "terminal-turn-ended-440".into(),
+                run_id: "run-a".into(),
+                binding_revision: 1,
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                foreground_turn_id: "foreground-turn-a".into(),
+                native_liveness: NativeLiveness::Completed,
+                evidence: fixture.evidence_ref("terminal-turn-ended-440.json", b"turn ended"),
+                observed_at: "2026-10-04T00:00:59Z".into(),
+            },
+        )
+        .unwrap();
+    fixture
+        .store
+        .resume_overwatcher_turn(
+            &fixture.supervisor,
+            ResumeOverwatcherTurnRequest {
+                event_id: "resume-terminal-turn-440".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "overwatcher-a".into(),
+                session_id: "session-overwatcher-a".into(),
+                binding_revision: 1,
+                expected_runtime_revision: fixture.runtime_revision(),
+                previous_foreground_turn_id: "foreground-turn-a".into(),
+                foreground_turn_id: "foreground-turn-b".into(),
+                last_anomaly_cycle_id: None,
+                last_native_status_id: Some("terminal-turn-ended-440".into()),
+                native_active_session_evidence: fixture
+                    .evidence_ref("resume-terminal-turn-440.json", b"same session active"),
+                reason: "finish the terminal cycle in the same bound Session".into(),
+                occurred_at: "2026-10-04T00:01:00Z".into(),
+            },
+        )
+        .unwrap();
+    fixture
+        .store
+        .write_event(
+            &fixture.supervisor,
+            WriteRequest {
+                event_id: "d2-passed-race-440".into(),
+                run_id: "run-a".into(),
+                go_id: None,
+                cell_id: None,
+                attempt: None,
+                plan_revision: 1,
+                role_instance_id: "supervisor-a".into(),
+                event_type: EventType::D2Passed,
+                details: json!({"verdict":"PASS"}),
+                corrects_event_id: None,
+                occurred_at: "2026-10-04T00:01:01Z".into(),
+            },
+        )
+        .unwrap();
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    let mut final_cycle = overwatch_cycle(1);
+    final_cycle.foreground_turn_id = "foreground-turn-b".into();
+    final_cycle.runtime_revision = snapshot.runtime_revision;
+    final_cycle.latest_event_id = snapshot.latest_event_id;
+    final_cycle.latest_message_id = snapshot.latest_message_id;
+    final_cycle.checklist.terminal_closure = OverwatchCheckResult::Clear;
+    final_cycle.evidence_refs = vec![fixture.evidence_ref("cycle-final-race-440.json", b"terminal")];
+    final_cycle.native_active_session_evidence_ref = final_cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, final_cycle)
+        .unwrap();
+    fixture
+        .store
+        .close_overwatcher(
+            &issued.credential,
+            CloseOverwatcherRequest {
+                event_id: "terminal-race-overwatcher-close-440".into(),
+                run_id: "run-a".into(),
+                archive_evidence_ref: "codex:thread-archived:overwatcher-a".into(),
+                final_cycle_id: Some("cycle-1".into()),
+                runtime_revision: Some(snapshot.runtime_revision),
+                occurred_at: "2026-10-04T00:01:03Z".into(),
+            },
+        )
+        .unwrap();
+    fixture
+        .store
+        .write_event(
+            &fixture.supervisor,
+            WriteRequest {
+                event_id: "run-closed-race-440".into(),
+                run_id: "run-a".into(),
+                go_id: None,
+                cell_id: None,
+                attempt: None,
+                plan_revision: 1,
+                role_instance_id: "supervisor-a".into(),
+                event_type: EventType::RunClosed,
+                details: json!({"reason":"validated terminal state"}),
+                corrects_event_id: None,
+                occurred_at: "2026-10-04T00:01:04Z".into(),
+            },
+        )
+        .unwrap();
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.summary.closure_state, "closed");
+    assert!(projection.role("overwatcher").is_none());
+    assert_eq!(projection.overwatcher_binding_transitions.len(), 2);
+}
+
+#[test]
 fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
     let fixture = Fixture::new_423();
     let issued = fixture
@@ -2330,6 +2572,19 @@ impl Fixture {
         database
             .execute(
                 "UPDATE runs SET slk_version='4.2.3' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        drop(database);
+        fixture
+    }
+
+    fn new_440() -> Self {
+        let fixture = Self::new();
+        let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.4.0' WHERE run_id='run-a'",
                 [],
             )
             .unwrap();
