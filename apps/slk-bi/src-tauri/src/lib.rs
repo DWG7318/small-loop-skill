@@ -4,6 +4,8 @@ pub mod commands;
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            commands::metadata,
+            commands::sync_webbi,
             commands::projects,
             commands::runs,
             commands::run,

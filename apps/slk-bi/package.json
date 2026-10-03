@@ -1,12 +1,16 @@
 {
   "name": "slk-bi",
   "private": true,
-  "version": "4.3.5",
+  "version": "1.1.0",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev": "vite",
     "build:ui": "tsc -b && vite build",
+    "build:webbi": "pnpm build:ui",
+    "dev:webbi": "pnpm build:webbi && pnpm dlx wrangler@4.147.0 dev",
+    "deploy:webbi": "pnpm build:webbi && pnpm dlx wrangler@4.147.0 deploy",
+    "migrate:webbi": "pnpm dlx wrangler@4.147.0 d1 migrations apply SLK_WEBBI --remote",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "tauri": "tauri"

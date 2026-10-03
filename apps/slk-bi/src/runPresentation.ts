@@ -10,7 +10,7 @@ import type {
 export type RunTone = "done" | "active" | "wait" | "exempt" | "rework" | "blocked";
 
 export interface RunStripRole {
-  role: "Supervisor" | "Checker" | "Worker";
+  role: "Supervisor" | "Checker" | "Worker" | "Overwatcher";
   agent: string;
   model: string;
   reasoning: string;
@@ -54,6 +54,7 @@ const ROLE_LABELS = {
   supervisor: "Supervisor",
   checker: "Checker",
   worker: "Worker",
+  overwatcher: "Overwatcher",
 } as const;
 
 export function visibleRunSummaries(runs: RunSummary[]) {
@@ -328,16 +329,17 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
   const intervals = workIntervals(run, now);
   const responsibleId = run.token_history.at(-1)?.to_role_instance_id;
   const responsible = run.roles.find((role) => role.role_instance_id === responsibleId);
-  const roles = (["supervisor", "checker", "worker"] as const).map((roleName) => {
+  const roles = (["supervisor", "checker", "worker", "overwatcher"] as const).flatMap((roleName) => {
     const role = run.roles.find(
       (candidate) => candidate.role === roleName && candidate.lifecycle === "active",
     );
-    return {
+    if (roleName === "overwatcher" && !role) return [];
+    return [{
       role: ROLE_LABELS[roleName],
       agent: role?.agent_runtime ?? "未登记",
       model: role?.model ?? "未登记",
       reasoning: role?.reasoning ?? "",
-    };
+    }];
   });
   const start = new Date(run.summary.created_at);
   const startDate = Number.isNaN(start.getTime())

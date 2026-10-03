@@ -231,6 +231,13 @@ export const twoRunFixture: { projects: ProjectsView; runs: RunsView; runDetails
 };
 
 export const fixtureApi: SlkApi = {
+  metadata: async () => ({
+    schema_version: "slk.bi.metadata/v1",
+    bi_version: "1.1.0",
+    device_id: "device-a",
+    device_name: "Workstation A",
+    webbi_sync_enabled: false,
+  }),
   projects: async () => twoRunFixture.projects,
   runs: async () => twoRunFixture.runs,
   run: async (runId) => twoRunFixture.runDetails.find((run) => run.run_id === runId)!,
@@ -259,4 +266,5 @@ export const fixtureApi: SlkApi = {
     run_id: "run-a",
     evidence: runFixture.evidence,
   }),
+  syncWebBi: async () => ({ status: "disabled", upload_id: null }),
 };
