@@ -313,12 +313,11 @@ fn a_423_overwatcher_is_not_closed_at_a_cell_boundary() {
 #[test]
 fn a_440_overwatcher_cannot_close_before_d2_passes() {
     let fixture = Fixture::new_440();
+    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.cadence_seconds = 600;
     let issued = fixture
         .store
-        .bind_overwatcher(
-            &fixture.supervisor,
-            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
-        )
+        .bind_overwatcher(&fixture.supervisor, binding)
         .unwrap();
 
     let result = fixture.store.close_overwatcher(
@@ -341,12 +340,11 @@ fn a_440_overwatcher_cannot_close_before_d2_passes() {
 #[test]
 fn a_440_d2_snapshot_closes_overwatcher_before_run_without_changing_engineering_state() {
     let fixture = Fixture::new_440();
+    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.cadence_seconds = 600;
     let issued = fixture
         .store
-        .bind_overwatcher(
-            &fixture.supervisor,
-            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
-        )
+        .bind_overwatcher(&fixture.supervisor, binding)
         .unwrap();
     fixture
         .store
@@ -371,13 +369,16 @@ fn a_440_d2_snapshot_closes_overwatcher_before_run_without_changing_engineering_
     let snapshot = before.runtime_snapshot.unwrap();
     let token = fixture.store.current_token("run-a").unwrap();
     let mut final_cycle = overwatch_cycle(1);
+    final_cycle.cadence_seconds = 600;
+    final_cycle.next_cycle_at = "2026-09-22T00:14:00Z".into();
     final_cycle.runtime_revision = snapshot.runtime_revision;
     final_cycle.latest_event_id = snapshot.latest_event_id;
     final_cycle.latest_message_id = snapshot.latest_message_id;
     final_cycle.token_sequence = token.sequence;
     final_cycle.token_holder_role_instance_id = token.owner_role_instance_id.clone();
     final_cycle.checklist.terminal_closure = OverwatchCheckResult::Clear;
-    final_cycle.evidence_refs = vec![fixture.evidence_ref("cycle-final-440.json", b"d2 terminal snapshot")];
+    final_cycle.evidence_refs =
+        vec![fixture.evidence_ref("cycle-final-440.json", b"d2 terminal snapshot")];
     final_cycle.native_active_session_evidence_ref = final_cycle.evidence_refs[0].path.clone();
     fixture
         .store
@@ -421,7 +422,12 @@ fn a_440_d2_snapshot_closes_overwatcher_before_run_without_changing_engineering_
         )
         .unwrap();
     assert_eq!(
-        fixture.store.query_run("run-a").unwrap().summary.closure_state,
+        fixture
+            .store
+            .query_run("run-a")
+            .unwrap()
+            .summary
+            .closure_state,
         "closed"
     );
     assert_eq!(fixture.store.current_token("run-a").unwrap(), token);
@@ -430,12 +436,11 @@ fn a_440_d2_snapshot_closes_overwatcher_before_run_without_changing_engineering_
 #[test]
 fn a_440_terminal_race_resumes_same_session_then_finalizes_before_run_close() {
     let fixture = Fixture::new_440();
+    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.cadence_seconds = 600;
     let issued = fixture
         .store
-        .bind_overwatcher(
-            &fixture.supervisor,
-            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
-        )
+        .bind_overwatcher(&fixture.supervisor, binding)
         .unwrap();
     fixture
         .store
@@ -502,12 +507,15 @@ fn a_440_terminal_race_resumes_same_session_then_finalizes_before_run_close() {
         .runtime_snapshot
         .unwrap();
     let mut final_cycle = overwatch_cycle(1);
+    final_cycle.cadence_seconds = 600;
+    final_cycle.next_cycle_at = "2026-09-22T00:14:00Z".into();
     final_cycle.foreground_turn_id = "foreground-turn-b".into();
     final_cycle.runtime_revision = snapshot.runtime_revision;
     final_cycle.latest_event_id = snapshot.latest_event_id;
     final_cycle.latest_message_id = snapshot.latest_message_id;
     final_cycle.checklist.terminal_closure = OverwatchCheckResult::Clear;
-    final_cycle.evidence_refs = vec![fixture.evidence_ref("cycle-final-race-440.json", b"terminal")];
+    final_cycle.evidence_refs =
+        vec![fixture.evidence_ref("cycle-final-race-440.json", b"terminal")];
     final_cycle.native_active_session_evidence_ref = final_cycle.evidence_refs[0].path.clone();
     fixture
         .store
@@ -1593,6 +1601,7 @@ fn adoption_433_to_434_to_435_to_436_preserves_the_schema_v8_run() {
     for (receipt_id, from_version, to_version, occurred_at) in [
         ("adopt-435", "4.3.4", "4.3.5", "2026-09-30T00:12:00Z"),
         ("adopt-436", "4.3.5", "4.3.6", "2026-10-01T00:12:00Z"),
+        ("adopt-440", "4.3.6", "4.4.0", "2026-10-04T00:12:00Z"),
     ] {
         let before = fixture.store.query_run("run-a").unwrap();
         let applied = fixture
@@ -2136,7 +2145,7 @@ fn method_adoption_rejects_an_already_active_overwatcher() {
 }
 
 #[test]
-fn binding_requires_the_current_supervisor_and_a_dedicated_unreused_session() {
+fn binding_requires_the_current_supervisor_and_an_independent_role_identity() {
     let fixture = Fixture::new();
     let wrong_role = fixture.store.bind_overwatcher(
         &fixture.checker,
@@ -2163,17 +2172,112 @@ fn binding_requires_the_current_supervisor_and_a_dedicated_unreused_session() {
             overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
         )
         .unwrap();
+}
+
+#[test]
+fn slk_440_allows_one_exact_overwatcher_session_to_bind_multiple_runs() {
+    let fixture = Fixture::new_440();
+    let mut first = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-shared");
+    first.cadence_seconds = 600;
+    fixture
+        .store
+        .bind_overwatcher(&fixture.supervisor, first)
+        .unwrap();
 
     let mut second = init_request("run-b", "supervisor-b");
     second.occurred_at = "2026-09-22T01:00:00Z".into();
     let second_run = fixture.store.init_run(second).unwrap();
-    assert!(matches!(
-        fixture.store.bind_overwatcher(
-            &second_run.supervisor_credential,
-            overwatcher_binding("run-b", "overwatcher-b", "session-overwatcher-a"),
-        ),
-        Err(StateError::OverwatcherSessionReused)
-    ));
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    database
+        .execute(
+            "UPDATE runs SET slk_version='4.4.0' WHERE run_id='run-b'",
+            [],
+        )
+        .unwrap();
+    drop(database);
+    let mut shared = overwatcher_binding("run-b", "overwatcher-b", "session-overwatcher-shared");
+    shared.cadence_seconds = 600;
+    fixture
+        .store
+        .bind_overwatcher(&second_run.supervisor_credential, shared)
+        .unwrap();
+
+    assert_eq!(
+        fixture
+            .store
+            .query_run("run-a")
+            .unwrap()
+            .role("overwatcher")
+            .unwrap()
+            .session_id,
+        "session-overwatcher-shared"
+    );
+    assert_eq!(
+        fixture
+            .store
+            .query_run("run-b")
+            .unwrap()
+            .role("overwatcher")
+            .unwrap()
+            .session_id,
+        "session-overwatcher-shared"
+    );
+}
+
+#[test]
+fn slk_440_replacement_may_join_an_exact_shared_overwatcher_session() {
+    let fixture = Fixture::new_440();
+    let mut original = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    original.cadence_seconds = 600;
+    let issued = fixture
+        .store
+        .bind_overwatcher(&fixture.supervisor, original)
+        .unwrap();
+    let mut cycle = overwatch_cycle(1);
+    cycle.cadence_seconds = 600;
+    cycle.runtime_revision = fixture.runtime_revision();
+    cycle.next_cycle_at = "2026-09-22T00:14:00Z".into();
+    cycle.evidence_refs = vec![fixture.evidence_ref("shared-replacement-cycle.json", b"active")];
+    cycle.native_active_session_evidence_ref = cycle.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
+
+    let mut second = init_request("run-b", "supervisor-b");
+    second.occurred_at = "2026-09-22T01:00:00Z".into();
+    let second_run = fixture.store.init_run(second).unwrap();
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    database
+        .execute(
+            "UPDATE runs SET slk_version='4.4.0' WHERE run_id='run-b'",
+            [],
+        )
+        .unwrap();
+    drop(database);
+
+    let replacement_evidence = fixture.evidence_ref("replacement-live.json", b"active");
+    let mut shared = overwatcher_binding("run-b", "overwatcher-shared", "session-overwatcher-b");
+    shared.cadence_seconds = 600;
+    shared.foreground_turn_id = "foreground-turn-b".into();
+    shared.native_active_session_evidence_ref = replacement_evidence.path.clone();
+    shared.canonical_task_id = "session-overwatcher-b".into();
+    fixture
+        .store
+        .bind_overwatcher(&second_run.supervisor_credential, shared)
+        .unwrap();
+
+    let mut replacement = replacement_request(
+        &fixture,
+        OverwatcherReplacementMode::Planned,
+        Some("cycle-1"),
+        None,
+    );
+    replacement.cadence_seconds = 600;
+    fixture
+        .store
+        .replace_overwatcher(&fixture.supervisor, replacement)
+        .unwrap();
 }
 
 #[test]
@@ -3032,7 +3136,7 @@ fn overwatcher_binding(
         foreground_turn_id: "foreground-turn-a".into(),
         native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
         binding_revision: 1,
-        canonical_task_id: format!("task-{run_id}"),
+        canonical_task_id: format!("task-{session_id}"),
         reason: "Supervisor selected one dedicated observation Session".into(),
         occurred_at: "2026-09-22T00:00:01Z".into(),
     }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import errno
+import importlib.util
 import json
 import os
 import shutil
@@ -12,6 +14,16 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 INTEGRATION = ROOT / "integrations" / "ocrv"
+
+
+def _load_adapter():
+    specification = importlib.util.spec_from_file_location(
+        "slk_test_ocrv_adapter", INTEGRATION / "slk_checker_adapter.py"
+    )
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
 
 
 def powershell() -> str:
@@ -38,6 +50,7 @@ def run_script(script: Path, *arguments: str) -> subprocess.CompletedProcess[str
 def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     wrapper = (INTEGRATION / "slk-checker.cmd").read_text(encoding="utf-8")
     assert '"%~1"=="--slk-post-d1"' in wrapper
+    assert '"%~1"=="--slk-complete-d1"' in wrapper
     assert "slk_checker_post_d1.py" in wrapper
     assert '"%~1"=="--slk-worker-recovery"' in wrapper
     assert '"%~1"=="--slk-existing-terminal"' in wrapper
@@ -49,6 +62,57 @@ def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     assert '"%~1"=="--slk-consume-existing-partial"' in wrapper
     assert "slk_checker_recovery.py" in wrapper
     assert "slk_checker_adapter.py" in wrapper
+
+
+def test_ocrv_atomic_replace_retries_busy_and_cleans_temporary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = _load_adapter()
+    target = tmp_path / "native-activity.json"
+    adapter._write_json_atomic(target, {"sequence": 1})
+    real_replace = os.replace
+    attempts = 0
+
+    def replace(source, destination):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError(errno.EBUSY, "busy once")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(adapter.os, "replace", replace)
+    monkeypatch.setattr(adapter.time, "sleep", lambda _seconds: None)
+
+    adapter._write_json_atomic(target, {"sequence": 2})
+
+    assert attempts == 2
+    assert json.loads(target.read_text(encoding="utf-8")) == {"sequence": 2}
+    assert list(tmp_path.glob("native-activity.json.*.tmp")) == []
+
+
+def test_ocrv_atomic_replace_exhaustion_keeps_previous_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = _load_adapter()
+    target = tmp_path / "native-activity.json"
+    adapter._write_json_atomic(target, {"sequence": 1})
+    attempts = 0
+
+    def replace(_source, _destination):
+        nonlocal attempts
+        attempts += 1
+        raise OSError(errno.EPERM, "still busy")
+
+    monkeypatch.setattr(adapter.os, "replace", replace)
+    monkeypatch.setattr(adapter.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(OSError) as failure:
+        adapter._write_json_atomic(target, {"sequence": 2})
+
+    assert failure.value.errno == errno.EPERM
+    assert attempts == 3
+    assert json.loads(target.read_text(encoding="utf-8")) == {"sequence": 1}
+    assert list(tmp_path.glob("native-activity.json.*.tmp")) == []
 
 
 def test_post_d1_wrapper_is_headless_strips_credentials_and_writes_exact_phase_result(
@@ -106,6 +170,68 @@ print(json.dumps({'schema_version':'slk.checker-post-d1-result/v1','status':'DES
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == "DESKTOP_BRIDGE_REQUIRED"
+
+
+def test_complete_d1_wrapper_is_headless_strips_credentials_and_writes_exact_result(
+    tmp_path: Path,
+) -> None:
+    fake = tmp_path / "fake_transport.py"
+    fake.write_text(
+        """import json, os, sys
+assert sys.argv[1] == 'checker-complete-d1'
+assert '--host-receipt' in sys.argv
+assert 'SLK_ROLE_CREDENTIAL' not in os.environ
+assert 'SLK_OVERWATCHER_CREDENTIAL' not in os.environ
+print(json.dumps({'schema_version':'slk.checker-completion-result/v1','status':'CHECKER_COMPLETION_COMMITTED'}))
+""",
+        encoding="utf-8",
+    )
+    attempt_root = tmp_path / "attempts"
+    attempt_root.mkdir()
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.checker-completion-request/v1",
+                "completion_invocation_id": "completion-1",
+                "handoff_attempt_root": str(attempt_root),
+                "transport_command": [sys.executable, str(fake)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = attempt_root / ".checker-completion" / "completion-1" / "committed-result.json"
+    host_receipt = tmp_path / "host-receipt.json"
+    host_receipt.write_text("{}", encoding="utf-8")
+    environment = os.environ.copy()
+    environment["SLK_ROLE_CREDENTIAL"] = "must-not-leak"
+    environment["SLK_OVERWATCHER_CREDENTIAL"] = "must-not-leak"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(INTEGRATION / "slk_checker_post_d1.py"),
+            "--slk-complete-d1",
+            "--request",
+            str(request),
+            "--output",
+            str(output),
+            "--host-receipt",
+            str(host_receipt),
+        ],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=environment,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "CHECKER_COMPLETION_COMMITTED"
 
 
 def test_existing_terminal_wrapper_reuses_checker_command_without_publishing_new_start(
@@ -244,7 +370,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert installed.returncode == 0, installed.stdout + installed.stderr
     receipt = json.loads(installed.stdout.strip())
     backup = Path(receipt["backup_root"])
-    assert receipt["version"] == "4.3.6"
+    assert receipt["version"] == "4.4.0"
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == (
         INTEGRATION / "slk_checker_adapter.py"
     ).read_bytes()

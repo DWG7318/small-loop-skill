@@ -17,6 +17,7 @@ from .adapters.dsh import DshAdapter
 from .adapters.ocrv import OcrvAdapter
 from .active_writer import recover_active_writer
 from .checker_escalation import CheckerEscalationError, execute_checker_escalation
+from .checker_completion import CheckerCompletionError, execute_checker_completion
 from .desktop_current_turn import (
     complete_desktop_current_turn,
     prepare_desktop_current_turn,
@@ -49,7 +50,7 @@ from .worker_completion import (
 )
 
 
-VERSION = "4.3.6"
+VERSION = "4.4.0"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -510,6 +511,18 @@ def _checker_escalate_d1(args: argparse.Namespace) -> int:
     return 0
 
 
+def _checker_complete_d1(args: argparse.Namespace) -> int:
+    request = _read_object(args.request, "Checker completion request")
+    result = execute_checker_completion(
+        request,
+        request_sha256=args.sha256,
+        request_path=args.request,
+        host_receipt_path=args.host_receipt,
+    )
+    _emit(result)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="slk-transport")
     parser.add_argument("--version", action="version", version=f"slk-transport {VERSION}")
@@ -605,6 +618,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
     checker_escalation.add_argument("--host-receipt", type=Path)
+    checker_completion = subparsers.add_parser("checker-complete-d1")
+    checker_completion.add_argument("--request", required=True, type=Path)
+    checker_completion.add_argument("--sha256", required=True)
+    checker_completion.add_argument("--host-receipt", type=Path)
     cadence = subparsers.add_parser("inspect-overwatcher-cadence")
     cadence.add_argument("--runtime-projection", required=True, type=Path)
     cadence.add_argument("--observed-at", required=True)
@@ -673,6 +690,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _consume_existing_partial_checker(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
+        if args.command == "checker-complete-d1":
+            return _checker_complete_d1(args)
         if args.command == "inspect-overwatcher-cadence":
             return _inspect_overwatcher_cadence(args)
         if args.command == "inspect-native-activity":
@@ -693,6 +712,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except CompletionError as exc:
         return _rejected(exc.error_code, str(exc))
     except CheckerEscalationError as exc:
+        return _rejected(exc.error_code, str(exc))
+    except CheckerCompletionError as exc:
         return _rejected(exc.error_code, str(exc))
     except OverwatcherContinuityError as exc:
         return _rejected("OVERWATCHER_CADENCE_PROJECTION_INVALID", str(exc))

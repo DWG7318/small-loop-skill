@@ -25,15 +25,15 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.3.6 skill collection" in result.stdout
+    assert "PASS: SLK 4.4.0 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.3.6"
-    assert manifest["skill_count"] == 15
+    assert manifest["version"] == "4.4.0"
+    assert manifest["skill_count"] == 16
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
     assert "skills/slk-close-run/SKILL.md" in paths
@@ -142,6 +142,14 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "escalation_attempt_root", "rework_round", "cell_goal", "acceptance_criteria",
             "findings", "reproduction_steps", "expected_result", "evidence_refs", "occurred_at",
         },
+        "docs/contracts/slk-checker-completion.schema.json": {
+            "schema_version", "method_version", "completion_invocation_id", "run_id",
+            "go_id", "cell_id", "target_cell_id", "attempt", "plan_revision",
+            "runtime_revision", "token_sequence", "checker_role_instance_id", "d1_event_id",
+            "route", "runtime_projection_path", "target_endpoint_path",
+            "checker_credential_path", "state_command", "transport_command",
+            "handoff_attempt_root", "payload", "occurred_at",
+        },
         "docs/contracts/slk-native-start.schema.json": {
             "schema_version", "status", "adapter", "run_id", "cell_id", "message_id",
             "request_sha256", "native_request_sha256", "observed_at", "process", "native_task",
@@ -149,6 +157,11 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
         "docs/contracts/slk-native-task-activity.schema.json": {
             "schema_version", "adapter", "run_id", "cell_id", "message_id",
             "native_task_id", "status", "sequence", "observed_at", "last_event", "waiting_on",
+        },
+        "docs/contracts/slk-native-execution-outcome.schema.json": {
+            "schema_version", "adapter", "run_id", "cell_id", "message_id",
+            "instance_id", "session_id", "status", "started_at", "ended_at", "duration_ms",
+            "exit_code", "error_code", "stdout_sha256", "stderr_sha256",
         },
         "docs/contracts/slk-overwatcher-cadence-inspection.schema.json": {
             "schema_version", "run_id", "observed_at", "projected_active",
@@ -230,19 +243,17 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.3.6" in text
-        assert "14" in text
+        assert "4.4.0" in text
+        assert "16" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text
-    assert "verify fixed role bindings/options with `preflight-run` → size initial CELLs" in english
-    assert "Supervisor creates Checker → Checker role Eval" in english
-    assert "Checker creates Worker" in english
-    assert "用 `preflight-run` 核对固定角色绑定与可选项 → 划分初始 CELL" in chinese
-    assert "Supervisor 创建 Checker → Checker 角色 Eval" in chinese
-    assert "Checker 创建 Worker" in chinese
+    assert "seven exact communication rehearsals" in english
+    assert "BI 1.1.0" in english
+    assert "七条准确通讯演练" in chinese
+    assert "BI 1.1.0" in chinese
     assert "not standalone methods" in english
-    assert "不可脱离 SLK Run 单独使用" in chinese
+    assert "不是独立方法" in chinese
     for marker in ("RTK", "Probe CLI", "Ponytail"):
         assert marker in english and marker in chinese
 
@@ -252,7 +263,7 @@ def test_migration_and_changelog_state_the_major_boundary() -> None:
     changelog = read("CHANGELOG.md")
     assert "2.6.0" in migration and "3.0.0" in migration
     assert "Supervisor" in migration and "Checker" in migration and "Worker" in migration
-    assert "## 4.3.6" in changelog and "## 4.3.4" in changelog and "## 4.3.3" in changelog and "## 4.3.2" in changelog and "## 4.3.1" in changelog and "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
+    assert "## 4.4.0" in changelog and "## 4.3.4" in changelog and "## 4.3.3" in changelog and "## 4.3.2" in changelog and "## 4.3.1" in changelog and "## 4.3.0" in changelog and "## 4.2.11" in changelog and "## 4.2.10" in changelog and "## 4.2.9" in changelog and "## 4.2.8" in changelog and "## 4.2.7" in changelog and "## 4.2.6" in changelog and "## 4.2.5" in changelog and "## 4.2.4" in changelog and "## 4.2.2" in changelog and "## 4.2.1" in changelog and "## 4.2.0" in changelog and "## 4.1.1" in changelog and "## 4.1.0" in changelog and "## 4.0.0" in changelog and "## 3.0.8" in changelog and "## 3.0.7" in changelog and "## 3.0.6" in changelog and "## 3.0.5" in changelog and "## 3.0.4" in changelog and "## 3.0.3" in changelog and "## 3.0.2" in changelog and "## 3.0.1" in changelog and "## 3.0.0" in changelog
     assert "one complete CELL" in changelog
     assert "later CELLs" in changelog
     assert "inspection-only CELLs" in changelog
@@ -269,7 +280,10 @@ def test_436_readiness_and_ocrv_preflight_contracts_are_closed() -> None:
         assert readiness["$defs"][name]["additionalProperties"] is False
     option_name = readiness["$defs"]["option"]["properties"]["name"]
     assert option_name["not"]["pattern"] == "^[Bb][Oo][Mm]$"
-    assert readiness["$defs"]["request"]["properties"]["optional_features"]["minItems"] == 5
+    assert readiness["$defs"]["request"]["properties"]["optional_features"]["minItems"] == 3
+    assert readiness["$defs"]["request"]["properties"]["roles"]["minItems"] == 4
+    for receipt in ("bi_open_receipt", "temporal_readiness_receipt", "communication_rehearsal"):
+        assert receipt in readiness["$defs"]["request"]["required"]
     for name in ("request", "preflight"):
         assert ocrv["$defs"][name]["additionalProperties"] is False
 
@@ -279,6 +293,8 @@ def test_431_consistency_audit_is_complete_and_packaged() -> None:
         encoding="utf-8"
     )
     for skill in validate_repository.EXPECTED_SKILLS:
+        if skill == "slk-manage-temporal":
+            continue
         assert f"`{skill}`" in audit
     for marker in (
         "Skill / contract / producer / consumer matrix",

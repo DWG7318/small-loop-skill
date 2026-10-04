@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 
-REQUEST_SCHEMA = "slk.checker-post-d1-request/v1"
+FAIL_REQUEST_SCHEMA = "slk.checker-post-d1-request/v1"
+PASS_REQUEST_SCHEMA = "slk.checker-completion-request/v1"
 
 
 def windows_no_window_kwargs() -> dict[str, object]:
@@ -29,10 +30,10 @@ def windows_no_window_kwargs() -> dict[str, object]:
     }
 
 
-def _read_request(path: Path) -> tuple[dict[str, Any], bytes]:
+def _read_request(path: Path, schema: str) -> tuple[dict[str, Any], bytes]:
     data = path.read_bytes()
     value = json.loads(data.decode("utf-8-sig"))
-    if not isinstance(value, dict) or value.get("schema_version") != REQUEST_SCHEMA:
+    if not isinstance(value, dict) or value.get("schema_version") != schema:
         raise ValueError("request schema is invalid")
     command = value.get("transport_command")
     if not isinstance(command, list) or not command or not all(
@@ -42,13 +43,22 @@ def _read_request(path: Path) -> tuple[dict[str, Any], bytes]:
     return value, data
 
 
-def _expected_output(request: dict[str, Any], *, completing: bool) -> Path:
-    root = Path(str(request.get("escalation_attempt_root", ""))).resolve()
-    invocation = request.get("post_d1_invocation_id")
+def _expected_output(request: dict[str, Any], *, pass_route: bool, completing: bool) -> Path:
+    root_field = "handoff_attempt_root" if pass_route else "escalation_attempt_root"
+    invocation_field = "completion_invocation_id" if pass_route else "post_d1_invocation_id"
+    root = Path(str(request.get(root_field, ""))).resolve()
+    invocation = request.get(invocation_field)
     if not isinstance(invocation, str) or not invocation or invocation != invocation.strip():
         raise ValueError("post-D1 invocation identity is invalid")
-    name = "committed-result.json" if completing else "prepared-result.json"
-    return (root / ".checker-post-d1" / invocation / name).resolve()
+    name = (
+        "committed-result.json"
+        if completing
+        else "result.json"
+        if pass_route
+        else "prepared-result.json"
+    )
+    directory = ".checker-completion" if pass_route else ".checker-post-d1"
+    return (root / directory / invocation / name).resolve()
 
 
 def _write_atomic(path: Path, value: dict[str, Any]) -> None:
@@ -72,14 +82,22 @@ def _write_atomic(path: Path, value: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--slk-post-d1", action="store_true", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--slk-post-d1", action="store_true")
+    mode.add_argument("--slk-complete-d1", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--host-receipt", type=Path)
     args = parser.parse_args()
     try:
-        request, data = _read_request(args.request.resolve())
-        expected = _expected_output(request, completing=args.host_receipt is not None)
+        pass_route = bool(args.slk_complete_d1)
+        schema = PASS_REQUEST_SCHEMA if pass_route else FAIL_REQUEST_SCHEMA
+        request, data = _read_request(args.request.resolve(), schema)
+        expected = _expected_output(
+            request,
+            pass_route=pass_route,
+            completing=args.host_receipt is not None,
+        )
         if args.output.resolve() != expected:
             raise ValueError("output path does not match the immutable suffix phase")
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
@@ -88,7 +106,7 @@ def main() -> int:
 
     arguments = [
         *request["transport_command"],
-        "checker-escalate-d1",
+        "checker-complete-d1" if pass_route else "checker-escalate-d1",
         "--request",
         str(args.request.resolve()),
         "--sha256",
@@ -122,10 +140,12 @@ def main() -> int:
         return completed.returncode
     try:
         result = json.loads(completed.stdout)
-        if not isinstance(result, dict) or result.get("status") not in {
-            "DESKTOP_BRIDGE_REQUIRED",
-            "CHECKER_ESCALATION_COMMITTED",
-        }:
+        accepted_statuses = (
+            {"CHECKER_COMPLETION_COMMITTED"}
+            if pass_route
+            else {"DESKTOP_BRIDGE_REQUIRED", "CHECKER_ESCALATION_COMMITTED"}
+        )
+        if not isinstance(result, dict) or result.get("status") not in accepted_statuses:
             raise ValueError("managed transport returned an invalid post-D1 result")
         _write_atomic(expected, result)
     except (OSError, json.JSONDecodeError, ValueError) as exc:

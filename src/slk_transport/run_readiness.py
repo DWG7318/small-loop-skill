@@ -12,11 +12,14 @@ from typing import Any, Mapping
 
 
 REQUEST_FIELDS = frozenset(
-    {"schema_version", "run_id", "plan_revision", "roles", "optional_features"}
+    {
+        "schema_version", "run_id", "plan_revision", "roles", "optional_features",
+        "bi_open_receipt", "temporal_readiness_receipt", "communication_rehearsal",
+    }
 )
 ROLE_FIELDS = frozenset(
     {
-        "role",
+        "role", "role_instance_id",
         "expected_runtime",
         "actual_runtime",
         "expected_model",
@@ -29,6 +32,7 @@ ROLE_FIELDS = frozenset(
         "required_skills",
         "required_tools",
         "native_activity_capability",
+        "tool_update_status",
     }
 )
 NATIVE_ACTIVITY_CAPABILITY_FIELDS = frozenset(
@@ -42,9 +46,19 @@ NATIVE_ACTIVITY_CAPABILITY_FIELDS = frozenset(
     }
 )
 OPTION_FIELDS = frozenset({"name", "decision", "owner_evidence_ref"})
-REQUIRED_ROLES = ("supervisor", "worker", "checker")
-REQUIRED_OPTIONS = ("Ponytail", "Temporal", "Overwatcher", "RTK", "Probe CLI")
+REQUIRED_ROLES = ("supervisor", "worker", "checker", "overwatcher")
+REQUIRED_OPTIONS = ("Ponytail", "RTK", "Probe CLI")
 FORBIDDEN_OPTION_NAMES = frozenset({"bom"})
+REQUIRED_REHEARSAL_LEGS = (
+    ("SETUP_TO_CHECKER", "supervisor", "checker"),
+    ("CELL_TO_WORKER", "checker", "worker"),
+    ("CANDIDATE_TO_CHECKER", "worker", "checker"),
+    ("D1_FAIL_TO_SUPERVISOR", "checker", "supervisor"),
+    ("REWORK_TO_WORKER", "supervisor", "worker"),
+    ("D2_READY_TO_SUPERVISOR", "checker", "supervisor"),
+    ("ANOMALY_TO_SUPERVISOR", "overwatcher", "supervisor"),
+)
+SHA256 = frozenset("0123456789abcdef")
 
 
 def _closed(value: Mapping[str, Any], fields: frozenset[str], label: str) -> None:
@@ -70,6 +84,91 @@ def _positive_int(value: Any, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{label} must be a positive integer")
     return value
+
+
+def _sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and set(value) <= SHA256
+
+
+def _receipt(path_value: Any) -> Mapping[str, Any] | None:
+    if not isinstance(path_value, str) or not path_value.strip():
+        return None
+    path = Path(path_value)
+    if not path.is_absolute() or not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, Mapping) else None
+
+
+def _valid_bi_receipt(path_value: Any, run_id: str) -> bool:
+    value = _receipt(path_value)
+    return bool(
+        value is not None
+        and set(value)
+        == {
+            "schema_version", "method_version", "run_id", "bi_version", "device_id",
+            "visible", "evidence_sha256",
+        }
+        and value.get("schema_version") == "slk.bi-open-readiness/v1"
+        and value.get("method_version") == "4.4.0"
+        and value.get("run_id") == run_id
+        and value.get("bi_version") == "1.1.0"
+        and isinstance(value.get("device_id"), str)
+        and bool(str(value.get("device_id")).strip())
+        and value.get("visible") is True
+        and _sha256(value.get("evidence_sha256"))
+    )
+
+
+def _valid_temporal_receipt(path_value: Any, run_id: str) -> bool:
+    value = _receipt(path_value)
+    return bool(
+        value is not None
+        and set(value)
+        == {
+            "schema_version", "method_version", "run_id", "status", "service_mode",
+            "workflow_templates", "evidence_sha256",
+        }
+        and value.get("schema_version") == "slk.temporal-readiness/v1"
+        and value.get("method_version") == "4.4.0"
+        and value.get("run_id") == run_id
+        and value.get("status") == "READY"
+        and value.get("service_mode") == "SHARED_LOCAL"
+        and value.get("workflow_templates") == ["SLK.Start", "SLK.Run"]
+        and _sha256(value.get("evidence_sha256"))
+    )
+
+
+def _valid_communication_rehearsal(path_value: Any, run_id: str) -> bool:
+    value = _receipt(path_value)
+    if not (
+        value is not None
+        and set(value) == {"schema_version", "method_version", "run_id", "status", "legs"}
+        and value.get("schema_version") == "slk.communication-rehearsal/v1"
+        and value.get("method_version") == "4.4.0"
+        and value.get("run_id") == run_id
+        and value.get("status") == "PASS"
+        and isinstance(value.get("legs"), list)
+        and len(value["legs"]) == len(REQUIRED_REHEARSAL_LEGS)
+    ):
+        return False
+    actual: list[tuple[str, str, str]] = []
+    for row in value["legs"]:
+        if not isinstance(row, Mapping) or set(row) != {
+            "leg_id", "sender_role", "receiver_role", "sent_receipt_sha256",
+            "receiver_started_sha256", "response_receipt_sha256",
+        } or not all(
+            _sha256(row.get(name))
+            for name in (
+                "sent_receipt_sha256", "receiver_started_sha256", "response_receipt_sha256"
+            )
+        ):
+            return False
+        actual.append((str(row["leg_id"]), str(row["sender_role"]), str(row["receiver_role"])))
+    return tuple(actual) == REQUIRED_REHEARSAL_LEGS
 
 
 def _tool_exists(value: str) -> bool:
@@ -105,7 +204,7 @@ def _native_activity_capability(path_value: Any, runtime: str) -> str | None:
         events = value["native_events"]
         if (
             value["schema_version"] != "slk.native-activity-capability/v1"
-            or value["method_version"] != "4.3.6"
+            or value["method_version"] != "4.4.0"
             or value["runtime"] != runtime
             or value["read_only_observation"] is not True
             or value["model_call_required"] is not False
@@ -125,6 +224,7 @@ def _native_activity_capability(path_value: Any, runtime: str) -> str | None:
 def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     _closed(raw, ROLE_FIELDS, "role")
     role = _nonempty(raw["role"], "role")
+    _nonempty(raw["role_instance_id"], "role_instance_id")
     expected_runtime = _nonempty(raw["expected_runtime"], "expected_runtime")
     actual_runtime = _nonempty(raw["actual_runtime"], "actual_runtime")
     expected_model = _nonempty(raw["expected_model"], "expected_model")
@@ -137,6 +237,7 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     skills = _string_array(raw["required_skills"], "required_skills")
     tools = _string_array(raw["required_tools"], "required_tools")
     native_capability = raw["native_activity_capability"]
+    tool_update_status = raw["tool_update_status"]
 
     incompatible: list[str] = []
     repair: list[str] = []
@@ -156,6 +257,10 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
         repair.append("REQUIRED_SKILL_MISSING")
     if any(not _tool_exists(item) for item in tools):
         repair.append("REQUIRED_TOOL_MISSING")
+    if tool_update_status == "UPDATE_REQUIRED":
+        repair.append("TOOL_UPDATE_REQUIRED")
+    elif tool_update_status != "CURRENT":
+        repair.append("TOOL_UPDATE_UNPROVEN")
     if role == "supervisor":
         if native_capability is not None:
             repair.append("NATIVE_ACTIVITY_CAPABILITY_INVALID")
@@ -191,7 +296,7 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
     roles = [_role_result(item) for item in raw_roles if isinstance(item, Mapping)]
     role_names = [item["role"] for item in roles]
     if len(roles) != len(raw_roles) or sorted(role_names) != sorted(REQUIRED_ROLES):
-        raise ValueError("roles must contain exactly one supervisor, worker, and checker")
+        raise ValueError("roles must contain exactly one supervisor, worker, checker, and overwatcher")
 
     raw_options = request["optional_features"]
     if not isinstance(raw_options, list):
@@ -227,6 +332,12 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
                 reason_codes.append(code)
     if forbidden_option_declared:
         reason_codes.append("OPTION_FORBIDDEN")
+    if not _valid_bi_receipt(request["bi_open_receipt"], run_id):
+        reason_codes.append("BI_OPEN_RECEIPT_INVALID")
+    if not _valid_temporal_receipt(request["temporal_readiness_receipt"], run_id):
+        reason_codes.append("TEMPORAL_READINESS_INVALID")
+    if not _valid_communication_rehearsal(request["communication_rehearsal"], run_id):
+        reason_codes.append("COMMUNICATION_REHEARSAL_INVALID")
     missing = [name for name in REQUIRED_OPTIONS if name not in options_by_name]
     if missing:
         reason_codes.append("REQUIRED_OPTION_MISSING")

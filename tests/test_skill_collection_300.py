@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.3.6"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.4.0"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -240,9 +240,9 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "同一 candidate/message/attempt" in recover
     assert "不要先 resume" in recover
     assert "外部 OCRV 宿主" in recover
-    assert "`slk-state resume-overwatcher-turn`" in overwatch
-    assert "新 Session、非 Supervisor 授权" in overwatch
-    assert "4.3.6" in main
+    assert "任意 OW Session 退出" in overwatch
+    assert "Supervisor 修复并提交匹配证据" in overwatch
+    assert "4.4.0" in main
 
 
 def test_invalid_result_contract_recovery_routes_through_original_roles() -> None:
@@ -397,15 +397,15 @@ def test_startup_order_and_creation_authority_are_unambiguous() -> None:
 
     assert plan.index("$slk-select-models") < plan.index("划分为初始 CELL")
     assert "原对话 ↔ Supervisor" in plan
-    assert "再创建 Checker，Checker 创建 Worker" in main
+    assert "Supervisor → Checker" in main and "Checker → Worker → Checker" in main
     assert "结构化角色 Eval" in main
     assert grill.index("$slk-record-run") < grill.index("$slk-manage-team")
     assert "通过 Eval 后" in record
     assert "$slk-manage-team" in record
-    assert "复用" in manage and "不重复" in manage
-    assert manage.index("Codex Supervisor 启动并登记 OCRV Checker") < manage.index(
-        "Checker 理解确认"
-    ) < manage.index("OCRV Checker 启动并登记 DSH Worker")
+    assert "复测受影响项" in manage
+    assert manage.index("打开可见 BI 1.1.0") < manage.index(
+        "登记 Owner 已确认的 Supervisor"
+    ) < manage.index("用标准 headless 入口演练七条必要腿")
     assert "Worker 不重复完整方法问答" in manage
 
 
@@ -436,9 +436,9 @@ def test_communication_recovery_preserves_all_original_direct_routes() -> None:
     recover = read_skill("slk-recover-communication")
     manage = read_skill("slk-manage-team")
 
-    assert "Worker 向 Checker" in main
+    assert "Checker → Worker → Checker" in main
     assert "$slk-recover-communication" in dispatch
-    assert "真实激活" in dispatch and "后台" in dispatch
+    assert "原生进程" in dispatch and "后台消息" in dispatch
     assert "原发送者" in recover and "原有直连" in recover
     assert "Overwatcher" in recover and "必经 relay" in recover
     assert "handoff" in recover and "SUPERVISOR_DECISION_REQUIRED" in recover
@@ -452,9 +452,9 @@ def test_cross_agent_delivery_requires_native_activation() -> None:
     for marker in (
         "已登记的目标原生 Agent 入口",
         "原生 Agent 入口",
-        "与消息匹配的原生启动证据",
-        "不增加令牌专用回执",
-        "旧状态、可见消息或 heartbeat 不证明工作",
+        "匹配的原生启动证据才证明流转",
+        "三工程角色不用正时长 `wait_threads`",
+        "可见文本冒充当前活动",
     ):
         assert marker in main
     for marker in ("active writer", "not activation evidence", "does not claim the receiver or D2 started"):
@@ -501,30 +501,30 @@ def test_supervisor_eval_is_closed_versioned_and_runtime_bounded() -> None:
     ):
         assert marker in text
     assert "开放式长问答" in text
-    assert "完整 70-case pack" in text
+    assert "完整 case pack" in text
 
 
 def test_manage_team_covers_native_role_creation_recovery_tests_and_archive() -> None:
     text = read_skill("slk-manage-team")
     for marker in (
-        "可见",
-        "任务 ID",
-        "原对话",
+        "RUN_TEAM_REGISTRY",
+        "agent identity",
+        "session locator",
+        "message endpoint",
+        "delivery success signal",
+        "打开可见 BI 1.1.0",
         "Supervisor",
         "Checker",
         "Worker",
-        "双向通讯",
-        "D1_REWORK_DIRECTIVE",
-        "上一级",
+        "Overwatcher",
+        "七条必要腿",
+        "真实发送者和接收者",
         "优先恢复原成员",
         "缺少回执不等于失效",
         "明确失效",
-        "极端",
-        "接管",
-        "归档 Worker",
-        "Worker、Checker",
-        "状态",
-        "原生 Agent 端点",
+        "replace-role",
+        "退役旧记录",
+        "close-role",
         "Codex Checker",
         "Codex Worker",
     ):
@@ -680,7 +680,7 @@ def test_supervisor_is_event_activated_not_a_daily_cell_controller() -> None:
         "Supervisor 记录计划变化、Run 进展",
     ):
         assert stale not in active
-    for marker in ("按需激活", "日常 CELL", "结束当前活动", "wait_threads"):
+    for marker in ("按需激活", "逐 CELL", "结束活动", "wait_threads"):
         assert marker in "\n".join((main, read_skill("slk-manage-team")))
     assert "Checker 记录" in record and "Run 进度" in record
     assert "Supervisor 仅在被激活时记录" in record and "继续调整前及时追加" in record
@@ -849,16 +849,16 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
 
     for marker in ("不用正时长 `wait_threads`", "真实激活操作", "原生启动证据"):
         assert marker in main
-    assert "不增加令牌专用回执" in dispatch and "发出完整 CELL 后结束本次激活" in dispatch
-    assert "不读取Worker施工状态" in dispatch
-    assert "候选交付重新激活Checker" in dispatch
+    assert "不增加令牌专用回执" in dispatch and "原子提交成功后结束本次激活" in dispatch
+    assert "不读取 Worker 施工状态" in dispatch
+    assert "候选交付重新激活 Checker" in dispatch
     assert "交付完成后 Worker 结束活动" in execute
     assert "不读取 Checker 状态" in execute
     assert "外部 headless OCRV 宿主" in execute
     assert "每次操作结束当前 turn" in recover
     assert "真实激活返回端点不可用" in recover
     assert "不重复激活" in recover
-    assert "不读取其他成员内部状态" in manage
+    assert "不使用 `wait_threads`" in manage
     assert "不跟踪下一对话" in record
     assert "Loop Engineering 的线性形态" in main
     assert "派发、施工与 D0、候选交付、隔离 D1" in main
@@ -870,42 +870,39 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "完成整个 CELL 候选" in execute
     for stale in ("每完成一条命令就结束", "一条命令一次激活", "把下一条命令交给 Worker"):
         assert stale not in active
-    assert "完成自己当前 Loop 节点" in manage
+    assert "完成当前节点和必要交接后结束活动" in manage
 
 
-def test_optional_overwatcher_is_one_active_session_without_authority_or_relay() -> None:
+def test_required_overwatcher_is_one_role_per_run_without_authority_or_relay() -> None:
     main = read_skill("small-loop-skill")
     manage = read_skill("slk-manage-team")
     watch = read_skill("slk-overwatch-run")
     recover = read_skill("slk-recover-communication")
 
-    for marker in ("可选", "每 Run 最多一个", "不接管三角色通讯", "缺席不阻断"):
+    for marker in ("每个 Run 都登记", "一个 Run 只绑定一个", "不改 BI", "不改", "D0/D1/D2"):
         assert marker in main
-    for marker in ("同一 Session 不跨 Run 复用", "独立凭证", "不改变上述三角色直连"):
+    for marker in ("独立角色实例", "同一精确 OW Session 可服务多个 Run", "不代发施工消息"):
         assert marker in manage
     for marker in (
-        "不直接改 BI",
-        "180–300 秒",
-        "前台 active turn",
-        "八项",
-        "不结束当前 turn",
-        "exact retry",
-        "归档本 Session",
-        "不要成为第四个工程角色",
-        "不要写 D0/D1/D2",
+        "不写 BI/TOKEN",
+        "600 秒",
+        "同一前台 turn",
+        "仍继续观察",
+        "不代发日常消息",
+        "不恢复成员",
+        "不要写 BI、TOKEN",
     ):
         assert marker in watch
     for forbidden in (
         "heartbeat",
         "automation",
         "cron",
-        "Windows 计划任务",
+        "计划任务",
         "daemon",
         "后台 Agent",
     ):
-        assert f"不要创建 {forbidden}" in watch
-    assert "每次检查后结束 turn" not in watch
-    assert "低频、Run 专属唤醒" not in watch
+        assert forbidden in watch
+    assert "不要因报告成功而暂停或退出" in watch
     assert "必经 relay" in recover
 
 
@@ -927,11 +924,11 @@ def test_425_runtime_consistency_is_explicit_without_per_cell_watcher_confirmati
     ):
         assert marker in combined
     for marker in (
-        "一个 Run 只绑定一次",
-        "不是每个 CELL 重新确认",
-        "LATE 不等于 INACTIVE",
-        "最后一轮",
-        "CONTINUITY_RECOVERY_REQUIRED",
+        "每个 Run 绑定一个 OW role instance",
+        "同一精确 OW Session 可以服务多个 Run",
+        "600 秒",
+        "1200 秒",
+        "runtime guard",
     ):
         assert marker in watch
     for forbidden in (
@@ -971,7 +968,7 @@ def test_run_identity_recovery_and_method_adoption_are_explicit_and_append_only(
     ):
         assert marker in combined
     assert "按标题自动合并 Run" in record
-    assert "先绑定再补记录" in watch
+    assert "同一精确 OW Session 可以服务多个 Run" in watch
 
 
 def test_linear_loop_uses_one_registered_native_relay_token_without_a_new_subsystem() -> None:
@@ -980,15 +977,15 @@ def test_linear_loop_uses_one_registered_native_relay_token_without_a_new_subsys
         "进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`",
         "真实激活操作",
         "已登记的目标原生 Agent 入口",
-        "与消息匹配的原生启动证据才证明流转",
+        "匹配的原生启动证据才证明流转",
         "同一 Run 最大且身份匹配的成功令牌才是当前事实",
         "不是新文件、角色、审批或外部状态系统",
         "只在既有 Loop 节点边界流转",
-        "不增加令牌专用回执",
         "令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径",
     ):
         assert marker in main
-    assert len(EXPECTED_SKILLS) == 15
+    assert "不增加令牌专用回执" in read_skill("slk-dispatch-cell")
+    assert len(EXPECTED_SKILLS) == 16
     assert not any(path.name.startswith("slk-token") for path in SKILLS.iterdir())
 
 
@@ -1001,9 +998,9 @@ def test_token_reports_responsibility_without_claiming_live_execution() -> None:
     for marker in (
         "当前有效的 `SLK TOKEN`",
         "当前事实",
-        "不证明正在工作",
-        "旧 running",
-        "活动无法证明",
+        "不构成真实运行证明",
+        "界面 running",
+        "无法证明",
     ):
         assert marker in "\n".join((main, read_skill("slk-overwatch-run")))
     assert "当前有效令牌" in record and "最后真实流转" in record
@@ -1023,8 +1020,7 @@ def test_existing_handoffs_move_the_same_token_between_existing_roles() -> None:
     adjust = read_skill("slk-adjust-run")
     close = read_skill("slk-close-run")
     recover = read_skill("slk-recover-communication")
-    assert "Supervisor 用 `T001`" in main
-    assert "SLK TOKEN T001" in manage
+    assert "Supervisor 用首枚 `SLK TOKEN T001`" in manage
     assert "恢复原成员时重发原令牌编号" in manage
     assert "接管新成员确认后" in manage and "使旧令牌失效" in manage
     assert "Checker → Worker" in dispatch and "SLK TOKEN" in dispatch
@@ -1058,7 +1054,7 @@ def test_440_terminal_order_closes_overwatcher_before_run_and_engineering_roles(
         "D2_PASSED → terminal snapshot → OW final cycle → close-overwatcher → "
         "RUN_CLOSED → close-role"
     ) in close
-    assert "D2_PASSED" in overwatch and "RUN_CLOSED 前" in overwatch
+    assert "D2_PASSED" in overwatch and "RUN_CLOSED" in overwatch
 
 
 def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
@@ -1076,6 +1072,8 @@ def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
         "下一动作",
         "根记录路径",
     ):
+        assert marker in main
+    for marker in ("令牌编号", "Run", "CELL", "当前位置 `n/N`", "接收者", "下一动作", "根记录路径"):
         assert marker in dispatch
     assert "单调递增" in dispatch
     assert "相同或更旧的令牌编号" in execute and "不重开 CELL" in execute
@@ -1243,13 +1241,13 @@ def test_checker_does_not_turn_empty_review_or_missing_proof_into_pass() -> None
     assert "零 finding" in negative and "自动 PASS" in negative
 
 
-def test_overwatcher_reports_worker_handoff_stall_then_pauses_for_same_member_recovery() -> None:
+def test_overwatcher_reports_anomaly_and_continues_observing_without_recovery_authority() -> None:
     overwatch = read_skill("slk-overwatch-run")
 
-    assert "240 秒" in overwatch
+    assert "600 秒" in overwatch
     assert "报告 Supervisor" in overwatch
-    assert "然后暂停" in overwatch
-    assert "恢复原成员" in overwatch
+    assert "仍继续观察" in overwatch
+    assert "不恢复成员" in overwatch
 
 
 def test_lost_overwatcher_write_credential_rotates_the_same_exact_binding() -> None:
@@ -1267,44 +1265,39 @@ def test_lost_overwatcher_write_credential_rotates_the_same_exact_binding() -> N
         "binding",
     ):
         assert marker in combined
-    assert "不要把 `overwatcher_credential_id` 当作 `overwatcher_write_credential`" in overwatch
-    assert "不伪造 cycle/continuity violation" in overwatch
+    assert "非秘密 `overwatcher_credential_id`" in manage
+    assert "不伪造 cycle" in combined
     assert "直接改数据库" in combined
 
 
-def test_overwatcher_native_status_resume_and_cycle_anomaly_mapping_are_unambiguous() -> None:
+def test_overwatcher_truth_check_and_temporal_guard_mapping_are_unambiguous() -> None:
     overwatch = read_skill("slk-overwatch-run")
     manage = read_skill("slk-manage-team")
     combined = "\n".join((overwatch, manage))
 
     for marker in (
-        "last_anomaly_cycle_id",
-        "last_native_status_id",
-        "二者只选一个",
-        "OVERWATCHER_CONTINUITY_VIOLATION",
-        "status/incident",
-        "不写入 `cycle.anomaly_codes`",
-        "OVERWATCHER_ACTIVE_DEGRADED",
-        "ACTIVE",
-        "IN_PROGRESS",
+        "inspect-native-activity",
+        "UNKNOWN",
+        "CLEAR",
+        "ANOMALY",
+        "交叉核对",
+        "1200 秒",
+        "runtime guard",
+        "FOREGROUND_ACTIVE_TURN",
     ):
         assert marker in combined
 
 
-def test_terminal_overwatcher_cycle_explains_the_exact_native_evidence_reference() -> None:
+def test_terminal_overwatcher_cycle_keeps_minimal_hash_bound_evidence() -> None:
     overwatch = read_skill("slk-overwatch-run")
 
     for marker in (
-        "native_active_session_evidence_ref",
-        "逐字等于",
-        "evidence_refs",
-        "现存绝对路径",
+        "证据路径",
         "SHA-256",
-        "status_id",
-        "cycle_id",
-        "URI",
-        "哈希值",
-        "说明文字",
+        "terminal snapshot",
+        "final cycle",
+        "close-overwatcher",
+        "RUN_CLOSED",
     ):
         assert marker in overwatch
 
@@ -1319,7 +1312,7 @@ def test_4210_forbids_post_turn_self_wake_and_fixed_time_promises() -> None:
         "post-turn",
         "延迟脚本",
         "固定秒数",
-        "新可审计恢复消息",
+        "不改旧证据",
         "Owner/Main 真实激活",
     ):
         assert marker in combined
@@ -1349,47 +1342,43 @@ def test_4210_worker_checker_and_resource_corrections_are_explicit() -> None:
     assert "同一安全命令会话" in resources
 
 
-def test_4210_overwatcher_has_only_three_exits_and_no_spin() -> None:
+def test_440_overwatcher_continues_after_reports_and_has_one_supervisor_target() -> None:
     overwatch = read_skill("slk-overwatch-run")
 
     for marker in (
-        "三个合法出口",
-        "正常 cycle 后继续",
-        "异常上报后暂停",
-        "terminal cycle",
-        "close",
-        "archive",
-        "不继续空转",
+        "负责对象只有登记的 Supervisor",
+        "正常时继续观察",
+        "仍继续观察",
+        "final cycle",
+        "close-overwatcher",
+        "归档 Session",
     ):
         assert marker in overwatch
     for marker in (
-        "同一原生进程",
         "同一前台 turn",
-        "不要返回后依赖第二条用户消息",
-        "不要在正常 cycle 后提交 final",
-        "--output <不可变绝对路径>",
-        "WORKER_INCOMPLETE",
-        "不伪造 candidate",
+        "不要因报告成功而暂停或退出",
+        "不要等待 Supervisor 回复",
+        "不要重复发送没有新事实的同一告警",
     ):
         assert marker in overwatch
 
 
-def test_430_temporal_mode_is_optional_and_keeps_engineering_authority_outside_workflows() -> None:
+def test_440_temporal_is_required_but_keeps_engineering_authority_outside_workflows() -> None:
     main = read_skill("small-loop-skill")
-    planning = read_skill("slk-plan-run")
-    recovery = read_skill("slk-recover-communication")
-    combined = "\n".join((main, planning, recovery))
+    manage = read_skill("slk-manage-team")
+    temporal = read_skill("slk-manage-temporal")
+    combined = "\n".join((main, manage, temporal))
 
     for marker in (
-        "显式可选",
-        "StartSlkWorkflow",
-        "RunSlkWorkflow",
-        "native-start ACK",
-        "delivery success",
+        "本地共享",
+        "SLK.Start",
+        "SLK.Run",
+        "slk.native-start/v2",
+        "不判断 CELL",
         "D0/D1/D2",
-        "SLK TOKEN",
-        "自动切换模型",
-        "Temporal 服务不存在",
+        "TOKEN",
+        "不派首 CELL",
+        "下一 CELL 保持阻断",
     ):
         assert marker in combined
 
@@ -1402,10 +1391,10 @@ def test_430_role_eval_covers_temporal_start_authority_and_recovery_boundaries()
     )
     case_ids = {case["case_id"] for case in pack["cases"]}
     assert {
-        "SUP-TEMPORAL-EXPLICIT-OPTIONAL",
+        "SUP-TEMPORAL-REQUIRED-READY",
         "CHK-TEMPORAL-NO-D1",
         "WRK-TEMPORAL-NATIVE-START",
-        "OVW-TEMPORAL-RECOVERY-ONLY",
+        "OVW-TEMPORAL-REPORT-ONLY",
     } <= case_ids
 
 
@@ -1426,7 +1415,8 @@ def test_434_bom_is_forbidden_but_not_owner_configurable() -> None:
     assert "BoM 保持禁用" in main
     assert "Ponytail/Temporal/Overwatcher/RTK/Probe CLI/BoM" not in main
     assert "Ponytail、Temporal、Overwatcher、RTK、Probe CLI、BoM" not in plan
-    assert "Ponytail、Temporal、Overwatcher、RTK、Probe CLI 和新增可选项" in plan
+    assert "Ponytail、RTK、Probe CLI 和新增可选项" in plan
+    assert "Overwatcher 与 Temporal 是 4.4.0 readiness 必需项" in plan
 
 
 def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:

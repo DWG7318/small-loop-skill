@@ -56,7 +56,7 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.3.6"}
+    assert result == {"status": "ok", "version": "4.4.0"}
 
 
 def test_init_run_can_atomically_deliver_credential_without_printing_secret(tmp_path):
@@ -432,7 +432,7 @@ def overwatcher_binding():
             "role": "overwatcher",
             "agent_runtime": "codex",
             "provider": "openai",
-            "model": "gpt-5.6-sol",
+            "model": "gpt-5.6-luna",
             "reasoning": "xhigh",
             "session_id": "thread-overwatcher-a",
         },
@@ -444,12 +444,12 @@ def overwatcher_binding():
             "native_address": {"thread_id": "thread-overwatcher-a"},
         },
         "observation_mode": "FOREGROUND_ACTIVE_TURN",
-        "cadence_seconds": 240,
+        "cadence_seconds": 600,
         "foreground_turn_id": "foreground-turn-a",
         "native_active_session_evidence_ref": "codex:thread-active:overwatcher-a",
         "binding_revision": 1,
         "canonical_task_id": "task-overwatcher-a",
-        "reason": "one optional dedicated observer",
+        "reason": "one required truth observer",
         "occurred_at": "2026-09-20T00:00:01Z",
     }
 
@@ -495,7 +495,7 @@ def overwatch_cycle(tmp_path):
         "runtime_revision": 2,
         "native_liveness": "IN_PROGRESS",
         "cycle_sequence": 1,
-        "cadence_seconds": 240,
+        "cadence_seconds": 600,
         "go_id": "GO-001",
         "cell_id": "CELL-001",
         "attempt": 1,
@@ -522,7 +522,7 @@ def overwatch_cycle(tmp_path):
         "native_active_session_evidence_ref": str(native_evidence.resolve()),
         "started_at": "2026-09-20T00:03:59Z",
         "completed_at": "2026-09-20T00:04:00Z",
-        "next_cycle_at": "2026-09-20T00:08:00Z",
+        "next_cycle_at": "2026-09-20T00:14:00Z",
     }
 
 

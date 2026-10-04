@@ -20,7 +20,7 @@ use crate::auth::{
 use crate::model::{
     AdoptMethodContractRequest, BindOverwatcherRequest, CloseOverwatcherRequest, CloseRoleRequest,
     CommitDeliveryStartRequest, EventType, EvidenceReference, InitRunRequest, NativeLiveness,
-    OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
+    ObservationMode, OperationalObservationRequest, OverwatchCheckResult, OverwatchCycleRequest,
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
     RebindSessionRequest, ReconcileRunIdentitiesRequest, RecordOverwatcherStatusRequest,
     RegisterRoleRequest, ReplaceOverwatcherRequest, ReplaceRoleRequest,
@@ -703,12 +703,12 @@ impl StateStore {
             || request.identity.session_id != request.endpoint.session_id
             || request.endpoint.host_identity.trim().is_empty()
             || request.endpoint.transport_adapter.trim().is_empty()
-            || !(180..=300).contains(&request.cadence_seconds)
+            || !((180..=300).contains(&request.cadence_seconds) || request.cadence_seconds == 600)
             || request.foreground_turn_id.trim().is_empty()
             || request.native_active_session_evidence_ref.trim().is_empty()
         {
             return Err(StateError::OverwatcherBindingInvalid(
-                "identity, exact endpoint, 180-300 second foreground active turn, native evidence, and Supervisor reason are required".into(),
+                "identity, exact endpoint, supported foreground cadence, native evidence, and Supervisor reason are required".into(),
             ));
         }
 
@@ -731,6 +731,11 @@ impl StateStore {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "active Overwatcher requires an open Run with a supported effective SLK contract"
                         .into(),
+                ));
+            }
+            if !valid_overwatcher_cadence(&run_contract.0, request.cadence_seconds) {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "SLK 4.4.0 requires the fixed 600-second Overwatcher cadence".into(),
                 ));
             }
             let binding_revision = if request.binding_revision == 0 {
@@ -760,15 +765,44 @@ impl StateStore {
             if already_bound.is_some() {
                 return Err(StateError::OverwatcherAlreadyBound);
             }
-            let reused_session: Option<i64> = transaction
+            let shared_session: Option<(
+                String, String, String, String, u32, String, String, String, String, i64,
+                String, String, String,
+            )> = transaction
                 .query_row(
-                    "SELECT 1 FROM overwatcher_bindings WHERE session_id=?1",
+                    "SELECT agent_runtime, provider, model, reasoning, endpoint_version,
+                            transport_adapter, host_identity, native_address_json,
+                            observation_mode, cadence_seconds, foreground_turn_id,
+                            native_active_session_evidence_ref, canonical_task_id
+                     FROM overwatcher_bindings WHERE session_id=?1 LIMIT 1",
                     [&request.identity.session_id],
-                    |row| row.get(0),
+                    |row| {
+                        Ok((
+                            row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
+                            row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?,
+                            row.get(10)?, row.get(11)?, row.get(12)?,
+                        ))
+                    },
                 )
                 .optional()?;
-            if reused_session.is_some() {
-                return Err(StateError::OverwatcherSessionReused);
+            if let Some(existing) = shared_session {
+                let native_address = serde_json::to_string(&request.endpoint.native_address)?;
+                if existing.0 != request.identity.agent_runtime
+                    || existing.1 != request.identity.provider
+                    || existing.2 != request.identity.model
+                    || existing.3 != request.identity.reasoning
+                    || existing.4 != request.endpoint.endpoint_version
+                    || existing.5 != request.endpoint.transport_adapter
+                    || existing.6 != request.endpoint.host_identity
+                    || existing.7 != native_address
+                    || existing.8 != request.observation_mode.as_str()
+                    || existing.9 != i64::from(request.cadence_seconds)
+                    || existing.10 != request.foreground_turn_id
+                    || existing.11 != request.native_active_session_evidence_ref
+                    || existing.12 != canonical_task_id
+                {
+                    return Err(StateError::OverwatcherSessionReused);
+                }
             }
             let identity_collision: Option<i64> = transaction
                 .query_row(
@@ -1104,7 +1138,7 @@ impl StateStore {
                     "commit-delivery-start requires a revisioned SLK runtime contract".into(),
                 ));
             }
-            let native_start = if matches!(method_version.as_str(), "4.3.5" | "4.3.6") {
+            let native_start = if matches!(method_version.as_str(), "4.3.5" | "4.3.6" | "4.4.0") {
                 Some(validate_native_start_v2(&evidence_bytes, &request)?)
             } else {
                 None
@@ -2248,6 +2282,11 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
+            if !valid_overwatcher_cadence(&method_version, request.cadence_seconds) {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "cycle cadence does not match the effective SLK contract".into(),
+                ));
+            }
             let runtime_snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
             if uses_revisioned_runtime_contract(&method_version) {
                 if request.binding_revision != binding_revision
@@ -2271,7 +2310,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2507,9 +2546,7 @@ impl StateStore {
                             |row| row.get(0),
                         )
                         .optional()?;
-                    if d2_passed.as_deref()
-                        != final_cycle.as_ref().map(|item| item.2.as_str())
-                    {
+                    if d2_passed.as_deref() != final_cycle.as_ref().map(|item| item.2.as_str()) {
                         return Err(StateError::OverwatcherObservationInvalid(
                             "pre-close final cycle must bind the exact latest D2_PASSED snapshot"
                                 .into(),
@@ -2605,13 +2642,12 @@ impl StateStore {
             || request.endpoint.endpoint_version == 0
             || request.endpoint.transport_adapter.trim().is_empty()
             || request.endpoint.host_identity.trim().is_empty()
-            || !(180..=300).contains(&request.cadence_seconds)
+            || !((180..=300).contains(&request.cadence_seconds) || request.cadence_seconds == 600)
             || request.foreground_turn_id.trim().is_empty()
             || request.reason.trim().is_empty()
         {
             return Err(StateError::OverwatcherBindingInvalid(
-                "replacement requires one complete closed identity and 180-300 second cadence"
-                    .into(),
+                "replacement requires one complete closed identity and supported cadence".into(),
             ));
         }
         validate_admin_timestamp(&request.occurred_at)?;
@@ -2655,6 +2691,11 @@ impl StateStore {
                     "revisioned replacement requires an effective revisioned runtime contract".into(),
                 ));
             }
+            if !valid_overwatcher_cadence(&method_version, request.cadence_seconds) {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "SLK 4.4.0 requires the fixed 600-second Overwatcher cadence".into(),
+                ));
+            }
             let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
             if snapshot.runtime_revision != request.expected_runtime_revision {
                 return Err(StateError::OverwatcherBindingInvalid(
@@ -2684,16 +2725,48 @@ impl StateStore {
                     |row| row.get(0),
                 )
                 .optional()?;
-            let session_collision: Option<i64> = transaction
+            let shared_session: Option<(
+                String, String, String, String, u32, String, String, String, String, i64,
+                String, String, String,
+            )> = transaction
                 .query_row(
-                    "SELECT 1 FROM overwatcher_bindings
-                     WHERE session_id=?1 AND run_id<>?2",
+                    "SELECT agent_runtime, provider, model, reasoning, endpoint_version,
+                            transport_adapter, host_identity, native_address_json,
+                            observation_mode, cadence_seconds, foreground_turn_id,
+                            native_active_session_evidence_ref, canonical_task_id
+                     FROM overwatcher_bindings
+                     WHERE session_id=?1 AND run_id<>?2 LIMIT 1",
                     params![request.replacement.session_id, request.run_id],
-                    |row| row.get(0),
+                    |row| {
+                        Ok((
+                            row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
+                            row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?,
+                            row.get(10)?, row.get(11)?, row.get(12)?,
+                        ))
+                    },
                 )
                 .optional()?;
-            if identity_collision.is_some() || session_collision.is_some() {
+            if identity_collision.is_some() {
                 return Err(StateError::OverwatcherSessionReused);
+            }
+            if let Some(existing) = shared_session {
+                let native_address = serde_json::to_string(&request.endpoint.native_address)?;
+                if existing.0 != request.replacement.agent_runtime
+                    || existing.1 != request.replacement.provider
+                    || existing.2 != request.replacement.model
+                    || existing.3 != request.replacement.reasoning
+                    || existing.4 != request.endpoint.endpoint_version
+                    || existing.5 != request.endpoint.transport_adapter
+                    || existing.6 != request.endpoint.host_identity
+                    || existing.7 != native_address
+                    || existing.8 != ObservationMode::ForegroundActiveTurn.as_str()
+                    || existing.9 != i64::from(request.cadence_seconds)
+                    || existing.10 != request.foreground_turn_id
+                    || existing.11 != request.native_active_session_evidence.path
+                    || existing.12 != request.replacement.session_id
+                {
+                    return Err(StateError::OverwatcherSessionReused);
+                }
             }
             match request.mode {
                 OverwatcherReplacementMode::Planned => {
@@ -2920,6 +2993,7 @@ impl StateStore {
                     | "4.3.4"
                     | "4.3.5"
                     | "4.3.6"
+                    | "4.4.0"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3511,7 +3585,7 @@ fn validate_overwatch_cycle_shape(request: &OverwatchCycleRequest) -> Result<(),
     if !valid_identifier(&request.cycle_id)
         || request.plan_revision == 0
         || request.cycle_sequence == 0
-        || !(180..=300).contains(&request.cadence_seconds)
+        || !((180..=300).contains(&request.cadence_seconds) || request.cadence_seconds == 600)
         || request.role_instance_id.trim().is_empty()
         || request.session_id.trim().is_empty()
         || request.foreground_turn_id.trim().is_empty()
@@ -4193,11 +4267,19 @@ fn validate_rework_requested(
     let details = request.details.as_object().ok_or_else(|| {
         StateError::WorkEventInvalid("REWORK_REQUESTED details must be an object".into())
     })?;
-    let required = [
+    let method_version: String = connection.query_row(
+        "SELECT slk_version FROM runs WHERE run_id=?1",
+        params![request.run_id],
+        |row| row.get(0),
+    )?;
+    let mut required = vec![
         "d1_failure_event_id",
         "failed_candidate_sha256",
         "rework_round",
     ];
+    if method_version == "4.4.0" {
+        required.push("investigation_mode");
+    }
     if details.len() != required.len() || required.iter().any(|field| !details.contains_key(*field))
     {
         return Err(StateError::WorkEventInvalid(
@@ -4225,6 +4307,18 @@ fn validate_rework_requested(
         .as_u64()
         .filter(|value| *value > 0)
         .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
+    if method_version == "4.4.0" {
+        let expected_mode = if rework_round == 1 {
+            "STANDARD"
+        } else {
+            "AGGRESSIVE"
+        };
+        if details["investigation_mode"].as_str() != Some(expected_mode) {
+            return Err(StateError::WorkEventInvalid(format!(
+                "rework round {rework_round} requires investigation_mode={expected_mode}"
+            )));
+        }
+    }
 
     let latest: Option<(String, String, String)> = connection
         .query_row(
@@ -4374,18 +4468,83 @@ fn valid_token_handoff_route(
     from: Role,
     to: Role,
 ) -> Result<bool, StateError> {
-    let latest_d1 = latest_d1_state(connection, request)?;
-    if from == Role::Checker && latest_d1.as_deref() == Some("D1_INCOMPLETE") {
-        return Ok(false);
-    }
-    if from == Role::Checker && latest_d1.as_deref() == Some("D1_FAILED") {
-        return Ok(to == Role::Supervisor && request.payload_type == "D1_FAILURE_ESCALATION");
+    if from == Role::Checker {
+        if let Some((state, go_id, cell_id)) = latest_run_d1_state(connection, &request.run_id)? {
+            if state == "D1_INCOMPLETE" {
+                return Ok(false);
+            }
+            if state == "D1_FAILED" {
+                return Ok(to == Role::Supervisor
+                    && request.payload_type == "D1_FAILURE_ESCALATION"
+                    && request.go_id == go_id
+                    && request.cell_id == cell_id);
+            }
+            if state == "D1_PASSED" {
+                if to == Role::Worker && request.payload_type == "WORKER_TASK" {
+                    return exact_next_required_cell(connection, request, &go_id, &cell_id);
+                }
+                if to == Role::Supervisor && request.payload_type == "D2_READY" {
+                    let open_cells: i64 = connection.query_row(
+                        "SELECT COUNT(*) FROM cell_nodes WHERE run_id=?1 AND state!='d1_passed'",
+                        [&request.run_id],
+                        |row| row.get(0),
+                    )?;
+                    return Ok(request.go_id == go_id
+                        && request.cell_id == cell_id
+                        && open_cells == 0);
+                }
+                return Ok(false);
+            }
+        }
     }
     match request.payload_type.as_str() {
         "D1_FAILURE_ESCALATION" => Ok(false),
         "D1_REWORK_DIRECTIVE" => valid_supervisor_rework_route(connection, request, from, to),
         _ => Ok(valid_token_route(from, to)),
     }
+}
+
+fn latest_run_d1_state(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Option<(String, String, String)>, StateError> {
+    connection
+        .query_row(
+            "SELECT event_type, go_id, cell_id FROM work_events
+             WHERE run_id=?1 AND event_type IN ('D1_FAILED', 'D1_PASSED', 'D1_INCOMPLETE')
+             ORDER BY rowid DESC LIMIT 1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(StateError::from)
+}
+
+fn exact_next_required_cell(
+    connection: &Connection,
+    request: &TokenHandoffRequest,
+    passed_go_id: &str,
+    passed_cell_id: &str,
+) -> Result<bool, StateError> {
+    let mut statement = connection.prepare(
+        "SELECT c.go_id, c.cell_id FROM cell_nodes c
+         JOIN go_nodes g ON g.run_id=c.run_id AND g.go_id=c.go_id
+         WHERE c.run_id=?1 ORDER BY g.ordinal, c.ordinal",
+    )?;
+    let cells = statement
+        .query_map([&request.run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let Some(position) = cells
+        .iter()
+        .position(|(go_id, cell_id)| go_id == passed_go_id && cell_id == passed_cell_id)
+    else {
+        return Ok(false);
+    };
+    Ok(cells
+        .get(position + 1)
+        .is_some_and(|(go_id, cell_id)| go_id == &request.go_id && cell_id == &request.cell_id))
 }
 
 fn valid_supervisor_rework_route(
@@ -4505,6 +4664,14 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
     )
 }
 
+fn valid_overwatcher_cadence(version: &str, cadence_seconds: u32) -> bool {
+    if version == "4.4.0" {
+        cadence_seconds == 600
+    } else {
+        (180..=300).contains(&cadence_seconds)
+    }
+}
+
 fn validate_method_adoption_request(
     request: &AdoptMethodContractRequest,
 ) -> Result<(), StateError> {
@@ -4526,7 +4693,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.3.2" && request.to_version == "4.3.3")
             || (request.from_version == "4.3.3" && request.to_version == "4.3.4")
             || (request.from_version == "4.3.4" && request.to_version == "4.3.5")
-            || (request.from_version == "4.3.5" && request.to_version == "4.3.6");
+            || (request.from_version == "4.3.5" && request.to_version == "4.3.6")
+            || (request.from_version == "4.3.6" && request.to_version == "4.4.0");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

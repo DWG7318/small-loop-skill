@@ -168,7 +168,7 @@ fn current_checker_or_supervisor_can_record_resource_recovery_without_moving_the
 
 #[test]
 fn run_closed_updates_the_read_projection_without_moving_the_token() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::two_cells();
     let mut closed = event(
         "run-closed",
         EventType::RunClosed,
@@ -944,6 +944,52 @@ fn supervisor_to_worker_is_only_valid_after_current_d1_fail_escalation() {
 }
 
 #[test]
+fn checker_d1_pass_routes_only_to_next_work_or_final_d2_ready() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+    let mut passed = event("d1-passed", EventType::D1Passed, json!({"verdict":"PASS"}));
+    passed.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, passed).unwrap();
+
+    for (to, payload_type) in [
+        ("worker-a", "CELL_ASSIGNMENT"),
+        ("worker-a", "D2_READY"),
+        ("supervisor-a", "WORKER_TASK"),
+        ("supervisor-a", "CELL_ASSIGNMENT"),
+    ] {
+        let mut invalid = handoff(3, "checker-a", to);
+        invalid.payload_type = payload_type.into();
+        assert!(matches!(
+            fixture.store.handoff_token(&fixture.checker, invalid),
+            Err(StateError::InvalidTokenRoute { .. })
+        ));
+    }
+
+    let mut final_ready = handoff(3, "checker-a", "supervisor-a");
+    final_ready.payload_type = "D2_READY".into();
+    fixture
+        .store
+        .handoff_token(&fixture.checker, final_ready)
+        .unwrap();
+
+    let fixture = Fixture::two_cells();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+    let mut passed = event("d1-passed", EventType::D1Passed, json!({"verdict":"PASS"}));
+    passed.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, passed).unwrap();
+    let mut next = handoff(3, "checker-a", "worker-a");
+    next.cell_id = "CELL-002".into();
+    next.payload_type = "WORKER_TASK".into();
+    fixture.store.handoff_token(&fixture.checker, next).unwrap();
+}
+
+#[test]
 fn rework_request_fails_closed_for_wrong_authority_identity_candidate_attempt_or_round() {
     let fixture = Fixture::new();
     fixture
@@ -1060,6 +1106,78 @@ fn rework_request_fails_closed_for_wrong_authority_identity_candidate_attempt_or
             .write_event(&fixture.supervisor, duplicate_round),
         Err(StateError::WorkEventInvalid(_))
     ));
+}
+
+#[test]
+fn slk_440_rework_request_requires_round_bound_investigation_mode() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a"))
+        .unwrap();
+    let mut failed = event(
+        "d1-failed-440",
+        EventType::D1Failed,
+        json!({"candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+    );
+    failed.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, failed).unwrap();
+    let mut escalation = handoff(3, "checker-a", "supervisor-a");
+    escalation.payload_type = "D1_FAILURE_ESCALATION".into();
+    fixture
+        .store
+        .handoff_token(&fixture.checker, escalation)
+        .unwrap();
+    let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE runs SET slk_version='4.4.0' WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+
+    for (event_id, details) in [
+        (
+            "missing-mode-440",
+            json!({
+                "d1_failure_event_id":"d1-failed-440",
+                "failed_candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "rework_round":1
+            }),
+        ),
+        (
+            "wrong-mode-440",
+            json!({
+                "d1_failure_event_id":"d1-failed-440",
+                "failed_candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "rework_round":1,
+                "investigation_mode":"AGGRESSIVE"
+            }),
+        ),
+    ] {
+        let mut request = event(event_id, EventType::ReworkRequested, details);
+        request.role_instance_id = "supervisor-a".into();
+        assert!(matches!(
+            fixture.store.write_event(&fixture.supervisor, request),
+            Err(StateError::WorkEventInvalid(_))
+        ));
+    }
+
+    let mut valid = event(
+        "valid-mode-440",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"d1-failed-440",
+            "failed_candidate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rework_round":1,
+            "investigation_mode":"STANDARD"
+        }),
+    );
+    valid.role_instance_id = "supervisor-a".into();
+    fixture
+        .store
+        .write_event(&fixture.supervisor, valid)
+        .unwrap();
 }
 
 #[test]
@@ -1256,9 +1374,25 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::from_request(init_request("run-a"))
+    }
+
+    fn two_cells() -> Self {
+        let mut request = init_request("run-a");
+        request.cell_nodes.push(CellDefinition {
+            go_id: "GO-001".into(),
+            cell_id: "CELL-002".into(),
+            ordinal: 2,
+            title: "CELL 2".into(),
+            objective: "Implement the next bounded change".into(),
+        });
+        Self::from_request(request)
+    }
+
+    fn from_request(request: InitRunRequest) -> Self {
         let root = tempfile::tempdir().unwrap();
         let store = StateStore::new(root.path());
-        let initialized = store.init_run(init_request("run-a")).unwrap();
+        let initialized = store.init_run(request).unwrap();
         let connection = slk_state_core::schema::open_database(root.path()).unwrap();
         connection
             .execute(

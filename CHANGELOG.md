@@ -1,8 +1,16 @@
 # Changelog
 
+## 4.4.0 (candidate)
+
+- Added fail-closed four-role `RUN_TEAM_REGISTRY` readiness: BI 1.1.0 must be open, tool/update and native activity capabilities must be current, the shared local Temporal service and this Run's workflows must be ready, and seven exact member-to-member communication legs must prove receiver start and response before the first CELL.
+- Made Overwatcher a required, non-authoritative truth observer with one distinct binding per Run, a fixed 600-second foreground cycle, cross-evidence `CLEAR`/`ANOMALY`/`UNKNOWN` results, Supervisor-only reports, continued observation after reports, and exact multi-Run Session isolation. It never relays normal work, retries delivery, edits BI/TOKEN, judges D0/D1/D2, or repairs a member.
+- Made the two Temporal templates the required continuity/timing guard while retaining one shared headless service for multiple Runs. Each Run independently records native-start acknowledgement, original-sender recovery, 30-minute member-residency notice, 20-minute OW audit, OW-exit guard and closure; unresolved runtime failure blocks the next CELL and never becomes engineering progress.
+- Closed Checker PASS continuation, Worker one-shot/orphan, and native receipt gaps. Exact D1 PASS alone can send the next Required CELL or final `D2_READY`; DSH/OCRV publish bounded atomic activity and execution outcomes; a second formal D1 FAIL for the same CELL requires an `AGGRESSIVE` Supervisor directive without moving D1 authority.
+- Added schema v9 for separately scoped OW bindings and preserved the explicit adjacent `4.3.6 → 4.4.0` adoption. No BoM, extra engineering role, D3, workflow-owned engineering decision, Docker install, heartbeat or product-Run mutation was added.
+
 ## BI 1.1.0 (candidate)
 
-- Versioned desktop BI and WebBI together as 1.1.0 without changing the SLK 4.3.6 method contract.
+- Versioned desktop BI and WebBI together as 1.1.0 for the SLK 4.4.0 package.
 - Added exact Agent-authored message projection, local unread markers, a complete Overwatcher identity card, stable device attribution, and a bounded 30-second HTTPS uploader with no local sidecar or hard cloud dependency. Current Checker session recovery and Supervisor role closure are recognized; unsupported historical events remain in the Run but cannot become notifications or block BI.
 - Added a responsive Cloudflare Worker/D1 WebBI archive with active/archived Run views and per-device isolation; archived Runs are retained rather than deleted.
 - Added server-side encrypted ntfy settings and exact catalog filtering. BI/WebBI never infer a message type, expose stored credentials, or turn polling/duration changes into notifications.

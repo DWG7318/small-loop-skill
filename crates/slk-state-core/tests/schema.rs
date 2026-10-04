@@ -50,7 +50,7 @@ fn database_enables_wal_foreign_keys_and_all_current_tables() {
         database
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap(),
-        8
+        9
     );
 
     for table in TABLES {
@@ -248,7 +248,7 @@ fn future_nonzero_migration_can_create_and_validate_a_backup() {
     let database = open_database(root.path()).expect("open state database");
     seed_history(&database);
 
-    let backup = create_migration_backup(&database, root.path(), 8, 9, "20260920T000000Z")
+    let backup = create_migration_backup(&database, root.path(), 9, 10, "20260920T000000Z")
         .expect("migration backup");
     let copy = Connection::open_with_flags(backup, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .expect("open backup");

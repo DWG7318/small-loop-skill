@@ -16,18 +16,18 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 
 - 使用 `small-loop-skill/assets/SLK-ROLE-EVAL.v1.json` 中 Supervisor 的 8 个 runtime-critical 场景；响应要绑定当前 Run、project、plan revision、角色与 case-pack SHA-256，并通过 `scripts/validate_role_eval.py`。
 - 缺题、多题、重复题、错角色、错答案、错 schema/hash、大小写或首尾空白变体、旧 plan revision 都失败关闭；“我理解了”不替代结构化答案。
-- 失败时只解释对应易错规则，再生成同一版本 Eval 的新响应；不新增 Agent、不扩成开放式长问答。完整 70-case pack 是版本发布门禁，运行时只付 8 题成本。
+- 失败时只解释对应易错规则，再生成同一版本 Eval 的新响应；不新增 Agent、不扩成开放式长问答。完整 case pack 是版本发布门禁，运行时只付 8 题成本。
 
 ## 建议覆盖
 
 1. SLK 的适用范围，以及一个 Run 直接包含线性 CELL 的含义。
-2. Codex Supervisor、OCRV Checker、DSH Worker 的固定绑定、正常直连、D1 FAIL 返工例外和可选 Overwatcher 的只观察边界。
+2. Codex Supervisor、OCRV Checker、DSH Worker 的固定绑定、正常直连、D1 FAIL 返工例外，以及必需 Overwatcher 的只核实/报告边界。
 3. D0、D1、D2分别解决什么问题，怎样优先复用现有入口和有效客观证据、减少重复，以及检查工具故障为什么不等于产品缺陷。
 4. CELL 大小怎样参考模型、电脑、累积工程量和余量；本 Run 涉及 Cargo 或其他明显独占资源时采用什么隔离、恢复与清理安排。
 5. Worker 与 Checker 的隔离、通讯和返工关系。
 6. 通讯异常、成员异常、连续返工和 D2 发现组合问题时如何恢复施工。
 7. 根 Run 记录由谁创建，各成员怎样记录和传输。
-8. Supervisor 在哪些边界按需激活，以及 Overwatcher 何时只做原样重试、何时转交 Supervisor。
+8. Supervisor 在哪些边界按需激活，以及 Overwatcher 如何用原生证据判断 CLEAR/ANOMALY/UNKNOWN、只向对应 Supervisor 报告并继续观察。
 9. 日常 CELL 为什么由 Checker 与 Worker 直接推进；三工程角色为什么不使用正时长 `wait_threads`，关键交接为什么不能依赖 post-turn 延迟脚本、后台自唤醒或固定秒数承诺，绑定的 Overwatcher 为什么保持自己的前台 active turn，旧 running/TOKEN/heartbeat 为什么不证明活跃。
 10. 收到 D2 交接后，怎样先检查 Run 目标、各 CELL 结果、最终候选和端到端结果，再核对详细施工历史。
 11. 面对允许误差或豁免时，怎样说明影响与剩余问题、安排补偿或后续 CELL；豁免不等于 D1 通过。

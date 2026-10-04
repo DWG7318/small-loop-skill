@@ -99,6 +99,7 @@ def _d1_rework_directive(value: Mapping[str, Any]) -> None:
             "d1_failure_event_id",
             "failed_candidate_sha256",
             "rework_round",
+            "investigation_mode",
             "cell_goal",
             "acceptance_criteria",
             "findings",
@@ -114,7 +115,17 @@ def _d1_rework_directive(value: Mapping[str, Any]) -> None:
     failed_candidate = _text(value["failed_candidate_sha256"], "failed_candidate_sha256")
     if not SHA256.fullmatch(failed_candidate):
         raise ContractError("failed_candidate_sha256 must be 64 lowercase hexadecimal characters")
-    _positive_int(value["rework_round"], "rework_round")
+    rework_round = _positive_int(value["rework_round"], "rework_round")
+    investigation_mode = _choice(
+        value["investigation_mode"],
+        frozenset({"STANDARD", "AGGRESSIVE"}),
+        "investigation_mode",
+    )
+    expected_mode = "STANDARD" if rework_round == 1 else "AGGRESSIVE"
+    if investigation_mode != expected_mode:
+        raise ContractError(
+            f"rework round {rework_round} requires investigation_mode={expected_mode}"
+        )
     _text(value["cell_goal"], "cell_goal")
     for field in ("acceptance_criteria", "findings", "evidence_refs"):
         _text_list(value[field], field)
@@ -151,6 +162,24 @@ def _d1_failure_escalation(value: Mapping[str, Any]) -> None:
     _text(value["expected_result"], "expected_result")
     for field in ("acceptance_criteria", "findings", "reproduction_steps", "evidence_refs"):
         _text_list(value[field], field)
+
+
+def _d2_ready(value: Mapping[str, Any]) -> None:
+    fields = frozenset(
+        {
+            "d1_event_id", "required_cell_ids", "accepted_cell_ids",
+            "final_candidate_message_id", "d2_criteria", "evidence_refs",
+        }
+    )
+    _closed(value, fields, "D2_READY")
+    _identifier(value["d1_event_id"], "d1_event_id")
+    _text(value["final_candidate_message_id"], "final_candidate_message_id")
+    required = _text_list(value["required_cell_ids"], "required_cell_ids")
+    accepted = _text_list(value["accepted_cell_ids"], "accepted_cell_ids")
+    if required != accepted or len(required) != len(set(required)):
+        raise ContractError("D2_READY accepted_cell_ids must exactly match unique required_cell_ids")
+    _text_list(value["d2_criteria"], "d2_criteria")
+    _text_list(value["evidence_refs"], "evidence_refs")
 
 
 def _worker_completion_recovery(value: Mapping[str, Any]) -> None:
@@ -335,6 +364,10 @@ class Envelope:
             if (sender_role, receiver_role) != ("supervisor", "checker"):
                 raise ContractError("WORKER_COMPLETION_RECOVERY requires supervisor->checker")
             _worker_completion_recovery(payload)
+        elif payload_type == "D2_READY":
+            if (sender_role, receiver_role) != ("checker", "supervisor"):
+                raise ContractError("D2_READY requires checker->supervisor")
+            _d2_ready(payload)
         elif (sender_role, receiver_role) == ("supervisor", "worker"):
             raise ContractError("supervisor->worker is limited to D1_REWORK_DIRECTIVE")
         payload_sha256 = _text(value["payload_sha256"], "payload_sha256")

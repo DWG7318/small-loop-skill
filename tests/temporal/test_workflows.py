@@ -16,13 +16,21 @@ from temporalio.worker import Worker
 
 from slk_temporal.workflows import RunSlkWorkflow, StartSlkWorkflow
 
-from .test_contracts import ack_value, delivery_value, start_value
+from .test_contracts import (
+    ack_value,
+    delivery_value,
+    overwatcher_exit_value,
+    runtime_guard_resolution_value,
+    start_value,
+)
 
 
 CALLS: dict[str, list[dict[str, Any]]] = {
     "prepare": [],
     "deliver": [],
     "recover": [],
+    "inspect_overwatcher": [],
+    "notify_supervisor": [],
 }
 
 
@@ -59,6 +67,29 @@ async def request_recovery(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@activity.defn(name="slk.inspect_overwatcher")
+async def inspect_overwatcher(value: dict[str, Any]) -> dict[str, Any]:
+    CALLS["inspect_overwatcher"].append(value)
+    return {
+        "status": "CLEAR",
+        "run_id": value["run_id"],
+        "overwatcher_role_instance_id": value["overwatcher_role_instance_id"],
+        "audit_cycle": value["audit_cycle"],
+        "evidence_sha256": "f" * 64,
+        "receipt_sha256": "a" * 64,
+    }
+
+
+@activity.defn(name="slk.notify_supervisor")
+async def notify_supervisor(value: dict[str, Any]) -> dict[str, Any]:
+    CALLS["notify_supervisor"].append(value)
+    return {
+        "status": "NOTIFIED",
+        "event_id": value["event_id"],
+        "receipt_sha256": "b" * 64,
+    }
+
+
 @pytest.fixture(autouse=True)
 def clear_calls() -> None:
     for values in CALLS.values():
@@ -87,8 +118,8 @@ async def _environment(tmp_path: Path) -> WorkflowEnvironment:
     return await WorkflowEnvironment.start_time_skipping(download_dest_dir=str(destination))
 
 
-def _unique_start(*, label: str, overwatcher: bool = True) -> dict[str, Any]:
-    value = start_value(overwatcher=overwatcher)
+def _unique_start(*, label: str) -> dict[str, Any]:
+    value = start_value()
     run_id = f"RUN-{label}-{uuid.uuid4().hex[:8]}"
     value["run_id"] = run_id
     value["startup_idempotency_key"] = f"start-{run_id}-v7"
@@ -106,7 +137,7 @@ async def test_start_template_starts_one_run_and_ack_closes_delivery(tmp_path: P
             env.client,
             task_queue="slk-local",
             workflows=[StartSlkWorkflow, RunSlkWorkflow],
-            activities=[prepare_run, deliver_message, request_recovery],
+            activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
         ):
             parent = await env.client.start_workflow(
                 StartSlkWorkflow.run,
@@ -136,11 +167,10 @@ async def test_start_template_starts_one_run_and_ack_closes_delivery(tmp_path: P
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("with_overwatcher,expected_target", [(True, "overwatcher-a"), (False, "SENDER")])
 async def test_ack_timeout_requests_exact_recovery_then_matching_ack_stops_it(
-    tmp_path: Path, with_overwatcher: bool, expected_target: str
+    tmp_path: Path,
 ) -> None:
-    start = _unique_start(label="OW" if with_overwatcher else "NOOW", overwatcher=with_overwatcher)
+    start = _unique_start(label="ACK-TIMEOUT")
     start["ack_timeout_seconds"] = 2
     delivery = delivery_value()
     delivery["run_id"] = start["run_id"]
@@ -150,7 +180,7 @@ async def test_ack_timeout_requests_exact_recovery_then_matching_ack_stops_it(
             env.client,
             task_queue="slk-local",
             workflows=[StartSlkWorkflow, RunSlkWorkflow],
-            activities=[prepare_run, deliver_message, request_recovery],
+            activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
         ):
             parent = await env.client.start_workflow(
                 StartSlkWorkflow.run,
@@ -164,7 +194,7 @@ async def test_ack_timeout_requests_exact_recovery_then_matching_ack_stops_it(
             await env.sleep(3)
             await _wait_for_phase(child, env, "RECOVERY_REQUIRED")
             assert len(CALLS["recover"]) == 1
-            assert CALLS["recover"][0]["recovery_target_role_instance_id"] == expected_target
+            assert CALLS["recover"][0]["recovery_target_role_instance_id"] == "worker-a"
 
             ack = ack_value()
             ack["operation_id"] = delivery["operation_id"]
@@ -174,3 +204,124 @@ async def test_ack_timeout_requests_exact_recovery_then_matching_ack_stops_it(
             assert len(CALLS["recover"]) == 1
             await child.execute_update(RunSlkWorkflow.close_run, "RUN_CLOSED")
             assert (await parent.result())["phase"] == "TERMINAL"
+
+
+@pytest.mark.asyncio
+async def test_member_residency_over_thirty_minutes_notifies_supervisor_once(tmp_path: Path) -> None:
+    start = _unique_start(label="MEMBER-TIMER")
+    delivery = delivery_value()
+    delivery["run_id"] = start["run_id"]
+    async with await _environment(tmp_path) as env:
+        async with Worker(
+            env.client,
+            task_queue="slk-local",
+            workflows=[StartSlkWorkflow, RunSlkWorkflow],
+            activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
+        ):
+            parent = await env.client.start_workflow(
+                StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue="slk-local"
+            )
+            child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
+            await _wait_for_phase(child, env, "IDLE")
+            await child.execute_update(RunSlkWorkflow.request_delivery, delivery)
+            ack = ack_value()
+            ack["operation_id"] = delivery["operation_id"]
+            await child.execute_update(RunSlkWorkflow.native_started, ack)
+            await _wait_for_phase(child, env, "IDLE")
+            await env.sleep(1801)
+            assert [item["kind"] for item in CALLS["notify_supervisor"]].count("MEMBER_RESIDENCY_EXCEEDED") == 1
+            notice = next(item for item in CALLS["notify_supervisor"] if item["kind"] == "MEMBER_RESIDENCY_EXCEEDED")
+            assert notice["responsible_role_instance_id"] == "checker-a"
+            await env.sleep(1801)
+            assert [item["kind"] for item in CALLS["notify_supervisor"]].count("MEMBER_RESIDENCY_EXCEEDED") == 1
+            await child.execute_update(RunSlkWorkflow.close_run, "RUN_CLOSED")
+            await parent.result()
+
+
+@pytest.mark.asyncio
+async def test_temporal_independently_checks_overwatcher_every_twenty_minutes(tmp_path: Path) -> None:
+    start = _unique_start(label="OW-AUDIT")
+    async with await _environment(tmp_path) as env:
+        async with Worker(
+            env.client,
+            task_queue="slk-local",
+            workflows=[StartSlkWorkflow, RunSlkWorkflow],
+            activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
+        ):
+            parent = await env.client.start_workflow(
+                StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue="slk-local"
+            )
+            child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
+            await _wait_for_phase(child, env, "IDLE")
+            await env.sleep(1201)
+            assert len(CALLS["inspect_overwatcher"]) == 1
+            assert CALLS["inspect_overwatcher"][0]["overwatcher_role_instance_id"] == "overwatcher-a"
+            await env.sleep(1201)
+            assert len(CALLS["inspect_overwatcher"]) == 2
+            await child.execute_update(RunSlkWorkflow.close_run, "RUN_CLOSED")
+            await parent.result()
+
+
+@pytest.mark.asyncio
+async def test_overwatcher_exit_blocks_next_delivery_until_exact_supervisor_repair(
+    tmp_path: Path,
+) -> None:
+    start = _unique_start(label="OW-EXIT")
+    run_id = start["run_id"]
+    exit_notice = overwatcher_exit_value()
+    exit_notice["run_id"] = run_id
+    resolution = runtime_guard_resolution_value()
+    resolution["run_id"] = run_id
+    delivery = delivery_value()
+    delivery["run_id"] = run_id
+    async with await _environment(tmp_path) as env:
+        async with Worker(
+            env.client,
+            task_queue="slk-local",
+            workflows=[StartSlkWorkflow, RunSlkWorkflow],
+            activities=[
+                prepare_run,
+                deliver_message,
+                request_recovery,
+                inspect_overwatcher,
+                notify_supervisor,
+            ],
+        ):
+            parent = await env.client.start_workflow(
+                StartSlkWorkflow.run,
+                start,
+                id=f"slk-start-{run_id}",
+                task_queue="slk-local",
+            )
+            child = env.client.get_workflow_handle(f"slk-run-{run_id}")
+            await _wait_for_phase(child, env, "IDLE")
+
+            assert await child.execute_update(
+                RunSlkWorkflow.overwatcher_exited, exit_notice
+            ) == "SUPERVISOR_CONFIRMATION_REQUIRED"
+            snapshot = await child.query(RunSlkWorkflow.status)
+            assert snapshot["runtime_guard_blocker"]["event_id"] == "overwatcher-exit-a"
+            assert CALLS["notify_supervisor"][-1]["kind"] == (
+                "OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION"
+            )
+            with pytest.raises(Exception, match="runtime guard"):
+                await child.execute_update(RunSlkWorkflow.request_delivery, delivery)
+
+            wrong_authority = dict(resolution)
+            wrong_authority["supervisor_role_instance_id"] = "checker-a"
+            with pytest.raises(Exception, match="frozen authority"):
+                await child.execute_update(
+                    RunSlkWorkflow.resolve_runtime_guard, wrong_authority
+                )
+            assert await child.execute_update(
+                RunSlkWorkflow.resolve_runtime_guard, resolution
+            ) == "RUNTIME_GUARD_REPAIRED"
+            assert await child.execute_update(
+                RunSlkWorkflow.request_delivery, delivery
+            ) == "DELIVERY_REQUESTED"
+            ack = ack_value()
+            ack["operation_id"] = delivery["operation_id"]
+            await child.execute_update(RunSlkWorkflow.native_started, ack)
+            await _wait_for_phase(child, env, "IDLE")
+            await child.execute_update(RunSlkWorkflow.close_run, "RUN_CLOSED")
+            await parent.result()

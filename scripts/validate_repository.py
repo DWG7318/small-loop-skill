@@ -11,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "4.3.6"
+VERSION = "4.4.0"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -21,6 +21,7 @@ EXPECTED_SKILLS = (
     "slk-grill-supervisor",
     "slk-manage-team",
     "slk-overwatch-run",
+    "slk-manage-temporal",
     "slk-dispatch-cell",
     "slk-execute-cell",
     "slk-check-cell",
@@ -160,6 +161,8 @@ def validate(root: Path) -> list[str]:
         "docs/contracts/slk-ocrv-worker-recovery.schema.json",
         "docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
         "docs/contracts/slk-checker-post-d1.schema.json",
+        "docs/contracts/slk-checker-completion.schema.json",
+        "docs/contracts/slk-native-execution-outcome.schema.json",
         "docs/contracts/slk-overwatcher-cadence-inspection.schema.json",
         "docs/contracts/slk-desktop-current-turn-recovery.schema.json",
         "docs/contracts/slk-run-readiness.schema.json",
@@ -216,6 +219,8 @@ def validate(root: Path) -> list[str]:
     ):
         check(marker in audit, "SLK_REPO_AUDIT_MATRIX", marker, errors)
     for name in EXPECTED_SKILLS:
+        if name == "slk-manage-temporal":
+            continue
         check(f"`{name}`" in audit, "SLK_REPO_AUDIT_SKILL", name, errors)
 
     main = utf8_text(SKILLS_ROOT / "small-loop-skill" / "SKILL.md", errors)
@@ -259,7 +264,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 4.3.6 skill collection structure, identity, and Manifest are valid.")
+    print("PASS: SLK 4.4.0 skill collection structure, identity, and Manifest are valid.")
     return 0
 
 

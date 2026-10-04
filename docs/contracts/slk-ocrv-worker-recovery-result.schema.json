@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "status", "run_id", "cell_id", "source_message_id", "worker_session_id", "checker_role_instance_id", "checker_endpoint_version", "checker_authenticated", "authorized_recovery", "recovery_invocation_id", "request_sha256", "runtime_revision", "token_sequence", "checker_token_already_committed", "native_attempt_path", "d1_verdict", "d1_event_type", "native_result_path"],
   "properties": {
     "schema_version": {"const": "slk.ocrv-worker-recovery-result/v1"},
-    "method_version": {"const": "4.3.6"},
+    "method_version": {"const": "4.4.0"},
     "status": {"const": "CHECKER_D1_RECORDED"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "cell_id": {"$ref": "#/$defs/identifier"},

@@ -39,7 +39,8 @@ fn fallback_device_id(name: &str) -> String {
 #[tauri::command]
 pub fn metadata() -> Result<Value, String> {
     let device_name = nonempty_env("SLK_BI_DEVICE_NAME").unwrap_or_else(fallback_device_name);
-    let device_id = nonempty_env("SLK_BI_DEVICE_ID").unwrap_or_else(|| fallback_device_id(&device_name));
+    let device_id =
+        nonempty_env("SLK_BI_DEVICE_ID").unwrap_or_else(|| fallback_device_id(&device_name));
     Ok(json!({
         "schema_version": "slk.bi.metadata/v1",
         "bi_version": BI_VERSION,
@@ -92,7 +93,11 @@ pub fn validate_sync_payload(payload: &Value, expected_device_id: &str) -> Resul
     {
         return Err("SLK_WEBBI_UPLOAD_INVALID".into());
     }
-    if serde_json::to_vec(payload).map_err(|error| error.to_string())?.len() > 10 * 1024 * 1024 {
+    if serde_json::to_vec(payload)
+        .map_err(|error| error.to_string())?
+        .len()
+        > 10 * 1024 * 1024
+    {
         return Err("SLK_WEBBI_UPLOAD_TOO_LARGE".into());
     }
     Ok(())
@@ -138,7 +143,10 @@ pub async fn sync_webbi(payload: Value) -> Result<Value, String> {
         .await
         .map_err(|_| "SLK_WEBBI_UPLOAD_FAILED".to_string())?;
     if !response.status().is_success() {
-        return Err(format!("SLK_WEBBI_UPLOAD_REJECTED:{}", response.status().as_u16()));
+        return Err(format!(
+            "SLK_WEBBI_UPLOAD_REJECTED:{}",
+            response.status().as_u16()
+        ));
     }
     Ok(json!({"status":"uploaded","upload_id":upload_id}))
 }

@@ -185,11 +185,11 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
         {
             "summary": {
                 "run_id": RUN_ID,
-                "slk_version": "4.3.6",
+                "slk_version": "4.4.0",
                 "current_plan_revision": 1,
             },
             "runtime_snapshot": {
-                "method_version": "4.3.6",
+                "method_version": "4.4.0",
                 "plan_revision": 1,
                 "runtime_revision": 25,
                 "token_sequence": 4,
@@ -227,7 +227,7 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     attempt_root.mkdir()
     request = {
         "schema_version": "slk.checker-post-d1-request/v1",
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "post_d1_invocation_id": "post-d1-001",
         "run_id": RUN_ID,
         "go_id": GO_ID,

@@ -28,7 +28,7 @@
 | Supervisor |  |  |  |
 | Checker |  |  |  |
 | Worker |  |  |  |
-| Overwatcher（可选） |  |  |  |
+| Overwatcher |  |  |  |
 
 ## CELL 历史
 
@@ -75,13 +75,13 @@
 - 变化原因：
 - 新方案与影响：
 
-## Overwatcher 运行观察（可选）
+## Overwatcher 运行观察
 
-- Session/foreground turn/180–300秒间隔：
+- role instance/Session/foreground turn/600 秒间隔：
 - 最近cycle序号、完成时间、下次时间：
 - Run/CELL/attempt/TOKEN/最近事件：
-- 八项巡查结果与不可变证据：
-- 异常、exact retry或升级结果：
+- CLEAR/ANOMALY/UNKNOWN 与不可变证据：
+- 报告 Supervisor 与送达结果：
 
 ## D2 交接
 

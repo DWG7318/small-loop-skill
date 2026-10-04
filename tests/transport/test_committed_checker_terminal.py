@@ -240,7 +240,7 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
         "run_id": run_id,
         "summary": {
             "run_id": run_id,
-            "slk_version": "4.3.6",
+            "slk_version": "4.4.0",
             "current_plan_revision": 2,
             "state": "active",
             "closure_state": "open",
@@ -253,7 +253,7 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
         },
         "runtime_snapshot": {
             "run_id": run_id,
-            "method_version": "4.3.6",
+            "method_version": "4.4.0",
             "plan_revision": 2,
             "runtime_revision": 155,
             "token_sequence": 31,
@@ -365,7 +365,7 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     transport_command_path.write_bytes(b"transport")
     request = {
         "schema_version": "slk.ocrv-committed-terminal-request/v1",
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "recovery_invocation_id": "66666666-6666-4666-8666-666666666666",
         "run_id": run_id,
         "go_id": go_id,
@@ -423,7 +423,7 @@ def test_outer_consumer_validates_chain_then_starts_only_the_sealed_checker_host
         captured["environment"] = kwargs["env"]
         value = {
             "schema_version": "slk.ocrv-committed-terminal-result/v1",
-            "method_version": "4.3.6",
+            "method_version": "4.4.0",
             "status": "CHECKER_D1_RECORDED",
             "run_id": request["run_id"],
             "cell_id": request["cell_id"],

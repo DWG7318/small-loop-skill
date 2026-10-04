@@ -1,3 +1,3 @@
 """SLK cross-agent transport."""
 
-__version__ = "4.3.6"
+__version__ = "4.4.0"

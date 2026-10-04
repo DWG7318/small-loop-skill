@@ -35,7 +35,7 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
                     native_address: json!({"thread_id":"thread-overwatcher-a"}),
                 },
                 observation_mode: ObservationMode::ForegroundActiveTurn,
-                cadence_seconds: 240,
+                cadence_seconds: 600,
                 foreground_turn_id: "foreground-turn-a".into(),
                 native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
                 binding_revision: 1,

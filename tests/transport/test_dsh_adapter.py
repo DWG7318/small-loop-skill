@@ -233,6 +233,65 @@ def test_dsh_preserves_each_closed_noncompleted_worker_outcome(
     assert result.native_identity["worker_outcome"] == outcome
 
 
+@pytest.mark.parametrize(
+    ("mode", "timeout_seconds", "outcome", "error_code", "exit_code"),
+    [
+        ("exit-nonzero-after-start", 5, "execution_failure", "DSH_EXIT_NONZERO", 42),
+        ("hang-after-start", 0.2, "timed_out", "DSH_TIMEOUT", None),
+    ],
+)
+def test_dsh_runtime_failure_has_closed_identity_bound_receipt_not_worker_fact(
+    tmp_path: Path,
+    mode: str,
+    timeout_seconds: float,
+    outcome: str,
+    error_code: str,
+    exit_code: int | None,
+) -> None:
+    endpoint = worker_endpoint(tmp_path, mode=mode)
+    endpoint = Endpoint(
+        **{
+            **endpoint.__dict__,
+            "address": {**endpoint.address, "timeout_seconds": timeout_seconds},
+        }
+    )
+    envelope = worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = DshAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "failed"
+    assert result.error_code == error_code
+    assert result.native_identity["runtime_outcome"] == outcome
+    assert result.native_identity["session_id"].startswith("session-")
+    assert result.native_identity["exit_code"] == exit_code
+    assert isinstance(result.native_identity["duration_ms"], int)
+    receipt = json.loads((attempt.root / "native-execution.json").read_text(encoding="utf-8"))
+    assert set(receipt) == {
+        "schema_version",
+        "adapter",
+        "run_id",
+        "cell_id",
+        "message_id",
+        "instance_id",
+        "session_id",
+        "status",
+        "started_at",
+        "ended_at",
+        "duration_ms",
+        "exit_code",
+        "error_code",
+        "stdout_sha256",
+        "stderr_sha256",
+    }
+    assert receipt["schema_version"] == "slk.native-execution-outcome/v1"
+    assert receipt["message_id"] == envelope.message_id
+    assert receipt["session_id"] == result.native_identity["session_id"]
+    assert receipt["status"] == outcome
+    assert receipt["error_code"] == error_code
+    assert not (attempt.root / "worker-result.json").exists()
+
+
 def test_dsh_rejects_noncompleted_result_that_claims_a_candidate(tmp_path: Path) -> None:
     endpoint = worker_endpoint(tmp_path, mode="invalid-incomplete-candidate")
     envelope = worker_envelope()

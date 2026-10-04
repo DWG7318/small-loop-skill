@@ -10,7 +10,21 @@ import pytest
 from slk_transport.run_readiness import evaluate_run_readiness
 
 
-REQUIRED_OPTIONS = ("Ponytail", "Temporal", "Overwatcher", "RTK", "Probe CLI")
+REQUIRED_OPTIONS = ("Ponytail", "RTK", "Probe CLI")
+REQUIRED_LEGS = (
+    ("SETUP_TO_CHECKER", "supervisor", "checker"),
+    ("CELL_TO_WORKER", "checker", "worker"),
+    ("CANDIDATE_TO_CHECKER", "worker", "checker"),
+    ("D1_FAIL_TO_SUPERVISOR", "checker", "supervisor"),
+    ("REWORK_TO_WORKER", "supervisor", "worker"),
+    ("D2_READY_TO_SUPERVISOR", "checker", "supervisor"),
+    ("ANOMALY_TO_SUPERVISOR", "overwatcher", "supervisor"),
+)
+
+
+def write_json(path: Path, value: object) -> Path:
+    path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
+    return path
 
 
 def _request(tmp_path: Path) -> dict[str, object]:
@@ -24,13 +38,14 @@ def _request(tmp_path: Path) -> dict[str, object]:
     for runtime, events in (
         ("dsh", ["agent/status", "session/event"]),
         ("ocrv", ["review/progress", "task/status"]),
+        ("lcas", ["session/status", "observation/cycle"]),
     ):
         capability = tmp_path / f"{runtime}-native-activity.json"
         capability.write_text(
             json.dumps(
                 {
                     "schema_version": "slk.native-activity-capability/v1",
-                    "method_version": "4.3.6",
+                    "method_version": "4.4.0",
                     "runtime": runtime,
                     "read_only_observation": True,
                     "model_call_required": False,
@@ -45,10 +60,12 @@ def _request(tmp_path: Path) -> dict[str, object]:
         ("supervisor", "codex", "gpt-5.6-sol"),
         ("worker", "dsh", "deepseek-v4-flash"),
         ("checker", "ocrv", "qwen3.8-max"),
+        ("overwatcher", "lcas", "gpt-6-luna"),
     ):
         roles.append(
             {
                 "role": role,
+                "role_instance_id": f"RUN-READINESS-A-{role}",
                 "expected_runtime": runtime,
                 "actual_runtime": runtime,
                 "expected_model": model,
@@ -61,13 +78,61 @@ def _request(tmp_path: Path) -> dict[str, object]:
                 "required_skills": [str(skill)],
                 "required_tools": [sys.executable],
                 "native_activity_capability": capabilities.get(runtime),
+                "tool_update_status": "CURRENT",
             }
         )
+    bi_receipt = write_json(
+        tmp_path / "bi-open.json",
+        {
+            "schema_version": "slk.bi-open-readiness/v1",
+            "method_version": "4.4.0",
+            "run_id": "RUN-READINESS-A",
+            "bi_version": "1.1.0",
+            "device_id": "device-a",
+            "visible": True,
+            "evidence_sha256": "a" * 64,
+        },
+    )
+    temporal_receipt = write_json(
+        tmp_path / "temporal-ready.json",
+        {
+            "schema_version": "slk.temporal-readiness/v1",
+            "method_version": "4.4.0",
+            "run_id": "RUN-READINESS-A",
+            "status": "READY",
+            "service_mode": "SHARED_LOCAL",
+            "workflow_templates": ["SLK.Start", "SLK.Run"],
+            "evidence_sha256": "b" * 64,
+        },
+    )
+    rehearsal = write_json(
+        tmp_path / "communication-rehearsal.json",
+        {
+            "schema_version": "slk.communication-rehearsal/v1",
+            "method_version": "4.4.0",
+            "run_id": "RUN-READINESS-A",
+            "status": "PASS",
+            "legs": [
+                {
+                    "leg_id": leg_id,
+                    "sender_role": sender,
+                    "receiver_role": receiver,
+                    "sent_receipt_sha256": "c" * 64,
+                    "receiver_started_sha256": "d" * 64,
+                    "response_receipt_sha256": "e" * 64,
+                }
+                for leg_id, sender, receiver in REQUIRED_LEGS
+            ],
+        },
+    )
     return {
         "schema_version": "slk.run-readiness-request/v1",
         "run_id": "RUN-READINESS-A",
         "plan_revision": 1,
         "roles": roles,
+        "bi_open_receipt": str(bi_receipt),
+        "temporal_readiness_receipt": str(temporal_receipt),
+        "communication_rehearsal": str(rehearsal),
         "optional_features": [
             {"name": name, "decision": "OFF", "owner_evidence_ref": f"owner:{name}"}
             for name in REQUIRED_OPTIONS
@@ -75,7 +140,7 @@ def _request(tmp_path: Path) -> dict[str, object]:
     }
 
 
-def test_three_agent_readiness_is_ready_only_when_every_fact_and_option_is_closed(
+def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     tmp_path: Path,
 ) -> None:
     result = evaluate_run_readiness(_request(tmp_path))
@@ -85,6 +150,7 @@ def test_three_agent_readiness_is_ready_only_when_every_fact_and_option_is_close
         "supervisor",
         "worker",
         "checker",
+        "overwatcher",
     }
     assert {item["status"] for item in result["roles"]} == {"READY"}
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
@@ -100,6 +166,37 @@ def test_missing_checker_capability_keeps_run_in_preparation(tmp_path: Path) -> 
     checker = next(item for item in result["roles"] if item["role"] == "checker")
     assert checker["status"] == "REPAIR_NEEDED"
     assert "REQUIRED_TOOL_MISSING" in checker["reason_codes"]
+
+
+def test_missing_overwatcher_or_failed_normal_route_rehearsal_blocks_start(tmp_path: Path) -> None:
+    missing_role = _request(tmp_path)
+    missing_role["roles"] = [row for row in missing_role["roles"] if row["role"] != "overwatcher"]
+    with pytest.raises(ValueError, match="exactly one"):
+        evaluate_run_readiness(missing_role)
+
+    failed_route = _request(tmp_path)
+    path = Path(failed_route["communication_rehearsal"])
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    receipt["legs"][2]["receiver_started_sha256"] = ""
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+    result = evaluate_run_readiness(failed_route)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "COMMUNICATION_REHEARSAL_INVALID" in result["reason_codes"]
+
+
+def test_tool_upgrade_need_and_missing_bi_or_temporal_proof_block_start(tmp_path: Path) -> None:
+    update = _request(tmp_path)
+    update["roles"][1]["tool_update_status"] = "UPDATE_REQUIRED"
+    result = evaluate_run_readiness(update)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "TOOL_UPDATE_REQUIRED" in result["reason_codes"]
+
+    missing = _request(tmp_path)
+    Path(missing["bi_open_receipt"]).unlink()
+    Path(missing["temporal_readiness_receipt"]).unlink()
+    result = evaluate_run_readiness(missing)
+    assert "BI_OPEN_RECEIPT_INVALID" in result["reason_codes"]
+    assert "TEMPORAL_READINESS_INVALID" in result["reason_codes"]
 
 
 def test_missing_or_wrong_native_activity_capability_blocks_worker_and_checker(

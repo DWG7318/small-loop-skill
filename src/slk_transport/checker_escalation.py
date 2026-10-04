@@ -162,9 +162,9 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_REQUEST_INVALID", "post-D1 request is not closed"
         )
-    if request.get("method_version") != "4.3.6":
+    if request.get("method_version") != "4.4.0":
         raise CheckerEscalationError(
-            "CHECKER_ESCALATION_REQUEST_INVALID", "post-D1 method version is not 4.3.6"
+            "CHECKER_ESCALATION_REQUEST_INVALID", "post-D1 method version is not 4.4.0"
         )
     for field in (
         "post_d1_invocation_id",
@@ -223,10 +223,10 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     if (
         not isinstance(summary, Mapping)
         or summary.get("run_id") != request["run_id"]
-        or summary.get("slk_version") != "4.3.6"
+        or summary.get("slk_version") != "4.4.0"
         or summary.get("current_plan_revision") != request["plan_revision"]
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.3.6"
+        or snapshot.get("method_version") != "4.4.0"
         or snapshot.get("plan_revision") != request["plan_revision"]
         or snapshot.get("runtime_revision") != request["runtime_revision"]
         or snapshot.get("token_sequence") != request["token_sequence"]

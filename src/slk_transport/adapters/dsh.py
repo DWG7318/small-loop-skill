@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -15,6 +16,7 @@ from ..evidence import Attempt
 from ..native_activity import (
     NativeActivityError,
     make_native_start,
+    utc_now,
     validate_native_task_activity,
 )
 from ..process import windows_no_window_kwargs
@@ -299,6 +301,68 @@ class DshAdapter:
             raise AdapterError("DSH_RESULT_INVALID", "Worker result status is unsupported")
         return value
 
+    def _runtime_failure(
+        self,
+        *,
+        endpoint: Endpoint,
+        envelope: Envelope,
+        attempt: Attempt,
+        session_id: str,
+        outcome: str,
+        error_code: str,
+        exit_code: int | None,
+        started_at: str,
+        duration_ms: int,
+        stdout: str,
+        stderr: str,
+    ) -> DeliveryResult:
+        receipt = {
+            "schema_version": "slk.native-execution-outcome/v1",
+            "adapter": endpoint.adapter,
+            "run_id": envelope.run_id,
+            "cell_id": envelope.cell_id,
+            "message_id": envelope.message_id,
+            "instance_id": str(endpoint.address["instance_id"]),
+            "session_id": session_id,
+            "status": outcome,
+            "started_at": started_at,
+            "ended_at": utc_now(),
+            "duration_ms": max(duration_ms, 0),
+            "exit_code": exit_code,
+            "error_code": error_code,
+            "stdout_sha256": hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
+            "stderr_sha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
+        }
+        receipt_path = attempt.write_json_once("native-execution.json", receipt)
+        return DeliveryResult(
+            schema_version=RESULT_SCHEMA,
+            message_id=envelope.message_id,
+            run_id=envelope.run_id,
+            adapter=endpoint.adapter,
+            status="failed",
+            native_identity={
+                "instance_id": str(endpoint.address["instance_id"]),
+                "session_id": session_id,
+                "exit_code": exit_code,
+                "runtime_outcome": outcome,
+                "duration_ms": max(duration_ms, 0),
+                "error_code": error_code,
+                "execution_receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+            },
+            error_code=error_code,
+            evidence=tuple(
+                name
+                for name in (
+                    "started.json",
+                    "native-activity.json",
+                    "native-execution.json",
+                    "native.stdout.txt",
+                    "native.stderr.txt",
+                )
+                if (attempt.root / name).is_file()
+            ),
+        )
+
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
         self.validate_address(endpoint)
         workspace = Path(str(endpoint.address["cwd"]))
@@ -338,6 +402,7 @@ class DshAdapter:
         try:
             try:
                 started_at = self._monotonic()
+                started_at_utc = utc_now()
                 timeout = _positive_seconds(endpoint.address["timeout_seconds"])
                 process = spawn(
                     command,
@@ -410,10 +475,38 @@ class DshAdapter:
                 stderr = exc.stderr if isinstance(exc.stderr, str) else ""
                 attempt.write_text_once("native.stdout.txt", stdout)
                 attempt.write_text_once("native.stderr.txt", stderr)
+                if session_id is not None and (attempt.root / "started.json").is_file():
+                    return self._runtime_failure(
+                        endpoint=endpoint,
+                        envelope=envelope,
+                        attempt=attempt,
+                        session_id=session_id,
+                        outcome="timed_out",
+                        error_code="DSH_TIMEOUT",
+                        exit_code=None,
+                        started_at=started_at_utc,
+                        duration_ms=int((self._monotonic() - started_at) * 1000),
+                        stdout=stdout,
+                        stderr=stderr,
+                    )
                 raise AdapterError("DSH_TIMEOUT", "DSH Worker did not complete in time") from exc
             attempt.write_text_once("native.stdout.txt", completed.stdout)
             attempt.write_text_once("native.stderr.txt", completed.stderr)
             if completed.returncode != 0:
+                if session_id is not None and (attempt.root / "started.json").is_file():
+                    return self._runtime_failure(
+                        endpoint=endpoint,
+                        envelope=envelope,
+                        attempt=attempt,
+                        session_id=session_id,
+                        outcome="execution_failure",
+                        error_code="DSH_EXIT_NONZERO",
+                        exit_code=completed.returncode,
+                        started_at=started_at_utc,
+                        duration_ms=int((self._monotonic() - started_at) * 1000),
+                        stdout=completed.stdout,
+                        stderr=completed.stderr,
+                    )
                 raise AdapterError("DSH_EXIT_NONZERO", f"DSH Worker exited with {completed.returncode}")
             session_id = self._resolve_session(endpoint, before, self._sessions(session_root))
             if not (attempt.root / "started.json").is_file():

@@ -20,7 +20,25 @@
       "required": ["kind", "sequence"],
       "properties": {
         "kind": {"type": "string", "minLength": 1},
-        "sequence": {"type": "integer", "minimum": 0}
+        "sequence": {"type": "integer", "minimum": 0},
+        "detail_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "summary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "exit_code": {"type": "integer"},
+        "tail": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "sequence", "observed_at", "detail_sha256"],
+            "properties": {
+              "kind": {"type": "string", "minLength": 1},
+              "sequence": {"type": "integer", "minimum": 0},
+              "observed_at": {"type": "string", "format": "date-time"},
+              "detail_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            }
+          }
+        }
       }
     },
     "waiting_on": {"type": ["string", "null"]}

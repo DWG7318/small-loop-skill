@@ -43,7 +43,7 @@ function Invoke-HiddenPython([string[]]$Arguments) {
 function Get-ManagedRoots([string]$Root) {
     $manifest = Get-Content -LiteralPath (Join-Path $Root 'install-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $skills = @($manifest.files.path | Where-Object { $_ -like 'skills/*/SKILL.md' } | ForEach-Object { ($_ -split '/')[1] } | Sort-Object -Unique)
-    if ($skills.Count -ne 15) { throw "Package does not enumerate exactly 15 Skill roots" }
+    if ($skills.Count -ne 16) { throw "Package does not enumerate exactly 16 Skill roots" }
     $roots = [System.Collections.Generic.List[string]]::new()
     foreach ($skill in $skills) { $roots.Add("skills/$skill") }
     $roots.Add('tools/slk/bin')
@@ -105,7 +105,7 @@ try {
     $oldVersionPath = Join-Path $codexRoot 'tools/slk/share/small-loop-skill/VERSION'
     $oldVersion = if (Test-Path -LiteralPath $oldVersionPath) { (Get-Content -LiteralPath $oldVersionPath -Raw).Trim() } else { 'absent' }
     $safeOldVersion = $oldVersion -replace '[^0-9A-Za-z._-]', '_'
-    $backupRoot = Assert-Within $codexRoot (Join-Path $codexRoot "tools/slk/backups/$safeOldVersion-to-4.3.6-$timestamp")
+    $backupRoot = Assert-Within $codexRoot (Join-Path $codexRoot "tools/slk/backups/$safeOldVersion-to-4.4.0-$timestamp")
     [void][System.IO.Directory]::CreateDirectory($backupRoot)
 
     $mutated = $true
@@ -126,7 +126,7 @@ try {
     }
     [void](Invoke-HiddenPython @($verifyScript, '--root', $codexRoot))
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-    [ordered]@{status='INSTALLED'; version='4.3.6'; backup_root=$backupRoot} | ConvertTo-Json -Compress
+    [ordered]@{status='INSTALLED'; version='4.4.0'; backup_root=$backupRoot} | ConvertTo-Json -Compress
     exit 0
 } catch {
     $message = $_.Exception.Message
@@ -158,7 +158,7 @@ try {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     [ordered]@{
         status=$status
-        version='4.3.6'
+        version='4.4.0'
         error=$message
         active_tree_verified=$rollbackVerified
         backup_root=$backupRoot

@@ -198,7 +198,7 @@ def test_outer_resume_validates_closed_incomplete_review_then_enters_sealed_chec
         captured["kwargs"] = kwargs
         return {
             "schema_version": "slk.ocrv-committed-terminal-result/v1",
-            "method_version": "4.3.6",
+            "method_version": "4.4.0",
             "status": "CHECKER_D1_RECORDED",
             "run_id": request["run_id"],
             "cell_id": request["cell_id"],

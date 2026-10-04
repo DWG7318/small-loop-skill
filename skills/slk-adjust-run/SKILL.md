@@ -40,6 +40,6 @@ Supervisor 可以按实际原因组合以下办法：
 
 调整完成后，Supervisor 用 `slk-state revise-plan` 或 `write` 追加决定，沿 `Supervisor → Checker` 完成真实投递；匹配的 `started.json` 出现后，以递增编号的同一 `SLK TOKEN` 调用 `slk-state commit-delivery-start` 原子提交启动证据、事件和 runtime revision，随后结束本次激活。待施工 CELL 使用 `$slk-dispatch-cell`；当前 CELL 修复回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再激活 Supervisor。
 
-不要在线等待或持续介入普通 CELL；可选 Overwatcher 只提供运行证据和通讯告警，不能替 Supervisor 决定路线、修改计划、TOKEN 或 BI。
+不要在线等待或持续介入普通 CELL；Overwatcher 只核实并报告运行证据，不能替 Supervisor 恢复成员、决定路线、修改计划、TOKEN 或 BI。同一 CELL 第二次正式 D1 FAIL 起，返工指引使用 `AGGRESSIVE`，对照两轮 findings、candidate diff、实际步骤、复现/回归证据和环境假设；不只重复普通建议，也不接管 D1。
 
 不要按标题、最近时间或自由文本猜 canonical Run；不要直接编辑 SQLite、伪造失效凭证、新建替代 Run、用终态结果补造启动、自动升级模型或启用 BoM，或借身份对账改写 CELL、D0/D1/D2、角色、证据和 TOKEN。

@@ -259,6 +259,100 @@ def _missing_result_failure(attempt: Path, envelope: Envelope) -> dict[str, Any]
     return failed
 
 
+def _native_execution_failure(
+    attempt: Path, endpoint: Endpoint, envelope: Envelope
+) -> dict[str, Any] | None:
+    receipt_path = attempt / "native-execution.json"
+    failed_path = attempt / "failed.json"
+    started_path = attempt / "started.json"
+    if (
+        not receipt_path.is_file()
+        or not failed_path.is_file()
+        or not started_path.is_file()
+        or (attempt / "completed.json").exists()
+        or (attempt / "worker-result.json").exists()
+    ):
+        return None
+    receipt = _read_object(receipt_path, "native execution outcome")
+    failed = _read_object(failed_path, "Worker failed result")
+    try:
+        started = validate_native_start(
+            started_path,
+            adapter="dsh-worker",
+            run_id=envelope.run_id,
+            cell_id=envelope.cell_id,
+            message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256,
+        )
+    except NativeActivityError:
+        return None
+    receipt_fields = {
+        "schema_version", "adapter", "run_id", "cell_id", "message_id", "instance_id",
+        "session_id", "status", "started_at", "ended_at", "duration_ms", "exit_code",
+        "error_code", "stdout_sha256", "stderr_sha256",
+    }
+    identity_fields = {
+        "instance_id", "session_id", "exit_code", "runtime_outcome", "duration_ms",
+        "error_code", "execution_receipt_sha256",
+    }
+    expected = {
+        "execution_failure": ("DSH_EXIT_NONZERO", int),
+        "timed_out": ("DSH_TIMEOUT", type(None)),
+    }
+    outcome = receipt.get("status")
+    if outcome not in expected:
+        return None
+    error_code, exit_type = expected[outcome]
+    identity = failed.get("native_identity")
+    evidence = failed.get("evidence")
+    duration = receipt.get("duration_ms")
+    try:
+        _timestamp(str(receipt.get("started_at")))
+        _timestamp(str(receipt.get("ended_at")))
+    except (CompletionError, ValueError):
+        return None
+    if (
+        set(receipt) != receipt_fields
+        or receipt.get("schema_version") != "slk.native-execution-outcome/v1"
+        or receipt.get("adapter") != "dsh-worker"
+        or receipt.get("run_id") != envelope.run_id
+        or receipt.get("cell_id") != envelope.cell_id
+        or receipt.get("message_id") != envelope.message_id
+        or receipt.get("instance_id") != endpoint.address.get("instance_id")
+        or receipt.get("session_id") != started["native_task"]["id"]
+        or receipt.get("error_code") != error_code
+        or not isinstance(receipt.get("exit_code"), exit_type)
+        or isinstance(duration, bool)
+        or not isinstance(duration, int)
+        or duration < 0
+        or not all(
+            isinstance(receipt.get(field), str)
+            and len(str(receipt[field])) == 64
+            and all(character in "0123456789abcdef" for character in str(receipt[field]))
+            for field in ("stdout_sha256", "stderr_sha256")
+        )
+        or failed.get("schema_version") != "slk.transport-result/v1"
+        or failed.get("message_id") != envelope.message_id
+        or failed.get("run_id") != envelope.run_id
+        or failed.get("adapter") != "dsh-worker"
+        or failed.get("status") != "failed"
+        or failed.get("error_code") != error_code
+        or not isinstance(identity, Mapping)
+        or set(identity) != identity_fields
+        or identity.get("instance_id") != receipt.get("instance_id")
+        or identity.get("session_id") != receipt.get("session_id")
+        or identity.get("exit_code") != receipt.get("exit_code")
+        or identity.get("runtime_outcome") != outcome
+        or identity.get("duration_ms") != duration
+        or identity.get("error_code") != error_code
+        or identity.get("execution_receipt_sha256") != _sha256(receipt_path)
+        or not isinstance(evidence, list)
+        or "native-execution.json" not in evidence
+    ):
+        return None
+    return receipt
+
+
 def _git_text(repository: Path, *arguments: str) -> str:
     from .process import windows_no_window_kwargs
 
@@ -703,7 +797,7 @@ def build_continuation_request(
             )
         )
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.3.6"
+        or snapshot.get("method_version") != "4.4.0"
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -729,7 +823,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -792,7 +886,7 @@ def _validate_continuation_request(request: Mapping[str, Any]) -> None:
     if (
         set(request) != CONTINUATION_FIELDS
         or request.get("schema_version") != CONTINUATION_SCHEMA
-        or request.get("method_version") != "4.3.6"
+        or request.get("method_version") != "4.4.0"
     ):
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation request is not closed")
     snapshot = request.get("source_runtime_snapshot")
@@ -807,7 +901,7 @@ def _validate_continuation_request(request: Mapping[str, Any]) -> None:
     if (
         not isinstance(snapshot, Mapping)
         or set(snapshot) != snapshot_fields
-        or snapshot.get("method_version") != "4.3.6"
+        or snapshot.get("method_version") != "4.4.0"
         or snapshot.get("plan_revision") != request.get("plan_revision")
         or snapshot.get("runtime_revision") != request.get("runtime_revision")
         or snapshot.get("token_sequence") != request.get("token_sequence")
@@ -928,7 +1022,7 @@ def prepare_invalid_result_recovery_envelope(
     _write_or_reuse_stable_request(destination, envelope)
     return {
         "schema_version": "slk.invalid-result-recovery-readiness/v1",
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "status": "INVALID_RESULT_RECOVERY_READY",
         "run_id": continuation["run_id"],
         "cell_id": continuation["cell_id"],
@@ -995,6 +1089,14 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     )
     adapter.validate_address(resumed_endpoint)
     continuation_root = _continuation_root(request)
+    if recovery_mode != "INVALID_RESULT_CONTRACT" and any(
+        (continuation_root / name).exists()
+        for name in ("launch-attempt.json", "started.json", "native.stdout.txt", "native.stderr.txt")
+    ):
+        raise CompletionError(
+            "WORKER_CONTINUATION_ALREADY_ATTEMPTED",
+            "the one allowed same-Session continuation already has execution evidence",
+        )
     if recovery_mode == "INVALID_RESULT_CONTRACT":
         if continuation_root.exists():
             raise CompletionError(
@@ -1072,6 +1174,20 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     environment["SLK_DSH_INSTANCE_ID"] = str(request["worker_instance_id"])
     environment["SLK_DSH_SESSION_ID"] = str(request["worker_session_id"])
     timeout = _positive_seconds(resumed_endpoint.address["timeout_seconds"])
+    launch_attempt_path = continuation_root / "launch-attempt.json"
+    launch_attempt_path.write_bytes(
+        continuation_request_bytes(
+            {
+                "schema_version": "slk.worker-continuation-launch/v1",
+                "run_id": request["run_id"],
+                "source_message_id": request["source_message_id"],
+                "instance_id": request["worker_instance_id"],
+                "session_id": request["worker_session_id"],
+                "request_sha256": digest,
+                "status": "launch_attempted",
+            }
+        )
+    )
     started_at = time.monotonic()
     process = spawn(
         command,
@@ -1223,6 +1339,7 @@ def inspect_worker_completion(
     observed_at: str,
     cadence_seconds: int,
     previous_inspection: Mapping[str, Any] | None = None,
+    native_inspector: Callable[..., Mapping[str, Any]] = inspect_native_activity,
 ) -> dict[str, Any]:
     """Classify one Worker terminal/handoff boundary without changing Run state."""
 
@@ -1362,7 +1479,56 @@ def inspect_worker_completion(
                 },
                 "grace_started_at": None,
             }
-        return {**base, "status": "IN_PROGRESS", "grace_started_at": None}
+        native_failure = _native_execution_failure(attempt, endpoint, envelope)
+        if native_failure is not None:
+            outcome = str(native_failure["status"])
+            return {
+                **base,
+                "status": {
+                    "execution_failure": "WORKER_EXECUTION_FAILURE",
+                    "timed_out": "WORKER_TIMED_OUT",
+                }[outcome],
+                "worker_outcome": outcome,
+                "blocker": {
+                    "phase": "native_execution",
+                    "cause": native_failure["error_code"],
+                    "summary": "the exact DSH runtime did not produce a Worker engineering result",
+                    "evidence": ["native-execution.json", "failed.json"],
+                },
+                "grace_started_at": None,
+            }
+        try:
+            native_status = str(
+                native_inspector(
+                    attempt / "started.json",
+                    terminal_paths=(completed_path, failed_path),
+                    observed_at=observed_at,
+                ).get("status")
+            )
+        except (NativeActivityError, OSError, TypeError, ValueError):
+            native_status = "UNKNOWN"
+        if native_status in {"ACTIVE", "PENDING", "IDLE"}:
+            return {**base, "status": "IN_PROGRESS", "grace_started_at": None}
+        cause = {
+            "DEAD_WITHOUT_TERMINAL": "NATIVE_TURN_ORPHANED",
+            "COMPLETED_WITHOUT_TERMINAL": "NATIVE_TASK_COMPLETED_WITHOUT_TERMINAL",
+            "FAILED_WITHOUT_TERMINAL": "NATIVE_TASK_FAILED_WITHOUT_TERMINAL",
+        }.get(native_status, "NATIVE_ACTIVITY_UNPROVED")
+        evidence = ["started.json"]
+        if (attempt / "native-activity.json").is_file():
+            evidence.append("native-activity.json")
+        return {
+            **base,
+            "status": "WORKER_INCOMPLETE",
+            "worker_outcome": "incomplete",
+            "blocker": {
+                "phase": "native_execution",
+                "cause": cause,
+                "summary": "the exact Worker native turn is not active and has no terminal engineering result",
+                "evidence": evidence,
+            },
+            "grace_started_at": None,
+        }
     if token_owner != endpoint.role_instance_id and exact_candidate and exact_transport:
         return {**base, "status": "HANDED_OFF_OR_D1", "grace_started_at": None}
     observations = runtime_projection.get("operational_observations")
@@ -2203,7 +2369,7 @@ def _activate_staged_checker(
     recovery_result_path = _continuation_root(continuation) / "commit-only-recovery" / "result.json"
     recovery_result = {
         "schema_version": "slk.worker-checker-commit-recovery/v1",
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         **activation,
         "status": "CHECKER_START_COMMITTED",
         "run_id": continuation["run_id"],
@@ -2268,7 +2434,7 @@ def _load_commit_only_checker_activation(
     if (
         set(result) != fields
         or result.get("schema_version") != "slk.worker-checker-commit-recovery/v1"
-        or result.get("method_version") != "4.3.6"
+        or result.get("method_version") != "4.4.0"
         or result.get("status") != "CHECKER_START_COMMITTED"
         or result.get("runtime_revision") != current_runtime_revision
         or result.get("run_id") != continuation.get("run_id")
@@ -2471,11 +2637,11 @@ def consume_staged_checker_terminal(
     request = _read_object(request_path, "Checker recovery request")
     if (
         request.get("schema_version") != CHECKER_RECOVERY_SCHEMA
-        or request.get("method_version") != "4.3.6"
+        or request.get("method_version") != "4.4.0"
     ):
         raise CompletionError(
             "CHECKER_RECOVERY_REQUEST_INVALID",
-            "existing-terminal consumption requires the original 4.3.6 Checker request",
+            "existing-terminal consumption requires the original 4.4.0 Checker request",
         )
     try:
         endpoint = Endpoint.from_dict(request["checker_endpoint"])
@@ -2864,8 +3030,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.3.6":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.3.6")
+    if request.get("method_version") != "4.4.0":
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.4.0")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -2969,7 +3135,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "actual OCRV D1 result was not recorded")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "status": "CHECKER_D1_RECORDED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -3083,7 +3249,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
     if (
         set(request) != fields
         or request.get("schema_version") != COMMITTED_TERMINAL_SCHEMA
-        or request.get("method_version") != "4.3.6"
+        or request.get("method_version") != "4.4.0"
         or not all(
             _positive_integer(request.get(name))
             for name in (
@@ -3185,7 +3351,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
     if (
         not _matches(projection, {"schema_version": "slk.bi.run/v1", "run_id": request["run_id"]})
         or not _matches(summary, {
-            **shared_state, "slk_version": "4.3.6",
+            **shared_state, "slk_version": "4.4.0",
             "current_plan_revision": request["plan_revision"],
         })
         or not _matches(administrative, {
@@ -3193,7 +3359,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
                 if partial_review is not None else request["transport_started_event_id"]),
         })
         or not _matches(runtime, {
-            "run_id": request["run_id"], "method_version": "4.3.6",
+            "run_id": request["run_id"], "method_version": "4.4.0",
             "plan_revision": request["plan_revision"],
             "runtime_revision": request["runtime_revision"],
             "token_sequence": request["token_sequence"],
@@ -3992,7 +4158,7 @@ def execute_committed_checker_terminal(
         )
     return {
         "schema_version": COMMITTED_TERMINAL_RESULT_SCHEMA,
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "status": "CHECKER_D1_RECORDED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -4040,7 +4206,7 @@ def consume_committed_checker_terminal(
     )
     if (
         set(value) != COMMITTED_TERMINAL_RESULT_FIELDS
-        or value.get("method_version") != "4.3.6"
+        or value.get("method_version") != "4.4.0"
         or value.get("d1_verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
     ):
         raise CompletionError(
@@ -4080,7 +4246,7 @@ def _validate_incomplete_resume(request: Mapping[str, Any], *, consumed: bool = 
         raise CompletionError("CHECKER_INCOMPLETE_RESUME_REQUEST_INVALID", "resume request is invalid") from exc
     if (
         set(request) != required or request.get("schema_version") != INCOMPLETE_RESUME_SCHEMA
-        or request.get("method_version") != "4.3.6" or not isinstance(session, Mapping)
+        or request.get("method_version") != "4.4.0" or not isinstance(session, Mapping)
         or recovery != attempt / "resume-incomplete-checker" / str(request["recovery_invocation_id"])
         or Path(str(request["result_path"])).resolve() != recovery / "result.json"
         or (partial is None and any((attempt / name).exists() for name in ("completed.json", "failed.json", "ocrv-result.json")))

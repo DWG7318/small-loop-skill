@@ -111,7 +111,7 @@ def _repository_sources(repository: Path, listed: dict[str, str]) -> list[tuple[
     skills_root = repository / "skills"
     actual_skills = {path.name for path in skills_root.iterdir() if path.is_dir()}
     if actual_skills != set(EXPECTED_SKILLS):
-        raise PackageError("repository skill set does not match the 15 managed Skills")
+        raise PackageError("repository skill set does not match the 16 managed Skills")
 
     mappings: list[tuple[Path, Path]] = []
     for name in EXPECTED_SKILLS:
@@ -146,8 +146,8 @@ def _repository_sources(repository: Path, listed: dict[str, str]) -> list[tuple[
             mappings.append((source, share / source.relative_to(repository)))
 
     migrations = _files(repository / SQLITE_SCHEMA_ROOT)
-    if [path.name for path in migrations] != [f"{index:04}.sql" for index in range(1, 9)]:
-        raise PackageError("SQLite schema identity must contain migrations 0001.sql through 0008.sql")
+    if [path.name for path in migrations] != [f"{index:04}.sql" for index in range(1, 10)]:
+        raise PackageError("SQLite schema identity must contain migrations 0001.sql through 0009.sql")
     for source in migrations:
         relative = source.relative_to(repository).as_posix()
         if listed.get(relative) != sha256(source):

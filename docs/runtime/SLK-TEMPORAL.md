@@ -1,50 +1,37 @@
-# Optional Temporal continuity for SLK 4.3.6
+# Required Temporal continuity for SLK 4.4.0
 
 ## Boundary
 
-Temporal is an explicit per-Run continuity option, not a required SLK runtime. The core install and all direct `Supervisor ↔ Checker ↔ Worker` routes work without the SDK or server. One opted-in Run owns one `SLK.Start` parent and one `SLK.Run` child; workflow IDs are deterministic from `run_id`.
+One shared, headless local Temporal service may host many SLK Runs. Every 4.4.0 Run must prove service/worker readiness before dispatch and owns one deterministic `SLK.Start` plus one independent `SLK.Run`; ending one Run closes only its workflows, not the shared service or another Run.
 
-The templates persist only startup identity and exact communication facts. They never decide D0/D1/D2, move SLK TOKEN, write BI, select a model, create or replace a role, or choose a CELL. A matching native-start ACK is the only positive activation fact. Delivery success, activity completion, process exit and terminal result are not ACKs.
+Temporal stores continuity and timing facts only. It never decides D0/D1/D2, moves TOKEN, writes BI, selects a model, creates/replaces a role, chooses a CELL, or becomes a communication participant. Direct registered members remain the first responsibility: Checker sends the CELL to Worker, Worker returns the candidate to Checker, Checker sends formal D1 FAIL or final D2 readiness to Supervisor, and Supervisor sends the structured rework directive to the same Worker.
 
-On bounded ACK timeout, `SLK.Run` requests one exact recovery. A bound Overwatcher is the recovery target; without one, the original sender remains responsible. The receiver, payload hash, scope, CELL, attempt and operation identity cannot change. A matching ACK stops recovery. If no verified route exists, the adapter reports `BLOCKED` rather than inventing progress.
+The only positive activation fact is a matching `slk.native-start/v2` acknowledgement. Tool success, terminal output, process exit, visible text, BI state and old activity do not substitute.
+
+## Runtime guarantees
+
+- Delivery timeout asks the exact original sender to recover the unchanged message; OW never relays or retries normal communication.
+- A member timer begins only after matching native start. If one responsibility remains on that member for more than 30 minutes, Temporal sends one scoped notice directly to the registered Supervisor; it does not decide whether the work is defective.
+- Every 20 minutes Temporal checks the registered OW native activity. Missing, mismatched, terminal, or anomalous evidence freezes the Run runtime guard and notifies Supervisor.
+- Every OW exit, including a Supervisor-requested stop, freezes the guard and notifies Supervisor for a second confirmation. Only an exact current-Supervisor resolution with restored OW evidence clears it.
+- While the guard is unresolved, no next CELL may dispatch. Mechanical recovery and Supervisor-directed repair may coexist, but Supervisor chooses and records the resolution.
 
 ## Windows local setup
 
-1. Obtain the official Temporal CLI for Windows from the [Temporal CLI releases](https://github.com/temporalio/cli/releases). Keep it outside the SLK repository.
-2. Start a local development service in a hidden/headless process chosen by the operator. For a persistent development database:
+1. Provision the official Temporal CLI/service outside this repository and operate it headlessly on the local machine. SLK never installs Docker or a service.
+2. Install `integrations/temporal` in a dedicated Python environment and start `slk-temporal-worker` on the frozen task queue.
+3. Supply an adapter whose five async functions call existing authoritative entrances: `prepare_run`, `deliver_message`, `request_recovery`, `inspect_overwatcher`, and `notify_supervisor`.
+4. Before CELL dispatch, pass `slk-run-readiness/v1` with exact service/worker health plus both deterministic workflow identities, then start the closed 4.4.0 request once.
+5. Preserve startup fingerprint, workflow IDs, update receipts and terminal closure as Run evidence.
 
-   ```powershell
-   temporal.exe server start-dev --ip 127.0.0.1 --port 7233 --ui-port 8233 --db-filename C:\path\to\slk-temporal.db
-   ```
+A development server is suitable only for local evaluation. Durable production operation needs separately governed backup, access control and availability. A missing SDK may not break import of the SLK core, but a 4.4.0 Run without proven Temporal readiness is blocked.
 
-3. Create a dedicated Python virtual environment and install `integrations/temporal` as shown in its README.
-4. Supply an adapter module whose activities call the already-authoritative SLK state and transport commands. Start `slk-temporal-worker` on the frozen task queue.
-5. Write a closed startup JSON matching `StartSlkRequest`, then call `slk-temporal-start` once. Preserve the returned startup fingerprint and workflow IDs with the Run evidence.
-6. Stop the local process explicitly when no opted-in Run requires it. The SLK installer never installs, enables or restores a server or Docker.
+## Closed operation
 
-The development server is suitable for local evaluation, not a production durability claim. Production use requires a separately operated Temporal service and its own backup, access-control and availability decisions.
+The startup request binds version 4.4.0, Run/revision/task queue, timeouts, idempotency key and exactly one Supervisor, Checker, Worker and Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, missing OW, invalid hashes, wrong versions, stale update events and mismatched acknowledgements fail closed.
 
-## Startup request
+Each delivery update freezes operation/message, sender/receiver, payload, GO/CELL/round, runtime revision and start deadline. Duplicate identical updates are idempotent; changed duplicates, extra unresolved deliveries and wrong-scope ACKs are rejected. Temporal records no synthetic progress and cannot turn recovery, terminal completion or elapsed time into acceptance.
 
-The exact startup schema is enforced by `slk_temporal.contracts.StartSlkRequest`. It binds method version 4.3.6, `run_id`, runtime revision, task queue, acknowledgement timeout, startup idempotency key, exactly one Supervisor/Checker/Worker endpoint and at most one Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, invalid hashes and unsupported versions fail closed.
+## Failure and closure
 
-The parent first obtains a hash-bound readiness receipt. It then starts `slk-run-<run_id>` once. A caller may reconnect to the same unchanged parent workflow; a changed request under the same identity is rejected through the frozen startup fingerprint.
-
-## Operation sequence
-
-1. The authoritative sender requests one delivery with immutable operation/message identity, role endpoints, scope, payload SHA-256 and runtime revision.
-2. The delivery activity invokes the existing transport boundary once.
-3. The thin adapter calls the installed `slk-transport inspect-native-activity` entrance for the exact receipt; it must not implement a second PID/session/legacy-marker heuristic. Only the validated v2 start is converted to the matching ACK, while later continuity keeps `UNKNOWN` distinct from `DEAD`.
-4. The original sender commits the existing SLK delivery-start transaction. Temporal does not commit TOKEN.
-5. If the ACK deadline expires first, the workflow requests exact recovery from the Overwatcher or sender. It does not retry side effects invisibly or alter engineering scope.
-
-Only one unresolved delivery is permitted per serial Run workflow. Duplicate unchanged updates are idempotent; changed duplicates and mismatched ACKs fail closed.
-
-## Fallback
-
-- SDK/package absent: use normal SLK direct communication.
-- Service unreachable before opt-in readiness: do not start Temporal mode; use direct mode or report a startup blockage.
-- Service becomes unavailable after opt-in: retain the last authoritative SLK state and report continuity as unavailable; do not infer ACK, D1, D2 or progress.
-- Adapter cannot verify the standard native-activity query or continuation route: return `BLOCKED`; Supervisor decides outside Temporal.
-
-No fallback may silently change receiver, model, reasoning effort, role instance, CELL, attempt, payload or acceptance authority.
+Service/worker/adapter failure after readiness preserves the last authoritative SLK facts, freezes the runtime guard and routes repair to Supervisor. It never silently falls back to an unguarded Run. After exact Run terminal evidence and Supervisor closure, close only that Run's workflows; keep the shared service available for other Runs.

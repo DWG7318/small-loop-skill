@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 import hashlib
 import json
 import os
 import re
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -82,7 +84,14 @@ def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary_name, path)
+        for attempt in range(3):
+            try:
+                os.replace(temporary_name, path)
+                break
+            except OSError as exc:
+                if exc.errno not in {errno.EBUSY, errno.EPERM} or attempt == 2:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
     finally:
         if os.path.exists(temporary_name):
             os.unlink(temporary_name)
@@ -312,6 +321,37 @@ def validate_native_task_activity(
         or event.get("sequence") != sequence
     ):
         raise NativeActivityError("native activity event is invalid")
+    tail = event.get("tail")
+    if tail is not None:
+        if not isinstance(tail, list) or len(tail) > 12:
+            raise NativeActivityError("native activity tail must contain at most twelve events")
+        previous_sequence = -1
+        for item in tail:
+            if not isinstance(item, Mapping) or set(item) != {
+                "kind", "sequence", "observed_at", "detail_sha256"
+            }:
+                raise NativeActivityError("native activity tail must be metadata-only")
+            item_sequence = item.get("sequence")
+            detail_sha256 = item.get("detail_sha256")
+            if (
+                not isinstance(item.get("kind"), str)
+                or not item["kind"]
+                or not isinstance(item_sequence, int)
+                or isinstance(item_sequence, bool)
+                or item_sequence <= previous_sequence
+                or item_sequence > sequence
+                or not isinstance(item.get("observed_at"), str)
+                or not isinstance(detail_sha256, str)
+                or not SHA256.fullmatch(detail_sha256)
+            ):
+                raise NativeActivityError("native activity tail metadata is invalid")
+            try:
+                datetime.fromisoformat(str(item["observed_at"]).replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise NativeActivityError("native activity tail timestamp is invalid") from exc
+            previous_sequence = item_sequence
+        if tail and tail[-1]["sequence"] != sequence:
+            raise NativeActivityError("native activity tail must end at the current sequence")
     waiting_on = value.get("waiting_on")
     if waiting_on is not None and (
         not isinstance(waiting_on, str) or not waiting_on or waiting_on != waiting_on.strip()

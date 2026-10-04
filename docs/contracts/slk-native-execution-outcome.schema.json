@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-native-execution-outcome.schema.json",
+  "title": "SLK identity-bound native execution outcome",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "adapter", "run_id", "cell_id", "message_id", "instance_id", "session_id", "status", "started_at", "ended_at", "duration_ms", "exit_code", "error_code", "stdout_sha256", "stderr_sha256"],
+  "properties": {
+    "schema_version": {"const": "slk.native-execution-outcome/v1"},
+    "adapter": {"const": "dsh-worker"},
+    "run_id": {"type": "string", "minLength": 1},
+    "cell_id": {"type": "string", "minLength": 1},
+    "message_id": {"type": "string", "format": "uuid"},
+    "instance_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "pattern": "^session-"},
+    "status": {"enum": ["execution_failure", "timed_out"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "ended_at": {"type": "string", "format": "date-time"},
+    "duration_ms": {"type": "integer", "minimum": 0},
+    "exit_code": {"type": ["integer", "null"]},
+    "error_code": {"enum": ["DSH_EXIT_NONZERO", "DSH_TIMEOUT"]},
+    "stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "timed_out"}}}, "then": {"properties": {"exit_code": {"const": null}, "error_code": {"const": "DSH_TIMEOUT"}}}},
+    {"if": {"properties": {"status": {"const": "execution_failure"}}}, "then": {"properties": {"exit_code": {"type": "integer"}, "error_code": {"const": "DSH_EXIT_NONZERO"}}}}
+  ]
+}

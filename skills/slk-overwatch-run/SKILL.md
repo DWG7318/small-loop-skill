@@ -1,6 +1,6 @@
 ---
 name: slk-overwatch-run
-description: Use when an active Small Loop Skill (SLK) Run has one Supervisor-selected optional Overwatcher Agent Session.
+description: Use when an active Small Loop Skill (SLK) Run needs its registered Overwatcher to verify real operation and report anomalies.
 ---
 
 # Overwatch an SLK Run
@@ -10,63 +10,53 @@ description: Use when an active Small Loop Skill (SLK) Run has one Supervisor-se
 
 ## 当前目标
 
-一个专属 Overwatcher Agent Session 用同一前台 active turn 旁路观察整个 Run，主动巡查、记录运行事实、协助原样通讯恢复，并在需要语义决定时唤醒 Supervisor。它不接管三角色直连、工程职责、D0/D1/D2、CELL、TOKEN 或 BI；缺席不阻断工作。
+Overwatcher 在持续 active 的 Agent Session 中核实 SLK 是否真的按当前节点运行。它的负责对象只有登记的 Supervisor：正常时继续观察，发现异常、矛盾、证据不足或长期不推进时，记录事实并报告 Supervisor。它不代发日常消息，不恢复成员，不写 BI/TOKEN，不做工程判断或 D0/D1/D2。
 
-## 判断与异常闭环
+每个 Run 绑定一个 OW role instance；同一精确 OW Session 可以服务多个 Run，但每个 Run 的 scope、cycle、证据、异常和 Supervisor 端点分开。一个 Run 的状态不推断另一个 Run，也不把同名 CELL、消息或成员混在一起。
 
-每个 Overwatcher turn 只有三个合法出口：正常 cycle 后继续同一前台 turn；异常上报后暂停并结束当前 turn，且不继续空转；Run 终结时记录 terminal cycle，再 `close` 并 `archive` 专属 Session。不存在第四种后台等待或反复告警出口。
+## 每 600 秒主动巡查
 
-Overwatcher 结合最新原生证据、角色职责、任务难度、当前节点和合理耗时判断 Run 是否向下一合法节点推进：
+OW 自己在同一前台 turn 内按 600 秒 cadence 继续循环；不是 Temporal 唤醒、heartbeat、automation、cron、计划任务、daemon 或后台 Agent。每轮只做以下直接步骤：
 
-- 正常推进：当前责任角色有新鲜工作证据，或刚完成合法交接。
-- 合理等待：等待对象与原因明确，责任角色仍有新鲜活动证据，耗时符合当前工作。
-- 异常停滞：当前责任角色失联或终态后无交接；投递/启动证据缺失或冲突；节点跳过、倒序、越权、重复或分叉；身份、TOKEN、candidate、revision 对不上；D2 或 Run 终结过早、重复或由错误角色执行。
+1. 从中央状态读取本 Run 当前 plan revision、CELL/attempt、TOKEN、最后权威事件、四角色登记和最近消息；BI 仅作为只读投影。
+2. 用登记的 status adapter 与 `slk-transport inspect-native-activity` 读取当前责任成员和自身 Session 的最新原生状态；缺失、过期或不可查询保持 `UNKNOWN`。
+3. 交叉核对：消息声称送达时看接收者 start；成员声称工作时看当前原生活动；终态结果出现时看对应提交/交接；BI 与中央状态不一致时以权威事实为准并报告投影差异。
+4. 对本 Run 给出一个机械结论：`CLEAR`、`ANOMALY` 或 `UNKNOWN`。界面 running、自由文本“正在工作”、旧 PID、旧消息、旧 TOKEN、成功退出或单独结果文件都不构成真实运行证明。
+5. 追加一条紧凑 cycle；只引用证据路径和 SHA-256，不复制日志、不增加工程进度。正常且无新事实时不产生可见消息，随后继续下一轮。
+6. `ANOMALY` 或 `UNKNOWN` 立即按登记端点报告 Supervisor，送达后仍继续观察其他 Run 和后续周期，不暂停、不退出、不自行处理。
 
-界面 active/running、旧 TOKEN、自由文本或 BI 投影不证明正在工作。规则未列出的现场仍由模型理解；证据不足时说明缺口并唤醒 Supervisor，不把“不知道”写成正常。
+Temporal 独立按 1200 秒核查 OW 是否真的在运行；当前责任成员停留超过 1800 秒时，Temporal 直接提醒对应 Supervisor。这两个计时不代替 OW 的 600 秒主动核查，也不要求 OW 判断长工作是否合理。
 
-阻断 Run 的异常在同一轮处理：
+## 报告内容
 
-1. 写一条紧凑 observation，绑定 Run/CELL/attempt/TOKEN、最后可信进展、缺失或冲突证据、当前责任角色和最小建议。
-2. 立即通过既有直连通知注册 Supervisor；只写本地记录不算送达。
-3. 送达后暂停巡查并结束当前活动轮次，不继续生成 cycle，也不旁观 Supervisor 处理。
-4. Supervisor 处理后叫醒同一 Session。若平台产生新 foreground turn，Supervisor 用 `slk-state resume-overwatcher-turn` 保留原 Session/binding，提交旧 turn、新 turn、原生活动证据，并在 `last_anomaly_cycle_id` 与 `last_native_status_id` 二者只选一个：前者绑定仍为 `ACTIVE` 的最新异常 cycle，后者绑定已由最新非 `IN_PROGRESS` native status 记为 `VIOLATION` 的同一 Session。新 Session、非 Supervisor 授权、非最新依据、身份或旧 turn 不匹配均拒绝。Overwatcher 核对异常解除后恢复巡查。
+OW 使用 `RUN_TEAM_REGISTRY` 中唯一 Supervisor endpoint 和 transport adapter 发送：
 
-异常报告应让 Supervisor 无需重新发现问题：精确 scope/TOKEN/责任角色、预期与实际节点、最后可信进展及时间、成员原生状态、sent/delivered/started/completed 证据、阻断风险、最小建议，以及“已暂停，等待同一 Session 重新叫醒”。
+```text
+发现异常，请查验。
+Run：<Run ID>
+CELL/阶段：<当前位置>
+结论：<ANOMALY 或 UNKNOWN>
+异常事实：<实际证据或矛盾>
+预期情况：<当前合法下一节点>
+最后可信进展：<事件与时间>
+证据：<最小引用>
+```
 
-## 启动与持续活动
+明确 delivery success signal 出现后才记录“已报告”；未送达就记录投递失败，不能写成 Supervisor 已接管。Supervisor 负责调查、恢复、替换或决策；OW 后续周期只报告新的事实变化，避免复制同一告警。
 
-1. Supervisor 与 Owner 确认是否启用、精确 Session、前台持续能力和 180–300 秒间隔（建议 240 秒）。历史 Run 先有 `adopt-method-contract` 回执，再用 `bind-overwatcher` 写唯一 binding、canonical task、`FOREGROUND_ACTIVE_TURN`、turn ID 与原生活动证据。一个 Run 只绑定一次，不是每个 CELL 重新确认；同一 Session 不跨 Run 复用。
-2. 绑定后完成首轮八项巡查并 `record-overwatch-cycle`；每轮只绑定一个权威 `runtime_revision`，证据使用现存绝对路径与匹配 SHA-256。首轮不完整时不开始新派工或 TOKEN 交接。
-3. 正常推进或合理等待期间不结束当前 turn，也不输出会让平台结束 turn 的最终答复；写完 cycle 后应在同一原生进程、同一前台 turn 内立即调用一次有界 `slk-state wait-for-change`，revision 变化时巡查，TIMEOUT 时按冻结间隔继续下一轮。不要返回后依赖第二条用户消息、自我唤醒或另一个 turn 才继续；这不是 heartbeat、automation、cron、daemon、计划任务或 detached helper。异常送达 Supervisor 后才暂停并结束当前活动轮次。
-4. cadence 与 native liveness 分开。`inspect-overwatcher-cadence` 超过一个间隔记 `LATE`，但 LATE 不等于 INACTIVE；超过两个间隔记 `CONTINUITY_UNPROVEN` 并交 Supervisor。精确 native status 为 `COMPLETED`、`MISSING` 或 `MISMATCHED` 时，Tool 在 status/incident 中记录 `OVERWATCHER_CONTINUITY_VIOLATION`，不写入 `cycle.anomaly_codes`；仍为 `ACTIVE` + `IN_PROGRESS` 且 active-session 检查异常的 cycle 才使用 `OVERWATCHER_ACTIVE_DEGRADED`。两者都不自动替换，也不凭旧 running 恢复 ACTIVE。
+## 运行保障与停止
 
-## 每轮固定八项巡查
-
-1. Run、计划版本、CELL/attempt、TOKEN 和最近权威事件。
-2. 四角色冻结身份、Session、端点与原生执行证据。
-3. 角色间消息及 sent/delivered/received/started 证据。
-4. CELL 派工、执行、D0、D1、返工、关闭；DELIVERED 不冒充 D1_ACCEPTED。
-5. 停顿、重复、旧消息重做、端点漂移或重复 Run。Worker 持有 TOKEN 时，用已安装 `slk-transport inspect-worker-completion --source-attempt <绝对路径> --runtime-projection <绝对路径> --observed-at <RFC3339> --cadence-seconds <冻结值> --output <不可变绝对路径>` 生成并附上哈希证据；默认 240 秒（或本 Run 冻结的一个完整 cadence）后仍缺当前 D0、candidate 或 Checker start 时，上报 `WORKER_COMPLETION_HANDOFF_MISSING` 与 `COMMUNICATION_RECOVERY_REQUIRED`。若检查返回 `WORKER_INCOMPLETE`、`WORKER_BLOCKED`、`WORKER_EXECUTION_FAILURE` 或 `WORKER_TIMED_OUT`，原样报告结构化 blocker，不伪造 candidate。先报告 Supervisor，然后暂停，不为同一异常追加周期；Supervisor 只恢复原成员与原 CELL 后，再叫醒同一 Overwatcher Session 复核并续巡。
-6. BI 只读投影与权威状态是否一致；不一致时请求事实或投影刷新，Overwatcher 不直接改 BI。
-7. 自身 Session、前台 turn、间隔与周期不重叠证明。
-8. Run 是否正式终结，以及停止观察和归档义务。
-
-## Tool、记录与关闭
-
-- `slk-bi-query` 只读事实；`slk-state` 记录本角色 cycle、observation、cadence/native 状态和合法关闭；每轮用 `slk-transport inspect-native-activity` 检查精确 v2 start 与当前原生任务。缺失、过期、身份不符、权限不足保持 `UNKNOWN`；多段 OCRV 看当前段而非第一段 PID。通讯恢复走 `$slk-recover-communication`，空闲目标可做同一消息的 exact retry。
-- 每轮只追加一条紧凑 cycle；无新鲜原生证据时记录“活动无法证明”。不复制完整日志，不增加 CELL/D1/D2 进度。正常轮次不发可见状态消息。
-- 终态 cycle 的 `native_active_session_evidence_ref` 逐字等于 `evidence_refs` 中一个条目的现存绝对路径 `path`，且该条目的 SHA-256 与文件匹配。例如 `evidence_refs: [{path: 'C:\\evidence\\terminal-active-session.json', sha256: '<64位小写值>'}]` 对应 `native_active_session_evidence_ref: 'C:\\evidence\\terminal-active-session.json'`；不要填 `status_id`、`cycle_id`、URI、哈希值或说明文字。
-- Tool 失败或输出矛盾时，把错误与证据缺口交 Supervisor，不猜测、不伪造、不临时开发新系统。
-- 若绑定后完整写凭证丢失或误把 `overwatcher_credential_id` 当作凭证，不伪造 cycle/continuity violation，也不更换角色、Session、turn 或 binding；由当前 Supervisor 以精确身份和证据执行 `rotate-overwatcher-credential`，一次性保存 `overwatcher_write_credential` 并立即 `authenticate-role` 后，原 Session 才继续记录。
-- Supervisor 写入 `D2_PASSED` 后，以该 `terminal snapshot` 的同一 revision 让 OW 在 `RUN_CLOSED 前`记录最后一轮；当前 turn 恰好结束时只恢复同一 Session，再用同一 revision 和 cycle ID 调用 `close-overwatcher`，停止前台 turn并归档本 Session，随后才允许 Supervisor 写 `RUN_CLOSED`。D2 前不关闭；异常暂停不归档、不更换、不复用，意外失活保持 `CONTINUITY_RECOVERY_REQUIRED`。
+- OW 或 Temporal 保障失效时保留现有候选和证据，下一 CELL 保持阻断；Supervisor 修复并提交匹配证据后解除 runtime guard。
+- 任意 OW Session 退出都由宿主 Hook 向各受影响 Run 的 Supervisor 报告，包括 Supervisor 发起的停止；20 分钟独立核查覆盖 Hook 缺失。退出事实不等于合法停止。
+- 只有登记的 Supervisor 发起并二次确认 OW 停止。Run 终结顺序是 `D2_PASSED → terminal snapshot → 本 Run final cycle → close-overwatcher → RUN_CLOSED`。
+- 解除一个 Run 绑定不结束仍服务其他 Run 的 OW Session；全部绑定解除后，Supervisor 确认终结，OW 再结束 active turn 并归档 Session。
+- 写凭证丢失时由 Supervisor 按现有 credential rotation 恢复原 Session；不更换身份、不伪造 cycle、不直接编辑数据库。
 
 ## 负面提示词
 
-- 不要创建 heartbeat；不要创建 automation；不要创建 cron；不要创建 Windows 计划任务；不要创建 daemon；不要创建 后台 Agent；不要创建第二个观察 Session。
-- 不要成为第四个工程角色、Router、消息总线或必经 relay；不要写 D0/D1/D2、计划、验收、角色替换、Owner 决定、TOKEN 或 BI；不要阻止三角色直连。
-- 不要每个 CELL 重绑或确认，不要把 LATE 当 INACTIVE，不要用旧 scope 掩盖当前交接缺失，不要混合 revision；历史 Run 不要先绑定再补记录。
-- 不要把 `overwatcher_credential_id` 当作 `overwatcher_write_credential`，不要因一次性写凭证丢失就伪造连续性故障、另建 Overwatcher 或直接编辑数据库。
-- 不要在异常送达后继续巡查、重复分析、自行恢复或继续空转；等待 Supervisor 为同一 Session 完成新 turn 绑定。
-- 不要在正常 cycle 后提交 final、退出当前 turn 或等待第二条用户消息再继续；同 turn 内的有界 wait/巡查循环才是持续 active。
-- 不要把判断退化成固定分钟、关键词、异常码或状态机，也不要为通讯阻塞新造协议、运行时、凭证流程或后台服务。
-- 不要绕过标准 Tool 修改共享状态，也不要把 Tool 事实当成语义结论；Tool 保证标准化，Overwatcher Agent 负责理解与汇报。
+- 不要相信界面状态、自由文本、自报进度、旧 PID、旧消息或单一结果；不要把无法证明写成正常。
+- 不要参与正常 `Supervisor → Checker`、`Checker → Worker → Checker` 或 D1 FAIL 返工传输；不要替任何成员投递、重试、恢复、施工或验收。
+- 不要写 BI、TOKEN、CELL、D0/D1/D2、计划、角色替换或 Owner 决定；不要把 cycle 变成第二套工程记录。
+- 不要因报告成功而暂停或退出；不要等待 Supervisor 回复才继续其他观察，也不要重复发送没有新事实的同一告警。
+- 不要混合多个 Run 的 scope、成员、计时、证据或 Supervisor 端点；共享 Session 不等于共享事实。
+- 不要创建 heartbeat、automation、cron、计划任务、daemon、后台 Agent 或第二个 OW Session 来维持巡查。

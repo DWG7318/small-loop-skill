@@ -125,6 +125,7 @@ def test_supervisor_to_worker_requires_closed_d1_rework_directive() -> None:
         "d1_failure_event_id": "d1-failed-001",
         "failed_candidate_sha256": "a" * 64,
         "rework_round": 1,
+        "investigation_mode": "STANDARD",
         "cell_goal": "Repair the current CELL without changing its acceptance target.",
         "acceptance_criteria": ["The failed behavior is corrected."],
         "findings": ["The current candidate violates criterion one."],
@@ -148,6 +149,7 @@ def test_supervisor_to_worker_requires_closed_d1_rework_directive() -> None:
         "d1_failure_event_id",
         "failed_candidate_sha256",
         "rework_round",
+        "investigation_mode",
         "cell_goal",
         "acceptance_criteria",
         "findings",
@@ -164,6 +166,7 @@ def test_d1_rework_directive_rejects_missing_fields(missing: str) -> None:
         "d1_failure_event_id": "d1-failed-001",
         "failed_candidate_sha256": "a" * 64,
         "rework_round": 1,
+        "investigation_mode": "STANDARD",
         "cell_goal": "Repair the current CELL.",
         "acceptance_criteria": ["The failed behavior is corrected."],
         "findings": ["The candidate violates criterion one."],
@@ -180,6 +183,37 @@ def test_d1_rework_directive_rejects_missing_fields(missing: str) -> None:
     envelope["payload_sha256"] = payload_hash(payload)
 
     with pytest.raises(ContractError, match="rework directive"):
+        parse_delivery(endpoint, envelope)
+
+
+@pytest.mark.parametrize(
+    "rework_round,investigation_mode",
+    [(1, "AGGRESSIVE"), (2, "STANDARD"), (3, "STANDARD")],
+)
+def test_d1_rework_directive_requires_aggressive_investigation_after_second_failure(
+    rework_round: int, investigation_mode: str
+) -> None:
+    endpoint = endpoint_value(role="worker")
+    payload = {
+        "d1_failure_event_id": "d1-failed-001",
+        "failed_candidate_sha256": "a" * 64,
+        "rework_round": rework_round,
+        "investigation_mode": investigation_mode,
+        "cell_goal": "Repair the current CELL.",
+        "acceptance_criteria": ["The failed behavior is corrected."],
+        "findings": ["The candidate violates criterion one."],
+        "evidence_refs": ["evidence/d1-failed-001.json"],
+        "root_cause_hypothesis": "The candidate updates the wrong state boundary.",
+        "minimal_experiment": "Reproduce the boundary mismatch with one focused test.",
+        "minimal_repair_scope": "Correct only the current CELL state transition.",
+        "regression_target": "The focused regression fails before and passes after.",
+    }
+    envelope = envelope_value(sender_role="supervisor", receiver_role="worker")
+    envelope["payload_type"] = "D1_REWORK_DIRECTIVE"
+    envelope["payload"] = payload
+    envelope["payload_sha256"] = payload_hash(payload)
+
+    with pytest.raises(ContractError, match="investigation_mode"):
         parse_delivery(endpoint, envelope)
 
 
@@ -220,6 +254,35 @@ def test_d1_failure_escalation_is_closed_and_checker_owned() -> None:
     missing["payload_sha256"] = payload_hash(missing["payload"])
     with pytest.raises(ContractError, match="D1 failure escalation"):
         parse_delivery(endpoint, missing)
+
+
+def test_d2_ready_payload_is_closed_and_role_bound() -> None:
+    d2_ready = {
+        "d1_event_id": "d1-pass-cell-002",
+        "required_cell_ids": ["CELL-001", "CELL-002"],
+        "accepted_cell_ids": ["CELL-001", "CELL-002"],
+        "final_candidate_message_id": MESSAGE_ID,
+        "d2_criteria": ["Verify the bounded Run."],
+        "evidence_refs": ["D:/run/evidence.json"],
+    }
+    to_supervisor = envelope_value(sender_role="checker", receiver_role="supervisor")
+    to_supervisor["cell_id"] = "CELL-002"
+    to_supervisor["payload_type"] = "D2_READY"
+    to_supervisor["payload"] = d2_ready
+    to_supervisor["payload_sha256"] = payload_hash(d2_ready)
+    assert parse_delivery(endpoint_value(role="supervisor"), to_supervisor).envelope.payload_type == "D2_READY"
+
+    missing = copy.deepcopy(to_supervisor)
+    del missing["payload"]["accepted_cell_ids"]
+    missing["payload_sha256"] = payload_hash(missing["payload"])
+    with pytest.raises(ContractError, match="D2_READY"):
+        parse_delivery(endpoint_value(role="supervisor"), missing)
+
+    wrong_edge = copy.deepcopy(to_supervisor)
+    wrong_edge["receiver_role"] = "worker"
+    wrong_edge["receiver_role_instance_id"] = "RUN-A-worker-001"
+    with pytest.raises(ContractError, match="checker->supervisor"):
+        Envelope.from_dict(wrong_edge)
 
 
 def test_worker_completion_recovery_is_closed_and_supervisor_to_checker_only() -> None:

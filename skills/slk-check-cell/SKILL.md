@@ -28,11 +28,11 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
    - `D1 FAIL：CELL n/N，进入返工`；`D1 INCOMPLETE：CELL n/N，说明未证明项`
 6. D1 FAIL 时形成结构化 `D1_FAILURE_ESCALATION`：绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体差距、复现方式、期望结果和证据引用；把 TOKEN 交给 Supervisor 生成改进指引，不由 Checker 直接启动返工。
 7. 在执行 D1 的同时，顺手记录本 CELL 的容量事实，例如工作量是否合适、是否接近当前能力或是否因过大带来返工；这复用已有事实，不增加额外检查。
-8. 标准工具先把终态 run/message、当前原生 review 身份、实际 result SHA-256 及分段 aggregate/segment 哈希闭合绑定，再用 Checker 凭证把 D1 结果、错误、返工与容量事实写入 `slk-state`，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项，不写 `D1_PASSED` 或 `D1_FAILED`、不推进令牌。后继交付仍由发送者在匹配 v2 start 后原子提交 TOKEN、事件和 revision；失败记 `TRANSPORT_FAILED` 且责任仍由 Checker 持有。
+8. 标准工具先把终态 run/message、当前原生 review 身份、实际 result SHA-256 及分段 aggregate/segment 哈希闭合绑定，再用 Checker 凭证把 D1 结果、错误、返工与容量事实写入 `slk-state`，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项，不写 `D1_PASSED` 或 `D1_FAILED`、不推进令牌。FAIL 应由 OCRV 标准 `--slk-post-d1` 后缀把原失败交给 Supervisor；PASS 应由 `--slk-complete-d1` 后缀投递精确下一 CELL，或在最终 CELL 把 `D2_READY` 交给 Supervisor。只有接收者匹配 v2 start 与发送者原子 TOKEN commit 均成立，Checker 本轮才完成；否则记 `TRANSPORT_FAILED` 且责任仍由 Checker 持有。
 
 ## 后继
 
-- D1 PASS 后，Checker 更新进度；还有 CELL 时沿 `Checker → Worker` 使用 `$slk-dispatch-cell` 校准并派发下一个既定 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，沿 `Checker → Supervisor` 交付最终令牌和 D2 条件。
+- D1 PASS 后，Checker 更新进度；还有 CELL 时沿 `Checker → Worker` 使用 `$slk-dispatch-cell` 校准，并由标准 PASS 后缀派发精确下一 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，标准 PASS 后缀沿 `Checker → Supervisor` 交付 `D2_READY`、最终令牌和 D2 条件。
 - D1 FAIL 后，Checker 沿 `Checker → Supervisor` 发送 `D1_FAILURE_ESCALATION` 与 TOKEN，再由 `$slk-rework-cell` 进入受限返工路径。
 - D1 INCOMPLETE 时 Checker 保留 `SLK TOKEN`，不触发返工或失败升级；优先补齐证据，确需改变 Run 方案时再请 Supervisor 使用 `$slk-adjust-run` 协助，Supervisor 提供新证据后仍由 Checker 重判 D1。
 
@@ -42,3 +42,4 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 - 不要把 D1-A/B/C 内部检查段固定成两个文件、并行化、分配给其他角色、推进 TOKEN 或记录成多次正式 D1；它们始终汇成一个正式 D1。不要在零完成预算中止后重跑已完成范围或另开 candidate/D1/Worker 返工；不要把零 finding、零 comments、无报错或空证据列表自动 PASS，也不要把合法 INCOMPLETE 的空 findings/evidence 判成 payload invalid；不要把低严重性观察机械升级为 FAIL，不要把 INCOMPLETE 当成第三种闭合结论，不要让 Supervisor 后补证据自动替代 Checker 的 D1，也不要把间接验证写成真实目标环境验证。
 - 不要把 INCOMPLETE、`TRANSPORT_FAILED`、`OCRV_REVIEW_INCOMPLETE`、OCRV 进程退出或检查覆盖不完整伪装成产品 D1 FAIL、返工 round 或 `D1_FAILURE_ESCALATION`，不要让单个 segment verdict 冒充 aggregate D1，不要丢弃已完成 segment 后从零重查；不要让一次性 Worker/DSH 进程托管长审查，也不要让 Supervisor 重做或覆盖 OCRV 的 D1；不要把 Worker 的 DELIVERED、Overwatcher 的观察/恢复成功或 BI 状态当成 D1 PASS，也不要用终态结果补造缺失的启动证据或在 revisioned contract 中分步推进 TOKEN。
 - 不要把 aborted Session 当成自由重跑：仅在无 terminal、原进程已死、全部冻结身份/哈希匹配且未恢复过时，由密封原 Checker 先读 `session show`；有 manifest/items 才续接，无 manifest/items 才以完全相同冻结输入发起一次新审查。Root、Supervisor、Overwatcher 和普通 shell 不运行该恢复、不接触 Checker 凭证、不代写 D1。
+- 不要把“消息已发”、工具正常退出、可见文本、后来的终态或 OW/Supervisor 补救成功写成 Checker 已完成；不要跳过标准后缀、用错误下一 CELL、在未全部 D1 PASS 时发 `D2_READY`，或缺少接收者 v2 start/原子 TOKEN commit 仍结束 Checker。

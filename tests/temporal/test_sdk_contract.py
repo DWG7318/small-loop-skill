@@ -13,20 +13,29 @@ from slk_temporal.worker import _activities
 from slk_temporal.workflows import RunSlkWorkflow, StartSlkWorkflow
 
 
-def test_two_named_templates_and_three_adapter_activities_are_exposed() -> None:
+def test_two_named_templates_and_five_adapter_activities_are_exposed() -> None:
     assert StartSlkWorkflow.__temporal_workflow_definition.name == "SLK.Start"
     assert RunSlkWorkflow.__temporal_workflow_definition.name == "SLK.Run"
     assert ACTIVITY_NAMES == (
         "slk.prepare_run",
         "slk.deliver_message",
         "slk.request_recovery",
+        "slk.inspect_overwatcher",
+        "slk.notify_supervisor",
     )
     assert inspect.iscoroutinefunction(StartSlkWorkflow.run)
     assert inspect.iscoroutinefunction(RunSlkWorkflow.run)
 
 
 def test_workflow_surface_has_only_communication_updates_and_queries() -> None:
-    assert {"request_delivery", "native_started", "close_run", "status"}.issubset(
+    assert {
+        "request_delivery",
+        "native_started",
+        "overwatcher_exited",
+        "resolve_runtime_guard",
+        "close_run",
+        "status",
+    }.issubset(
         set(dir(RunSlkWorkflow))
     )
     for forbidden in (
@@ -40,7 +49,7 @@ def test_workflow_surface_has_only_communication_updates_and_queries() -> None:
         assert not hasattr(RunSlkWorkflow, forbidden)
 
 
-def test_adapter_loader_exposes_three_single_argument_temporal_activities(monkeypatch) -> None:
+def test_adapter_loader_exposes_five_single_argument_temporal_activities(monkeypatch) -> None:
     module = ModuleType("slk_test_adapter")
 
     async def prepare_run(value):
@@ -52,9 +61,17 @@ def test_adapter_loader_exposes_three_single_argument_temporal_activities(monkey
     async def request_recovery(value):
         return value
 
+    async def inspect_overwatcher(value):
+        return value
+
+    async def notify_supervisor(value):
+        return value
+
     module.prepare_run = prepare_run
     module.deliver_message = deliver_message
     module.request_recovery = request_recovery
+    module.inspect_overwatcher = inspect_overwatcher
+    module.notify_supervisor = notify_supervisor
     monkeypatch.setitem(sys.modules, module.__name__, module)
 
     loaded = _activities(module.__name__)

@@ -1,5 +1,15 @@
 # SLK Migration Guide
 
+## Current minor migration: 4.3.6 to 4.4.0
+
+Install the complete 4.4.0 package transactionally and run the normal writable state configuration so the verified schema-v8 backup precedes migration 0009/schema v9. Installation alone does not adopt, resume, dispatch, inspect, start Temporal, open BI or modify product files. At an Owner-confirmed stable Supervisor boundary, an exact snapshot may adopt only the adjacent `4.3.6 → 4.4.0`; Run identity, plan, CELL/attempt, roles/endpoints, TOKEN, candidates, D0/D1/D2, transport evidence, OW history and product state remain immutable.
+
+Before any new 4.4.0 CELL, open BI 1.1.0 and create a new versioned four-role team registry; verify current DSH/OCRV/transport/state/BI/Temporal capabilities and device readiness; bind one distinct OW role for the Run at 600 seconds; start the Run's deterministic workflow pair on the shared local Temporal service; then complete all seven exact communication rehearsals with native receiver-start and response evidence. An exact OW Session may serve several Runs only when agent/runtime/model/endpoint/cadence facts match and each Run retains a distinct binding and scope. Missing or stale tools, BI, Temporal, OW, endpoint/status adapters, or rehearsal legs block dispatch.
+
+Do not reinterpret an in-flight 4.3.6 delivery, review, rework, OW cycle or optional Temporal workflow as 4.4.0. Finish or resolve that operation under its frozen contract, then take a fresh stable snapshot and adopt; otherwise keep the Run on 4.3.6. After adoption, direct members remain responsible for normal communication, OW only reports truth conflicts to Supervisor, and Temporal only guards continuity/timing. A runtime guard, OW exit, Temporal failure or unresolved member/endpoint state prohibits the next CELL until the current Supervisor records exact repair and restored evidence.
+
+No old receipt becomes PASS, no optional 4.3.6 OW/Temporal absence is silently filled, and no historical product Run is reopened. Do not mix 4.3.6 and 4.4.0 contracts inside one operation.
+
 ## Current patch migration: 4.3.5 to 4.3.6
 
 Install the complete 4.3.6 package transactionally. Installation alone does not adopt, resume, dispatch, inspect, move TOKEN or mutate product files. At an Owner-authorized Supervisor boundary, an exact snapshot may adopt `4.3.5 → 4.3.6`; schema remains v8 and Run identity, plan, CELL/attempt, roles/endpoints, TOKEN, candidate, D0/D1/D2 history, Overwatcher history, transport attempts and product changes are preserved.

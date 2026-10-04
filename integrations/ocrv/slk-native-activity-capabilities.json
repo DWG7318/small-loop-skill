@@ -1,6 +1,6 @@
 {
   "schema_version": "slk.native-activity-capability/v1",
-  "method_version": "4.3.6",
+  "method_version": "4.4.0",
   "runtime": "ocrv",
   "read_only_observation": true,
   "model_call_required": false,

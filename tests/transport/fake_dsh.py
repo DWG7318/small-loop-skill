@@ -56,6 +56,12 @@ if activity_path and activity_context and MODE != "resume-no-native-event":
 
 time.sleep(0.05)
 
+if MODE == "exit-nonzero-after-start":
+    print("provider stream closed", file=sys.stderr)
+    sys.exit(42)
+if MODE == "hang-after-start":
+    time.sleep(30)
+
 continuation_match = re.search(
     r'<slk-worker-continuation-task path=(".*?") sha256=("[0-9a-f]{64}") />',
     prompt,

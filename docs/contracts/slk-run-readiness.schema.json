@@ -10,9 +10,10 @@
     "roleRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["role", "expected_runtime", "actual_runtime", "expected_model", "actual_model", "adapter_command", "endpoint_path", "workspace_root", "context_capacity", "task_context_estimate", "required_skills", "required_tools", "native_activity_capability"],
+      "required": ["role", "role_instance_id", "expected_runtime", "actual_runtime", "expected_model", "actual_model", "adapter_command", "endpoint_path", "workspace_root", "context_capacity", "task_context_estimate", "required_skills", "required_tools", "native_activity_capability", "tool_update_status"],
       "properties": {
-        "role": { "enum": ["supervisor", "worker", "checker"] },
+        "role": { "enum": ["supervisor", "worker", "checker", "overwatcher"] },
+        "role_instance_id": { "type": "string", "minLength": 1 },
         "expected_runtime": { "type": "string", "minLength": 1 },
         "actual_runtime": { "type": "string", "minLength": 1 },
         "expected_model": { "type": "string", "minLength": 1 },
@@ -24,7 +25,8 @@
         "task_context_estimate": { "type": "integer", "minimum": 1 },
         "required_skills": { "$ref": "#/$defs/nonemptyStrings" },
         "required_tools": { "$ref": "#/$defs/nonemptyStrings" },
-        "native_activity_capability": { "type": ["string", "null"] }
+        "native_activity_capability": { "type": ["string", "null"] },
+        "tool_update_status": { "enum": ["CURRENT", "UPDATE_REQUIRED", "UNPROVEN"] }
       }
     },
     "option": {
@@ -40,13 +42,16 @@
     "request": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "run_id", "plan_revision", "roles", "optional_features"],
+      "required": ["schema_version", "run_id", "plan_revision", "roles", "optional_features", "bi_open_receipt", "temporal_readiness_receipt", "communication_rehearsal"],
       "properties": {
         "schema_version": { "const": "slk.run-readiness-request/v1" },
         "run_id": { "type": "string", "minLength": 1 },
         "plan_revision": { "type": "integer", "minimum": 1 },
-        "roles": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/$defs/roleRequest" } },
-        "optional_features": { "type": "array", "minItems": 5, "items": { "$ref": "#/$defs/option" } }
+        "roles": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/roleRequest" } },
+        "optional_features": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/option" } },
+        "bi_open_receipt": { "type": "string", "minLength": 1 },
+        "temporal_readiness_receipt": { "type": "string", "minLength": 1 },
+        "communication_rehearsal": { "type": "string", "minLength": 1 }
       }
     },
     "roleResult": {
@@ -54,7 +59,7 @@
       "additionalProperties": false,
       "required": ["role", "status", "reason_codes", "repair"],
       "properties": {
-        "role": { "enum": ["supervisor", "worker", "checker"] },
+        "role": { "enum": ["supervisor", "worker", "checker", "overwatcher"] },
         "status": { "enum": ["READY", "REPAIR_NEEDED", "INCOMPATIBLE"] },
         "reason_codes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "repair": { "type": "array", "items": { "type": "string", "minLength": 1 } }
@@ -71,7 +76,7 @@
         "status": { "enum": ["READY", "REPAIR_NEEDED", "INCOMPATIBLE"] },
         "reason_codes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "repairs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "roles": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/$defs/roleResult" } },
+        "roles": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/roleResult" } },
         "optional_features": { "type": "array", "items": { "$ref": "#/$defs/option" } },
         "request_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }

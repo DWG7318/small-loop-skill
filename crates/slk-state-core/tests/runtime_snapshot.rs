@@ -73,8 +73,8 @@ fn invalid_start_evidence_rolls_back_every_runtime_fact() {
 }
 
 #[test]
-fn slk_435_and_436_reject_legacy_started_marker_and_accept_exact_native_v2() {
-    for method_version in ["4.3.5", "4.3.6"] {
+fn slk_435_and_later_reject_legacy_started_marker_and_accept_exact_native_v2() {
+    for method_version in ["4.3.5", "4.3.6", "4.4.0"] {
         let fixture = Fixture::new_423();
         let connection = slk_state_core::schema::open_database(fixture.root.path()).unwrap();
         connection

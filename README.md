@@ -1,64 +1,39 @@
 # Small Loop Skill (SLK)
 
-Current version: **4.3.6**
+Current version: **4.4.0**
 
-SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. One SLK is one Run, and the Run directly contains one serial CELL path.
+SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 
 ## Core
 
 ```text
-Supervisor ↔ Checker ↔ Worker
+Supervisor → Checker → Worker → Checker
+                       FAIL → Supervisor → same Worker → Checker
+                 final PASS → Supervisor D2
 
-        optional Overwatcher (observe/recover/escalate only)
-
-CELL dispatch → Worker construction + D0 → candidate → isolated Checker D1 → PASS/rework → Supervisor D2
+Overwatcher: required, non-authoritative truth observation → Supervisor only
+Temporal: required continuity/timing guard; never engineering authority
 ```
 
-```text
-Plan Run/checks → verify fixed role bindings/options with `preflight-run` → size initial CELLs
-→ Original creates Supervisor and hands off → Supervisor role Eval → root record
-→ Supervisor creates Checker → Checker role Eval → Checker creates Worker
-→ communication tests → first CELL
-```
+Before any CELL, Supervisor opens BI 1.1.0, establishes the four-role `RUN_TEAM_REGISTRY`, proves current tools/capabilities and device readiness, starts the Run's deterministic `SLK.Start`/`SLK.Run` workflows on the shared local Temporal service, then completes the seven exact communication rehearsals. Missing, stale, guessed, or unqueryable identity/endpoint/tool evidence blocks dispatch.
 
-Codex is the Supervisor (one Owner-selected Sol-class model, such as `gpt-5.6-sol`, `gpt-6-sol`, or `gpt-6.1-sol`, with `xhigh`), OCRV is the Checker (Qwen3.8-Max), and DSH is the Worker (DeepSeek V4 Flash); runtime, model, session, and adapter identities are validated instead of inferred from prompts. Supervisor is activated for setup, escalated help, exemptions, member recovery, and D2. Checker and Worker own the daily CELL loop; Supervisor does not wait online for each CELL. D1 PASS advances acceptance; D1 INCOMPLETE leaves D1 open and TOKEN with Checker; a formal D1 FAIL alone permits the closed `Checker → Supervisor → same Worker` rework route, where Supervisor supplies a structured directive without redoing D1. A Run may additionally bind one dedicated, non-reusable Overwatcher Agent Session using one Owner-selected Luna-class model, such as `gpt-5.6-luna` or `gpt-6-luna`, with `xhigh`. Once bound, that same Session keeps one foreground active turn and performs a complete proactive cycle every 180–300 seconds; it is not a heartbeat, scheduled task, daemon, background Agent, relay, BI/TOKEN editor, or D0/D1/D2 authority. Each selected model is frozen in readiness; neither role may choose or silently replace it.
+Codex is Supervisor using an Owner-selected Sol-class model with `xhigh`; OCRV is Checker (Qwen3.8-Max); DSH is Worker (DeepSeek V4 Flash). Runtime, model, Session, adapter, endpoint and native activity are validated rather than inferred from prompts. Checker and Worker own the ordinary CELL loop. Supervisor acts at setup, D1 failure, recovery, exemption and D2; the second formal D1 failure for the same CELL requires an `AGGRESSIVE` investigation directive without transferring D1 authority.
 
-Run planning keeps D0, D1, and D2 as the existing inspection layers instead of creating inspection-only CELLs. Checks prefer existing entrances and direct product evidence, distinguish checking-tool/environment failures from product defects, and reuse still-valid objective evidence without repeating whole lower-level reviews or building a checking system first; insufficient evidence stays unproved, not PASS. When SLK joins an already completed or partly completed project, the plan preserves and reuses completed work, then chooses the reasonable minimum construction route, scope, and engineering activity needed to reach the current target reliably—not merely the smallest code diff.
+Overwatcher is mandatory and observes actual cross-evidence facts every 600 seconds. It never relays normal work, retries delivery, edits BI/TOKEN, judges D0/D1/D2, or repairs a member. It reports `ANOMALY` or `UNKNOWN` only to the exact registered Supervisor and continues observing. One Run has one distinct Overwatcher role binding; one exact active Session may serve multiple Runs only when all native identity/model/endpoint/cadence facts match and every Run remains separately scoped. Only Supervisor may stop it, and every exit triggers a Supervisor-confirmed runtime guard before another CELL may dispatch.
 
-SLK guidance helps members decide how to continue. Rework, communication recovery, member recovery, plan adjustment, and exemption remain available as situational options.
+Temporal is one shared headless local service for multiple Runs. Each Run has an independent `SLK.Start` and `SLK.Run`: exact native-start acknowledgement, original-sender recovery, a 30-minute member-residency notice to Supervisor, a 20-minute Overwatcher audit, and a per-Run closure. It never decides engineering state or replaces direct role communication. SLK does not install Docker; unavailable or failed required continuity remains blocked until Supervisor repairs it.
 
-RTK, Probe CLI, and Ponytail are optional external efficiency aids. They may be installed once in the Codex-wide environment, but installation does not authorize use in a project: the Owner chooses them per Run. SLK uses them explicitly without automatic hooks, MCP, or extra agents; native commands and raw evidence remain the fallback and authority.
+Run planning keeps D0, D1 and D2 as the existing inspection layers. Evidence shortage stays unproved, not PASS. RTK, Probe CLI and Ponytail remain optional efficiency aids with native fallbacks and raw evidence retention.
 
-Cross-Agent handoffs use the accepted `slk-transport` artifact with exact role endpoints and native Agent activation. In 4.3.6, the managed launcher uses its sibling hash-bound pyz; `slk.native-start/v2` separates payload and native-input hashes. `inspect-native-activity` reads exact process/task facts without waking an Agent or calling a model; missing or unqueryable evidence stays UNKNOWN. DSH stages the candidate; the independent OCRV host starts and authors D1. Legacy start/result corrections preserve original evidence, candidate and TOKEN. The bounded partial routes verify reusable checkpoints and may resume one exact later budget-partial segment once; completed fingerprints must be reused, earlier findings remain immutable, and a second partial stops without aggregate/D1. No fresh full-review fallback, budget/model increase, duplicate start or new role is permitted. `--prepare-only` validates source evidence without launching a host or model; its receipt is not D1 completion. See [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md).
+Cross-Agent delivery uses `slk-transport` with immutable endpoints, envelopes, candidate/evidence hashes, sealed role credentials and `slk.native-start/v2`. DSH and OCRV publish compact, atomic native activity plus terminal execution receipts; bulk logs remain local by path/hash. A Worker continuation is one-shot, orphaned native work is `WORKER_INCOMPLETE`, and Checker completion can route only the exact next Required CELL or final `D2_READY`. See [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md).
 
-4.3.6 continues to ship the optional `SLK.Start` and `SLK.Run` Temporal templates introduced in 4.3.0. They require explicit per-Run selection and an existing service/adapter, do not install Docker or become a hard dependency, and never decide engineering state. Their thin activity query reuses the same native-activity inspector; direct mode remains the fallback. See [`docs/runtime/SLK-TEMPORAL.md`](docs/runtime/SLK-TEMPORAL.md).
+## State and BI
 
-## 4.0 state and LE BI
-
-SLK 4.0 added one configurable machine-wide data root, a versioned SQLite authority, durable evidence, deterministic Markdown exports, and the standalone read-only **LE BI** desktop view. BI 1.1.0 adds the same-source WebBI archive, exact Agent-authored unread/message projection, four-role display, and optional ntfy delivery without changing SLK 4.3.6 method semantics or adding a local service. `slk-bi-query`, desktop BI, and WebBI remain non-authoritative. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
-
-LE BI displays each explicit Run identity as one compact row, whether independent or owned by a CLK/GLK project. Explicit predecessor lineage distinguishes current, historical, duplicate-active, and orphaned identities; titles and timestamps never merge Runs. Expanding a row shows the three technical roles, CELL facts, and a separate compact Overwatcher operational strip when bound. BI does not confirm message delivery, repair communication, or modify the Run; accepted observations may conservatively show that activity is unproved without changing engineering progress.
+SLK uses a versioned SQLite authority, durable evidence, deterministic Markdown exports and read-only LE BI. BI/WebBI 1.1.0 shows device/version, four-role identity, exact Agent-authored unread messages and archived Runs. WebBI accepts independent per-device Run uploads and optional ntfy delivery configured by server URL, username, password and topic; BI/WebBI never infer message types or modify engineering state. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
 
 ## Skill collection
 
-The active collection lives in [`skills/`](skills/):
-
-- [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) — lightweight identity and situational entry;
-- 14 sibling Skills for planning, resource continuity, role-based model selection, closed role Eval, team lifecycle, optional Overwatcher observation, CELL work, recording, rework, adjustment, communication recovery, and closure. Rework can call an available project-appropriate Debug Skill when root-cause diagnosis is needed.
-
-The 14 companion Skills are not standalone methods. Each applies only inside a Run that has selected Small Loop Skill (SLK) and has been routed to that situation by the main Skill or the same collection flow.
-
-Ordinary work reads the main Skill and the current situational Skill. Additional guidance is loaded when the situation changes. When maintaining SLK prompts, pair corrections for demonstrated misuse with direct “Do not…” reminders in an independent negative-prompt section; revise existing reminders rather than stacking duplicates. These sections clarify the same method, not another workflow or an approval/stop checklist.
-
-## Run record
-
-Supervisor initializes the Run and its first plan revision. Worker, Checker, and Supervisor append their own engineering facts to the configured SLK data root; an enabled Overwatcher appends only its own complete cycles and operational observations. Deterministic `SLK-RUN-<RUN-ID>.md` exports are generated from that authority, outside the product repository. The template remains at [`skills/slk-record-run/assets/SLK-RUN.template.md`](skills/slk-record-run/assets/SLK-RUN.template.md) for readable structure and compatibility.
-
-## Install
-
-Place the 15 directories under `skills/` as sibling directories in the Codex Skill root. The main entry and 14 focused companion Skills cover planning, resource continuity, model selection, execution, checking, optional observation, recovery, records, and closure. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
-
-A new Windows machine also needs one-time DSH, OCRV, cross-Agent transport, and state-tool configuration. Follow the [`SLK 4.0 Windows runtime setup guide`](docs/runtime/SLK-WINDOWS-RUNTIME.md). These machine-level components are shared by projects rather than reinstalled for every project.
+Install all 16 sibling directories under [`skills/`](skills/): [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) is the main router and 15 focused companion Skills cover planning, capacity, models, role Eval/team readiness, Temporal, Overwatcher observation, CELL execution/checking/rework, records, adjustment, recovery and closure. They are one method collection, not standalone methods.
 
 ## Validation
 
@@ -67,9 +42,7 @@ python scripts/validate_repository.py
 python -m pytest -q
 ```
 
-## Previous method
-
-SLK **v3.0.8** remains the last lightweight prompt-only release, and **v2.6.0** remains the previous monolithic recovery release. SLK 4.0 keeps the 3.x method semantics and adds durable cross-Agent state and read-only presentation rather than replacing the three-role Loop.
+For Windows machine setup, follow [`docs/runtime/SLK-WINDOWS-RUNTIME.md`](docs/runtime/SLK-WINDOWS-RUNTIME.md). The v3.0.8 tag preserves the prompt-only method and v2.6.0 preserves the earlier monolith.
 
 ## License
 

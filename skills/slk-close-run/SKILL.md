@@ -14,7 +14,7 @@ description: Use when an active Small Loop Skill (SLK) Run has D1 PASS or Superv
 
 ## 激活与 D2 交接
 
-所有计划 CELL 都有明确处理结果后，Checker 沿 `Checker → Supervisor` 用最终令牌激活 Supervisor。每个 CELL 的结果是 `D1 PASS` 或 `Supervisor 豁免`；两者分别记录，不把豁免改写为完成。初始交接聚焦原始 Run 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
+所有 Required CELL 都有明确处理结果后，Checker 使用 OCRV 标准 `--slk-complete-d1` 后缀，沿 `Checker → Supervisor` 发送闭合 `D2_READY` 并以最终令牌激活 Supervisor；只有匹配 Supervisor v2 start 和 Checker 原子 TOKEN commit 都成立才完成交接。每个 CELL 的结果是 `D1 PASS` 或版本化 Supervisor 豁免；两者分别记录，不把豁免改写为完成。初始交接聚焦原始 Run 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
 
 ## 检查对象隔离
 
@@ -51,3 +51,4 @@ Owner 可以根据结论继续查询；Supervisor 保留最终交接、D2结论�
 - 不要把“计划归档”、原生 Session 已结束或已发出关闭命令写成“已经归档”；缺少 Worker/Checker 的中央 `close-role` 收据时，active/ready 就是真实未归档状态。
 - 不要忽略这一边界：Supervisor 后补证据不能替代 Checker 的 D1；不要追认原本证据不足的 PASS，也不要在令牌尚未真实交回 Supervisor 时写入 D2 已开始或 Run 已关闭。
 - 不要在 `D2_PASSED` 前或缺少 OW final cycle/匹配 runtime revision 时关闭 Overwatcher；不要先写 `RUN_CLOSED` 再尝试恢复 OW turn、补 terminal cycle 或关闭 OW，也不要在普通 CELL 边界关闭、暂停、释放或重新确认 Overwatcher。
+- 不要让单条“请做 D2”、可见消息、终态结果或 Desktop bridge 已准备冒充 `D2_READY` 已交付；缺少全部 Required CELL 的当前 D1 结果、Supervisor v2 start 或 Checker 原子 TOKEN commit 时，不开始 D2。

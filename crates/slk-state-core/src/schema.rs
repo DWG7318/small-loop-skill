@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::config::{validate_data_root, ConfigError};
 
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 const MIGRATION_V1: &str = include_str!("../migrations/0001.sql");
 const MIGRATION_V2: &str = include_str!("../migrations/0002.sql");
 const MIGRATION_V3: &str = include_str!("../migrations/0003.sql");
@@ -18,6 +18,7 @@ const MIGRATION_V5: &str = include_str!("../migrations/0005.sql");
 const MIGRATION_V6: &str = include_str!("../migrations/0006.sql");
 const MIGRATION_V7: &str = include_str!("../migrations/0007.sql");
 const MIGRATION_V8: &str = include_str!("../migrations/0008.sql");
+const MIGRATION_V9: &str = include_str!("../migrations/0009.sql");
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -50,7 +51,7 @@ pub fn open_database(data_root: &Path) -> Result<Connection, SchemaError> {
     match version {
         SCHEMA_VERSION => {}
         0 => migrate_database(&mut connection, version)?,
-        1..=7 => {
+        1..=8 => {
             create_migration_backup(
                 &connection,
                 data_root,
@@ -160,6 +161,9 @@ fn migrate_database(connection: &mut Connection, from: i64) -> Result<(), Schema
     }
     if from <= 7 {
         transaction.execute_batch(MIGRATION_V8)?;
+    }
+    if from <= 8 {
+        transaction.execute_batch(MIGRATION_V9)?;
     }
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     transaction.commit()?;

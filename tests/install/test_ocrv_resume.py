@@ -49,7 +49,7 @@ def _run_recovery(
     )
     request = {
         "schema_version": "slk.ocrv-incomplete-checker-resume-request/v1",
-        "method_version": "4.3.6", "recovery_invocation_id": "recovery-1",
+        "method_version": "4.4.0", "recovery_invocation_id": "recovery-1",
         "run_id": original_value["run_id"], "go_id": "GO-001", "cell_id": original_value["cell_id"],
         "attempt": 1, "plan_revision": 1, "runtime_revision": 1, "token_sequence": 1,
         "worker_role_instance_id": "worker-1", "checker_role_instance_id": "checker-1",

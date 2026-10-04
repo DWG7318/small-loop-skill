@@ -32,11 +32,11 @@ RTK 用于压缩高噪声终端输出，Probe CLI 用于在精准读取前定位
 3. 依次写出需要完成的工程范围和 CELL 结果，保持单一线性顺序。接手已完成或部分完成项目时，先识别并保留、复用已完成工作，再按“合理最小施工”规划为稳定达到当前目标所需的施工路线、范围和工程活动；这不等于最小代码改动，并应避免重复施工、提前开展无关工作和不必要的全局重构。
 4. 使用 `$slk-guard-resources` 静态确认 Cargo 和其他明显独占资源的隔离、恢复与清理安排；没有相应资源时简要记为无特别安排。
 5. Agent 根据项目目标、现有测试、可观察结果和相关检验 Skill 自行设计分层检查；对依赖 UI、运行时或真实环境的 CELL，注明现有直接证据入口、能取得证据的角色与保存位置。D0提供最低施工信心，D1检查当前 CELL，D2检查成果组合；建议减少重复和过度检验，优先使用现有入口或直接操作取得产品证据，不把搭建检查体系当作开工前提。检查本身不另列为独立 CELL，只有检查发现后确需实施的工程工作才进入 CELL。
-6. 在创建 Supervisor 前使用 `$slk-select-models`，并以 `slk-transport preflight-run` 核对 Codex Supervisor、OCRV Checker、DSH Worker 的真实 runtime、model、adapter、endpoint、上下文/任务容量、可写工作区及必需 Skill/Tool；同时让 Owner 对 Ponytail、Temporal、Overwatcher、RTK、Probe CLI 和新增可选项逐项明确 ON/OFF。BoM 不是可配置项，不进入 Owner 选择或 readiness 请求。只有整体 `READY` 才进入施工，不按项目临场改成三个 Codex 对话或动态升级模型。
-7. 若 Owner 为本 Run 显式选择可选 Temporal 连续性，冻结现有服务端点、task queue、角色端点、ACK 超时和启动幂等键，再用 `StartSlkWorkflow` 启动唯一 `RunSlkWorkflow`；Temporal 服务不存在或 readiness 不通过时不要假装已启用，回退原直连或报告阻断。
+6. 在创建 Supervisor 前使用 `$slk-select-models`，再用 `$slk-manage-team` 与 `slk-transport preflight-run` 建立四角色 `RUN_TEAM_REGISTRY`，打开可见 BI 1.1.0，核对真实 runtime、model、adapter、endpoint、设备、上下文/任务容量、可写工作区及必需 Skill/Tool，并由原责任成员完成必要通讯演练。Owner 只对 Ponytail、RTK、Probe CLI 和新增可选项明确 ON/OFF；Overwatcher 与 Temporal 是 4.4.0 readiness 必需项，BoM 不进入配置。
+7. 使用 `$slk-manage-temporal` 验证共享本地服务，并以稳定 Run ID 启动本 Run 独立的 `SLK.Start` 与 `SLK.Run` 工作流；服务、worker、adapter 或 readiness 收据未证明时保持阻断，不以直连正常代替运行保障。
 8. 根据每项工作的难度、固定 Worker 能力、电脑和累积工程量，把工程工作划分为初始 CELL，并为测试、意外依赖和返工保留余量；这里形成的是开工所需的初始估计。规划 CELL 时应控制单个 CELL 的工程量，并考虑线性推进中依赖与上下文会逐步累积，使越靠后的 CELL——尤其包含衔接或融合工作的 CELL——通常保留更多余量，并在可行时拆得更小。
 9. 说明后续由 Checker 根据前序 CELL 的实际施工事实、D1和返工表现动态校准待派发 CELL，不把初始估计冻结成固定容量。
-10. 汇总 Run 目标、CELL 顺序与总数或近期窗口、分层检查方案、每个 CELL 的容量依据、资源安排、固定角色绑定、中央 SLK 数据根、可选效率工具、可选 Temporal 绑定、已知风险和 Owner 决定。
+10. 汇总 Run 目标、CELL 顺序与总数或近期窗口、分层检查方案、每个 CELL 的容量依据、资源安排、四角色绑定、中央 SLK 数据根、BI、Temporal、可选效率工具、已知风险和 Owner 决定。
 
 ## 完成后
 

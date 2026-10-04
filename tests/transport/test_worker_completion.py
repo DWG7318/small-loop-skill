@@ -418,7 +418,7 @@ def checker_recovery_request(tmp_path: Path) -> dict[str, object]:
     projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
     return {
         "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "recovery_invocation_id": "recovery-invocation-1",
         "recovery_envelope_message_id": "22222222-2222-4222-8222-222222222222",
         "run_id": "RUN-A",
@@ -466,7 +466,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
 
     def resume(continuation: dict[str, object]) -> dict[str, object]:
         calls.append("resume")
-        assert continuation["method_version"] == "4.3.6"
+        assert continuation["method_version"] == "4.4.0"
         return {
             "status": "CHECKER_DELIVERY_READY",
             "source_message_id": continuation["source_message_id"],
@@ -480,7 +480,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
     def activate(outcome: dict[str, object], continuation: dict[str, object]) -> dict[str, object]:
         calls.append("activate")
         assert outcome["status"] == "CHECKER_DELIVERY_READY"
-        assert continuation["method_version"] == "4.3.6"
+        assert continuation["method_version"] == "4.4.0"
         return {
             "status": "CHECKER_STARTED",
             "runtime_revision": 11,
@@ -498,7 +498,7 @@ def test_exact_ocrv_checker_authenticates_before_resuming_worker(
     ) -> dict[str, object]:
         calls.append("record")
         assert activation["status"] == "CHECKER_STARTED"
-        assert continuation["method_version"] == "4.3.6"
+        assert continuation["method_version"] == "4.4.0"
         assert credential.name == "checker.dpapi"
         assert timeout == 30
         return {
@@ -997,9 +997,9 @@ def runtime_projection(
             event["details_json"] = json.dumps({"message_id": MESSAGE_ID})
         events.append(event)
     return {
-        "summary": {"run_id": "RUN-A", "slk_version": "4.3.6", "plan_revision": 1},
+        "summary": {"run_id": "RUN-A", "slk_version": "4.4.0", "plan_revision": 1},
         "runtime_snapshot": {
-            "method_version": "4.3.6",
+            "method_version": "4.4.0",
             "plan_revision": 1,
             "runtime_revision": 7,
             "token_sequence": 14,
@@ -1008,6 +1008,82 @@ def runtime_projection(
         },
         "events": events,
         "operational_observations": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("outcome", "error_code", "exit_code", "expected_status"),
+    [
+        ("execution_failure", "DSH_EXIT_NONZERO", 42, "WORKER_EXECUTION_FAILURE"),
+        ("timed_out", "DSH_TIMEOUT", None, "WORKER_TIMED_OUT"),
+    ],
+)
+def test_worker_inspection_preserves_native_runtime_failure_without_worker_claim(
+    tmp_path: Path,
+    outcome: str,
+    error_code: str,
+    exit_code: int | None,
+    expected_status: str,
+) -> None:
+    attempt, endpoint, _checker = completion_fixture(tmp_path)
+    (attempt / "completed.json").unlink()
+    (attempt / "worker-result.json").unlink()
+    receipt = write_json(
+        attempt / "native-execution.json",
+        {
+            "schema_version": "slk.native-execution-outcome/v1",
+            "adapter": "dsh-worker",
+            "run_id": "RUN-A",
+            "cell_id": "CELL-001",
+            "message_id": MESSAGE_ID,
+            "instance_id": endpoint["address"]["instance_id"],
+            "session_id": endpoint["address"]["session_id"],
+            "status": outcome,
+            "started_at": "2026-09-23T00:00:00Z",
+            "ended_at": "2026-09-23T00:00:05Z",
+            "duration_ms": 5000,
+            "exit_code": exit_code,
+            "error_code": error_code,
+            "stdout_sha256": "a" * 64,
+            "stderr_sha256": "b" * 64,
+        },
+    )
+    write_json(
+        attempt / "failed.json",
+        {
+            "schema_version": "slk.transport-result/v1",
+            "message_id": MESSAGE_ID,
+            "run_id": "RUN-A",
+            "adapter": "dsh-worker",
+            "status": "failed",
+            "native_identity": {
+                "instance_id": endpoint["address"]["instance_id"],
+                "session_id": endpoint["address"]["session_id"],
+                "exit_code": exit_code,
+                "runtime_outcome": outcome,
+                "duration_ms": 5000,
+                "error_code": error_code,
+                "execution_receipt_sha256": hashlib.sha256(receipt.read_bytes()).hexdigest(),
+            },
+            "error_code": error_code,
+            "evidence": ["started.json", "native-execution.json"],
+        },
+    )
+
+    result = inspect_worker_completion(
+        attempt,
+        runtime_projection(),
+        observed_at="2026-09-23T00:00:06Z",
+        cadence_seconds=60,
+    )
+
+    assert result["status"] == expected_status
+    assert result["worker_outcome"] == outcome
+    assert result["blocker"] == {
+        "phase": "native_execution",
+        "cause": error_code,
+        "summary": "the exact DSH runtime did not produce a Worker engineering result",
+        "evidence": ["native-execution.json", "failed.json"],
     }
 
 
@@ -1092,6 +1168,7 @@ def test_running_worker_and_existing_d1_do_not_raise_completion_handoff_alarm(tm
         runtime_projection(token_owner=str(endpoint["role_instance_id"])),
         observed_at="2026-09-23T00:10:00Z",
         cadence_seconds=240,
+        native_inspector=lambda *_args, **_kwargs: {"status": "ACTIVE"},
     )["status"] == "IN_PROGRESS"
 
     write_json(attempt / "completed.json", {"status": "completed"})
@@ -1103,6 +1180,25 @@ def test_running_worker_and_existing_d1_do_not_raise_completion_handoff_alarm(tm
         observed_at="2026-09-23T00:10:00Z",
         cadence_seconds=240,
     )["status"] == "HANDED_OFF_OR_D1"
+
+
+def test_dead_worker_native_turn_is_not_reported_as_in_progress(tmp_path: Path) -> None:
+    attempt, endpoint, _checker = completion_fixture(tmp_path)
+    (attempt / "completed.json").unlink()
+    (attempt / "worker-result.json").unlink()
+
+    result = inspect_worker_completion(
+        attempt,
+        runtime_projection(token_owner=str(endpoint["role_instance_id"])),
+        observed_at="2026-09-23T00:10:00Z",
+        cadence_seconds=240,
+        native_inspector=lambda *_args, **_kwargs: {"status": "DEAD_WITHOUT_TERMINAL"},
+    )
+
+    assert result["status"] == "WORKER_INCOMPLETE"
+    assert result["worker_outcome"] == "incomplete"
+    assert result["blocker"]["cause"] == "NATIVE_TURN_ORPHANED"
+    assert result["candidate"] is None
 
 
 def test_d1_from_an_older_attempt_does_not_hide_current_worker_handoff_stall(tmp_path: Path) -> None:
@@ -1354,6 +1450,42 @@ def test_resume_worker_continuation_uses_exact_session_and_strips_parent_credent
     assert "\r" not in instructions[0] and "\n" not in instructions[0]
     started = json.loads((attempt / "worker-continuation" / "started.json").read_text(encoding="utf-8"))
     assert started["session_id"] == session_id
+
+
+def test_resume_worker_continuation_rejects_second_same_session_execution(tmp_path: Path) -> None:
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    request = build_continuation_request(
+        attempt,
+        checker,
+        runtime_projection(),
+        plan_revision=1,
+        runtime_revision=7,
+        token_sequence=14,
+        credential_path=tmp_path / "credentials" / "worker.dpapi",
+        state_command=["slk-state"],
+        transport_command=["slk-transport"],
+        occurred_at="2026-09-23T00:00:00Z",
+    )
+    continuation_root = worker_completion._continuation_root(request)
+    continuation_root.mkdir(parents=True)
+    (continuation_root / "request.json").write_bytes(worker_completion.continuation_request_bytes(request))
+    write_json(
+        continuation_root / "started.json",
+        {
+            "schema_version": "slk.worker-continuation-start/v1",
+            "run_id": request["run_id"],
+            "source_message_id": request["source_message_id"],
+            "instance_id": request["worker_instance_id"],
+            "session_id": request["worker_session_id"],
+            "request_sha256": "0" * 64,
+            "status": "started",
+        },
+    )
+
+    with pytest.raises(CompletionError) as rejected:
+        resume_worker_continuation(request)
+
+    assert rejected.value.error_code == "WORKER_CONTINUATION_ALREADY_ATTEMPTED"
 
 
 def test_worker_owned_continuation_records_d0_then_starts_checker_once(tmp_path: Path) -> None:
@@ -1981,7 +2113,7 @@ def test_false_legacy_start_with_token_at_checker_recovers_same_candidate_withou
         "attempt_root": str(original_root),
     }
     continuation = {
-        "method_version": "4.3.6",
+        "method_version": "4.4.0",
         "run_id": run_id,
         "go_id": "LEGACY-GROUP-01",
         "cell_id": "CELL01",
@@ -2426,6 +2558,7 @@ def test_rework_acceptance_criteria_become_checker_d1_criteria(tmp_path: Path) -
         "d1_failure_event_id": "d1-failed-001",
         "failed_candidate_sha256": "a" * 64,
         "rework_round": 1,
+        "investigation_mode": "STANDARD",
         "cell_goal": "remove the invalid comparison",
         "acceptance_criteria": [
             "compare only the valid GUI identity surface",

@@ -34,6 +34,8 @@ def _activities(module_name: str) -> list[Adapter]:
         ("prepare_run", "slk.prepare_run"),
         ("deliver_message", "slk.deliver_message"),
         ("request_recovery", "slk.request_recovery"),
+        ("inspect_overwatcher", "slk.inspect_overwatcher"),
+        ("notify_supervisor", "slk.notify_supervisor"),
     ):
         implementation: Any = getattr(module, attribute, None)
         if implementation is None or not inspect.iscoroutinefunction(implementation):

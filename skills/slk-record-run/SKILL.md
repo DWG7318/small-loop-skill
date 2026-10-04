@@ -12,7 +12,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 在中央 SLK 数据根维护一份可读、可追查的 Run 状态，让接管成员和 Owner 理解已经做了什么、检查了什么、出现过什么问题以及下一步在哪里；SQLite 是状态事实，`SLK-RUN-<RUN-ID>.md` 是自动导出，完整工程历史留在中央状态，令牌只携带当前状态集合与记录指针。
 
-通过 Eval 后，Supervisor 使用 `slk-state init-run` 写入 Run 定义、计划、方法版本、显式 predecessor（适用时）、身份和端点，再使用 `$slk-manage-team` 建立后续成员。即使成员在其他 worktree 施工，三个工程角色与可选 Overwatcher 都指向同一中央状态；Checker 的 D1 隔离和 Supervisor 的 D2 顺序保持不变。
+通过 Eval 后，Supervisor 使用 `slk-state init-run` 写入 Run 定义、计划、方法版本、显式 predecessor（适用时）、身份和端点，再使用 `$slk-manage-team` 建立后续成员。即使成员在其他 worktree 施工，三个工程角色与必需 Overwatcher 都指向同一中央状态；Checker 的 D1 隔离和 Supervisor 的 D2 顺序保持不变。
 
 历史上独立初始化的重复 Run 不属于普通 predecessor：只有 Owner 明确指定 canonical/source ID 后，canonical 当前 Supervisor 才可提交精确快照执行 `slk-state reconcile-run-identities`；旧 Run 需要当前语义时再以独立 Owner 证据执行 `slk-state adopt-method-contract`。两类回执追加且不可变，只更新身份元数据或有效方法版本，origin 版本与全部工程历史、角色、证据和 TOKEN 保持不变。
 
@@ -21,7 +21,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 - Worker 通过 `slk-state` 记录施工变化、资源占用与恢复、候选、最低 D0、判断过程、风险和交付对象；本地 D0 尝试与正式候选、D1 返工分别标明。
 - Checker 记录派发、D1 方法与结果、错误、返工建议、CELL 与 Run 进度，以及从实际工作中得到的 CELL 容量事实；Supervisor 用 `REWORK_REQUESTED` 记录正式返工请求，`D1_REWORK_DIRECTIVE` 仅是同一请求的传输载荷。
 - Supervisor 仅在被激活时记录启动交接、计划调整、豁免、成员恢复、D2、归档或最终结论，并通过 `slk-state` 追加；关键失败、重要决定和未执行事项建议在继续调整前及时追加，保留可能被后续操作覆盖的必要证据，交接前补齐，不接管日常进度记录。
-- Overwatcher 在整个 Run 只绑定一次同一 Session/active turn，用独立凭证追加绑定单一 runtime revision 的完整八项巡查 cycle，以及通讯、活动证明、记录冲突、恢复升级和自身归档等 operational observation；CELL 变化只更新 cycle scope，不重新确认或绑定。它只写自己的事实，不写 D0/D1/D2、计划、角色替换、Run 结论、TOKEN 或 BI。
+- Overwatcher 对每个 Run 只绑定一次独立 role instance；同一精确 Session 可服务多个 Run，但 scope、cycle、证据与 Supervisor 端点彼此隔离。它每 600 秒追加绑定单一 runtime revision 的紧凑真实性 cycle；CELL 变化只更新 scope，不重新绑定。它只写自己的观察，不写 D0/D1/D2、计划、角色替换、Run 结论、TOKEN 或 BI。
 
 ## 建议记录方式
 

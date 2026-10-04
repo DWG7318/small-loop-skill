@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 from pathlib import Path
 
@@ -8,8 +9,94 @@ import pytest
 from slk_transport.native_activity import (
     NativeActivityError,
     inspect_native_activity,
+    validate_native_task_activity,
     validate_native_start,
 )
+
+
+def test_core_atomic_projection_retries_windows_busy_without_losing_last_good(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import slk_transport.native_activity as activity
+
+    target = tmp_path / "projection.json"
+    activity._atomic_json(target, {"sequence": 1})
+    real_replace = activity.os.replace
+    attempts = 0
+
+    def replace(source, destination):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError(errno.EPERM, "busy once")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(activity.os, "replace", replace)
+    monkeypatch.setattr(activity.time, "sleep", lambda _seconds: None)
+
+    activity._atomic_json(target, {"sequence": 2})
+
+    assert attempts == 2
+    assert json.loads(target.read_text(encoding="utf-8")) == {"sequence": 2}
+    assert list(tmp_path.glob(".projection.json.*.tmp")) == []
+
+
+def test_native_activity_tail_is_metadata_only_and_bounded_to_twelve() -> None:
+    base = {
+        "schema_version": "slk.native-task-activity/v1",
+        "adapter": "dsh-worker",
+        "run_id": "RUN-A",
+        "cell_id": "CELL-001",
+        "message_id": "11111111-1111-4111-8111-111111111111",
+        "native_task_id": "session-a",
+        "status": "RUNNING",
+        "sequence": 13,
+        "observed_at": "2026-10-01T00:05:00Z",
+        "last_event": {
+            "kind": "DSH_SESSION_EVENT",
+            "sequence": 13,
+            "detail_sha256": "a" * 64,
+            "tail": [
+                {
+                    "kind": "DSH_SESSION_EVENT",
+                    "sequence": index,
+                    "observed_at": "2026-10-01T00:05:00Z",
+                    "detail_sha256": "b" * 64,
+                }
+                for index in range(1, 14)
+            ],
+        },
+        "waiting_on": "DSH_AGENT",
+    }
+
+    with pytest.raises(NativeActivityError, match="at most twelve"):
+        validate_native_task_activity(
+            base,
+            adapter="dsh-worker",
+            run_id="RUN-A",
+            cell_id="CELL-001",
+            message_id="11111111-1111-4111-8111-111111111111",
+            observed_at="2026-10-01T00:05:00Z",
+        )
+
+    base["last_event"]["tail"] = [
+        {
+            "kind": "DSH_SESSION_EVENT",
+            "sequence": 13,
+            "observed_at": "2026-10-01T00:05:00Z",
+            "detail_sha256": "b" * 64,
+            "text": "model output must never enter the native tail",
+        }
+    ]
+    with pytest.raises(NativeActivityError, match="metadata-only"):
+        validate_native_task_activity(
+            base,
+            adapter="dsh-worker",
+            run_id="RUN-A",
+            cell_id="CELL-001",
+            message_id="11111111-1111-4111-8111-111111111111",
+            observed_at="2026-10-01T00:05:00Z",
+        )
 
 
 def test_windows_retained_handle_of_exited_process_is_not_alive(monkeypatch):

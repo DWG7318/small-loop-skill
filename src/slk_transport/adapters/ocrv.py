@@ -641,7 +641,7 @@ class OcrvAdapter:
         transport_command = _string_array(payload["transport_command"], "transport_command")
         return {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "method_version": "4.3.6",
+            "method_version": "4.4.0",
             "recovery_invocation_id": recovery_invocation_id,
             "recovery_envelope_message_id": envelope.message_id,
             "run_id": envelope.run_id,
@@ -674,7 +674,7 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery result is not closed")
         if (
             value["schema_version"] != "slk.ocrv-worker-recovery-result/v1"
-            or value["method_version"] != "4.3.6"
+            or value["method_version"] != "4.4.0"
             or value["status"] != "CHECKER_D1_RECORDED"
             or value["run_id"] != envelope.run_id
             or value["cell_id"] != envelope.cell_id

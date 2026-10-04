@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +74,16 @@ def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(value, stream, ensure_ascii=False, indent=2)
             stream.write("\n")
-        os.replace(temporary, path)
+            stream.flush()
+            os.fsync(stream.fileno())
+        for attempt in range(3):
+            try:
+                os.replace(temporary, path)
+                break
+            except OSError as exc:
+                if exc.errno not in {errno.EBUSY, errno.EPERM} or attempt == 2:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -370,7 +381,7 @@ def _publish_native_start(
     context: dict[str, str],
     invocation: str,
     pid: int,
-) -> Path:
+) -> tuple[Path, list[dict[str, Any]]]:
     value = {
         "schema_version": "slk.native-start/v2",
         "status": "STARTED",
@@ -386,6 +397,12 @@ def _publish_native_start(
     }
     _write_json_atomic(receipt_path, value)
     activity_path = receipt_path.with_name("native-activity.json")
+    event_tail = [{
+        "kind": "OCRV_PROCESS_STARTED",
+        "sequence": 0,
+        "observed_at": value["observed_at"],
+        "detail_sha256": hashlib.sha256(invocation.encode("utf-8")).hexdigest(),
+    }]
     _write_json_atomic(
         activity_path,
         {
@@ -398,11 +415,13 @@ def _publish_native_start(
             "status": "RUNNING",
             "sequence": 0,
             "observed_at": value["observed_at"],
-            "last_event": {"kind": "OCRV_PROCESS_STARTED", "sequence": 0},
+            "last_event": {
+                "kind": "OCRV_PROCESS_STARTED", "sequence": 0, "tail": event_tail,
+            },
             "waiting_on": "OCRV_REVIEW",
         },
     )
-    return activity_path
+    return activity_path, event_tail
 
 
 def preflight(request_path: Path, output_path: Path) -> int:
@@ -544,8 +563,11 @@ def run(
     )
     native = _native_context()
     activity_path: Path | None = None
+    activity_tail: list[dict[str, Any]] = []
     if native is not None:
-        activity_path = _publish_native_start(native[0], native[1], invocation, process.pid)
+        activity_path, activity_tail = _publish_native_start(
+            native[0], native[1], invocation, process.pid
+        )
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
 
@@ -555,6 +577,13 @@ def run(
             destination.append(line)
             if kind == "OCRV_PROGRESS" and activity_path is not None:
                 sequence += 1
+                observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+                detail_sha256 = hashlib.sha256(line.encode("utf-8")).hexdigest()
+                activity_tail.append({
+                    "kind": kind, "sequence": sequence, "observed_at": observed_at,
+                    "detail_sha256": detail_sha256,
+                })
+                del activity_tail[:-12]
                 _write_json_atomic(
                     activity_path,
                     {
@@ -566,11 +595,12 @@ def run(
                         "native_task_id": invocation,
                         "status": "RUNNING",
                         "sequence": sequence,
-                        "observed_at": datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                        "observed_at": observed_at,
                         "last_event": {
                             "kind": kind,
                             "sequence": sequence,
-                            "summary_sha256": hashlib.sha256(line.encode("utf-8")).hexdigest(),
+                            "summary_sha256": detail_sha256,
+                            "tail": list(activity_tail),
                         },
                         "waiting_on": "OCRV_REVIEW",
                     },
@@ -589,6 +619,14 @@ def run(
     stdout_path.write_text(stdout, encoding="utf-8", newline="\n")
     stderr_path.write_text(stderr, encoding="utf-8", newline="\n")
     if activity_path is not None:
+        exit_sequence = len(stderr_lines) + 1
+        exit_observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        activity_tail.append({
+            "kind": "OCRV_PROCESS_EXITED", "sequence": exit_sequence,
+            "observed_at": exit_observed_at,
+            "detail_sha256": hashlib.sha256(str(returncode).encode("utf-8")).hexdigest(),
+        })
+        del activity_tail[:-12]
         _write_json_atomic(
             activity_path,
             {
@@ -599,12 +637,13 @@ def run(
                 "message_id": native[1]["message_id"] if native is not None else "unknown",
                 "native_task_id": invocation,
                 "status": "COMPLETED" if returncode == 0 else "FAILED",
-                "sequence": len(stderr_lines) + 1,
-                "observed_at": datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                "sequence": exit_sequence,
+                "observed_at": exit_observed_at,
                 "last_event": {
                     "kind": "OCRV_PROCESS_EXITED",
-                    "sequence": len(stderr_lines) + 1,
+                    "sequence": exit_sequence,
                     "exit_code": returncode,
+                    "tail": list(activity_tail),
                 },
                 "waiting_on": None,
             },

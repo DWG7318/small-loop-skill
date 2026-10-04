@@ -93,15 +93,17 @@ class StartSlkRequest:
             "roles",
         }
         source = _closed(value, fields, "SLK startup request")
-        if source["method_version"] != "4.3.6":
-            raise ContractError("method_version must be 4.3.6")
+        if source["method_version"] != "4.4.0":
+            raise ContractError("method_version must be 4.4.0")
         raw_roles = source["roles"]
         if not isinstance(raw_roles, list):
             raise ContractError("roles must be an array")
         roles = tuple(RoleBinding.from_dict(item) for item in raw_roles)
         counts = {role: sum(item.role == role for item in roles) for role in ALL_ROLES}
-        if any(counts[role] != 1 for role in ENGINEERING_ROLES) or counts["OVERWATCHER"] > 1:
-            raise ContractError("roles must contain exactly one SUPERVISOR, CHECKER and WORKER")
+        if any(counts[role] != 1 for role in ALL_ROLES):
+            raise ContractError(
+                "roles must contain exactly one SUPERVISOR, CHECKER, WORKER and OVERWATCHER"
+            )
         identities = [item.role_instance_id for item in roles]
         endpoints = [item.endpoint_ref for item in roles]
         if len(set(identities)) != len(identities):
@@ -110,7 +112,7 @@ class StartSlkRequest:
             raise ContractError("endpoint_ref must be unique")
         return cls(
             run_id=_identifier(source["run_id"], "run_id"),
-            method_version="4.3.6",
+            method_version="4.4.0",
             runtime_revision=_integer(source["runtime_revision"], "runtime_revision"),
             task_queue=_identifier(source["task_queue"], "task_queue"),
             ack_timeout_seconds=_integer(
@@ -125,6 +127,10 @@ class StartSlkRequest:
     @property
     def overwatcher(self) -> RoleBinding | None:
         return next((item for item in self.roles if item.role == "OVERWATCHER"), None)
+
+    @property
+    def supervisor(self) -> RoleBinding:
+        return next(item for item in self.roles if item.role == "SUPERVISOR")
 
     @property
     def startup_fingerprint(self) -> str:
@@ -241,3 +247,68 @@ class NativeStartAck:
 
     def to_dict(self) -> dict[str, str]:
         return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class OverwatcherExitNotice:
+    event_id: str
+    run_id: str
+    overwatcher_role_instance_id: str
+    requested_by_role_instance_id: str
+    evidence_sha256: str
+
+    @classmethod
+    def from_dict(cls, value: object) -> "OverwatcherExitNotice":
+        fields = {
+            "event_id",
+            "run_id",
+            "overwatcher_role_instance_id",
+            "requested_by_role_instance_id",
+            "evidence_sha256",
+        }
+        source = _closed(value, fields, "Overwatcher exit notice")
+        return cls(
+            event_id=_identifier(source["event_id"], "event_id"),
+            run_id=_identifier(source["run_id"], "run_id"),
+            overwatcher_role_instance_id=_identifier(
+                source["overwatcher_role_instance_id"], "overwatcher_role_instance_id"
+            ),
+            requested_by_role_instance_id=_identifier(
+                source["requested_by_role_instance_id"], "requested_by_role_instance_id"
+            ),
+            evidence_sha256=_hash(source["evidence_sha256"], "evidence_sha256"),
+        )
+
+
+@dataclass(frozen=True)
+class RuntimeGuardResolution:
+    event_id: str
+    run_id: str
+    supervisor_role_instance_id: str
+    blocker_event_id: str
+    resolution: str
+    evidence_sha256: str
+
+    @classmethod
+    def from_dict(cls, value: object) -> "RuntimeGuardResolution":
+        fields = {
+            "event_id",
+            "run_id",
+            "supervisor_role_instance_id",
+            "blocker_event_id",
+            "resolution",
+            "evidence_sha256",
+        }
+        source = _closed(value, fields, "runtime guard resolution")
+        if source["resolution"] != "OVERWATCHER_RESTORED":
+            raise ContractError("runtime guard resolution must prove OVERWATCHER_RESTORED")
+        return cls(
+            event_id=_identifier(source["event_id"], "event_id"),
+            run_id=_identifier(source["run_id"], "run_id"),
+            supervisor_role_instance_id=_identifier(
+                source["supervisor_role_instance_id"], "supervisor_role_instance_id"
+            ),
+            blocker_event_id=_identifier(source["blocker_event_id"], "blocker_event_id"),
+            resolution="OVERWATCHER_RESTORED",
+            evidence_sha256=_hash(source["evidence_sha256"], "evidence_sha256"),
+        )
