@@ -217,6 +217,27 @@ def test_overwatcher_resume_has_exactly_one_basis_and_cycle_enum_excludes_incide
     assert "OVERWATCHER_CONTINUITY_VIOLATION" not in anomaly_codes
 
 
+def test_overwatcher_contracts_preserve_legacy_cadence_and_allow_current_600_seconds() -> None:
+    cycle = json.loads(read("docs/contracts/slk-overwatch-cycle.schema.json"))
+    inspection = json.loads(
+        read("docs/contracts/slk-overwatcher-cadence-inspection.schema.json")
+    )
+
+    assert cycle["properties"]["cadence_seconds"] == {
+        "oneOf": [
+            {"type": "integer", "minimum": 180, "maximum": 300},
+            {"const": 600},
+        ]
+    }
+    assert inspection["properties"]["cadence_seconds"] == {
+        "oneOf": [
+            {"type": "integer", "minimum": 180, "maximum": 300},
+            {"const": 600},
+            {"type": "null"},
+        ]
+    }
+
+
 def test_release_file_discovery_follows_git_and_ignores_local_build_outputs(
     tmp_path: Path,
 ) -> None:
@@ -275,7 +296,7 @@ def test_436_readiness_and_ocrv_preflight_contracts_are_closed() -> None:
     ocrv = json.loads(read("docs/contracts/slk-ocrv-d1-preflight.schema.json"))
     for schema in (readiness, ocrv):
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-        assert len(schema["oneOf"]) == (6 if schema is readiness else 2)
+        assert len(schema["oneOf"]) == (7 if schema is readiness else 2)
     for name in ("request", "result"):
         assert readiness["$defs"][name]["additionalProperties"] is False
     option_name = readiness["$defs"]["option"]["properties"]["name"]

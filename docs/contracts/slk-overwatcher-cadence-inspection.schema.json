@@ -13,7 +13,7 @@
     "overwatcher_role_instance_id": {"$ref": "#/$defs/nullable_identifier"},
     "latest_cycle_id": {"$ref": "#/$defs/nullable_identifier"},
     "latest_cycle_completed_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
-    "cadence_seconds": {"oneOf": [{"type": "integer", "minimum": 180, "maximum": 300}, {"type": "null"}]},
+    "cadence_seconds": {"oneOf": [{"type": "integer", "minimum": 180, "maximum": 300}, {"const": 600}, {"type": "null"}]},
     "elapsed_seconds": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
     "missed_intervals": {"type": "integer", "minimum": 0},
     "status": {"enum": ["ABSENT", "CURRENT", "LATE", "CONTINUITY_UNPROVEN"]},

@@ -892,11 +892,12 @@ impl StateStore {
                 ],
             )?;
             if uses_revisioned_runtime_contract(&run_contract.0) {
+                let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
                 let runtime_revision = advance_runtime_snapshot(
                     transaction,
                     &request.run_id,
                     &request.event_id,
-                    None,
+                    snapshot.latest_message_id.as_deref(),
                     &request.occurred_at,
                 )?;
                 transaction.execute(
@@ -2025,7 +2026,11 @@ impl StateStore {
                     actor.role_instance_id, details_json, request.occurred_at],
             )?;
             let runtime_revision = advance_runtime_snapshot(
-                transaction, &request.run_id, &request.event_id, None, &request.occurred_at,
+                transaction,
+                &request.run_id,
+                &request.event_id,
+                runtime.latest_message_id.as_deref(),
+                &request.occurred_at,
             )?;
             Ok(ModelRevisionResult {
                 status: "MODEL_REVISED".into(), role_instance_id: request.role_instance_id.clone(),
@@ -2442,6 +2447,20 @@ impl StateStore {
                 ));
             }
             let runtime_snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
+            let token_message_id: Option<String> = transaction.query_row(
+                "SELECT message_id FROM token_events
+                 WHERE run_id=?1 ORDER BY token_sequence DESC LIMIT 1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
+            let authoritative_message_id = if uses_revisioned_runtime_contract(&method_version) {
+                runtime_snapshot
+                    .latest_message_id
+                    .clone()
+                    .or_else(|| token_message_id.clone())
+            } else {
+                token_message_id.clone()
+            };
             if uses_revisioned_runtime_contract(&method_version) {
                 if request.binding_revision != binding_revision
                     || request.runtime_revision != runtime_snapshot.runtime_revision
@@ -2469,6 +2488,7 @@ impl StateStore {
                         transaction,
                         &request,
                         &runtime_snapshot,
+                        authoritative_message_id.as_deref(),
                     )?;
                 }
             }
@@ -2503,18 +2523,7 @@ impl StateStore {
                     "cycle TOKEN snapshot is stale or mismatched".into(),
                 ));
             }
-            let current_message_id: Option<String> = transaction.query_row(
-                "SELECT message_id FROM token_events
-                 WHERE run_id=?1 ORDER BY token_sequence DESC LIMIT 1",
-                [&request.run_id],
-                |row| row.get(0),
-            )?;
-            let expected_message = if uses_revisioned_runtime_contract(&method_version) {
-                runtime_snapshot.latest_message_id.clone()
-            } else {
-                current_message_id
-            };
-            if expected_message != request.latest_message_id {
+            if authoritative_message_id != request.latest_message_id {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "cycle latest message reference is stale".into(),
                 ));
@@ -3799,6 +3808,7 @@ fn validate_worker_completion_cycle(
     connection: &Connection,
     request: &OverwatchCycleRequest,
     runtime_snapshot: &RuntimeSnapshot,
+    authoritative_message_id: Option<&str>,
 ) -> Result<(), StateError> {
     let token_role: Option<String> = connection
         .query_row(
@@ -3852,7 +3862,7 @@ fn validate_worker_completion_cycle(
         || inspection
             .get("source_message_id")
             .and_then(serde_json::Value::as_str)
-            != runtime_snapshot.latest_message_id.as_deref()
+            != authoritative_message_id
         || runtime_snapshot.token_sequence != request.token_sequence
     {
         return Err(StateError::OverwatcherCycleInvalid(

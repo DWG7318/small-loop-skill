@@ -2334,7 +2334,7 @@ def _default_checker_authenticate(
 
 
 def _default_load_current_projection(
-    run_id: str, state_command: list[str]
+    run_id: str, state_command: list[str], *, state_config_path: str | None = None,
 ) -> Mapping[str, Any]:
     query_path = Path(state_command[0]).resolve().with_name("slk-bi-query.exe")
     if not query_path.is_file():
@@ -2344,7 +2344,8 @@ def _default_load_current_projection(
         )
     try:
         value = _run_json_command(
-            [str(query_path)], ["run", "--run-id", run_id], credential=None
+            [str(query_path)], ["run", "--run-id", run_id], credential=None,
+            state_config_path=state_config_path,
         )
     except CompletionError as exc:
         raise CompletionError(
@@ -4722,6 +4723,7 @@ def _run_json_command(
     *,
     credential: str | None,
     credential_scope: str = "role",
+    state_config_path: str | None = None,
 ) -> dict[str, Any]:
     from .process import windows_no_window_kwargs
 
@@ -4739,6 +4741,14 @@ def _run_json_command(
             if credential_scope == "role"
             else "SLK_OVERWATCHER_CREDENTIAL"
         ] = credential
+    if state_config_path is not None:
+        config = Path(state_config_path)
+        if not config.is_absolute() or not config.is_file():
+            raise CompletionError(
+                "WORKER_CONTINUATION_STATE_CONFIG_INVALID",
+                "state command config path is unavailable",
+            )
+        environment["SLK_CONFIG_PATH"] = str(config.resolve())
     environment["PYTHONIOENCODING"] = "utf-8"
     environment["PYTHONUTF8"] = "1"
     completed = subprocess.run(

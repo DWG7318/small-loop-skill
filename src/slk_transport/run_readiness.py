@@ -55,6 +55,17 @@ NATIVE_ACTIVITY_CAPABILITY_FIELDS = frozenset(
     }
 )
 OPTION_FIELDS = frozenset({"name", "decision", "owner_evidence_ref"})
+NORMAL_CHAIN_SOURCE_FIELDS = frozenset(
+    {
+        "schema_version", "method_version", "status", "source_run_id",
+        "plan_revision", "source_state_context", "source_roles",
+        "source_communication_rehearsal",
+    }
+)
+SOURCE_STATE_CONTEXT_FIELDS = frozenset({"config_path", "config_sha256"})
+SOURCE_ROLE_FIELDS = frozenset(
+    {"role", "role_instance_id", "actual_runtime", "endpoint_path", "workspace_root"}
+)
 REQUIRED_ROLES = ("supervisor", "worker", "checker", "overwatcher")
 REQUIRED_OPTIONS = ("Ponytail", "RTK", "Probe CLI")
 REQUIRED_REHEARSAL_LEGS = (
@@ -166,6 +177,52 @@ def _proof(reference: Any) -> Mapping[str, Any]:
     return value
 
 
+def _source_state_config(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        raise ValueError("source state context must be an object")
+    _closed(value, SOURCE_STATE_CONTEXT_FIELDS, "source state context")
+    if not _sha256(value["config_sha256"]):
+        raise ValueError("source state config hash is invalid")
+    path = Path(_nonempty(value["config_path"], "source state config path"))
+    if not path.is_absolute() or not path.is_file() or path.stat().st_size > 131072:
+        raise ValueError("source state config is unavailable")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != value["config_sha256"]:
+        raise ValueError("source state config changed")
+    config = json.loads(raw.decode("utf-8-sig"))
+    if (not isinstance(config, Mapping) or set(config) != {"schema_version", "data_root"}
+        or config.get("schema_version") != "slk.config/v1"):
+        raise ValueError("source state config is invalid")
+    data_root = Path(_nonempty(config["data_root"], "source data root"))
+    if not data_root.is_absolute() or not data_root.is_dir() or not (data_root / "slk.db").is_file():
+        raise ValueError("source state database is unavailable")
+    return str(path.resolve())
+
+
+def _source_roles(value: Any) -> list[Mapping[str, Any]]:
+    if not isinstance(value, list) or len(value) != len(REQUIRED_ROLES):
+        raise ValueError("source role registry is incomplete")
+    roles = []
+    for row in value:
+        if not isinstance(row, Mapping):
+            raise ValueError("source role registry entry is invalid")
+        _closed(row, SOURCE_ROLE_FIELDS, "source role registry entry")
+        role = _nonempty(row["role"], "source role")
+        if role not in REQUIRED_ROLES:
+            raise ValueError("source role is unsupported")
+        for field in ("role_instance_id", "actual_runtime"):
+            _nonempty(row[field], f"source {field}")
+        endpoint = Path(_nonempty(row["endpoint_path"], "source endpoint path"))
+        workspace = Path(_nonempty(row["workspace_root"], "source workspace root"))
+        if not endpoint.is_absolute() or not endpoint.is_file() or not workspace.is_absolute() or not workspace.is_dir():
+            raise ValueError("source role path is unavailable")
+        roles.append(dict(row))
+    if ({row["role"] for row in roles} != set(REQUIRED_ROLES)
+        or len({row["role_instance_id"] for row in roles}) != len(roles)):
+        raise ValueError("source role identities are incomplete or aliased")
+    return roles
+
+
 def _normal_payload(host: Any, envelope: Any, roles: Mapping[str, Any]) -> None:
     from .adapters.ocrv import OcrvAdapter
     frozen = next((cell for cell in host.binding["cells"]
@@ -197,7 +254,8 @@ def _normal_payload(host: Any, envelope: Any, roles: Mapping[str, Any]) -> None:
 
 
 def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
-                                   roles: list[Mapping[str, Any]]) -> bool:
+                                   roles: list[Mapping[str, Any]], *,
+                                   state_config_path: str | None = None) -> bool:
     from .contracts import DeliveryResult, parse_delivery
     from .adapters.base import AdapterError
     from .native_activity import validate_native_start
@@ -222,7 +280,8 @@ def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
         if len({r["role_instance_id"] for r in roles}) != len(roles):
             raise ValueError("role instances must be isolated")
         binding = _proof(value["host_binding"])
-        host = RoleHost(binding, value["host_binding"]["sha256"])
+        host = RoleHost(binding, value["host_binding"]["sha256"],
+                        state_config_path=state_config_path)
         if binding["run_id"] != run_id or binding["plan_revision"] != revision:
             raise ValueError("host scope changed")
         consumers = value["sealed_role_receipts"]
@@ -248,7 +307,8 @@ def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
             secret = wc.unprotect_dpapi_hex(sealed)
             try:
                 authenticated = wc._run_json_command(host.state, ["authenticate-role", "--run-id", run_id,
-                    "--role-instance-id", registered[role]["role_instance_id"]], credential=secret)
+                    "--role-instance-id", registered[role]["role_instance_id"]], credential=secret,
+                    state_config_path=state_config_path)
             finally:
                 secret = ""
             if (authenticated.get("status") != "authenticated" or authenticated.get("run_id") != run_id
@@ -407,6 +467,24 @@ def _valid_current_registration(host_reference: Any, consumers: Any, run_id: str
 def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | None:
     value = _receipt(path_value)
     try:
+        if value is not None and value.get("schema_version") == "slk.normal-chain-source/v1":
+            _closed(value, NORMAL_CHAIN_SOURCE_FIELDS, "normal chain source")
+            if (value["method_version"] != "4.4.1" or value["status"] != "PASS"
+                or not isinstance(value["source_run_id"], str)
+                or value["source_run_id"] == current_run_id):
+                raise ValueError("normal chain source scope is invalid")
+            revision = _positive_int(value["plan_revision"], "source plan revision")
+            state_config_path = _source_state_config(value["source_state_context"])
+            roles = _source_roles(value["source_roles"])
+            rehearsal = _proof(value["source_communication_rehearsal"])
+            if (rehearsal.get("run_id") != value["source_run_id"]
+                or not _valid_communication_rehearsal(
+                    value["source_communication_rehearsal"]["path"],
+                    value["source_run_id"], revision, roles,
+                    state_config_path=state_config_path,
+                )):
+                raise ValueError("normal chain source cannot be recomputed")
+            return value["source_run_id"]
         if (value is None or set(value) != {"schema_version", "method_version", "status", "source_run_id",
                 "source_readiness_request", "source_communication_rehearsal"}
             or value["schema_version"] != "slk.normal-chain-conformance/v1"

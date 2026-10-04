@@ -37,7 +37,6 @@ def test_426_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: 
         "exact_worker_event_replay": True,
         "final_cycle_close": True,
         "late_cadence_not_false_inactive": True,
-        "no_bom_route": True,
         "no_model_upgrade": True,
         "overwatcher_worker_completion_guard": True,
         "one_overwatcher_binding": True,
@@ -53,7 +52,6 @@ def test_426_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: 
     assert report["counts"]["transport_start_receipts"] == 1
     assert report["counts"]["worker_completion_guard_checks"] == 3
     assert report["counts"]["model_change_events"] == 0
-    assert report["counts"]["bom_routes"] == 0
 
     output_root = output.resolve()
     for root in report["disposable_roots"]:

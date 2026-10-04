@@ -60,6 +60,44 @@ def test_state_cli_reports_the_exact_build_version(tmp_path):
     assert result == {"status": "ok", "version": "4.4.1"}
 
 
+def test_one_process_authenticates_two_runs_through_separate_state_configs(
+    tmp_path, monkeypatch,
+):
+    def initialize(root, run_id, role_instance_id):
+        root.mkdir()
+        environment = configured_environment(root)
+        invoke(["configure", "--data-root", root / "state"], environment)
+        request = init_request()
+        request["run_id"] = run_id
+        request["supervisor"]["role_instance_id"] = role_instance_id
+        initialized = json.loads(invoke(
+            ["init-run", "--request", write_json(root / "init.json", request)],
+            environment,
+        ).stdout)
+        return environment["SLK_CONFIG_PATH"], initialized["supervisor_credential"]
+
+    source_config, source_credential = initialize(
+        tmp_path / "source", "run-source", "supervisor-source")
+    current_config, current_credential = initialize(
+        tmp_path / "current", "run-current", "supervisor-current")
+    monkeypatch.setenv("SLK_CONFIG_PATH", current_config)
+
+    source = worker_completion._run_json_command(
+        [str(state_binary())],
+        ["authenticate-role", "--run-id", "run-source", "--role-instance-id", "supervisor-source"],
+        credential=source_credential, state_config_path=source_config,
+    )
+    current = worker_completion._run_json_command(
+        [str(state_binary())],
+        ["authenticate-role", "--run-id", "run-current", "--role-instance-id", "supervisor-current"],
+        credential=current_credential,
+    )
+
+    assert (source["run_id"], source["role_instance_id"]) == ("run-source", "supervisor-source")
+    assert (current["run_id"], current["role_instance_id"]) == ("run-current", "supervisor-current")
+    assert os.environ["SLK_CONFIG_PATH"] == current_config
+
+
 def test_supervisor_model_revision_cli_preserves_the_same_role_instance(tmp_path):
     environment = configured_environment(tmp_path)
     state_root = tmp_path / "state"

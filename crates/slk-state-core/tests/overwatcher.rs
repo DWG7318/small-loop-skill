@@ -70,6 +70,45 @@ fn supervisor_rebinds_overwatcher_endpoint_without_changing_role_or_session() {
 }
 
 #[test]
+fn overwatcher_binding_preserves_latest_engineering_message() {
+    let fixture = Fixture::new_423();
+    fixture
+        .store
+        .commit_delivery_start(
+            &fixture.supervisor,
+            fixture.delivery_start_request("before-overwatcher-binding", "2026-09-22T00:00:02Z"),
+        )
+        .unwrap();
+    let before = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    assert_eq!(
+        before.latest_message_id.as_deref(),
+        Some("message-before-overwatcher-binding")
+    );
+
+    fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
+
+    let after = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    assert_eq!(after.latest_event_id, "bind-overwatcher-a");
+    assert_eq!(after.latest_message_id, before.latest_message_id);
+}
+
+#[test]
 fn supervisor_rotates_only_the_exact_active_overwatcher_credential_without_a_cycle() {
     let fixture = Fixture::new_427();
     let issued = fixture
@@ -717,10 +756,10 @@ fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
-    let forbidden_event_count: i64 = database
+    let model_change_event_count: i64 = database
         .query_row(
             "SELECT COUNT(*) FROM work_events
-             WHERE run_id='run-a' AND (event_type='MODEL_CHANGED' OR upper(details_json) LIKE '%\"BOM\"%')",
+             WHERE run_id='run-a' AND event_type='MODEL_CHANGED'",
             [],
             |row| row.get(0),
         )
@@ -730,7 +769,7 @@ fn a_423_terminal_close_requires_the_last_cycle_and_same_runtime_revision() {
         (1, 3, 1, 1)
     );
     assert_eq!(late_health, ("LATE".into(), "IN_PROGRESS".into()));
-    assert_eq!(forbidden_event_count, 0);
+    assert_eq!(model_change_event_count, 0);
 }
 
 #[test]
@@ -1606,7 +1645,7 @@ fn adoption_433_to_434_to_435_to_436_preserves_the_schema_v8_run() {
                     engineering_history: PreservedAssertion::Preserved,
                     overwatcher: OverwatcherAssertion::Absent,
                 },
-                reason: "remove BoM from readiness options".into(),
+                reason: "keep readiness options closed".into(),
                 occurred_at: "2026-09-30T00:11:01Z".into(),
             },
         )
@@ -1984,6 +2023,37 @@ fn a_424_cycle_cannot_clear_a_terminal_worker_completion_without_handoff() {
         .commit_delivery_start(&fixture.checker, to_worker)
         .unwrap();
 
+    // A sealed pre-fix administrative snapshot may have lost only its message
+    // pointer while the authoritative TOKEN event remains intact.
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    let previous_runtime_revision = fixture.runtime_revision();
+    let historical_runtime_revision = previous_runtime_revision + 1;
+    database
+        .execute(
+            "UPDATE runs SET current_runtime_revision=?2 WHERE run_id=?1",
+            rusqlite::params!["run-a", historical_runtime_revision],
+        )
+        .unwrap();
+    database
+        .execute(
+            "INSERT INTO run_runtime_snapshots
+             (run_id, runtime_revision, plan_revision, token_sequence,
+              token_holder_role_instance_id, latest_event_id, latest_message_id,
+              method_version, overwatcher_binding_revision, overwatcher_status, committed_at)
+             SELECT run_id, ?2, plan_revision, token_sequence,
+                    token_holder_role_instance_id, 'historic-admin-event', NULL,
+                    method_version, overwatcher_binding_revision, overwatcher_status,
+                    '2026-10-05T00:00:00Z'
+             FROM run_runtime_snapshots WHERE run_id=?1 AND runtime_revision=?3",
+            rusqlite::params![
+                "run-a",
+                historical_runtime_revision,
+                previous_runtime_revision
+            ],
+        )
+        .unwrap();
+    drop(database);
+
     let snapshot = fixture
         .store
         .query_run("run-a")
@@ -2030,6 +2100,14 @@ fn a_424_cycle_cannot_clear_a_terminal_worker_completion_without_handoff() {
         OverwatchAnomalyCode::WorkerCompletionHandoffMissing,
         OverwatchAnomalyCode::CommunicationRecoveryRequired,
     ];
+    let mut wrong_message = cycle.clone();
+    wrong_message.latest_message_id = Some("message-from-another-delivery".into());
+    assert!(matches!(
+        fixture
+            .store
+            .record_overwatch_cycle(&issued.credential, wrong_message),
+        Err(StateError::OverwatcherCycleInvalid(_))
+    ));
     fixture
         .store
         .record_overwatch_cycle(&issued.credential, cycle)

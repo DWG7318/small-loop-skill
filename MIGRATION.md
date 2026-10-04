@@ -42,7 +42,7 @@ No role, model, CELL/D0/D1/D2 authority, BI authority, Temporal default, Docker 
 
 Install the complete 4.3.4 package and matching OCRV integration transactionally. Installation alone does not adopt, resume, dispatch, inspect or mutate a Run. At an existing Supervisor boundary, an Owner-authorized exact snapshot may adopt `4.3.3 → 4.3.4`; schema remains v8 and Run identity, plan, CELL/attempt, TOKEN, roles/endpoints, candidate, D0/D1/D2 history, Overwatcher state, evidence and product changes are preserved.
 
-Before new construction, readiness records Owner ON/OFF decisions only for Ponytail, Temporal, Overwatcher, RTK, Probe CLI and future genuinely optional features. BoM is not configurable and must not appear in a readiness request; any declaration returns `OPTION_FORBIDDEN` and stays outside the normalized result.
+Before new construction, readiness records Owner ON/OFF decisions only for Ponytail, Temporal, Overwatcher, RTK, Probe CLI and future genuinely optional features. Retired features are not configurable and must not appear in a readiness request; any declaration returns `OPTION_FORBIDDEN` and stays outside the normalized result.
 
 No role, model, CELL/D0/D1/D2 authority, TOKEN, BI authority, Temporal default, Docker service, daemon, heartbeat, MCP or product file changes automatically.
 
@@ -92,7 +92,7 @@ Install the complete 4.2.10 package. Existing 4.2.9 Runs retain topology, CELL/D
 
 Do not preserve any 4.2.9 prompt or wrapper that promises a delayed post-turn self-wake. An active-writer collision keeps the failed delivery immutable and sends one new auditable recovery message to the exact canonical task/active turn, or waits for a real Owner/Main activation. Worker continuation now returns the committed runtime revision, retains bulk logs by path/hash rather than sending them to Checker, revalidates resumed DSH identity, and starts OCRV headlessly outside the Worker job. LE BI separates Overwatcher binding, native liveness, cycle/incident pause and terminal closure; none changes CELL progress.
 
-DeepSeek V4 Flash remains the Worker, Pro is not introduced, and BoM remains disabled. No role responsibility, TOKEN semantics, CELL, D0/D1/D2, model policy, product candidate, remote tag or Release changes in this migration.
+DeepSeek V4 Flash remains the Worker and Pro is not introduced. No role responsibility, TOKEN semantics, CELL, D0/D1/D2, model policy, product candidate, remote tag or Release changes in this migration.
 
 ## Current patch migration: 4.2.8 to 4.2.9
 
@@ -118,7 +118,7 @@ Worker and Checker now perform role-local lightweight preflight. Internal Worker
 
 Codex endpoint files stay immutable when a Desktop update moves `codex.exe`; transport records the resolved executable separately. OCRV requests now match the installed closed v1 contract. Legacy Worker results that omit repository may use only the authenticated immutable endpoint `cwd`; new results include repository explicitly. Exact continuation retries reuse the first stored event bytes and timestamp.
 
-No D2, LCaS product candidate, BoM, model binding, remote tag, or release is changed by migration.
+No D2, LCaS product candidate, model binding, remote tag, or release is changed by migration.
 
 ## Current patch migration: 4.2.5 to 4.2.6
 
@@ -128,7 +128,7 @@ If an Overwatcher has already reported an anomaly and the Supervisor later wakes
 
 Worker completion recovery in 4.2.6 requires the exact current attempt, candidate and derived handoff message. A legacy 4.2.5 record that lacks these facts remains unproved and must be recovered through the existing roles; it is not silently reinterpreted. Rework `acceptance_criteria` is passed to OCRV as `d1_criteria`. Active-writer delivery uses read+steer, and long OCRV work must run under the detached headless Checker transport host or a persistent Supervisor host. Tool failure remains the same attempt and is not a product D1 FAIL.
 
-No model policy changes are included. DSH remains the frozen Worker runtime for affected LCaS Runs; Pro and BoM remain disabled.
+No model policy changes are included. DSH remains the frozen Worker runtime for affected LCaS Runs; Pro remains disabled.
 
 ## Migration from SLK 2.6.0 to 3.0.0
 
@@ -199,7 +199,7 @@ If the surviving Run began on 4.1.1, 4.2.0, or 4.2.1 and needs the 4.2.2 contrac
 
 ## Migration from 4.2.2 to 4.2.3
 
-Install the complete 4.2.3 package atomically, then run the normal writable `slk-state configure` once so the verified schema-v6 backup and schema-v7 migration precede read-only use. New deliveries use immutable task/start evidence and `commit-delivery-start`; a 4.2.3 Run rejects legacy split `handoff`, terminal-derived start, mixed runtime revisions, silent model changes, and BoM routes.
+Install the complete 4.2.3 package atomically, then run the normal writable `slk-state configure` once so the verified schema-v6 backup and schema-v7 migration precede read-only use. New deliveries use immutable task/start evidence and `commit-delivery-start`; a 4.2.3 Run rejects legacy split `handoff`, terminal-derived start, mixed runtime revisions, silent model changes, and retired routes.
 
 An open 4.2.2 Run adopts through `adopt-method-contract` with an exact snapshot and explicit Overwatcher assertion: `ABSENT`, hash-verified `PRESERVED_ACTIVE`, or `CONTINUITY_RECOVERY_REQUIRED`. Adoption preserves origin version, plan, roles, TOKEN, CELL/D0/D1/D2 and evidence; it neither silently repairs nor rebinds an Overwatcher. The same optional Session/foreground turn remains bound once for the whole Run—CELL boundaries only change cycle scope—and terminal close requires the exact final cycle and runtime revision. Any exceptional replacement is Supervisor-authorized, non-overlapping, and retains the continuity gap.
 

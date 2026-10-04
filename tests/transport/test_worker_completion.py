@@ -399,6 +399,53 @@ def test_json_command_routes_one_credential_scope_without_cross_leak(
     assert result["status"] == "ok"
 
 
+def test_json_command_scopes_state_config_to_one_child_without_parent_leak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    product = tmp_path / "product-config.json"
+    source = tmp_path / "source-config.json"
+    product.write_text("{}", encoding="utf-8")
+    source.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("SLK_CONFIG_PATH", str(product.resolve()))
+    command = [sys.executable, "-c",
+        "import json,os; print(json.dumps({'config': os.environ.get('SLK_CONFIG_PATH')}))"]
+
+    isolated = worker_completion._run_json_command(
+        command, [], credential=None, state_config_path=str(source.resolve()),
+    )
+    inherited = worker_completion._run_json_command(command, [], credential=None)
+
+    assert isolated["config"] == str(source.resolve())
+    assert inherited["config"] == str(product.resolve())
+    assert os.environ["SLK_CONFIG_PATH"] == str(product.resolve())
+
+
+def test_projection_forwards_exact_state_config_to_the_query_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = tmp_path / "slk-state.exe"
+    query = tmp_path / "slk-bi-query.exe"
+    config = tmp_path / "source-config.json"
+    state.write_bytes(b"")
+    query.write_bytes(b"")
+    config.write_text("{}", encoding="utf-8")
+    captured = {}
+
+    def run(command, arguments, *, credential, state_config_path=None, **_kwargs):
+        captured.update(command=command, arguments=arguments,
+                        state_config_path=state_config_path)
+        return {"run_id": "RUN-SOURCE", "_slk_command": {"process_exit": 0}}
+
+    monkeypatch.setattr(worker_completion, "_run_json_command", run)
+    result = worker_completion._default_load_current_projection(
+        "RUN-SOURCE", [str(state)], state_config_path=str(config.resolve()),
+    )
+
+    assert result == {"run_id": "RUN-SOURCE"}
+    assert captured["command"] == [str(query.resolve())]
+    assert captured["state_config_path"] == str(config.resolve())
+
+
 def test_json_command_rejects_non_utf8_without_secondary_decode_or_none_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

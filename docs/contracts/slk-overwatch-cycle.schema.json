@@ -16,7 +16,7 @@
     "runtime_revision": {"type": "integer", "minimum": 1},
     "native_liveness": {"enum": ["IN_PROGRESS", "COMPLETED", "MISSING", "MISMATCHED"]},
     "cycle_sequence": {"type": "integer", "minimum": 1},
-    "cadence_seconds": {"type": "integer", "minimum": 180, "maximum": 300},
+    "cadence_seconds": {"oneOf": [{"type": "integer", "minimum": 180, "maximum": 300}, {"const": 600}]},
     "go_id": {"$ref": "#/$defs/nullable_identifier"},
     "cell_id": {"$ref": "#/$defs/nullable_identifier"},
     "attempt": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},

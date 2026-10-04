@@ -41,7 +41,7 @@ def load_role_host(endpoint_raw: Mapping[str, Any]) -> "RoleHost | None":
 
 
 class RoleHost:
-    def __init__(self, binding: Mapping[str, Any], digest: str):
+    def __init__(self, binding: Mapping[str, Any], digest: str, *, state_config_path: str | None = None):
         if (set(binding) != FIELDS or binding.get("schema_version") != "slk.role-host/v1"
             or not isinstance(binding.get("roles"), Mapping) or set(binding["roles"]) != {"supervisor", "checker", "worker"}
             or type(binding.get("plan_revision")) is not int or binding["plan_revision"] < 1
@@ -51,6 +51,7 @@ class RoleHost:
             if not isinstance(binding[field], list) or not binding[field] or not all(isinstance(x, str) and x.strip() for x in binding[field]):
                 raise ValueError("host command or criteria are invalid")
         self.binding, self.digest = dict(binding), digest
+        self.state_config_path = state_config_path
         self.state = list(binding["state_command"])
         self.transport = list(binding["transport_command"])
         self.endpoints = {}
@@ -101,12 +102,21 @@ class RoleHost:
         return str(self.binding["roles"][role]["credential_path"])
 
     def projection(self) -> Mapping[str, Any]:
-        return wc._default_load_current_projection(str(self.binding["run_id"]), self.state)
+        if self.state_config_path is None:
+            return wc._default_load_current_projection(str(self.binding["run_id"]), self.state)
+        return wc._default_load_current_projection(str(self.binding["run_id"]), self.state,
+                                                   state_config_path=self.state_config_path)
+
+    def _state_json(self, arguments: list[str], *, credential: str | None) -> Mapping[str, Any]:
+        if self.state_config_path is None:
+            return wc._run_json_command(self.state, arguments, credential=credential)
+        return wc._run_json_command(self.state, arguments, credential=credential,
+                                    state_config_path=self.state_config_path)
 
     def _authenticate(self, role: str, credential: str) -> Mapping[str, Any]:
         endpoint = self.endpoint(role)
-        value = wc._run_json_command(self.state, ["authenticate-role", "--run-id", endpoint["run_id"],
-                                                "--role-instance-id", endpoint["role_instance_id"]], credential=credential)
+        value = self._state_json(["authenticate-role", "--run-id", endpoint["run_id"],
+                                  "--role-instance-id", endpoint["role_instance_id"]], credential=credential)
         if (value.get("status") != "authenticated" or value.get("run_id") != endpoint["run_id"]
             or value.get("role") != role or value.get("role_instance_id") != endpoint["role_instance_id"]
             or type(value.get("runtime_revision")) is not int or value["runtime_revision"] < 1):
@@ -295,7 +305,7 @@ class RoleHost:
                     "plan_revision": self.binding["plan_revision"], "role_instance_id": envelope.receiver_role_instance_id,
                     "event_type": event_type, "details": details, "corrects_event_id": None, "occurred_at": occurred_at}
                 path = wc._write_or_reuse_stable_request(root / f"{event_type.lower()}.json", request)
-                written = wc._run_json_command(self.state, ["write", "--request", str(path)], credential=credential)
+                written = self._state_json(["write", "--request", str(path)], credential=credential)
                 if written.get("status") != "recorded" or written.get("run_id") != envelope.run_id:
                     raise wc.CompletionError("SUPERVISOR_STATE_WRITE_FAILED", "Supervisor event was not recorded")
         finally:
@@ -374,7 +384,7 @@ class RoleHost:
                     path = root / "commit-only" / f"revision-{auth['runtime_revision']}.json"
                     path.parent.mkdir(parents=True, exist_ok=True)
             path = wc._write_or_reuse_stable_request(path, request)
-            value = wc._run_json_command(self.state, ["commit-delivery-start", "--request", str(path)], credential=credential)
+            value = self._state_json(["commit-delivery-start", "--request", str(path)], credential=credential)
             if (value.get("status") not in {"committed", "idempotent_replay"}
                 or value.get("message_id") != envelope.message_id or value.get("run_id") != envelope.run_id
                 or type(value.get("runtime_revision")) is not int or value["runtime_revision"] != auth["runtime_revision"] + 1

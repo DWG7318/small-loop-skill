@@ -302,6 +302,86 @@ def test_inflight_admission_separates_reusable_normal_chain_from_current_run_ide
     assert not Path(current["communication_rehearsal"]).exists()
 
 
+def test_narrow_normal_chain_source_uses_its_own_state_database_without_changing_current_run(
+    tmp_path, monkeypatch,
+):
+    source_root, current_root = tmp_path / "source", tmp_path / "current"
+    source_root.mkdir()
+    current_root.mkdir()
+    source = _request(source_root, run_id="RUN-SOURCE")
+    current = _request(current_root, run_id="RUN-CURRENT")
+
+    source_state = source_root / "state"
+    source_state.mkdir()
+    (source_state / "slk.db").write_bytes(b"source-db")
+    source_config = write_json(source_root / "config.json", {
+        "schema_version": "slk.config/v1", "data_root": str(source_state.resolve()),
+    })
+    current_state = current_root / "state"
+    current_state.mkdir()
+    (current_state / "slk.db").write_bytes(b"current-db")
+    current_config = write_json(current_root / "config.json", {
+        "schema_version": "slk.config/v1", "data_root": str(current_state.resolve()),
+    })
+    monkeypatch.setenv("SLK_CONFIG_PATH", str(current_config.resolve()))
+
+    def proof(path):
+        return {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+    source_contract = write_json(source_root / "normal-chain-source.json", {
+        "schema_version": "slk.normal-chain-source/v1", "method_version": "4.4.1",
+        "status": "PASS", "source_run_id": "RUN-SOURCE", "plan_revision": 1,
+        "source_state_context": {
+            "config_path": str(source_config.resolve()),
+            "config_sha256": hashlib.sha256(source_config.read_bytes()).hexdigest(),
+        },
+        "source_roles": [{key: row[key] for key in (
+            "role", "role_instance_id", "actual_runtime", "endpoint_path", "workspace_root"
+        )} for row in source["roles"]],
+        "source_communication_rehearsal": proof(Path(source["communication_rehearsal"])),
+    })
+    current_packet = json.loads(Path(current["communication_rehearsal"]).read_text())
+    admission = {
+        "schema_version": "slk.run-admission-request/v1", "run_id": "RUN-CURRENT",
+        "plan_revision": 1, "roles": current["roles"],
+        "optional_features": current["optional_features"],
+        "bi_open_receipt": current["bi_open_receipt"],
+        "temporal_readiness_receipt": current["temporal_readiness_receipt"],
+        "normal_chain_conformance": str(source_contract),
+        "current_host_binding": current_packet["host_binding"],
+        "sealed_role_receipts": current_packet["sealed_role_receipts"],
+    }
+    calls = []
+
+    def authenticate(command, args, *, state_config_path=None, **_kwargs):
+        run_id, role_instance_id = args[2], args[4]
+        calls.append((run_id, state_config_path, os.environ["SLK_CONFIG_PATH"]))
+        if run_id == "RUN-SOURCE" and state_config_path != str(source_config.resolve()):
+            raise ValueError("source authentication used the product database")
+        if run_id == "RUN-CURRENT" and (
+            state_config_path is not None
+            or os.environ["SLK_CONFIG_PATH"] != str(current_config.resolve())
+        ):
+            raise ValueError("current authentication left the product database")
+        return {"status": "authenticated", "run_id": run_id,
+                "role_instance_id": role_instance_id,
+                "role": role_instance_id.rsplit("-", 1)[1], "runtime_revision": 7}
+
+    monkeypatch.setattr(wc, "_run_json_command", authenticate)
+    result = evaluate_run_admission(admission)
+
+    assert result["status"] == "READY"
+    assert result["conformance_run_id"] == "RUN-SOURCE"
+    assert {item[0] for item in calls} == {"RUN-SOURCE", "RUN-CURRENT"}
+    assert os.environ["SLK_CONFIG_PATH"] == str(current_config.resolve())
+
+    source_config.write_text(source_config.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    drifted = evaluate_run_admission(admission)
+    assert drifted["status"] == "REPAIR_NEEDED"
+    assert "NORMAL_CHAIN_CONFORMANCE_INVALID" in drifted["reason_codes"]
+    assert os.environ["SLK_CONFIG_PATH"] == str(current_config.resolve())
+
+
 def test_inflight_admission_rejects_echo_conformance_and_missing_current_consumer(tmp_path):
     source_root = tmp_path / "source"
     current_root = tmp_path / "current"

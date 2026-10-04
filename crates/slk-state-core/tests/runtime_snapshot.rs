@@ -6,8 +6,9 @@ use sha2::{Digest, Sha256};
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
     CellDefinition, CommitDeliveryStartRequest, DeliveryStartEvidence, EndpointIdentity, EventType,
-    GoDefinition, InitRunRequest, NativeStartStatus, ProjectIdentity, RegisterRoleRequest, Role,
-    RoleIdentity, TokenHandoffRequest, WriteRequest,
+    EvidenceReference, GoDefinition, InitRunRequest, NativeStartStatus, ProjectIdentity,
+    RegisterRoleRequest, ReviseRoleModelRequest, Role, RoleIdentity, TokenHandoffRequest,
+    WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -46,6 +47,60 @@ fn delivery_start_commits_receipt_token_event_and_snapshot_atomically() {
     assert_eq!(replay.status, "IDEMPOTENT_REPLAY");
     assert_eq!(replay.runtime_revision, result.runtime_revision);
     assert_eq!(replay.token, result.token);
+}
+
+#[test]
+fn administrative_model_revision_preserves_latest_engineering_message() {
+    let fixture = Fixture::new_423();
+    let start_path = fixture.root.path().join("started-model-revision.json");
+    fs::write(&start_path, br#"{"status":"started"}"#).unwrap();
+    fixture
+        .store
+        .commit_delivery_start(
+            &fixture.supervisor,
+            start_request(&start_path, fixture.runtime_revision()),
+        )
+        .unwrap();
+    let connection = slk_state_core::schema::open_database(fixture.root.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE role_instances SET model='gpt-5.6-sol' WHERE run_id='run-a' AND role='supervisor'",
+            [],
+        )
+        .unwrap();
+    let evidence_path = fixture.root.path().join("owner-model-choice.txt");
+    fs::write(&evidence_path, b"Owner selected gpt-6.1-sol xhigh").unwrap();
+    let evidence_sha256 = format!("{:x}", Sha256::digest(fs::read(&evidence_path).unwrap()));
+
+    fixture
+        .store
+        .revise_role_model(
+            &fixture.supervisor,
+            ReviseRoleModelRequest {
+                event_id: "model-revised-after-delivery".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "supervisor-a".into(),
+                expected_runtime_revision: fixture.runtime_revision(),
+                model: "gpt-6.1-sol".into(),
+                reasoning: "xhigh".into(),
+                owner_evidence: EvidenceReference {
+                    path: evidence_path.to_string_lossy().into_owned(),
+                    sha256: evidence_sha256,
+                },
+                reason: "Owner model policy correction".into(),
+                occurred_at: "2026-10-05T00:00:00Z".into(),
+            },
+        )
+        .unwrap();
+
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    assert_eq!(snapshot.latest_event_id, "model-revised-after-delivery");
+    assert_eq!(snapshot.latest_message_id.as_deref(), Some("message-2"));
 }
 
 #[test]
