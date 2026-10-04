@@ -40,8 +40,8 @@ def test_ow_consumer_authenticates_and_records_own_cycle_without_exposing_secret
     calls = []
     monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda path: "slk_" + "a" * 64)
 
-    def run(command, arguments, credential=None):
-        calls.append((arguments, credential))
+    def run(command, arguments, credential=None, credential_scope="role"):
+        calls.append((arguments, credential, credential_scope))
         if arguments[0] == "authenticate-role":
             return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
                     "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 7}
@@ -52,6 +52,7 @@ def test_ow_consumer_authenticates_and_records_own_cycle_without_exposing_secret
         request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
 
     assert [item[0][0] for item in calls] == ["authenticate-role", "record-overwatch-cycle"]
+    assert [item[2] for item in calls] == ["role", "overwatcher"]
     assert result["status"] == "OVERWATCHER_ADMIN_COMPLETED"
     assert "slk_" not in json.dumps(result)
     assert "slk_" not in Path(json.loads(request.read_text())["result_path"]).read_text()
@@ -67,7 +68,7 @@ def test_ow_consumer_fails_closed_before_ow_state_write(tmp_path, monkeypatch, d
     calls = []
     monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda path: "slk_" + "b" * 64)
 
-    def run(command, arguments, credential=None):
+    def run(command, arguments, credential=None, credential_scope="role"):
         calls.append(arguments[0])
         return {"status": "authenticated", "run_id": "RUN-A",
                 "role": "supervisor" if damage == "wrong-role" else "overwatcher",

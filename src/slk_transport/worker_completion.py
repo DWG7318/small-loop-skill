@@ -4721,14 +4721,24 @@ def _run_json_command(
     arguments: list[str],
     *,
     credential: str | None,
+    credential_scope: str = "role",
 ) -> dict[str, Any]:
     from .process import windows_no_window_kwargs
 
+    if credential_scope not in {"role", "overwatcher"}:
+        raise CompletionError(
+            "WORKER_CONTINUATION_CREDENTIAL_SCOPE_INVALID",
+            "continuation command credential scope is not allowed",
+        )
     environment = os.environ.copy()
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
     if credential is not None:
-        environment["SLK_ROLE_CREDENTIAL"] = credential
+        environment[
+            "SLK_ROLE_CREDENTIAL"
+            if credential_scope == "role"
+            else "SLK_OVERWATCHER_CREDENTIAL"
+        ] = credential
     environment["PYTHONIOENCODING"] = "utf-8"
     environment["PYTHONUTF8"] = "1"
     completed = subprocess.run(

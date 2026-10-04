@@ -374,6 +374,31 @@ def test_json_command_forces_child_utf8_and_parses_non_ascii_json(
     assert result["_slk_command"]["process_exit"] == 2
 
 
+@pytest.mark.parametrize(
+    ("credential_scope", "expected_variable"),
+    [("role", "SLK_ROLE_CREDENTIAL"), ("overwatcher", "SLK_OVERWATCHER_CREDENTIAL")],
+)
+def test_json_command_routes_one_credential_scope_without_cross_leak(
+    monkeypatch: pytest.MonkeyPatch, credential_scope: str, expected_variable: str,
+) -> None:
+    monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "parent-role")
+    monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "parent-overwatcher")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert environment[expected_variable] == VALID_CREDENTIAL
+        other = ({"SLK_ROLE_CREDENTIAL", "SLK_OVERWATCHER_CREDENTIAL"} - {expected_variable}).pop()
+        assert other not in environment
+        return subprocess.CompletedProcess(command, 0, stdout=b'{"status":"ok"}', stderr=b"")
+
+    monkeypatch.setattr(worker_completion.subprocess, "run", run)
+    result = worker_completion._run_json_command(
+        ["tool"], ["send"], credential=VALID_CREDENTIAL, credential_scope=credential_scope,
+    )
+    assert result["status"] == "ok"
+
+
 def test_json_command_rejects_non_utf8_without_secondary_decode_or_none_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

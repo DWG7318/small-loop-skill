@@ -96,7 +96,7 @@ def execute_sealed_overwatcher_admin(
             raise ValueError("saved credential does not authenticate the exact current Overwatcher revision")
         state_result = wc._run_json_command(
             list(state_command), [operation, "--request", str(operation_request)],
-            credential=secret,
+            credential=secret, credential_scope="overwatcher",
         )
     finally:
         secret = ""

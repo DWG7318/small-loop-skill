@@ -11,6 +11,9 @@ from slk_transport import supervisor_notification as notification
 from slk_transport.native_activity import make_native_start
 from slk_transport.process import windows_no_window_kwargs
 from slk_transport.adapters.base import AdapterError
+from slk_temporal.contracts import (
+    RoleBinding, StartSlkRequest, notification_native_id, validate_supervisor_notification,
+)
 from test_codex_desktop import prepared
 
 
@@ -89,8 +92,82 @@ def test_temporal_activity_receipt_binds_outer_event_and_exact_native_notice(tmp
         "run_id": endpoint["run_id"], "responsible_role_instance_id": "OW-A", "source_operation_id": "guard-a", "threshold_seconds": 0}
     result = notification.notify_temporal_supervisor(value, endpoint, projection, tmp_path / "notices")
     assert result["event_id"] == value["event_id"]
-    assert result["native_start"]["message_id"] != value["event_id"]
+    assert result["native_start"]["message_id"] == notification_native_id(value["run_id"], value["event_id"])
+    validate_supervisor_notification(
+        result, run_id=value["run_id"], event_id=value["event_id"],
+        supervisor_role_instance_id=endpoint["role_instance_id"],
+    )
     assert result["receipt_sha256"] == notification.canonical_json_sha256({k: v for k, v in result.items() if k != "receipt_sha256"})
+
+
+def test_real_temporal_runtime_events_reach_native_start_validator_and_replay(tmp_path, monkeypatch):
+    pytest.importorskip("temporalio")
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from slk_temporal import workflows
+
+    endpoint, _notice, projection = fixture(tmp_path, monkeypatch)
+    startup = StartSlkRequest(
+        run_id=endpoint["run_id"], method_version="4.4.1", runtime_revision=11,
+        task_queue="slk-test", ack_timeout_seconds=120,
+        startup_idempotency_key="start-run-a-v11",
+        roles=(
+            RoleBinding("SUPERVISOR", endpoint["role_instance_id"], "supervisor-endpoint"),
+            RoleBinding("CHECKER", "checker-a", "checker-endpoint"),
+            RoleBinding("WORKER", "worker-a", "worker-endpoint"),
+            RoleBinding("OVERWATCHER", "OW-A", "overwatcher-endpoint"),
+        ),
+    )
+    notices = []
+
+    async def collect(value):
+        notices.append(value)
+        return True
+
+    member = workflows.RunSlkWorkflow()
+    member._startup = startup
+    now = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
+    member._member_residency_since = now - workflows.MEMBER_RESIDENCY_LIMIT
+    member._responsibility_operation_id = "delivery-1"
+    member._responsible_role_instance_id = "checker-a"
+    member._next_overwatcher_audit_at = now + timedelta(hours=1)
+    monkeypatch.setattr(workflows.workflow, "now", lambda: now)
+    monkeypatch.setattr(member, "_notify_supervisor", collect)
+    asyncio.run(member._perform_runtime_checks())
+
+    audit = workflows.RunSlkWorkflow()
+    audit._startup = startup
+
+    async def inspect(_name, value, **_kwargs):
+        return {
+            "status": "ANOMALY", "run_id": value["run_id"],
+            "overwatcher_role_instance_id": value["overwatcher_role_instance_id"],
+            "audit_cycle": value["audit_cycle"], "evidence_sha256": "a" * 64,
+            "receipt_sha256": "b" * 64,
+        }
+
+    monkeypatch.setattr(workflows.workflow, "execute_activity", inspect)
+    monkeypatch.setattr(workflows.workflow, "patched", lambda _name: True)
+    monkeypatch.setattr(audit, "_notify_supervisor", collect)
+    asyncio.run(audit._inspect_overwatcher())
+
+    assert [value["event_id"] for value in notices] == [
+        "RUN-A-member-residency-delivery-1", "RUN-A-overwatcher-audit-1",
+    ]
+    for value in notices:
+        result = notification.notify_temporal_supervisor(
+            value, endpoint, projection, tmp_path / "notices")
+        assert result["event_id"] == value["event_id"]
+        assert result["native_start"]["message_id"] == notification_native_id(
+            value["run_id"], value["event_id"])
+        validate_supervisor_notification(
+            result, run_id=value["run_id"], event_id=value["event_id"],
+            supervisor_role_instance_id=endpoint["role_instance_id"],
+        )
+        assert notification.notify_temporal_supervisor(
+            value, endpoint, projection, tmp_path / "notices") == result
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(call["name"] == "send_message_to_thread" for call in calls) == 2
 
 
 @pytest.mark.parametrize("registered_session_matches", [True, False])

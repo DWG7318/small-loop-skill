@@ -11,6 +11,7 @@ import pytest
 
 from slk_transport.adapters.dsh import DshAdapter
 from slk_transport.adapters.ocrv import OcrvAdapter
+from slk_transport import overwatcher_admin, supervisor_admin, worker_completion
 from slk_transport.contracts import canonical_json_sha256
 from slk_transport.dispatcher import dispatch_once
 
@@ -807,6 +808,55 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
     assert json.loads(rejected.stderr)["code"] == "SLK_ROLE_CREDENTIAL_REQUIRED"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="CurrentUser DPAPI is Windows-only")
+def test_real_overwatcher_admin_uses_the_ow_environment_for_cycle_write(tmp_path, monkeypatch):
+    environment = configured_environment(tmp_path)
+    monkeypatch.setenv("SLK_CONFIG_PATH", environment["SLK_CONFIG_PATH"])
+    data_root = tmp_path / "state"
+    invoke(["configure", "--data-root", data_root], environment)
+    initialized = json.loads(invoke(
+        ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+        environment,
+    ).stdout)
+    supervisor_environment = environment.copy()
+    supervisor_environment["SLK_ROLE_CREDENTIAL"] = initialized["supervisor_credential"]
+    bound = json.loads(invoke([
+        "bind-overwatcher", "--request",
+        write_json(tmp_path / "overwatcher.json", overwatcher_binding()),
+    ], supervisor_environment).stdout)
+    source = tmp_path / "overwatcher.credential"
+    sealed = tmp_path / "overwatcher.dpapi"
+    source.write_text(bound["overwatcher_write_credential"], encoding="ascii")
+    worker_completion.prepare_sealed_role_credential(
+        source, sealed, run_id="run-a", role="overwatcher",
+        role_instance_id="overwatcher-a", state_command=[str(state_binary())],
+    )
+    operation = write_json(tmp_path / "cycle.json", overwatch_cycle(tmp_path))
+    result_path = tmp_path / "overwatcher-admin-result.json"
+    request = write_json(tmp_path / "overwatcher-admin.json", {
+        "schema_version": "slk.overwatcher-admin/v1",
+        "run_id": "run-a",
+        "overwatcher_role_instance_id": "overwatcher-a",
+        "expected_runtime_revision": 2,
+        "sealed_credential_path": str(sealed.resolve()),
+        "state_command": [str(state_binary())],
+        "operation": "record-overwatch-cycle",
+        "operation_request_path": str(operation.resolve()),
+        "operation_request_sha256": hashlib.sha256(operation.read_bytes()).hexdigest(),
+        "result_path": str(result_path.resolve()),
+    })
+
+    result = overwatcher_admin.execute_sealed_overwatcher_admin(
+        request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+    assert result["state_result"]["status"] == "overwatch_cycle_recorded"
+    assert result_path.is_file()
+    with sqlite3.connect(data_root / "slk.db") as database:
+        assert database.execute(
+            "SELECT COUNT(*) FROM overwatch_cycles WHERE run_id='run-a'"
+        ).fetchone()[0] == 1
+
+
 def test_overwatcher_credential_rotation_uses_unambiguous_one_time_fields(tmp_path):
     environment = configured_environment(tmp_path)
     invoke(["configure", "--data-root", tmp_path / "state"], environment)
@@ -1151,3 +1201,78 @@ def test_admin_cli_reconciles_and_adopts_with_closed_payloads(tmp_path):
         "run_id": "run-canonical",
         "status": "applied",
     }
+
+
+@pytest.mark.skipif(os.name != "nt", reason="CurrentUser DPAPI is Windows-only")
+def test_real_supervisor_admin_accepts_applied_and_idempotent_adoption(tmp_path, monkeypatch):
+    environment = configured_environment(tmp_path)
+    monkeypatch.setenv("SLK_CONFIG_PATH", environment["SLK_CONFIG_PATH"])
+    data_root = tmp_path / "state"
+    invoke(["configure", "--data-root", data_root], environment)
+    initialized = json.loads(invoke(
+        ["init-run", "--request", write_json(tmp_path / "init.json", init_request())],
+        environment,
+    ).stdout)
+    source = tmp_path / "supervisor.credential"
+    sealed = tmp_path / "supervisor.dpapi"
+    source.write_text(initialized["supervisor_credential"], encoding="ascii")
+    worker_completion.prepare_sealed_role_credential(
+        source, sealed, run_id="run-a", role="supervisor",
+        role_instance_id="supervisor-a", state_command=[str(state_binary())],
+    )
+    database_path = data_root / "slk.db"
+    with sqlite3.connect(database_path) as database:
+        database.execute(
+            "UPDATE runs SET slk_version='4.4.0', origin_slk_version='4.4.0' WHERE run_id='run-a'"
+        )
+    operation = write_json(tmp_path / "adopt.json", {
+        "receipt_id": "adoption-real-admin",
+        "run_id": "run-a",
+        "expected_snapshot": administrative_snapshot(database_path, "run-a"),
+        "from_version": "4.4.0",
+        "to_version": "4.4.1",
+        "owner_authorization": {
+            "source_thread_id": "owner-thread",
+            "message_id": "owner-adoption",
+            "content_sha256": "0123456789abcdef" * 4,
+            "decision": "APPROVE_METHOD_CONTRACT_ADOPTION",
+            "occurred_at": "2026-10-05T00:00:00Z",
+        },
+        "reconciliation_receipt_id": None,
+        "compatibility": {
+            "topology": "PRESERVED", "role_bindings": "PRESERVED",
+            "token": "PRESERVED", "engineering_history": "PRESERVED",
+            "overwatcher": "ABSENT",
+        },
+        "reason": "exercise the real sealed Supervisor adoption consumer",
+        "occurred_at": "2026-10-05T00:00:01Z",
+    })
+    operation_hash = hashlib.sha256(operation.read_bytes()).hexdigest()
+
+    def admin_request(revision, suffix):
+        return write_json(tmp_path / f"admin-{suffix}.json", {
+            "schema_version": "slk.supervisor-admin/v1",
+            "run_id": "run-a",
+            "supervisor_role_instance_id": "supervisor-a",
+            "expected_runtime_revision": revision,
+            "sealed_credential_path": str(sealed.resolve()),
+            "state_command": [str(state_binary())],
+            "operation": "adopt-method-contract",
+            "operation_request_path": str(operation.resolve()),
+            "operation_request_sha256": operation_hash,
+            "result_path": str((tmp_path / f"admin-{suffix}-result.json").resolve()),
+        })
+
+    first = admin_request(1, "applied")
+    applied = supervisor_admin.execute_sealed_supervisor_admin(
+        first, request_sha256=hashlib.sha256(first.read_bytes()).hexdigest())
+    replay = admin_request(2, "replay")
+    idempotent = supervisor_admin.execute_sealed_supervisor_admin(
+        replay, request_sha256=hashlib.sha256(replay.read_bytes()).hexdigest())
+
+    assert applied["state_result"]["status"] == "applied"
+    assert idempotent["state_result"]["status"] == "idempotent_replay"
+    with sqlite3.connect(database_path) as database:
+        assert database.execute(
+            "SELECT COUNT(*) FROM run_method_adoption_receipts WHERE run_id='run-a'"
+        ).fetchone()[0] == 1

@@ -21,7 +21,7 @@ FIELDS = {
     "operation_request_sha256", "result_path",
 }
 OPERATIONS = {
-    "adopt-method-contract": {"adopted", "already_applied"},
+    "adopt-method-contract": {"applied", "idempotent_replay"},
     "revise-role-model": {"model_revised", "already_applied"},
     "resume-overwatcher-turn": {"overwatcher_turn_resumed"},
     "rebind-session": {"rebound"},

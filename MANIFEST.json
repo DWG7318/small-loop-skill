@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "40b3ec94e186e8cacf7b14ed83a3df7143afa904041fbf41725d4f138f0d6f9b"
+      "sha256": "4579469ab3c9fe9273d2b9dc04753c81904062cd9ecfa83acbb49db81b8bddab"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "e0066709725234bf2b67bcc10ec956657e217c46fc780727017bf7d8cefeb2bd"
+      "sha256": "3db48a3a989a5a9a9d0af4f8127f183170757bfaf3a7da55d1fdee717bb30a48"
     },
     {
       "path": "VERSION",
@@ -1400,7 +1400,7 @@
     },
     {
       "path": "src/slk_transport/overwatcher_admin.py",
-      "sha256": "844b98ed7466eb404f25f79a959ac9665f96f1cf3cb68a9164460a277bd37344"
+      "sha256": "05f56be45a5dae32642a144af6c4bba1fa436bd6dfbd89dd51b31c072a991906"
     },
     {
       "path": "src/slk_transport/overwatcher_continuity.py",
@@ -1436,7 +1436,7 @@
     },
     {
       "path": "src/slk_transport/supervisor_admin.py",
-      "sha256": "739ea10a99bc466a21ae467f059f5a3d6fcb273b194ec0bd8ebb444885a36669"
+      "sha256": "09ace122423d178ba908fc0f9de2250e13d780225dd53823932d460d3bb97eab"
     },
     {
       "path": "src/slk_transport/supervisor_notification.py",
@@ -1452,7 +1452,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "749ac9792bb25180b6c7467eed5a83655b35175f7806a45fcbdf80c3e259637f"
+      "sha256": "cad3acaf6476319632938fccb66fba62f21ce9249a9641f4fe9d0d7ce21399a3"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1512,7 +1512,7 @@
     },
     {
       "path": "tests/state/test_state_cli.py",
-      "sha256": "9b4c8dd9801b56f7cc864e8caa679ab93e880278c0cc64be6b54863590991122"
+      "sha256": "7b7bfc9bb08ef02b5ec3931bb94f65efae71f775f6e71bc96a35dc46c9b2d1fe"
     },
     {
       "path": "tests/temporal/__init__.py",
@@ -1660,7 +1660,7 @@
     },
     {
       "path": "tests/transport/test_overwatcher_admin.py",
-      "sha256": "a545250c670e65762f74b8ca7eb0ae0a0722f55cc1437b6afdd5a401cf8c1ceb"
+      "sha256": "5361e4e612bc70d8c12e0de7703a69b0ddf67b17da7eb1fc8d46c13615b3793a"
     },
     {
       "path": "tests/transport/test_overwatcher_continuity.py",
@@ -1700,7 +1700,7 @@
     },
     {
       "path": "tests/transport/test_supervisor_notification.py",
-      "sha256": "d41289e857efe62881d5247f4aeb3943afc88125787eea8021db67a6efd01bbd"
+      "sha256": "2009cb03c6b201dd3c3d4948ad463e62fc2f7235c0327432ff34ff777655a220"
     },
     {
       "path": "tests/transport/test_task_file.py",
@@ -1712,7 +1712,7 @@
     },
     {
       "path": "tests/transport/test_worker_completion.py",
-      "sha256": "a2e97f9c57be4d479b2518077ff10fb1eb4c89482217382e4ceb138feb7b1999"
+      "sha256": "ebe46ce88cc2704576f1b82c10dd700c5beabbb5eecc54bdbf08fc95722a8050"
     },
     {
       "path": "tests/transport/test_workspace.py",
