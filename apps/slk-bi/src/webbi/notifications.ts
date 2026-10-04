@@ -1,6 +1,6 @@
 import { catalogKey } from "../messages/catalog";
 import type { AuthoritativeMessage } from "../messages/messageFeed";
-import type { NotificationSelectionMode, NtfyAuthMode } from "./contracts";
+import type { NotificationSelectionMode, NotificationSettingsInput, NtfyAuthMode } from "./contracts";
 
 export interface NotificationSelection {
   selection_mode: NotificationSelectionMode;
@@ -26,6 +26,12 @@ export interface PublicNotificationSettings extends NotificationSelection {
   username: string | null;
   has_secret: boolean;
   config_version: number;
+}
+
+export function canReuseNotificationSecret(current: StoredNotificationSettings, input: NotificationSettingsInput) {
+  return current.auth_mode === input.auth_mode && current.server_url === input.server_url
+    && (input.auth_mode !== "password" || current.username === input.username)
+    && Boolean(current.encrypted_secret && current.secret_iv);
 }
 
 export function selectMessagesForNotification(

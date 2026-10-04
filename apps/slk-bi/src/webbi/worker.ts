@@ -9,6 +9,7 @@ import {
 } from "./contracts";
 import {
   notificationKey,
+  canReuseNotificationSecret,
   selectMessagesForNotification,
   toPublicNotificationSettings,
   type StoredNotificationSettings,
@@ -64,7 +65,6 @@ export interface WebBiHandlerDependencies {
   notifier: WebBiNotifier;
   catalog: readonly MessageCatalogEntry[];
   ingest_token: string;
-  admin_token: string;
 }
 
 function json(value: unknown, status = 200) {
@@ -155,7 +155,7 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
         }, 202);
       }
 
-      // Only these exact GET routes are public. Viewing never grants mutation authority.
+      // Run facts stay read-only; notification configuration permits manual editing.
       if (url.pathname === "/api/v1/catalog" && request.method === "GET") {
         return json({ schema_version: "slk.bi.message-catalog/v1", entries: dependencies.catalog });
       }
@@ -185,9 +185,6 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
           return json(toPublicNotificationSettings(await dependencies.store.getSettings()));
         }
         if (request.method === "PUT") {
-          if (!bearerAuthorized(request, dependencies.admin_token)) {
-            return json({ error: "SLK_WEBBI_ADMIN_UNAUTHORIZED" }, 401);
-          }
           const input = await requestJson(request);
           const current = await dependencies.store.getSettings();
           const requestedMode = input && typeof input === "object" && !Array.isArray(input)
@@ -197,13 +194,13 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
             allow_secret_reuse: requestedMode === current.auth_mode
               && Boolean(current.encrypted_secret && current.secret_iv),
           });
+          if (parsed.auth_mode !== "none" && !parsed.secret && !canReuseNotificationSecret(current, parsed)) {
+            throw new Error("SLK_WEBBI_NOTIFICATION_SECRET_REQUIRED");
+          }
           return json(toPublicNotificationSettings(await dependencies.store.saveSettings(parsed)));
         }
       }
       if (url.pathname === "/api/v1/notification-settings/test" && request.method === "POST") {
-        if (!bearerAuthorized(request, dependencies.admin_token)) {
-          return json({ error: "SLK_WEBBI_ADMIN_UNAUTHORIZED" }, 401);
-        }
         const target = await dependencies.store.notificationTarget();
         if (!target) return json({ error: "SLK_WEBBI_NOTIFICATION_NOT_CONFIGURED" }, 409);
         await dependencies.notifier.test(target);

@@ -90,24 +90,20 @@ afterEach(() => {
 });
 
 describe("WebBI 1.1 browser UI", () => {
-  it("allows reading settings without login but requires ephemeral authorization only when writing", async () => {
+  it("allows manual settings saves and test sends without a management token", async () => {
     const mock = api();
     render(<WebBiApp api={mock} />);
     fireEvent.click(await screen.findByRole("link", { name: "手机通知" }));
-    await screen.findByLabelText("Topic 名称");
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
-    fireEvent.click(screen.getByRole("button", { name: "发送测试消息" }));
-    expect(mock.saveNotificationSettings).not.toHaveBeenCalled();
-    expect(mock.testNotification).not.toHaveBeenCalled();
-    expect(screen.getByText(/请输入修改授权/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("修改授权"), { target: { value: "admin-edit-secret" } });
+    fireEvent.change(await screen.findByLabelText("Topic 名称"), { target: { value: "owner-alerts" } });
+    expect(screen.queryByLabelText("修改授权")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
     await waitFor(() => expect(mock.saveNotificationSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ server_url: settings.server_url }), "admin-edit-secret",
+      expect.objectContaining({ server_url: settings.server_url, topic: "owner-alerts" }),
     ));
+    expect(await screen.findByText("设置已保存")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "发送测试消息" }));
-    await waitFor(() => expect(mock.testNotification).toHaveBeenCalledWith("admin-edit-secret"));
-    expect(JSON.stringify(window.localStorage)).not.toContain("admin-edit-secret");
+    await waitFor(() => expect(mock.testNotification).toHaveBeenCalledWith());
+    expect(await screen.findByText("测试消息已发送")).toBeInTheDocument();
   });
 
   it("starts with 进行中, has no 全部 filter, and opens an isolated Run detail", async () => {
@@ -168,7 +164,7 @@ describe("WebBI 1.1 browser UI", () => {
     expect(screen.getByLabelText("用户名")).toHaveValue("DWG");
     expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
     expect(screen.getByLabelText("Topic 名称")).toHaveValue("slk");
-    expect(screen.getByText("已保存凭据；留空即保留")).toBeInTheDocument();
+    expect(screen.getByText("已保存凭据；更换服务器、认证方式或账号需重新填写")).toBeInTheDocument();
     expect(screen.queryByDisplayValue("private-token")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /Worker 开始工作/ })).toBeChecked();
     expect(screen.queryByText("进度变化")).not.toBeInTheDocument();

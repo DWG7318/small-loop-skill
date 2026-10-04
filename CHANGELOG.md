@@ -1,5 +1,10 @@
 # Changelog
 
+## WebBI manual notification settings (2026-10-04, local candidate)
+
+- At Owner request, removed the management-token field and authorization requirement for notification saves/tests. Visitors can directly edit this configuration; Run facts remain read-only and device uploads still require their existing token. No replacement login, dependency, token rotation or method change was added.
+- Retained encrypted/redacted ntfy credentials; reuse is bound to the same server/auth/account to prevent forwarding a stored secret after changing its destination.
+
 ## WebBI public-read correction (2026-10-04, local candidate)
 
 - Removed the unrequested login dependency: Run/archive/detail/catalog and redacted notification settings are readable without a login. Exact upload, settings-save and notification-test routes keep their separate bearer authorization; caller-supplied email/JWT headers cannot grant writes.

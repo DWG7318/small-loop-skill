@@ -14,12 +14,18 @@ describe("WebBI browser authorization", () => {
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization")).toBeNull();
   });
 
-  it("sends the supplied management token only with the write, without retaining it", async () => {
+  it("saves and tests manual settings without an authorization header or stored credential", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ status: "sent" }));
     vi.stubGlobal("fetch", fetchMock);
-    await webBiApi.testNotification("admin-edit-secret");
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer admin-edit-secret");
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("cookie")).toBeNull();
+    await webBiApi.saveNotificationSettings({
+      enabled: false, server_url: "https://ntfy.example.test", topic: "slk",
+      auth_mode: "none", selection_mode: "all", selected_message_types: [],
+    });
+    await webBiApi.testNotification();
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(new Headers(init?.headers).get("authorization")).toBeNull();
+      expect(new Headers(init?.headers).get("cookie")).toBeNull();
+    }
     expect(window.localStorage.length).toBe(0);
   });
 });

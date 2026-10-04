@@ -275,7 +275,6 @@ function SettingsPage({ api }: { api: WebBiApi }) {
   const [draft, setDraft] = useState<NotificationSettingsInput>();
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
-  const [editAuthorization, setEditAuthorization] = useState("");
 
   useEffect(() => {
     void Promise.all([api.catalog(), api.getNotificationSettings()]).then(([entries, settings]) => {
@@ -296,9 +295,8 @@ function SettingsPage({ api }: { api: WebBiApi }) {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft) return;
-    if (!editAuthorization) { setError("请输入修改授权；查看不需要登录"); return; }
     try {
-      const saved = await api.saveNotificationSettings(draft, editAuthorization);
+      const saved = await api.saveNotificationSettings(draft);
       setStored(saved);
       setDraft((current) => current ? { ...current, secret: undefined } : current);
       setNotice("设置已保存");
@@ -307,9 +305,8 @@ function SettingsPage({ api }: { api: WebBiApi }) {
   }
 
   async function sendTest() {
-    if (!editAuthorization) { setError("请输入修改授权；查看不需要登录"); return; }
     try {
-      await api.testNotification(editAuthorization);
+      await api.testNotification();
       setNotice("测试消息已发送");
       setError(undefined);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
@@ -334,7 +331,7 @@ function SettingsPage({ api }: { api: WebBiApi }) {
           <label>Topic 名称<input aria-label="Topic 名称" value={draft.topic} onChange={(event) => setDraft({ ...draft, topic: event.target.value })} /></label>
           <label>认证方式<select value={draft.auth_mode} onChange={(event) => setDraft({ ...draft, auth_mode: event.target.value as NotificationSettingsInput["auth_mode"] })}><option value="none">无</option><option value="token">Token</option><option value="password">账号密码</option></select></label>
           {draft.auth_mode === "password" ? <label>用户名<input aria-label="用户名" value={draft.username ?? ""} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label> : null}
-          {draft.auth_mode !== "none" ? <label>{draft.auth_mode === "password" ? "密码" : "Token"}<input aria-label={draft.auth_mode === "password" ? "密码" : "Token"} type="password" value={draft.secret ?? ""} onChange={(event) => setDraft({ ...draft, secret: event.target.value || undefined })} placeholder={stored.has_secret ? "留空即保留" : draft.auth_mode === "password" ? "请输入密码" : "请输入 Token"} /><small>{stored.has_secret ? "已保存凭据；留空即保留" : "尚未保存凭据"}</small></label> : null}
+          {draft.auth_mode !== "none" ? <label>{draft.auth_mode === "password" ? "密码" : "Token"}<input aria-label={draft.auth_mode === "password" ? "密码" : "Token"} type="password" value={draft.secret ?? ""} onChange={(event) => setDraft({ ...draft, secret: event.target.value || undefined })} placeholder={stored.has_secret ? "同一服务器与账号留空保留" : draft.auth_mode === "password" ? "请输入密码" : "请输入 Token"} /><small>{stored.has_secret ? "已保存凭据；更换服务器、认证方式或账号需重新填写" : "尚未保存凭据"}</small></label> : null}
         </div>
         <fieldset>
           <legend>发送范围</legend>
@@ -347,7 +344,6 @@ function SettingsPage({ api }: { api: WebBiApi }) {
             return <label key={key}><input type="checkbox" checked={draft.selected_message_types.includes(key)} onChange={() => toggleType(key)} /><span><b>{entry.label_zh}</b><code>{key}</code></span></label>;
           })}
         </div> : null}
-        <div className="webbi-form-grid"><label>修改授权<input aria-label="修改授权" type="password" autoComplete="off" value={editAuthorization} onChange={(event) => setEditAuthorization(event.target.value)} /><small>仅保存或测试时需要 WebBI 管理令牌，不是 ntfy 密码；不保存在浏览器。</small></label></div>
         {error ? <p className="webbi-error">操作失败：{error}</p> : null}{notice ? <p className="webbi-success">{notice}</p> : null}
         <div className="webbi-form-actions"><button type="submit">保存设置</button><button type="button" className="secondary" onClick={() => void sendTest()}>发送测试消息</button></div>
       </form>

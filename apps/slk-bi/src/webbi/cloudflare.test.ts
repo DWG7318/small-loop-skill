@@ -15,13 +15,12 @@ function environment() {
       }),
     },
     ASSETS: { fetch: async () => new Response("WebBI assets") },
-    WEBBI_ADMIN_TOKEN: "admin-test-secret",
     WEBBI_INGEST_TOKEN: "ingest-test-secret",
     WEBBI_SETTINGS_ENCRYPTION_KEY: "unused-for-read",
   };
 }
 
-describe("WebBI public reading / protected writing", () => {
+describe("WebBI public reading / manual settings / protected uploads", () => {
   it.each([
     "/api/v1/runs?archive=active", "/api/v1/runs?archive=archived",
     "/api/v1/catalog", "/api/v1/notification-settings",
@@ -46,20 +45,21 @@ describe("WebBI public reading / protected writing", () => {
     { "cf-access-authenticated-user-email": "owner@example.test" },
     { "cf-access-jwt-assertion": "caller-supplied-token" },
     { authorization: "Bearer ingest-test-secret" },
-  ])("does not grant settings/test writes from public viewing or an unrelated credential: %o", async (headers) => {
-    for (const [path, method] of [
-      ["/api/v1/notification-settings", "PUT"],
-      ["/api/v1/notification-settings/test", "POST"],
-    ]) {
-      const response = await worker.fetch(new Request(`https://slk.example.test${path}`, {
-        method, headers: headers as HeadersInit, body: "{}",
-      }), environment());
-      expect(response.status).toBe(401);
-      expect(await response.json()).toEqual({ error: "SLK_WEBBI_ADMIN_UNAUTHORIZED" });
-    }
+  ])("validates manual settings without relying on identity headers: %o", async (headers) => {
+    const response = await worker.fetch(new Request("https://slk.example.test/api/v1/notification-settings", {
+      method: "PUT", headers: headers as HeadersInit, body: "{}",
+    }), environment());
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "SLK_WEBBI_NOTIFICATION_INVALID" });
   });
 
-  it("keeps the upload credential separate from admin authorization", async () => {
+  it("checks notification readiness, not management authorization, before a test send", async () => {
+    const response = await worker.fetch(new Request("https://slk.example.test/api/v1/notification-settings/test", { method: "POST" }), environment());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "SLK_WEBBI_NOTIFICATION_NOT_CONFIGURED" });
+  });
+
+  it("does not authorize uploads through manual settings access or an unrelated credential", async () => {
     for (const headers of [{}, { authorization: "Bearer admin-test-secret" }]) {
       const response = await worker.fetch(new Request("https://slk.example.test/api/v1/uploads", {
         method: "POST", headers: headers as HeadersInit, body: "{}",

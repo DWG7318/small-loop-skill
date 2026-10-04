@@ -122,7 +122,6 @@ class RecordingNotifier implements WebBiNotifier {
 
 function request(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
-  headers.set("authorization", headers.get("authorization") ?? "Bearer admin-secret");
   return new Request(`https://slk.example.test${path}`, { ...init, headers });
 }
 
@@ -134,7 +133,7 @@ describe("WebBI worker", () => {
     const notifier = new RecordingNotifier();
     const handler = createWebBiHandler({
       store, notifier, catalog: MESSAGE_CATALOG,
-      ingest_token: "ingest-secret", admin_token: "admin-secret",
+      ingest_token: "ingest-secret",
     });
     const before = JSON.stringify(store.settings);
     const detail = await handler(new Request("https://slk.example.test/api/v1/runs/device-a/run-a"));
@@ -143,29 +142,51 @@ describe("WebBI worker", () => {
     const settings = await handler(new Request("https://slk.example.test/api/v1/notification-settings"));
     expect(settings.status).toBe(200);
     expect(await settings.text()).not.toContain("ciphertext");
-    for (const [path, method] of [
-      ["/api/v1/notification-settings", "PUT"], ["/api/v1/notification-settings/test", "POST"],
-    ]) {
-      const rejected = await handler(new Request(`https://slk.example.test${path}`, {
-        method, body: "{}", headers: { "cf-access-authenticated-user-email": "owner@example.test" },
-      }));
-      expect(rejected.status).toBe(401);
-    }
+    const rejected = await handler(new Request("https://slk.example.test/api/v1/notification-settings", {
+      method: "PUT", body: "{}",
+    }));
+    expect(rejected.status).toBe(400);
     expect(JSON.stringify(store.settings)).toBe(before);
     expect(store.records.size).toBe(1);
     expect(notifier.sent).toEqual([]);
   });
 
-  it("requires an explicit configured admin token for settings and test sends", async () => {
+  it("saves settings and sends a test without a management credential or Run mutation", async () => {
     const store = new MemoryStore();
     const notifier = new RecordingNotifier();
-    const make = (admin_token: string) => createWebBiHandler({
-      store, notifier, catalog: MESSAGE_CATALOG, ingest_token: "ingest-secret", admin_token,
+    const handler = createWebBiHandler({
+      store, notifier, catalog: MESSAGE_CATALOG, ingest_token: "ingest-secret",
     });
-    expect((await make("")(request("/api/v1/notification-settings/test", { method: "POST" }))).status).toBe(401);
-    const accepted = await make("admin-secret")(request("/api/v1/notification-settings/test", { method: "POST" }));
+    const saved = await handler(new Request("https://slk.example.test/api/v1/notification-settings", {
+      method: "PUT", body: JSON.stringify({
+        enabled: true, server_url: store.settings.server_url, topic: "owner-alerts",
+        auth_mode: "none", selection_mode: "all", selected_message_types: [],
+      }),
+    }));
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ topic: "owner-alerts", config_version: 2 });
+    const accepted = await handler(new Request("https://slk.example.test/api/v1/notification-settings/test", { method: "POST" }));
     expect(accepted.status).toBe(200);
     expect(notifier.sent).toEqual(["test"]);
+    expect(store.records.size).toBe(0);
+    expect(store.settings.config_version).toBe(2);
+  });
+
+  it.each([
+    { server_url: "https://another.example.test", username: "owner" },
+    { server_url: "https://ntfy.example.test", username: "another-user" },
+  ])("does not forward a retained ntfy password to a changed destination/account: %o", async (change) => {
+    const store = new MemoryStore();
+    store.settings = { ...store.settings, auth_mode: "password", username: "owner", encrypted_secret: "ciphertext", secret_iv: "iv" };
+    const before = JSON.stringify(store.settings);
+    const handler = createWebBiHandler({ store, notifier: new RecordingNotifier(), catalog: MESSAGE_CATALOG, ingest_token: "ingest-secret" });
+    const response = await handler(request("/api/v1/notification-settings", {
+      method: "PUT", body: JSON.stringify({
+        enabled: true, topic: "slk", auth_mode: "password", selection_mode: "all", selected_message_types: [], ...change,
+      }),
+    }));
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(store.settings)).toBe(before);
   });
 
   it("treats every terminal Run as archived even before an archived_at timestamp is present", () => {
@@ -183,7 +204,6 @@ describe("WebBI worker", () => {
       notifier: new RecordingNotifier(),
       catalog: MESSAGE_CATALOG,
       ingest_token: "ingest-secret",
-      admin_token: "admin-secret",
     });
     for (const deviceId of ["device-a", "device-b"]) {
       await handler(request("/api/v1/uploads", {
@@ -208,7 +228,6 @@ describe("WebBI worker", () => {
       notifier,
       catalog: MESSAGE_CATALOG,
       ingest_token: "ingest-secret",
-      admin_token: "admin-secret",
     });
     const post = (body: WebBiUploadEnvelope) => handler(request("/api/v1/uploads", {
       method: "POST",
@@ -238,7 +257,6 @@ describe("WebBI worker", () => {
       notifier: new RecordingNotifier(),
       catalog: MESSAGE_CATALOG,
       ingest_token: "ingest-secret",
-      admin_token: "admin-secret",
     });
     const denied = await handler(request("/api/v1/uploads", {
       method: "POST",
@@ -267,7 +285,6 @@ describe("WebBI worker", () => {
       notifier: new RecordingNotifier(),
       catalog: MESSAGE_CATALOG,
       ingest_token: "ingest-secret",
-      admin_token: "admin-secret",
     });
     const keep = await handler(request("/api/v1/notification-settings", {
       method: "PUT",

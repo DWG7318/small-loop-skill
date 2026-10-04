@@ -7,7 +7,7 @@ import type {
   WebBiStore,
 } from "./worker";
 import { isArchivedRun } from "./worker";
-import type { StoredNotificationSettings } from "./notifications";
+import { canReuseNotificationSecret, type StoredNotificationSettings } from "./notifications";
 
 export interface D1Result<T = unknown> {
   results: T[];
@@ -245,7 +245,7 @@ export class D1WebBiStore implements WebBiStore {
           input.secret,
           this.settingsEncryptionKey,
         ));
-      } else if (current.auth_mode === input.auth_mode && current.encrypted_secret && current.secret_iv) {
+      } else if (canReuseNotificationSecret(current, input)) {
         encrypted_secret = current.encrypted_secret;
         secret_iv = current.secret_iv;
       } else {

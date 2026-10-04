@@ -11,7 +11,6 @@ interface Environment {
   DB: D1Database;
   ASSETS: AssetBinding;
   WEBBI_INGEST_TOKEN: string;
-  WEBBI_ADMIN_TOKEN: string;
   WEBBI_SETTINGS_ENCRYPTION_KEY: string;
 }
 
@@ -24,7 +23,6 @@ export default {
       notifier: new NtfyNotifier(),
       catalog: MESSAGE_CATALOG,
       ingest_token: environment.WEBBI_INGEST_TOKEN,
-      admin_token: environment.WEBBI_ADMIN_TOKEN,
     });
     return handler(request);
   },

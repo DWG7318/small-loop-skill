@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "f52dc6e123256c74c77c5eec823e703ec80b78e02b0f1d9b5163be5d7a22e51e"
+      "sha256": "199ea1043682b8ffff8376caa3a355807d753089a048eece1779a3a7100dda22"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "fefbd7b95e87c899a63ad41cdfdc4b9360f58c1e2e95958b63180cfda5b1b18a"
+      "sha256": "1572c0a142ccc8639e2ac4b6491585813a8ec1125ac33988fbf4676f4bb204bf"
     },
     {
       "path": "VERSION",
@@ -436,19 +436,19 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/WebBiApp.test.tsx",
-      "sha256": "952c149b341ba67b64e945c25dda07751e30bd7ffc559751b6f035fc1d1d807c"
+      "sha256": "93116ead161e1d41e5d9fcb901baf2fcbaae7b0e8bea5c5b65ec0095f19a7f65"
     },
     {
       "path": "apps/slk-bi/src/webbi/WebBiApp.tsx",
-      "sha256": "c382e1d6d292f952bd88377cb4f197ada1dc7f34d5a50f63e6e7f89ed0d0da6a"
+      "sha256": "54a30b14c8e049f6ee7430d16a4aa6d969d83be046ebb37faee570b744c3d897"
     },
     {
       "path": "apps/slk-bi/src/webbi/cloudflare.test.ts",
-      "sha256": "bfac6ef51b5c4b2616be6de7120ac9b284abe25f6a77d95aa94c607525409d93"
+      "sha256": "0cf5c85d023454c00b5ab6b61db2bc09bedce5a89bd57deceab3d3345df2812b"
     },
     {
       "path": "apps/slk-bi/src/webbi/cloudflare.ts",
-      "sha256": "50680b3304d05a4a22880ac2ca32f6810267fef3acbabdbcc9c99dec1c56b109"
+      "sha256": "f4c3e2a36eb8056017af79ae4e6905ff39a6cda3b813e34943050fac0be9d967"
     },
     {
       "path": "apps/slk-bi/src/webbi/contracts.test.ts",
@@ -459,8 +459,12 @@
       "sha256": "73b1a256b45a2f044603f2f943c1f588bbd5baa2734fc29ea01eee88d3626920"
     },
     {
+      "path": "apps/slk-bi/src/webbi/d1Store.test.ts",
+      "sha256": "51c66f778115371ae510a6390073d50f1126a6da8f742306bde5e0fb7859ac39"
+    },
+    {
       "path": "apps/slk-bi/src/webbi/d1Store.ts",
-      "sha256": "ccbc31bb8beeb808e0437a88e3a65cef33793d826af76d9d40d071df8e19ed41"
+      "sha256": "5fa1cd1707fd35651a073f9c1bc6a00650ca1fbf47ff46ee2882cd12e2f04a86"
     },
     {
       "path": "apps/slk-bi/src/webbi/notifications.test.ts",
@@ -468,7 +472,7 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/notifications.ts",
-      "sha256": "9c20355b8673978bacdf4b6f8ac83f9b0f3b338d5b02bbd73b6fb2e0fb2bc668"
+      "sha256": "2242d5174a16b8e6d0fedd9751b1d5cbed3e5c1d05df3e45add95b3e9beadf10"
     },
     {
       "path": "apps/slk-bi/src/webbi/ntfy.test.ts",
@@ -496,11 +500,11 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/webApi.test.ts",
-      "sha256": "4caa037843cfb4ab643ba054116691aaeb570119a6467c7515fc0d52ee65e55c"
+      "sha256": "2dc65e73c6df2859c631df2ff0d8a6cb512e58da4ddbda0b5724eae4d219282a"
     },
     {
       "path": "apps/slk-bi/src/webbi/webApi.ts",
-      "sha256": "4e34ff8f50110436e46b6ba00be2d4d86d3e2ae30eeac9d12cd9e72cb6dfcfa4"
+      "sha256": "e6fc364b9978e9fa461c74bb30c4a63b164f942a894c3cad1f8f6bc91b827b71"
     },
     {
       "path": "apps/slk-bi/src/webbi/webbi.css",
@@ -508,11 +512,11 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/worker.test.ts",
-      "sha256": "0288550fbc71c79cfb28c09138c098a49849dbc4faf256220685ae6e9593c9e9"
+      "sha256": "535a29049371a01cc1658a10987bce52c92a8b6a49b47ac3baaf1c2b9b664458"
     },
     {
       "path": "apps/slk-bi/src/webbi/worker.ts",
-      "sha256": "604d496030e85284a276be38ab874b542da9fb166e021aae6452ed55bb323da0"
+      "sha256": "08ac76e1a4bad4383f3be37c35df761200fcee2d0b3f2a3d0f473b3345a4cfcb"
     },
     {
       "path": "apps/slk-bi/tsconfig.json",
@@ -828,7 +832,7 @@
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "425856505fa4b1cd501415800eea254374220356a8dfe739cdc8cc1ec84832df"
+      "sha256": "aaa59fb02c826ca4f0813c2eba9a138116d108d2e1b66bbbc10ab6914eccd52e"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",

@@ -8,8 +8,8 @@ export interface WebBiApi {
   getRun(deviceId: string, runId: string): Promise<WebBiArchiveRecord>;
   catalog(): Promise<readonly MessageCatalogEntry[]>;
   getNotificationSettings(): Promise<PublicNotificationSettings>;
-  saveNotificationSettings(input: NotificationSettingsInput, adminToken?: string): Promise<PublicNotificationSettings>;
-  testNotification(adminToken?: string): Promise<void>;
+  saveNotificationSettings(input: NotificationSettingsInput): Promise<PublicNotificationSettings>;
+  testNotification(): Promise<void>;
 }
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
@@ -60,16 +60,15 @@ export const webBiApi: WebBiApi = {
   async getNotificationSettings() {
     return await json<PublicNotificationSettings>("/api/v1/notification-settings");
   },
-  async saveNotificationSettings(input, adminToken) {
+  async saveNotificationSettings(input) {
     return await json<PublicNotificationSettings>("/api/v1/notification-settings", {
       method: "PUT",
-      headers: adminToken ? { authorization: `Bearer ${adminToken}` } : {},
       body: JSON.stringify(input),
     });
   },
-  async testNotification(adminToken) {
+  async testNotification() {
     await json("/api/v1/notification-settings/test", {
-      method: "POST", headers: adminToken ? { authorization: `Bearer ${adminToken}` } : {},
+      method: "POST",
     });
   },
 };
