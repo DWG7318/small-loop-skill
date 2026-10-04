@@ -46,7 +46,7 @@ Owner 已授权本 Run 启动准备且准备未完时，Supervisor 先查询当�
 
 明确失效可以依据任务 ID 不存在、平台显示失败或取消且无法继续，或者真实激活操作明确返回任务不可用。暂时没有回复不作为更换成员的依据。
 
-接管成员可以先用 `slk-bi-query` 读取 Run、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号并复用原消息身份；只有同一角色实例的会话 rebound 时用 `slk-state rebind-session` 退役旧端点并保留凭证，接管新成员确认后则用 `replace-role` 退役旧凭证与端点、保留退役旧记录，再把当前节点交给新任务 ID，使旧令牌失效并保留身份历史。
+接管成员可以先用 `slk-bi-query` 读取 Run、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号并复用原消息身份；只有同一角色实例的会话 rebound 时用 `slk-state rebind-session` 退役旧端点并保留凭证，密封 Supervisor 权限经 hash-bound `supervisor-admin` 消费。OW 的 Desktop endpoint 修正由该入口为同一 OW role instance 与同一 Session 追加更高 endpoint version；不能替换 OW、借用 OW 写权限或手改数据库。接管新成员确认后则用 `replace-role` 退役旧凭证与端点、保留退役旧记录，再把当前节点交给新任务 ID，使旧令牌失效并保留身份历史。
 
 Overwatcher 的一次性完整写凭证丢失、或调用方误存非秘密 `overwatcher_credential_id` 时，不构成角色/Session/turn/binding 失效。当前 Supervisor 使用精确当前身份、revision 与哈希证据执行 `slk-state rotate-overwatcher-credential`；响应中的 `overwatcher_write_credential` 只显示一次，应立即保存并用 `authenticate-role` 验证。不要用 credential ID 认证、伪造 cycle/continuity violation、替换原 Session 或直接改数据库。
 

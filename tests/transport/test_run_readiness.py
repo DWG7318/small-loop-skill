@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from slk_transport.run_readiness import evaluate_run_readiness
+from slk_transport.run_readiness import evaluate_run_admission, evaluate_run_readiness
 from slk_transport.contracts import canonical_json_sha256
 from slk_transport.native_activity import make_native_start
 from slk_transport import worker_completion as wc
@@ -34,7 +34,7 @@ def write_json(path: Path, value: object) -> Path:
     return path
 
 
-def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
+def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A") -> dict[str, object]:
     workspace = tmp_path / "workspace"
     workspace.mkdir(exist_ok=True)
     endpoint = tmp_path / "endpoint.json"
@@ -64,7 +64,7 @@ def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
         capabilities[runtime] = str(capability)
     roles = []
     for role, runtime, model in (
-        ("supervisor", "codex", "gpt-5.6-sol"),
+        ("supervisor", "codex", "gpt-6.1-sol"),
         ("worker", "dsh", "deepseek-v4-flash"),
         ("checker", "ocrv", "qwen3.8-max"),
         ("overwatcher", "lcas", "gpt-6-luna"),
@@ -72,7 +72,7 @@ def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
         roles.append(
             {
                 "role": role,
-                "role_instance_id": f"RUN-READINESS-A-{role}",
+                "role_instance_id": f"{run_id}-{role}",
                 "expected_runtime": runtime,
                 "actual_runtime": runtime,
                 "expected_model": model,
@@ -93,7 +93,7 @@ def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
         {
             "schema_version": "slk.bi-open-readiness/v1",
             "method_version": "4.4.0",
-            "run_id": "RUN-READINESS-A",
+            "run_id": run_id,
             "bi_version": "1.1.0",
             "device_id": "device-a",
             "visible": True,
@@ -105,7 +105,7 @@ def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
         {
             "schema_version": "slk.temporal-readiness/v1",
             "method_version": "4.4.0",
-            "run_id": "RUN-READINESS-A",
+            "run_id": run_id,
             "status": "READY",
             "service_mode": "SHARED_LOCAL",
             "workflow_templates": ["SLK.Start", "SLK.Run"],
@@ -117,7 +117,7 @@ def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
         {
             "schema_version": "slk.communication-rehearsal/v1",
             "method_version": "4.4.0",
-            "run_id": "RUN-READINESS-A",
+            "run_id": run_id,
             "status": "PASS",
             "legs": [
                 {
@@ -134,7 +134,7 @@ def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
     )
     request = {
         "schema_version": "slk.run-readiness-request/v1",
-        "run_id": "RUN-READINESS-A",
+        "run_id": run_id,
         "plan_revision": 1,
         "roles": roles,
         "bi_open_receipt": str(bi_receipt),
@@ -263,6 +263,70 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     }
     assert {item["status"] for item in result["roles"]} == {"READY"}
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
+
+
+def test_inflight_admission_separates_reusable_normal_chain_from_current_run_identity(tmp_path):
+    source_root = tmp_path / "source"
+    current_root = tmp_path / "current"
+    source_root.mkdir()
+    current_root.mkdir()
+    source = _request(source_root, run_id="RUN-CONFORMANCE")
+    source_path = write_json(source_root / "readiness-request.json", source)
+    source_rehearsal = Path(source["communication_rehearsal"])
+    def proof(path):
+        return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    conformance = write_json(source_root / "normal-chain-conformance.json", {
+        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.1",
+        "status": "PASS", "source_run_id": "RUN-CONFORMANCE",
+        "source_readiness_request": proof(source_path),
+        "source_communication_rehearsal": proof(source_rehearsal),
+    })
+    current = _request(current_root, run_id="RUN-CURRENT")
+    current_rehearsal = json.loads(Path(current["communication_rehearsal"]).read_text())
+    Path(current["communication_rehearsal"]).unlink()
+    admission = {
+        "schema_version": "slk.run-admission-request/v1", "run_id": "RUN-CURRENT", "plan_revision": 1,
+        "roles": current["roles"], "optional_features": current["optional_features"],
+        "bi_open_receipt": current["bi_open_receipt"],
+        "temporal_readiness_receipt": current["temporal_readiness_receipt"],
+        "normal_chain_conformance": str(conformance),
+        "current_host_binding": current_rehearsal["host_binding"],
+        "sealed_role_receipts": current_rehearsal["sealed_role_receipts"],
+    }
+
+    result = evaluate_run_admission(admission)
+
+    assert result["status"] == "READY"
+    assert result["conformance_run_id"] == "RUN-CONFORMANCE"
+    assert result["run_id"] == "RUN-CURRENT"
+    assert not Path(current["communication_rehearsal"]).exists()
+
+
+def test_inflight_admission_rejects_echo_conformance_and_missing_current_consumer(tmp_path):
+    source_root = tmp_path / "source"
+    current_root = tmp_path / "current"
+    source_root.mkdir()
+    current_root.mkdir()
+    source = _request(source_root, legacy_echo=True, run_id="RUN-CONFORMANCE")
+    source_path = write_json(source_root / "readiness-request.json", source)
+    source_rehearsal = Path(source["communication_rehearsal"])
+    def proof(path):
+        return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    conformance = write_json(source_root / "normal-chain-conformance.json", {
+        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.1",
+        "status": "PASS", "source_run_id": "RUN-CONFORMANCE",
+        "source_readiness_request": proof(source_path),
+        "source_communication_rehearsal": proof(source_rehearsal),
+    })
+    current = _request(current_root, run_id="RUN-CURRENT")
+    packet = json.loads(Path(current["communication_rehearsal"]).read_text())
+    packet["sealed_role_receipts"].pop("worker")
+    admission = {"schema_version": "slk.run-admission-request/v1", "run_id": "RUN-CURRENT", "plan_revision": 1,
+        "roles": current["roles"], "optional_features": current["optional_features"],
+        "bi_open_receipt": current["bi_open_receipt"], "temporal_readiness_receipt": current["temporal_readiness_receipt"],
+        "normal_chain_conformance": str(conformance), "current_host_binding": packet["host_binding"],
+        "sealed_role_receipts": packet["sealed_role_receipts"]}
+    assert evaluate_run_admission(admission)["status"] == "REPAIR_NEEDED"
 
 
 def test_legacy_echo_hashes_are_not_normal_handoff_evidence(tmp_path):
@@ -510,7 +574,7 @@ def _native_ow_request(tmp_path):
     host = json.loads(host_path.read_text())
     endpoint_path = Path(host["roles"]["supervisor"]["endpoint_path"])
     endpoint = json.loads(endpoint_path.read_text())
-    endpoint["address"]["desktop"] = {"caller_thread_id": "supervisor-native-host", "model": "gpt-5.6-sol",
+    endpoint["address"]["desktop"] = {"caller_thread_id": "supervisor-native-host", "model": "gpt-6.1-sol",
         "reasoning_effort": "xhigh", "plugin_sha256": "a" * 64}
     write_json(endpoint_path, endpoint)
     supervisor_ref = ref(endpoint_path)
@@ -548,7 +612,7 @@ def test_native_ow_caller_override_cannot_change_any_other_frozen_identity(tmp_p
     if damage in {"supervisor-caller", "other-caller"}:
         endpoint["address"]["desktop"]["caller_thread_id"] = "supervisor-native-host" if damage == "supervisor-caller" else "other-session"
     elif damage == "receiver": endpoint["address"]["thread_id"] = "other-supervisor"
-    elif damage == "model": endpoint["address"]["desktop"]["model"] = "gpt-6.1-sol"
+    elif damage == "model": endpoint["address"]["desktop"]["model"] = "gpt-6-sol"
     elif damage == "instance": endpoint["role_instance_id"] = "other-supervisor"
     else:
         ow_path = Path(request["roles"][-1]["endpoint_path"])

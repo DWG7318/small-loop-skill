@@ -10,6 +10,7 @@ import pytest
 from slk_transport import worker_completion as wc
 from slk_transport import cli
 from slk_transport.contracts import canonical_json_sha256
+from slk_transport.role_host import RoleHost
 from test_worker_completion import completion_fixture, runtime_projection, write_json
 
 
@@ -161,3 +162,40 @@ def test_owning_host_uses_native_identity_not_model_environment(tmp_path, monkey
     altered = {**request, "worker_session_id": "session-another"}
     with pytest.raises(wc.CompletionError):
         wc.execute_worker_host_continuation(altered)
+
+
+def test_public_role_host_resumes_verified_incomplete_without_redispatch(tmp_path, monkeypatch):
+    attempt, staged, d0, checker = prepared_incomplete(tmp_path)
+    wc.prepare_incomplete_worker_handoff(attempt, staged_envelope_path=staged, d0_request_path=d0)
+    worker = json.loads((attempt / "endpoint.json").read_text())
+    supervisor = {**checker, "role": "supervisor", "agent_runtime": "codex",
+                  "adapter": "codex-app-server", "role_instance_id": "RUN-A-supervisor-001",
+                  "address": {"thread_id": "isolated-supervisor"}}
+    roles = {}
+    for endpoint in (supervisor, checker, worker):
+        role = endpoint["role"]
+        endpoint_path = write_json(tmp_path / f"{role}.json", endpoint)
+        credential = tmp_path / f"{role}.sealed"
+        credential.write_text("sealed-unit-fixture", encoding="ascii")
+        roles[role] = {"endpoint_path": str(endpoint_path), "endpoint_sha256": wc._sha256(endpoint_path),
+                       "credential_path": str(credential)}
+    source = json.loads((attempt / "envelope.json").read_text())
+    binding = {"schema_version": "slk.role-host/v1", "run_id": source["run_id"], "plan_revision": 1,
+               "state_command": ["state"], "transport_command": ["transport"], "roles": roles,
+               "cells": [{"go_id": source["go_id"], "cell_id": source["cell_id"], "payload": source["payload"]}],
+               "d2_criteria": ["accepted"]}
+    host = RoleHost(binding, "a" * 64)
+    projection = runtime_projection()
+    projection["runtime_snapshot"].update(token_sequence=14,
+        token_holder_role_instance_id=worker["role_instance_id"], runtime_revision=7)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    calls = []
+    monkeypatch.setattr(wc, "execute_worker_host_continuation",
+        lambda request: calls.append(request) or {"status": "CHECKER_STARTED", "candidate_message_id": "candidate-a"})
+
+    result = host.complete(attempt)
+
+    assert result["status"] == "CHECKER_STARTED"
+    assert calls[0]["recovery_mode"] == "INCOMPLETE_HANDOFF"
+    assert not (attempt / "completed.json").exists()
+    assert json.loads((attempt / "worker-result.json").read_text())["status"] == "incomplete"

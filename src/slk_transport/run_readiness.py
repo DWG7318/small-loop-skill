@@ -19,6 +19,13 @@ REQUEST_FIELDS = frozenset(
         "bi_open_receipt", "temporal_readiness_receipt", "communication_rehearsal",
     }
 )
+ADMISSION_FIELDS = frozenset(
+    {
+        "schema_version", "run_id", "plan_revision", "roles", "optional_features",
+        "bi_open_receipt", "temporal_readiness_receipt", "normal_chain_conformance",
+        "current_host_binding", "sealed_role_receipts",
+    }
+)
 ROLE_FIELDS = frozenset(
     {
         "role", "role_instance_id",
@@ -349,6 +356,79 @@ def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
         return False
 
 
+def _valid_current_registration(host_reference: Any, consumers: Any, run_id: str, revision: int,
+                                roles: list[Mapping[str, Any]]) -> bool:
+    """Join current Run identity and permission without manufacturing engineering events."""
+    from . import worker_completion as wc
+    from .role_host import RoleHost
+    try:
+        registered = {row["role"]: row for row in roles}
+        if set(registered) != set(REQUIRED_ROLES) or len({row["role_instance_id"] for row in roles}) != 4:
+            raise ValueError("current roles are incomplete or aliased")
+        binding = _proof(host_reference)
+        host = RoleHost(binding, host_reference["sha256"])
+        if binding["run_id"] != run_id or binding["plan_revision"] != revision:
+            raise ValueError("current host scope changed")
+        if not isinstance(consumers, Mapping) or set(consumers) != set(REQUIRED_ROLES):
+            raise ValueError("each current role needs one saved consumer")
+        for role, reference in consumers.items():
+            consumer = _proof(reference)
+            row = registered[role]
+            if (set(consumer) != {"status", "run_id", "role", "role_instance_id", "sealed_path", "sealed_sha256", "runtime_revision"}
+                or consumer["status"] != "SEALED_ROLE_VERIFIED" or consumer["run_id"] != run_id
+                or consumer["role"] != role or consumer["role_instance_id"] != row["role_instance_id"]
+                or type(consumer["runtime_revision"]) is not int or consumer["runtime_revision"] < 1):
+                raise ValueError("current saved consumer changed identity")
+            sealed = Path(consumer["sealed_path"])
+            if not sealed.is_absolute() or not sealed.is_file() or wc._sha256(sealed) != consumer["sealed_sha256"]:
+                raise ValueError("current sealed credential changed")
+            if role != "overwatcher":
+                endpoint = _proof({"path": row["endpoint_path"],
+                    "sha256": hashlib.sha256(Path(row["endpoint_path"]).read_bytes()).hexdigest()})
+                if (host.endpoint(role) != endpoint or endpoint["role_instance_id"] != row["role_instance_id"]
+                    or Path(host.credential_path(role)).resolve() != sealed.resolve()):
+                    raise ValueError("current endpoint is not the prepared host binding")
+            secret = wc.unprotect_dpapi_hex(sealed)
+            try:
+                authenticated = wc._run_json_command(host.state, ["authenticate-role", "--run-id", run_id,
+                    "--role-instance-id", row["role_instance_id"]], credential=secret)
+            finally:
+                secret = ""
+            if (authenticated.get("status") != "authenticated" or authenticated.get("run_id") != run_id
+                or authenticated.get("role") != role or authenticated.get("role_instance_id") != row["role_instance_id"]
+                or type(authenticated.get("runtime_revision")) is not int
+                or authenticated["runtime_revision"] < consumer["runtime_revision"]):
+                raise ValueError("current saved consumer is no longer authorized")
+        return True
+    except (OSError, TypeError, ValueError, KeyError):
+        return False
+
+
+def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | None:
+    value = _receipt(path_value)
+    try:
+        if (value is None or set(value) != {"schema_version", "method_version", "status", "source_run_id",
+                "source_readiness_request", "source_communication_rehearsal"}
+            or value["schema_version"] != "slk.normal-chain-conformance/v1"
+            or value["method_version"] != "4.4.1" or value["status"] != "PASS"
+            or not isinstance(value["source_run_id"], str) or value["source_run_id"] == current_run_id):
+            raise ValueError("normal-chain conformance scope is invalid")
+        source_request = _proof(value["source_readiness_request"])
+        source_rehearsal = _proof(value["source_communication_rehearsal"])
+        if (set(source_request) != REQUEST_FIELDS
+            or source_request["schema_version"] != "slk.run-readiness-request/v1"
+            or source_request["run_id"] != value["source_run_id"]
+            or Path(source_request["communication_rehearsal"]).resolve()
+                != Path(value["source_communication_rehearsal"]["path"]).resolve()
+            or source_rehearsal.get("run_id") != value["source_run_id"]
+            or not _valid_communication_rehearsal(source_request["communication_rehearsal"],
+                source_request["run_id"], source_request["plan_revision"], source_request["roles"])):
+            raise ValueError("normal-chain conformance cannot be recomputed")
+        return value["source_run_id"]
+    except (OSError, TypeError, ValueError, KeyError):
+        return None
+
+
 def _tool_exists(value: str) -> bool:
     candidate = Path(value)
     if candidate.is_absolute() or candidate.parent != Path("."):
@@ -559,3 +639,73 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
         "optional_features": list(options_by_name.values()),
         "request_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
     }
+
+
+def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Admit an in-flight Run without replaying a synthetic product failure or D2."""
+    if not isinstance(request, Mapping):
+        raise ValueError("request must be an object")
+    _closed(request, ADMISSION_FIELDS, "admission request")
+    if request["schema_version"] != "slk.run-admission-request/v1":
+        raise ValueError("Run admission schema mismatch")
+    run_id = _nonempty(request["run_id"], "run_id")
+    revision = _positive_int(request["plan_revision"], "plan_revision")
+    raw_roles = request["roles"]
+    if not isinstance(raw_roles, list):
+        raise ValueError("roles must be an array")
+    roles = [_role_result(item) for item in raw_roles if isinstance(item, Mapping)]
+    if len(roles) != len(raw_roles) or sorted(item["role"] for item in roles) != sorted(REQUIRED_ROLES):
+        raise ValueError("roles must contain exactly one supervisor, worker, checker, and overwatcher")
+    raw_options = request["optional_features"]
+    if not isinstance(raw_options, list):
+        raise ValueError("optional_features must be an array")
+    options_by_name: dict[str, dict[str, Any]] = {}
+    unsupported = False
+    for raw in raw_options:
+        if not isinstance(raw, Mapping):
+            raise ValueError("optional feature must be an object")
+        _closed(raw, OPTION_FIELDS, "optional feature")
+        name = _nonempty(raw["name"], "optional feature name")
+        if name in options_by_name:
+            raise ValueError("optional feature names must be unique")
+        if raw["decision"] not in {"ON", "OFF", "UNCONFIRMED"} or not isinstance(raw["owner_evidence_ref"], str):
+            raise ValueError("optional feature decision is invalid")
+        if name not in REQUIRED_OPTIONS:
+            unsupported = True
+        else:
+            options_by_name[name] = dict(raw)
+    reason_codes: list[str] = []
+    for role in roles:
+        for code in role["reason_codes"]:
+            if code not in reason_codes:
+                reason_codes.append(code)
+    if unsupported:
+        reason_codes.append("OPTION_UNSUPPORTED")
+    if not _valid_bi_receipt(request["bi_open_receipt"], run_id):
+        reason_codes.append("BI_OPEN_RECEIPT_INVALID")
+    if not _valid_temporal_receipt(request["temporal_readiness_receipt"], run_id):
+        reason_codes.append("TEMPORAL_READINESS_INVALID")
+    conformance_run_id = _normal_chain_conformance(request["normal_chain_conformance"], run_id)
+    if conformance_run_id is None:
+        reason_codes.append("NORMAL_CHAIN_CONFORMANCE_INVALID")
+    if not _valid_current_registration(request["current_host_binding"], request["sealed_role_receipts"],
+                                       run_id, revision, raw_roles):
+        reason_codes.append("CURRENT_ROLE_REGISTRATION_INVALID")
+    if any(name not in options_by_name for name in REQUIRED_OPTIONS):
+        reason_codes.append("REQUIRED_OPTION_MISSING")
+    for option in options_by_name.values():
+        if option["decision"] == "ON" and not _enabled_option_entry(option["name"], raw_roles):
+            if "ENABLED_OPTION_ENTRY_MISSING" not in reason_codes:
+                reason_codes.append("ENABLED_OPTION_ENTRY_MISSING")
+        if option["decision"] == "UNCONFIRMED" or not option["owner_evidence_ref"].strip():
+            if "OPTION_DECISION_REQUIRED" not in reason_codes:
+                reason_codes.append("OPTION_DECISION_REQUIRED")
+    status = "INCOMPATIBLE" if any(item["status"] == "INCOMPATIBLE" for item in roles) else (
+        "REPAIR_NEEDED" if reason_codes else "READY")
+    canonical = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return {"schema_version": "slk.run-admission-result/v1", "run_id": run_id,
+            "plan_revision": revision, "status": status, "reason_codes": reason_codes,
+            "repairs": [f"Resolve {code}." for code in reason_codes], "roles": roles,
+            "optional_features": list(options_by_name.values()),
+            "conformance_run_id": conformance_run_id,
+            "request_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}

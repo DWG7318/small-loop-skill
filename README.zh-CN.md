@@ -15,9 +15,9 @@ Overwatcher：必需、非权威，只核实真假并向 Supervisor 报告
 Temporal：必需的连续性与计时保障，不拥有工程权威
 ```
 
-任何 CELL 开工前，Supervisor 必须打开 BI 1.1.0，建立四角色 `RUN_TEAM_REGISTRY`，证明工具/能力和设备 readiness，连接共享本地 Temporal 服务并启动本 Run 的确定性 `SLK.Start`/`SLK.Run`，最后完成七条准确通讯演练。身份、端点、工具或状态证据缺失、过期、猜测、不可查询时禁止派工。
+任何 CELL 开工前，Supervisor 必须打开 BI 1.1.0，建立四角色 `RUN_TEAM_REGISTRY`，证明工具/能力和设备 readiness，连接共享本地 Temporal 服务并启动本 Run 的确定性 `SLK.Start`/`SLK.Run`。新 Run 完成七条准确通讯演练；续接中的 Run 复用同版本完整正常链证明，但另行验证本 Run 的准确身份、端点和四个密封权限，不伪造未来 FAIL/返工/D2。证据缺失、过期、猜测、不可查询时禁止派工。
 
-Codex 担任 Supervisor，使用 Owner 选择的 Sol 级模型与 `xhigh`；OCRV 担任 Checker（Qwen3.8-Max）；DSH 担任 Worker（DeepSeek V4 Flash）。runtime、model、Session、adapter、endpoint 与原生活动都由工具验证，不从提示词推断。日常 CELL 由 Checker 与 Worker 推进；Supervisor 只在准备、D1 失败、恢复、豁免和 D2 介入。同一 CELL 第二次正式 D1 FAIL 必须给出 `AGGRESSIVE` 调查指引，但 D1 权威仍属于 Checker。
+Codex 担任 Supervisor，固定 canonical `gpt-6.1-sol`，每个 Run 由 Owner 选择 `high` 或 `xhigh`；OCRV 担任 Checker（Qwen3.8-Max）；DSH 担任 Worker（DeepSeek V4 Flash）。runtime、model、reasoning、Session、adapter、endpoint 与原生活动都由工具验证，不从提示词推断。日常 CELL 由 Checker 与 Worker 推进；Supervisor 只在准备、D1 失败、恢复、豁免和 D2 介入。同一 CELL 第二次正式 D1 FAIL 必须给出 `AGGRESSIVE` 调查指引，但 D1 权威仍属于 Checker。
 
 Overwatcher 为必选，每 600 秒以交叉证据核验真实情况。它不转发正常工作、不重试投递、不修改 BI/TOKEN、不判断 D0/D1/D2，也不修复成员；只把 `ANOMALY` 或 `UNKNOWN` 报给准确登记的 Supervisor，并继续观察。一个 Run 只有一个独立 OW 角色绑定；只有 agent/model/endpoint/cadence 等事实完全一致时，同一个 active Session 才能同时服务多个 Run，而且每个 Run 必须独立定界。只有 Supervisor 可叫停 OW；任何退出都必须触发 Supervisor 二次确认的 runtime guard，未解除前不得派发下一 CELL。
 

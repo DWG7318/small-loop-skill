@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -29,8 +30,11 @@ from .native_activity import NativeActivityError, inspect_native_activity, valid
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
 from .role_eval import load_pack, pack_sha256, validate_response
-from .run_readiness import evaluate_run_readiness
-from .role_host import load_role_host
+from .run_readiness import evaluate_run_admission, evaluate_run_readiness
+from .role_host import RoleHost, load_role_host
+from .overwatcher_admin import execute_sealed_overwatcher_admin
+from .supervisor_admin import execute_sealed_supervisor_admin
+from .temporal_reload import reload_temporal_worker
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
     CompletionError,
@@ -507,6 +511,38 @@ def _preflight_run(args: argparse.Namespace) -> int:
     return 0 if result["status"] == "READY" else 3
 
 
+def _preflight_admission(args: argparse.Namespace) -> int:
+    result = evaluate_run_admission(_read_object(args.request, "Run admission request"))
+    _emit(result)
+    return 0 if result["status"] == "READY" else 3
+
+
+def _resume_role_host(args: argparse.Namespace) -> int:
+    binding_path = args.binding.resolve()
+    source = args.source_attempt.resolve()
+    digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
+    if digest != args.sha256:
+        raise ValueError("role host binding hash changed")
+    host = RoleHost(_read_object(binding_path, "role host binding"), digest)
+    _emit(host.complete(source))
+    return 0
+
+
+def _supervisor_admin(args: argparse.Namespace) -> int:
+    _emit(execute_sealed_supervisor_admin(args.request, request_sha256=args.sha256))
+    return 0
+
+
+def _overwatcher_admin(args: argparse.Namespace) -> int:
+    _emit(execute_sealed_overwatcher_admin(args.request, request_sha256=args.sha256))
+    return 0
+
+
+def _reload_temporal_worker(args: argparse.Namespace) -> int:
+    _emit(reload_temporal_worker(args.request, request_sha256=args.sha256))
+    return 0
+
+
 def _prepare_role_credential(args: argparse.Namespace) -> int:
     from .worker_completion import prepare_sealed_role_credential
 
@@ -681,6 +717,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     continuation.add_argument("--sha256", required=True)
     readiness = subparsers.add_parser("preflight-run")
     readiness.add_argument("--request", required=True, type=Path)
+    admission = subparsers.add_parser("preflight-admission")
+    admission.add_argument("--request", required=True, type=Path)
+    role_host_resume = subparsers.add_parser("resume-role-host")
+    role_host_resume.add_argument("--binding", required=True, type=Path)
+    role_host_resume.add_argument("--sha256", required=True)
+    role_host_resume.add_argument("--source-attempt", required=True, type=Path)
+    supervisor_admin = subparsers.add_parser("supervisor-admin")
+    supervisor_admin.add_argument("--request", required=True, type=Path)
+    supervisor_admin.add_argument("--sha256", required=True)
+    overwatcher_admin = subparsers.add_parser("overwatcher-admin")
+    overwatcher_admin.add_argument("--request", required=True, type=Path)
+    overwatcher_admin.add_argument("--sha256", required=True)
+    temporal_reload = subparsers.add_parser("reload-temporal-worker")
+    temporal_reload.add_argument("--request", required=True, type=Path)
+    temporal_reload.add_argument("--sha256", required=True)
     credentials = subparsers.add_parser("prepare-role-credential")
     credentials.add_argument("--request", required=True, type=Path)
     incomplete = subparsers.add_parser("prepare-incomplete-handoff")
@@ -755,6 +806,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _continue_worker(args)
         if args.command == "preflight-run":
             return _preflight_run(args)
+        if args.command == "preflight-admission":
+            return _preflight_admission(args)
+        if args.command == "resume-role-host":
+            return _resume_role_host(args)
+        if args.command == "supervisor-admin":
+            return _supervisor_admin(args)
+        if args.command == "overwatcher-admin":
+            return _overwatcher_admin(args)
+        if args.command == "reload-temporal-worker":
+            return _reload_temporal_worker(args)
         if args.command == "prepare-role-credential":
             return _prepare_role_credential(args)
         if args.command == "prepare-incomplete-handoff":

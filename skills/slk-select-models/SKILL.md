@@ -10,7 +10,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs role-specific m
 
 ## 当前目标
 
-冻结并核对当前 SLK 的原生角色绑定，不在 CELL 之间自动换模型：Codex = Supervisor（Owner 选择一款 Sol 级模型，例如 `gpt-5.6-sol`、`gpt-6-sol`、`gpt-6.1-sol`，使用 `xhigh`），OCRV = Checker（Qwen3.8-Max），DSH = Worker（DeepSeek V4 Flash）。启用 Overwatcher 时，由 Owner 选择一款 Luna 级模型，例如 `gpt-5.6-luna`、`gpt-6-luna`，同样使用 `xhigh`。
+冻结并核对当前 SLK 的原生角色绑定，不在 CELL 之间自动换模型：Codex = Supervisor，固定 canonical `gpt-6.1-sol`，由 Owner 为每个 Run 选择 `high` 或 `xhigh`；OCRV = Checker（Qwen3.8-Max）；DSH = Worker（DeepSeek V4 Flash）。启用 Overwatcher 时，由 Owner 选择一款 Luna 级模型，例如 `gpt-5.6-luna`、`gpt-6-luna`，并冻结其 reasoning。
 
 ## 绑定规则
 

@@ -4,6 +4,8 @@
 
 One shared, headless local Temporal service may host many SLK Runs. Every 4.4.1 Run must prove service/worker readiness before dispatch and owns one deterministic `SLK.Start` plus one independent `SLK.Run`; ending one Run closes only its workflows, not the shared service or another Run.
 
+`slk-transport reload-temporal-worker` is the only bounded code-reload entrance. A hash-bound request freezes the exact old process chain, adapter/workflow bytes, task queue and existing Start/Run workflow IDs, native run IDs and startup fingerprint. It stops only those processes, starts the same queue headlessly with the new source, and succeeds only after `slk_temporal.inspector` re-queries the identical workflow pair. It never calls a workflow start/terminate API or resets history.
+
 Temporal stores continuity and timing facts only. It never decides D0/D1/D2, moves TOKEN, writes BI, selects a model, creates/replaces a role, chooses a CELL, or becomes a communication participant. Direct registered members remain the first responsibility: Checker sends the CELL to Worker, Worker returns the candidate to Checker, Checker sends formal D1 FAIL or final D2 readiness to Supervisor, and Supervisor sends the structured rework directive to the same Worker.
 
 The only positive activation fact is a matching `slk.native-start/v2` acknowledgement. Tool success, terminal output, process exit, visible text, BI state and old activity do not substitute.

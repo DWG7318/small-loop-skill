@@ -15,7 +15,7 @@ use slk_state_core::model::{
     CommitDeliveryStartRequest, InitRunRequest, OperationalObservationRequest,
     OverwatchCycleRequest, RebindSessionRequest, ReconcileRunIdentitiesRequest,
     RecordOverwatcherStatusRequest, RegisterRoleRequest, ReplaceOverwatcherRequest,
-    ReplaceRoleRequest, ResumeOverwatcherTurnRequest, RevisePlanRequest,
+    ReplaceRoleRequest, ResumeOverwatcherTurnRequest, RevisePlanRequest, ReviseRoleModelRequest,
     RotateOverwatcherCredentialRequest, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::schema::open_database;
@@ -101,6 +101,7 @@ fn run() -> Result<Value, CliError> {
         "revise-plan" => revise_plan(&arguments[1..]),
         "replace-role" => replace_role(&arguments[1..]),
         "rebind-session" => rebind_session(&arguments[1..]),
+        "revise-role-model" => revise_role_model(&arguments[1..]),
         "register-evidence" => register_evidence(&arguments[1..]),
         "authenticate-role" => authenticate_role(&arguments[1..]),
         "export" => export(&arguments[1..]),
@@ -469,6 +470,26 @@ fn revise_plan(arguments: &[String]) -> Result<Value, CliError> {
     )
 }
 
+fn revise_role_model(arguments: &[String]) -> Result<Value, CliError> {
+    let request: ReviseRoleModelRequest = request(arguments)?;
+    let run_id = request.run_id.clone();
+    let store = configured_store()?;
+    let result = store
+        .revise_role_model(&role_credential()?, request)
+        .map_err(CliError::command)?;
+    Ok(json!({
+        "status": result.status.to_ascii_lowercase(),
+        "run_id": run_id,
+        "role_instance_id": result.role_instance_id,
+        "previous_model": result.previous_model,
+        "previous_reasoning": result.previous_reasoning,
+        "model": result.model,
+        "reasoning": result.reasoning,
+        "runtime_revision": result.runtime_revision,
+        "export": refresh_export(&store, &run_id)
+    }))
+}
+
 fn replace_role(arguments: &[String]) -> Result<Value, CliError> {
     let request: ReplaceRoleRequest = request(arguments)?;
     let run_id = request.run_id.clone();
@@ -644,5 +665,5 @@ fn refresh_export(store: &StateStore, run_id: &str) -> Value {
 }
 
 fn help() -> &'static str {
-    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|resume-overwatcher-turn|replace-overwatcher|rotate-overwatcher-credential|wait-for-change|record-observation|close-overwatcher|close-role|register-role|handoff|commit-delivery-start|write|revise-plan|replace-role|rebind-session|register-evidence|authenticate-role|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
+    "slk-state <configure|init-run|reconcile-run-identities|adopt-method-contract|bind-overwatcher|record-overwatch-cycle|record-overwatcher-status|resume-overwatcher-turn|replace-overwatcher|rotate-overwatcher-credential|wait-for-change|record-observation|close-overwatcher|close-role|register-role|handoff|commit-delivery-start|write|revise-plan|revise-role-model|replace-role|rebind-session|register-evidence|authenticate-role|export|verify-evidence> [options]\nRole credentials use SLK_ROLE_CREDENTIAL; Overwatcher observation commands use SLK_OVERWATCHER_CREDENTIAL."
 }

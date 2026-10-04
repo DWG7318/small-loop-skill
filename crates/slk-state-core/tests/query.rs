@@ -351,7 +351,7 @@ fn identity(id: &str, role: Role) -> RoleIdentity {
         }
         .into(),
         model: match role {
-            Role::Supervisor => "gpt-5.6-sol",
+            Role::Supervisor => "gpt-6.1-sol",
             Role::Overwatcher => "gpt-5.6-luna",
             Role::Checker => "qwen3.8-max",
             Role::Worker => "deepseek-v4-flash",

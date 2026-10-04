@@ -332,11 +332,11 @@ def test_local_d0_attempts_are_distinct_from_checker_d1_rework() -> None:
 def test_select_models_matches_capability_to_each_visible_role() -> None:
     text = read_skill("slk-select-models")
     for marker in (
-        "Sol 级",
-        "`gpt-5.6-sol`、`gpt-6-sol`、`gpt-6.1-sol`",
+        "`gpt-6.1-sol`",
+        "`high` 或 `xhigh`",
         "Luna 级",
         "`gpt-5.6-luna`、`gpt-6-luna`",
-        "具体型号由 Owner",
+        "由 Owner 为每个 Run",
         "Qwen3.8-Max",
         "DeepSeek V4 Flash",
         "ocrv-checker",

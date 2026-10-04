@@ -24,7 +24,7 @@ use crate::model::{
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
     RebindSessionRequest, ReconcileRunIdentitiesRequest, RecordOverwatcherStatusRequest,
     RegisterRoleRequest, ReplaceOverwatcherRequest, ReplaceRoleRequest,
-    ResumeOverwatcherTurnRequest, RevisePlanRequest, Role, RotateOverwatcherCredentialRequest,
+    ResumeOverwatcherTurnRequest, RevisePlanRequest, ReviseRoleModelRequest, Role, RotateOverwatcherCredentialRequest,
     RunStateSnapshot, RuntimeSnapshot, TokenHandoffRequest, WriteRequest,
 };
 use crate::schema::{open_database, SchemaError};
@@ -118,6 +118,17 @@ pub struct OverwatcherCredentialRotationResult {
 pub struct CloseRoleResult {
     pub status: String,
     pub role_instance_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelRevisionResult {
+    pub status: String,
+    pub role_instance_id: String,
+    pub previous_model: String,
+    pub previous_reasoning: String,
+    pub model: String,
+    pub reasoning: String,
+    pub runtime_revision: u64,
 }
 
 impl StateStore {
@@ -1790,17 +1801,32 @@ impl StateStore {
                 credential,
                 EventType::TokenHandedOff,
             )?;
-            let target_role_text: String = transaction
+            let engineering_role_text: Option<String> = transaction
                 .query_row(
                     "SELECT role FROM role_instances
                      WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
                     params![request.run_id, request.role_instance_id],
                     |row| row.get(0),
                 )
-                .optional()?
-                .ok_or_else(|| {
-                    StateError::RoleInstanceNotCurrent(request.role_instance_id.clone())
-                })?;
+                .optional()?;
+            let overwatcher: Option<(String, u32, String, String, String, String)> = if engineering_role_text.is_none() {
+                transaction.query_row(
+                    "SELECT role_instance_id, endpoint_version, transport_adapter,
+                            host_identity, session_id, native_address_json
+                     FROM overwatcher_bindings
+                     WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle_state='active'",
+                    params![request.run_id, request.role_instance_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+                ).optional()?
+            } else {
+                None
+            };
+            let target_role_text = engineering_role_text.unwrap_or_else(|| {
+                if overwatcher.is_some() { "overwatcher".into() } else { String::new() }
+            });
+            if target_role_text.is_empty() {
+                return Err(StateError::RoleInstanceNotCurrent(request.role_instance_id.clone()));
+            }
             let target_role = Role::parse(&target_role_text)
                 .ok_or_else(|| StateError::StoredRoleInvalid(target_role_text.clone()))?;
             let authorized = matches!(
@@ -1808,49 +1834,67 @@ impl StateStore {
                 (Role::Supervisor, Role::Checker) | (Role::Checker, Role::Worker)
             ) || (actor.role == Role::Supervisor
                 && target_role == Role::Supervisor
-                && actor.role_instance_id == request.role_instance_id);
+                && actor.role_instance_id == request.role_instance_id)
+                || (actor.role == Role::Supervisor && target_role == Role::Overwatcher);
             if !authorized {
                 return Err(StateError::SessionReboundNotAuthorized {
                     actor: actor.role,
                     target: target_role,
                 });
             }
-            validate_engineering_endpoint_binding(target_role, &request.endpoint)?;
-
-            let current_version: u32 = transaction.query_row(
-                "SELECT endpoint_version FROM role_endpoints
-                 WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
-                params![request.run_id, request.role_instance_id],
-                |row| row.get(0),
-            )?;
+            let (current_version, current_adapter, current_host, current_session, current_address) =
+                if let Some(binding) = overwatcher {
+                    if request.endpoint.session_id != binding.4
+                        || request.endpoint.transport_adapter != binding.2
+                        || request.endpoint.host_identity != binding.3
+                    {
+                        return Err(StateError::RoleBindingInvalid {
+                            role: Role::Overwatcher,
+                            reason: "Overwatcher endpoint correction must preserve the exact role, Session, adapter, and host".into(),
+                        });
+                    }
+                    (binding.1, binding.2, binding.3, binding.4, binding.5)
+                } else {
+                    validate_engineering_endpoint_binding(target_role, &request.endpoint)?;
+                    transaction.query_row(
+                        "SELECT endpoint_version, transport_adapter, host_identity, session_id, native_address_json
+                         FROM role_endpoints
+                         WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                        params![request.run_id, request.role_instance_id],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                    )?
+                };
             if request.endpoint.endpoint_version != current_version + 1 {
                 return Err(StateError::EndpointNotCurrent);
             }
-            transaction.execute(
-                "UPDATE role_endpoints SET state='retired', retired_at=?3
-                 WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
-                params![
-                    request.run_id,
-                    request.role_instance_id,
-                    request.occurred_at
-                ],
-            )?;
-            insert_endpoint(
-                transaction,
-                &request.run_id,
-                &request.role_instance_id,
-                &request.endpoint,
-                &request.occurred_at,
-            )?;
-            transaction.execute(
-                "UPDATE role_instances SET session_id=?3
-                 WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
-                params![
-                    request.run_id,
-                    request.role_instance_id,
-                    request.endpoint.session_id
-                ],
-            )?;
+            if target_role == Role::Overwatcher {
+                transaction.execute(
+                    "UPDATE overwatcher_bindings
+                     SET endpoint_version=?3, native_address_json=?4
+                     WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle_state='active'",
+                    params![request.run_id, request.role_instance_id,
+                        request.endpoint.endpoint_version,
+                        serde_json::to_string(&request.endpoint.native_address)?],
+                )?;
+            } else {
+                transaction.execute(
+                    "UPDATE role_endpoints SET state='retired', retired_at=?3
+                     WHERE run_id=?1 AND role_instance_id=?2 AND state='active'",
+                    params![request.run_id, request.role_instance_id, request.occurred_at],
+                )?;
+                insert_endpoint(
+                    transaction,
+                    &request.run_id,
+                    &request.role_instance_id,
+                    &request.endpoint,
+                    &request.occurred_at,
+                )?;
+                transaction.execute(
+                    "UPDATE role_instances SET session_id=?3
+                     WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                    params![request.run_id, request.role_instance_id, request.endpoint.session_id],
+                )?;
+            }
             let revision = current_plan_revision(transaction, &request.run_id)?;
             transaction.execute(
                 "INSERT INTO work_events
@@ -1864,6 +1908,14 @@ impl StateStore {
                     actor.role_instance_id,
                     serde_json::to_string(&serde_json::json!({
                         "role_instance_id": request.role_instance_id,
+                        "role": target_role.as_str(),
+                        "previous_endpoint": {
+                            "endpoint_version": current_version,
+                            "transport_adapter": current_adapter,
+                            "host_identity": current_host,
+                            "session_id": current_session,
+                            "native_address": serde_json::from_str::<serde_json::Value>(&current_address)?,
+                        },
                         "endpoint_version": request.endpoint.endpoint_version,
                         "session_id": request.endpoint.session_id,
                         "reason": request.reason
@@ -1878,6 +1930,108 @@ impl StateStore {
                 &request.occurred_at,
             )?;
             Ok(())
+        })
+    }
+
+    pub fn revise_role_model(
+        &self,
+        credential: &Credential,
+        request: ReviseRoleModelRequest,
+    ) -> Result<ModelRevisionResult, StateError> {
+        validate_evidence_reference(&request.owner_evidence)?;
+        if request.model != "gpt-6.1-sol" || !matches!(request.reasoning.as_str(), "high" | "xhigh") {
+            return Err(StateError::RoleBindingInvalid {
+                role: Role::Supervisor,
+                reason: "Supervisor model must be canonical gpt-6.1-sol with Owner-selected high or xhigh reasoning".into(),
+            });
+        }
+        self.with_immediate_transaction(|transaction| {
+            let actor = authorize_event(transaction, &request.run_id, credential, EventType::ModelChanged)?;
+            if actor.role != Role::Supervisor
+                || actor.role_instance_id != request.role_instance_id
+            {
+                return Err(StateError::RoleInstanceMismatch);
+            }
+            let current: (String, String, String) = transaction
+                .query_row(
+                    "SELECT role, model, reasoning FROM role_instances
+                     WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                    params![request.run_id, request.role_instance_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?
+                .ok_or_else(|| StateError::RoleInstanceNotCurrent(request.role_instance_id.clone()))?;
+            if current.0 != "supervisor" {
+                return Err(StateError::RoleBindingInvalid {
+                    role: actor.role,
+                    reason: "only the current Supervisor may revise its model binding".into(),
+                });
+            }
+            let existing: Option<String> = transaction.query_row(
+                "SELECT details_json FROM work_events WHERE run_id=?1 AND event_id=?2 AND event_type='MODEL_CHANGED'",
+                params![request.run_id, request.event_id], |row| row.get(0),
+            ).optional()?;
+            if let Some(saved) = existing {
+                let details: serde_json::Value = serde_json::from_str(&saved)?;
+                if details["role_instance_id"] != request.role_instance_id
+                    || details["model"] != request.model
+                    || details["reasoning"] != request.reasoning
+                    || details["owner_evidence"] != serde_json::to_value(&request.owner_evidence)?
+                    || details["reason"] != request.reason
+                    || current.1 != request.model
+                    || current.2 != request.reasoning
+                {
+                    return Err(StateError::WorkEventConflict(request.event_id.clone()));
+                }
+                return Ok(ModelRevisionResult {
+                    status: "ALREADY_APPLIED".into(),
+                    role_instance_id: request.role_instance_id.clone(),
+                    previous_model: details["previous_model"].as_str().unwrap().into(),
+                    previous_reasoning: details["previous_reasoning"].as_str().unwrap().into(),
+                    model: request.model.clone(), reasoning: request.reasoning.clone(),
+                    runtime_revision: runtime_snapshot_from(transaction, &request.run_id)?.runtime_revision,
+                });
+            }
+            if current.1 == request.model && current.2 == request.reasoning {
+                return Err(StateError::RunAdministrationInvalid("model revision cannot be a no-op".into()));
+            }
+            let details = serde_json::json!({
+                "role_instance_id": request.role_instance_id,
+                "previous_model": current.1,
+                "previous_reasoning": current.2,
+                "model": request.model,
+                "reasoning": request.reasoning,
+                "owner_evidence": request.owner_evidence,
+                "reason": request.reason,
+            });
+            let details_json = serde_json::to_string(&details)?;
+            let runtime = runtime_snapshot_from(transaction, &request.run_id)?;
+            if runtime.runtime_revision != request.expected_runtime_revision {
+                return Err(StateError::RuntimeRevisionMismatch {
+                    requested: request.expected_runtime_revision,
+                    current: runtime.runtime_revision,
+                });
+            }
+            transaction.execute(
+                "UPDATE role_instances SET model=?3, reasoning=?4
+                 WHERE run_id=?1 AND role_instance_id=?2 AND lifecycle='active'",
+                params![request.run_id, request.role_instance_id, request.model, request.reasoning],
+            )?;
+            transaction.execute(
+                "INSERT INTO work_events
+                 (event_id, run_id, plan_revision, author_role_instance_id, event_type, details_json, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, 'MODEL_CHANGED', ?5, ?6)",
+                params![request.event_id, request.run_id, current_plan_revision(transaction, &request.run_id)?,
+                    actor.role_instance_id, details_json, request.occurred_at],
+            )?;
+            let runtime_revision = advance_runtime_snapshot(
+                transaction, &request.run_id, &request.event_id, None, &request.occurred_at,
+            )?;
+            Ok(ModelRevisionResult {
+                status: "MODEL_REVISED".into(), role_instance_id: request.role_instance_id.clone(),
+                previous_model: current.1, previous_reasoning: current.2,
+                model: request.model.clone(), reasoning: request.reasoning.clone(), runtime_revision,
+            })
         })
     }
 
@@ -3927,10 +4081,10 @@ fn validate_engineering_role_binding(
     if identity.role == Role::Supervisor {
         let fixed_identity = identity.agent_runtime == "codex"
             && identity.provider == "openai"
-            && identity.reasoning == "xhigh"
+            && matches!(identity.reasoning.as_str(), "high" | "xhigh")
             && endpoint.transport_adapter == "codex-app-server"
             && identity.session_id == endpoint.session_id;
-        if !fixed_identity || !is_gpt_capability_family(&identity.model, "sol") {
+        if !fixed_identity || identity.model != "gpt-6.1-sol" {
             return Err(StateError::RoleBindingInvalid {
                 role: identity.role,
                 reason: "runtime, provider, Owner-selected Sol-class model, reasoning, adapter, and session must match the role contract"
@@ -3974,22 +4128,6 @@ fn validate_engineering_role_binding(
     Ok(())
 }
 
-fn is_gpt_capability_family(model: &str, family: &str) -> bool {
-    if model != model.trim() || model.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return false;
-    }
-    let Some(version) = model
-        .strip_prefix("gpt-")
-        .and_then(|value| value.strip_suffix(&format!("-{family}")))
-    else {
-        return false;
-    };
-    !version.is_empty()
-        && version
-            .split('.')
-            .all(|segment| !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit()))
-}
-
 fn validate_engineering_endpoint_binding(
     role: Role,
     endpoint: &crate::model::EndpointIdentity,
@@ -4007,6 +4145,22 @@ fn validate_engineering_endpoint_binding(
         });
     }
     Ok(())
+}
+
+fn is_gpt_capability_family(model: &str, family: &str) -> bool {
+    if model != model.trim() || model.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return false;
+    }
+    let Some(version) = model
+        .strip_prefix("gpt-")
+        .and_then(|value| value.strip_suffix(&format!("-{family}")))
+    else {
+        return false;
+    };
+    !version.is_empty()
+        && version
+            .split('.')
+            .all(|segment| !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn insert_role_instance(

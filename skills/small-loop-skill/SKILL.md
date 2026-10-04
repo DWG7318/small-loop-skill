@@ -24,7 +24,7 @@ D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 �
 
 Supervisor、Checker、Worker、Overwatcher 是 Agent，不是状态机。Worker 与 Checker 工作前做角色本地轻量预检，按范围、证据和工具能力顺序合理化；内部段不并行，不能把内部顺序段当成正式 CELL 或 D1，也不新增 TOKEN。Supervisor 不提前接管，只在成员或 Overwatcher 上报异常时处理并恢复原成员。角色问题先修子 Skill；普通交接与恢复先用直连，不因提示词问题新增协议、daemon 或大段运行时。
 
-- 跨 Agent/进程的一致事实——信封、身份/端点、启动证据、`SLK TOKEN` 原子流转、中央记录和 BI 只读投影——由一个小而稳定的标准 Tool 实现。开工前由团队准备子 Skill 登记四角色、打开 BI、核对工具更新/环境/端点，并以真实接收者启动证据演练必要通讯腿；`slk-transport preflight-run` 只接受闭合 readiness。Agent 不拼隐藏脚本、不直改数据库，也不凭标题或文本猜身份。
+- 跨 Agent/进程的一致事实——信封、身份/端点、启动证据、`SLK TOKEN` 原子流转、中央记录和 BI 只读投影——由一个小而稳定的标准 Tool 实现。开工前由团队准备子 Skill 登记四角色、打开 BI、核对工具更新/环境/端点；新 Run 以 `preflight-run` 验证完整演练，续接 Run 以 `preflight-admission` 分开验证版本正常链和本 Run 当前身份/权限。Agent 不拼隐藏脚本、不直改数据库、不伪造未来工程事件，也不凭标题或文本猜身份。
 - Tool 输出事实，Agent 负责语义判断。项目超时、异常、唤醒、暂停和最小处理方式由对应角色结合真实证据决定，不靠规则穷举现场。
 - Temporal 管理子 Skill 负责共享本地服务；每个 Run 使用独立的 `SLK.Start`/`SLK.Run` 工作流记录通讯、成员停留和运行保障，不重写工程 Loop。只有匹配 `slk.native-start/v2` 才证明启动，后续活动用标准 `inspect-native-activity` 查询；缺失、过期、身份不符或权限不足都保持 `UNKNOWN`，不裁决 D0/D1/D2、`SLK TOKEN`、角色、模型或 BI。
 - Prompt-only 修正保持 prompt-only：用真实失败作反例并验证对应角色，不扩成数百行代码或庞大测试设施。

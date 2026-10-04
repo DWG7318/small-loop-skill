@@ -59,6 +59,34 @@ def test_state_cli_reports_the_exact_build_version(tmp_path):
     assert result == {"status": "ok", "version": "4.4.1"}
 
 
+def test_supervisor_model_revision_cli_preserves_the_same_role_instance(tmp_path):
+    environment = configured_environment(tmp_path)
+    state_root = tmp_path / "state"
+    invoke(["configure", "--data-root", state_root], environment)
+    initialized = json.loads(invoke(
+        ["init-run", "--request", write_json(tmp_path / "init.json", init_request())], environment).stdout)
+    with sqlite3.connect(state_root / "slk.db") as database:
+        database.execute("UPDATE role_instances SET model='gpt-5.6-sol' WHERE role_instance_id='supervisor-a'")
+    evidence = tmp_path / "owner-model-choice.txt"
+    evidence.write_text("Owner: Supervisor gpt-6.1-sol xhigh", encoding="utf-8")
+    request = write_json(tmp_path / "revise-model.json", {
+        "event_id": "model-revision-1", "run_id": "run-a", "role_instance_id": "supervisor-a",
+        "expected_runtime_revision": 1, "model": "gpt-6.1-sol", "reasoning": "xhigh",
+        "owner_evidence": {"path": str(evidence.resolve()),
+                           "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest()},
+        "reason": "Owner selected current Supervisor binding", "occurred_at": "2026-10-05T00:00:00Z",
+    })
+    supervisor = environment.copy()
+    supervisor["SLK_ROLE_CREDENTIAL"] = initialized["supervisor_credential"]
+
+    result = json.loads(invoke(["revise-role-model", "--request", request], supervisor).stdout)
+
+    assert result["status"] == "model_revised"
+    assert result["role_instance_id"] == "supervisor-a"
+    assert result["previous_model"] == "gpt-5.6-sol"
+    assert result["model"] == "gpt-6.1-sol"
+
+
 def test_init_run_can_atomically_deliver_credential_without_printing_secret(tmp_path):
     environment = configured_environment(tmp_path)
     invoke(["configure", "--data-root", tmp_path / "state"], environment)
@@ -343,7 +371,7 @@ def init_request():
             "role": "supervisor",
             "agent_runtime": "codex",
             "provider": "openai",
-            "model": "gpt-5.6-sol",
+            "model": "gpt-6.1-sol",
             "reasoning": "xhigh",
             "session_id": "thread-a",
         },

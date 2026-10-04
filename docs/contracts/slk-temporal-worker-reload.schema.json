@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","title":"SLK exact Temporal worker reload","oneOf":[
+    {"type":"object","additionalProperties":false,"required":["schema_version","run_id","address","task_queue","python_executable","worker_command","inspection_command","pythonpath","adapter_source","workflow_source","old_processes","workflow_identity","evidence_root","result_path"],
+      "properties":{"schema_version":{"const":"slk.temporal-worker-reload/v1"},"run_id":{"type":"string","minLength":1},"address":{"type":"string","minLength":1},"task_queue":{"type":"string","minLength":1},"python_executable":{"type":"string","minLength":1},
+        "worker_command":{"type":"array","minItems":3,"items":{"type":"string","minLength":1}},"inspection_command":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},"pythonpath":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},
+        "adapter_source":{"$ref":"#/$defs/proof"},"workflow_source":{"$ref":"#/$defs/proof"},"old_processes":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/process"}},"workflow_identity":{"$ref":"#/$defs/proof"},"evidence_root":{"type":"string","minLength":1},"result_path":{"type":"string","minLength":1}}},
+    {"type":"object","additionalProperties":false,"required":["schema_version","status","run_id","task_queue","new_worker_pid","request_sha256","adapter_source_sha256","workflow_source_sha256","workflow_identity"],
+      "properties":{"schema_version":{"const":"slk.temporal-worker-reload-result/v1"},"status":{"const":"TEMPORAL_WORKER_RELOADED"},"run_id":{"type":"string","minLength":1},"task_queue":{"type":"string","minLength":1},"new_worker_pid":{"type":"integer","minimum":1},"request_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"adapter_source_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"workflow_source_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"workflow_identity":{"type":"object"}}}
+  ],
+  "$defs":{"proof":{"type":"object","additionalProperties":false,"required":["path","sha256"],"properties":{"path":{"type":"string","minLength":1},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},
+    "process":{"type":"object","additionalProperties":false,"required":["pid","parent_pid","creation_time","command_sha256"],"properties":{"pid":{"type":"integer","minimum":1},"parent_pid":{"type":"integer","minimum":0},"creation_time":{"type":"string","minLength":1},"command_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}}}
+}

@@ -30,7 +30,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 
 ## 收尾与故障
 
-Run 的工程终结顺序完成后，Supervisor 关闭本 Run 的 `SLK.Run` 与 `SLK.Start`，只取消该 Run 的计时和待处理操作。Temporal 或 adapter 中途不可用时保留中央状态与候选，下一 CELL 保持阻断；Supervisor 修复同一服务/工作流后再继续，不用临时脚本伪造 ACK。
+Run 的工程终结顺序完成后，Supervisor 关闭本 Run 的 `SLK.Run` 与 `SLK.Start`，只取消该 Run 的计时和待处理操作。Temporal 或 adapter 中途不可用时保留中央状态与候选，下一 CELL 保持阻断；代码漂移只用 hash-bound `reload-temporal-worker` 替换准确 worker 进程链，并复核同一 Start/Run workflow ID、native run ID 与 startup fingerprint，不重建历史或用临时脚本伪造 ACK。
 
 ## 负面提示词
 

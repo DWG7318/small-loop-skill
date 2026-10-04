@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","title":"SLK Supervisor model revision","type":"object","additionalProperties":false,
+  "required":["event_id","run_id","role_instance_id","expected_runtime_revision","model","reasoning","owner_evidence","reason","occurred_at"],
+  "properties":{"event_id":{"type":"string","minLength":1},"run_id":{"type":"string","minLength":1},"role_instance_id":{"type":"string","minLength":1},
+    "expected_runtime_revision":{"type":"integer","minimum":1},"model":{"const":"gpt-6.1-sol"},"reasoning":{"enum":["high","xhigh"]},
+    "owner_evidence":{"type":"object","additionalProperties":false,"required":["path","sha256"],"properties":{"path":{"type":"string","minLength":1},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},
+    "reason":{"type":"string","minLength":1},"occurred_at":{"type":"string","format":"date-time"}}
+}

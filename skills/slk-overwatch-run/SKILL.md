@@ -48,6 +48,7 @@ OW 使用 `RUN_TEAM_REGISTRY` 中唯一 Supervisor endpoint 和 transport adapte
 - 只有登记的 Supervisor 发起并二次确认 OW 停止。Run 终结顺序是 `D2_PASSED → terminal snapshot → 本 Run final cycle → close-overwatcher → RUN_CLOSED`。
 - 解除一个 Run 绑定不结束仍服务其他 Run 的 OW Session；全部绑定解除后，Supervisor 确认终结，OW 再结束 active turn 并归档 Session。
 - 写凭证丢失时由 Supervisor 按现有 credential rotation 恢复原 Session；不更换身份、不伪造 cycle、不直接编辑数据库。
+- OW 自己通过 hash-bound `overwatcher-admin` 消费本角色已密封凭据，仅可写 `record-overwatch-cycle` 或 `record-overwatcher-status`；Supervisor、普通 shell 和其他角色无权解密、借用或代填 OW cycle。端点纠正由当前 Supervisor 的 `supervisor-admin` 调用 `rebind-session`，保留同一 OW role instance、Session、adapter 与 host，只追加更高 endpoint version。
 
 ## 负面提示词
 

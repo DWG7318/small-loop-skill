@@ -69,7 +69,7 @@ def test_live_drill_first_leg_is_started_by_exact_supervisor_agent(tmp_path: Pat
     config["codex_command"] = [sys.executable, str(TESTS / "fake_app_server.py"), "execute-command"]
     config["transport_artifact"] = str(build_zipapp(tmp_path / "slk-transport.pyz"))
     config["live_endpoints"] = True
-    config["codex_model"] = "gpt-5.6-sol"
+    config["codex_model"] = "gpt-6.1-sol"
     config["codex_effort"] = "xhigh"
 
     summary = run_drill(config, live=True, run_ids=("RUN-A", "RUN-B"))

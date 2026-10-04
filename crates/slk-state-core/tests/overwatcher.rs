@@ -14,9 +14,60 @@ use slk_state_core::model::{
     OverwatcherAssertion, OverwatcherReplacementMode, OwnerAuthorizationEvidence, OwnerDecision,
     PreservedAssertion, ProjectIdentity, RecordOverwatcherStatusRequest, RegisterRoleRequest,
     ReplaceOverwatcherRequest, ResumeOverwatcherTurnRequest, Role, RoleIdentity,
-    RotateOverwatcherCredentialRequest, TokenHandoffRequest, WriteRequest,
+    RebindSessionRequest, RotateOverwatcherCredentialRequest, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
+
+#[test]
+fn supervisor_rebinds_overwatcher_endpoint_without_changing_role_or_session() {
+    let fixture = Fixture::new_440();
+    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.cadence_seconds = 600;
+    fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    let before = fixture.store.query_run("run-a").unwrap();
+    let before_runtime = before.runtime_snapshot.unwrap().runtime_revision;
+    let mut wrong_session = endpoint("different-overwatcher-session");
+    wrong_session.endpoint_version = 2;
+    assert!(matches!(
+        fixture.store.rebind_session(
+            &fixture.supervisor,
+            RebindSessionRequest {
+                event_id: "rebind-overwatcher-wrong-session".into(),
+                run_id: "run-a".into(),
+                role_instance_id: "overwatcher-a".into(),
+                endpoint: wrong_session,
+                reason: "must not replace the registered OW Session".into(),
+                occurred_at: "2026-10-05T00:59:00Z".into(),
+            },
+        ),
+        Err(StateError::RoleBindingInvalid { .. })
+    ));
+    let mut rebound = endpoint("session-overwatcher-a");
+    rebound.endpoint_version = 2;
+    rebound.native_address = json!({"desktop_thread_id":"session-overwatcher-a","caller_pipe":"app-tools"});
+
+    fixture.store.rebind_session(
+        &fixture.supervisor,
+        RebindSessionRequest {
+            event_id: "rebind-overwatcher-desktop".into(),
+            run_id: "run-a".into(),
+            role_instance_id: "overwatcher-a".into(),
+            endpoint: rebound,
+            reason: "replace stale CLI endpoint with the same native Desktop Session".into(),
+            occurred_at: "2026-10-05T01:00:00Z".into(),
+        },
+    ).unwrap();
+
+    let after = fixture.store.query_run("run-a").unwrap();
+    let watcher = after.role("overwatcher").unwrap();
+    assert_eq!(watcher.role_instance_id, "overwatcher-a");
+    assert_eq!(watcher.session_id, "session-overwatcher-a");
+    assert_eq!(watcher.endpoints[0].endpoint_version, 2);
+    assert_eq!(after.runtime_snapshot.unwrap().runtime_revision, before_runtime + 1);
+    let event = after.events.iter().find(|row| row.event_id == "rebind-overwatcher-desktop").unwrap();
+    assert_eq!(event.event_type, "SESSION_REBOUND");
+    assert!(event.details_json.contains("previous_endpoint"));
+}
 
 #[test]
 fn supervisor_rotates_only_the_exact_active_overwatcher_credential_without_a_cycle() {
@@ -3272,7 +3323,7 @@ fn role(role_instance_id: &str, role: Role, session_id: &str) -> RoleIdentity {
         }
         .into(),
         model: match role {
-            Role::Supervisor => "gpt-5.6-sol",
+            Role::Supervisor => "gpt-6.1-sol",
             Role::Overwatcher => "gpt-5.6-luna",
             Role::Checker => "qwen3.8-max",
             Role::Worker => "deepseek-v4-flash",

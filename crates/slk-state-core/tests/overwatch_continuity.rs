@@ -73,7 +73,7 @@ fn init_request() -> InitRunRequest {
             role: Role::Supervisor,
             agent_runtime: "codex".into(),
             provider: "openai".into(),
-            model: "gpt-5.6-sol".into(),
+            model: "gpt-6.1-sol".into(),
             reasoning: "xhigh".into(),
             session_id: "session-supervisor-wait".into(),
         },

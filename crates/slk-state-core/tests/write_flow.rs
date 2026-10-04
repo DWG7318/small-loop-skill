@@ -4,7 +4,8 @@ use sha2::{Digest, Sha256};
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
     CellDefinition, CloseRoleRequest, EndpointIdentity, EventType, GoDefinition, InitRunRequest,
-    ProjectIdentity, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    EvidenceReference, ProjectIdentity, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    ReviseRoleModelRequest,
     RevisePlanRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
@@ -768,21 +769,73 @@ fn fixed_engineering_role_bindings_fail_closed() {
 }
 
 #[test]
-fn owner_selected_supervisor_sol_family_is_not_fixed_to_one_generation() {
+fn supervisor_binding_is_exact_61_sol_with_owner_selected_high_or_xhigh() {
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
     let mut selected = init_request("run-a");
-    selected.supervisor.model = "gpt-6.1-sol".into();
+    selected.supervisor.reasoning = "high".into();
     store.init_run(selected).unwrap();
 
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
     let mut wrong_class = init_request("run-b");
-    wrong_class.supervisor.model = "gpt-6-luna".into();
+    wrong_class.supervisor.model = "gpt-5.6-sol".into();
     assert!(matches!(
         store.init_run(wrong_class),
         Err(StateError::RoleBindingInvalid { .. })
     ));
+}
+
+#[test]
+fn supervisor_model_revision_preserves_identity_and_appends_evidence() {
+    let root = tempfile::tempdir().unwrap();
+    let store = StateStore::new(root.path());
+    let initialized = store.init_run(init_request("run-a")).unwrap();
+    let database = rusqlite::Connection::open(root.path().join("slk.db")).unwrap();
+    database.execute(
+        "UPDATE role_instances SET model='gpt-5.6-sol' WHERE run_id='run-a' AND role='supervisor'",
+        [],
+    ).unwrap();
+    let evidence_path = root.path().join("owner-model-choice.txt");
+    std::fs::write(&evidence_path, b"Owner selected gpt-6.1-sol xhigh for this Run").unwrap();
+    let evidence_sha256 = format!("{:x}", Sha256::digest(std::fs::read(&evidence_path).unwrap()));
+
+    let request = ReviseRoleModelRequest {
+            event_id: "model-revised-1".into(),
+            run_id: "run-a".into(),
+            role_instance_id: "supervisor-a".into(),
+            expected_runtime_revision: 1,
+            model: "gpt-6.1-sol".into(),
+            reasoning: "xhigh".into(),
+            owner_evidence: EvidenceReference {
+                path: evidence_path.to_string_lossy().into_owned(),
+                sha256: evidence_sha256,
+            },
+            reason: "Owner model policy correction".into(),
+            occurred_at: "2026-10-05T00:00:00Z".into(),
+        };
+    let result = store.revise_role_model(
+        &initialized.supervisor_credential,
+        request.clone(),
+    ).unwrap();
+
+    assert_eq!(result.status, "MODEL_REVISED");
+    assert_eq!(result.role_instance_id, "supervisor-a");
+    assert_eq!(result.previous_model, "gpt-5.6-sol");
+    assert_eq!(result.model, "gpt-6.1-sol");
+    let row: (String, String, String) = database.query_row(
+        "SELECT role_instance_id, model, reasoning FROM role_instances WHERE run_id='run-a' AND role='supervisor'",
+        [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).unwrap();
+    assert_eq!(row, ("supervisor-a".into(), "gpt-6.1-sol".into(), "xhigh".into()));
+    let details: String = database.query_row(
+        "SELECT details_json FROM work_events WHERE event_id='model-revised-1'", [], |row| row.get(0),
+    ).unwrap();
+    assert!(details.contains("gpt-5.6-sol") && details.contains("gpt-6.1-sol"));
+    let replay = store.revise_role_model(&initialized.supervisor_credential, request).unwrap();
+    assert_eq!(replay.status, "ALREADY_APPLIED");
+    assert_eq!(replay.previous_model, "gpt-5.6-sol");
+    assert_eq!(replay.runtime_revision, result.runtime_revision);
 }
 
 #[test]
@@ -1498,7 +1551,7 @@ fn role(role_instance_id: &str, role: Role) -> RoleIdentity {
         }
         .into(),
         model: match role {
-            Role::Supervisor => "gpt-5.6-sol",
+            Role::Supervisor => "gpt-6.1-sol",
             Role::Overwatcher => "gpt-5.6-luna",
             Role::Checker => "qwen3.8-max",
             Role::Worker => "deepseek-v4-flash",

@@ -2,6 +2,9 @@
 
 ## 4.4.1 — bounded normal-handoff correction (local candidate)
 
+- Closed production admission without replaying product work: reusable 4.4.1 normal-chain conformance is recomputed from a complete isolated v2 rehearsal, while the target Run separately proves its exact current host, endpoint and four saved credential consumers. Echo v1, relabeling another Run, missing consumers and future engineering events remain invalid.
+- Added hash-bound `supervisor-admin`, `overwatcher-admin`, `revise-role-model`, `resume-role-host` and `reload-temporal-worker` entries. Supervisor administration now includes exact endpoint rebind; OW consumes its own sealed permission only for cycle/status records. They preserve the original role/Session, immutable INCOMPLETE result, workflow IDs/history/startup fingerprint and sealed credential boundary; only the declared remaining suffix or administrative event is added.
+- Supervisor is now canonical `gpt-6.1-sol`; Owner freezes `high` or `xhigh` per Run. An old binding can only move through the append-only model-revision operation with hash-valid Owner evidence; no prompt or silent overwrite changes it.
 - Original native roles execute their authenticated suffix after immutable engineering results; saved Windows credential consumers and legitimate INCOMPLETE/commit-only recovery stay separate from engineering rework.
 - Desktop Supervisor delivery uses its genuine installed host capability without CLI takeover; native start, TOKEN commit, verdict and takeover remain distinct. Readiness v2 joins real normal-route evidence rather than echo responses.
 - Temporal timer/recovery guards, replay-safe native notices and independent exit observations are corrected. OW instructions distinguish reporting from takeover and restoration. Preparation Goal is bounded to actual preparation.

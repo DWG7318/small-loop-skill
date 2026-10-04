@@ -134,7 +134,7 @@ def actual_worker_state(
                         "role": "supervisor",
                         "agent_runtime": "codex",
                         "provider": "openai",
-                        "model": "gpt-5.6-sol",
+                        "model": "gpt-6.1-sol",
                         "reasoning": "xhigh",
                         "session_id": "thread-a",
                     },

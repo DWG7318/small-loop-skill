@@ -372,7 +372,7 @@ fn register_role(event_id: &str, id: &str, role_kind: Role) -> RegisterRoleReque
 
 fn role(id: &str, role_kind: Role) -> RoleIdentity {
     let (runtime, provider, model, reasoning) = match role_kind {
-        Role::Supervisor => ("codex", "openai", "gpt-5.6-sol", "xhigh"),
+        Role::Supervisor => ("codex", "openai", "gpt-6.1-sol", "xhigh"),
         Role::Checker => (
             "ocrv",
             "dashscope-tokenplan",

@@ -141,17 +141,25 @@ class RoleHost:
         source_sha256 = canonical_json_sha256({name: wc._sha256(source / name) for name in (
             "endpoint.json", "envelope.json", "started.json", "completed.json", "failed.json",
             "worker-result.json", "checker-result.json", "ocrv-result.json", "supervisor-result.json") if (source / name).is_file()})
+        handoff_evidence = source / "incomplete-handoff" / "evidence.json"
+        if handoff_evidence.is_file():
+            source_sha256 = canonical_json_sha256({"source": source_sha256,
+                                                   "incomplete-handoff/evidence.json": wc._sha256(handoff_evidence)})
         if result_path.exists():
             saved = wc._read_object(result_path, "owned handoff receipt")
             if (saved.get("binding_sha256") != self.digest or saved.get("source_message_id") != envelope.message_id
                 or saved.get("source_sha256") != source_sha256):
                 raise wc.CompletionError("ROLE_HOST_CONFLICT", "owned handoff receipt changed identity")
             return saved
-        if not (source / "completed.json").is_file():
+        incomplete_worker = (role == "worker" and not (source / "completed.json").is_file()
+                             and (source / "failed.json").is_file() and handoff_evidence.is_file())
+        if not (source / "completed.json").is_file() and not incomplete_worker:
             return {"status": "ENGINEERING_RESULT_INCOMPLETE", "source_message_id": envelope.message_id}
-        self._completion_proof(source, envelope)
+        if not incomplete_worker:
+            self._completion_proof(source, envelope)
         projection = None if role == "supervisor" else self._boundary(envelope)
-        occurred_at = datetime.fromtimestamp((source / "completed.json").stat().st_mtime, timezone.utc).isoformat()
+        terminal = source / ("failed.json" if incomplete_worker else "completed.json")
+        occurred_at = datetime.fromtimestamp(terminal.stat().st_mtime, timezone.utc).isoformat()
         if role == "supervisor":
             result = self._supervisor_result(source, envelope, root, occurred_at)
         elif role == "worker":

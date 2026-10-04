@@ -70,7 +70,7 @@ export const runFixture: RunView = {
       role_instance_id: "supervisor-a",
       agent_runtime: "Codex",
       provider: "OpenAI",
-      model: "gpt-5.6-sol",
+      model: "gpt-6.1-sol",
       reasoning: "xhigh",
       session_id: "supervisor-session-a",
       lifecycle: "active",

@@ -707,6 +707,20 @@ pub struct RebindSessionRequest {
     pub occurred_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviseRoleModelRequest {
+    pub event_id: String,
+    pub run_id: String,
+    pub role_instance_id: String,
+    pub expected_runtime_revision: u64,
+    pub model: String,
+    pub reasoning: String,
+    pub owner_evidence: EvidenceReference,
+    pub reason: String,
+    pub occurred_at: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OwnerDecision {
