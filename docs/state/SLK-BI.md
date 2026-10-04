@@ -4,7 +4,7 @@ LE BI presents machine-wide role-authored state plus accepted operational observ
 
 ## Data source
 
-The desktop resolves the same machine-wide `config.json` used by `slk-state` and `slk-bi-query`, then opens the configured SQLite database read-only for every refresh. The database remains authoritative. WebBI stores only the bounded display projection uploaded by each desktop; that online archive is non-authoritative and never writes back to SLK state.
+The desktop resolves the same machine-wide `config.json` used by `slk-state` and `slk-bi-query`, then opens the configured SQLite database read-only for every refresh. Readers explicitly support schema 8 and 9 because migration 0009 changes only OW write constraints, not read columns; other versions fail closed. Reading never migrates the database or changes a Run's method version. WebBI stores only the bounded display projection uploaded by each desktop; that online archive is non-authoritative and never writes back to SLK state.
 
 If `SLK_CONFIG_PATH` is not set, the core uses the operating system's local-data SLK configuration path. Tests and isolated environments may set `SLK_CONFIG_PATH` to an explicit configuration file. The configuration contains an absolute data-root path and is created outside BI through the state CLI.
 
@@ -116,7 +116,7 @@ The release script invokes `tauri build --no-bundle`, requires a `custom-protoco
 ## Troubleshooting
 
 - **Not configured:** configure the data root with `slk-state`; BI intentionally has no configure action.
-- **Unsupported schema:** update BI and do not interpret newer fields using an older frontend.
+- **Unsupported schema:** use the hash-verified installed BI. Schema 8 and 9 cold-start without migration; an unreviewed version still requires the matching reader or a backed-up writer migration before opening. A responsive window alone is not a successful launch: verify the configured Run projections load.
 - **Transient database read:** keep the stale snapshot visible and retry through normal refresh.
 - **Missing evidence file:** retain the evidence record and investigate through the owning SLK role; BI does not repair or remove it.
 - **A role appears active but may not be working:** treat lifecycle and old work facts as records, inspect native activity evidence, and record `ACTIVITY_UNPROVEN` when appropriate; never infer current work from a heartbeat or visible task alone.

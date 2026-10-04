@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "2ebb5dc92161a3c877ef8064569a9df73ee0dfa4460d607843a21c96edf82ecc"
+      "sha256": "2fed8087216ede5df13cb5a5c9919e3eddb5609c1361a10e04d69531e6305bc9"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "15a8cecacdf3b4bdfa3658647a98b2d3c8400ca9947663f29ec8ef082af7ee35"
+      "sha256": "417dea286ba08b3f93f30107dfaca4e8d0053e5f79e1679b3c43af4763b43878"
     },
     {
       "path": "VERSION",
@@ -332,7 +332,7 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/tests/read_commands.rs",
-      "sha256": "7e11e26826076218191400fb2787f1cedf32519a07f3eee2620589092b8a9f00"
+      "sha256": "d0408ecb5a53c56c9fd1b32adcf63b0b0b3fb4bacb81dda7ed8b144b010c9716"
     },
     {
       "path": "apps/slk-bi/src/App.test.tsx",
@@ -648,11 +648,11 @@
     },
     {
       "path": "crates/slk-state-core/src/query.rs",
-      "sha256": "bd1172cfa2a99df43964104021f86a0797050ae8e89da7b620c4ab02b2c897f8"
+      "sha256": "21cf0fb5b1d6088bdd9a43d7e05fb9884f1871a14800461b28c39bc892acb0b5"
     },
     {
       "path": "crates/slk-state-core/src/schema.rs",
-      "sha256": "5677442332c7d05f61dfda1bbf01fb8b6a57dbd1d50a3cb74beed3d91ee25694"
+      "sha256": "f909f4d531e563ef59c97a9c2ff2d243050b73b09bffe3aa7dfe3b092e2e4f1a"
     },
     {
       "path": "crates/slk-state-core/src/write.rs",
@@ -700,7 +700,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/schema.rs",
-      "sha256": "c674af1983b9c815aaaca296f4a49e72608c3e1dd16e5d9043a3fa7016511406"
+      "sha256": "dadad86969dfc7d1a936f387a07fc88ca83537570b9cbc42a4c215835ddd87ba"
     },
     {
       "path": "crates/slk-state-core/tests/write_flow.rs",
@@ -816,11 +816,11 @@
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
-      "sha256": "385c29eae8ea62d42beef6e3d062e64de063b78d51a78eed353177b187112add"
+      "sha256": "973d6af76c95b4db51c2da41f536bae4fab35607fd3af74dd721be8ed75b4abe"
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "e6aa0fd5fbfcbde2b96de04a47f66ce62dc901e48cdc84778ad4063a89f8fe8e"
+      "sha256": "01ecb29e4611b160d384b56c540b778738bcf15b7e8021868abe78e10eab3bb3"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",

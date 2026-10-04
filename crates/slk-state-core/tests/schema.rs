@@ -2,7 +2,10 @@ use std::fs;
 
 use rusqlite::{params, Connection, OpenFlags};
 
-use slk_state_core::schema::{create_migration_backup, open_database};
+use slk_state_core::schema::{
+    create_migration_backup, open_database, open_database_read_only, SchemaError,
+};
+use slk_state_core::write::StateStore;
 
 const TABLES: [&str; 23] = [
     "projects",
@@ -368,6 +371,77 @@ fn failed_multi_step_migration_keeps_the_original_database_version() {
             .count(),
         1
     );
+}
+
+#[test]
+fn v8_cold_start_reads_all_bi_views_without_migration_or_data_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("slk.db");
+    let database = Connection::open(&path).unwrap();
+    for migration in [
+        include_str!("../migrations/0001.sql"),
+        include_str!("../migrations/0002.sql"),
+        include_str!("../migrations/0003.sql"),
+        include_str!("../migrations/0004.sql"),
+        include_str!("../migrations/0005.sql"),
+        include_str!("../migrations/0006.sql"),
+        include_str!("../migrations/0007.sql"),
+        include_str!("../migrations/0008.sql"),
+    ] {
+        database.execute_batch(migration).unwrap();
+    }
+    database.pragma_update(None, "user_version", 8).unwrap();
+    seed_history(&database);
+    database
+        .execute(
+            "INSERT INTO run_runtime_snapshots
+         (run_id, runtime_revision, plan_revision, token_sequence,
+          token_holder_role_instance_id, latest_event_id, method_version,
+          overwatcher_status, committed_at)
+         VALUES ('run-a',1,1,1,'role-a','work-a','4.3.6','UNBOUND',
+                 '2026-09-20T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+    drop(database);
+    let original = fs::read(&path).unwrap();
+    let store = StateStore::new(root.path());
+
+    for _ in 0..3 {
+        assert_eq!(
+            store.projects_view().unwrap()["projects"][0]["project_id"],
+            "project-a"
+        );
+        assert_eq!(store.runs_view(None).unwrap()["runs"][0]["run_id"], "run-a");
+        assert_eq!(store.query_run("run-a").unwrap().schema_version, 8);
+        assert_eq!(store.run_view("run-a").unwrap()["run_id"], "run-a");
+        assert!(store.graph_view("run-a").is_ok());
+        assert!(store.roles_view("run-a").is_ok());
+        assert!(store.plans_view("run-a").is_ok());
+        assert!(store.events_view("run-a").is_ok());
+        assert!(store.evidence_view("run-a").is_ok());
+        let read_only = open_database_read_only(root.path()).unwrap();
+        assert!(read_only
+            .execute("UPDATE runs SET goal='changed'", [])
+            .is_err());
+    }
+    assert_eq!(fs::read(&path).unwrap(), original);
+    assert!(!root.path().join("backups").exists());
+}
+
+#[test]
+fn read_only_compatibility_rejects_unreviewed_schema_versions() {
+    let root = tempfile::tempdir().unwrap();
+    let database = open_database(root.path()).unwrap();
+    for version in [0, 1, 7, 10] {
+        database
+            .pragma_update(None, "user_version", version)
+            .unwrap();
+        assert!(matches!(
+            open_database_read_only(root.path()),
+            Err(SchemaError::UnsupportedVersion { found, .. }) if found == version
+        ));
+    }
 }
 
 fn seed_history(database: &Connection) {

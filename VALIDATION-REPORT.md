@@ -1,5 +1,7 @@
 # Validation Report — SLK 4.4.0 Candidate
 
+Local post-release BI correction (2026-10-04, branch `fix/bi-schema-cold-start`): explicit read-only schema-8/9 compatibility, accurate source schema version, and three new regression tests. The genuine v8 cold-start test was RED before the fix. Rust workspace 135 passed; package/install tests 6 passed; production build/fingerprint and 99-file local install passed. Three installed-path cold starts read all ten historical Run details, with no STALE/read error in the captured view and unchanged database/configuration hashes. This correction remains local and does not replace published v4.4.0 assets or alter Run method versions. Evidence: `docs/state/SLK-BI-ACCEPTANCE.md`.
+
 Date: 2026-10-04
 
 Branch: `feature/slk-4.4.0-runtime-webbi`

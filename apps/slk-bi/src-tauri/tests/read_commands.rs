@@ -25,6 +25,35 @@ fn desktop_commands_read_the_configured_global_store_without_credentials() {
 }
 
 #[test]
+fn repeated_desktop_cold_reads_keep_a_compatible_v8_store_unchanged() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("config.json");
+    let data = temp.path().join("data");
+    configure_at(&config, &data).unwrap();
+    StateStore::new(&data).init_run(init_request()).unwrap();
+    // The complete real V8 migration/read matrix is covered by state-core/schema.
+    let database = slk_state_core::schema::open_database(&data).unwrap();
+    database.pragma_update(None, "user_version", 8).unwrap();
+    drop(database);
+    let database_path = data.join("slk.db");
+    let original = std::fs::read(&database_path).unwrap();
+    let original_config = std::fs::read(&config).unwrap();
+    for _ in 0..3 {
+        assert_eq!(
+            projects_from(&config).unwrap()["projects"][0]["project_id"],
+            "project-a"
+        );
+        assert_eq!(
+            runs_from(&config, None).unwrap()["runs"][0]["run_id"],
+            "run-a"
+        );
+    }
+    assert_eq!(std::fs::read(&database_path).unwrap(), original);
+    assert_eq!(std::fs::read(&config).unwrap(), original_config);
+    assert!(!data.join("backups").exists());
+}
+
+#[test]
 fn desktop_registers_the_nine_read_only_projection_commands() {
     assert_eq!(
         REGISTERED_READ_COMMANDS,

@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use crate::auth::StateError;
 use crate::model::RuntimeSnapshot;
 use crate::model::{OwnerAuthorizationEvidence, RunStateSnapshot};
-use crate::schema::{open_database_read_only, SCHEMA_VERSION};
+use crate::schema::open_database_read_only;
 use crate::write::{run_state_snapshot_from, runtime_snapshot_from, StateStore};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -364,7 +364,8 @@ impl StateStore {
             .find(|summary| summary.run_id == run_id)
             .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))?;
         Ok(RunProjection {
-            schema_version: SCHEMA_VERSION as u32,
+            schema_version: connection
+                .pragma_query_value(None, "user_version", |row| row.get(0))?,
             summary,
             administrative_snapshot: run_state_snapshot_from(&connection, run_id)?,
             runtime_snapshot: Some(runtime_snapshot_from(&connection, run_id)?),

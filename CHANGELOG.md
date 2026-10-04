@@ -1,5 +1,10 @@
 # Changelog
 
+## Local BI cold-start fix (2026-10-04, unpublished)
+
+- Added explicit read-only schema 8/9 compatibility: migration 0009 only relaxes OW write constraints, so existing schema-8 Runs now load without migrating or rewriting their data. Run projections retain the actual database version; unreviewed versions remain rejected.
+- Added repeated cold-read coverage for all BI projections and the desktop command boundary, including unchanged database/configuration bytes and rejected writes. Use the installed executable and verify data reads before reporting a successful launch.
+
 ## 4.4.0 (candidate)
 
 - Added fail-closed four-role `RUN_TEAM_REGISTRY` readiness: BI 1.1.0 must be open, tool/update and native activity capabilities must be current, the shared local Temporal service and this Run's workflows must be ready, and seven exact member-to-member communication legs must prove receiver start and response before the first CELL.

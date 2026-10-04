@@ -10,6 +10,8 @@ use thiserror::Error;
 use crate::config::{validate_data_root, ConfigError};
 
 pub const SCHEMA_VERSION: i64 = 9;
+// V9 only relaxes OW cadence/session write constraints; V8 has identical read columns.
+const READ_ONLY_SCHEMA_VERSIONS: [i64; 2] = [8, SCHEMA_VERSION];
 const MIGRATION_V1: &str = include_str!("../migrations/0001.sql");
 const MIGRATION_V2: &str = include_str!("../migrations/0002.sql");
 const MIGRATION_V3: &str = include_str!("../migrations/0003.sql");
@@ -81,7 +83,7 @@ pub fn open_database_read_only(data_root: &Path) -> Result<Connection, SchemaErr
     connection.busy_timeout(Duration::from_secs(5))?;
     connection.pragma_update(None, "foreign_keys", true)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version != SCHEMA_VERSION {
+    if !READ_ONLY_SCHEMA_VERSIONS.contains(&version) {
         return Err(SchemaError::UnsupportedVersion {
             found: version,
             supported: SCHEMA_VERSION,

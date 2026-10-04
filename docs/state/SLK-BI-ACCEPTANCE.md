@@ -1,5 +1,11 @@
 # SLK BI Acceptance
 
+## Local schema-8 cold-start correction (2026-10-04)
+
+The released reader rejected schema 8 before any projection was loaded. The new regression first failed with `UnsupportedVersion { found: 8, supported: 9 }`, then passed with explicit schema-8/9 read compatibility. The genuine schema-8 fixture covers every BI projection, three consecutive reads, original bytes, no migration backup, and denied writes. Versions 0/1/7/10 remain rejected. Desktop command tests also verify unchanged configuration and repeated cold reads. Rust workspace: 135 passed. This local correction does not replace any published tag or asset.
+
+Production fingerprint verification passed for the corrected desktop SHA-256 `205072009dfb8fdd7826d9d00d885aafde20a0567189dc73d97bd26ff7a238fa`. The verified 99-file package was installed at `C:\Users\DWG\.codex\tools\slk`; three cold starts used that installed executable, and all ten local Run details were readable. The captured window showed the valid empty-active view without STALE/read errors. Database and configuration SHA-256 values remained unchanged; no Run adoption, data migration, or UI style change was performed by this correction.
+
 ## BI / WebBI 1.1.0 local candidate
 
 Date: 2026-10-04
