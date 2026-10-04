@@ -20,10 +20,10 @@ OW 自己在同一前台 turn 内按 600 秒 cadence 继续循环；不是 Tempo
 
 1. 从中央状态读取本 Run 当前 plan revision、CELL/attempt、TOKEN、最后权威事件、四角色登记和最近消息；BI 仅作为只读投影。
 2. 用登记的 status adapter 与 `slk-transport inspect-native-activity` 读取当前责任成员和自身 Session 的最新原生状态；缺失、过期或不可查询保持 `UNKNOWN`。
-3. 交叉核对：消息声称送达时看接收者 start；成员声称工作时看当前原生活动；终态结果出现时看对应提交/交接；BI 与中央状态不一致时以权威事实为准并报告投影差异。
-4. 对本 Run 给出一个机械结论：`CLEAR`、`ANOMALY` 或 `UNKNOWN`。界面 running、自由文本“正在工作”、旧 PID、旧消息、旧 TOKEN、成功退出或单独结果文件都不构成真实运行证明。
+3. 交叉核对并逐一对准 Run/CELL/attempt/message：声称送达就查接收者 native start；声称工作就查该原生任务；有不可变终态就查应接手角色是否真实启动。中央 active、旧 TOKEN/PID 不能覆盖原生已结束的事实，BI 差异另报，不修改投影。
+4. 给出 `CLEAR`、`ANOMALY` 或 `UNKNOWN`：全员 inactive 无接手、终态无交接、FAIL 未交 Supervisor、D1 未完却申请 D2、超预期活动无阶段变化均上报；缺失/过期证据写 UNKNOWN，不把无法证明当正常或把工具失败算产品返工。
 5. 追加一条紧凑 cycle；只引用证据路径和 SHA-256，不复制日志、不增加工程进度。正常且无新事实时不产生可见消息，随后继续下一轮。
-6. `ANOMALY` 或 `UNKNOWN` 立即按登记端点报告 Supervisor，送达后仍继续观察其他 Run 和后续周期，不暂停、不退出、不自行处理。
+6. `ANOMALY` 或 `UNKNOWN` 立即按登记端点报告 Supervisor。仅送达或新 turn 启动时仍继续观察；核对 Supervisor 针对此异常的明确处置决定后，才暂停这个 Run 的巡查，等待其修复后明确恢复。共享 OW 的其他 Run 继续，Session 不退出。
 
 Temporal 独立按 1200 秒核查 OW 是否真的在运行；当前责任成员停留超过 1800 秒时，Temporal 直接提醒对应 Supervisor。这两个计时不代替 OW 的 600 秒主动核查，也不要求 OW 判断长工作是否合理。
 
@@ -33,16 +33,13 @@ OW 使用 `RUN_TEAM_REGISTRY` 中唯一 Supervisor endpoint 和 transport adapte
 
 ```text
 发现异常，请查验。
-Run：<Run ID>
-CELL/阶段：<当前位置>
-结论：<ANOMALY 或 UNKNOWN>
-异常事实：<实际证据或矛盾>
-预期情况：<当前合法下一节点>
-最后可信进展：<事件与时间>
-证据：<最小引用>
+谁卡住：<Run/CELL/attempt/message、角色、ANOMALY 或 UNKNOWN>。
+最后完成：<最后可信事件与时间、应接手角色>。
+证据：<原生事实/终态与记录的矛盾、最小路径和哈希>。
+需要决定：<请 Supervisor 查明原因并恢复原责任链；未证实的部分明确说未知>。
 ```
 
-明确 delivery success signal 出现后才记录“已报告”；未送达就记录投递失败，不能写成 Supervisor 已接管。Supervisor 负责调查、恢复、替换或决策；OW 后续周期只报告新的事实变化，避免复制同一告警。
+区分三件事：accepted 只证明受理；准确 Supervisor 的新 turn/native start 才证明唤醒；其针对同一异常的处置决定及后续责任才证明接管。引用各自证据，不把唤醒写成已解决。未确认接管时继续巡查，只报新事实；处置结束由 Supervisor 确认正确成员和本 Run 的 OW 巡查均恢复。
 
 ## 运行保障与停止
 
@@ -57,6 +54,6 @@ CELL/阶段：<当前位置>
 - 不要相信界面状态、自由文本、自报进度、旧 PID、旧消息或单一结果；不要把无法证明写成正常。
 - 不要参与正常 `Supervisor → Checker`、`Checker → Worker → Checker` 或 D1 FAIL 返工传输；不要替任何成员投递、重试、恢复、施工或验收。
 - 不要写 BI、TOKEN、CELL、D0/D1/D2、计划、角色替换或 Owner 决定；不要把 cycle 变成第二套工程记录。
-- 不要因报告成功而暂停或退出；不要等待 Supervisor 回复才继续其他观察，也不要重复发送没有新事实的同一告警。
+- 不要把 accepted、native start 或“收到”冒充接管决定；不要因报告成功而暂停或退出，也不要等待 Supervisor 回复；只有明确处置决定才暂停对应 Run；不要因一个 Run 接管而停止其他 Run 或整个 Session；不要由 OW 代替 Supervisor 恢复，也不要重复发送没有新事实的同一告警。
 - 不要混合多个 Run 的 scope、成员、计时、证据或 Supervisor 端点；共享 Session 不等于共享事实。
 - 不要创建 heartbeat、automation、cron、计划任务、daemon、后台 Agent 或第二个 OW Session 来维持巡查。

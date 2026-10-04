@@ -10,7 +10,7 @@ import pytest
 temporalio = pytest.importorskip("temporalio")
 
 from temporalio import activity
-from temporalio.client import Client
+from temporalio.client import Client, WorkflowUpdateFailedError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
@@ -24,6 +24,8 @@ from .test_contracts import (
     start_value,
 )
 
+
+TEST_TASK_QUEUE = "slk441-isolated-" + uuid.uuid4().hex[:12]
 
 CALLS: dict[str, list[dict[str, Any]]] = {
     "prepare": [],
@@ -83,11 +85,8 @@ async def inspect_overwatcher(value: dict[str, Any]) -> dict[str, Any]:
 @activity.defn(name="slk.notify_supervisor")
 async def notify_supervisor(value: dict[str, Any]) -> dict[str, Any]:
     CALLS["notify_supervisor"].append(value)
-    return {
-        "status": "NOTIFIED",
-        "event_id": value["event_id"],
-        "receipt_sha256": "b" * 64,
-    }
+    from .test_contracts import notification_value
+    return notification_value(value["event_id"], value["run_id"])
 
 
 @pytest.fixture(autouse=True)
@@ -122,6 +121,8 @@ def _unique_start(*, label: str) -> dict[str, Any]:
     value = start_value()
     run_id = f"RUN-{label}-{uuid.uuid4().hex[:8]}"
     value["run_id"] = run_id
+    value["task_queue"] = TEST_TASK_QUEUE
+    value["method_version"] = "4.4.1"
     value["startup_idempotency_key"] = f"start-{run_id}-v7"
     return value
 
@@ -135,7 +136,7 @@ async def test_start_template_starts_one_run_and_ack_closes_delivery(tmp_path: P
     async with await _environment(tmp_path) as env:
         async with Worker(
             env.client,
-            task_queue="slk-local",
+            task_queue=TEST_TASK_QUEUE,
             workflows=[StartSlkWorkflow, RunSlkWorkflow],
             activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
         ):
@@ -143,7 +144,7 @@ async def test_start_template_starts_one_run_and_ack_closes_delivery(tmp_path: P
                 StartSlkWorkflow.run,
                 start,
                 id=f"slk-start-{run_id}",
-                task_queue="slk-local",
+                task_queue=TEST_TASK_QUEUE,
             )
             child = env.client.get_workflow_handle(f"slk-run-{run_id}")
             await _wait_for_phase(child, env, "IDLE")
@@ -178,7 +179,7 @@ async def test_ack_timeout_requests_exact_recovery_then_matching_ack_stops_it(
     async with await _environment(tmp_path) as env:
         async with Worker(
             env.client,
-            task_queue="slk-local",
+            task_queue=TEST_TASK_QUEUE,
             workflows=[StartSlkWorkflow, RunSlkWorkflow],
             activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
         ):
@@ -186,7 +187,7 @@ async def test_ack_timeout_requests_exact_recovery_then_matching_ack_stops_it(
                 StartSlkWorkflow.run,
                 start,
                 id=f"slk-start-{start['run_id']}",
-                task_queue="slk-local",
+                task_queue=TEST_TASK_QUEUE,
             )
             child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
             await _wait_for_phase(child, env, "IDLE")
@@ -214,12 +215,12 @@ async def test_member_residency_over_thirty_minutes_notifies_supervisor_once(tmp
     async with await _environment(tmp_path) as env:
         async with Worker(
             env.client,
-            task_queue="slk-local",
+            task_queue=TEST_TASK_QUEUE,
             workflows=[StartSlkWorkflow, RunSlkWorkflow],
             activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
         ):
             parent = await env.client.start_workflow(
-                StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue="slk-local"
+                StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue=TEST_TASK_QUEUE
             )
             child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
             await _wait_for_phase(child, env, "IDLE")
@@ -244,12 +245,12 @@ async def test_temporal_independently_checks_overwatcher_every_twenty_minutes(tm
     async with await _environment(tmp_path) as env:
         async with Worker(
             env.client,
-            task_queue="slk-local",
+            task_queue=TEST_TASK_QUEUE,
             workflows=[StartSlkWorkflow, RunSlkWorkflow],
             activities=[prepare_run, deliver_message, request_recovery, inspect_overwatcher, notify_supervisor],
         ):
             parent = await env.client.start_workflow(
-                StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue="slk-local"
+                StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue=TEST_TASK_QUEUE
             )
             child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
             await _wait_for_phase(child, env, "IDLE")
@@ -277,7 +278,7 @@ async def test_overwatcher_exit_blocks_next_delivery_until_exact_supervisor_repa
     async with await _environment(tmp_path) as env:
         async with Worker(
             env.client,
-            task_queue="slk-local",
+            task_queue=TEST_TASK_QUEUE,
             workflows=[StartSlkWorkflow, RunSlkWorkflow],
             activities=[
                 prepare_run,
@@ -291,7 +292,7 @@ async def test_overwatcher_exit_blocks_next_delivery_until_exact_supervisor_repa
                 StartSlkWorkflow.run,
                 start,
                 id=f"slk-start-{run_id}",
-                task_queue="slk-local",
+                task_queue=TEST_TASK_QUEUE,
             )
             child = env.client.get_workflow_handle(f"slk-run-{run_id}")
             await _wait_for_phase(child, env, "IDLE")
@@ -304,15 +305,18 @@ async def test_overwatcher_exit_blocks_next_delivery_until_exact_supervisor_repa
             assert CALLS["notify_supervisor"][-1]["kind"] == (
                 "OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION"
             )
-            with pytest.raises(Exception, match="runtime guard"):
+            with pytest.raises(WorkflowUpdateFailedError) as rejected:
                 await child.execute_update(RunSlkWorkflow.request_delivery, delivery)
+            assert "runtime guard" in str(rejected.value.__cause__)
+            assert (await child.query(RunSlkWorkflow.status))["runtime_guard_blocker"] is not None
 
             wrong_authority = dict(resolution)
             wrong_authority["supervisor_role_instance_id"] = "checker-a"
-            with pytest.raises(Exception, match="frozen authority"):
+            with pytest.raises(WorkflowUpdateFailedError) as rejected:
                 await child.execute_update(
                     RunSlkWorkflow.resolve_runtime_guard, wrong_authority
                 )
+            assert "frozen authority" in str(rejected.value.__cause__)
             assert await child.execute_update(
                 RunSlkWorkflow.resolve_runtime_guard, resolution
             ) == "RUNTIME_GUARD_REPAIRED"

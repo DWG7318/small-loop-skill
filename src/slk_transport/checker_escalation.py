@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from . import SUPPORTED_METHOD_VERSIONS
+
 import hashlib
 import json
 import uuid
@@ -162,9 +164,9 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_REQUEST_INVALID", "post-D1 request is not closed"
         )
-    if request.get("method_version") != "4.4.0":
+    if request.get("method_version") not in SUPPORTED_METHOD_VERSIONS:
         raise CheckerEscalationError(
-            "CHECKER_ESCALATION_REQUEST_INVALID", "post-D1 method version is not 4.4.0"
+            "CHECKER_ESCALATION_REQUEST_INVALID", "post-D1 method version is unsupported"
         )
     for field in (
         "post_d1_invocation_id",
@@ -223,10 +225,10 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     if (
         not isinstance(summary, Mapping)
         or summary.get("run_id") != request["run_id"]
-        or summary.get("slk_version") != "4.4.0"
+        or summary.get("slk_version") != request["method_version"]
         or summary.get("current_plan_revision") != request["plan_revision"]
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.4.0"
+        or snapshot.get("method_version") != request["method_version"]
         or snapshot.get("plan_revision") != request["plan_revision"]
         or snapshot.get("runtime_revision") != request["runtime_revision"]
         or snapshot.get("token_sequence") != request["token_sequence"]
@@ -484,6 +486,7 @@ def _prepare(
     request: Mapping[str, Any],
     prepared: Mapping[str, Any],
     run_json_command: Callable[..., Mapping[str, Any]],
+    credential: str,
 ) -> dict[str, Any]:
     common = [
         "--endpoint",
@@ -498,6 +501,23 @@ def _prepare(
         ["send", *common],
         credential=None,
     )
+    if sent.get("status") in {"started", "completed"}:
+        native = Path(str(prepared["delivery_path"]))
+        started_path = native / "started.json"
+        message_id = str(prepared["envelope"]["message_id"])
+        if (sent.get("run_id") != request["run_id"] or sent.get("message_id") != message_id
+            or _read_object(native / "endpoint.json", "native endpoint") != prepared["endpoint"]
+            or _read_object(native / "envelope.json", "native envelope") != prepared["envelope"]):
+            raise CheckerEscalationError("CHECKER_ESCALATION_START_UNPROVEN", "direct Supervisor identity differs")
+        try:
+            validate_native_start(started_path, adapter=str(prepared["endpoint"]["adapter"]),
+                                  run_id=str(request["run_id"]), cell_id=str(request["cell_id"]),
+                                  message_id=message_id, request_sha256=prepared["envelope"]["payload_sha256"])
+        except NativeActivityError as exc:
+            raise CheckerEscalationError("CHECKER_ESCALATION_START_UNPROVEN", "direct Supervisor start is unproven") from exc
+        return _commit_started(request, prepared, started_path, message_id,
+                               _sha256(native / "endpoint.json"), _sha256(native / "envelope.json"),
+                               credential, run_json_command, recovered=False)
     failure_kind = sent.get("error_code")
     if sent.get("status") != "failed" or failure_kind not in {
         "CODEX_ACTIVE_WRITER_UNRESOLVED",
@@ -615,6 +635,16 @@ def _complete(
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_START_UNPROVEN", "Desktop start evidence is missing or invalid"
         ) from exc
+    return _commit_started(request, prepared, started_path, str(recovery_message_id),
+                           recovered["endpoint_sha256"], recovered["envelope_sha256"],
+                           credential, run_json_command, recovered=True)
+
+
+def _commit_started(
+    request: Mapping[str, Any], prepared: Mapping[str, Any], started_path: Path, message_id: str,
+    endpoint_sha256: str, envelope_sha256: str, credential: str,
+    run_json_command: Callable[..., Mapping[str, Any]], *, recovered: bool,
+) -> dict[str, Any]:
     commit = {
         "event_id": _stable_id(request, "supervisor-transport-started"),
         "transport_receipt_id": _stable_id(request, "supervisor-transport-receipt"),
@@ -624,7 +654,7 @@ def _complete(
         "attempt": request["attempt"],
         "plan_revision": request["plan_revision"],
         "expected_runtime_revision": request["runtime_revision"],
-        "message_id": recovery_message_id,
+        "message_id": message_id,
         "token_sequence": int(request["token_sequence"]) + 1,
         "from_role_instance_id": request["checker_role_instance_id"],
         "to_role_instance_id": prepared["endpoint"]["role_instance_id"],
@@ -635,9 +665,9 @@ def _complete(
             "evidence_id": _stable_id(request, "supervisor-native-start"),
             "stored_path": str(started_path.resolve()),
             "sha256": _sha256(started_path),
-            "message_id": recovery_message_id,
-            "endpoint_sha256": recovered["endpoint_sha256"],
-            "envelope_sha256": recovered["envelope_sha256"],
+            "message_id": message_id,
+            "endpoint_sha256": endpoint_sha256,
+            "envelope_sha256": envelope_sha256,
             "native_status": "STARTED",
         },
         "occurred_at": request["occurred_at"],
@@ -656,11 +686,12 @@ def _complete(
         or recorded.get("runtime_revision") != int(request["runtime_revision"]) + 1
         or recorded.get("token_sequence") != int(request["token_sequence"]) + 1
         or recorded.get("token_owner_role_instance_id") != prepared["endpoint"]["role_instance_id"]
-        or recorded.get("message_id") != recovery_message_id
+        or recorded.get("message_id") != message_id
     ):
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_COMMIT_FAILED", "atomic TOKEN commit did not match the escalation"
         )
+    _write_stable(commit_path.with_suffix(".result.json"), recorded)
     return {
         "schema_version": "slk.checker-post-d1-result/v1",
         "status": "CHECKER_ESCALATION_COMMITTED",
@@ -671,12 +702,12 @@ def _complete(
         "d1_failure_event_id": request["d1_failure_event_id"],
         "failed_candidate_sha256": prepared["envelope"]["payload"]["failed_candidate_sha256"],
         "escalation_message_id": prepared["envelope"]["message_id"],
-        "recovery_message_id": recovery_message_id,
+        "recovery_message_id": message_id if recovered else None,
         "runtime_revision": recorded["runtime_revision"],
         "token_sequence": recorded["token_sequence"],
         "token_owner_role_instance_id": recorded["token_owner_role_instance_id"],
         "commit_request_path": str(commit_path),
-        "desktop_started_path": str(started_path),
+        ("desktop_started_path" if recovered else "started_path"): str(started_path),
     }
 
 
@@ -703,7 +734,7 @@ def execute_checker_escalation(
     try:
         _authenticate(validated, credential, run_json_command)
         if host_receipt_path is None:
-            return _prepare(validated, prepared, run_json_command)
+            return _prepare(validated, prepared, run_json_command, credential)
         receipt = _path(str(host_receipt_path), "host_receipt_path")
         return _complete(validated, prepared, receipt, credential, run_json_command)
     finally:

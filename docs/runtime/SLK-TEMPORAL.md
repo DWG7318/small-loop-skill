@@ -1,8 +1,8 @@
-# Required Temporal continuity for SLK 4.4.0
+# Required Temporal continuity for SLK 4.4.1
 
 ## Boundary
 
-One shared, headless local Temporal service may host many SLK Runs. Every 4.4.0 Run must prove service/worker readiness before dispatch and owns one deterministic `SLK.Start` plus one independent `SLK.Run`; ending one Run closes only its workflows, not the shared service or another Run.
+One shared, headless local Temporal service may host many SLK Runs. Every 4.4.1 Run must prove service/worker readiness before dispatch and owns one deterministic `SLK.Start` plus one independent `SLK.Run`; ending one Run closes only its workflows, not the shared service or another Run.
 
 Temporal stores continuity and timing facts only. It never decides D0/D1/D2, moves TOKEN, writes BI, selects a model, creates/replaces a role, chooses a CELL, or becomes a communication participant. Direct registered members remain the first responsibility: Checker sends the CELL to Worker, Worker returns the candidate to Checker, Checker sends formal D1 FAIL or final D2 readiness to Supervisor, and Supervisor sends the structured rework directive to the same Worker.
 
@@ -21,14 +21,14 @@ The only positive activation fact is a matching `slk.native-start/v2` acknowledg
 1. Provision the official Temporal CLI/service outside this repository and operate it headlessly on the local machine. SLK never installs Docker or a service.
 2. Install `integrations/temporal` in a dedicated Python environment and start `slk-temporal-worker` on the frozen task queue.
 3. Supply an adapter whose five async functions call existing authoritative entrances: `prepare_run`, `deliver_message`, `request_recovery`, `inspect_overwatcher`, and `notify_supervisor`.
-4. Before CELL dispatch, pass `slk-run-readiness/v1` with exact service/worker health plus both deterministic workflow identities, then start the closed 4.4.0 request once.
+4. Before CELL dispatch, pass `slk-run-readiness/v1` with exact service/worker health plus both deterministic workflow identities, then start the closed 4.4.1 request once.
 5. Preserve startup fingerprint, workflow IDs, update receipts and terminal closure as Run evidence.
 
-A development server is suitable only for local evaluation. Durable production operation needs separately governed backup, access control and availability. A missing SDK may not break import of the SLK core, but a 4.4.0 Run without proven Temporal readiness is blocked.
+A development server is suitable only for local evaluation. Durable production operation needs separately governed backup, access control and availability. A missing SDK may not break import of the SLK core, but a 4.4.1 Run without proven Temporal readiness is blocked.
 
 ## Closed operation
 
-The startup request binds version 4.4.0, Run/revision/task queue, timeouts, idempotency key and exactly one Supervisor, Checker, Worker and Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, missing OW, invalid hashes, wrong versions, stale update events and mismatched acknowledgements fail closed.
+The startup request binds version 4.4.1, Run/revision/task queue, timeouts, idempotency key and exactly one Supervisor, Checker, Worker and Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, missing OW, invalid hashes, wrong versions, stale update events and mismatched acknowledgements fail closed.
 
 Each delivery update freezes operation/message, sender/receiver, payload, GO/CELL/round, runtime revision and start deadline. Duplicate identical updates are idempotent; changed duplicates, extra unresolved deliveries and wrong-scope ACKs are rejected. Temporal records no synthetic progress and cannot turn recovery, terminal completion or elapsed time into acceptance.
 

@@ -1,4 +1,4 @@
-"""Read-only cadence inspection for one optional whole-Run Overwatcher."""
+"""Read-only cadence inspection; legacy evidence does not redefine current readiness."""
 
 from __future__ import annotations
 
@@ -59,7 +59,11 @@ def inspect_overwatcher_cadence(
         "action": "NONE",
     }
     now = _time(observed_at)
+    current_method = summary.get("slk_version") in {"4.4.0", "4.4.1"}
     if not active:
+        if current_method:
+            return {**base, "status": "CONTINUITY_UNPROVEN", "anomaly_codes": ["OVERWATCHER_MISSING"],
+                    "action": "SUPERVISOR_RECOVERY_REVIEW"}
         return {**base, "status": "ABSENT"}
     matching = [
         item
@@ -76,7 +80,9 @@ def inspect_overwatcher_cadence(
         }
     latest = max(matching, key=lambda item: int(item.get("cycle_sequence", 0)))
     cadence = latest.get("cadence_seconds")
-    if isinstance(cadence, bool) or not isinstance(cadence, int) or not 180 <= cadence <= 300:
+    if isinstance(cadence, bool) or not isinstance(cadence, int) or (
+        cadence != 600 if current_method else not 180 <= cadence <= 300
+    ):
         raise OverwatcherContinuityError("Overwatcher cadence is invalid")
     completed = _time(latest.get("completed_at"))
     next_cycle = _time(latest.get("next_cycle_at"))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import time
 from dataclasses import asdict
@@ -224,7 +225,7 @@ class CodexAdapter:
                 "CODEX_ADDRESS_INVALID", "Codex endpoint must be the Supervisor adapter"
             )
         address = endpoint.address
-        if set(address) != ADDRESS_FIELDS:
+        if set(address) not in (ADDRESS_FIELDS, ADDRESS_FIELDS | {"desktop"}):
             raise AdapterError("CODEX_ADDRESS_INVALID", "Codex address must use the exact field set")
         command = address["command"]
         if not isinstance(command, list) or not command or not all(isinstance(item, str) and item for item in command):
@@ -237,18 +238,43 @@ class CodexAdapter:
             raise AdapterError("CODEX_ADDRESS_INVALID", "cwd must be an existing absolute directory")
         _positive_seconds(address["startup_timeout_seconds"], "startup_timeout_seconds")
         _positive_seconds(address["turn_timeout_seconds"], "turn_timeout_seconds")
+        if "desktop" in address:
+            from .codex_desktop import validate_desktop_address
+            validate_desktop_address(address)
 
-    def _prompt(self, envelope: Envelope) -> str:
+    def _prompt(self, envelope: Envelope, attempt: Attempt | None = None) -> str:
         value = json.dumps(asdict(envelope), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        return (
+        prompt = (
             "SLK cross-Agent delivery. Treat the closed envelope below as the current assigned work, "
             "not as background or a status-only message. Do not locate another task by title.\n"
             f"<slk-transport-envelope>{value}</slk-transport-envelope>"
         )
+        if (attempt is not None and os.environ.get("SLK_TRANSPORT_ROLE_HOST")
+            and envelope.payload_type in {"D1_FAILURE_ESCALATION", "D2_READY"}):
+            operation = "rework" if envelope.payload_type == "D1_FAILURE_ESCALATION" else "d2"
+            prompt += "\nThe original Supervisor makes the engineering decision; do not repeat or replace Checker D1. "
+            prompt += "Write one flat JSON result before ending the turn; do not send again or consume sealed credentials. "
+            prompt += "The prepared owning host records your decision and performs only its legal handoff. "
+            contract = ({**{k: envelope.payload[k] for k in ("d1_failure_event_id", "failed_candidate_sha256",
+                "rework_round", "cell_goal", "acceptance_criteria", "findings", "evidence_refs")},
+                "investigation_mode": "STANDARD" if envelope.payload["rework_round"] == 1 else "AGGRESSIVE",
+                "root_cause_hypothesis": "your evidence-based cause, not a D1 replacement",
+                "minimal_experiment": "your bounded discriminating test", "minimal_repair_scope": "your precise repair boundary",
+                "regression_target": "your unchanged acceptance/regression target"}
+                if operation == "rework" else {"verdict": "PASS|FAIL|INCOMPLETE", "summary": "your verified conclusion",
+                    "evidence_refs": ["absolute existing evidence paths"]})
+            prompt += "The JSON result has only schema_version/source_message_id/operation/decision; put the filled decision_contract under decision. result_path is a location, not a result field. "
+            prompt += json.dumps({"result_path": str(attempt.root / "supervisor-result.json"),
+                "schema_version": "slk.supervisor-result/v1", "source_message_id": envelope.message_id,
+                "operation": operation, "decision_contract": contract}, ensure_ascii=False)
+        return prompt
 
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
         self.validate_address(endpoint)
         address = endpoint.address
+        if "desktop" in address:
+            from .codex_desktop import deliver_desktop
+            return deliver_desktop(endpoint, envelope, attempt, self._prompt(envelope, attempt))
         command = resolve_codex_command(
             list(address["command"]), attempt=attempt, thread_id=str(address["thread_id"])
         )
@@ -267,7 +293,7 @@ class CodexAdapter:
                         "clientInfo": {
                             "name": "slk_transport",
                             "title": "SLK Transport",
-                            "version": "4.4.0",
+                            "version": "4.4.1",
                         }
                     },
                     startup_timeout,
@@ -331,7 +357,7 @@ class CodexAdapter:
                 "turn/start",
                 {
                     "threadId": thread_id,
-                    "input": [{"type": "text", "text": self._prompt(envelope)}],
+                    "input": [{"type": "text", "text": self._prompt(envelope, attempt)}],
                     "cwd": str(cwd),
                     "approvalPolicy": "never",
                     "clientUserMessageId": envelope.message_id,

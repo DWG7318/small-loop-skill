@@ -370,7 +370,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert installed.returncode == 0, installed.stdout + installed.stderr
     receipt = json.loads(installed.stdout.strip())
     backup = Path(receipt["backup_root"])
-    assert receipt["version"] == "4.4.0"
+    assert receipt["version"] == "4.4.1"
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == (
         INTEGRATION / "slk_checker_adapter.py"
     ).read_bytes()

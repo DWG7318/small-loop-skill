@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .. import SUPPORTED_METHOD_VERSIONS
+
 import hashlib
 import json
 import os
@@ -639,9 +641,13 @@ class OcrvAdapter:
             revisions[field] = value
         state_command = _string_array(payload["state_command"], "state_command")
         transport_command = _string_array(payload["transport_command"], "transport_command")
+        projection = json.loads(Path(paths["runtime_projection_path"]).read_text(encoding="utf-8-sig"))
+        version = projection.get("summary", {}).get("slk_version")
+        if version not in SUPPORTED_METHOD_VERSIONS or projection.get("runtime_snapshot", {}).get("method_version") != version:
+            raise AdapterError("OCRV_PAYLOAD_INVALID", "recovery Run version is unsupported or inconsistent")
         return {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "method_version": "4.4.0",
+            "method_version": version,
             "recovery_invocation_id": recovery_invocation_id,
             "recovery_envelope_message_id": envelope.message_id,
             "run_id": envelope.run_id,
@@ -674,7 +680,7 @@ class OcrvAdapter:
             raise AdapterError("OCRV_RECOVERY_RESULT_INVALID", "Checker recovery result is not closed")
         if (
             value["schema_version"] != "slk.ocrv-worker-recovery-result/v1"
-            or value["method_version"] != "4.4.0"
+            or value["method_version"] != json.loads(request_path.read_text(encoding="utf-8-sig"))["method_version"]
             or value["status"] != "CHECKER_D1_RECORDED"
             or value["run_id"] != envelope.run_id
             or value["cell_id"] != envelope.cell_id
@@ -730,6 +736,8 @@ class OcrvAdapter:
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
+        environment.pop("SLK_TRANSPORT_ROLE_HOST", None)
+        environment.pop("SLK_TRANSPORT_ROLE_HOST_SHA256", None)
         environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = endpoint.role_instance_id
         environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = recovery_invocation_id
         environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = str(endpoint.endpoint_version)

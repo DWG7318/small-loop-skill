@@ -1,5 +1,9 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.4.0 to 4.4.1
+
+Follow [the current compatibility guide](docs/runtime/SLK-4.4.1-MIGRATION.md). Deploy the complete hash-bound local package only after A1–C2 acceptance. Existing 4.4.0 Run records, credentials, candidates and Workflow histories are retained, not silently adopted/relabelled; requests must match their Run version. New readiness requires real `slk.communication-rehearsal/v2` evidence. Installation does not itself resume or dispatch a product Run.
+
 ## Current minor migration: 4.3.6 to 4.4.0
 
 Install the complete 4.4.0 package transactionally and run the normal writable state configuration so the verified schema-v8 backup precedes migration 0009/schema v9. Installation alone does not adopt, resume, dispatch, inspect, start Temporal, open BI or modify product files. At an Owner-confirmed stable Supervisor boundary, an exact snapshot may adopt only the adjacent `4.3.6 → 4.4.0`; Run identity, plan, CELL/attempt, roles/endpoints, TOKEN, candidates, D0/D1/D2, transport evidence, OW history and product state remain immutable.

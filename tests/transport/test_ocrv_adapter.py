@@ -59,7 +59,8 @@ def candidate_envelope(tmp_path: Path) -> Envelope:
 def recovery_envelope(tmp_path: Path) -> Envelope:
     source_attempt, _worker, _checker = completion_fixture(tmp_path)
     projection = tmp_path / "runtime-projection.json"
-    projection.write_text("{}", encoding="utf-8")
+    projection.write_text(json.dumps({"summary": {"slk_version": "4.4.0"},
+        "runtime_snapshot": {"method_version": "4.4.0"}}), encoding="utf-8")
     worker_credential = tmp_path / "worker.dpapi"
     checker_credential = tmp_path / "checker.dpapi"
     worker_credential.write_text("00", encoding="ascii")

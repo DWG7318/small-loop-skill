@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 
 import pytest
 
@@ -11,7 +13,38 @@ from slk_temporal.contracts import (
     OverwatcherExitNotice,
     RuntimeGuardResolution,
     StartSlkRequest,
+    notification_native_id,
+    validate_supervisor_notification,
 )
+
+
+def notification_value(event_id="notice-a", run_id="RUN-A"):
+    value = {"status": "NOTIFIED", "event_id": event_id, "supervisor_role_instance_id": "supervisor-a",
+        "native_start": {"schema_version": "slk.native-start/v2", "status": "STARTED", "adapter": "codex-app-server",
+            "run_id": run_id, "cell_id": "PREPARATION", "message_id": notification_native_id(run_id, event_id),
+            "request_sha256": "a" * 64, "native_request_sha256": "b" * 64, "observed_at": "2026-10-05T00:00:00Z",
+            "process": {"pid": 1, "creation_time": "fixture-only:1"},
+            "native_task": {"kind": "codex-desktop-turn", "id": "fixture-thread:turn:item", "status": "RUNNING"}}}
+    value["receipt_sha256"] = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return value
+
+
+def test_native_supervisor_notification_contract():
+    validate_supervisor_notification(notification_value(), run_id="RUN-A", event_id="notice-a", supervisor_role_instance_id="supervisor-a")
+
+
+@pytest.mark.parametrize("damage", ["other-run", "other-supervisor", "other-message", "hash-only", "legacy-native", "boolean-pid", "changed-receipt"])
+def test_native_supervisor_notification_rejects_wrong_or_missing_proof(damage):
+    value = notification_value()
+    if damage == "other-run": value["native_start"]["run_id"] = "OTHER-RUN"
+    if damage == "other-supervisor": value["supervisor_role_instance_id"] = "ow-a"
+    if damage == "other-message": value["native_start"]["message_id"] = "another-message"
+    if damage == "hash-only": value.pop("native_start")
+    if damage == "legacy-native": value["native_start"]["schema_version"] = "slk.native-start/v1"
+    if damage == "boolean-pid": value["native_start"]["process"]["pid"] = True
+    if damage == "changed-receipt": value["receipt_sha256"] = "c" * 64
+    with pytest.raises(ContractError):
+        validate_supervisor_notification(value, run_id="RUN-A", event_id="notice-a", supervisor_role_instance_id="supervisor-a")
 
 
 def start_value(*, overwatcher: bool = True) -> dict[str, object]:
@@ -94,6 +127,15 @@ def runtime_guard_resolution_value() -> dict[str, object]:
         "resolution": "OVERWATCHER_RESTORED",
         "evidence_sha256": "d" * 64,
     }
+
+
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+def test_compatible_start_preserves_original_method_version(version):
+    value = start_value()
+    value["method_version"] = version
+    parsed = StartSlkRequest.from_dict(value)
+    assert parsed.method_version == version
+    assert parsed.to_dict()["method_version"] == version
 
 
 def test_start_contract_is_closed_and_has_exact_role_topology() -> None:

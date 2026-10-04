@@ -723,7 +723,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -735,7 +735,7 @@ impl StateStore {
             }
             if !valid_overwatcher_cadence(&run_contract.0, request.cadence_seconds) {
                 return Err(StateError::OverwatcherBindingInvalid(
-                    "SLK 4.4.0 requires the fixed 600-second Overwatcher cadence".into(),
+                    "SLK 4.4.x requires the fixed 600-second Overwatcher cadence".into(),
                 ));
             }
             let binding_revision = if request.binding_revision == 0 {
@@ -1138,7 +1138,7 @@ impl StateStore {
                     "commit-delivery-start requires a revisioned SLK runtime contract".into(),
                 ));
             }
-            let native_start = if matches!(method_version.as_str(), "4.3.5" | "4.3.6" | "4.4.0") {
+            let native_start = if matches!(method_version.as_str(), "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1") {
                 Some(validate_native_start_v2(&evidence_bytes, &request)?)
             } else {
                 None
@@ -1911,7 +1911,7 @@ impl StateStore {
                     | "4.3.4"
                     | "4.3.5"
                     | "4.3.6"
-                    | "4.4.0"
+                    | "4.4.0" | "4.4.1"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -2310,7 +2310,7 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0") {
+                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2498,7 +2498,7 @@ impl StateStore {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
             if uses_revisioned_runtime_contract(&method_version) {
-                let preclose_terminal = closure_state == "open" && method_version == "4.4.0";
+                let preclose_terminal = closure_state == "open" && matches!(method_version.as_str(), "4.4.0" | "4.4.1");
                 if closure_state == "open" && !preclose_terminal {
                     return Err(StateError::OverwatcherObservationInvalid(
                         "a whole-Run Overwatcher cannot close at a CELL or GO boundary".into(),
@@ -2693,7 +2693,7 @@ impl StateStore {
             }
             if !valid_overwatcher_cadence(&method_version, request.cadence_seconds) {
                 return Err(StateError::OverwatcherBindingInvalid(
-                    "SLK 4.4.0 requires the fixed 600-second Overwatcher cadence".into(),
+                    "SLK 4.4.x requires the fixed 600-second Overwatcher cadence".into(),
                 ));
             }
             let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
@@ -2993,7 +2993,7 @@ impl StateStore {
                     | "4.3.4"
                     | "4.3.5"
                     | "4.3.6"
-                    | "4.4.0"
+                    | "4.4.0" | "4.4.1"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3276,13 +3276,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -4277,7 +4277,7 @@ fn validate_rework_requested(
         "failed_candidate_sha256",
         "rework_round",
     ];
-    if method_version == "4.4.0" {
+    if matches!(method_version.as_str(), "4.4.0" | "4.4.1") {
         required.push("investigation_mode");
     }
     if details.len() != required.len() || required.iter().any(|field| !details.contains_key(*field))
@@ -4307,7 +4307,7 @@ fn validate_rework_requested(
         .as_u64()
         .filter(|value| *value > 0)
         .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
-    if method_version == "4.4.0" {
+    if matches!(method_version.as_str(), "4.4.0" | "4.4.1") {
         let expected_mode = if rework_round == 1 {
             "STANDARD"
         } else {
@@ -4660,12 +4660,12 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
             | "4.3.4"
             | "4.3.5"
             | "4.3.6"
-            | "4.4.0"
+            | "4.4.0" | "4.4.1"
     )
 }
 
 fn valid_overwatcher_cadence(version: &str, cadence_seconds: u32) -> bool {
-    if version == "4.4.0" {
+    if matches!(version, "4.4.0" | "4.4.1") {
         cadence_seconds == 600
     } else {
         (180..=300).contains(&cadence_seconds)
@@ -4694,7 +4694,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.3.3" && request.to_version == "4.3.4")
             || (request.from_version == "4.3.4" && request.to_version == "4.3.5")
             || (request.from_version == "4.3.5" && request.to_version == "4.3.6")
-            || (request.from_version == "4.3.6" && request.to_version == "4.4.0");
+            || (request.from_version == "4.3.6" && request.to_version == "4.4.0")
+            || (request.from_version == "4.4.0" && request.to_version == "4.4.1");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id

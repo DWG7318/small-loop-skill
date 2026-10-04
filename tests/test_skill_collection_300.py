@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.4.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.4.1"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -242,7 +242,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "外部 OCRV 宿主" in recover
     assert "任意 OW Session 退出" in overwatch
     assert "Supervisor 修复并提交匹配证据" in overwatch
-    assert "4.4.0" in main
+    assert "4.4.1" in main
 
 
 def test_invalid_result_contract_recovery_routes_through_original_roles() -> None:
@@ -452,9 +452,9 @@ def test_cross_agent_delivery_requires_native_activation() -> None:
     for marker in (
         "已登记的目标原生 Agent 入口",
         "原生 Agent 入口",
-        "匹配的原生启动证据才证明流转",
+        "原生启动证据与 TOKEN 提交分别核实",
         "三工程角色不用正时长 `wait_threads`",
-        "可见文本冒充当前活动",
+        "可见文本、旧 attempt/candidate 冒充当前活动",
     ):
         assert marker in main
     for marker in ("active writer", "not activation evidence", "does not claim the receiver or D2 started"):
@@ -933,9 +933,9 @@ def test_425_runtime_consistency_is_explicit_without_per_cell_watcher_confirmati
         assert marker in watch
     for forbidden in (
         "自动升级模型",
-        "BoM 触发器",
-        "旧信封作为新消息",
-        "终态结果倒推启动成功",
+        "新增协议、daemon",
+        "旧信封换成新消息",
+        "终态倒推启动",
     ):
         assert forbidden in combined
 
@@ -977,7 +977,7 @@ def test_linear_loop_uses_one_registered_native_relay_token_without_a_new_subsys
         "进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`",
         "真实激活操作",
         "已登记的目标原生 Agent 入口",
-        "匹配的原生启动证据才证明流转",
+        "原生启动证据与 TOKEN 提交分别核实",
         "同一 Run 最大且身份匹配的成功令牌才是当前事实",
         "不是新文件、角色、审批或外部状态系统",
         "只在既有 Loop 节点边界流转",
@@ -1083,22 +1083,19 @@ def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
     assert "完整工程历史" in record and "不复制整段令牌历史" in record
 
 
-def test_slk_rejects_goal_that_binds_one_conversation_as_the_run_driver() -> None:
+def test_preparation_goal_exception_does_not_bind_the_whole_run() -> None:
     main = read_skill("small-loop-skill")
     negative = main.split("\n## 负面提示词\n\n", 1)[1]
     for marker in (
-        "不要把 SLK Run 绑定到任何由单个对话持续工作到底的 Goal 模式",
-        "不要让这类 Goal 驱动或续作 Run",
-        "不限制目标定义",
-        "固定对话",
-        "Supervisor、Checker、Worker",
-        "逐节点流转",
-        "天然冲突",
+        "用于启动准备／预检之外", "Supervisor", "团队准备子 Skill",
+        "CELL、D0、D1、返工、OW 巡查、D2", "整 Run",
     ):
         assert marker in negative
-    assert "Codex Goal" not in negative
-    for tool_name in ("create_goal", "get_goal", "update_goal"):
-        assert tool_name not in negative
+    team = read_skill("slk-manage-team")
+    for marker in ("Owner 已授权", "续用", "不重复建立", "CELL01", "原生启动", "合法 TOKEN",
+                   "OW", "无未闭合", "可恢复错误", "最后可信", "简明准备记录", "不是自动重启",
+                   "工具不可用", "预算", "不能擅自暂停", "Owner 明确暂停", "证据保留"):
+        assert marker in team
 
 
 def test_cell_capacity_never_becomes_a_one_size_fits_all_rule() -> None:
@@ -1215,7 +1212,6 @@ def test_d1_incomplete_and_supervisor_rework_are_not_conflated() -> None:
     assert "REWORK_REQUESTED" in rework
     assert "state event" in rework
     assert "transport payload" in rework
-    assert "BoM" not in rework + execute
 
 
 def test_worker_and_checker_preflight_can_rationalize_locally_without_new_formal_units() -> None:
@@ -1398,25 +1394,23 @@ def test_430_role_eval_covers_temporal_start_authority_and_recovery_boundaries()
     } <= case_ids
 
 
-def test_4210_keeps_bom_off_and_worker_flash_without_pro() -> None:
+def test_worker_remains_flash_without_pro() -> None:
     main = read_skill("small-loop-skill")
     models = read_skill("slk-select-models")
     combined = "\n".join((main, models))
 
-    assert "BoM 保持禁用" in combined
     assert "DeepSeek V4 Flash" in combined
     assert "DeepSeek V4 Pro" not in combined
 
 
-def test_434_bom_is_forbidden_but_not_owner_configurable() -> None:
+def test_optional_features_use_the_declared_catalog() -> None:
     main = read_skill("small-loop-skill")
     plan = read_skill("slk-plan-run")
 
-    assert "BoM 保持禁用" in main
-    assert "Ponytail/Temporal/Overwatcher/RTK/Probe CLI/BoM" not in main
-    assert "Ponytail、Temporal、Overwatcher、RTK、Probe CLI、BoM" not in plan
-    assert "Ponytail、RTK、Probe CLI 和新增可选项" in plan
-    assert "Overwatcher 与 Temporal 是 4.4.0 readiness 必需项" in plan
+    assert "未登记功能不能靠任意 ON/OFF" in main
+    assert "Ponytail、RTK、Probe CLI" in plan
+    assert "Supervisor 可补充项目所需 Skill/Tool" in plan
+    assert "Overwatcher 与 Temporal 是 4.4.1 readiness 必需项" in plan
 
 
 def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:
@@ -1438,7 +1432,7 @@ def test_436_checker_post_d1_suffix_is_discoverable_without_expanding_authority(
     rework = read_skill("slk-rework-cell")
 
     assert "--slk-post-d1" in main
-    assert "D:\\OCRV\\slk-checker.cmd --slk-post-d1" in rework
+    assert "标准 `--slk-post-d1` 后缀" in rework
     assert "DESKTOP_BRIDGE_REQUIRED" in rework
     assert "密封 Checker 凭据" in rework
-    assert "不覆盖普通空闲 Supervisor" in rework
+    assert "空闲 Supervisor 走正常直达" in rework

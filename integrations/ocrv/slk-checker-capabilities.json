@@ -1,6 +1,6 @@
 {
   "schema_version": "slk.ocrv-capabilities/v1",
-  "method_version": "4.4.0",
+  "method_version": "4.4.1",
   "required": ["ocrv-preview", "checker-post-d1-failure-suffix", "checker-post-d1-pass-suffix", "committed-terminal-consumption"],
   "optional": {
     "probe-cli": {

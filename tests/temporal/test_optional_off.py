@@ -19,7 +19,7 @@ def blocked_import(name, *args, **kwargs):
     return real_import(name, *args, **kwargs)
 builtins.__import__ = blocked_import
 from slk_transport.cli import VERSION
-if VERSION != '4.4.0':
+if VERSION != '4.4.1':
     raise SystemExit(f'wrong direct-mode version: {VERSION}')
 print('CORE_IMPORT_OK')
 """

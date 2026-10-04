@@ -38,6 +38,7 @@ def unresolved_delivery(
     tmp_path: Path, *, with_exact_retry: bool = True
 ) -> tuple[dict[str, object], dict[str, object], Path, Path]:
     endpoint, envelope = delivery(tmp_path)
+    endpoint["address"]["startup_timeout_seconds"] = 3
     endpoint["address"]["command"] = [
         sys.executable,
         str(FAKE_SERVER),
@@ -71,7 +72,7 @@ def rpc_timeout_delivery(
 ) -> tuple[dict[str, object], dict[str, object], Path, Path]:
     endpoint, envelope = delivery(tmp_path)
     endpoint["address"]["command"] = [sys.executable, str(FAKE_SERVER), mode]
-    endpoint["address"]["startup_timeout_seconds"] = 0.3
+    endpoint["address"]["startup_timeout_seconds"] = 1
     attempts = tmp_path / "attempts"
     result = dispatch_once(
         endpoint,

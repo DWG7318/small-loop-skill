@@ -15,12 +15,12 @@ Worker 完成当前 CELL，形成可检查候选，并把 Checker 需要的信�
 ## 建议做法
 
 1. 先做 Worker 本地轻量预检：核对已通过的 Run readiness 中 DSH runtime/model/adapter/endpoint、上下文与任务容量、所需 Skill/Tool，再核对不可变 task file、SHA-256、当前 `runtime_revision` 和 `SLK TOKEN` 的 `CELL n/N`、目标、实现范围、依赖、工具能力、证据负荷、D1 验收目标及候选基线；接收令牌不结束当前 CELL 施工。可把实现、测试和证据整理成顺序内部段，但不能自行拆成多个正式 CELL、并行 Worker 或新 TOKEN。启动前通过有界 Git 预检，确认 repo root、Git worktree、common-dir、objects/refs 与沙箱内可写边界；支持独立可写 clone/simple layout，common-dir 在沙箱外的 linked worktree 应在施工前拒绝。实例 ID 保持确定且不超过 64 字符。预检失败或实际范围明显超过本角色能力时不试运气，也不静默换目录、换 worktree或自造身份，而是用 `incomplete|blocked|execution_failure|timed_out` 和闭合 blocker 原样上报，不伪造 candidate；收到相同或更旧的令牌编号时，不重开 CELL，只结合根记录和现有候选判断是否需要补交。
-2. 用 `slk-state write` 记录 `WORK_STARTED` 后，在同一次当前 CELL 施工中连续完成所需编辑、命令、测试和最低 D0，直到完成整个 CELL 候选；正式 D1 FAIL 返工只接受绑定当前失败事件、候选和 round 的 `D1_REWORK_DIRECTIVE`。命令、工具结果或中间进展不构成 CELL 交付边界。独占资源阻塞时按需读取 [`references/resource-contention.md`](references/resource-contention.md)，恢复同一 CELL 而不把占用算成返工。
+2. 在同一次当前 CELL 施工中连续完成所需编辑、命令、测试和最低 D0；`WORK_STARTED` 等事实由所属可信宿主用 `slk-state` 记录，不让模型沙箱触碰中央库或密封凭据。正式 D1 FAIL 返工只接受绑定当前失败事件、候选和 round 的 `D1_REWORK_DIRECTIVE`。命令、工具结果或中间进展不构成 CELL 交付边界。独占资源阻塞时按需读取 [`references/resource-contention.md`](references/resource-contention.md)，恢复同一 CELL 而不把占用算成返工。
    Owner 已为本次 Run 启用效率工具时，Worker 可先用 Probe CLI 定位再精准读取，用 RTK 获取测试、构建或 Git 输出的低噪声首轮结果，并在适用时遵循 Ponytail 减少过度施工；完整原始输出仍应可追溯，出现失败、截断、疑义或需要核心代码事实时，读取保留原文或回退原生命令。
 3. 选择最低 D0，为 Worker 自己的交付提供基本信心，例如目标测试、构建或直接 smoke。建议围绕本次变化和风险选择低成本检查，不提前重复 D1/D2 的完整验收。
-4. 把实际变化、D0、判断和风险作为倒数第二项通过 `slk-state write` 记录；大证据用 `register-evidence` 保存，交给 Checker 的默认入口是紧凑 `evidence index`（命令、退出码、摘要、关键失败尾部、原始日志路径、字节数与 SHA-256），不是整份重复编译日志；原始日志仍可追溯。随后自动导出，建议调用 `$slk-record-run`。
+4. 把实际变化、D0、判断和风险作为倒数第二项交所属宿主通过 `slk-state write` 记录；大证据用 `register-evidence` 保存，交给 Checker 的默认入口是紧凑 `evidence index`（命令、退出码、摘要、关键失败尾部、原始日志路径、字节数与 SHA-256），不是整份重复编译日志；原始日志仍可追溯。随后自动导出，建议调用 `$slk-record-run`。
 5. 初始 D1 交付的业务载荷只包含 `CELL n/N`、候选身份与访问位置、客观变更范围和运行候选所需的必要事实，此外保留主 Skill 定义的统一令牌头。D0 结果、判断过程和建议关注点不进入初始 D1 交付。
-6. **代码、提交与测试完成不等于 Worker 角色完成。** 作为最后一项，写入 `D0_COMPLETED` 与绑定当前 candidate/source message 的 `CANDIDATE_SUBMITTED`，通过 `Worker → Checker` 完成恰好一次当前 CELL/attempt/candidate 的 SLK TOKEN 交接；DSH 只密封 Checker endpoint/envelope，外部 headless OCRV 宿主从该不可变包真实激活 D1。正常路径由 Worker 凭证在匹配 `slk.native-start/v2` 后原子提交下一编号 TOKEN；若历史假启动已把 TOKEN 置于 Checker，恢复只在 `.native-recovery-v2` 启动同一候选，不恢复 Worker、不重放交接、不移动 TOKEN，标准工具再用密封 Checker 凭证记录实际 D1。旧 shell、旧 attempt、其他 candidate/message、wrapper start、终态文字和重复交接均不能补证。交付完成后 Worker 结束活动，不用 `wait_threads`、不读取 Checker 状态，也不增加接收回执轮次。
+6. **代码、提交与测试完成不等于 Worker 角色完成。** 最后一项是完成整个 CELL 候选的 `Worker → Checker` 交付：Worker 返回闭合原生结果；所属 transport 宿主自动用其密封凭据记录 `D0_COMPLETED`、绑定 candidate/source message 的 `CANDIDATE_SUBMITTED`，保存恰好一次当前 CELL/attempt/candidate 的密封 Checker endpoint/envelope 包并从独立外部 headless OCRV 宿主真实激活 D1，匹配 `slk.native-start/v2` 后原子提交 TOKEN。正常路径不等 Supervisor/OW 代发；已有 start 只补未完成的提交，已提交不再启动或移交。合法 INCOMPLETE 保留原件，仅核验其不可变候选/父提交/D0/范围线索并生成恢复补充，不重做有效施工、不伪造 completed。历史假启动按标准恢复合同处理；交付完成后 Worker 结束活动，不用 `wait_threads`、不读取 Checker 状态，不增加接收回执轮次。
 
 ## Checker 未被激活时
 

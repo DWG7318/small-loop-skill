@@ -4,9 +4,35 @@
   "title": "SLK Run readiness request and result",
   "oneOf": [
     { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/result" }
+    { "$ref": "#/$defs/result" },
+    { "$ref": "#/$defs/communicationRehearsal" }
   ],
   "$defs": {
+    "proof": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+    },
+    "communicationLeg": {
+      "type": "object", "additionalProperties": false,
+      "required": ["leg_id", "sender_role", "receiver_role", "endpoint", "envelope", "sent_receipt", "receiver_started", "commit_request", "commit_result"],
+      "properties": {
+        "leg_id": {"enum": ["SETUP_TO_CHECKER", "CELL_TO_WORKER", "CANDIDATE_TO_CHECKER", "D1_FAIL_TO_SUPERVISOR", "REWORK_TO_WORKER", "D2_READY_TO_SUPERVISOR", "ANOMALY_TO_SUPERVISOR"]},
+        "sender_role": {"enum": ["supervisor", "checker", "worker", "overwatcher"]}, "receiver_role": {"enum": ["supervisor", "checker", "worker"]},
+        "endpoint": {"$ref": "#/$defs/proof"}, "envelope": {"$ref": "#/$defs/proof"}, "sent_receipt": {"$ref": "#/$defs/proof"}, "receiver_started": {"$ref": "#/$defs/proof"},
+        "commit_request": {"oneOf": [{"$ref": "#/$defs/proof"}, {"type": "null"}]}, "commit_result": {"oneOf": [{"$ref": "#/$defs/proof"}, {"type": "null"}]}
+      }
+    },
+    "communicationRehearsal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "method_version", "run_id", "plan_revision", "status", "host_binding", "sealed_role_receipts", "legs"],
+      "properties": {
+        "schema_version": {"const": "slk.communication-rehearsal/v2"}, "method_version": {"const": "4.4.1"}, "run_id": {"type": "string", "minLength": 1}, "plan_revision": {"type": "integer", "minimum": 1}, "status": {"const": "PASS"},
+        "host_binding": {"$ref": "#/$defs/proof"},
+        "sealed_role_receipts": {"type": "object", "additionalProperties": false, "required": ["supervisor", "checker", "worker", "overwatcher"],
+          "properties": {"supervisor": {"$ref": "#/$defs/proof"}, "checker": {"$ref": "#/$defs/proof"}, "worker": {"$ref": "#/$defs/proof"}, "overwatcher": {"$ref": "#/$defs/proof"}}},
+        "legs": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"$ref": "#/$defs/communicationLeg"}}
+      }
+    },
     "roleRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -34,7 +60,7 @@
       "additionalProperties": false,
       "required": ["name", "decision", "owner_evidence_ref"],
       "properties": {
-        "name": { "type": "string", "minLength": 1, "not": { "pattern": "^[Bb][Oo][Mm]$" } },
+        "name": { "enum": ["Ponytail", "RTK", "Probe CLI"] },
         "decision": { "enum": ["ON", "OFF", "UNCONFIRMED"] },
         "owner_evidence_ref": { "type": "string" }
       }

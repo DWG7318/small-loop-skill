@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.4.1 — bounded normal-handoff correction (local candidate)
+
+- Original native roles execute their authenticated suffix after immutable engineering results; saved Windows credential consumers and legitimate INCOMPLETE/commit-only recovery stay separate from engineering rework.
+- Desktop Supervisor delivery uses its genuine installed host capability without CLI takeover; native start, TOKEN commit, verdict and takeover remain distinct. Readiness v2 joins real normal-route evidence rather than echo responses.
+- Temporal timer/recovery guards, replay-safe native notices and independent exit observations are corrected. OW instructions distinguish reporting from takeover and restoration. Preparation Goal is bounded to actual preparation.
+- Current auxiliary feature entrypoints are removed; source history remains preserved. Compatible 4.4.0 records retain their versions and identities; BI/WebBI stays 1.1.0. No remote publication or product-Run action is included.
+
 ## WebBI manual notification settings (2026-10-04, local candidate)
 
 - At Owner request, removed the management-token field and authorization requirement for notification saves/tests. Visitors can directly edit this configuration; Run facts remain read-only and device uploads still require their existing token. No replacement login, dependency, token rotation or method change was added.

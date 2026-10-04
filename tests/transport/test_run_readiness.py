@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import os
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
 
 from slk_transport.run_readiness import evaluate_run_readiness
+from slk_transport.contracts import canonical_json_sha256
+from slk_transport.native_activity import make_native_start
+from slk_transport import worker_completion as wc
+from test_contracts import endpoint_value, envelope_value
 
 
 REQUIRED_OPTIONS = ("Ponytail", "RTK", "Probe CLI")
@@ -27,7 +34,7 @@ def write_json(path: Path, value: object) -> Path:
     return path
 
 
-def _request(tmp_path: Path) -> dict[str, object]:
+def _request(tmp_path: Path, *, legacy_echo=False) -> dict[str, object]:
     workspace = tmp_path / "workspace"
     workspace.mkdir(exist_ok=True)
     endpoint = tmp_path / "endpoint.json"
@@ -125,7 +132,7 @@ def _request(tmp_path: Path) -> dict[str, object]:
             ],
         },
     )
-    return {
+    request = {
         "schema_version": "slk.run-readiness-request/v1",
         "run_id": "RUN-READINESS-A",
         "plan_revision": 1,
@@ -138,6 +145,108 @@ def _request(tmp_path: Path) -> dict[str, object]:
             for name in REQUIRED_OPTIONS
         ],
     }
+    if not legacy_echo:
+        _attach_verified_rehearsal(tmp_path, request)
+    return request
+
+
+@pytest.fixture(autouse=True)
+def isolated_consumer_boundary(monkeypatch):
+    # Contract tests do not contact production state or consume real secrets.
+    # Real Windows DPAPI + state binary tests live in test_sealed_role_credentials.
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda p: "isolated-test-credential")
+    def authenticate(command, args, **kwargs):
+        return {"status": "authenticated", "run_id": args[2], "role_instance_id": args[4],
+                "role": args[4].rsplit("-", 1)[1], "runtime_revision": 7}
+    monkeypatch.setattr(wc, "_run_json_command", authenticate)
+
+
+def _attach_verified_rehearsal(root, request):
+    """Generated artifact fixtures validate joins, not a real-role acceptance claim."""
+    def proof(name, value):
+        path = write_json(root / f"{name}.json", value)
+        return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    run_id = request["run_id"]
+    roles, consumers, endpoints = {}, {}, {}
+    registered = {r["role"]: r for r in request["roles"]}
+    for role, row in registered.items():
+        sealed = root / f"{role}.dpapi"
+        sealed.write_text("synthetic test blob", encoding="ascii")
+        consumers[role] = proof(f"consumer-{role}", {"status": "SEALED_ROLE_VERIFIED", "run_id": run_id,
+            "role": role, "role_instance_id": row["role_instance_id"], "sealed_path": str(sealed),
+            "sealed_sha256": hashlib.sha256(sealed.read_bytes()).hexdigest(), "runtime_revision": 7})
+        if role == "overwatcher":
+            continue
+        endpoint = endpoint_value(role=role, run_id=run_id, version=1)
+        endpoint["role_instance_id"] = row["role_instance_id"]
+        ref = proof(f"endpoint-{role}", endpoint)
+        row["endpoint_path"] = ref["path"]
+        endpoints[role] = ref
+        roles[role] = {"endpoint_path": ref["path"], "endpoint_sha256": ref["sha256"], "credential_path": str(sealed)}
+    worker_payload = {"cell_id": "CELL-001", "cell_ordinal": 1, "required_cell_count": 1,
+        "task": "sample", "d1_criteria": ["sample test passes"], "root_record_path": str(root / "SKILL.md")}
+    binding = proof("host-binding", {"schema_version": "slk.role-host/v1", "run_id": run_id, "plan_revision": 1,
+        "state_command": ["isolated-state"], "transport_command": ["isolated-transport"], "roles": roles,
+        "cells": [{"go_id": "GO-001", "cell_id": "CELL-001", "payload": worker_payload}],
+        "d2_criteria": ["one accepted CELL"]})
+    kinds = ["CELL_DISPATCH", "WORKER_TASK", "CANDIDATE_READY", "D1_FAILURE_ESCALATION", "D1_REWORK_DIRECTIVE", "D2_READY"]
+    legs = []
+    for index, (leg_id, sender, receiver) in enumerate(REQUIRED_LEGS):
+        message_id = str(uuid.uuid5(uuid.NAMESPACE_URL, leg_id))
+        payload = worker_payload
+        if leg_id == "SETUP_TO_CHECKER":
+            payload = {"worker_endpoint": json.loads(Path(endpoints["worker"]["path"]).read_text()),
+                       "worker_payload": worker_payload}
+        if leg_id == "CANDIDATE_TO_CHECKER":
+            payload = {"repository": str(root / "workspace"), "candidate": {"kind": "commit", "commit": "c" * 40},
+                "cell_goal": "sample", "d1_criteria": ["sample test passes"], "evidence_files": [str(root / "SKILL.md")]}
+        if leg_id in {"D1_FAIL_TO_SUPERVISOR", "REWORK_TO_WORKER"}:
+            payload = {"d1_failure_event_id": "d1-failed", "failed_candidate_sha256": "a" * 64, "rework_round": 1,
+                       "cell_goal": "sample", "acceptance_criteria": ["sample test passes"],
+                       "findings": ["sample defect"], "evidence_refs": ["sample-finding"]}
+            if sender == "checker":
+                payload.update(reproduction_steps=["run test"], expected_result="passes")
+            else:
+                payload.update(investigation_mode="STANDARD", root_cause_hypothesis="boundary error",
+                               minimal_experiment="focused test", minimal_repair_scope="sample", regression_target="sample test")
+        if leg_id == "D2_READY_TO_SUPERVISOR":
+            payload = {"d1_event_id": "d1-passed", "required_cell_ids": ["CELL-001"], "accepted_cell_ids": ["CELL-001"],
+                "final_candidate_message_id": "sample-candidate", "d2_criteria": ["sample"], "evidence_refs": ["sample-pass"]}
+        envelope = envelope_value(run_id=run_id, sender_role=sender, receiver_role=receiver, receiver_endpoint_version=1)
+        envelope.update(message_id=message_id, token_sequence=index + 2,
+                        sender_role_instance_id=registered[sender]["role_instance_id"],
+                        receiver_role_instance_id=registered[receiver]["role_instance_id"])
+        if sender == "overwatcher":
+            envelope = {"schema_version": "slk.ow-notification/v1", "run_id": run_id, "event_id": message_id,
+                "sender_role_instance_id": registered[sender]["role_instance_id"],
+                "receiver_role_instance_id": registered[receiver]["role_instance_id"], "message": "发现异常，请查验。隔离样本"}
+            payload_hash, cell_id = canonical_json_sha256(envelope), "PREPARATION"
+        else:
+            envelope.update(payload_type=kinds[index], payload=payload, payload_sha256=canonical_json_sha256(payload))
+            payload_hash, cell_id = envelope["payload_sha256"], envelope["cell_id"]
+        target = json.loads(Path(endpoints[receiver]["path"]).read_text())
+        env_ref = proof(f"envelope-{index}", envelope)
+        start_ref = proof(f"start-{index}", make_native_start(adapter=target["adapter"], run_id=run_id,
+            cell_id=cell_id, message_id=message_id, request_sha256=payload_hash, native_request_sha256="b" * 64,
+            native_task_kind="isolated-contract-fixture", native_task_id=f"native-{index}", native_task_status="RUNNING", pid=os.getpid()))
+        sent_ref = proof(f"accepted-{index}", {"schema_version": "slk.transport-result/v1", "message_id": message_id,
+            "run_id": run_id, "adapter": target["adapter"], "status": "accepted", "native_identity": {}, "error_code": None, "evidence": []})
+        commit_ref = result_ref = None
+        if sender != "overwatcher":
+            commit_ref = proof(f"commit-{index}", {"run_id": run_id, "go_id": "GO-001", "cell_id": cell_id,
+                "plan_revision": 1, "message_id": message_id, "token_sequence": envelope["token_sequence"],
+                "from_role_instance_id": envelope["sender_role_instance_id"], "to_role_instance_id": envelope["receiver_role_instance_id"],
+                "endpoint_version": 1, "payload_type": envelope["payload_type"], "payload_sha256": payload_hash,
+                "expected_runtime_revision": index + 7, "start_evidence": {"sha256": start_ref["sha256"],
+                    "endpoint_sha256": endpoints[receiver]["sha256"], "envelope_sha256": env_ref["sha256"],
+                    "message_id": message_id, "native_status": "STARTED"}})
+            result_ref = proof(f"commit-result-{index}", {"status": "committed", "message_id": message_id,
+                              "token_sequence": envelope["token_sequence"], "runtime_revision": index + 8})
+        legs.append({"leg_id": leg_id, "sender_role": sender, "receiver_role": receiver, "endpoint": endpoints[receiver],
+                     "envelope": env_ref, "sent_receipt": sent_ref, "receiver_started": start_ref,
+                     "commit_request": commit_ref, "commit_result": result_ref})
+    write_json(Path(request["communication_rehearsal"]), {"schema_version": "slk.communication-rehearsal/v2", "method_version": "4.4.1",
+        "run_id": run_id, "plan_revision": 1, "status": "PASS", "host_binding": binding, "sealed_role_receipts": consumers, "legs": legs})
 
 
 def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
@@ -154,6 +263,96 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     }
     assert {item["status"] for item in result["roles"]} == {"READY"}
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
+
+
+def test_legacy_echo_hashes_are_not_normal_handoff_evidence(tmp_path):
+    request = _request(tmp_path, legacy_echo=True)
+    result = evaluate_run_readiness(request)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "COMMUNICATION_REHEARSAL_INVALID" in result["reason_codes"]
+
+
+@pytest.mark.parametrize("feature", REQUIRED_OPTIONS)
+def test_enabled_optional_tool_cannot_skip_its_actual_role_entry(tmp_path, feature):
+    request = _request(tmp_path)
+    next(o for o in request["optional_features"] if o["name"] == feature)["decision"] = "ON"
+    result = evaluate_run_readiness(request)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "ENABLED_OPTION_ENTRY_MISSING" in result["reason_codes"]
+
+
+def test_enabled_rtk_requires_both_original_worker_and_checker_entry(tmp_path):
+    request = _request(tmp_path)
+    next(o for o in request["optional_features"] if o["name"] == "RTK")["decision"] = "ON"
+    entry = tmp_path / "rtk.cmd"
+    entry.write_text("@echo capability-fixture-only", encoding="ascii")
+    for role in request["roles"]:
+        if role["role"] in {"worker", "checker"}: role["required_tools"].append(str(entry))
+    assert evaluate_run_readiness(request)["status"] == "READY"
+    request["roles"][2]["required_tools"].remove(str(entry))
+    assert evaluate_run_readiness(request)["status"] == "REPAIR_NEEDED"
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_normal_label_cannot_disguise_echo_only_payload(tmp_path, index):
+    request = _request(tmp_path)
+    path = Path(request["communication_rehearsal"])
+    value = json.loads(path.read_text())
+    leg = value["legs"][index]
+    def replace(reference, change):
+        file = Path(reference["path"])
+        obj = json.loads(file.read_text())
+        change(obj)
+        write_json(file, obj)
+        reference["sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+    echo = {"task": "reply exactly READY"}
+    digest = canonical_json_sha256(echo)
+    replace(leg["envelope"], lambda obj: obj.update(payload=echo, payload_sha256=digest))
+    replace(leg["receiver_started"], lambda obj: obj.update(request_sha256=digest))
+    def update_commit(obj):
+        obj["payload_sha256"] = digest
+        obj["start_evidence"].update(sha256=leg["receiver_started"]["sha256"], envelope_sha256=leg["envelope"]["sha256"])
+    replace(leg["commit_request"], update_commit)
+    write_json(path, value)
+    assert evaluate_run_readiness(request)["status"] == "REPAIR_NEEDED"
+
+
+@pytest.mark.parametrize("failure", ["missing_bytes", "changed_bytes", "missing_commit", "wrong_role",
+                                     "duplicate_leg", "old_plan", "consumer_rejected", "only_accepted",
+                                     "echo_payload", "ow_takes_token"])
+def test_rehearsal_requires_exact_native_and_owned_commit_evidence(tmp_path, monkeypatch, failure):
+    request = _request(tmp_path)
+    path = Path(request["communication_rehearsal"])
+    value = json.loads(path.read_text())
+    leg = value["legs"][2]
+    if failure == "missing_bytes":
+        Path(leg["receiver_started"]["path"]).unlink()
+    elif failure == "changed_bytes":
+        Path(leg["receiver_started"]["path"]).write_text("{}")
+    elif failure == "missing_commit":
+        leg["commit_result"] = None
+    elif failure == "wrong_role":
+        request["roles"][1]["role_instance_id"] = "different-worker"
+    elif failure == "duplicate_leg":
+        value["legs"][3] = leg
+    elif failure == "old_plan":
+        request["plan_revision"] = 2
+    elif failure == "consumer_rejected":
+        monkeypatch.setattr(wc, "_run_json_command", lambda *a, **k: {"status": "rejected"})
+    elif failure == "only_accepted":
+        leg["receiver_started"] = leg["sent_receipt"]
+    elif failure == "echo_payload":
+        envelope_path = Path(leg["envelope"]["path"])
+        envelope = json.loads(envelope_path.read_text())
+        envelope["payload_type"] = "TRANSPORT_PROBE"
+        write_json(envelope_path, envelope)
+        leg["envelope"]["sha256"] = hashlib.sha256(envelope_path.read_bytes()).hexdigest()
+    elif failure == "ow_takes_token":
+        value["legs"][-1]["commit_result"] = leg["commit_result"]
+    write_json(path, value)
+    result = evaluate_run_readiness(request)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "COMMUNICATION_REHEARSAL_INVALID" in result["reason_codes"]
 
 
 def test_missing_checker_capability_keeps_run_in_preparation(tmp_path: Path) -> None:
@@ -177,7 +376,7 @@ def test_missing_overwatcher_or_failed_normal_route_rehearsal_blocks_start(tmp_p
     failed_route = _request(tmp_path)
     path = Path(failed_route["communication_rehearsal"])
     receipt = json.loads(path.read_text(encoding="utf-8"))
-    receipt["legs"][2]["receiver_started_sha256"] = ""
+    receipt["legs"][2]["receiver_started"]["sha256"] = ""
     path.write_text(json.dumps(receipt), encoding="utf-8")
     result = evaluate_run_readiness(failed_route)
     assert result["status"] == "REPAIR_NEEDED"
@@ -264,7 +463,7 @@ def test_role_substitution_is_not_repairable_by_prompt(tmp_path: Path) -> None:
     json.dumps(result)
 
 
-def test_future_option_is_allowed_but_still_requires_owner_confirmation(tmp_path: Path) -> None:
+def test_future_option_requires_registered_capability_not_a_free_name(tmp_path: Path) -> None:
     request = _request(tmp_path)
     request["optional_features"].append(
         {"name": "Future Tool", "decision": "UNCONFIRMED", "owner_evidence_ref": ""}
@@ -273,20 +472,114 @@ def test_future_option_is_allowed_but_still_requires_owner_confirmation(tmp_path
     result = evaluate_run_readiness(request)
 
     assert result["status"] == "REPAIR_NEEDED"
-    assert "OPTION_DECISION_REQUIRED" in result["reason_codes"]
+    assert "OPTION_UNSUPPORTED" in result["reason_codes"]
 
 
 @pytest.mark.parametrize("decision", ["ON", "OFF"])
-def test_bom_is_forbidden_instead_of_owner_configurable(
+def test_unsupported_optional_feature_is_not_an_enable_or_disable_switch(
     tmp_path: Path, decision: str
 ) -> None:
     request = _request(tmp_path)
     request["optional_features"].append(
-        {"name": "BoM", "decision": decision, "owner_evidence_ref": "owner:legacy"}
+        {"name": "UNREGISTERED_AUXILIARY", "decision": decision, "owner_evidence_ref": "owner:legacy"}
     )
 
     result = evaluate_run_readiness(request)
 
     assert result["status"] == "REPAIR_NEEDED"
-    assert "OPTION_FORBIDDEN" in result["reason_codes"]
-    assert all(item["name"] != "BoM" for item in result["optional_features"])
+    assert "OPTION_UNSUPPORTED" in result["reason_codes"]
+    assert all(item["name"] != "UNREGISTERED_AUXILIARY" for item in result["optional_features"])
+
+
+def _native_ow_request(tmp_path):
+    request = _request(tmp_path)
+    ow = next(r for r in request["roles"] if r["role"] == "overwatcher")
+    ow["actual_runtime"] = ow["expected_runtime"] = "codex"
+    ow["native_activity_capability"] = str(write_json(tmp_path / "native-ow-capability.json", {
+        "schema_version": "slk.native-activity-capability/v1", "method_version": "4.4.1", "runtime": "codex",
+        "read_only_observation": True, "model_call_required": False, "native_events": ["thread/status", "turn/status"]}))
+    ow["endpoint_path"] = str(write_json(tmp_path / "native-ow-endpoint.json", {
+        "schema_version": "slk.transport-endpoint/v1", "run_id": request["run_id"], "role": "overwatcher",
+        "role_instance_id": ow["role_instance_id"], "agent_runtime": "codex", "adapter": "codex-app-server",
+        "host_id": "local", "endpoint_version": 1, "state": "active", "address": {"thread_id": "registered-ow-session"}}))
+    packet_path = Path(request["communication_rehearsal"])
+    packet = json.loads(packet_path.read_text())
+    def ref(path):
+        return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    host_path = Path(packet["host_binding"]["path"])
+    host = json.loads(host_path.read_text())
+    endpoint_path = Path(host["roles"]["supervisor"]["endpoint_path"])
+    endpoint = json.loads(endpoint_path.read_text())
+    endpoint["address"]["desktop"] = {"caller_thread_id": "supervisor-native-host", "model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh", "plugin_sha256": "a" * 64}
+    write_json(endpoint_path, endpoint)
+    supervisor_ref = ref(endpoint_path)
+    host["roles"]["supervisor"]["endpoint_sha256"] = supervisor_ref["sha256"]
+    write_json(host_path, host)
+    packet["host_binding"] = ref(host_path)
+    for leg in packet["legs"]:
+        if leg["receiver_role"] != "supervisor":
+            continue
+        leg["endpoint"] = supervisor_ref
+        if leg["commit_request"]:
+            commit_path = Path(leg["commit_request"]["path"])
+            commit = json.loads(commit_path.read_text())
+            commit["start_evidence"]["endpoint_sha256"] = supervisor_ref["sha256"]
+            write_json(commit_path, commit)
+            leg["commit_request"] = ref(commit_path)
+    endpoint["address"]["desktop"]["caller_thread_id"] = "registered-ow-session"
+    packet["legs"][-1]["endpoint"] = ref(write_json(tmp_path / "ow-notification-endpoint.json", endpoint))
+    write_json(packet_path, packet)
+    return request
+
+
+def test_native_ow_notification_keeps_receiver_but_uses_its_own_registered_caller(tmp_path):
+    assert evaluate_run_readiness(_native_ow_request(tmp_path))["status"] == "READY"
+
+
+@pytest.mark.parametrize("damage", ["supervisor-caller", "other-caller", "receiver", "model", "instance", "ow-state", "ow-session"])
+def test_native_ow_caller_override_cannot_change_any_other_frozen_identity(tmp_path, damage):
+    request = _native_ow_request(tmp_path)
+    packet_path = Path(request["communication_rehearsal"])
+    packet = json.loads(packet_path.read_text())
+    reference = packet["legs"][-1]["endpoint"]
+    endpoint_path = Path(reference["path"])
+    endpoint = json.loads(endpoint_path.read_text())
+    if damage in {"supervisor-caller", "other-caller"}:
+        endpoint["address"]["desktop"]["caller_thread_id"] = "supervisor-native-host" if damage == "supervisor-caller" else "other-session"
+    elif damage == "receiver": endpoint["address"]["thread_id"] = "other-supervisor"
+    elif damage == "model": endpoint["address"]["desktop"]["model"] = "gpt-6.1-sol"
+    elif damage == "instance": endpoint["role_instance_id"] = "other-supervisor"
+    else:
+        ow_path = Path(request["roles"][-1]["endpoint_path"])
+        ow = json.loads(ow_path.read_text())
+        if damage == "ow-state": ow["state"] = "retired"
+        else: ow["address"]["thread_id"] = "other-ow-session"
+        write_json(ow_path, ow)
+    write_json(endpoint_path, endpoint)
+    reference["sha256"] = hashlib.sha256(endpoint_path.read_bytes()).hexdigest()
+    write_json(packet_path, packet)
+    result = evaluate_run_readiness(request)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "COMMUNICATION_REHEARSAL_INVALID" in result["reason_codes"]
+
+
+@pytest.mark.parametrize("current_join_matches", [True, False])
+def test_historical_worker_activation_needs_live_exact_central_handoff_join(tmp_path, monkeypatch, current_join_matches):
+    from slk_transport.role_host import RoleHost
+    request = _request(tmp_path)
+    packet_path = Path(request["communication_rehearsal"])
+    packet = json.loads(packet_path.read_text())
+    leg = packet["legs"][2]
+    commit = json.loads(Path(leg["commit_request"]["path"]).read_text())
+    result_path = Path(leg["commit_result"]["path"])
+    write_json(result_path, {"status": "CHECKER_STARTED", "runtime_revision": 10, "token_sequence": commit["token_sequence"],
+        "candidate_message_id": commit["message_id"], "checker_token_already_committed": False,
+        "native_attempt_path": str(Path(leg["receiver_started"]["path"]).parent), "binding_sha256": packet["host_binding"]["sha256"],
+        "source_message_id": "original-worker-message", "source_sha256": "f" * 64})
+    leg["commit_result"]["sha256"] = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    write_json(packet_path, packet)
+    monkeypatch.setattr(RoleHost, "projection", lambda self: {"contract_fixture_only": True})
+    monkeypatch.setattr(RoleHost, "_committed_delivery", lambda self, projection, envelope, native: current_join_matches)
+    result = evaluate_run_readiness(request)
+    assert result["status"] == ("READY" if current_join_matches else "REPAIR_NEEDED")

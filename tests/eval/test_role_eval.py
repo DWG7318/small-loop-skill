@@ -36,7 +36,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.4.0"
+    assert pack["method_version"] == "4.4.1"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -174,6 +174,15 @@ def test_pack_covers_fixed_topology_incomplete_and_supervisor_rework() -> None:
     } <= case_ids
 
 
+def test_pack_covers_preparation_goal_only_without_growing_runtime_subset() -> None:
+    cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
+    for identity in ("SUP-PREP-GOAL-RESUME", "SUP-PREP-GOAL-ERROR", "SUP-PREP-GOAL-NATIVE",
+                     "SUP-PREP-GOAL-CLOSE", "SUP-PREP-GOAL-SCOPE", "SUP-PREP-GOAL-UNAVAILABLE",
+                     "SUP-PREP-GOAL-OWNER-STOP", "SUP-PREP-GOAL-CONFLICT"):
+        assert cases[identity]["role"] == "supervisor"
+        assert cases[identity]["runtime_critical"] is False
+
+
 def test_pack_covers_423_runtime_consistency_failures() -> None:
     pack = load_pack(PACK)
     case_ids = {case["case_id"] for case in pack["cases"]}
@@ -182,7 +191,7 @@ def test_pack_covers_423_runtime_consistency_failures() -> None:
         "SUP-ACTIVE-WRITER-NEW-MESSAGE",
         "SUP-NO-LEGACY-423-HANDOFF",
         "SUP-NO-AUTO-MODEL-UPGRADE",
-        "SUP-NO-BOM-RUNTIME",
+        "SUP-NO-EXTRA-RECOVERY-ROLE",
         "WRK-GIT-WORKSPACE-PREFLIGHT",
         "OVW-ONE-WHOLE-RUN-BINDING",
         "OVW-PROJECTED-ACTIVE-IS-UNKNOWN",

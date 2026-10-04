@@ -117,7 +117,16 @@ def test_dsh_command_uses_only_a_short_hashed_task_reference(tmp_path: Path) -> 
     assert len(instruction) < 600
 
 
-def test_dsh_resume_uses_only_the_recorded_session(tmp_path: Path) -> None:
+def test_dsh_resume_uses_only_the_recorded_session(tmp_path: Path, monkeypatch) -> None:
+    from slk_transport.adapters import dsh
+    original_spawn = dsh.spawn
+
+    def exact_host_session(*args, **kwargs):
+        assert kwargs["env"].get("SLK_DSH_SESSION_ID") == session_id
+        return original_spawn(*args, **kwargs)
+
+    monkeypatch.setenv("SLK_DSH_SESSION_ID", "session-stale-inherited")
+    monkeypatch.setattr(dsh, "spawn", exact_host_session)
     session_id = "session-11111111-1111-4111-8111-111111111111"
     endpoint = worker_endpoint(tmp_path, session_id=session_id)
     session_root = (

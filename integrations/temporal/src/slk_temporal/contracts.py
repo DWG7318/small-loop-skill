@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import uuid
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -43,6 +44,39 @@ def _integer(value: object, label: str, *, minimum: int = 0, maximum: int | None
     if maximum is not None and value > maximum:
         raise ContractError(f"{label} must be an integer <= {maximum}")
     return value
+
+
+def notification_native_id(run_id: str, event_id: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"slk.temporal-notification:{run_id}:{event_id}"))
+
+
+def validate_supervisor_notification(value: object, *, run_id: str, event_id: str,
+                                     supervisor_role_instance_id: str) -> None:
+    receipt = _closed(value, {"status", "event_id", "supervisor_role_instance_id", "native_start", "receipt_sha256"}, "notification receipt")
+    if (receipt["status"] != "NOTIFIED" or receipt["event_id"] != event_id
+        or receipt["supervisor_role_instance_id"] != supervisor_role_instance_id):
+        raise ContractError("notification changed the frozen Supervisor or event")
+    native = _closed(receipt["native_start"], {"schema_version", "status", "adapter", "run_id", "cell_id", "message_id",
+        "request_sha256", "native_request_sha256", "observed_at", "process", "native_task"}, "native notice start")
+    if (native["schema_version"] != "slk.native-start/v2" or native["status"] != "STARTED"
+        or native["run_id"] != run_id or native["cell_id"] != "PREPARATION"
+        or native["message_id"] != notification_native_id(run_id, event_id)):
+        raise ContractError("notification lacks the exact native start")
+    for field in ("request_sha256", "native_request_sha256"):
+        _hash(native[field], field)
+    for field in ("adapter", "observed_at"):
+        if not isinstance(native[field], str) or not native[field].strip():
+            raise ContractError("native notice metadata is missing")
+    process = _closed(native["process"], {"pid", "creation_time"}, "native notice process")
+    _integer(process["pid"], "native notice PID", minimum=1)
+    task = _closed(native["native_task"], {"kind", "id", "status"}, "native notice task")
+    if (task["status"] not in {"RUNNING", "IDLE"}
+        or not all(isinstance(v, str) and v.strip() for v in (*task.values(), process["creation_time"]))):
+        raise ContractError("native Supervisor task identity is missing")
+    expected = hashlib.sha256(json.dumps({k: v for k, v in receipt.items() if k != "receipt_sha256"},
+        sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    if _hash(receipt["receipt_sha256"], "receipt hash") != expected:
+        raise ContractError("notification receipt bytes changed")
 
 
 @dataclass(frozen=True)
@@ -93,8 +127,8 @@ class StartSlkRequest:
             "roles",
         }
         source = _closed(value, fields, "SLK startup request")
-        if source["method_version"] != "4.4.0":
-            raise ContractError("method_version must be 4.4.0")
+        if source["method_version"] not in ("4.4.0", "4.4.1"):
+            raise ContractError("method_version must be 4.4.0 or 4.4.1")
         raw_roles = source["roles"]
         if not isinstance(raw_roles, list):
             raise ContractError("roles must be an array")
@@ -112,7 +146,7 @@ class StartSlkRequest:
             raise ContractError("endpoint_ref must be unique")
         return cls(
             run_id=_identifier(source["run_id"], "run_id"),
-            method_version="4.4.0",
+            method_version=source["method_version"],
             runtime_revision=_integer(source["runtime_revision"], "runtime_revision"),
             task_queue=_identifier(source["task_queue"], "task_queue"),
             ack_timeout_seconds=_integer(

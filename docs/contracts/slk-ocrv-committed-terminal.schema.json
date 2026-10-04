@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision", "token_sequence", "worker_role_instance_id", "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint", "runtime_projection_path", "runtime_projection_sha256", "candidate_repository", "candidate_commit", "candidate_parent", "candidate_message_id", "payload_sha256", "candidate_submitted_event_id", "transport_started_event_id", "commit_request_path", "commit_request_sha256", "native_attempt_path", "raw_review_path", "immutable_sha256", "checker_credential_path", "state_command", "transport_command", "result_path"],
   "properties": {
     "schema_version": {"const": "slk.ocrv-committed-terminal-request/v1"},
-    "method_version": {"const": "4.4.0"},
+    "method_version": {"enum": ["4.4.0", "4.4.1"]},
     "recovery_invocation_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "go_id": {"$ref": "#/$defs/identifier"},

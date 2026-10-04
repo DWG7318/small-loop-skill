@@ -383,6 +383,11 @@ class DshAdapter:
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
+        environment.pop("SLK_TRANSPORT_ROLE_HOST", None)
+        environment.pop("SLK_TRANSPORT_ROLE_HOST_SHA256", None)
+        environment.pop("SLK_DSH_SESSION_ID", None)
+        if endpoint.address["session_id"] is not None:
+            environment["SLK_DSH_SESSION_ID"] = str(endpoint.address["session_id"])
         environment["DSH_RUNTIME_ROOT"] = str(endpoint.address["runtime_root"])
         environment["SLK_NATIVE_ACTIVITY_PATH"] = str(attempt.root / "native-activity.json")
         environment["SLK_NATIVE_ACTIVITY_CONTEXT"] = json.dumps(

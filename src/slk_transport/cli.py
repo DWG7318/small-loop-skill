@@ -30,6 +30,7 @@ from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
 from .role_eval import load_pack, pack_sha256, validate_response
 from .run_readiness import evaluate_run_readiness
+from .role_host import load_role_host
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
     CompletionError,
@@ -41,6 +42,7 @@ from .worker_completion import (
     execute_worker_continuation,
     inspect_worker_completion,
     prepare_invalid_result_recovery_envelope,
+    prepare_incomplete_worker_handoff,
     recover_staged_checker_commit,
     continue_consumed_partial_checker,
     consume_existing_partial_checker,
@@ -50,7 +52,7 @@ from .worker_completion import (
 )
 
 
-VERSION = "4.4.0"
+VERSION = "4.4.1"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -108,12 +110,27 @@ def _validate(args: argparse.Namespace) -> int:
 def _job(args: argparse.Namespace) -> int:
     endpoint_raw = _read_object(args.endpoint, "endpoint")
     envelope_raw = _read_object(args.envelope, "envelope")
+    host = load_role_host(endpoint_raw)
     result = dispatch_once(
         endpoint_raw,
         envelope_raw,
         args.attempt_root,
         adapters=ADAPTERS,
     )
+    if host is not None:
+        source = args.attempt_root / result.run_id / result.message_id
+        try:
+            host.complete(source)
+        except (ValueError, OSError) as exc:
+            # Engineering completion is immutable and is not handoff success.
+            from .worker_completion import _write_or_reuse_stable_request
+            root = source / "role-host"
+            root.mkdir(parents=True, exist_ok=True)
+            failure = {"status": "HOST_HANDOFF_FAILED", "run_id": result.run_id,
+                       "source_message_id": result.message_id,
+                       "error_code": getattr(exc, "error_code", type(exc).__name__)}
+            _write_or_reuse_stable_request(root / f"failure-{failure['error_code']}.json", failure)
+            raise
     _emit(result.to_dict())
     return 0 if result.status == "completed" else 3
 
@@ -466,10 +483,38 @@ def _inspect_native_activity(args: argparse.Namespace) -> int:
     return 0 if result["status"] in {"ACTIVE", "IDLE", "PENDING", "COMPLETED", "FAILED"} else 3
 
 
+def _notify_supervisor(args: argparse.Namespace) -> int:
+    from .supervisor_notification import notify_registered_supervisor, notify_temporal_supervisor
+    request = _read_object(args.request, "operational notification")
+    if set(request) != {"notification", "endpoint_path", "runtime_projection_path", "attempt_root"}:
+        raise ValueError("operational notification request is not closed")
+    endpoint = _read_object(Path(request["endpoint_path"]), "registered Supervisor endpoint")
+    projection = _read_object(Path(request["runtime_projection_path"]), "current Run projection")
+    root = Path(request["attempt_root"])
+    if not root.is_absolute():
+        raise ValueError("operational notification evidence root must be absolute")
+    value = request["notification"]
+    if not isinstance(value, Mapping):
+        raise ValueError("operational notification must be an object")
+    notify = notify_registered_supervisor if "schema_version" in value else notify_temporal_supervisor
+    _emit(notify(value, endpoint, projection, root))
+    return 0
+
+
 def _preflight_run(args: argparse.Namespace) -> int:
     result = evaluate_run_readiness(_read_object(args.request, "Run readiness request"))
     _emit(result)
     return 0 if result["status"] == "READY" else 3
+
+
+def _prepare_role_credential(args: argparse.Namespace) -> int:
+    from .worker_completion import prepare_sealed_role_credential
+
+    request = _read_object(args.request, "role credential preparation")
+    if set(request) != {"source", "destination", "run_id", "role", "role_instance_id", "state_command"}:
+        raise ValueError("credential preparation requires the exact field set")
+    _emit(prepare_sealed_role_credential(**request))
+    return 0
 
 
 def _validate_role_eval(args: argparse.Namespace) -> int:
@@ -629,11 +674,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     native_activity.add_argument("--started", required=True, type=Path)
     native_activity.add_argument("--completed", type=Path)
     native_activity.add_argument("--failed", type=Path)
+    notice = subparsers.add_parser("notify-supervisor")
+    notice.add_argument("--request", required=True, type=Path)
     continuation = subparsers.add_parser("continue-worker")
     continuation.add_argument("--request", required=True, type=Path)
     continuation.add_argument("--sha256", required=True)
     readiness = subparsers.add_parser("preflight-run")
     readiness.add_argument("--request", required=True, type=Path)
+    credentials = subparsers.add_parser("prepare-role-credential")
+    credentials.add_argument("--request", required=True, type=Path)
+    incomplete = subparsers.add_parser("prepare-incomplete-handoff")
+    incomplete.add_argument("--source-attempt", required=True, type=Path)
+    incomplete.add_argument("--staged-envelope", required=True, type=Path)
+    incomplete.add_argument("--d0-request", required=True, type=Path)
     role_eval = subparsers.add_parser("validate-role-eval")
     role_eval.add_argument("--pack", required=True, type=Path)
     role_eval.add_argument("--response", type=Path)
@@ -696,10 +749,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _inspect_overwatcher_cadence(args)
         if args.command == "inspect-native-activity":
             return _inspect_native_activity(args)
+        if args.command == "notify-supervisor":
+            return _notify_supervisor(args)
         if args.command == "continue-worker":
             return _continue_worker(args)
         if args.command == "preflight-run":
             return _preflight_run(args)
+        if args.command == "prepare-role-credential":
+            return _prepare_role_credential(args)
+        if args.command == "prepare-incomplete-handoff":
+            _emit(prepare_incomplete_worker_handoff(args.source_attempt,
+                staged_envelope_path=args.staged_envelope, d0_request_path=args.d0_request))
+            return 0
         if args.command == "validate-role-eval":
             return _validate_role_eval(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")

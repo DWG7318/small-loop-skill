@@ -41,6 +41,39 @@ def supervisor_envelope() -> Envelope:
     )
 
 
+def test_prepared_supervisor_prompt_has_only_result_contract_not_host_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("SLK_TRANSPORT_ROLE_HOST", str(tmp_path / "secret-host-binding.json"))
+    raw = envelope_value(sender_role="checker", receiver_role="supervisor", receiver_endpoint_version=1)
+    raw["payload_type"] = "D2_READY"
+    raw["payload"] = {"d1_event_id": "D1-pass", "required_cell_ids": ["CELL-001"],
+        "accepted_cell_ids": ["CELL-001"], "final_candidate_message_id": raw["message_id"],
+        "d2_criteria": ["verify whole result"], "evidence_refs": ["local-evidence"]}
+    from slk_transport.contracts import canonical_json_sha256
+    raw["payload_sha256"] = canonical_json_sha256(raw["payload"])
+    envelope = Envelope.from_dict(raw)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    prompt = CodexAdapter()._prompt(envelope, attempt)
+    assert "slk.supervisor-result/v1" in prompt
+    assert json.dumps(str(attempt.root / "supervisor-result.json"))[1:-1] in prompt
+    assert "secret-host-binding" not in prompt
+    assert "sealed" in prompt and "D1" in prompt
+
+
+def test_rework_prompt_provides_closed_fields_and_aggressive_round_without_credential(tmp_path, monkeypatch):
+    from test_role_host import supervisor_result_fixture
+    host, source, envelope, result, projection = supervisor_result_fixture(tmp_path)
+    monkeypatch.setenv("SLK_TRANSPORT_ROLE_HOST", "private-host-binding")
+    prompt = CodexAdapter()._prompt(envelope, AttemptStore(tmp_path / "out").create(envelope))
+    descriptor = json.loads(prompt[prompt.index('{"result_path":'):])
+    contract = descriptor["decision_contract"]
+    assert isinstance(contract, dict)
+    assert set(contract) == set(result["decision"])
+    assert contract["d1_failure_event_id"] == envelope.payload["d1_failure_event_id"]
+    assert contract["acceptance_criteria"] == envelope.payload["acceptance_criteria"]
+    assert contract["investigation_mode"] == "STANDARD"
+    assert "private-host-binding" not in prompt
+
+
 def test_codex_reads_exact_idle_thread_then_starts_turn(tmp_path: Path) -> None:
     endpoint = codex_endpoint(tmp_path)
     envelope = supervisor_envelope()

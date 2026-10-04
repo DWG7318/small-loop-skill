@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from . import SUPPORTED_METHOD_VERSIONS
+
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -658,6 +661,119 @@ def _legacy_completed_worker_session(
     return session_id if candidate_submitted and transport_started else None
 
 
+def _incomplete_handoff_evidence(attempt: Path, staged: Path, d0_path: Path) -> dict[str, Any]:
+    """Verify preserved clues against files and Git, not the blocker's prose claim."""
+    from .adapters.dsh import DshAdapter
+
+    try:
+        endpoint = Endpoint.from_dict(_read_object(attempt / "endpoint.json", "Worker endpoint"))
+        source = Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))
+        result = DshAdapter()._read_result(attempt / "worker-result.json", endpoint, source)
+        terminal = DeliveryResult.from_dict(_read_object(attempt / "failed.json", "Worker terminal"))
+        _native_v2_worker_session(attempt / "started.json", endpoint, source)
+        if (result["status"] != "incomplete" or terminal.status != "failed"
+            or terminal.run_id != source.run_id or terminal.message_id != source.message_id
+            or terminal.adapter != "dsh-worker" or (attempt / "completed.json").exists()
+            or result["blocker"]["phase"] != "worker-suffix-handoff"
+            or result["blocker"]["cause"] != "ENVIRONMENT_SANDBOX_WRITE_DENIED"):
+            raise ValueError("not a preserved handoff-only INCOMPLETE")
+        references: dict[Path, str] = {}
+        for clue in result["blocker"]["evidence"]:
+            match = re.fullmatch(r"(.+?) sha256=([0-9a-f]{64})(?: \(.*\))?", clue)
+            if match and Path(match[1]).is_absolute():
+                path = Path(match[1]).resolve()
+                if path in references and references[path] != match[2]:
+                    raise ValueError("conflicting immutable evidence hashes")
+                references[path] = match[2]
+
+        def bound(path: Path) -> dict[str, str]:
+            path = path.resolve()
+            if path not in references or not path.is_file() or _sha256(path) != references[path]:
+                raise ValueError("preserved evidence is absent or changed")
+            return {"path": str(path), "sha256": references[path]}
+
+        staged_ref, d0_ref = bound(staged), bound(d0_path)
+        prepared = Envelope.from_dict(_read_object(staged, "preserved candidate envelope"))
+        d0 = _read_object(d0_path, "preserved D0 request")
+        if (prepared.run_id != source.run_id or prepared.go_id != source.go_id
+            or prepared.message_id != _stable_id(source.message_id, "candidate-ready")
+            or prepared.cell_id != source.cell_id or prepared.sender_role != "worker"
+            or prepared.sender_role_instance_id != endpoint.role_instance_id
+            or prepared.receiver_role != "checker" or prepared.payload_type != "CANDIDATE_READY"
+            or prepared.token_sequence != source.token_sequence + 1
+            or d0.get("event_type") != "D0_COMPLETED" or d0.get("corrects_event_id") is not None
+            or any(d0.get(k) != getattr(source, k) for k in ("run_id", "go_id", "cell_id"))
+            or d0.get("role_instance_id") != endpoint.role_instance_id):
+            raise ValueError("preserved handoff changed scope or role")
+        payload = prepared.payload
+        if set(payload) != {"repository", "candidate", "cell_goal", "d1_criteria", "evidence_files"}:
+            raise ValueError("candidate payload is not closed")
+        repo = Path(payload["repository"]).resolve()
+        snapshot = _candidate_repository_snapshot(repo)
+        details = d0["details"]
+        candidate = {"kind": "commit", "commit": snapshot["head"]}
+        criteria = source.payload.get("d1_criteria", source.payload.get("acceptance_criteria"))
+        if (repo != Path(endpoint.address["cwd"]).resolve()
+            or payload["candidate"] != candidate or details.get("candidate") != candidate
+            or details.get("baseline_commit") != snapshot["parent"]
+            or sorted(details.get("changed_paths", [])) != snapshot["changed_paths"]
+            or not details.get("d0") or not isinstance(details.get("unproved"), list)
+            or payload["cell_goal"] != source.payload.get("cell_goal")
+            or not criteria or payload["d1_criteria"] != criteria):
+            raise ValueError("candidate, parent, changed paths or frozen criteria differ")
+        proofs = []
+        for item in payload["evidence_files"]:
+            path = Path(item).resolve()
+            # The Worker's copied terminal can also be an original evidence file.
+            if path.is_file() and path.read_bytes() == (attempt / "worker-result.json").read_bytes():
+                proofs.append({"path": str(path), "sha256": _sha256(path)})
+            else:
+                proofs.append(bound(path))
+        if not proofs:
+            raise ValueError("D0 evidence is missing")
+        return {
+            "schema_version": "slk.worker-handoff-evidence/v1", "status": "HANDOFF_EVIDENCE_VERIFIED",
+            "run_id": source.run_id, "go_id": source.go_id, "cell_id": source.cell_id,
+            "source_message_id": source.message_id, "role_instance_id": endpoint.role_instance_id,
+            "source_result_sha256": _sha256(attempt / "worker-result.json"),
+            "source_terminal_sha256": _sha256(attempt / "failed.json"),
+            "staged_envelope": staged_ref, "d0_request": d0_ref, "evidence": proofs,
+            "candidate": candidate, "parent_commit": snapshot["parent"],
+            "candidate_repository": str(repo), "changed_paths": snapshot["changed_paths"],
+            "d0": details["d0"], "unproved": details["unproved"],
+            "attempt": d0["attempt"], "plan_revision": d0["plan_revision"],
+            "checker_role_instance_id": prepared.receiver_role_instance_id,
+            "checker_endpoint_version": prepared.receiver_endpoint_version,
+        }
+    except (OSError, KeyError, TypeError, ValueError, AdapterError) as exc:
+        raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "preserved handoff evidence failed verification") from exc
+
+
+def prepare_incomplete_worker_handoff(
+    source_attempt_root: Path | str, *, staged_envelope_path: Path | str, d0_request_path: Path | str,
+) -> dict[str, Any]:
+    """Prepare a new host supplement; original INCOMPLETE and failed attempt stay untouched."""
+    attempt = Path(source_attempt_root).resolve()
+    evidence = _incomplete_handoff_evidence(attempt, Path(staged_envelope_path), Path(d0_request_path))
+    destination = attempt / "incomplete-handoff" / "evidence.json"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    _write_or_reuse_stable_request(destination, evidence)
+    return evidence
+
+
+def _load_incomplete_handoff(attempt: Path) -> dict[str, Any]:
+    evidence = _read_object(attempt / "incomplete-handoff" / "evidence.json", "incomplete handoff supplement")
+    try:
+        verified = _incomplete_handoff_evidence(
+            attempt, Path(evidence["staged_envelope"]["path"]), Path(evidence["d0_request"]["path"]),
+        )
+    except (KeyError, TypeError) as exc:
+        raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "incomplete handoff supplement is not closed") from exc
+    if verified != evidence:
+        raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "incomplete handoff supplement changed")
+    return evidence
+
+
 def build_continuation_request(
     attempt_root: Path | str,
     checker_endpoint_raw: Mapping[str, Any],
@@ -693,6 +809,7 @@ def build_continuation_request(
     source_repository: str | None = None
     source_changed_paths: list[str] | None = None
     supplement_result_contract: dict[str, Any] | None = None
+    incomplete_evidence = None
     if result_path.is_file() and completed_path.is_file():
         recovery_mode = "COMPLETED_RESULT"
         result = _read_object(result_path, "Worker result")
@@ -700,6 +817,13 @@ def build_continuation_request(
         continuation_result_path = result_path
         worker_result_sha256: str | None = _sha256(result_path)
         source_terminal_path = completed_path
+    elif result_path.is_file() and (attempt / "incomplete-handoff" / "evidence.json").is_file():
+        incomplete_evidence = _load_incomplete_handoff(attempt)
+        recovery_mode = "INCOMPLETE_HANDOFF"
+        result = completed = None
+        continuation_result_path = attempt / "incomplete-handoff" / "evidence.json"
+        worker_result_sha256 = _sha256(continuation_result_path)
+        source_terminal_path = attempt / "failed.json"
     elif missing_result_failure is not None:
         recovery_mode = "MISSING_RESULT"
         result = None
@@ -730,6 +854,12 @@ def build_continuation_request(
             "Worker attempt has no exact recoverable completed, missing, or invalid-result source",
         )
     attempt_number = _source_attempt(runtime_projection, envelope)
+    if incomplete_evidence is not None and (
+        incomplete_evidence["attempt"] != attempt_number or incomplete_evidence["plan_revision"] != plan_revision
+        or incomplete_evidence["checker_role_instance_id"] != checker.role_instance_id
+        or incomplete_evidence["checker_endpoint_version"] != checker.endpoint_version
+    ):
+        raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "supplement does not bind the frozen plan or Checker")
     snapshot = runtime_projection.get("runtime_snapshot")
     candidate_message_id = _stable_id(envelope.message_id, "candidate-ready")
     checker_token_already_committed = (
@@ -797,7 +927,8 @@ def build_continuation_request(
             )
         )
         or not isinstance(snapshot, Mapping)
-        or snapshot.get("method_version") != "4.4.0"
+        or snapshot.get("method_version") not in SUPPORTED_METHOD_VERSIONS
+        or runtime_projection.get("summary", {}).get("slk_version") != snapshot.get("method_version")
         or snapshot.get("plan_revision") != plan_revision
         or snapshot.get("runtime_revision") != runtime_revision
         or snapshot.get("token_sequence") != token_sequence
@@ -823,7 +954,7 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     return {
         "schema_version": CONTINUATION_SCHEMA,
-        "method_version": "4.4.0",
+        "method_version": snapshot["method_version"],
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
         "cell_id": envelope.cell_id,
@@ -886,7 +1017,7 @@ def _validate_continuation_request(request: Mapping[str, Any]) -> None:
     if (
         set(request) != CONTINUATION_FIELDS
         or request.get("schema_version") != CONTINUATION_SCHEMA
-        or request.get("method_version") != "4.4.0"
+        or request.get("method_version") not in SUPPORTED_METHOD_VERSIONS
     ):
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation request is not closed")
     snapshot = request.get("source_runtime_snapshot")
@@ -901,7 +1032,7 @@ def _validate_continuation_request(request: Mapping[str, Any]) -> None:
     if (
         not isinstance(snapshot, Mapping)
         or set(snapshot) != snapshot_fields
-        or snapshot.get("method_version") != "4.4.0"
+        or snapshot.get("method_version") != request["method_version"]
         or snapshot.get("plan_revision") != request.get("plan_revision")
         or snapshot.get("runtime_revision") != request.get("runtime_revision")
         or snapshot.get("token_sequence") != request.get("token_sequence")
@@ -930,7 +1061,7 @@ def _validate_continuation_request(request: Mapping[str, Any]) -> None:
                 "WORKER_CONTINUATION_INVALID",
                 "invalid-result supplement does not bind the original Worker snapshot",
             )
-    elif request.get("recovery_mode") in {"COMPLETED_RESULT", "MISSING_RESULT"}:
+    elif request.get("recovery_mode") in {"COMPLETED_RESULT", "MISSING_RESULT", "INCOMPLETE_HANDOFF"}:
         if request.get("supplement_result_contract") is not None:
             raise CompletionError("WORKER_CONTINUATION_INVALID", "ordinary continuation has supplement fields")
     else:
@@ -1022,7 +1153,7 @@ def prepare_invalid_result_recovery_envelope(
     _write_or_reuse_stable_request(destination, envelope)
     return {
         "schema_version": "slk.invalid-result-recovery-readiness/v1",
-        "method_version": "4.4.0",
+        "method_version": continuation["method_version"],
         "status": "INVALID_RESULT_RECOVERY_READY",
         "run_id": continuation["run_id"],
         "cell_id": continuation["cell_id"],
@@ -1593,7 +1724,7 @@ def run_worker_continuation(
         raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "fresh runtime revision is unavailable")
     attempt = Path(str(request["source_attempt_root"]))
     recovery_mode = request.get("recovery_mode")
-    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT"}:
+    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT", "INCOMPLETE_HANDOFF"}:
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation recovery mode is invalid")
     if recovery_mode == "INVALID_RESULT_CONTRACT" and fresh_runtime_revision != request.get("runtime_revision"):
         raise CompletionError(
@@ -1605,6 +1736,8 @@ def run_worker_continuation(
         expected_result_path = attempt / "worker-continuation" / "recovered-worker-result.json"
     elif recovery_mode == "INVALID_RESULT_CONTRACT":
         expected_result_path = attempt / "invalid-result-supplement" / "recovered-worker-result.json"
+    elif recovery_mode == "INCOMPLETE_HANDOFF":
+        expected_result_path = attempt / "incomplete-handoff" / "evidence.json"
     else:
         expected_result_path = attempt / "worker-result.json"
     expected_result_path = expected_result_path.resolve()
@@ -1631,6 +1764,11 @@ def run_worker_continuation(
                 "WORKER_COMPLETION_EVIDENCE_INVALID",
                 "missing-result recovery source is not exact",
             )
+    elif recovery_mode == "INCOMPLETE_HANDOFF":
+        if (_sha256(result_path) != request.get("worker_result_sha256")
+            or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")):
+            raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "incomplete handoff source changed")
+        _load_incomplete_handoff(attempt)
     elif (
         request.get("worker_result_sha256") is not None
         or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")
@@ -1659,6 +1797,12 @@ def run_worker_continuation(
         )
     source_envelope = Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))
     next_payload = worker_result.get("next_payload")
+    if recovery_mode == "INCOMPLETE_HANDOFF":
+        if (worker_result["attempt"] != request["attempt"] or worker_result["plan_revision"] != request["plan_revision"]
+            or worker_result["checker_role_instance_id"] != request["checker_endpoint"]["role_instance_id"]
+            or worker_result["checker_endpoint_version"] != request["checker_endpoint"]["endpoint_version"]):
+            raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "incomplete handoff scope changed")
+        next_payload = {key: worker_result[key] for key in ("candidate_repository", "changed_paths", "d0", "unproved")}
     completed_result_fields = {
         "schema_version",
         "message_id",
@@ -1668,7 +1812,7 @@ def run_worker_continuation(
         "candidate",
         "next_payload",
     }
-    if (
+    if recovery_mode != "INCOMPLETE_HANDOFF" and (
         frozenset(worker_result) != frozenset(completed_result_fields)
         or worker_result.get("schema_version") != "slk.worker-result/v1"
         or worker_result.get("message_id") != request.get("source_message_id")
@@ -1762,7 +1906,7 @@ def run_worker_continuation(
         "corrects_event_id": None,
         "occurred_at": request["occurred_at"],
     }
-    cell_goal = source_envelope.payload.get("cell_goal", next_payload.get("cell_goal"))
+    cell_goal = source_envelope.payload.get("cell_goal", source_envelope.payload.get("task", next_payload.get("cell_goal")))
     d1_criteria = source_envelope.payload.get("d1_criteria")
     acceptance_criteria = source_envelope.payload.get("acceptance_criteria")
     if d1_criteria is None:
@@ -1774,13 +1918,14 @@ def run_worker_continuation(
         )
     source_terminal_path = attempt / (
         "failed.json"
-        if recovery_mode in {"MISSING_RESULT", "INVALID_RESULT_CONTRACT"}
+        if recovery_mode in {"MISSING_RESULT", "INVALID_RESULT_CONTRACT", "INCOMPLETE_HANDOFF"}
         else "completed.json"
     )
     raw_evidence = [
         path
         for path in (
             result_path,
+            attempt / "worker-result.json",
             source_terminal_path,
             attempt / "native.stdout.txt",
             attempt / "native.stderr.txt",
@@ -1831,6 +1976,11 @@ def run_worker_continuation(
         "d1_criteria": [item.strip() for item in d1_criteria],
         "evidence_files": evidence_files,
     }
+    if recovery_mode == "INCOMPLETE_HANDOFF":
+        # Preserve the original logical delivery byte contract. Supplementary
+        # verification is separate evidence, never a new payload under an old ID.
+        prepared = _read_object(Path(worker_result["staged_envelope"]["path"]), "preserved candidate envelope")
+        candidate_payload = dict(prepared["payload"])
     checker = Endpoint.from_dict(request["checker_endpoint"])
     envelope = {
         "schema_version": ENVELOPE_SCHEMA,
@@ -2038,6 +2188,83 @@ def _decode_dpapi_plaintext(plain: bytes) -> str:
     return secret
 
 
+def prepare_sealed_role_credential(
+    source: Path | str, destination: Path | str, *, run_id: str, role: str,
+    role_instance_id: str, state_command: list[str],
+) -> dict[str, Any]:
+    """Trusted preparation host: authenticate, seal, then verify the saved consumer.
+
+    Input is the existing one-time credential-out file, never a CLI secret value.
+    Neither source nor an existing destination is rewritten or removed.
+    """
+    if os.name != "nt" or role not in {"supervisor", "checker", "worker", "overwatcher"}:
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "Windows and an exact role are required")
+    source, destination = Path(source), Path(destination)
+    if not source.is_absolute() or not destination.is_absolute() or destination.exists():
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "use absolute paths and a new sealed destination")
+    if not all(isinstance(item, str) and item.strip() for item in (run_id, role_instance_id)) or not isinstance(state_command, list) or not state_command or not all(
+        isinstance(part, str) and part for part in state_command
+    ):
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "frozen identity and state command are required")
+    try:
+        raw = source.read_bytes()
+        if len(raw) > 512:
+            raise ValueError("credential source exceeds the supported encoding size")
+        secret = _decode_dpapi_plaintext(raw.rstrip(b"\r\n"))
+    except (OSError, ValueError) as exc:
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "credential source is unreadable or invalid") from exc
+
+    def authenticate(credential: str) -> Mapping[str, Any]:
+        result = _run_json_command(
+            state_command,
+            ["authenticate-role", "--run-id", run_id, "--role-instance-id", role_instance_id],
+            credential=credential,
+        )
+        revision = result.get("runtime_revision")
+        if (
+            result.get("status") != "authenticated" or result.get("run_id") != run_id
+            or result.get("role") != role or result.get("role_instance_id") != role_instance_id
+            or isinstance(revision, bool) or not isinstance(revision, int) or revision < 1
+        ):
+            raise CompletionError("ROLE_CREDENTIAL_MISMATCH", "credential does not authenticate the frozen role")
+        return result
+
+    authenticate(secret)
+
+    class DataBlob(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+    buffer = ctypes.create_string_buffer(secret.encode("utf-8"))
+    incoming = DataBlob(len(secret), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_byte)))
+    outgoing = DataBlob()
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    try:
+        if not crypt32.CryptProtectData(
+            ctypes.byref(incoming), None, None, None, None, 1, ctypes.byref(outgoing)
+        ):
+            raise CompletionError("ROLE_CREDENTIAL_SEAL_FAILED", "CurrentUser DPAPI sealing failed")
+        encoded = ctypes.string_at(outgoing.pbData, outgoing.cbData).hex()
+        with destination.open("x", encoding="ascii") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        saved = unprotect_dpapi_hex(destination)
+        if saved != secret:
+            raise CompletionError("ROLE_CREDENTIAL_SEAL_FAILED", "saved consumer roundtrip failed")
+        result = authenticate(saved)
+        return {
+            "status": "SEALED_ROLE_VERIFIED", "run_id": run_id, "role": role,
+            "role_instance_id": role_instance_id, "sealed_path": str(destination),
+            "sealed_sha256": _sha256(destination), "runtime_revision": result.get("runtime_revision"),
+        }
+    finally:
+        ctypes.memset(buffer, 0, len(buffer))
+        if outgoing.pbData:
+            kernel32.LocalFree(outgoing.pbData)
+        secret = ""
+
+
 def unprotect_dpapi_hex(path: Path | str) -> str:
     """Decrypt one CurrentUser DPAPI hex blob without emitting its plaintext."""
 
@@ -2092,7 +2319,13 @@ def _default_checker_authenticate(
     credential_path: Path,
     state_command: list[str],
 ) -> Mapping[str, Any]:
-    credential = unprotect_dpapi_hex(credential_path)
+    try:
+        credential = unprotect_dpapi_hex(credential_path)
+    except CompletionError as exc:
+        raise CompletionError(
+            "CHECKER_CREDENTIAL_UNAVAILABLE",
+            "Checker sealed credential cannot be consumed; verify preparation format and CurrentUser identity",
+        ) from exc
     return _run_json_command(
         state_command,
         ["authenticate-role", "--run-id", run_id, "--role-instance-id", role_instance_id],
@@ -2187,7 +2420,7 @@ def _activate_staged_checker(
     started_path = attempt / "started.json"
     persisted_endpoint_path = attempt / "endpoint.json"
     persisted_envelope_path = attempt / "envelope.json"
-    existing = started_path.exists() or persisted_endpoint_path.exists() or persisted_envelope_path.exists()
+    existing = attempt.exists()
     if existing:
         if not all(path.is_file() for path in (started_path, persisted_endpoint_path, persisted_envelope_path)):
             raise CompletionError("CHECKER_START_UNPROVED", "Checker attempt has incomplete immutable evidence")
@@ -2356,6 +2589,7 @@ def _activate_staged_checker(
         or committed.get("message_id") != envelope.message_id
     ):
         raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "Checker start commit is not exact")
+    _write_or_reuse_stable_request(commit_request_path.with_suffix(".result.json"), committed)
     activation = {
         "status": "CHECKER_STARTED",
         "runtime_revision": committed_revision,
@@ -2369,7 +2603,7 @@ def _activate_staged_checker(
     recovery_result_path = _continuation_root(continuation) / "commit-only-recovery" / "result.json"
     recovery_result = {
         "schema_version": "slk.worker-checker-commit-recovery/v1",
-        "method_version": "4.4.0",
+        "method_version": continuation["method_version"],
         **activation,
         "status": "CHECKER_START_COMMITTED",
         "run_id": continuation["run_id"],
@@ -2434,7 +2668,7 @@ def _load_commit_only_checker_activation(
     if (
         set(result) != fields
         or result.get("schema_version") != "slk.worker-checker-commit-recovery/v1"
-        or result.get("method_version") != "4.4.0"
+        or result.get("method_version") != continuation["method_version"]
         or result.get("status") != "CHECKER_START_COMMITTED"
         or result.get("runtime_revision") != current_runtime_revision
         or result.get("run_id") != continuation.get("run_id")
@@ -2637,11 +2871,11 @@ def consume_staged_checker_terminal(
     request = _read_object(request_path, "Checker recovery request")
     if (
         request.get("schema_version") != CHECKER_RECOVERY_SCHEMA
-        or request.get("method_version") != "4.4.0"
+        or request.get("method_version") not in SUPPORTED_METHOD_VERSIONS
     ):
         raise CompletionError(
             "CHECKER_RECOVERY_REQUEST_INVALID",
-            "existing-terminal consumption requires the original 4.4.0 Checker request",
+            "existing-terminal consumption requires the original supported Checker request",
         )
     try:
         endpoint = Endpoint.from_dict(request["checker_endpoint"])
@@ -3030,8 +3264,8 @@ def execute_checker_recovery(
     }
     if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
-    if request.get("method_version") != "4.4.0":
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires SLK 4.4.0")
+    if request.get("method_version") not in SUPPORTED_METHOD_VERSIONS:
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires a supported SLK patch")
     role_instance_id = request.get("checker_role_instance_id")
     invocation_id = request.get("recovery_invocation_id")
     endpoint_version = request.get("checker_endpoint_version")
@@ -3097,6 +3331,8 @@ def execute_checker_recovery(
         transport_command=list(transport_command),
         occurred_at=str(request["occurred_at"]),
     )
+    if continuation["method_version"] != request["method_version"]:
+        raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker request and Run versions differ")
     if authenticated_revision == request.get("runtime_revision"):
         outcome = (
             _reuse_committed_checker_delivery(continuation)
@@ -3135,7 +3371,7 @@ def execute_checker_recovery(
         raise CompletionError("CHECKER_RECOVERY_FAILED", "actual OCRV D1 result was not recorded")
     return {
         "schema_version": CHECKER_RECOVERY_RESULT_SCHEMA,
-        "method_version": "4.4.0",
+        "method_version": request["method_version"],
         "status": "CHECKER_D1_RECORDED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -3249,7 +3485,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
     if (
         set(request) != fields
         or request.get("schema_version") != COMMITTED_TERMINAL_SCHEMA
-        or request.get("method_version") != "4.4.0"
+        or request.get("method_version") not in SUPPORTED_METHOD_VERSIONS
         or not all(
             _positive_integer(request.get(name))
             for name in (
@@ -3351,7 +3587,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
     if (
         not _matches(projection, {"schema_version": "slk.bi.run/v1", "run_id": request["run_id"]})
         or not _matches(summary, {
-            **shared_state, "slk_version": "4.4.0",
+            **shared_state, "slk_version": request["method_version"],
             "current_plan_revision": request["plan_revision"],
         })
         or not _matches(administrative, {
@@ -3359,7 +3595,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
                 if partial_review is not None else request["transport_started_event_id"]),
         })
         or not _matches(runtime, {
-            "run_id": request["run_id"], "method_version": "4.4.0",
+            "run_id": request["run_id"], "method_version": request["method_version"],
             "plan_revision": request["plan_revision"],
             "runtime_revision": request["runtime_revision"],
             "token_sequence": request["token_sequence"],
@@ -4158,7 +4394,7 @@ def execute_committed_checker_terminal(
         )
     return {
         "schema_version": COMMITTED_TERMINAL_RESULT_SCHEMA,
-        "method_version": "4.4.0",
+        "method_version": request["method_version"],
         "status": "CHECKER_D1_RECORDED",
         "run_id": request["run_id"],
         "cell_id": request["cell_id"],
@@ -4206,7 +4442,7 @@ def consume_committed_checker_terminal(
     )
     if (
         set(value) != COMMITTED_TERMINAL_RESULT_FIELDS
-        or value.get("method_version") != "4.4.0"
+        or value.get("method_version") != request["method_version"]
         or value.get("d1_verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
     ):
         raise CompletionError(
@@ -4246,7 +4482,7 @@ def _validate_incomplete_resume(request: Mapping[str, Any], *, consumed: bool = 
         raise CompletionError("CHECKER_INCOMPLETE_RESUME_REQUEST_INVALID", "resume request is invalid") from exc
     if (
         set(request) != required or request.get("schema_version") != INCOMPLETE_RESUME_SCHEMA
-        or request.get("method_version") != "4.4.0" or not isinstance(session, Mapping)
+        or request.get("method_version") not in SUPPORTED_METHOD_VERSIONS or not isinstance(session, Mapping)
         or recovery != attempt / "resume-incomplete-checker" / str(request["recovery_invocation_id"])
         or Path(str(request["result_path"])).resolve() != recovery / "result.json"
         or (partial is None and any((attempt / name).exists() for name in ("completed.json", "failed.json", "ocrv-result.json")))
@@ -4566,6 +4802,47 @@ def execute_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             "WORKER_CONTINUATION_SESSION_MISMATCH",
             "continuation is not running inside the exact resumed DSH Worker Session",
         )
+    return _execute_worker_suffix(request)
+
+
+def execute_worker_host_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Owning adapter executes the existing suffix outside the model sandbox.
+
+    Authority remains the sealed Worker credential. Identity comes from the
+    immutable native start, never environment variables invented by the caller.
+    """
+    _validate_continuation_request(request)
+    attempt = Path(str(request["source_attempt_root"]))
+    endpoint = Endpoint.from_dict(_read_object(attempt / "endpoint.json", "Worker endpoint"))
+    envelope = Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))
+    session = _native_v2_worker_session(attempt / "started.json", endpoint, envelope)
+    if (session != request["worker_session_id"] or endpoint.address.get("instance_id") != request["worker_instance_id"]
+        or endpoint.role_instance_id != request["worker_role_instance_id"]
+        or _sha256(attempt / "endpoint.json") != request["source_endpoint_sha256"]
+        or _sha256(attempt / "envelope.json") != request["source_envelope_sha256"]):
+        raise CompletionError("WORKER_CONTINUATION_SESSION_MISMATCH", "owning host source identity changed")
+    root = _continuation_root(request)
+    root.mkdir(parents=True, exist_ok=True)
+    result_path = root / "host-handoff.json"
+    digest = canonical_json_sha256(request)
+    if result_path.exists():
+        saved = _read_object(result_path, "host handoff receipt")
+        if set(saved) != {"request_sha256", "activation"} or saved["request_sha256"] != digest:
+            raise CompletionError("WORKER_CONTINUATION_CONFLICT", "host handoff identity changed")
+        return saved["activation"]
+    stage_path = Path(str(request["continuation_result_path"]))
+    if stage_path.exists():
+        stage = _read_object(stage_path, "staged host handoff")
+    else:
+        stage = _execute_worker_suffix(request)
+        _write_or_reuse_stable_request(stage_path, stage)
+    activation = dict(_activate_staged_checker(stage, request))
+    _write_or_reuse_stable_request(result_path, {"request_sha256": digest, "activation": activation})
+    return activation
+
+
+def _execute_worker_suffix(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Shared deterministic suffix; caller establishes the native ownership boundary."""
     state_command = list(request["state_command"])
     credential = unprotect_dpapi_hex(str(request["credential_path"]))
     request_root = _continuation_root(request)
@@ -4593,6 +4870,10 @@ def execute_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
         return str(state_request("write", value).get("status"))
 
     checker_attempt_root = request_root / "checker-attempts"
+    if request.get("recovery_mode") == "INCOMPLETE_HANDOFF":
+        # The preserved candidate was addressed through the original transport
+        # root. Query/reuse that exact attempt instead of starting it in a new root.
+        checker_attempt_root = Path(str(request["source_attempt_root"])).parents[1]
 
     def start_checker(endpoint_raw: dict[str, Any], envelope_raw: dict[str, Any]) -> Mapping[str, Any]:
         endpoint_path = request_root / "checker-endpoint.json"

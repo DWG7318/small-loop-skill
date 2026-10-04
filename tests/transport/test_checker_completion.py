@@ -176,6 +176,24 @@ def fixture(tmp_path: Path, *, final: bool = False) -> tuple[dict[str, object], 
     return request, write_json(tmp_path / "checker-completion.json", request)
 
 
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+def test_compatible_patch_requires_exact_request_and_run_version(tmp_path, version):
+    from slk_transport.checker_completion import _validate_request, _validate_boundary, CheckerCompletionError
+    request, _ = fixture(tmp_path)
+    request["method_version"] = version
+    path = Path(request["runtime_projection_path"])
+    projection = json.loads(path.read_text())
+    projection["summary"]["slk_version"] = version
+    projection["runtime_snapshot"]["method_version"] = version
+    write_json(path, projection)
+    assert _validate_request(request)["method_version"] == version
+    _validate_boundary(request)
+    projection["runtime_snapshot"]["method_version"] = "4.4.1" if version == "4.4.0" else "4.4.0"
+    write_json(path, projection)
+    with pytest.raises(CheckerCompletionError, match="runtime"):
+        _validate_boundary(request)
+
+
 def successful_runner(request: dict[str, object], commands: list[str]):
     def run(_command: list[str], arguments: list[str], *, credential: str | None):
         operation = arguments[0]
@@ -258,6 +276,8 @@ def test_checker_pass_completes_only_after_target_start_and_atomic_commit(
         SUPERVISOR_ID if final else WORKER_ID
     )
     assert commands == ["authenticate-role", "send", "commit-delivery-start"]
+    receipt = json.loads(Path(result["commit_request_path"]).with_suffix(".result.json").read_text())
+    assert receipt["status"] == "committed" and receipt["message_id"] == result["message_id"]
 
 
 def test_next_cell_must_be_the_exact_next_required_cell(tmp_path: Path) -> None:

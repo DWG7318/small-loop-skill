@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from . import SUPPORTED_METHOD_VERSIONS
+
 import hashlib
 import json
 import uuid
@@ -195,7 +197,7 @@ def _validate_payload(
 def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     if set(request) != REQUEST_FIELDS or request.get("schema_version") != REQUEST_SCHEMA:
         raise CheckerCompletionError("CHECKER_COMPLETION_REQUEST_INVALID", "request is not closed")
-    if request.get("method_version") != "4.4.0" or request.get("route") not in {"NEXT_CELL", "D2_READY"}:
+    if request.get("method_version") not in SUPPORTED_METHOD_VERSIONS or request.get("route") not in {"NEXT_CELL", "D2_READY"}:
         raise CheckerCompletionError("CHECKER_COMPLETION_REQUEST_INVALID", "method version or route is invalid")
     for field in (
         "completion_invocation_id", "run_id", "go_id", "cell_id", "target_cell_id",
@@ -227,9 +229,9 @@ def _validate_boundary(request: Mapping[str, Any]) -> dict[str, Any]:
     events = projection.get("events")
     if (
         not isinstance(summary, Mapping) or summary.get("run_id") != request["run_id"]
-        or summary.get("slk_version") != "4.4.0"
+        or summary.get("slk_version") != request["method_version"]
         or summary.get("current_plan_revision") != request["plan_revision"]
-        or not isinstance(snapshot, Mapping) or snapshot.get("method_version") != "4.4.0"
+        or not isinstance(snapshot, Mapping) or snapshot.get("method_version") != request["method_version"]
         or snapshot.get("plan_revision") != request["plan_revision"]
         or snapshot.get("runtime_revision") != request["runtime_revision"]
         or snapshot.get("token_sequence") != request["token_sequence"]
@@ -489,6 +491,7 @@ def _commit(
         or recorded.get("message_id") != message_id
     ):
         raise CheckerCompletionError("CHECKER_COMPLETION_COMMIT_FAILED", "atomic TOKEN commit did not match")
+    _write_stable(commit_path.with_suffix(".result.json"), recorded)
     return {
         "schema_version": "slk.checker-completion-result/v1",
         "status": "CHECKER_COMPLETION_COMMITTED",

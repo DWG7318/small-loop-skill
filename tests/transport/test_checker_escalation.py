@@ -262,6 +262,71 @@ def load_module():
     return importlib.import_module("slk_transport.checker_escalation")
 
 
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+def test_patch_failure_requires_exact_request_and_run_version(tmp_path, version):
+    module = load_module()
+    request, _ = fixture(tmp_path)
+    request["method_version"] = version
+    path = Path(request["runtime_projection_path"])
+    projection = json.loads(path.read_text())
+    projection["summary"]["slk_version"] = version
+    projection["runtime_snapshot"]["method_version"] = version
+    write_json(path, projection)
+    assert module._validate_request(request)["method_version"] == version
+    module._validate_failure(request)
+    projection["summary"]["slk_version"] = "4.4.1" if version == "4.4.0" else "4.4.0"
+    write_json(path, projection)
+    with pytest.raises(module.CheckerEscalationError, match="runtime"):
+        module._validate_failure(request)
+
+
+@pytest.mark.parametrize("start_proof", [True, False])
+def test_ordinary_supervisor_start_does_not_require_desktop_repair(tmp_path, start_proof):
+    module = load_module()
+    request, path = fixture(tmp_path)
+    operations = []
+
+    def run(_command, args, *, credential):
+        operation = args[0]
+        operations.append(operation)
+        if operation == "authenticate-role":
+            return {"status": "authenticated", "run_id": RUN_ID, "role": "checker",
+                    "role_instance_id": CHECKER_ID, "runtime_revision": request["runtime_revision"]}
+        prepared = module.materialize_escalation(request)
+        message = prepared["envelope"]["message_id"]
+        if operation == "send":
+            native = Path(prepared["delivery_path"])
+            write_json(native / "endpoint.json", prepared["endpoint"])
+            write_json(native / "envelope.json", prepared["envelope"])
+            if start_proof:
+                write_json(native / "started.json", make_native_start(
+                    adapter="codex-app-server", run_id=RUN_ID, cell_id=CELL_ID, message_id=message,
+                    request_sha256=prepared["envelope"]["payload_sha256"], native_request_sha256="f" * 64,
+                    native_task_kind="codex-turn", native_task_id="turn-normal", native_task_status="RUNNING",
+                    pid=os.getpid(),
+                ))
+            return {"status": "started", "run_id": RUN_ID, "message_id": message}
+        assert operation == "commit-delivery-start"
+        assert credential is not None
+        return {"status": "committed", "run_id": RUN_ID, "runtime_revision": request["runtime_revision"] + 1,
+                "token_sequence": request["token_sequence"] + 1, "token_owner_role_instance_id": SUPERVISOR_ID,
+                "message_id": message}
+
+    if not start_proof:
+        with pytest.raises(module.CheckerEscalationError):
+            module.execute_checker_escalation(request, request_sha256=sha256(path), request_path=path,
+                                              run_json_command=run, unprotect_credential=lambda _: "synthetic")
+        assert "commit-delivery-start" not in operations
+    else:
+        result = module.execute_checker_escalation(request, request_sha256=sha256(path), request_path=path,
+                                                  run_json_command=run, unprotect_credential=lambda _: "synthetic")
+        assert result["status"] == "CHECKER_ESCALATION_COMMITTED"
+        receipt = json.loads(Path(result["commit_request_path"]).with_suffix(".result.json").read_text())
+        assert receipt["status"] == "committed" and receipt["run_id"] == RUN_ID
+        assert result["recovery_message_id"] is None
+        assert operations == ["authenticate-role", "send", "commit-delivery-start"]
+
+
 def request_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 

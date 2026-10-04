@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from slk_transport.overwatcher_continuity import inspect_overwatcher_cadence
+import pytest
 
 
 def projection(*, completed_at: str = "2026-09-23T00:00:00Z") -> dict[str, object]:
@@ -47,3 +48,19 @@ def test_fresh_cycle_and_optional_absence_do_not_raise_false_alarm() -> None:
     assert current["anomaly_codes"] == []
     assert absent["status"] == "ABSENT"
     assert absent["action"] == "NONE"
+
+
+def test_current_method_accepts_ten_minute_cadence_and_requires_ow():
+    value = projection()
+    value["summary"]["slk_version"] = "4.4.0"
+    value["overwatch_cycles"][0].update(cadence_seconds=600, next_cycle_at="2026-09-23T00:10:00Z")
+    assert inspect_overwatcher_cadence(value, observed_at="2026-09-23T00:10:00Z")["status"] == "CURRENT"
+    value["roles"] = []
+    assert inspect_overwatcher_cadence(value, observed_at="2026-09-23T00:10:00Z")["action"] == "SUPERVISOR_RECOVERY_REVIEW"
+
+
+def test_current_method_rejects_old_cadence():
+    value = projection()
+    value["summary"]["slk_version"] = "4.4.0"
+    with pytest.raises(ValueError):
+        inspect_overwatcher_cadence(value, observed_at="2026-09-23T00:04:00Z")

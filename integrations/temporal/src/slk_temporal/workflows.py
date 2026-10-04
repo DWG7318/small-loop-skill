@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy, WorkflowIDReusePolicy
+from temporalio.exceptions import ActivityError, ApplicationError
 
 with workflow.unsafe.imports_passed_through():
     from .continuity import RunContinuity
@@ -17,6 +18,7 @@ with workflow.unsafe.imports_passed_through():
         OverwatcherExitNotice,
         RuntimeGuardResolution,
         StartSlkRequest,
+        validate_supervisor_notification,
     )
 
 
@@ -127,6 +129,7 @@ class RunSlkWorkflow:
         self._overwatcher_audit_cycle = 0
         self._next_overwatcher_audit_at = None
         self._runtime_guard_blocker: dict[str, Any] | None = None
+        self._notification_failure: dict[str, Any] | None = None
 
     @workflow.run
     async def run(self, value: dict[str, Any]) -> dict[str, Any]:
@@ -142,7 +145,8 @@ class RunSlkWorkflow:
                 break
             delivery = self._continuity.pending_delivery()
             if delivery is None:
-                raise RuntimeError("pending delivery disappeared after the wait condition")
+                # An audit/residency timer can wake an otherwise idle Run.
+                continue
             operation_id = delivery.operation_id
             if operation_id not in self._delivery_started:
                 self._delivery_started.add(operation_id)
@@ -172,12 +176,17 @@ class RunSlkWorkflow:
                         )
             if self._continuity.is_completed(operation_id):
                 continue
+            guarded_wait = workflow.patched("slk-4.4.1-runtime-checks-during-ack")
             try:
-                await workflow.wait_condition(
-                    lambda: self._continuity is not None
-                    and self._continuity.is_completed(operation_id),
-                    timeout=self._startup.ack_timeout_seconds,
-                )
+                if guarded_wait:
+                    await self._wait_for_completion(operation_id, self._startup.ack_timeout_seconds)
+                else:
+                    # Preserve the command sequence of histories created before the patch.
+                    await workflow.wait_condition(
+                        lambda: self._continuity is not None
+                        and self._continuity.is_completed(operation_id),
+                        timeout=self._startup.ack_timeout_seconds,
+                    )
             except asyncio.TimeoutError:
                 if self._continuity.is_completed(operation_id):
                     continue
@@ -206,16 +215,19 @@ class RunSlkWorkflow:
                         self._continuity.mark_blocked(
                             operation_id, "adapter reported no verified continuation route"
                         )
-            await workflow.wait_condition(
-                lambda: self._continuity is not None
-                and (
-                    self._continuity.is_completed(operation_id)
-                    or self._continuity.is_terminal()
+            if guarded_wait:
+                await self._wait_for_completion(operation_id)
+            else:
+                await workflow.wait_condition(
+                    lambda: self._continuity is not None
+                    and (
+                        self._continuity.is_completed(operation_id)
+                        or self._continuity.is_terminal()
+                    )
                 )
-            )
         return self._continuity.snapshot()
 
-    async def _wait_for_delivery_or_runtime_check(self) -> None:
+    def _runtime_check_timeout(self) -> float:
         if self._continuity is None or self._startup is None:
             raise ValueError("SLK Run has not initialized")
         now = workflow.now()
@@ -223,7 +235,30 @@ class RunSlkWorkflow:
         if self._member_residency_since is not None and not self._member_residency_notice_sent:
             deadlines.append(self._member_residency_since + MEMBER_RESIDENCY_LIMIT)
         due = min(item for item in deadlines if item is not None)
-        timeout = max(0.001, (due - now).total_seconds())
+        return max(0.001, (due - now).total_seconds())
+
+    async def _wait_for_completion(self, operation_id: str, seconds: int | None = None) -> None:
+        deadline = workflow.now() + timedelta(seconds=seconds) if seconds is not None else None
+        while self._continuity is not None and not (
+            self._continuity.is_completed(operation_id) or self._continuity.is_terminal()
+        ):
+            timeout = self._runtime_check_timeout()
+            if deadline is not None:
+                remaining = (deadline - workflow.now()).total_seconds()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                timeout = min(timeout, remaining)
+            try:
+                await workflow.wait_condition(
+                    lambda: self._continuity is not None and (
+                        self._continuity.is_completed(operation_id) or self._continuity.is_terminal()
+                    ), timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                await self._perform_runtime_checks()
+
+    async def _wait_for_delivery_or_runtime_check(self) -> None:
+        timeout = self._runtime_check_timeout()
         try:
             await workflow.wait_condition(
                 lambda: self._continuity is not None
@@ -236,6 +271,9 @@ class RunSlkWorkflow:
             return
         except asyncio.TimeoutError:
             pass
+        await self._perform_runtime_checks()
+
+    async def _perform_runtime_checks(self) -> None:
         now = workflow.now()
         if self._next_overwatcher_audit_at is not None and now >= self._next_overwatcher_audit_at:
             await self._inspect_overwatcher()
@@ -290,6 +328,25 @@ class RunSlkWorkflow:
                 retry_policy=ONE_ATTEMPT,
                 activity_id=f"audit-{overwatcher.role_instance_id}-{self._overwatcher_audit_cycle}",
             )
+            receipt = _closed_receipt(
+                receipt,
+                {
+                    "status", "run_id", "overwatcher_role_instance_id", "audit_cycle",
+                    "evidence_sha256", "receipt_sha256",
+                },
+                status={"CLEAR", "ANOMALY"},
+            )
+            if (
+                receipt.get("run_id") != self._startup.run_id
+                or receipt.get("overwatcher_role_instance_id") != overwatcher.role_instance_id
+                or receipt.get("audit_cycle") != self._overwatcher_audit_cycle
+            ):
+                raise ValueError("Overwatcher audit receipt changed identity")
+            if workflow.patched("slk-4.4.1-closed-audit-evidence"):
+                digest = receipt["evidence_sha256"]
+                if (type(receipt["audit_cycle"]) is not int or not isinstance(digest, str)
+                    or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)):
+                    raise ValueError("Overwatcher audit evidence identity is invalid")
         except Exception:
             blocker = self._set_runtime_guard(
                 event_id=f"{self._startup.run_id}-overwatcher-audit-{self._overwatcher_audit_cycle}",
@@ -298,20 +355,6 @@ class RunSlkWorkflow:
             )
             await self._notify_supervisor(blocker)
             return
-        receipt = _closed_receipt(
-            receipt,
-            {
-                "status", "run_id", "overwatcher_role_instance_id", "audit_cycle",
-                "evidence_sha256", "receipt_sha256",
-            },
-            status={"CLEAR", "ANOMALY"},
-        )
-        if (
-            receipt.get("run_id") != self._startup.run_id
-            or receipt.get("overwatcher_role_instance_id") != overwatcher.role_instance_id
-            or receipt.get("audit_cycle") != self._overwatcher_audit_cycle
-        ):
-            raise ValueError("Overwatcher audit receipt changed identity")
         if receipt["status"] == "ANOMALY":
             blocker = self._set_runtime_guard(
                 event_id=f"{self._startup.run_id}-overwatcher-audit-{self._overwatcher_audit_cycle}",
@@ -335,44 +378,63 @@ class RunSlkWorkflow:
         }
         if self._runtime_guard_blocker is None:
             self._runtime_guard_blocker = dict(blocker)
-        elif self._runtime_guard_blocker["event_id"] != event_id:
-            raise ValueError("a different unresolved runtime guard already blocks the Run")
+        # A later alarm must remain reportable without replacing the unresolved
+        # repair identity or crashing monitoring of this Run.
         return blocker
 
-    async def _notify_supervisor(self, value: dict[str, Any]) -> None:
-        receipt = await workflow.execute_activity(
-            "slk.notify_supervisor",
-            value,
-            result_type=dict,
-            start_to_close_timeout=timedelta(minutes=5),
-            retry_policy=ONE_ATTEMPT,
-            activity_id=f"notify-{value['event_id']}",
-        )
-        _closed_receipt(
-            receipt,
-            {"status", "event_id", "receipt_sha256"},
-            status={"NOTIFIED"},
-            operation_id=None,
-        )
-        if receipt.get("event_id") != value["event_id"]:
-            raise ValueError("Supervisor notification receipt changed event_id")
+    async def _notify_supervisor(self, value: dict[str, Any]) -> bool:
+        strict = workflow.patched("slk-441-native-supervisor-notice")
+        try:
+            receipt = await workflow.execute_activity(
+                "slk.notify_supervisor", value, result_type=dict,
+                start_to_close_timeout=timedelta(minutes=5), retry_policy=ONE_ATTEMPT,
+                activity_id=f"notify-{value['event_id']}",
+            )
+            if strict:
+                if self._startup is None:
+                    raise ValueError("notification requires the frozen Run team")
+                validate_supervisor_notification(receipt, run_id=self._startup.run_id, event_id=value["event_id"],
+                                                 supervisor_role_instance_id=self._startup.supervisor.role_instance_id)
+            else:
+                _closed_receipt(receipt, {"status", "event_id", "receipt_sha256"}, status={"NOTIFIED"})
+                if receipt.get("event_id") != value["event_id"]:
+                    raise ValueError("Supervisor notification receipt changed event_id")
+        except (ActivityError, ValueError, KeyError, TypeError):
+            if not strict or self._startup is None:
+                raise
+            self._notification_failure = {"event_id": value["event_id"], "reason": "SUPERVISOR_NOTIFICATION_UNPROVED"}
+            self._set_runtime_guard(event_id=value["event_id"], kind="SUPERVISOR_NOTIFICATION_UNPROVED",
+                                    role_instance_id=self._startup.supervisor.role_instance_id)
+            return False  # retain bounded monitoring; never claim takeover or permit another CELL
+        self._notification_failure = None
+        return True
+
+    @staticmethod
+    def _update_value(function, value):
+        """Reject only this invalid update; never poison the whole Workflow task."""
+        try:
+            return function(value)
+        except ValueError as exc:
+            raise ApplicationError(str(exc), type="SLK_UPDATE_REJECTED", non_retryable=True) from exc
 
     @workflow.update
     def request_delivery(self, value: dict[str, Any]) -> str:
         if self._continuity is None:
-            raise ValueError("SLK Run has not initialized")
+            raise ApplicationError("SLK Run has not initialized", non_retryable=True)
         if self._runtime_guard_blocker is not None:
-            raise ValueError("runtime guard must be repaired before the next CELL delivery")
-        return self._continuity.request_delivery(DeliveryRequest.from_dict(value))
+            raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
+        request = self._update_value(DeliveryRequest.from_dict, value)
+        return self._update_value(self._continuity.request_delivery, request)
 
     @workflow.update
     def native_started(self, value: dict[str, Any]) -> str:
         if self._continuity is None:
-            raise ValueError("SLK Run has not initialized")
+            raise ApplicationError("SLK Run has not initialized", non_retryable=True)
+        acknowledgement = self._update_value(NativeStartAck.from_dict, value)
         pending = self._continuity.pending_delivery()
         if pending is None:
-            return self._continuity.acknowledge(NativeStartAck.from_dict(value))
-        result = self._continuity.acknowledge(NativeStartAck.from_dict(value))
+            return self._update_value(self._continuity.acknowledge, acknowledgement)
+        result = self._update_value(self._continuity.acknowledge, acknowledgement)
         self._responsible_role_instance_id = pending.receiver_role_instance_id
         self._responsibility_operation_id = pending.operation_id
         self._member_residency_since = workflow.now()
@@ -382,15 +444,15 @@ class RunSlkWorkflow:
     @workflow.update
     async def overwatcher_exited(self, value: dict[str, Any]) -> str:
         if self._startup is None:
-            raise ValueError("SLK Run has not initialized")
-        notice = OverwatcherExitNotice.from_dict(value)
+            raise ApplicationError("SLK Run has not initialized", non_retryable=True)
+        notice = self._update_value(OverwatcherExitNotice.from_dict, value)
         overwatcher = self._startup.overwatcher
         if (
             overwatcher is None
             or notice.run_id != self._startup.run_id
             or notice.overwatcher_role_instance_id != overwatcher.role_instance_id
         ):
-            raise ValueError("Overwatcher exit notice changed the frozen Run identity")
+            raise ApplicationError("Overwatcher exit notice changed the frozen Run identity", non_retryable=True)
         blocker = self._set_runtime_guard(
             event_id=notice.event_id,
             kind="OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION",
@@ -402,23 +464,23 @@ class RunSlkWorkflow:
     @workflow.update
     def resolve_runtime_guard(self, value: dict[str, Any]) -> str:
         if self._startup is None or self._runtime_guard_blocker is None:
-            raise ValueError("no runtime guard is awaiting repair")
-        resolution = RuntimeGuardResolution.from_dict(value)
+            raise ApplicationError("no runtime guard is awaiting repair", non_retryable=True)
+        resolution = self._update_value(RuntimeGuardResolution.from_dict, value)
         if (
             resolution.run_id != self._startup.run_id
             or resolution.supervisor_role_instance_id
             != self._startup.supervisor.role_instance_id
             or resolution.blocker_event_id != self._runtime_guard_blocker["event_id"]
         ):
-            raise ValueError("runtime guard resolution changed the frozen authority or blocker")
+            raise ApplicationError("runtime guard resolution changed the frozen authority or blocker", non_retryable=True)
         self._runtime_guard_blocker = None
         return "RUNTIME_GUARD_REPAIRED"
 
     @workflow.update
     def close_run(self, reason: str) -> str:
         if self._continuity is None:
-            raise ValueError("SLK Run has not initialized")
-        return self._continuity.terminate(reason)
+            raise ApplicationError("SLK Run has not initialized", non_retryable=True)
+        return self._update_value(self._continuity.terminate, reason)
 
     @workflow.query
     def status(self) -> dict[str, Any]:
@@ -442,4 +504,5 @@ class RunSlkWorkflow:
                 dict(self._runtime_guard_blocker)
                 if self._runtime_guard_blocker is not None else None
             ),
+            "notification_failure": dict(self._notification_failure) if self._notification_failure else None,
         }

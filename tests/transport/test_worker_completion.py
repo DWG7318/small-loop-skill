@@ -1321,6 +1321,23 @@ def test_recorded_notification_does_not_clear_a_still_unresolved_completion_stal
         ]
 
 
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+def test_patch_continuation_preserves_run_version(tmp_path, version):
+    from slk_transport.worker_completion import build_continuation_request, _validate_continuation_request
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    projection = runtime_projection(attempt=2)
+    projection["summary"]["slk_version"] = version
+    projection["runtime_snapshot"]["method_version"] = version
+    value = build_continuation_request(attempt, checker, projection, plan_revision=1,
+        runtime_revision=7, token_sequence=14, credential_path=tmp_path / "worker.dpapi",
+        state_command=["state"], transport_command=["transport"], occurred_at="2026-10-05T00:00:00Z")
+    assert value["method_version"] == version
+    _validate_continuation_request(value)
+    value["source_runtime_snapshot"]["method_version"] = "4.4.1" if version == "4.4.0" else "4.4.0"
+    with pytest.raises(CompletionError):
+        _validate_continuation_request(value)
+
+
 def test_continuation_request_is_stable_resumes_exact_session_and_contains_no_secret(tmp_path: Path) -> None:
     attempt, _endpoint, checker = completion_fixture(tmp_path)
     projection = runtime_projection(attempt=2)
@@ -1797,6 +1814,11 @@ def test_external_recovery_host_starts_ocrv_then_commits_exact_native_v2(
     assert [arguments[0] for _, arguments, _ in commands] == ["send", "commit-delivery-start"]
     assert commands[0][2] is None
     assert commands[1][2] == VALID_CREDENTIAL
+    commit_path = Path(commands[1][1][-1])
+    saved_commit = json.loads(commit_path.with_suffix(".result.json").read_text())
+    assert saved_commit["status"] == "committed"
+    assert saved_commit["message_id"] == activated["candidate_message_id"]
+    assert VALID_CREDENTIAL not in str(saved_commit)
 
 
 def test_commit_only_recovery_reuses_existing_start_and_changes_only_revision(
@@ -2621,6 +2643,30 @@ def test_rework_acceptance_criteria_become_checker_d1_criteria(tmp_path: Path) -
     assert result["status"] == "CHECKER_STARTED"
     assert sent[0]["payload"]["d1_criteria"] == source["payload"]["acceptance_criteria"]
     assert sent[0]["payload"]["cell_goal"] == source["payload"]["cell_goal"]
+
+
+def test_next_cell_candidate_keeps_frozen_task_not_worker_self_report(tmp_path: Path) -> None:
+    attempt, endpoint, checker = completion_fixture(tmp_path)
+    source = json.loads((attempt / "envelope.json").read_text())
+    source["payload"] = {"cell_id": "CELL-001", "cell_ordinal": 1, "required_cell_count": 1,
+        "task": "Exact frozen NEXT_CELL task", "d1_criteria": ["focused test passes"],
+        "root_record_path": str(attempt / "endpoint.json")}
+    source["payload_sha256"] = canonical_json_sha256(source["payload"])
+    write_json(attempt / "envelope.json", source)
+    started = json.loads((attempt / "started.json").read_text())
+    started["request_sha256"] = source["payload_sha256"]
+    write_json(attempt / "started.json", started)
+    request = build_continuation_request(attempt, checker, runtime_projection(), plan_revision=1,
+        runtime_revision=7, token_sequence=14, credential_path=tmp_path / "worker.dpapi",
+        state_command=["state"], transport_command=["transport"], occurred_at="2026-10-05T00:00:00Z")
+    sent = []
+    def capture(endpoint, envelope):
+        sent.append(envelope)
+        raise RuntimeError("capture-only")
+    with pytest.raises(RuntimeError, match="capture-only"):
+        run_worker_continuation(request, authenticate=lambda *a: 10, write_event=lambda e: "RECORDED",
+                               start_checker=capture, commit_start=commit_result)
+    assert sent[0]["payload"]["cell_goal"] == source["payload"]["task"]
 
 
 def test_continuation_exact_replay_does_not_send_checker_twice(tmp_path: Path) -> None:

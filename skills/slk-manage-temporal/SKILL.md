@@ -15,7 +15,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 ## 开工准备
 
 1. 检查本机登记的 Temporal 地址、namespace、task queue、执行进程和持久数据库可达；不为每个 Run 另装服务、另开端口或另建数据库。
-2. 用 `RUN_TEAM_REGISTRY` 的四角色端点和当前 runtime revision 构造闭合 `StartSlkRequest`；方法版本为 4.4.0，未知字段、旧版本、重复角色或缺少 OW 都保持未就绪。
+2. 用 `RUN_TEAM_REGISTRY` 的四角色端点和当前 runtime revision 构造闭合 `StartSlkRequest`；方法版本为 4.4.1，未知字段、旧版本、重复角色或缺少 OW 都保持未就绪。
 3. 取得 `slk.prepare_run` 的哈希绑定 READY 收据，再以稳定 Run ID 启动该 Run 的一对工作流；同 ID 改参数不重建、不覆盖。
 4. 把 Temporal readiness 收据交给 `$slk-manage-team`；服务、worker、adapter 或收据未证明时不派首 CELL。
 
@@ -24,8 +24,8 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 - 每个交接使用不可变 operation/message、sender/receiver、CELL/attempt、payload SHA-256 和 runtime revision；匹配 `slk.native-start/v2` 才是 ACK。
 - ACK 超时只请求一次精确恢复，不换接收者、不改 payload、不重做工程副作用。恢复目标是原发送者，Supervisor 选择机械恢复或人工处理。
 - 接收者真实启动后开始本 Run 的责任停留计时；同一成员超过 1800 秒，Temporal 直接通知登记的 Supervisor 一次，不由 OW 中转，也不判断长工作是否合理。
-- 每 1200 秒独立调用原生状态适配器核查本 Run 登记的 OW；异常、UNKNOWN 或 Activity 失败形成 runtime guard，并通知 Supervisor。guard 修复前新的 CELL delivery 保持拒绝。
-- OW 退出 Hook 以闭合 notice 进入本 Run，任何发起者都触发 Supervisor 二次确认；Supervisor 提交 `OVERWATCHER_RESTORED` 证据后解除 guard。
+- 每 1200 秒独立调用原生状态适配器核查本 Run 的 OW；异常、UNKNOWN、无效收据或 Activity 失败形成 runtime guard 并报告。无消息的定时醒来继续等待，ACK/恢复等待期间仍执行保障检查；guard 修复前不派下一 CELL。
+- OW 退出 Hook 由已有宿主独立观察，以闭合 notice 进入本 Run；不能依赖 OW 退出前自报。任何发起者都触发 Supervisor 二次确认；消息 accepted、原生 turn 启动、Supervisor 实际接管分别记录，不能互相替代。通知模型来自 Supervisor 的冻结绑定，不复制 OW 参数；恢复正确成员与 OW 后才解除 guard。
 - 一个 Run 的计时、恢复、关闭或重放不改变其他 Run；共享服务只在没有任何活动 Run 后由运维侧正常停止。
 
 ## 收尾与故障
