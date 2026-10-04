@@ -1,5 +1,10 @@
 # Changelog
 
+## WebBI public-read correction (2026-10-04, local candidate)
+
+- Removed the unrequested login dependency: Run/archive/detail/catalog and redacted notification settings are readable without a login. Exact upload, settings-save and notification-test routes keep their separate bearer authorization; caller-supplied email/JWT headers cannot grant writes.
+- Added regression coverage for anonymous browser reads, unchanged state on rejected writes, distinct upload/admin credentials and page-memory-only settings authorization. No account system, new dependency, SLK method change or token rotation was added.
+
 ## Local BI cold-start fix (2026-10-04, unpublished)
 
 - Added explicit read-only schema 8/9 compatibility: migration 0009 only relaxes OW write constraints, so existing schema-8 Runs now load without migrating or rewriting their data. Run projections retain the actual database version; unreviewed versions remain rejected.

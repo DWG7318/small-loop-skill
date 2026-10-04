@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "2fed8087216ede5df13cb5a5c9919e3eddb5609c1361a10e04d69531e6305bc9"
+      "sha256": "f52dc6e123256c74c77c5eec823e703ec80b78e02b0f1d9b5163be5d7a22e51e"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "417dea286ba08b3f93f30107dfaca4e8d0053e5f79e1679b3c43af4763b43878"
+      "sha256": "fefbd7b95e87c899a63ad41cdfdc4b9360f58c1e2e95958b63180cfda5b1b18a"
     },
     {
       "path": "VERSION",
@@ -436,11 +436,15 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/WebBiApp.test.tsx",
-      "sha256": "aa89fa6409a4fc34347c79c4b86d07518ccd289bbb498427de2fb2c205847a35"
+      "sha256": "952c149b341ba67b64e945c25dda07751e30bd7ffc559751b6f035fc1d1d807c"
     },
     {
       "path": "apps/slk-bi/src/webbi/WebBiApp.tsx",
-      "sha256": "24bfdad508eb2c6265b39bfefcc87b0f0787d303a2d2cd248db6c7dbad40effd"
+      "sha256": "c382e1d6d292f952bd88377cb4f197ada1dc7f34d5a50f63e6e7f89ed0d0da6a"
+    },
+    {
+      "path": "apps/slk-bi/src/webbi/cloudflare.test.ts",
+      "sha256": "bfac6ef51b5c4b2616be6de7120ac9b284abe25f6a77d95aa94c607525409d93"
     },
     {
       "path": "apps/slk-bi/src/webbi/cloudflare.ts",
@@ -491,8 +495,12 @@
       "sha256": "a07422c05857032e6c9c931a8e4420331654fc629d0e9b721732973ba1d525f6"
     },
     {
+      "path": "apps/slk-bi/src/webbi/webApi.test.ts",
+      "sha256": "4caa037843cfb4ab643ba054116691aaeb570119a6467c7515fc0d52ee65e55c"
+    },
+    {
       "path": "apps/slk-bi/src/webbi/webApi.ts",
-      "sha256": "875496870ee5697ff73e6d4503d13683a4102f9ed73f850871108ebfcfbeca7f"
+      "sha256": "4e34ff8f50110436e46b6ba00be2d4d86d3e2ae30eeac9d12cd9e72cb6dfcfa4"
     },
     {
       "path": "apps/slk-bi/src/webbi/webbi.css",
@@ -500,11 +508,11 @@
     },
     {
       "path": "apps/slk-bi/src/webbi/worker.test.ts",
-      "sha256": "72596c00a3b57e347a24567cf9093ec5fa223e90df19f629250d061a00f17e39"
+      "sha256": "0288550fbc71c79cfb28c09138c098a49849dbc4faf256220685ae6e9593c9e9"
     },
     {
       "path": "apps/slk-bi/src/webbi/worker.ts",
-      "sha256": "636ba13843e573e15add4e0bb6541c321ca95edece23f79c68a7e2a13cb2276e"
+      "sha256": "604d496030e85284a276be38ab874b542da9fb166e021aae6452ed55bb323da0"
     },
     {
       "path": "apps/slk-bi/tsconfig.json",
@@ -520,7 +528,7 @@
     },
     {
       "path": "apps/slk-bi/wrangler.jsonc",
-      "sha256": "d95f2c6d84d725ba4fa7f5d3511c5b4f0f6e72bb22ca0f7c7a512f15afae02e8"
+      "sha256": "dd7520de2e74437e0ee0c137f0f8af6a09305fb7cf6f08881ee466346e1992a5"
     },
     {
       "path": "crates/slk-bi-query/Cargo.toml",
@@ -820,7 +828,7 @@
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "01ecb29e4611b160d384b56c540b778738bcf15b7e8021868abe78e10eab3bb3"
+      "sha256": "425856505fa4b1cd501415800eea254374220356a8dfe739cdc8cc1ec84832df"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",

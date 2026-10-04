@@ -83,13 +83,8 @@ function bearer(request: Request) {
   return value.startsWith("Bearer ") ? value.slice(7) : "";
 }
 
-function uploadAuthorized(request: Request, token: string) {
+function bearerAuthorized(request: Request, token: string) {
   return token.length >= 12 && bearer(request) === token;
-}
-
-function viewerAuthorized(request: Request, adminToken: string) {
-  return Boolean(request.headers.get("cf-access-authenticated-user-email"))
-    || (adminToken.length >= 12 && bearer(request) === adminToken);
 }
 
 async function requestJson(request: Request) {
@@ -145,7 +140,7 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/v1/uploads" && request.method === "POST") {
-        if (!uploadAuthorized(request, dependencies.ingest_token)) {
+        if (!bearerAuthorized(request, dependencies.ingest_token)) {
           return json({ error: "SLK_WEBBI_UPLOAD_UNAUTHORIZED" }, 401);
         }
         const envelope = parseUploadEnvelope(await requestJson(request), dependencies.catalog);
@@ -160,10 +155,7 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
         }, 202);
       }
 
-      if (!viewerAuthorized(request, dependencies.admin_token)) {
-        return json({ error: "SLK_WEBBI_VIEW_UNAUTHORIZED" }, 401);
-      }
-
+      // Only these exact GET routes are public. Viewing never grants mutation authority.
       if (url.pathname === "/api/v1/catalog" && request.method === "GET") {
         return json({ schema_version: "slk.bi.message-catalog/v1", entries: dependencies.catalog });
       }
@@ -193,6 +185,9 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
           return json(toPublicNotificationSettings(await dependencies.store.getSettings()));
         }
         if (request.method === "PUT") {
+          if (!bearerAuthorized(request, dependencies.admin_token)) {
+            return json({ error: "SLK_WEBBI_ADMIN_UNAUTHORIZED" }, 401);
+          }
           const input = await requestJson(request);
           const current = await dependencies.store.getSettings();
           const requestedMode = input && typeof input === "object" && !Array.isArray(input)
@@ -206,6 +201,9 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
         }
       }
       if (url.pathname === "/api/v1/notification-settings/test" && request.method === "POST") {
+        if (!bearerAuthorized(request, dependencies.admin_token)) {
+          return json({ error: "SLK_WEBBI_ADMIN_UNAUTHORIZED" }, 401);
+        }
         const target = await dependencies.store.notificationTarget();
         if (!target) return json({ error: "SLK_WEBBI_NOTIFICATION_NOT_CONFIGURED" }, 409);
         await dependencies.notifier.test(target);

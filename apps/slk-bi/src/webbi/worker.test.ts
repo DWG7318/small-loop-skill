@@ -127,6 +127,47 @@ function request(path: string, init: RequestInit = {}) {
 }
 
 describe("WebBI worker", () => {
+  it("reads existing Run details and redacted settings publicly without changing state", async () => {
+    const store = new MemoryStore();
+    await store.ingest(upload("device-a"));
+    store.settings = { ...store.settings, encrypted_secret: "ciphertext", secret_iv: "iv" };
+    const notifier = new RecordingNotifier();
+    const handler = createWebBiHandler({
+      store, notifier, catalog: MESSAGE_CATALOG,
+      ingest_token: "ingest-secret", admin_token: "admin-secret",
+    });
+    const before = JSON.stringify(store.settings);
+    const detail = await handler(new Request("https://slk.example.test/api/v1/runs/device-a/run-a"));
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({ record: { run: { run_id: "run-a" } } });
+    const settings = await handler(new Request("https://slk.example.test/api/v1/notification-settings"));
+    expect(settings.status).toBe(200);
+    expect(await settings.text()).not.toContain("ciphertext");
+    for (const [path, method] of [
+      ["/api/v1/notification-settings", "PUT"], ["/api/v1/notification-settings/test", "POST"],
+    ]) {
+      const rejected = await handler(new Request(`https://slk.example.test${path}`, {
+        method, body: "{}", headers: { "cf-access-authenticated-user-email": "owner@example.test" },
+      }));
+      expect(rejected.status).toBe(401);
+    }
+    expect(JSON.stringify(store.settings)).toBe(before);
+    expect(store.records.size).toBe(1);
+    expect(notifier.sent).toEqual([]);
+  });
+
+  it("requires an explicit configured admin token for settings and test sends", async () => {
+    const store = new MemoryStore();
+    const notifier = new RecordingNotifier();
+    const make = (admin_token: string) => createWebBiHandler({
+      store, notifier, catalog: MESSAGE_CATALOG, ingest_token: "ingest-secret", admin_token,
+    });
+    expect((await make("")(request("/api/v1/notification-settings/test", { method: "POST" }))).status).toBe(401);
+    const accepted = await make("admin-secret")(request("/api/v1/notification-settings/test", { method: "POST" }));
+    expect(accepted.status).toBe(200);
+    expect(notifier.sent).toEqual(["test"]);
+  });
+
   it("treats every terminal Run as archived even before an archived_at timestamp is present", () => {
     expect(isArchivedRun({
       ...runFixture,

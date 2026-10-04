@@ -275,6 +275,7 @@ function SettingsPage({ api }: { api: WebBiApi }) {
   const [draft, setDraft] = useState<NotificationSettingsInput>();
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
+  const [editAuthorization, setEditAuthorization] = useState("");
 
   useEffect(() => {
     void Promise.all([api.catalog(), api.getNotificationSettings()]).then(([entries, settings]) => {
@@ -295,11 +296,21 @@ function SettingsPage({ api }: { api: WebBiApi }) {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft) return;
+    if (!editAuthorization) { setError("请输入修改授权；查看不需要登录"); return; }
     try {
-      const saved = await api.saveNotificationSettings(draft);
+      const saved = await api.saveNotificationSettings(draft, editAuthorization);
       setStored(saved);
       setDraft((current) => current ? { ...current, secret: undefined } : current);
       setNotice("设置已保存");
+      setError(undefined);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
+
+  async function sendTest() {
+    if (!editAuthorization) { setError("请输入修改授权；查看不需要登录"); return; }
+    try {
+      await api.testNotification(editAuthorization);
+      setNotice("测试消息已发送");
       setError(undefined);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
@@ -336,8 +347,9 @@ function SettingsPage({ api }: { api: WebBiApi }) {
             return <label key={key}><input type="checkbox" checked={draft.selected_message_types.includes(key)} onChange={() => toggleType(key)} /><span><b>{entry.label_zh}</b><code>{key}</code></span></label>;
           })}
         </div> : null}
-        {error ? <p className="webbi-error">保存失败：{error}</p> : null}{notice ? <p className="webbi-success">{notice}</p> : null}
-        <div className="webbi-form-actions"><button type="submit">保存设置</button><button type="button" className="secondary" onClick={() => void api.testNotification().then(() => setNotice("测试消息已发送")).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))}>发送测试消息</button></div>
+        <div className="webbi-form-grid"><label>修改授权<input aria-label="修改授权" type="password" autoComplete="off" value={editAuthorization} onChange={(event) => setEditAuthorization(event.target.value)} /><small>仅保存或测试时需要 WebBI 管理令牌，不是 ntfy 密码；不保存在浏览器。</small></label></div>
+        {error ? <p className="webbi-error">操作失败：{error}</p> : null}{notice ? <p className="webbi-success">{notice}</p> : null}
+        <div className="webbi-form-actions"><button type="submit">保存设置</button><button type="button" className="secondary" onClick={() => void sendTest()}>发送测试消息</button></div>
       </form>
     </main>
   );
