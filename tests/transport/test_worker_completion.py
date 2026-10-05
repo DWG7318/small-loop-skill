@@ -1215,6 +1215,29 @@ def test_terminal_worker_without_handoff_alerts_after_one_complete_cadence(tmp_p
     ]
 
 
+def test_explicit_host_handoff_failure_is_not_hidden_by_completion_grace(tmp_path: Path) -> None:
+    attempt, endpoint, _checker = completion_fixture(tmp_path)
+    failure = attempt / "role-host" / "failure-ROLE_HOST_START_INVALID.json"
+    write_json(failure, {
+        "status": "HOST_HANDOFF_FAILED",
+        "run_id": "RUN-A",
+        "source_message_id": MESSAGE_ID,
+        "error_code": "ROLE_HOST_START_INVALID",
+    })
+
+    result = inspect_worker_completion(
+        attempt,
+        runtime_projection(token_owner=str(endpoint["role_instance_id"])),
+        observed_at="2026-09-23T00:00:01Z",
+        cadence_seconds=240,
+    )
+
+    assert result["status"] == "WORKER_COMPLETION_HANDOFF_MISSING"
+    assert result["grace_started_at"] is None
+    assert result["blocker"]["cause"] == "ROLE_HOST_START_INVALID"
+    assert result["blocker"]["evidence"] == [str(failure.resolve())]
+
+
 def test_first_inspection_uses_old_terminal_evidence_instead_of_granting_fresh_grace(
     tmp_path: Path,
 ) -> None:
@@ -1394,7 +1417,7 @@ def test_recorded_notification_does_not_clear_a_still_unresolved_completion_stal
         ]
 
 
-@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2"])
 def test_patch_continuation_preserves_run_version(tmp_path, version):
     from slk_transport.worker_completion import build_continuation_request, _validate_continuation_request
     attempt, _endpoint, checker = completion_fixture(tmp_path)
@@ -1406,7 +1429,7 @@ def test_patch_continuation_preserves_run_version(tmp_path, version):
         state_command=["state"], transport_command=["transport"], occurred_at="2026-10-05T00:00:00Z")
     assert value["method_version"] == version
     _validate_continuation_request(value)
-    value["source_runtime_snapshot"]["method_version"] = "4.4.1" if version == "4.4.0" else "4.4.0"
+    value["source_runtime_snapshot"]["method_version"] = "4.4.2" if version == "4.4.0" else "4.4.0"
     with pytest.raises(CompletionError):
         _validate_continuation_request(value)
 
@@ -1421,8 +1444,8 @@ def test_continuation_uses_exact_authoritative_token_when_snapshot_message_is_hi
         write_json(path, value)
     envelope = json.loads((attempt / "envelope.json").read_text(encoding="utf-8"))
     projection = runtime_projection(token_owner=envelope["receiver_role_instance_id"], attempt=1)
-    projection["summary"] = {"run_id": "RUN-A", "slk_version": "4.4.1", "current_plan_revision": 1}
-    projection["runtime_snapshot"].update(method_version="4.4.1", runtime_revision=15,
+    projection["summary"] = {"run_id": "RUN-A", "slk_version": "4.4.2", "current_plan_revision": 1}
+    projection["runtime_snapshot"].update(method_version="4.4.2", runtime_revision=15,
         token_sequence=3, latest_message_id=None)
     projection["token_history"] = [{"event_type": "TOKEN_HANDED_OFF", "message_id": message_id,
         "token_sequence": 3, "go_id": envelope["go_id"], "cell_id": envelope["cell_id"],
@@ -1448,8 +1471,8 @@ def test_continuation_uses_exact_authoritative_token_when_snapshot_message_is_hi
 
 def test_authoritative_token_resolver_preserves_only_the_exact_initial_supervisor_boundary():
     projection = {"run_id": "RUN-A",
-        "summary": {"run_id": "RUN-A", "slk_version": "4.4.1", "current_plan_revision": 1},
-        "runtime_snapshot": {"run_id": "RUN-A", "method_version": "4.4.1", "plan_revision": 1,
+        "summary": {"run_id": "RUN-A", "slk_version": "4.4.2", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": "RUN-A", "method_version": "4.4.2", "plan_revision": 1,
             "runtime_revision": 1, "token_sequence": 1,
             "token_holder_role_instance_id": "RUN-A-supervisor", "latest_message_id": None},
         "roles": [{"role": "supervisor", "role_instance_id": "RUN-A-supervisor", "lifecycle": "active"}],
@@ -1480,8 +1503,8 @@ def test_authoritative_token_resolver_preserves_only_the_exact_initial_superviso
 
 def test_authoritative_token_resolver_rejects_non_null_snapshot_that_conflicts_with_newer_history():
     projection = {"run_id": "RUN-A",
-        "summary": {"run_id": "RUN-A", "slk_version": "4.4.1", "current_plan_revision": 1},
-        "runtime_snapshot": {"run_id": "RUN-A", "method_version": "4.4.1", "plan_revision": 1,
+        "summary": {"run_id": "RUN-A", "slk_version": "4.4.2", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": "RUN-A", "method_version": "4.4.2", "plan_revision": 1,
             "runtime_revision": 4, "token_sequence": 2,
             "token_holder_role_instance_id": "RUN-A-checker", "latest_message_id": "message-2"},
         "token_history": [

@@ -12,7 +12,7 @@ from slk_transport.contracts import Endpoint
 from slk_transport.dispatcher import dispatch_once
 from slk_transport.evidence import AttemptStore
 from slk_transport.native_activity import inspect_native_activity, validate_native_task_activity
-from slk_transport.adapters.codex_desktop import DesktopClient
+from slk_transport.adapters.codex_desktop import DesktopClient, consume_desktop_readback
 from slk_transport.jsonrpc import JsonRpcProcess
 from test_codex_adapter import codex_endpoint, supervisor_envelope
 
@@ -121,6 +121,62 @@ def test_desktop_exact_retry_returns_immutable_result_without_second_message(tmp
     assert first == second and first.status == "completed"
     calls = [json.loads(s) for s in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
     assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
+
+
+def test_late_desktop_readback_consumes_original_send_without_resend(tmp_path, monkeypatch):
+    endpoint = prepared(tmp_path, monkeypatch, "unconfirmed")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    adapter = CodexAdapter()
+    prompt = adapter._prompt(envelope, attempt)
+    with pytest.raises(AdapterError) as error:
+        adapter.deliver(endpoint, envelope, attempt)
+    assert error.value.error_code == "CODEX_DESKTOP_READBACK_UNPROVED"
+
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "late-confirmed")
+    result = consume_desktop_readback(endpoint, envelope, attempt)
+    repeated = consume_desktop_readback(endpoint, envelope, attempt)
+
+    assert result == repeated and result.status == "completed"
+    assert result.native_identity["turn_id"] == "turn-new"
+    calls = [json.loads(s) for s in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
+
+
+def test_late_desktop_readback_rejects_ambiguous_native_match_without_resend(tmp_path, monkeypatch):
+    endpoint = prepared(tmp_path, monkeypatch, "unconfirmed")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    adapter = CodexAdapter()
+    prompt = adapter._prompt(envelope, attempt)
+    with pytest.raises(AdapterError):
+        adapter.deliver(endpoint, envelope, attempt)
+
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "late-duplicate")
+    with pytest.raises(AdapterError) as error:
+        consume_desktop_readback(endpoint, envelope, attempt, prompt)
+
+    assert error.value.error_code == "CODEX_DESKTOP_READBACK_AMBIGUOUS"
+    calls = [json.loads(s) for s in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
+
+
+def test_late_desktop_readback_rejects_changed_anchor_before_native_query(tmp_path, monkeypatch):
+    endpoint = prepared(tmp_path, monkeypatch, "unconfirmed")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    adapter = CodexAdapter()
+    prompt = adapter._prompt(envelope, attempt)
+    with pytest.raises(AdapterError):
+        adapter.deliver(endpoint, envelope, attempt)
+    anchor = json.loads((attempt.root / "desktop-readback-anchor.json").read_text())
+    anchor["message_id"] = "another-message"
+    (attempt.root / "desktop-readback-anchor.json").write_text(json.dumps(anchor), encoding="utf-8")
+
+    with pytest.raises(AdapterError) as error:
+        consume_desktop_readback(endpoint, envelope, attempt, prompt)
+
+    assert error.value.error_code == "CODEX_DESKTOP_READBACK_DRIFT"
 
 
 def test_active_desktop_receives_new_item_on_same_native_turn_without_writer_takeover(tmp_path, monkeypatch):

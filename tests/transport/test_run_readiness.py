@@ -115,7 +115,7 @@ def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A") -> 
         tmp_path / "temporal-ready.json",
         {
             "schema_version": "slk.temporal-readiness/v2",
-            "method_version": "4.4.1",
+            "method_version": "4.4.2",
             "run_id": run_id,
             "status": "READY",
             "service_mode": "SHARED_LOCAL",
@@ -174,8 +174,8 @@ def isolated_consumer_boundary(monkeypatch):
         if args[0] == "run":
             run_id = args[2]
             return {"schema_version": "slk.bi.run/v1", "run_id": run_id,
-                "summary": {"run_id": run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
-                "runtime_snapshot": {"run_id": run_id, "method_version": "4.4.1", "plan_revision": 1,
+                "summary": {"run_id": run_id, "slk_version": "4.4.2", "current_plan_revision": 1},
+                "runtime_snapshot": {"run_id": run_id, "method_version": "4.4.2", "plan_revision": 1,
                     "runtime_revision": 7, "token_sequence": 1,
                     "token_holder_role_instance_id": f"{run_id}-supervisor", "latest_message_id": None},
                 "roles": [{"role": "supervisor", "role_instance_id": f"{run_id}-supervisor", "lifecycle": "active"}],
@@ -280,7 +280,7 @@ def _attach_verified_rehearsal(root, request):
         legs.append({"leg_id": leg_id, "sender_role": sender, "receiver_role": receiver, "endpoint": endpoints[receiver],
                      "envelope": env_ref, "sent_receipt": sent_ref, "receiver_started": start_ref,
                      "commit_request": commit_ref, "commit_result": result_ref})
-    write_json(Path(request["communication_rehearsal"]), {"schema_version": "slk.communication-rehearsal/v2", "method_version": "4.4.1",
+    write_json(Path(request["communication_rehearsal"]), {"schema_version": "slk.communication-rehearsal/v2", "method_version": "4.4.2",
         "run_id": run_id, "plan_revision": 1, "status": "PASS", "host_binding": binding, "sealed_role_receipts": consumers, "legs": legs})
 
 
@@ -311,7 +311,7 @@ def test_inflight_admission_separates_reusable_normal_chain_from_current_run_ide
     def proof(path):
         return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     conformance = write_json(source_root / "normal-chain-conformance.json", {
-        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.1",
+        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.2",
         "status": "PASS", "source_run_id": "RUN-CONFORMANCE",
         "source_readiness_request": proof(source_path),
         "source_communication_rehearsal": proof(source_rehearsal),
@@ -348,7 +348,7 @@ def test_inflight_admission_checks_the_same_historical_null_boundary_as_the_real
     def proof(path):
         return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     conformance = write_json(source_root / "normal-chain-conformance.json", {
-        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.1",
+        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.2",
         "status": "PASS", "source_run_id": "RUN-CONFORMANCE",
         "source_readiness_request": proof(source_path),
         "source_communication_rehearsal": proof(Path(source["communication_rehearsal"])),
@@ -364,8 +364,8 @@ def test_inflight_admission_checks_the_same_historical_null_boundary_as_the_real
     registered = {row["role"]: row for row in current["roles"]}
     message_id = "c13ee3db-524e-4011-a7f3-ba02386e5599"
     projection = {"schema_version": "slk.bi.run/v1", "run_id": "RUN-CURRENT",
-        "summary": {"run_id": "RUN-CURRENT", "slk_version": "4.4.1", "current_plan_revision": 1},
-        "runtime_snapshot": {"run_id": "RUN-CURRENT", "method_version": "4.4.1", "plan_revision": 1,
+        "summary": {"run_id": "RUN-CURRENT", "slk_version": "4.4.2", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": "RUN-CURRENT", "method_version": "4.4.2", "plan_revision": 1,
             "runtime_revision": 15, "token_sequence": 3,
             "token_holder_role_instance_id": registered["worker"]["role_instance_id"], "latest_message_id": None},
         "token_history": [{"event_type": "TOKEN_HANDED_OFF", "message_id": message_id,
@@ -423,7 +423,7 @@ def test_narrow_normal_chain_source_uses_its_own_state_database_without_changing
         return {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
     source_contract = write_json(source_root / "normal-chain-source.json", {
-        "schema_version": "slk.normal-chain-source/v1", "method_version": "4.4.1",
+        "schema_version": "slk.normal-chain-source/v1", "method_version": "4.4.2",
         "status": "PASS", "source_run_id": "RUN-SOURCE", "plan_revision": 1,
         "source_state_context": {
             "config_path": str(source_config.resolve()),
@@ -452,8 +452,8 @@ def test_narrow_normal_chain_source_uses_its_own_state_database_without_changing
             run_id = args[2]
             calls.append((run_id, state_config_path, os.environ["SLK_CONFIG_PATH"]))
             return {"schema_version": "slk.bi.run/v1", "run_id": run_id,
-                "summary": {"run_id": run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
-                "runtime_snapshot": {"run_id": run_id, "method_version": "4.4.1", "plan_revision": 1,
+                "summary": {"run_id": run_id, "slk_version": "4.4.2", "current_plan_revision": 1},
+                "runtime_snapshot": {"run_id": run_id, "method_version": "4.4.2", "plan_revision": 1,
                     "runtime_revision": 7, "token_sequence": 1,
                     "token_holder_role_instance_id": f"{run_id}-supervisor", "latest_message_id": None},
                 "roles": [{"role": "supervisor", "role_instance_id": f"{run_id}-supervisor", "lifecycle": "active"}],
@@ -500,7 +500,7 @@ def test_inflight_admission_rejects_echo_conformance_and_missing_current_consume
     def proof(path):
         return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     conformance = write_json(source_root / "normal-chain-conformance.json", {
-        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.1",
+        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.2",
         "status": "PASS", "source_run_id": "RUN-CONFORMANCE",
         "source_readiness_request": proof(source_path),
         "source_communication_rehearsal": proof(source_rehearsal),
@@ -765,7 +765,7 @@ def _native_ow_request(tmp_path):
     ow = next(r for r in request["roles"] if r["role"] == "overwatcher")
     ow["actual_runtime"] = ow["expected_runtime"] = "codex"
     ow["native_activity_capability"] = str(write_json(tmp_path / "native-ow-capability.json", {
-        "schema_version": "slk.native-activity-capability/v1", "method_version": "4.4.1", "runtime": "codex",
+        "schema_version": "slk.native-activity-capability/v1", "method_version": "4.4.2", "runtime": "codex",
         "read_only_observation": True, "model_call_required": False, "native_events": ["thread/status", "turn/status"]}))
     ow["endpoint_path"] = str(write_json(tmp_path / "native-ow-endpoint.json", {
         "schema_version": "slk.transport-endpoint/v1", "run_id": request["run_id"], "role": "overwatcher",

@@ -1959,6 +1959,43 @@ def inspect_worker_completion(
         }
     if token_owner != endpoint.role_instance_id and exact_candidate and exact_transport:
         return {**base, "status": "HANDED_OFF_OR_D1", "grace_started_at": None}
+    handoff_failures = sorted((attempt / "role-host").glob("failure-*.json"))
+    if len(handoff_failures) > 1:
+        raise CompletionError(
+            "WORKER_COMPLETION_EVIDENCE_INVALID",
+            "multiple explicit Worker handoff failures conflict",
+        )
+    if handoff_failures:
+        failure = _read_object(handoff_failures[0], "Worker host handoff failure")
+        error_code = failure.get("error_code")
+        if (
+            set(failure)
+            != {"status", "run_id", "source_message_id", "error_code"}
+            or failure.get("status") != "HOST_HANDOFF_FAILED"
+            or failure.get("run_id") != envelope.run_id
+            or failure.get("source_message_id") != envelope.message_id
+            or not isinstance(error_code, str)
+            or not error_code
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "explicit Worker handoff failure does not match this dispatch",
+            )
+        return {
+            **base,
+            "status": "WORKER_COMPLETION_HANDOFF_MISSING",
+            "blocker": {
+                "phase": "checker_handoff",
+                "cause": error_code,
+                "summary": "the owning host recorded an explicit Checker handoff failure",
+                "evidence": [str(handoff_failures[0].resolve())],
+            },
+            "grace_started_at": None,
+            "anomaly_codes": [
+                "WORKER_COMPLETION_HANDOFF_MISSING",
+                "COMMUNICATION_RECOVERY_REQUIRED",
+            ],
+        }
     observations = runtime_projection.get("operational_observations")
     notification_already_sent = isinstance(observations, list) and any(
         _observation_mentions_message(item, envelope.message_id) for item in observations
@@ -5206,7 +5243,10 @@ def _execute_worker_suffix(request: Mapping[str, Any]) -> dict[str, Any]:
         return str(state_request("write", value).get("status"))
 
     checker_attempt_root = request_root / "checker-attempts"
-    if request.get("recovery_mode") == "INCOMPLETE_HANDOFF":
+    temporal = request.get("temporal")
+    if isinstance(temporal, Mapping):
+        checker_attempt_root = Path(str(temporal["attempt_root"])).resolve()
+    elif request.get("recovery_mode") == "INCOMPLETE_HANDOFF":
         # The preserved candidate was addressed through the original transport
         # root. Query/reuse that exact attempt instead of starting it in a new root.
         checker_attempt_root = Path(str(request["source_attempt_root"])).parents[1]

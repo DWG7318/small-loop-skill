@@ -13,7 +13,7 @@ from slk_transport import cli
 from slk_transport import role_host as role_host_module
 from slk_transport.contracts import DeliveryResult
 from slk_transport.contracts import Envelope
-from slk_transport.role_host import RoleHost
+from slk_transport.role_host import RoleHost, normalized_checker_findings
 from slk_transport.native_activity import make_native_start
 from slk_transport import worker_completion as wc
 from test_worker_completion import completion_fixture, write_json
@@ -52,6 +52,18 @@ def test_host_binding_is_checked_before_any_native_delivery(tmp_path, monkeypatc
                               attempt_root=attempt.parents[1])
     with pytest.raises(ValueError):
         cli._job(args)
+
+
+def test_checker_findings_strip_provider_thinking_before_supervisor_escalation():
+    findings = normalized_checker_findings([
+        {"severity": "HIGH", "message": "real defect", "thinking": "private chain",
+         "evidence": {"path": "proof.txt", "analysis": "provider scratchpad"}}
+    ])
+
+    assert findings == [json.dumps(
+        {"evidence": {"path": "proof.txt"}, "message": "real defect", "severity": "HIGH"},
+        ensure_ascii=False, sort_keys=True,
+    )]
 
 
 def prepared_host(tmp_path):
@@ -143,9 +155,9 @@ def test_changed_sender_is_rejected_before_credentials_or_send(tmp_path, monkeyp
 
 
 def host_boundary(host, envelope):
-    return {"summary": {"run_id": envelope.run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
+    return {"summary": {"run_id": envelope.run_id, "slk_version": "4.4.2", "current_plan_revision": 1},
             "events": [], "token_history": [],
-            "runtime_snapshot": {"method_version": "4.4.1", "plan_revision": 1, "runtime_revision": 7,
+            "runtime_snapshot": {"method_version": "4.4.2", "plan_revision": 1, "runtime_revision": 7,
                 "token_sequence": envelope.token_sequence - 1,
                 "token_holder_role_instance_id": envelope.sender_role_instance_id,
                 "latest_message_id": "source-message"}}
@@ -154,8 +166,8 @@ def host_boundary(host, envelope):
 def run06_historical_null_boundary(envelope):
     message_id = "c13ee3db-524e-4011-a7f3-ba02386e5599"
     projection = {
-        "summary": {"run_id": envelope.run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
-        "runtime_snapshot": {"run_id": envelope.run_id, "method_version": "4.4.1", "plan_revision": 1,
+        "summary": {"run_id": envelope.run_id, "slk_version": "4.4.2", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": envelope.run_id, "method_version": "4.4.2", "plan_revision": 1,
             "runtime_revision": 15, "token_sequence": 3,
             "token_holder_role_instance_id": envelope.receiver_role_instance_id,
             "latest_message_id": None},
@@ -422,6 +434,45 @@ def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkey
         assert seen[0]["details"]["d1_failure_event_id"] == incoming.payload["d1_failure_event_id"]
     assert host.complete(source) == receipt
     assert len(seen) == (2 if d2 else 1)
+
+
+def test_supervisor_can_submit_decision_from_exact_session_before_turn_terminal(tmp_path, monkeypatch):
+    host, source, incoming, result, projection = supervisor_result_fixture(tmp_path)
+    (source / "completed.json").unlink()
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
+    monkeypatch.setattr(host, "_boundary", lambda envelope: projection)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: "sealed-supervisor")
+    events = []
+
+    def run(command, args, **kwargs):
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": incoming.run_id, "role": "supervisor",
+                    "role_instance_id": incoming.receiver_role_instance_id, "runtime_revision": 7}
+        events.append(wc._read_object(Path(args[-1]), "event"))
+        return {"status": "recorded", "run_id": incoming.run_id}
+
+    monkeypatch.setattr(wc, "_run_json_command", run)
+    monkeypatch.setattr(host, "_send_owned", lambda *args: {
+        "status": "OWNED_HANDOFF_COMMITTED", "message_id": "rework-message"})
+
+    receipt = host.submit_supervisor_decision(source)
+
+    assert receipt["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert [event["event_type"] for event in events] == ["REWORK_REQUESTED"]
+    assert host.complete(source) == receipt
+
+
+def test_supervisor_active_submit_rejects_wrong_session_before_credentials(tmp_path, monkeypatch):
+    host, source, _incoming, _result, _projection = supervisor_result_fixture(tmp_path)
+    (source / "completed.json").unlink()
+    monkeypatch.setenv("CODEX_THREAD_ID", "another-supervisor-session")
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: pytest.fail("wrong session used credential"))
+
+    with pytest.raises(wc.CompletionError) as error:
+        host.submit_supervisor_decision(source)
+
+    assert error.value.error_code == "ROLE_HOST_SESSION_MISMATCH"
 
 
 @pytest.mark.parametrize("damage", ["wrong-source", "wrong-failure", "changed-criteria", "d1-takeover", "missing"])

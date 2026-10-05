@@ -26,6 +26,7 @@ from .desktop_current_turn import (
 from .contracts import ContractError, Endpoint, Envelope, parse_delivery
 from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
+from .evidence import Attempt
 from .native_activity import NativeActivityError, inspect_native_activity, validate_native_start
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
@@ -56,7 +57,7 @@ from .worker_completion import (
 )
 
 
-VERSION = "4.4.1"
+VERSION = "4.4.2"
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),
@@ -528,6 +529,28 @@ def _resume_role_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _submit_supervisor_decision(args: argparse.Namespace) -> int:
+    binding_path = args.binding.resolve()
+    digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
+    if digest != args.sha256:
+        raise ValueError("role host binding hash changed")
+    host = RoleHost(_read_object(binding_path, "role host binding"), digest)
+    _emit(host.submit_supervisor_decision(args.source_attempt.resolve()))
+    return 0
+
+
+def _consume_desktop_readback(args: argparse.Namespace) -> int:
+    from .adapters.codex_desktop import consume_desktop_readback
+
+    source = args.source_attempt.resolve()
+    endpoint = Endpoint.from_dict(_read_object(source / "endpoint.json", "source endpoint"))
+    envelope = Envelope.from_dict(_read_object(source / "envelope.json", "source envelope"))
+    parse_delivery(endpoint, envelope)
+    result = consume_desktop_readback(endpoint, envelope, Attempt(source))
+    _emit(result.to_dict())
+    return 0 if result.status in {"completed", "started"} else 3
+
+
 def _supervisor_admin(args: argparse.Namespace) -> int:
     _emit(execute_sealed_supervisor_admin(args.request, request_sha256=args.sha256))
     return 0
@@ -723,6 +746,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     role_host_resume.add_argument("--binding", required=True, type=Path)
     role_host_resume.add_argument("--sha256", required=True)
     role_host_resume.add_argument("--source-attempt", required=True, type=Path)
+    supervisor_submit = subparsers.add_parser("submit-supervisor-decision")
+    supervisor_submit.add_argument("--binding", required=True, type=Path)
+    supervisor_submit.add_argument("--sha256", required=True)
+    supervisor_submit.add_argument("--source-attempt", required=True, type=Path)
+    desktop_readback = subparsers.add_parser("consume-desktop-readback")
+    desktop_readback.add_argument("--source-attempt", required=True, type=Path)
     supervisor_admin = subparsers.add_parser("supervisor-admin")
     supervisor_admin.add_argument("--request", required=True, type=Path)
     supervisor_admin.add_argument("--sha256", required=True)
@@ -810,6 +839,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _preflight_admission(args)
         if args.command == "resume-role-host":
             return _resume_role_host(args)
+        if args.command == "submit-supervisor-decision":
+            return _submit_supervisor_decision(args)
+        if args.command == "consume-desktop-readback":
+            return _consume_desktop_readback(args)
         if args.command == "supervisor-admin":
             return _supervisor_admin(args)
         if args.command == "overwatcher-admin":

@@ -13,7 +13,19 @@ from .base import AdapterError
 from ..contracts import DeliveryResult, Endpoint, Envelope, RESULT_SCHEMA, SHA256
 from ..evidence import Attempt
 from ..jsonrpc import JsonRpcProcess
-from ..native_activity import TASK_ACTIVITY_SCHEMA, _atomic_json, make_native_start, utc_now
+from ..native_activity import (
+    TASK_ACTIVITY_SCHEMA,
+    _atomic_json,
+    make_native_start,
+    utc_now,
+    validate_native_start,
+)
+
+
+READBACK_ANCHOR_FIELDS = {
+    "schema_version", "thread_id", "host_id", "caller_thread_id", "message_id",
+    "prompt_sha256", "previous_turn_ids", "previous_item_ids", "active_turn_ids",
+}
 
 
 def validate_desktop_address(address: Mapping[str, Any]) -> None:
@@ -73,6 +85,188 @@ def _view(value: Mapping[str, Any], endpoint: Endpoint) -> tuple[Mapping[str, An
     return thread, turns
 
 
+def _read_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", f"{label} is missing or unreadable") from exc
+    if not isinstance(value, dict):
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", f"{label} is not an object")
+    return value
+
+
+def _write_or_match(attempt: Attempt, name: str, value: Mapping[str, Any]) -> None:
+    path = attempt.root / name
+    if path.exists():
+        if _read_object(path, name) != dict(value):
+            raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", f"{name} changed native identity")
+        return
+    attempt.write_json_once(name, value)
+
+
+def _matching_items(
+    turns: list[Mapping[str, Any]],
+    *,
+    previous: set[str],
+    previous_items: set[str],
+    active: set[str],
+    expected: str,
+) -> list[tuple[Mapping[str, Any], Mapping[str, Any]]]:
+    matches = []
+    for turn in turns:
+        for item in turn.get("items", []):
+            output = item.get("output", {}) if isinstance(item, Mapping) else {}
+            if ((turn["id"] not in previous or turn["id"] in active)
+                and isinstance(item.get("id"), str) and item["id"] not in previous_items
+                and item.get("type") == "functionCallOutput" and item.get("name") == "send_message_to_thread"
+                and item.get("namespace") == "codex_app" and isinstance(output, Mapping)
+                and output.get("truncated") is False and output.get("text") == expected):
+                matches.append((turn, item))
+    return matches
+
+
+def _readback_result(
+    endpoint: Endpoint,
+    envelope: Envelope,
+    attempt: Attempt,
+    turn: Mapping[str, Any],
+    item: Mapping[str, Any],
+    prompt_sha256: str,
+) -> DeliveryResult:
+    if turn.get("status") not in {"completed", "inProgress", "active"}:
+        raise AdapterError("CODEX_TURN_FAILED", "Desktop native turn did not complete successfully")
+    target = str(endpoint.address["thread_id"])
+    identity = f"{target}:{turn['id']}:{item['id']}"
+    proof = {
+        "thread_id": target,
+        "turn_id": turn["id"],
+        "turn_status": turn["status"],
+        "platform_item_id": item["id"],
+        "caller_thread_id": endpoint.address["desktop"]["caller_thread_id"],
+        "message_id": envelope.message_id,
+        "platform_item": dict(item),
+    }
+    _write_or_match(attempt, "desktop-readback.json", proof)
+    started = make_native_start(
+        adapter=endpoint.adapter,
+        run_id=envelope.run_id,
+        cell_id=envelope.cell_id,
+        message_id=envelope.message_id,
+        request_sha256=envelope.payload_sha256,
+        native_request_sha256=prompt_sha256,
+        native_task_kind="codex-desktop-turn",
+        native_task_id=identity,
+        native_task_status="IDLE" if turn.get("status") == "completed" else "RUNNING",
+        pid=os.getpid(),
+    )
+    _write_or_match(attempt, "started.json", started)
+    _atomic_json(attempt.root / "native-activity.json", {
+        "schema_version": TASK_ACTIVITY_SCHEMA, "adapter": endpoint.adapter,
+        "run_id": envelope.run_id, "cell_id": envelope.cell_id, "message_id": envelope.message_id,
+        "native_task_id": identity,
+        "status": "COMPLETED" if turn["status"] == "completed" else "RUNNING",
+        "sequence": 1, "observed_at": utc_now(),
+        "last_event": {"kind": "DESKTOP_TURN_OBSERVED", "sequence": 1}, "waiting_on": None,
+    })
+    return DeliveryResult(
+        RESULT_SCHEMA, envelope.message_id, envelope.run_id, endpoint.adapter,
+        "completed" if turn["status"] == "completed" else "started",
+        {"thread_id": target, "turn_id": turn["id"], "platform_item_id": item["id"],
+         "turn_status": turn["status"]}, None,
+        ("started.json", "desktop-send.json", "desktop-readback.json"),
+    )
+
+
+def consume_desktop_readback(
+    endpoint: Endpoint,
+    envelope: Envelope,
+    attempt: Attempt,
+    prompt: str | None = None,
+) -> DeliveryResult:
+    """Read the original Desktop delivery once; never send or create a replacement turn."""
+    validate_desktop_address(endpoint.address)
+    address, binding = endpoint.address, endpoint.address["desktop"]
+    caller, target = binding["caller_thread_id"], address["thread_id"]
+    if (os.environ.get("CODEX_THREAD_ID") != caller or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
+        or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
+        raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "the prepared Desktop executor capability was not inherited")
+    if prompt is None:
+        prompt_record = _read_object(attempt.root / "desktop-prompt.json", "Desktop prompt evidence")
+        if (set(prompt_record) != {"message_id", "prompt"}
+            or prompt_record.get("message_id") != envelope.message_id
+            or not isinstance(prompt_record.get("prompt"), str)):
+            raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "Desktop prompt evidence changed identity")
+        prompt = prompt_record["prompt"]
+    prompt_sha256 = hashlib.sha256(prompt.encode()).hexdigest()
+    anchor = _read_object(attempt.root / "desktop-readback-anchor.json", "Desktop readback anchor")
+    if (set(anchor) != READBACK_ANCHOR_FIELDS or anchor.get("schema_version") != "slk.desktop-readback-anchor/v1"
+        or anchor.get("thread_id") != target or anchor.get("host_id") != endpoint.host_id
+        or anchor.get("caller_thread_id") != caller or anchor.get("message_id") != envelope.message_id
+        or anchor.get("prompt_sha256") != prompt_sha256
+        or any(not isinstance(anchor.get(key), list) or not all(isinstance(v, str) for v in anchor[key])
+               for key in ("previous_turn_ids", "previous_item_ids", "active_turn_ids"))):
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "Desktop readback anchor changed identity")
+    sent = _read_object(attempt.root / "desktop-send.json", "Desktop send evidence")
+    if (sent.get("thread_id") != target or sent.get("caller_thread_id") != caller
+        or sent.get("message_id") != envelope.message_id or sent.get("prompt_sha256") != prompt_sha256
+        or not isinstance(sent.get("result"), Mapping) or sent["result"].get("threadId") != target):
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "Desktop accepted-send evidence changed identity")
+    proof_path = attempt.root / "desktop-readback.json"
+    if proof_path.is_file():
+        proof = _read_object(proof_path, "Desktop readback proof")
+        item = proof.get("platform_item")
+        turn_status = proof.get("turn_status")
+        if (proof.get("thread_id") != target or proof.get("caller_thread_id") != caller
+            or proof.get("message_id") != envelope.message_id or not isinstance(item, Mapping)
+            or turn_status not in {"completed", "inProgress", "active"}):
+            raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "saved Desktop readback changed identity")
+        native_id = f"{target}:{proof.get('turn_id')}:{proof.get('platform_item_id')}"
+        try:
+            started = validate_native_start(
+                attempt.root / "started.json", adapter=endpoint.adapter,
+                run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
+                request_sha256=envelope.payload_sha256, native_request_sha256=prompt_sha256,
+            )
+            if (started["native_task"]["kind"] != "codex-desktop-turn"
+                or started["native_task"]["id"] != native_id):
+                raise ValueError("saved native start changed identity")
+        except (OSError, KeyError, ValueError) as exc:
+            raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "saved native start changed identity") from exc
+        return DeliveryResult(
+            RESULT_SCHEMA, envelope.message_id, envelope.run_id, endpoint.adapter,
+            "completed" if turn_status == "completed" else "started",
+            {"thread_id": target, "turn_id": proof["turn_id"],
+             "platform_item_id": proof["platform_item_id"], "turn_status": turn_status}, None,
+            ("started.json", "desktop-send.json", "desktop-readback.json"),
+        )
+    expected = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
+    timeout = float(address["startup_timeout_seconds"])
+    client = DesktopClient(list(address["command"]), Path(str(address["cwd"])))
+    try:
+        client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+            "clientInfo": {"name": "slk_transport_desktop_readback", "version": "4.4.2"}}, timeout)
+        client.notify("notifications/initialized", {})
+        catalog = client.request(2, "tools/list", {}, timeout)
+        if "read_thread" not in {t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}:
+            raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "installed Desktop plugin lacks read_thread")
+        args = {"threadId": target, "hostId": endpoint.host_id, "turnLimit": 2,
+                "includeOutputs": True, "maxOutputCharsPerItem": len(expected) + 512}
+        view = client.call(3, "read_thread", args, caller, timeout)
+        _, turns = _view(view, endpoint)
+        matches = _matching_items(turns, previous=set(anchor["previous_turn_ids"]),
+            previous_items=set(anchor["previous_item_ids"]), active=set(anchor["active_turn_ids"]),
+            expected=expected)
+        if len(matches) > 1:
+            raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "multiple native items claim this exact delivery")
+        if not matches:
+            raise AdapterError("CODEX_DESKTOP_READBACK_UNPROVED", "original accepted send still lacks exact native proof; do not resend")
+        return _readback_result(endpoint, envelope, attempt, *matches[0], prompt_sha256)
+    except TimeoutError as error:
+        raise AdapterError("CODEX_RPC_TIMEOUT", "Desktop native readback timed out; do not resend") from error
+    finally:
+        client.close()
+
+
 def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, prompt: str,
                     *, wait_for_completion: bool = True) -> DeliveryResult:
     address, binding = endpoint.address, endpoint.address["desktop"]
@@ -89,7 +283,7 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
     client = DesktopClient(list(address["command"]), Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.1"}}, timeout)
+            "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.2"}}, timeout)
         client.notify("notifications/initialized", {})
         catalog = client.request(2, "tools/list", {}, timeout)
         if not {"read_thread", "send_message_to_thread"}.issubset({t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}):
@@ -106,6 +300,16 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
             raise AdapterError("CODEX_ACTIVE_WRITER_UNRESOLVED", "Desktop active turn identity is ambiguous")
         previous = {t["id"] for t in turns}
         previous_items = {i.get("id") for t in turns for i in t["items"] if isinstance(i.get("id"), str)}
+        attempt.write_json_once("desktop-readback-anchor.json", {
+            "schema_version": "slk.desktop-readback-anchor/v1", "thread_id": target,
+            "host_id": endpoint.host_id, "caller_thread_id": caller,
+            "message_id": envelope.message_id, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "previous_turn_ids": sorted(previous), "previous_item_ids": sorted(previous_items),
+            "active_turn_ids": sorted(active),
+        })
+        attempt.write_json_once("desktop-prompt.json", {
+            "message_id": envelope.message_id, "prompt": prompt,
+        })
         sent = client.call(4, "send_message_to_thread", {"threadId": target, "hostId": endpoint.host_id,
             "model": binding["model"], "thinking": binding["reasoning_effort"], "prompt": prompt}, caller, timeout)
         attempt.write_json_once("desktop-send.json", {"thread_id": target, "caller_thread_id": caller,
@@ -140,7 +344,8 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
                     raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "delivery native identity changed")
                 if proven is None:
                     proven = identity
-                    proof = {"thread_id": target, "turn_id": turn["id"], "platform_item_id": item["id"],
+                    proof = {"thread_id": target, "turn_id": turn["id"], "turn_status": turn["status"],
+                             "platform_item_id": item["id"],
                              "caller_thread_id": caller, "message_id": envelope.message_id, "platform_item": dict(item)}
                     attempt.write_json_once("desktop-readback.json", proof)
                     attempt.write_json_once("started.json", make_native_start(adapter=endpoint.adapter,

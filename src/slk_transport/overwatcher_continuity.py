@@ -59,7 +59,7 @@ def inspect_overwatcher_cadence(
         "action": "NONE",
     }
     now = _time(observed_at)
-    current_method = summary.get("slk_version") in {"4.4.0", "4.4.1"}
+    current_method = summary.get("slk_version") in {"4.4.0", "4.4.1", "4.4.2"}
     if not active:
         if current_method:
             return {**base, "status": "CONTINUITY_UNPROVEN", "anomaly_codes": ["OVERWATCHER_MISSING"],

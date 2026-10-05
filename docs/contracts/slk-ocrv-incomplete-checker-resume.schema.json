@@ -19,7 +19,7 @@
   ],
   "properties": {
     "schema_version": {"const": "slk.ocrv-incomplete-checker-resume-request/v1"},
-    "method_version": {"enum": ["4.4.0", "4.4.1"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2"]},
     "recovery_invocation_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "go_id": {"$ref": "#/$defs/identifier"},

@@ -21,6 +21,26 @@ from .native_activity import validate_native_start
 FIELDS = {"schema_version", "run_id", "plan_revision", "state_command", "transport_command", "roles", "cells", "d2_criteria"}
 FIELDS_V2 = FIELDS | {"temporal"}
 ROLE_FIELDS = {"endpoint_path", "endpoint_sha256", "credential_path"}
+PROVIDER_THINKING_FIELDS = {"thinking", "reasoning", "analysis"}
+
+
+def _without_provider_thinking(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            key: _without_provider_thinking(item)
+            for key, item in value.items()
+            if str(key).lower() not in PROVIDER_THINKING_FIELDS
+        }
+    if isinstance(value, list):
+        return [_without_provider_thinking(item) for item in value]
+    return value
+
+
+def normalized_checker_findings(findings: list[Any]) -> list[str]:
+    return [
+        json.dumps(_without_provider_thinking(finding), ensure_ascii=False, sort_keys=True)
+        for finding in findings
+    ]
 
 
 def load_role_host(endpoint_raw: Mapping[str, Any]) -> "RoleHost | None":
@@ -152,6 +172,101 @@ class RoleHost:
                 raise wc.CompletionError("ROLE_HOST_TOKEN_UNCONFIRMED", "receiver started but the exact TOKEN commit is not confirmed")
             time.sleep(0.05)
 
+    @staticmethod
+    def _source_sha256(source: Path, role: str) -> str:
+        names = (
+            ("endpoint.json", "envelope.json", "started.json", "supervisor-result.json")
+            if role == "supervisor"
+            else (
+                "endpoint.json", "envelope.json", "started.json", "completed.json", "failed.json",
+                "worker-result.json", "checker-result.json", "ocrv-result.json",
+            )
+        )
+        value: dict[str, str] = {
+            name: wc._sha256(source / name) for name in names if (source / name).is_file()
+        }
+        handoff_evidence = source / "incomplete-handoff" / "evidence.json"
+        if handoff_evidence.is_file():
+            value["incomplete-handoff/evidence.json"] = wc._sha256(handoff_evidence)
+        return canonical_json_sha256(value)
+
+    def _supervisor_start_proof(self, source: Path, envelope: Envelope) -> None:
+        endpoint = self.endpoint("supervisor")
+        expected_thread = endpoint.get("address", {}).get("thread_id")
+        if os.environ.get("CODEX_THREAD_ID") != expected_thread:
+            raise wc.CompletionError(
+                "ROLE_HOST_SESSION_MISMATCH",
+                "Supervisor decision submit must run inside the exact registered Session",
+            )
+        deadline = time.monotonic() + 10
+        while not (source / "started.json").is_file() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        try:
+            parse_delivery(endpoint, wc._read_object(source / "envelope.json", "source envelope"))
+            native = validate_native_start(
+                source / "started.json",
+                adapter=endpoint["adapter"],
+                run_id=envelope.run_id,
+                cell_id=envelope.cell_id,
+                message_id=envelope.message_id,
+                request_sha256=envelope.payload_sha256,
+            )
+            desktop = "desktop" in endpoint.get("address", {})
+            expected_kind = "codex-desktop-turn" if desktop else "codex-turn"
+            native_id = native["native_task"]["id"]
+            if native["native_task"]["kind"] != expected_kind or not native_id.startswith(
+                f"{expected_thread}:"
+            ):
+                raise ValueError("native start differs from the registered Supervisor Session")
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            raise wc.CompletionError(
+                "ROLE_HOST_START_INVALID",
+                "Supervisor decision submit lacks the exact native start proof",
+            ) from exc
+
+    def submit_supervisor_decision(self, source: Path) -> dict[str, Any]:
+        """Submit one Supervisor decision from its live native Session, before turn end."""
+        envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
+        if envelope.receiver_role != "supervisor" or wc._read_object(
+            source / "endpoint.json", "source endpoint"
+        ) != self.endpoint("supervisor"):
+            raise wc.CompletionError(
+                "ROLE_HOST_BINDING_INVALID", "source receiver is not the prepared Supervisor"
+            )
+        self._supervisor_start_proof(source, envelope)
+        root = source / "role-host"
+        root.mkdir(parents=True, exist_ok=True)
+        result_path = root / "result.json"
+        source_sha256 = self._source_sha256(source, "supervisor")
+        if result_path.exists():
+            saved = wc._read_object(result_path, "owned handoff receipt")
+            if (
+                saved.get("binding_sha256") != self.digest
+                or saved.get("source_message_id") != envelope.message_id
+                or saved.get("source_sha256") != source_sha256
+            ):
+                raise wc.CompletionError(
+                    "ROLE_HOST_CONFLICT", "owned handoff receipt changed identity"
+                )
+            return saved
+        decision_path = source / "supervisor-result.json"
+        if not decision_path.is_file():
+            raise wc.CompletionError(
+                "SUPERVISOR_RESULT_INVALID", "Supervisor decision file is missing"
+            )
+        occurred_at = datetime.fromtimestamp(
+            decision_path.stat().st_mtime, timezone.utc
+        ).isoformat()
+        result = self._supervisor_result(source, envelope, root, occurred_at)
+        receipt = {
+            **result,
+            "binding_sha256": self.digest,
+            "source_message_id": envelope.message_id,
+            "source_sha256": source_sha256,
+        }
+        wc._write_or_reuse_stable_request(result_path, receipt)
+        return receipt
+
     def complete(self, source: Path) -> dict[str, Any]:
         envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
         role = envelope.receiver_role
@@ -160,13 +275,8 @@ class RoleHost:
         root = source / "role-host"
         root.mkdir(parents=True, exist_ok=True)
         result_path = root / "result.json"
-        source_sha256 = canonical_json_sha256({name: wc._sha256(source / name) for name in (
-            "endpoint.json", "envelope.json", "started.json", "completed.json", "failed.json",
-            "worker-result.json", "checker-result.json", "ocrv-result.json", "supervisor-result.json") if (source / name).is_file()})
+        source_sha256 = self._source_sha256(source, role)
         handoff_evidence = source / "incomplete-handoff" / "evidence.json"
-        if handoff_evidence.is_file():
-            source_sha256 = canonical_json_sha256({"source": source_sha256,
-                                                   "incomplete-handoff/evidence.json": wc._sha256(handoff_evidence)})
         if result_path.exists():
             saved = wc._read_object(result_path, "owned handoff receipt")
             if (saved.get("binding_sha256") != self.digest or saved.get("source_message_id") != envelope.message_id
@@ -525,7 +635,7 @@ class RoleHost:
                 "escalation_attempt_root": str(root),
                 "rework_round": 1 + sum(e.get("event_type") == "REWORK_REQUESTED" and e.get("cell_id") == envelope.cell_id for e in projection["events"]),
                 "cell_goal": envelope.payload["cell_goal"], "acceptance_criteria": envelope.payload["d1_criteria"],
-                "findings": [json.dumps(f, ensure_ascii=False, sort_keys=True) for f in native["findings"]],
+                "findings": normalized_checker_findings(native["findings"]),
                 "reproduction_steps": ["Read the original Checker findings and cited evidence; do not infer a reproduction."],
                 "expected_result": "Satisfy the unchanged CELL acceptance criteria.", "evidence_refs": [str(source / "ocrv-result.json")]}
             execute = failed.execute_checker_escalation

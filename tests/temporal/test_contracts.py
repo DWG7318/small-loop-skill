@@ -129,7 +129,7 @@ def runtime_guard_resolution_value() -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2"])
 def test_compatible_start_preserves_original_method_version(version):
     value = start_value()
     value["method_version"] = version

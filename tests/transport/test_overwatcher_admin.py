@@ -80,3 +80,22 @@ def test_ow_consumer_fails_closed_before_ow_state_write(tmp_path, monkeypatch, d
         admin.execute_sealed_overwatcher_admin(
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
     assert "record-overwatch-cycle" not in calls
+
+
+def test_ow_consumer_preserves_safe_state_rejection_code_and_message(tmp_path, monkeypatch):
+    request = request_fixture(tmp_path)
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda path: "slk_" + "c" * 64)
+
+    def run(command, arguments, credential=None, credential_scope="role"):
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
+                    "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 7}
+        return {"status": "error", "code": "SLK_STATE_COMMAND_FAILED",
+                "message": "cycle runtime revision is stale",
+                "_slk_command": {"process_exit": 1, "json_parse": "PARSED_STDERR",
+                                 "business_status": "error"}}
+
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(ValueError, match="SLK_STATE_COMMAND_FAILED: cycle runtime revision is stale"):
+        admin.execute_sealed_overwatcher_admin(
+            request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())

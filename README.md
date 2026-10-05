@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **4.4.1**
+Current version: **4.4.2**
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 
@@ -17,7 +17,7 @@ Temporal: required continuity/timing guard; never engineering authority
 
 Before any CELL, Supervisor opens BI 1.1.0, establishes the four-role `RUN_TEAM_REGISTRY`, proves current tools/capabilities and device readiness, starts the Run's deterministic `SLK.Start`/`SLK.Run` workflows on the shared local Temporal service, then completes the seven exact communication rehearsals. Missing, stale, guessed, or unqueryable identity/endpoint/tool evidence blocks dispatch.
 
-Codex is Supervisor using canonical `gpt-6.1-sol`; Owner freezes `high` or `xhigh` per Run. OCRV is Checker (Qwen3.8-Max); DSH is Worker (DeepSeek V4 Flash). Runtime, model, reasoning, Session, adapter, endpoint and native activity are validated rather than inferred from prompts. Checker and Worker own the ordinary CELL loop. Supervisor acts at setup, D1 failure, recovery, exemption and D2; the second formal D1 failure for the same CELL requires an `AGGRESSIVE` investigation directive without transferring D1 authority.
+Codex is Supervisor using canonical `gpt-6.1-sol`; Owner freezes `high` or `xhigh` per Run. OCRV is Checker (Qwen3.8-Max); DSH is Worker (DeepSeek V4 Flash). Runtime, model, reasoning, Session, adapter, endpoint and native activity are validated rather than inferred from prompts. Supervisor sizes the frozen engineering solution for DSH: oversized work is pre-split into independently D0/D1-checkable small or medium CELLs without changing acceptance. Most CELLs should pass D1 first try; a second consecutive formal D1 failure stops ordinary rework and requires versioned split/replan of the unaccepted remainder, while Checker retains D1 authority.
 
 Overwatcher is mandatory and observes actual cross-evidence facts every 600 seconds. It never relays normal work, retries delivery, edits BI/TOKEN, judges D0/D1/D2, or repairs a member. It reports `ANOMALY` or `UNKNOWN` only to the exact registered Supervisor and continues observing. One Run has one distinct Overwatcher role binding; one exact active Session may serve multiple Runs only when all native identity/model/endpoint/cadence facts match and every Run remains separately scoped. Only Supervisor may stop it, and every exit triggers a Supervisor-confirmed runtime guard before another CELL may dispatch.
 

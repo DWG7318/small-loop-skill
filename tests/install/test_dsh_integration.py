@@ -310,7 +310,7 @@ def test_dsh_integration_installs_and_rolls_back_managed_files(tmp_path: Path) -
 
     assert installed.returncode == 0, installed.stdout + installed.stderr
     receipt = json.loads(installed.stdout.strip())
-    assert receipt["version"] == "4.4.1"
+    assert receipt["version"] == "4.4.2"
     for name in (
         "dsh-slk.ps1",
         "slk-native-activity.patch.yml",

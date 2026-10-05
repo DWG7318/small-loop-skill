@@ -98,7 +98,7 @@ async def _run_standard_client_drives_one_real_sdk_update_and_one_fake_ocrv_nati
         return {"status": "DELIVERED", "operation_id": operation_id,
                 "receipt_sha256": hashlib.sha256(receipt.encode()).hexdigest()}
 
-    start = {"run_id": run_id, "method_version": "4.4.1", "runtime_revision": 7, "task_queue": queue,
+    start = {"run_id": run_id, "method_version": "4.4.2", "runtime_revision": 7, "task_queue": queue,
              "ack_timeout_seconds": 120, "startup_idempotency_key": f"start-{run_id}-v7",
              "roles": [{"role": role.upper(), "role_instance_id": f"{run_id}-{role}-001",
                         "endpoint_ref": f"endpoint-{role}-v1"}

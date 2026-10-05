@@ -61,6 +61,8 @@ def _powershell_json(script: str) -> Any:
         stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", check=False,
         **windows_no_window_kwargs(),
     )
+    if completed.returncode == 3:
+        raise ProcessLookupError("Windows process no longer exists")
     if completed.returncode != 0 or not completed.stdout.strip():
         raise ValueError("Windows process identity is unavailable")
     return json.loads(completed.stdout)
@@ -113,6 +115,12 @@ def _stop_exact_processes(rows: list[dict[str, Any]]) -> None:
             stdin=subprocess.DEVNULL, capture_output=True, check=False, **windows_no_window_kwargs(),
         )
         if completed.returncode != 0:
+            try:
+                current = _process_snapshot(pid)
+            except ProcessLookupError:
+                continue
+            if current != row:
+                raise ValueError(f"exact Temporal worker process {pid} identity changed")
             raise ValueError(f"exact Temporal worker process {pid} did not stop")
 
 
@@ -189,9 +197,6 @@ def reload_temporal_worker(request_path: Path | str, *, request_sha256: str) -> 
     if len(pids) != len(rows):
         raise ValueError("old Temporal worker processes must form one exact chain")
     _child_first([dict(row) for row in rows])
-    for row in rows:
-        if _process_snapshot(row["pid"]) != row:
-            raise ValueError("old Temporal worker identity changed")
     result_path, evidence_root = Path(request["result_path"]), Path(request["evidence_root"])
     if not result_path.is_absolute() or not evidence_root.is_absolute():
         raise ValueError("Temporal reload output paths must be absolute")
@@ -200,6 +205,9 @@ def reload_temporal_worker(request_path: Path | str, *, request_sha256: str) -> 
         if saved.get("request_sha256") != request_sha256:
             raise ValueError("Temporal reload result conflicts with this request")
         return saved
+    for row in rows:
+        if _process_snapshot(row["pid"]) != row:
+            raise ValueError("old Temporal worker identity changed")
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(request["pythonpath"])
     environment["PYTHONIOENCODING"] = "utf-8"

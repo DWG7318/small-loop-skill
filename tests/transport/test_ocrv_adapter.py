@@ -161,6 +161,44 @@ def test_ocrv_v2_request_matches_installed_closed_contract(tmp_path: Path) -> No
     assert result.native_identity["review_invocation_id"]
 
 
+def test_registered_checker_freezes_only_executing_review_limits(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    raw = {**endpoint.__dict__, "address": dict(endpoint.address)}
+    raw["address"]["review_capacity"] = {
+        "max_tokens": 120_000,
+        "max_tokens_budget": 360_000,
+        "timeout_minutes": 21,
+    }
+    endpoint = Endpoint.from_dict(raw)
+    envelope = candidate_envelope(tmp_path)
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    OcrvAdapter().deliver(endpoint, envelope, attempt)
+
+    request = json.loads((attempt.root / "ocrv-request.json").read_text(encoding="utf-8"))
+    assert {key: request["capacity"][key] for key in (
+        "max_tokens", "max_tokens_budget", "timeout_minutes"
+    )} == raw["address"]["review_capacity"]
+    assert request["capacity"]["max_changed_lines"] == 800  # legacy advisory only
+
+
+@pytest.mark.parametrize("damage", ["missing", "extra", "zero"])
+def test_registered_checker_review_limits_fail_closed(tmp_path: Path, damage: str) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    raw = {**endpoint.__dict__, "address": dict(endpoint.address)}
+    capacity = {"max_tokens": 120_000, "max_tokens_budget": 360_000, "timeout_minutes": 21}
+    if damage == "missing":
+        capacity.pop("max_tokens")
+    elif damage == "extra":
+        capacity["max_changed_lines"] = 1
+    else:
+        capacity["timeout_minutes"] = 0
+    raw["address"]["review_capacity"] = capacity
+
+    with pytest.raises(AdapterError, match="review_capacity"):
+        OcrvAdapter().validate_address(Endpoint.from_dict(raw))
+
+
 def test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -452,7 +490,7 @@ def _large_candidate_envelope(tmp_path: Path) -> Envelope:
     return Envelope(**raw)
 
 
-def test_ocrv_large_review_is_split_into_durable_segments_then_aggregated(
+def test_ocrv_large_review_runs_once_without_legacy_threshold_segmentation(
     tmp_path: Path,
 ) -> None:
     endpoint = checker_endpoint(tmp_path)
@@ -462,35 +500,9 @@ def test_ocrv_large_review_is_split_into_durable_segments_then_aggregated(
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
     assert result.status == "completed"
-    segment_results = sorted((attempt.root / "review-segments").glob("segment-*/result.json"))
-    assert len(segment_results) >= 2
-    segment_progress = json.loads(
-        (attempt.root / "ocrv-review-progress-001.json").read_text(encoding="utf-8")
-    )
-    assert len(segment_progress["request_sha256"]) == 64
-    assert len(segment_progress["result_sha256"]) == 64
-    assert segment_progress["session_id"].startswith("ocrv-session-")
-    progress = json.loads((attempt.root / "ocrv-review-progress.json").read_text(encoding="utf-8"))
-    assert progress["completed_segments"] == progress["total_segments"]
+    assert result.native_identity["review_segment_count"] == 0
     assert (attempt.root / "ocrv-result.json").is_file()
-    assert result.native_identity["review_segment_count"] == len(segment_results)
-    for segment in sorted((attempt.root / "review-segments").glob("segment-*"))[1:]:
-        assert (segment / "started.json").is_file()
-        assert (segment / "native-activity.json").is_file()
-    segment_sentinel = "SEGMENT_FULL_RESULT_MUST_NOT_ENTER_AGGREGATE_"
-    assert segment_sentinel in segment_results[0].read_text(encoding="utf-8")
-    for segment in sorted((attempt.root / "review-segments").glob("segment-*")):
-        request = json.loads((segment / "request.json").read_text(encoding="utf-8"))
-        preflight = json.loads((segment / "preflight.json").read_text(encoding="utf-8"))
-        assert request["review_scope"]["include_paths"] == preflight["preview"]["selected_paths"]
-
-    aggregate = json.loads((attempt.root / "ocrv-aggregate.json").read_text(encoding="utf-8"))
-    encoded = json.dumps(aggregate)
-    final_request = (attempt.root / "ocrv-request.json").read_text(encoding="utf-8")
-    assert segment_sentinel not in encoded
-    assert segment_sentinel not in final_request
-    assert "review-segments" not in encoded
-    assert "review-segments" not in final_request
+    assert not (attempt.root / "review-segments").exists()
 
 
 def test_ocrv_segments_cover_every_selected_path_against_every_criterion(
@@ -521,7 +533,33 @@ def test_ocrv_segments_cover_every_selected_path_against_every_criterion(
     assert covered == expected
 
 
-def test_ocrv_full_over_capacity_preview_is_refined_until_segments_fit(
+def test_legacy_line_file_and_background_limits_are_advisory_only(tmp_path: Path) -> None:
+    adapter = OcrvAdapter()
+    request = adapter._candidate_request(_large_candidate_envelope(tmp_path))
+    request["capacity"].update(
+        max_background_characters=1,
+        max_background_bytes=1,
+        max_changed_lines=1,
+        max_segment_paths=1,
+    )
+    paths = ["large.py", "support.py", "proof.py"]
+    preflight = {
+        "status": "READY",
+        "background": {"characters": 20_000, "bytes": 40_000, "evidence_bytes": 80_000},
+        "preview": {
+            "selected_paths": paths,
+            "inventory": [
+                {"path": "large.py", "insertions": 994, "deletions": 83},
+                {"path": "support.py", "insertions": 4, "deletions": 2},
+                {"path": "proof.py", "insertions": 1, "deletions": 0},
+            ],
+        },
+    }
+
+    assert adapter._preflight_fits(request, preflight) is True
+
+
+def test_ocrv_large_background_is_advisory_and_reaches_one_real_review(
     tmp_path: Path,
 ) -> None:
     endpoint = checker_endpoint(tmp_path)
@@ -537,15 +575,14 @@ def test_ocrv_full_over_capacity_preview_is_refined_until_segments_fit(
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
     assert result.status == "completed"
-    segment_roots = sorted((attempt.root / "review-segments").glob("segment-*"))
-    assert len(segment_roots) >= 6
-    for segment in segment_roots:
-        request = json.loads((segment / "request.json").read_text(encoding="utf-8"))
-        preflight = json.loads((segment / "preflight.json").read_text(encoding="utf-8"))
-        assert preflight["background"]["characters"] <= request["capacity"]["max_background_characters"]
+    assert result.native_identity["review_segment_count"] == 0
+    preflight = json.loads((attempt.root / "ocrv-preflight.json").read_text(encoding="utf-8"))
+    request = json.loads((attempt.root / "ocrv-request.json").read_text(encoding="utf-8"))
+    assert preflight["background"]["characters"] > request["capacity"]["max_background_characters"]
+    assert (attempt.root / "ocrv-result.json").is_file()
 
 
-def test_ocrv_rejects_nominal_segment_when_preview_still_selects_whole_candidate(
+def test_ocrv_does_not_open_scope_segments_for_advisory_limits(
     tmp_path: Path,
 ) -> None:
     endpoint = checker_endpoint(tmp_path, "scope-leak")
@@ -554,15 +591,15 @@ def test_ocrv_rejects_nominal_segment_when_preview_still_selects_whole_candidate
 
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "failed"
-    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
+    assert result.status == "completed"
+    assert not (attempt.root / "review-segments").exists()
     invocations = (Path(str(envelope.payload["repository"])) / ".fake-ocrv-invocations.jsonl").read_text(
         encoding="utf-8"
     )
-    assert '"preflight": false' not in invocations
+    assert invocations.count('"preflight": false') == 1
 
 
-def test_ocrv_exact_background_over_limit_fails_before_model_start(tmp_path: Path) -> None:
+def test_ocrv_exact_background_over_legacy_limit_still_starts_model(tmp_path: Path) -> None:
     endpoint = checker_endpoint(tmp_path)
     envelope = candidate_envelope(tmp_path)
     raw = dict(envelope.__dict__)
@@ -575,12 +612,11 @@ def test_ocrv_exact_background_over_limit_fails_before_model_start(tmp_path: Pat
 
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "failed"
-    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
+    assert result.status == "completed"
     invocations = (Path(str(envelope.payload["repository"])) / ".fake-ocrv-invocations.jsonl").read_text(
         encoding="utf-8"
     )
-    assert '"preflight": false' not in invocations
+    assert invocations.count('"preflight": false') == 1
 
 
 def test_ocrv_accepts_preflight_incomplete_exit_as_d1_incomplete(tmp_path: Path) -> None:
@@ -599,7 +635,7 @@ def test_ocrv_accepts_preflight_incomplete_exit_as_d1_incomplete(tmp_path: Path)
     assert '"preflight": false' not in invocations
 
 
-def test_ocrv_blocking_segment_stops_before_next_segment(tmp_path: Path) -> None:
+def test_ocrv_blocking_full_review_returns_fail_without_segmentation(tmp_path: Path) -> None:
     endpoint = checker_endpoint(tmp_path, "blocking-first")
     envelope = _large_candidate_envelope(tmp_path)
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
@@ -608,11 +644,11 @@ def test_ocrv_blocking_segment_stops_before_next_segment(tmp_path: Path) -> None
 
     assert result.status == "completed"
     assert result.native_identity["verdict"] == "FAIL"
-    assert (attempt.root / "review-segments" / "segment-001" / "result.json").is_file()
-    assert not (attempt.root / "review-segments" / "segment-002").exists()
+    assert (attempt.root / "ocrv-result.json").is_file()
+    assert not (attempt.root / "review-segments").exists()
 
 
-def test_ocrv_timeout_preserves_completed_segments_and_returns_incomplete(
+def test_ocrv_registered_timeout_is_enforced_on_full_review(
     tmp_path: Path,
 ) -> None:
     endpoint = checker_endpoint(tmp_path, "timeout-second")
@@ -625,11 +661,8 @@ def test_ocrv_timeout_preserves_completed_segments_and_returns_incomplete(
     envelope = _large_candidate_envelope(tmp_path)
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
 
-    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+    with pytest.raises(AdapterError) as error:
+        OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "failed"
-    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
-    progress = json.loads((attempt.root / "ocrv-review-progress.json").read_text(encoding="utf-8"))
-    assert progress["completed_segments"] == 1
-    assert progress["status"] == "INCOMPLETE"
-    assert (attempt.root / "review-segments" / "segment-001" / "result.json").is_file()
+    assert error.value.error_code == "OCRV_TIMEOUT"
+    assert not (attempt.root / "review-segments").exists()

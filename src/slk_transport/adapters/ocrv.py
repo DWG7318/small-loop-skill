@@ -34,6 +34,7 @@ from ..subprocess_watch import finish, spawn
 
 
 ADDRESS_FIELDS = frozenset({"command", "runtime_root", "timeout_seconds"})
+REVIEW_CAPACITY_FIELDS = frozenset({"max_tokens", "max_tokens_budget", "timeout_minutes"})
 DISPATCH_FIELDS = frozenset({"worker_endpoint", "worker_payload"})
 CANDIDATE_FIELDS = frozenset(
     {"repository", "candidate", "cell_goal", "d1_criteria", "evidence_files"}
@@ -124,6 +125,12 @@ def _positive_seconds(value: Any) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
         raise AdapterError("OCRV_ADDRESS_INVALID", "timeout_seconds must be positive")
     return float(value)
+
+
+def _positive_integer(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise AdapterError("OCRV_ADDRESS_INVALID", f"{label} must be a positive integer")
+    return value
 
 
 def _string_array(value: Any, label: str) -> list[str]:
@@ -220,7 +227,7 @@ class OcrvAdapter:
         ):
             raise AdapterError("OCRV_ADDRESS_INVALID", "OCRV endpoint must be the Checker adapter")
         address = endpoint.address
-        if set(address) != ADDRESS_FIELDS:
+        if set(address) not in (ADDRESS_FIELDS, ADDRESS_FIELDS | {"review_capacity"}):
             raise AdapterError("OCRV_ADDRESS_INVALID", "OCRV address must use the exact field set")
         _string_array(address["command"], "command")
         runtime_root = address["runtime_root"]
@@ -231,6 +238,22 @@ class OcrvAdapter:
         ):
             raise AdapterError("OCRV_ADDRESS_INVALID", "runtime_root must be an existing absolute directory")
         _positive_seconds(address["timeout_seconds"])
+        if "review_capacity" in address:
+            capacity = address["review_capacity"]
+            if not isinstance(capacity, Mapping) or set(capacity) != REVIEW_CAPACITY_FIELDS:
+                raise AdapterError(
+                    "OCRV_ADDRESS_INVALID",
+                    "review_capacity must use the exact executing-limit field set",
+                )
+            for field in REVIEW_CAPACITY_FIELDS:
+                _positive_integer(capacity[field], f"review_capacity.{field}")
+
+    @staticmethod
+    def _executing_capacity(address: Mapping[str, Any]) -> dict[str, int]:
+        configured = address.get("review_capacity")
+        if configured is None:
+            return {field: int(DEFAULT_REVIEW_CAPACITY[field]) for field in REVIEW_CAPACITY_FIELDS}
+        return {field: int(configured[field]) for field in REVIEW_CAPACITY_FIELDS}
 
     def _dispatch(
         self,
@@ -306,7 +329,11 @@ class OcrvAdapter:
             evidence=("started.json", "checker-result.json"),
         )
 
-    def _candidate_request(self, envelope: Envelope) -> dict[str, Any]:
+    def _candidate_request(
+        self,
+        envelope: Envelope,
+        review_capacity: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         payload = envelope.payload
         _closed(payload, CANDIDATE_FIELDS, "CANDIDATE_READY payload")
         repository = Path(_nonempty(payload["repository"], "repository"))
@@ -332,6 +359,9 @@ class OcrvAdapter:
             "criterion_ids": [f"D1-{index:03d}" for index in range(1, len(criteria) + 1)],
         }
         scope["scope_sha256"] = canonical_json_sha256(scope)
+        capacity = dict(DEFAULT_REVIEW_CAPACITY)
+        if review_capacity is not None:
+            capacity.update({field: int(review_capacity[field]) for field in REVIEW_CAPACITY_FIELDS})
         return {
             "schema_version": "slk.ocrv-d1-request/v2",
             "run_id": envelope.run_id,
@@ -342,7 +372,7 @@ class OcrvAdapter:
             "d1_criteria": [item.strip() for item in criteria],
             "evidence_files": list(evidence_files),
             "review_scope": scope,
-            "capacity": dict(DEFAULT_REVIEW_CAPACITY),
+            "capacity": capacity,
         }
 
     def _read_ocrv_result(
@@ -577,11 +607,8 @@ class OcrvAdapter:
 
     @staticmethod
     def _preflight_fits(request: Mapping[str, Any], preflight: Mapping[str, Any]) -> bool:
-        background = preflight["background"]
         preview = preflight["preview"]
-        capacity = request["capacity"]
         selected = set(preview["selected_paths"])
-        changed_lines = 0
         inventoried: set[str] = set()
         for item in preview["inventory"]:
             if not isinstance(item, Mapping) or item.get("path") not in selected:
@@ -592,13 +619,8 @@ class OcrvAdapter:
             if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in (insertions, deletions)):
                 return False
             inventoried.add(path)
-            changed_lines += insertions + deletions
         return bool(
             preflight["status"] == "READY"
-            and background["characters"] <= capacity["max_background_characters"]
-            and background["bytes"] <= capacity["max_background_bytes"]
-            and len(selected) <= capacity["max_segment_paths"]
-            and changed_lines <= capacity["max_changed_lines"]
             and inventoried == selected
         )
 
@@ -822,7 +844,10 @@ class OcrvAdapter:
         envelope: Envelope,
         attempt: Attempt,
     ) -> DeliveryResult:
-        request = self._candidate_request(envelope)
+        request = self._candidate_request(
+            envelope,
+            self._executing_capacity(endpoint.address),
+        )
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
@@ -873,11 +898,9 @@ class OcrvAdapter:
         selected_paths = list(preview["selected_paths"])
         segments = []
         if not self._preflight_fits(request, preflight):
-            segments = self._review_segments(request, selected_paths, list(preview["inventory"]))
-            if not segments:
-                return incomplete(
-                    evidence=("ocrv-preflight-request.json", "ocrv-preflight.json")
-                )
+            return incomplete(
+                evidence=("ocrv-preflight-request.json", "ocrv-preflight.json")
+            )
         if not segments:
             request_path = attempt.write_json_once("ocrv-request.json", request)
             result_path = attempt.root / "ocrv-result.json"

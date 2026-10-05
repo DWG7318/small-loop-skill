@@ -121,7 +121,7 @@ def test_installed_adapter_preflight_uses_exact_exclude_scope_without_model(tmp_
     assert '"b.py"' not in background
 
 
-def test_installed_adapter_previews_oversized_background_without_model(tmp_path: Path) -> None:
+def test_installed_adapter_records_oversized_background_as_advisory(tmp_path: Path) -> None:
     request, output, _repository = _request(tmp_path)
     value = json.loads(request.read_text(encoding="utf-8"))
     value["capacity"]["max_background_characters"] = 10
@@ -130,7 +130,9 @@ def test_installed_adapter_previews_oversized_background_without_model(tmp_path:
 
     completed = _run(request, output, tmp_path / "runtime", fake, log)
 
-    assert completed.returncode == 3
-    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "INCOMPLETE"
+    assert completed.returncode == 0
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["status"] == "READY"
+    assert result["background"]["characters"] > value["capacity"]["max_background_characters"]
     arguments = json.loads(log.read_text(encoding="utf-8"))
     assert "--preview" in arguments

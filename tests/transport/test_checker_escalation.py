@@ -262,7 +262,7 @@ def load_module():
     return importlib.import_module("slk_transport.checker_escalation")
 
 
-@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2"])
 def test_patch_failure_requires_exact_request_and_run_version(tmp_path, version):
     module = load_module()
     request, _ = fixture(tmp_path)
@@ -274,7 +274,7 @@ def test_patch_failure_requires_exact_request_and_run_version(tmp_path, version)
     write_json(path, projection)
     assert module._validate_request(request)["method_version"] == version
     module._validate_failure(request)
-    projection["summary"]["slk_version"] = "4.4.1" if version == "4.4.0" else "4.4.0"
+    projection["summary"]["slk_version"] = "4.4.2" if version == "4.4.0" else "4.4.0"
     write_json(path, projection)
     with pytest.raises(module.CheckerEscalationError, match="runtime"):
         module._validate_failure(request)

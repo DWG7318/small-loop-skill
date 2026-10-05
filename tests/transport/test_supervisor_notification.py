@@ -108,7 +108,7 @@ def test_real_temporal_runtime_events_reach_native_start_validator_and_replay(tm
 
     endpoint, _notice, projection = fixture(tmp_path, monkeypatch)
     startup = StartSlkRequest(
-        run_id=endpoint["run_id"], method_version="4.4.1", runtime_revision=11,
+        run_id=endpoint["run_id"], method_version="4.4.2", runtime_revision=11,
         task_queue="slk-test", ack_timeout_seconds=120,
         startup_idempotency_key="start-run-a-v11",
         roles=(

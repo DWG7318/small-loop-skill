@@ -1,5 +1,11 @@
 # SLK Migration Guide
 
+## Current patch migration: 4.4.1 to 4.4.2
+
+Follow [the 4.4.2 compatibility guide](docs/runtime/SLK-4.4.2-MIGRATION.md). Install the complete hash-bound package only after candidate acceptance and at an Owner-selected stable boundary. Installation alone does not alter the active Run. Preserve all 4.4.1 roles, Sessions, TOKEN, CELL/D0/D1/D2 facts, candidates, Temporal histories and OW evidence; exact 4.4.0/4.4.1 recovery artifacts remain readable under their original versions.
+
+After explicit adjacent adoption, regenerate readiness for 4.4.2 before the next dispatch. New work uses active Supervisor submission, no-resend Desktop readback, the canonical Temporal Checker attempt root, three frozen OCRV execution limits and current OW completion inspection. Supervisor re-sizes undispatched work for DSH; a second consecutive formal D1 failure enters versioned split/replan rather than a third ordinary rework. Do not reinterpret INCOMPLETE/tool/transport failures as product D1 failures, and do not silently relabel an in-flight operation.
+
 ## Current patch migration: 4.4.0 to 4.4.1
 
 Follow [the current compatibility guide](docs/runtime/SLK-4.4.1-MIGRATION.md). Deploy the complete hash-bound local package only after A1–C2 acceptance. Existing 4.4.0 Run records, credentials, candidates and Workflow histories are retained, not silently adopted/relabelled; requests must match their Run version. New Runs require same-Run `slk.communication-rehearsal/v2`; an in-flight Run uses `preflight-admission` to join reusable complete version conformance with its own current identities/permissions. Saved Supervisor authority is consumed only by `supervisor-admin`, and OW cycle/status writes only by OW-owned `overwatcher-admin`. Installation does not itself resume or dispatch a product Run.

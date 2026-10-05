@@ -263,10 +263,30 @@ class CodexAdapter:
                 "regression_target": "your unchanged acceptance/regression target"}
                 if operation == "rework" else {"verdict": "PASS|FAIL|INCOMPLETE", "summary": "your verified conclusion",
                     "evidence_refs": ["absolute existing evidence paths"]})
-            prompt += "The JSON result has only schema_version/source_message_id/operation/decision; put the filled decision_contract under decision. result_path is a location, not a result field. "
-            prompt += json.dumps({"result_path": str(attempt.root / "supervisor-result.json"),
+            descriptor: dict[str, Any] = {"result_path": str(attempt.root / "supervisor-result.json"),
                 "schema_version": "slk.supervisor-result/v1", "source_message_id": envelope.message_id,
-                "operation": operation, "decision_contract": contract}, ensure_ascii=False)
+                "operation": operation, "decision_contract": contract}
+            binding_value = os.environ.get("SLK_TRANSPORT_ROLE_HOST")
+            binding_digest = os.environ.get("SLK_TRANSPORT_ROLE_HOST_SHA256")
+            try:
+                binding_path = Path(binding_value or "")
+                if (not binding_path.is_absolute() or not binding_path.is_file()
+                    or hashlib.sha256(binding_path.read_bytes()).hexdigest() != binding_digest):
+                    raise ValueError("role host binding is unavailable")
+                binding = json.loads(binding_path.read_text(encoding="utf-8-sig"))
+                transport = binding["transport_command"]
+                if not isinstance(transport, list) or not transport or not all(
+                    isinstance(item, str) and item for item in transport
+                ):
+                    raise ValueError("transport command is invalid")
+                descriptor["submit_command"] = [*transport, "submit-supervisor-decision",
+                    "--binding", str(binding_path), "--sha256", str(binding_digest),
+                    "--source-attempt", str(attempt.root)]
+                prompt += "After atomically writing the result, immediately run submit_command in this same Session; do not wait for the whole turn to end. "
+            except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                pass
+            prompt += "The JSON result has only schema_version/source_message_id/operation/decision; put the filled decision_contract under decision. result_path and submit_command are instructions, not result fields. "
+            prompt += json.dumps(descriptor, ensure_ascii=False)
         return prompt
 
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
@@ -293,7 +313,7 @@ class CodexAdapter:
                         "clientInfo": {
                             "name": "slk_transport",
                             "title": "SLK Transport",
-                            "version": "4.4.1",
+                            "version": "4.4.2",
                         }
                     },
                     startup_timeout,

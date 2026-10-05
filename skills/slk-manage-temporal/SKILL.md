@@ -15,7 +15,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 ## 开工准备
 
 1. 检查本机登记的 Temporal 地址、namespace、task queue、执行进程和持久数据库可达；不为每个 Run 另装服务、另开端口或另建数据库。
-2. 用 `RUN_TEAM_REGISTRY` 的四角色端点和当前 runtime revision 构造闭合 `StartSlkRequest`；方法版本为 4.4.1，未知字段、旧版本、重复角色或缺少 OW 都保持未就绪。
+2. 用 `RUN_TEAM_REGISTRY` 的四角色端点和当前 runtime revision 构造闭合 `StartSlkRequest`；方法版本为 4.4.2，未知字段、旧版本、重复角色或缺少 OW 都保持未就绪。
 3. 取得 `slk.prepare_run` 的哈希绑定 READY 收据，再以稳定 Run ID 启动该 Run 的一对工作流；同 ID 改参数不重建、不覆盖。
 4. 把 Temporal readiness 收据交给 `$slk-manage-team`；服务、worker、adapter 或收据未证明时不派首 CELL。
 

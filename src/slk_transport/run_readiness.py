@@ -150,7 +150,7 @@ def _temporal_binding_from_receipt(path_value: Any, run_id: str) -> dict[str, An
                 "workflow_templates", "client_command", "workflow_identity", "attempt_root",
                 "evidence_sha256",
             } or value.get("schema_version") != "slk.temporal-readiness/v2"
-            or value.get("method_version") != "4.4.1" or value.get("run_id") != run_id
+            or value.get("method_version") != "4.4.2" or value.get("run_id") != run_id
             or value.get("status") != "READY" or value.get("service_mode") != "SHARED_LOCAL"
             or value.get("workflow_templates") != ["SLK.Start", "SLK.Run"]
             or not _sha256(value.get("evidence_sha256"))):
@@ -306,7 +306,7 @@ def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
         and set(value) == {"schema_version", "method_version", "run_id", "plan_revision", "status",
                            "host_binding", "sealed_role_receipts", "legs"}
         and value.get("schema_version") == "slk.communication-rehearsal/v2"
-        and value.get("method_version") == "4.4.1"
+        and value.get("method_version") == "4.4.2"
         and value.get("run_id") == run_id
         and value.get("plan_revision") == revision
         and value.get("status") == "PASS"
@@ -526,7 +526,7 @@ def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | Non
     try:
         if value is not None and value.get("schema_version") == "slk.normal-chain-source/v1":
             _closed(value, NORMAL_CHAIN_SOURCE_FIELDS, "normal chain source")
-            if (value["method_version"] != "4.4.1" or value["status"] != "PASS"
+            if (value["method_version"] != "4.4.2" or value["status"] != "PASS"
                 or not isinstance(value["source_run_id"], str)
                 or value["source_run_id"] == current_run_id):
                 raise ValueError("normal chain source scope is invalid")
@@ -545,7 +545,7 @@ def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | Non
         if (value is None or set(value) != {"schema_version", "method_version", "status", "source_run_id",
                 "source_readiness_request", "source_communication_rehearsal"}
             or value["schema_version"] != "slk.normal-chain-conformance/v1"
-            or value["method_version"] != "4.4.1" or value["status"] != "PASS"
+            or value["method_version"] != "4.4.2" or value["status"] != "PASS"
             or not isinstance(value["source_run_id"], str) or value["source_run_id"] == current_run_id):
             raise ValueError("normal-chain conformance scope is invalid")
         source_request = _proof(value["source_readiness_request"])

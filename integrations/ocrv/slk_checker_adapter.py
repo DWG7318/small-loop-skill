@@ -150,10 +150,16 @@ def _compact_evidence(path: Path) -> dict[str, Any]:
             }
         next_payload = raw.get("next_payload")
         if isinstance(next_payload, dict) and isinstance(next_payload.get("changed_paths"), list):
-            summary["changed_paths"] = [
-                value for value in next_payload["changed_paths"][:1000]
-                if isinstance(value, str) and value
-            ]
+            all_paths = [value for value in next_payload["changed_paths"]
+                         if isinstance(value, str) and value]
+            shown = all_paths[:1000]
+            summary["changed_paths"] = shown
+            summary["changed_paths_summary"] = {
+                "total": len(all_paths),
+                "shown": len(shown),
+                "omitted": len(all_paths) - len(shown),
+                "source": str(path.resolve()),
+            }
         for key in ("base_commit", "head_commit", "candidate_commit", "test_status"):
             if isinstance(raw.get(key), str):
                 summary[key] = raw[key]
@@ -435,10 +441,6 @@ def preflight(request_path: Path, output_path: Path) -> int:
     preview_path = root / "ocrv-preview.json"
     stdout_path = root / "ocrv-preview.stdout.txt"
     stderr_path = root / "ocrv-preview.stderr.txt"
-    within_capacity = (
-        len(background) <= request["capacity"]["max_background_characters"]
-        and len(encoded) <= request["capacity"]["max_background_bytes"]
-    )
     preview: dict[str, Any] = {}
     exit_code = 0
     stdout = ""
@@ -460,7 +462,7 @@ def preflight(request_path: Path, output_path: Path) -> int:
     files = preview.get("files") if isinstance(preview.get("files"), list) else []
     inventory = [item for item in files if isinstance(item, dict)]
     selected = [str(item["path"]).replace("\\", "/") for item in inventory if item.get("will_review") is True]
-    status = "READY" if within_capacity and exit_code == 0 and isinstance(preview.get("files"), list) else "INCOMPLETE"
+    status = "READY" if exit_code == 0 and isinstance(preview.get("files"), list) else "INCOMPLETE"
     result = {
         "schema_version": PREFLIGHT_SCHEMA, "status": status,
         "run_id": request["run_id"], "cell_id": request["cell_id"],
@@ -541,6 +543,20 @@ def _classify(review: dict[str, Any] | None, exit_code: int) -> tuple[str, list[
     if any(value in {"MEDIUM", "HIGH", "BLOCKER", "CRITICAL"} for value in severities):
         return "FAIL", ["OCR_BLOCKING_FINDINGS_PRESENT"]
     return "PASS", ["OCR_COMPLETE_LOW_SEVERITY_OBSERVATIONS"]
+
+
+def _normalized_findings(review: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Keep formal provider findings while excluding non-evidence reasoning payloads."""
+
+    comments = review.get("comments") if isinstance(review, dict) else None
+    if not isinstance(comments, list):
+        return []
+    excluded = {"thinking", "reasoning", "analysis"}
+    return [
+        {key: value for key, value in comment.items() if key not in excluded}
+        for comment in comments
+        if isinstance(comment, dict)
+    ]
 
 
 def run(
@@ -660,7 +676,7 @@ def run(
     result = {
         "schema_version": RESULT_SCHEMA, "run_id": request["run_id"], "cell_id": request["cell_id"],
         "review_invocation_id": invocation, "verdict": verdict, "reason_codes": reasons,
-        "findings": review.get("comments", []) if isinstance(review, dict) else [],
+        "findings": _normalized_findings(review),
         "review": {
             "status": review.get("status") if isinstance(review, dict) else None,
             "provider": llm.get("provider") if isinstance(llm, dict) else None,

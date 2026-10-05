@@ -26,7 +26,7 @@ def test_active_install_does_not_export_historical_auxiliary_instructions():
 def fake_artifacts(root: Path) -> Path:
     root.mkdir()
     for name in ARTIFACT_NAMES:
-        (root / name).write_bytes(f"fake-{name}-4.4.1\n".encode())
+        (root / name).write_bytes(f"fake-{name}-4.4.2\n".encode())
     return root
 
 
@@ -35,7 +35,7 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
     manifest = json.loads((package / "install-manifest.json").read_text(encoding="utf-8"))
 
     assert manifest["schema_version"] == "slk.install-manifest/v1"
-    assert manifest["version"] == "4.4.1"
+    assert manifest["version"] == "4.4.2"
     assert manifest["skill_count"] == 16
     assert manifest["artifact_count"] == 5
     paths = {entry["path"] for entry in manifest["files"]}
@@ -63,7 +63,7 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
         "tools/slk/share/small-loop-skill/docs/contracts/slk-overwatcher-cadence-inspection.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-overwatcher-credential-rotation.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-temporal-delivery.schema.json",
-        "tools/slk/share/small-loop-skill/docs/runtime/SLK-4.4.1-MIGRATION.md",
+        "tools/slk/share/small-loop-skill/docs/runtime/SLK-4.4.2-MIGRATION.md",
         "tools/slk/share/small-loop-skill/integrations/ocrv/install.ps1",
         "tools/slk/share/small-loop-skill/integrations/ocrv/rollback.ps1",
         "tools/slk/share/small-loop-skill/integrations/ocrv/slk-checker.cmd",

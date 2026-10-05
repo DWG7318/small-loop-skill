@@ -74,6 +74,32 @@ def test_rework_prompt_provides_closed_fields_and_aggressive_round_without_crede
     assert "private-host-binding" not in prompt
 
 
+def test_supervisor_prompt_includes_the_frozen_active_submit_command(tmp_path, monkeypatch):
+    from test_role_host import supervisor_result_fixture, write_json
+    from slk_transport import worker_completion as wc
+
+    host, _source, envelope, _result, _projection = supervisor_result_fixture(tmp_path)
+    binding_path = write_json(tmp_path / "role-host-binding.json", host.binding)
+    monkeypatch.setenv("SLK_TRANSPORT_ROLE_HOST", str(binding_path))
+    monkeypatch.setenv("SLK_TRANSPORT_ROLE_HOST_SHA256", wc._sha256(binding_path))
+    attempt = AttemptStore(tmp_path / "out").create(envelope)
+
+    prompt = CodexAdapter()._prompt(envelope, attempt)
+    descriptor = json.loads(prompt[prompt.index('{"result_path":'):])
+
+    assert descriptor["submit_command"] == [
+        *host.binding["transport_command"],
+        "submit-supervisor-decision",
+        "--binding",
+        str(binding_path),
+        "--sha256",
+        wc._sha256(binding_path),
+        "--source-attempt",
+        str(attempt.root),
+    ]
+    assert "credential_path" not in prompt
+
+
 def test_codex_reads_exact_idle_thread_then_starts_turn(tmp_path: Path) -> None:
     endpoint = codex_endpoint(tmp_path)
     envelope = supervisor_envelope()

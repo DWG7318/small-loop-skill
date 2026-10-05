@@ -17,7 +17,7 @@ if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
     throw 'OCRV integration backup receipt is missing'
 }
 $receipt = Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($receipt.schema_version -ne 'slk.ocrv-install/v2' -or $receipt.version -ne '4.4.1' -or $receipt.ocrv_root -ne $root) {
+if ($receipt.schema_version -ne 'slk.ocrv-install/v2' -or $receipt.version -ne '4.4.2' -or $receipt.ocrv_root -ne $root) {
     throw 'OCRV integration backup identity mismatch'
 }
 $names = @(
@@ -44,4 +44,4 @@ foreach ($name in $names) {
         Remove-Item -LiteralPath $active -Force
     }
 }
-[ordered]@{status='ROLLED_BACK'; version='4.4.1'; backup_root=$backup} | ConvertTo-Json -Compress
+[ordered]@{status='ROLLED_BACK'; version='4.4.2'; backup_root=$backup} | ConvertTo-Json -Compress

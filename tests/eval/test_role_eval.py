@@ -36,7 +36,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.4.1"
+    assert pack["method_version"] == "4.4.2"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -171,7 +171,20 @@ def test_pack_covers_fixed_topology_incomplete_and_supervisor_rework() -> None:
         "SUP-ADOPT-EXPLICITLY",
         "SUP-ADMIN-HISTORY-IMMUTABLE",
         "OVW-ADOPTION-GATE",
+        "SUP-DSH-AWARE-CELL-SPLIT",
+        "SUP-SECOND-D1-FAIL-SPLIT",
     } <= case_ids
+
+    split = next(case for case in load_pack(PACK)["cases"]
+                 if case["case_id"] == "SUP-DSH-AWARE-CELL-SPLIT")
+    assert split["role"] == "supervisor"
+    assert split["runtime_critical"] is False
+    assert split["correct_choice"] == "PRESPLIT_FOR_DSH_WITH_ACCEPTANCE_PRESERVED"
+    second_fail = next(case for case in load_pack(PACK)["cases"]
+                       if case["case_id"] == "SUP-SECOND-D1-FAIL-SPLIT")
+    assert second_fail["role"] == "supervisor"
+    assert second_fail["runtime_critical"] is False
+    assert second_fail["correct_choice"] == "REPLAN_AND_SPLIT_BEFORE_REDISPATCH"
 
 
 def test_pack_covers_preparation_goal_only_without_growing_runtime_subset() -> None:

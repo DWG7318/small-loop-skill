@@ -176,7 +176,7 @@ def fixture(tmp_path: Path, *, final: bool = False) -> tuple[dict[str, object], 
     return request, write_json(tmp_path / "checker-completion.json", request)
 
 
-@pytest.mark.parametrize("version", ["4.4.0", "4.4.1"])
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2"])
 def test_compatible_patch_requires_exact_request_and_run_version(tmp_path, version):
     from slk_transport.checker_completion import _validate_request, _validate_boundary, CheckerCompletionError
     request, _ = fixture(tmp_path)
@@ -188,7 +188,7 @@ def test_compatible_patch_requires_exact_request_and_run_version(tmp_path, versi
     write_json(path, projection)
     assert _validate_request(request)["method_version"] == version
     _validate_boundary(request)
-    projection["runtime_snapshot"]["method_version"] = "4.4.1" if version == "4.4.0" else "4.4.0"
+    projection["runtime_snapshot"]["method_version"] = "4.4.2" if version == "4.4.0" else "4.4.0"
     write_json(path, projection)
     with pytest.raises(CheckerCompletionError, match="runtime"):
         _validate_boundary(request)

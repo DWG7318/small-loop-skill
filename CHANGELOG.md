@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.4.2 — runtime recovery and DSH-aware capacity (local candidate)
+
+- Let the exact registered Supervisor submit its completed decision from the owning Session before the parent turn exits; late Codex Desktop readback consumes the original accepted send without resending, and identity/round/scope ambiguity remains closed.
+- Unified Temporal Worker continuation on one canonical Checker attempt root, made explicit suffix failure visible before grace, and made reload tolerant only of an already-exited process whose frozen identity still matches.
+- Replaced OCRV's old line/file/background size gates with preparation-frozen token/time execution limits. Full original evidence remains local; compact changed-path summaries disclose omission and provider thinking is excluded from formal findings.
+- Required each Worker-held OW cycle to bind one exact read-only completion inspection and preserved safe state-core rejection details without leaking secrets or granting OW recovery authority.
+- Made Supervisor size the frozen solution for DSH before dispatch. Large work becomes independently D0/D1-checkable small or medium CELLs; a second consecutive formal D1 failure stops ordinary rework and version-replans the unaccepted remainder without erasing failures or weakening acceptance.
+- Preserved 4.4.0/4.4.1 evidence compatibility, BI/WebBI 1.1.0 and all four role boundaries. This candidate performs no install, product-Run adoption or remote action.
+
 ## 4.4.1 — bounded normal-handoff correction (local candidate)
 
 - Bound every future normal role handoff to the existing `SLK.Run`: the original role remains semantic sender, one Temporal Activity is the sole native launcher, exact native v2 ACK precedes the existing central TOKEN commit, and old v1 hosts cannot pass current readiness. Status-specific immutable results make `BLOCKED`/`RECOVERY_REQUIRED` immediate and make ACK-before-commit recovery commit-only without another native launch.

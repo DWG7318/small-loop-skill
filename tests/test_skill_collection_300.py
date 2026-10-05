@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.4.1"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.4.2"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -154,6 +154,23 @@ def test_plan_run_derives_lean_checks_and_sizes_cells_for_available_capacity() -
     assert "在可行时拆得更小" in text
 
 
+def test_supervisor_sizes_the_frozen_solution_for_dsh_before_dispatch() -> None:
+    plan = read_skill("slk-plan-run")
+    dispatch = read_skill("slk-dispatch-cell")
+    for marker in (
+        "工程方案和验收结果已经确定",
+        "DSH Worker 的实际能力",
+        "多个中小 CELL",
+        "独立 D0",
+        "独立 D1",
+        "不改变原 Run 结果和验收强度",
+    ):
+        assert marker in plan
+    for marker in ("派工前", "Supervisor", "DSH", "大 CELL", "拆分"):
+        assert marker in dispatch
+    assert "逐条命令" in dispatch
+
+
 def test_plan_run_keeps_inspection_out_of_the_cell_construction_plan() -> None:
     step = next(
         line
@@ -242,7 +259,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "外部 OCRV 宿主" in recover
     assert "任意 OW Session 退出" in overwatch
     assert "Supervisor 修复并提交匹配证据" in overwatch
-    assert "4.4.1" in main
+    assert "4.4.2" in main
 
 
 def test_invalid_result_contract_recovery_routes_through_original_roles() -> None:
@@ -695,11 +712,11 @@ def test_rework_cell_uses_the_closed_supervisor_directive_path() -> None:
         "Codex Supervisor",
         "同一 DSH Worker",
         "验收目标",
-        "第三次 D1 FAIL",
+        "第二次连续 D1 FAIL",
         "D1_FAILURE_ESCALATION",
         "D1_REWORK_DIRECTIVE",
         "不重做或接管 D1",
-        "一分为二",
+        "多个中小后继 CELL",
         "CELL n/N",
         "$slk-dispatch-cell",
         "$slk-execute-cell",
@@ -709,6 +726,27 @@ def test_rework_cell_uses_the_closed_supervisor_directive_path() -> None:
         "$superpowers:systematic-debugging",
     ):
         assert marker in text
+
+
+def test_second_consecutive_d1_failure_requires_supervisor_cell_split() -> None:
+    combined = "\n".join((
+        read_skill("slk-rework-cell"),
+        read_skill("slk-adjust-run"),
+        read_skill("small-loop-skill"),
+    ))
+    for marker in (
+        "原则上最多一次常规 D1 FAIL",
+        "绝大部分 CELL 首轮 D1 PASS",
+        "第二次连续 D1 FAIL",
+        "应停止普通返工",
+        "进一步拆分",
+        "多个中小后继 CELL",
+        "独立 D0",
+        "独立 D1",
+        "不改变原目标和验收强度",
+    ):
+        assert marker in combined
+    assert "第三次 D1 FAIL 后先重新规划" not in read_skill("slk-rework-cell")
 
 
 def test_adjust_run_keeps_supervisor_authority_and_d1_exemption_clear() -> None:
@@ -744,7 +782,7 @@ def test_adjust_run_keeps_supervisor_authority_and_d1_exemption_clear() -> None:
 def test_rework_reuses_the_dispatch_one_to_two_split() -> None:
     text = read_skill("slk-rework-cell")
     assert "$slk-dispatch-cell" in text
-    assert "一分为二" in text
+    assert "多个中小后继 CELL" in text
 
 
 def test_recover_communication_requires_real_activation_and_preserves_checker() -> None:
@@ -1285,6 +1323,20 @@ def test_overwatcher_truth_check_and_temporal_guard_mapping_are_unambiguous() ->
         assert marker in combined
 
 
+def test_worker_held_cycle_requires_one_read_only_completion_inspection() -> None:
+    overwatch = read_skill("slk-overwatch-run")
+    for marker in (
+        "Worker 持有 TOKEN",
+        "恰好一次",
+        "inspect-worker-completion",
+        "无凭据",
+        "只读",
+        "当前 Run/CELL/attempt/message",
+        "缺少 `WORK_STARTED` 不能单独证明",
+    ):
+        assert marker in overwatch
+
+
 def test_terminal_overwatcher_cycle_keeps_minimal_hash_bound_evidence() -> None:
     overwatch = read_skill("slk-overwatch-run")
 
@@ -1411,7 +1463,7 @@ def test_optional_features_use_the_declared_catalog() -> None:
     assert "未登记功能不能靠任意 ON/OFF" in main
     assert "Ponytail、RTK、Probe CLI" in plan
     assert "Supervisor 可补充项目所需 Skill/Tool" in plan
-    assert "Overwatcher 与 Temporal 是 4.4.1 readiness 必需项" in plan
+    assert "Overwatcher 与 Temporal 是 4.4.2 readiness 必需项" in plan
 
 
 def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:

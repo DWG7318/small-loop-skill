@@ -57,7 +57,7 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.4.1"}
+    assert result == {"status": "ok", "version": "4.4.2"}
 
 
 def test_one_process_authenticates_two_runs_through_separate_state_configs(
@@ -1261,14 +1261,14 @@ def test_real_supervisor_admin_accepts_applied_and_idempotent_adoption(tmp_path,
     database_path = data_root / "slk.db"
     with sqlite3.connect(database_path) as database:
         database.execute(
-            "UPDATE runs SET slk_version='4.4.0', origin_slk_version='4.4.0' WHERE run_id='run-a'"
+            "UPDATE runs SET slk_version='4.4.1', origin_slk_version='4.4.1' WHERE run_id='run-a'"
         )
     operation = write_json(tmp_path / "adopt.json", {
         "receipt_id": "adoption-real-admin",
         "run_id": "run-a",
         "expected_snapshot": administrative_snapshot(database_path, "run-a"),
-        "from_version": "4.4.0",
-        "to_version": "4.4.1",
+        "from_version": "4.4.1",
+        "to_version": "4.4.2",
         "owner_authorization": {
             "source_thread_id": "owner-thread",
             "message_id": "owner-adoption",

@@ -338,7 +338,7 @@ def test_incomplete_suffix_registers_only_the_new_candidate_on_the_original_atte
         "source_message_id": source_message_id, "candidate_message_id": candidate_message_id,
         "runtime_revision": 7, "endpoint_path": str(endpoint_path), "envelope_path": str(envelope_path),
         "attempt_root": str(original_attempt_root), "checker_token_already_committed": False}
-    continuation = {"schema_version": "slk.worker-continuation/v2", "method_version": "4.4.1",
+    continuation = {"schema_version": "slk.worker-continuation/v2", "method_version": "4.4.2",
         "run_id": "RUN-A", "go_id": envelope.go_id, "cell_id": envelope.cell_id, "attempt": 1,
         "plan_revision": 1, "runtime_revision": 7, "source_message_id": source_message_id,
         "source_attempt_root": str(tmp_path / source_message_id), "worker_role_instance_id": "RUN-A-worker-001",
@@ -378,3 +378,32 @@ def test_incomplete_suffix_registers_only_the_new_candidate_on_the_original_atte
     assert activated["status"] == "CHECKER_STARTED"
     assert [row["message_id"] for row in requests] == [candidate_message_id]
     assert not (original_attempt_root / "RUN-A" / source_message_id).exists()
+
+
+def test_temporal_worker_suffix_stages_checker_on_the_canonical_attempt_root(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    source = tmp_path / "transport" / "attempts" / "RUN-A" / "source-message"
+    source.mkdir(parents=True)
+    canonical = tmp_path / "transport" / "attempts"
+    credential = tmp_path / "worker.dpapi"
+    credential.write_text("sealed", encoding="ascii")
+    request = {
+        "credential_path": str(credential),
+        "source_attempt_root": str(source),
+        "recovery_mode": "COMPLETED_RESULT",
+        "temporal": {"attempt_root": str(canonical)},
+        "state_command": ["state"],
+    }
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _path: "secret")
+
+    def capture(_request, **callbacks):
+        return callbacks["start_checker"](
+            {"schema_version": "endpoint"}, {"schema_version": "envelope"}
+        )
+
+    monkeypatch.setattr(wc, "run_worker_continuation", capture)
+    staged = wc._execute_worker_suffix(request)
+
+    assert Path(staged["attempt_root"]).resolve() == canonical.resolve()
+    assert "worker-continuation" not in Path(staged["attempt_root"]).parts

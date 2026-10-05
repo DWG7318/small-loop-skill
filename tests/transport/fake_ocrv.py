@@ -160,10 +160,7 @@ if args.preflight:
     if args.mode == "scope-leak" and scope.get("include_paths"):
         selected = changed_paths
     background_chars = len(request["cell_goal"]) + sum(map(len, request["d1_criteria"])) + 256
-    preflight_incomplete = (
-        args.mode == "preflight-incomplete"
-        or background_chars > request.get("capacity", {}).get("max_background_characters", 8_000)
-    )
+    preflight_incomplete = args.mode == "preflight-incomplete"
     result = {
         "schema_version": "slk.ocrv-d1-preflight/v1",
         "status": "INCOMPLETE" if preflight_incomplete else "READY",
@@ -202,7 +199,7 @@ if args.preflight:
 session_id = None if args.mode == "missing-session" else f"ocrv-session-{uuid.uuid4()}"
 review_invocation_id = str(uuid.uuid4())
 publish_native_start("ocrv-review", review_invocation_id)
-if args.mode == "timeout-second" and "segment 2/" in request["cell_goal"]:
+if args.mode == "timeout-second":
     time.sleep(2.0)
 if args.mode == "delayed-terminal":
     time.sleep(0.35)
@@ -214,7 +211,7 @@ segment_sentinel = (
 )
 verdict = (
     "FAIL"
-    if args.mode == "blocking-first" and is_first_segment
+    if args.mode == "blocking-first" and (is_first_segment or "segment " not in request["cell_goal"])
     else "INCOMPLETE"
     if args.mode == "incomplete"
     else "PASS"

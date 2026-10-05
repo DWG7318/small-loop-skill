@@ -26,6 +26,48 @@ def _load_adapter():
     return module
 
 
+def test_compact_evidence_discloses_path_omission_and_keeps_source(tmp_path: Path) -> None:
+    module = _load_adapter()
+    evidence = tmp_path / "worker-result.json"
+    paths = [f"src/file-{index:04d}.py" for index in range(1005)]
+    evidence.write_text(
+        json.dumps({"next_payload": {"changed_paths": paths}}), encoding="utf-8"
+    )
+
+    compact = module._compact_evidence(evidence)
+
+    assert compact["summary"]["changed_paths"] == paths[:1000]
+    assert compact["summary"]["changed_paths_summary"] == {
+        "total": 1005,
+        "shown": 1000,
+        "omitted": 5,
+        "source": str(evidence.resolve()),
+    }
+
+
+def test_normalized_findings_exclude_provider_thinking_but_keep_evidence() -> None:
+    module = _load_adapter()
+    findings = module._normalized_findings({
+        "comments": [{
+            "severity": "HIGH",
+            "message": "criterion violated",
+            "path": "src/a.py",
+            "line": 7,
+            "evidence_refs": ["review.json"],
+            "thinking": "duplicated hidden chain " * 1000,
+            "reasoning": "more duplicated analysis",
+        }]
+    })
+
+    assert findings == [{
+        "severity": "HIGH",
+        "message": "criterion violated",
+        "path": "src/a.py",
+        "line": 7,
+        "evidence_refs": ["review.json"],
+    }]
+
+
 def powershell() -> str:
     executable = shutil.which("pwsh") or shutil.which("powershell")
     if not executable:
@@ -370,7 +412,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert installed.returncode == 0, installed.stdout + installed.stderr
     receipt = json.loads(installed.stdout.strip())
     backup = Path(receipt["backup_root"])
-    assert receipt["version"] == "4.4.1"
+    assert receipt["version"] == "4.4.2"
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == (
         INTEGRATION / "slk_checker_adapter.py"
     ).read_bytes()

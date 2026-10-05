@@ -7,7 +7,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 ## 方法身份
 
-SLK 4.4.1 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
+SLK 4.4.2 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
 
 它以 CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，帮助成员判断怎样继续：D1 FAIL 回到同一 CELL 返工，D1 PASS 前进，全部 CELL 处理后由 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌本身不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态事实，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与未来 BI 只读查询。
 
@@ -31,7 +31,7 @@ Supervisor、Checker、Worker、Overwatcher 是 Agent，不是状态机。Worker
 
 原对话与 Owner 选择 SLK，并明确 Run 目标、边界和 Owner 关心的结果。Agent 在创建 Supervisor 前结合项目整理 Run、初始 CELL 与分层检查方案。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
 
-Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run --credential-out` 初始化状态和根记录 `SLK-RUN-<RUN-ID>.md`；准备宿主再用 `prepare-role-credential` 密封并验证消费者，不能把明文输出当密封凭据。正常链为 `Supervisor → Checker`（初始）、`Checker → Worker → Checker`；D1 PASS 由 Checker 发下一 CELL，最终交 `D2_READY` 给 Supervisor。正式 D1 FAIL 才走 `Checker → Supervisor → 同一 Worker → Checker`，第二次同 CELL 失败起使用 `AGGRESSIVE` 指引；INCOMPLETE、工具错误和重复回执不增加失败轮次。准备冻结的角色宿主在原生结果后自动执行所属后缀，通过已登记的目标原生 Agent 入口做真实激活操作，用原发送者凭据，原生启动证据与 TOKEN 提交分别核实，在真实接收者启动后原子提交 start、TOKEN、事件和 revision；不把模型沙箱当中央写入宿主，不等 Supervisor/OW 代发。失败保留现场，exact retry 只原样一次；已有 start 只补提交，已有提交不重复启动。标准入口含 `commit-delivery-start` 与 Checker `--slk-post-d1` 后缀。三工程角色不用正时长 `wait_threads`，节点交接后结束活动；Supervisor 异常接管须有界处理并确认正确成员与 OW 恢复后退出。OW 自行巡查，Temporal 每 1200 秒独立核查 OW、责任成员停留超过 1800 秒直接报告 Supervisor；保障失效先修复再派下一 CELL。工具/传输失败留在同一 D1 attempt 并记 INCOMPLETE/`TRANSPORT_FAILED`。边界见 [`docs/state/SLK-STATE.md`](../../docs/state/SLK-STATE.md) 和 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
+Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run --credential-out` 初始化状态和根记录 `SLK-RUN-<RUN-ID>.md`；准备宿主再用 `prepare-role-credential` 密封并验证消费者，不能把明文输出当密封凭据。正常链为 `Supervisor → Checker`（初始）、`Checker → Worker → Checker`；D1 PASS 由 Checker 发下一 CELL，最终交 `D2_READY` 给 Supervisor。正式 D1 FAIL 才走 `Checker → Supervisor → 同一 Worker → Checker`；目标是绝大部分 CELL 首轮 D1 PASS，第二次连续 D1 FAIL 应停止普通返工并由 Supervisor 按冻结目标进一步拆分；INCOMPLETE、工具错误和重复回执不增加失败轮次。准备冻结的角色宿主在原生结果后自动执行所属后缀，通过已登记的目标原生 Agent 入口做真实激活操作，用原发送者凭据，原生启动证据与 TOKEN 提交分别核实，在真实接收者启动后原子提交 start、TOKEN、事件和 revision；不把模型沙箱当中央写入宿主，不等 Supervisor/OW 代发。失败保留现场，exact retry 只原样一次；已有 start 只补提交，已有提交不重复启动。标准入口含 `commit-delivery-start` 与 Checker `--slk-post-d1` 后缀。三工程角色不用正时长 `wait_threads`，节点交接后结束活动；Supervisor 异常接管须有界处理并确认正确成员与 OW 恢复后退出。OW 自行巡查，Temporal 每 1200 秒独立核查 OW、责任成员停留超过 1800 秒直接报告 Supervisor；保障失效先修复再派下一 CELL。工具/传输失败留在同一 D1 attempt 并记 INCOMPLETE/`TRANSPORT_FAILED`。边界见 [`docs/state/SLK-STATE.md`](../../docs/state/SLK-STATE.md) 和 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
 
 同一实际 Run 应复用其 run_id；历史独立根需要收敛时，只接受 Owner 明确指定的 canonical/source ID、闭合授权证据和精确快照，由 canonical 当前 Supervisor 追加身份对账回执。旧 Run 采用新方法语义需要另有方法采用回执，不能靠标题、提示词或可见对话推断。
 

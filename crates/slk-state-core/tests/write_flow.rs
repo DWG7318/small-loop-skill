@@ -3,10 +3,10 @@ use sha2::{Digest, Sha256};
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
-    CellDefinition, CloseRoleRequest, EndpointIdentity, EventType, GoDefinition, InitRunRequest,
-    EvidenceReference, ProjectIdentity, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
-    ReviseRoleModelRequest,
-    RevisePlanRequest, Role, RoleIdentity, TokenHandoffRequest, WriteRequest,
+    CellDefinition, CloseRoleRequest, EndpointIdentity, EventType, EvidenceReference, GoDefinition,
+    InitRunRequest, ProjectIdentity, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
+    RevisePlanRequest, ReviseRoleModelRequest, Role, RoleIdentity, TokenHandoffRequest,
+    WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -797,27 +797,33 @@ fn supervisor_model_revision_preserves_identity_and_appends_evidence() {
         [],
     ).unwrap();
     let evidence_path = root.path().join("owner-model-choice.txt");
-    std::fs::write(&evidence_path, b"Owner selected gpt-6.1-sol xhigh for this Run").unwrap();
-    let evidence_sha256 = format!("{:x}", Sha256::digest(std::fs::read(&evidence_path).unwrap()));
+    std::fs::write(
+        &evidence_path,
+        b"Owner selected gpt-6.1-sol xhigh for this Run",
+    )
+    .unwrap();
+    let evidence_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&evidence_path).unwrap())
+    );
 
     let request = ReviseRoleModelRequest {
-            event_id: "model-revised-1".into(),
-            run_id: "run-a".into(),
-            role_instance_id: "supervisor-a".into(),
-            expected_runtime_revision: 1,
-            model: "gpt-6.1-sol".into(),
-            reasoning: "xhigh".into(),
-            owner_evidence: EvidenceReference {
-                path: evidence_path.to_string_lossy().into_owned(),
-                sha256: evidence_sha256,
-            },
-            reason: "Owner model policy correction".into(),
-            occurred_at: "2026-10-05T00:00:00Z".into(),
-        };
-    let result = store.revise_role_model(
-        &initialized.supervisor_credential,
-        request.clone(),
-    ).unwrap();
+        event_id: "model-revised-1".into(),
+        run_id: "run-a".into(),
+        role_instance_id: "supervisor-a".into(),
+        expected_runtime_revision: 1,
+        model: "gpt-6.1-sol".into(),
+        reasoning: "xhigh".into(),
+        owner_evidence: EvidenceReference {
+            path: evidence_path.to_string_lossy().into_owned(),
+            sha256: evidence_sha256,
+        },
+        reason: "Owner model policy correction".into(),
+        occurred_at: "2026-10-05T00:00:00Z".into(),
+    };
+    let result = store
+        .revise_role_model(&initialized.supervisor_credential, request.clone())
+        .unwrap();
 
     assert_eq!(result.status, "MODEL_REVISED");
     assert_eq!(result.role_instance_id, "supervisor-a");
@@ -827,12 +833,21 @@ fn supervisor_model_revision_preserves_identity_and_appends_evidence() {
         "SELECT role_instance_id, model, reasoning FROM role_instances WHERE run_id='run-a' AND role='supervisor'",
         [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).unwrap();
-    assert_eq!(row, ("supervisor-a".into(), "gpt-6.1-sol".into(), "xhigh".into()));
-    let details: String = database.query_row(
-        "SELECT details_json FROM work_events WHERE event_id='model-revised-1'", [], |row| row.get(0),
-    ).unwrap();
+    assert_eq!(
+        row,
+        ("supervisor-a".into(), "gpt-6.1-sol".into(), "xhigh".into())
+    );
+    let details: String = database
+        .query_row(
+            "SELECT details_json FROM work_events WHERE event_id='model-revised-1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert!(details.contains("gpt-5.6-sol") && details.contains("gpt-6.1-sol"));
-    let replay = store.revise_role_model(&initialized.supervisor_credential, request).unwrap();
+    let replay = store
+        .revise_role_model(&initialized.supervisor_credential, request)
+        .unwrap();
     assert_eq!(replay.status, "ALREADY_APPLIED");
     assert_eq!(replay.previous_model, "gpt-5.6-sol");
     assert_eq!(replay.runtime_revision, result.runtime_revision);
@@ -1231,6 +1246,115 @@ fn slk_440_rework_request_requires_round_bound_investigation_mode() {
         .store
         .write_event(&fixture.supervisor, valid)
         .unwrap();
+}
+
+#[test]
+fn slk_442_second_d1_failure_requires_plan_split_not_another_rework_request() {
+    let (fixture, first_candidate_sha256) = legacy_d1_candidate_chain(
+        "candidate-message-a",
+        Some("candidate-message-a"),
+        "candidate-message-a",
+    );
+    let mut first_rework = event(
+        "first-rework-442",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"legacy-d1-failed",
+            "failed_candidate_sha256":first_candidate_sha256,
+            "rework_round":1
+        }),
+    );
+    first_rework.role_instance_id = "supervisor-a".into();
+    fixture
+        .store
+        .write_event(&fixture.supervisor, first_rework)
+        .unwrap();
+
+    let mut to_worker = handoff(6, "supervisor-a", "worker-a");
+    to_worker.payload_type = "D1_REWORK_DIRECTIVE".into();
+    fixture
+        .store
+        .handoff_token(&fixture.supervisor, to_worker)
+        .unwrap();
+
+    let second_candidate =
+        json!({"kind":"commit","commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"});
+    let second_candidate_sha256 = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&second_candidate).unwrap())
+    );
+    let mut candidate_event = event(
+        "second-candidate-submitted-442",
+        EventType::CandidateSubmitted,
+        json!({
+            "candidate":second_candidate,
+            "source_message_id":"second-source-message-442",
+            "handoff_message_id":"second-candidate-message-442"
+        }),
+    );
+    candidate_event.attempt = Some(2);
+    fixture
+        .store
+        .write_event(&fixture.worker, candidate_event)
+        .unwrap();
+    let mut started = event(
+        "second-transport-started-442",
+        EventType::TransportStarted,
+        json!({"message_id":"second-candidate-message-442"}),
+    );
+    started.attempt = Some(2);
+    fixture.store.write_event(&fixture.worker, started).unwrap();
+    let mut to_checker = handoff(7, "worker-a", "checker-a");
+    to_checker.payload_type = "CANDIDATE_READY".into();
+    fixture
+        .store
+        .handoff_token(&fixture.worker, to_checker)
+        .unwrap();
+    let mut second_failed = event(
+        "second-d1-failed-442",
+        EventType::D1Failed,
+        json!({"verdict":"FAIL","candidate_message_id":"second-candidate-message-442"}),
+    );
+    second_failed.role_instance_id = "checker-a".into();
+    second_failed.attempt = Some(2);
+    fixture
+        .store
+        .write_event(&fixture.checker, second_failed)
+        .unwrap();
+    let mut escalation = handoff(8, "checker-a", "supervisor-a");
+    escalation.payload_type = "D1_FAILURE_ESCALATION".into();
+    fixture
+        .store
+        .handoff_token(&fixture.checker, escalation)
+        .unwrap();
+
+    let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE runs SET slk_version='4.4.2' WHERE run_id='run-a'",
+            [],
+        )
+        .unwrap();
+
+    let mut forbidden_second_rework = event(
+        "forbidden-second-rework-442",
+        EventType::ReworkRequested,
+        json!({
+            "d1_failure_event_id":"second-d1-failed-442",
+            "failed_candidate_sha256":second_candidate_sha256,
+            "rework_round":2,
+            "investigation_mode":"AGGRESSIVE"
+        }),
+    );
+    forbidden_second_rework.role_instance_id = "supervisor-a".into();
+    forbidden_second_rework.attempt = Some(2);
+    assert!(matches!(
+        fixture
+            .store
+            .write_event(&fixture.supervisor, forbidden_second_rework),
+        Err(StateError::WorkEventInvalid(message))
+            if message.contains("split") && message.contains("second consecutive D1 failure")
+    ));
 }
 
 #[test]

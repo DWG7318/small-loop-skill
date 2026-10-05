@@ -122,7 +122,7 @@ def _unique_start(*, label: str) -> dict[str, Any]:
     run_id = f"RUN-{label}-{uuid.uuid4().hex[:8]}"
     value["run_id"] = run_id
     value["task_queue"] = TEST_TASK_QUEUE
-    value["method_version"] = "4.4.1"
+    value["method_version"] = "4.4.2"
     value["startup_idempotency_key"] = f"start-{run_id}-v7"
     return value
 

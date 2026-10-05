@@ -70,6 +70,35 @@ def test_process_chain_is_stopped_child_first_not_by_pid_number():
     assert [row["pid"] for row in reload._child_first(rows)] == [5, 20, 900]
 
 
+def test_exact_reload_result_is_idempotent_after_old_parent_exits(tmp_path, monkeypatch):
+    request = reload_request(tmp_path)
+    value = json.loads(request.read_text())
+    identity = json.loads(Path(value["workflow_identity"]["path"]).read_text())
+    result = {"schema_version": "slk.temporal-worker-reload-result/v1",
+              "status": "TEMPORAL_WORKER_RELOADED", "run_id": "RUN-A", "task_queue": "slk-run-a",
+              "new_worker_pid": 202, "request_sha256": hashlib.sha256(request.read_bytes()).hexdigest(),
+              "adapter_source_sha256": value["adapter_source"]["sha256"],
+              "workflow_source_sha256": value["workflow_source"]["sha256"],
+              "workflow_identity": identity}
+    Path(value["result_path"]).write_text(json.dumps(result), encoding="utf-8")
+    monkeypatch.setattr(reload, "_process_snapshot", lambda pid: pytest.fail("completed retry must not inspect exited old parent"))
+
+    assert reload.reload_temporal_worker(
+        request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest()) == result
+
+
+def test_post_identity_process_exit_is_idempotent_but_pid_reuse_is_rejected(monkeypatch):
+    row = {"pid": 101, "parent_pid": 100, "creation_time": "original", "command_sha256": "b" * 64}
+    completed = type("Completed", (), {"returncode": 1})()
+    monkeypatch.setattr(reload.subprocess, "run", lambda *args, **kwargs: completed)
+    monkeypatch.setattr(reload, "_process_snapshot", lambda pid: (_ for _ in ()).throw(ProcessLookupError(pid)))
+    reload._stop_exact_processes([row])
+
+    monkeypatch.setattr(reload, "_process_snapshot", lambda pid: {**row, "creation_time": "reused"})
+    with pytest.raises(ValueError, match="identity changed"):
+        reload._stop_exact_processes([row])
+
+
 @pytest.mark.parametrize("damage", ["old-process", "workflow", "source"])
 def test_reload_fails_closed_on_process_history_or_source_drift(tmp_path, monkeypatch, damage):
     request = reload_request(tmp_path)

@@ -24,24 +24,34 @@ for line in sys.stdin:
         emit(request, {"tools": [{"name": n, "inputSchema": {"type": "object"}} for n in ("read_thread", "send_message_to_thread")]})
     elif method == "tools/call":
         p = request["params"]
-        with (Path.cwd() / "native-calls.jsonl").open("a", encoding="utf-8") as output:
+        calls_path = Path.cwd() / "native-calls.jsonl"
+        previous_calls = calls_path.read_text(encoding="utf-8").splitlines() if calls_path.is_file() else []
+        with calls_path.open("a", encoding="utf-8") as output:
             output.write(json.dumps(p) + "\n")
         if p["name"] == "send_message_to_thread":
             sent = p
             value = {"threadId": "thr_exact"}
         elif p["name"] == "read_thread":
+            effective_mode = mode.removeprefix("late-") if mode.startswith("late-") else mode
+            effective_sent = sent
+            if effective_sent is None and mode.startswith("late-"):
+                for raw in reversed(previous_calls):
+                    candidate = json.loads(raw)
+                    if candidate.get("name") == "send_message_to_thread":
+                        effective_sent = candidate
+                        break
             items = []
-            if sent and mode != "unconfirmed":
-                prompt = sent["arguments"]["prompt"]
-                caller = "wrong-caller" if mode == "wrong-caller" else "caller-exact"
-                if mode == "wrong-payload":
+            if effective_sent and effective_mode != "unconfirmed":
+                prompt = effective_sent["arguments"]["prompt"]
+                caller = "wrong-caller" if effective_mode == "wrong-caller" else "caller-exact"
+                if effective_mode == "wrong-payload":
                     prompt += "changed"
                 text = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
-                items = [{"id": "item-exact", "type": "functionCallOutput", "name": "send_message_to_thread", "namespace": "codex_app", "output": {"text": text, "truncated": mode == "truncated"}}]
-                if mode == "duplicate":
+                items = [{"id": "item-exact", "type": "functionCallOutput", "name": "send_message_to_thread", "namespace": "codex_app", "output": {"text": text, "truncated": effective_mode == "truncated"}}]
+                if effective_mode == "duplicate":
                     items.append({**items[0], "id": "item-other"})
             value = {"schemaVersion": 1, "thread": {"id": "thr_wrong" if mode == "wrong-thread" else "thr_exact", "hostId": "remote" if mode == "wrong-host" else "local", "cwd": str(Path.cwd()), "status": {"type": "active" if mode == "active" else "idle"}},
-                     "page": {"hasMore": False}, "turns": [{"id": "turn-new" if sent else "turn-old", "status": "completed", "items": items}]}
+                     "page": {"hasMore": False}, "turns": [{"id": "turn-new" if effective_sent else "turn-old", "status": "completed", "items": items}]}
             if mode in {"active", "active-running", "old-item", "ambiguous-active"}:
                 value["thread"]["status"]["type"] = "active"
                 value["turns"][0]["id"] = "turn-old"
