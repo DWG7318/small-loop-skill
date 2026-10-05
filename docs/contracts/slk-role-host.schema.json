@@ -5,7 +5,7 @@
   "type": "object", "additionalProperties": false,
   "required": ["schema_version", "run_id", "plan_revision", "state_command", "transport_command", "roles", "cells", "d2_criteria"],
   "properties": {
-    "schema_version": {"const": "slk.role-host/v1"},
+    "schema_version": {"enum": ["slk.role-host/v1", "slk.role-host/v2"]},
     "run_id": {"type": "string", "minLength": 1},
     "plan_revision": {"type": "integer", "minimum": 1},
     "state_command": {"$ref": "#/$defs/strings"},
@@ -19,14 +19,28 @@
       "type": "array", "minItems": 1,
       "prefixItems": [{"$ref": "#/$defs/firstCell"}],
       "items": {"$ref": "#/$defs/nextCell"}
-    }
+    },
+    "temporal": {"$ref": "#/$defs/temporal"}
   },
+  "allOf": [{"if": {"properties": {"schema_version": {"const": "slk.role-host/v1"}}},
+    "then": {"not": {"required": ["temporal"]}}, "else": {"required": ["temporal"]}}],
   "$defs": {
     "text": {"type": "string", "minLength": 1},
     "strings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
     "role": {
       "type": "object", "additionalProperties": false, "required": ["endpoint_path", "endpoint_sha256", "credential_path"],
       "properties": {"endpoint_path": {"$ref": "#/$defs/text"}, "endpoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "credential_path": {"$ref": "#/$defs/text"}}
+    },
+    "temporal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["client_command", "workflow_identity_path", "workflow_identity_sha256", "attempt_root"],
+      "properties": {
+        "client_command": {"type": "array", "minItems": 3, "maxItems": 3,
+          "prefixItems": [{"$ref": "#/$defs/text"}, {"const": "-m"}, {"const": "slk_temporal.delivery_client"}]},
+        "workflow_identity_path": {"$ref": "#/$defs/text"},
+        "workflow_identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "attempt_root": {"$ref": "#/$defs/text"}
+      }
     },
     "firstCell": {
       "type": "object", "additionalProperties": false, "required": ["go_id", "cell_id", "payload"],

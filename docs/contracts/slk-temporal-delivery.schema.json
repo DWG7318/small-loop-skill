@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-temporal-delivery.schema.json",
+  "title": "SLK Temporal ordinary handoff bridge",
+  "oneOf": [
+    {"$ref": "#/$defs/readiness"},
+    {"$ref": "#/$defs/delivery"},
+    {"$ref": "#/$defs/ack"},
+    {"$ref": "#/$defs/result"}
+  ],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$"},
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "proof": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}},
+    "readiness": {"type": "object", "additionalProperties": false,
+      "required": ["schema_version", "method_version", "run_id", "status", "service_mode", "workflow_templates", "client_command", "workflow_identity", "attempt_root", "evidence_sha256"],
+      "properties": {
+        "schema_version": {"const": "slk.temporal-readiness/v2"}, "method_version": {"const": "4.4.1"},
+        "run_id": {"$ref": "#/$defs/id"}, "status": {"const": "READY"}, "service_mode": {"const": "SHARED_LOCAL"},
+        "workflow_templates": {"const": ["SLK.Start", "SLK.Run"]},
+        "client_command": {"type": "array", "minItems": 3, "maxItems": 3,
+          "prefixItems": [{"type": "string", "minLength": 1}, {"const": "-m"}, {"const": "slk_temporal.delivery_client"}]},
+        "workflow_identity": {"$ref": "#/$defs/proof"}, "attempt_root": {"type": "string", "minLength": 1},
+        "evidence_sha256": {"$ref": "#/$defs/sha"}
+      }},
+    "delivery": {"type": "object", "additionalProperties": false,
+      "required": ["operation_id", "run_id", "cell_id", "attempt", "message_id", "sender_role_instance_id", "receiver_role_instance_id", "payload_sha256", "source_runtime_revision"],
+      "properties": {"operation_id": {"$ref": "#/$defs/id"}, "run_id": {"$ref": "#/$defs/id"}, "cell_id": {"$ref": "#/$defs/id"},
+        "attempt": {"type": "integer", "minimum": 1}, "message_id": {"$ref": "#/$defs/id"},
+        "sender_role_instance_id": {"$ref": "#/$defs/id"}, "receiver_role_instance_id": {"$ref": "#/$defs/id"},
+        "payload_sha256": {"$ref": "#/$defs/sha"}, "source_runtime_revision": {"type": "integer", "minimum": 1}}},
+    "ack": {"type": "object", "additionalProperties": false,
+      "required": ["operation_id", "message_id", "receiver_role_instance_id", "payload_sha256", "started_receipt_sha256"],
+      "properties": {"operation_id": {"$ref": "#/$defs/id"}, "message_id": {"$ref": "#/$defs/id"},
+        "receiver_role_instance_id": {"$ref": "#/$defs/id"}, "payload_sha256": {"$ref": "#/$defs/sha"},
+        "started_receipt_sha256": {"$ref": "#/$defs/sha"}}},
+    "result": {"type": "object", "additionalProperties": false,
+      "required": ["schema_version", "status", "operation", "run_id", "operation_id", "message_id"],
+      "properties": {"schema_version": {"const": "slk.temporal-delivery-update-result/v1"},
+        "status": {"enum": ["DELIVERY_REQUESTED", "DELIVERY_ACKNOWLEDGED", "RECOVERY_REQUIRED", "BLOCKED"]},
+        "operation": {"enum": ["request_delivery", "native_started"]}, "run_id": {"$ref": "#/$defs/id"},
+        "operation_id": {"$ref": "#/$defs/id"}, "message_id": {"$ref": "#/$defs/id"}}}
+  }
+}

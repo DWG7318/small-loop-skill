@@ -142,23 +142,36 @@ def _valid_bi_receipt(path_value: Any, run_id: str) -> bool:
     )
 
 
-def _valid_temporal_receipt(path_value: Any, run_id: str) -> bool:
+def _temporal_binding_from_receipt(path_value: Any, run_id: str) -> dict[str, Any] | None:
     value = _receipt(path_value)
-    return bool(
-        value is not None
-        and set(value)
-        == {
-            "schema_version", "method_version", "run_id", "status", "service_mode",
-            "workflow_templates", "evidence_sha256",
-        }
-        and value.get("schema_version") == "slk.temporal-readiness/v1"
-        and value.get("method_version") in SUPPORTED_METHOD_VERSIONS
-        and value.get("run_id") == run_id
-        and value.get("status") == "READY"
-        and value.get("service_mode") == "SHARED_LOCAL"
-        and value.get("workflow_templates") == ["SLK.Start", "SLK.Run"]
-        and _sha256(value.get("evidence_sha256"))
-    )
+    try:
+        if (value is None or set(value) != {
+                "schema_version", "method_version", "run_id", "status", "service_mode",
+                "workflow_templates", "client_command", "workflow_identity", "attempt_root",
+                "evidence_sha256",
+            } or value.get("schema_version") != "slk.temporal-readiness/v2"
+            or value.get("method_version") != "4.4.1" or value.get("run_id") != run_id
+            or value.get("status") != "READY" or value.get("service_mode") != "SHARED_LOCAL"
+            or value.get("workflow_templates") != ["SLK.Start", "SLK.Run"]
+            or not _sha256(value.get("evidence_sha256"))):
+            raise ValueError("Temporal readiness is not closed")
+        identity = value["workflow_identity"]
+        if not isinstance(identity, Mapping):
+            raise ValueError("Temporal identity proof is missing")
+        _proof(identity)
+        from . import worker_completion as wc
+        return wc.validate_temporal_binding({
+            "client_command": value["client_command"],
+            "workflow_identity_path": identity["path"],
+            "workflow_identity_sha256": identity["sha256"],
+            "attempt_root": value["attempt_root"],
+        }, run_id)
+    except (OSError, TypeError, ValueError, KeyError):
+        return None
+
+
+def _valid_temporal_receipt(path_value: Any, run_id: str) -> bool:
+    return _temporal_binding_from_receipt(path_value, run_id) is not None
 
 
 def _proof(reference: Any) -> Mapping[str, Any]:
@@ -175,6 +188,32 @@ def _proof(reference: Any) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("evidence must be an object")
     return value
+
+
+def _host_has_temporal_binding(host_reference: Any, expected: Mapping[str, Any],
+                               run_id: str, revision: int) -> bool:
+    from .role_host import RoleHost
+    try:
+        binding = _proof(host_reference)
+        host = RoleHost(binding, host_reference["sha256"])
+        return bool(
+            binding.get("run_id") == run_id
+            and binding.get("plan_revision") == revision
+            and host.binding.get("temporal") == dict(expected)
+        )
+    except (OSError, TypeError, ValueError, KeyError):
+        return False
+
+
+def _rehearsal_has_temporal_binding(path_value: Any, expected: Mapping[str, Any],
+                                    run_id: str, revision: int) -> bool:
+    value = _receipt(path_value)
+    return bool(
+        value is not None
+        and value.get("run_id") == run_id
+        and value.get("plan_revision") == revision
+        and _host_has_temporal_binding(value.get("host_binding"), expected, run_id, revision)
+    )
 
 
 def _source_state_config(value: Any) -> str:
@@ -684,10 +723,16 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
         reason_codes.append("OPTION_UNSUPPORTED")
     if not _valid_bi_receipt(request["bi_open_receipt"], run_id):
         reason_codes.append("BI_OPEN_RECEIPT_INVALID")
-    if not _valid_temporal_receipt(request["temporal_readiness_receipt"], run_id):
+    temporal_binding = _temporal_binding_from_receipt(request["temporal_readiness_receipt"], run_id)
+    if temporal_binding is None:
         reason_codes.append("TEMPORAL_READINESS_INVALID")
-    if not _valid_communication_rehearsal(request["communication_rehearsal"], run_id, revision, raw_roles):
+    communication_valid = _valid_communication_rehearsal(
+        request["communication_rehearsal"], run_id, revision, raw_roles)
+    if not communication_valid:
         reason_codes.append("COMMUNICATION_REHEARSAL_INVALID")
+    elif temporal_binding is not None and not _rehearsal_has_temporal_binding(
+            request["communication_rehearsal"], temporal_binding, run_id, revision):
+        reason_codes.append("TEMPORAL_BINDING_INVALID")
     missing = [name for name in REQUIRED_OPTIONS if name not in options_by_name]
     if missing:
         reason_codes.append("REQUIRED_OPTION_MISSING")
@@ -761,14 +806,19 @@ def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
         reason_codes.append("OPTION_UNSUPPORTED")
     if not _valid_bi_receipt(request["bi_open_receipt"], run_id):
         reason_codes.append("BI_OPEN_RECEIPT_INVALID")
-    if not _valid_temporal_receipt(request["temporal_readiness_receipt"], run_id):
+    temporal_binding = _temporal_binding_from_receipt(request["temporal_readiness_receipt"], run_id)
+    if temporal_binding is None:
         reason_codes.append("TEMPORAL_READINESS_INVALID")
     conformance_run_id = _normal_chain_conformance(request["normal_chain_conformance"], run_id)
     if conformance_run_id is None:
         reason_codes.append("NORMAL_CHAIN_CONFORMANCE_INVALID")
-    if not _valid_current_registration(request["current_host_binding"], request["sealed_role_receipts"],
-                                       run_id, revision, raw_roles):
+    registration_valid = _valid_current_registration(
+        request["current_host_binding"], request["sealed_role_receipts"], run_id, revision, raw_roles)
+    if not registration_valid:
         reason_codes.append("CURRENT_ROLE_REGISTRATION_INVALID")
+    elif temporal_binding is not None and not _host_has_temporal_binding(
+            request["current_host_binding"], temporal_binding, run_id, revision):
+        reason_codes.append("TEMPORAL_BINDING_INVALID")
     if any(name not in options_by_name for name in REQUIRED_OPTIONS):
         reason_codes.append("REQUIRED_OPTION_MISSING")
     for option in options_by_name.values():

@@ -8,6 +8,8 @@ One shared, headless local Temporal service may host many SLK Runs. Every 4.4.1 
 
 Temporal stores continuity and timing facts only. It never decides D0/D1/D2, moves TOKEN, writes BI, selects a model, creates/replaces a role, chooses a CELL, or becomes a communication participant. Direct registered members remain the first responsibility: Checker sends the CELL to Worker, Worker returns the candidate to Checker, Checker sends formal D1 FAIL or final D2 readiness to Supervisor, and Supervisor sends the structured rework directive to the same Worker.
 
+For a ready 4.4.1 Run, that original sender submits the exact delivery through the hash-bound `slk_temporal.delivery_client`; the existing `SLK.Run` schedules the sole `slk.deliver_message` Activity, and that Activity is the only physical native launcher. The role host never also calls direct transport. Historical v1 hosts remain readable for old evidence, but cannot satisfy current Temporal readiness.
+
 The only positive activation fact is a matching `slk.native-start/v2` acknowledgement. Tool success, terminal output, process exit, visible text, BI state and old activity do not substitute.
 
 ## Runtime guarantees
@@ -21,7 +23,7 @@ The only positive activation fact is a matching `slk.native-start/v2` acknowledg
 ## Windows local setup
 
 1. Provision the official Temporal CLI/service outside this repository and operate it headlessly on the local machine. SLK never installs Docker or a service.
-2. Install `integrations/temporal` in a dedicated Python environment and start `slk-temporal-worker` on the frozen task queue.
+2. Install `integrations/temporal` without network/dependency changes in the Run's registered Python environment and start `slk-temporal-worker` on the frozen task queue. Prove `python -m slk_temporal.delivery_client --help` from that exact environment.
 3. Supply an adapter whose five async functions call existing authoritative entrances: `prepare_run`, `deliver_message`, `request_recovery`, `inspect_overwatcher`, and `notify_supervisor`.
 4. Before CELL dispatch, pass `slk-run-readiness/v1` with exact service/worker health plus both deterministic workflow identities, then start the closed 4.4.1 request once.
 5. Preserve startup fingerprint, workflow IDs, update receipts and terminal closure as Run evidence.
@@ -33,6 +35,8 @@ A development server is suitable only for local evaluation. Durable production o
 The startup request binds version 4.4.1, Run/revision/task queue, timeouts, idempotency key and exactly one Supervisor, Checker, Worker and Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, missing OW, invalid hashes, wrong versions, stale update events and mismatched acknowledgements fail closed.
 
 Each delivery update freezes operation/message, sender/receiver, payload, GO/CELL/round, runtime revision and start deadline. Duplicate identical updates are idempotent; changed duplicates, extra unresolved deliveries and wrong-scope ACKs are rejected. Temporal records no synthetic progress and cannot turn recovery, terminal completion or elapsed time into acceptance.
+
+`DELIVERY_REQUESTED` may wait only for the matching native v2 receipt. `BLOCKED` and `RECOVERY_REQUIRED` are recorded and returned immediately to the original role; they never become a misleading 300-second native-start timeout. If a crash occurs after `DELIVERY_ACKNOWLEDGED` but before central TOKEN commit, the retry preserves both status-specific update results, validates the existing native receipt and performs only the missing central commit—never a second native launch or second ACK.
 
 ## Failure and closure
 

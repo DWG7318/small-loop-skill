@@ -170,6 +170,7 @@ def validate(root: Path) -> list[str]:
         "docs/contracts/slk-overwatcher-admin.schema.json",
         "docs/contracts/slk-supervisor-model-revision.schema.json",
         "docs/contracts/slk-temporal-worker-reload.schema.json",
+        "docs/contracts/slk-temporal-delivery.schema.json",
         "docs/contracts/slk-ocrv-d1-preflight.schema.json",
         "docs/maintenance/2026-09-28-slk-4.3.1-consistency-audit.md",
         "docs/superpowers/specs/2026-09-28-slk-4.3.1-field-corrections-design.md",
@@ -193,6 +194,7 @@ def validate(root: Path) -> list[str]:
         "src/slk_transport/overwatcher_admin.py",
         "src/slk_transport/temporal_reload.py",
         "integrations/temporal/src/slk_temporal/inspector.py",
+        "integrations/temporal/src/slk_temporal/delivery_client.py",
     )
     for relative in required:
         check((root / relative).is_file(), "SLK_REPO_REQUIRED_FILE", relative, errors)

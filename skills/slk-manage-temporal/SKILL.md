@@ -21,7 +21,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 
 ## 运行边界
 
-- 每个交接使用不可变 operation/message、sender/receiver、CELL/attempt、payload SHA-256 和 runtime revision；匹配 `slk.native-start/v2` 才是 ACK。
+- 每个交接由原角色把不可变 operation/message、sender/receiver、CELL/attempt、payload SHA-256 和 runtime revision 提交给已绑定 `SLK.Run`；其单个 Activity 是唯一物理启动入口，Role Host 不再同时直发。匹配 `slk.native-start/v2` 才是 ACK。
 - ACK 超时只请求一次精确恢复，不换接收者、不改 payload、不重做工程副作用。恢复目标是原发送者，Supervisor 选择机械恢复或人工处理。
 - 接收者真实启动后开始本 Run 的责任停留计时；同一成员超过 1800 秒，Temporal 直接通知登记的 Supervisor 一次，不由 OW 中转，也不判断长工作是否合理。
 - 每 1200 秒独立调用原生状态适配器核查本 Run 的 OW；异常、UNKNOWN、无效收据或 Activity 失败形成 runtime guard 并报告。无消息的定时醒来继续等待，ACK/恢复等待期间仍执行保障检查；guard 修复前不派下一 CELL。
@@ -36,6 +36,7 @@ Run 的工程终结顺序完成后，Supervisor 关闭本 Run 的 `SLK.Run` 与 
 
 - 不要把 Temporal 做成第二套 SLK、每 Run 独立服务器、工程裁决者、BI 写入器、角色创建器或模型路由器。
 - 不要用 Activity 成功、进程退出、可见文本、旧 receipt 或工作流重放冒充 Agent 原生启动。
+- 不要把 `BLOCKED`/`RECOVERY_REQUIRED` 变成等待超时，也不要在 ACK 后、中央 commit 前的重试中再次启动接收者或覆盖旧 update 结果。
 - 不要让重试重新施工、重跑 D1、重复移动 TOKEN 或生成第二候选；不确定时保持阻断并交 Supervisor。
 - 不要让单个 Run 关闭共享服务，也不要让一个 Run 的 ID、计时、恢复或证据污染另一个 Run。
 - 不要弹出 PowerShell/控制台窗口；服务和 worker 使用 headless 方式，BI 窗口仍按准备规则可见。

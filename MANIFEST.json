@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "a52bba4e12795fdbaa9f980d59f594173c045a9d986ed00c92593fca7c4b6396"
+      "sha256": "73889f5f4493d0fc9678545cee02e97e477830793322b9c825704f5e377f6e93"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "d85c968d3766f285fcbc0ee1c6d35e90984cea94f1c9cc45e77c8d5d1956b8a5"
+      "sha256": "bf40d69f6e7693d88edae8d0bc34bab9e855bede83e1dd2c097c12fd8ffb4127"
     },
     {
       "path": "VERSION",
@@ -788,7 +788,7 @@
     },
     {
       "path": "docs/contracts/slk-role-host.schema.json",
-      "sha256": "5bbf37426a1ad56d0a363770b91f4da65e21095adc96512254bf3f2784e2cc89"
+      "sha256": "9b52700ab8bff6a9bac3de3d613840a1f1389f6f68f52d74f86da34e46cc7bc8"
     },
     {
       "path": "docs/contracts/slk-run-readiness.schema.json",
@@ -807,6 +807,10 @@
       "sha256": "b2cff48b9601a0a453778026aacca63b468d8fb3258efd22d66dfd4c14028f53"
     },
     {
+      "path": "docs/contracts/slk-temporal-delivery.schema.json",
+      "sha256": "a90814205d77a0834a0f7816fec5531bb4ce1f83e0e6e1de44c408b067893e88"
+    },
+    {
       "path": "docs/contracts/slk-temporal-worker-reload.schema.json",
       "sha256": "42def1950728ee674553dac216c05f803857e41317136fa5f9c5e57b575f222a"
     },
@@ -820,7 +824,7 @@
     },
     {
       "path": "docs/contracts/slk-worker-continuation.schema.json",
-      "sha256": "8f269bab4af619f71101172f114089cbe801ad74d1d4714313ae2e04e2c1c150"
+      "sha256": "3e266a4e44d5cfbf5fd1e56b7c5dfe69a9f304d74806e1072adfe836fcebe90b"
     },
     {
       "path": "docs/maintenance/2026-09-22-slk-4.2.2-cell02-field-trial-review.md",
@@ -844,11 +848,11 @@
     },
     {
       "path": "docs/runtime/SLK-4.4.1-MIGRATION.md",
-      "sha256": "ea0c1892ecffca07be4bd7b5b50e573f25f54bec5dbbaea8ec65530e98c60e7f"
+      "sha256": "3443d583ca2289e353283faafc3951a9ff809d8e6990c655d7a42eeb25799165"
     },
     {
       "path": "docs/runtime/SLK-TEMPORAL.md",
-      "sha256": "405e151b3bbfbfbae5e9d45e7852d841aed7f0f790537ef1e585b30a07703173"
+      "sha256": "c85d376e0f8eaecb8d1719ce5420f11b6636472ab04cbec29a90070ea074194b"
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
@@ -1092,7 +1096,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "18bf4971653e57dad7c6fdecc2bd15e202cc7432c1af7bf4cd67a2b671cfd207"
+      "sha256": "2d6d88aab435aa6a60d50f5fc72e9e7482ddc93b1c798a8e73d27d579da9e6f7"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1152,11 +1156,11 @@
     },
     {
       "path": "integrations/temporal/README.md",
-      "sha256": "2fba39f512070de7caafdf270fe72c6371e55dc534d1606eb98384f75853c16b"
+      "sha256": "923ddbf0abf0c49f6ace177c156a6d33147edd2b8d57cae7b27d56ab7e75ce7d"
     },
     {
       "path": "integrations/temporal/pyproject.toml",
-      "sha256": "fd6437881bfedae8e73b1258b792aa94b8b5e262d1d94591b64b316eb943f1e2"
+      "sha256": "58e32b93cce0045bb23b2e592bebd95420cdf7db3eda27b940db5195ab348e3b"
     },
     {
       "path": "integrations/temporal/src/slk_temporal/__init__.py",
@@ -1173,6 +1177,10 @@
     {
       "path": "integrations/temporal/src/slk_temporal/contracts.py",
       "sha256": "17c35e2c96bd1ccb7738c970515054a33acf908843453cd4d9a4798df84478db"
+    },
+    {
+      "path": "integrations/temporal/src/slk_temporal/delivery_client.py",
+      "sha256": "562ae190e3b52359138f68c0f91c585a75a02763c71628a242f0579241c9e598"
     },
     {
       "path": "integrations/temporal/src/slk_temporal/inspector.py",
@@ -1228,7 +1236,7 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "183677396b3b7cb61a0ee4ffea4548d5500d7353170d2da542ed45dea79d0bca"
+      "sha256": "9454066aec1ba5192e3a18e80c0c06b63ffed84be9a156d69b149b88081e0d65"
     },
     {
       "path": "scripts/validate_role_eval.py",
@@ -1280,7 +1288,7 @@
     },
     {
       "path": "skills/slk-manage-temporal/SKILL.md",
-      "sha256": "ae16a3f035737b8c56927888f7b9eae50315324fab2419db9629da838ceef41a"
+      "sha256": "42e10c784b77e63ec138a242ecf01b308f3e838adb5933b0a877375e6d5f2692"
     },
     {
       "path": "skills/slk-overwatch-run/SKILL.md",
@@ -1376,7 +1384,7 @@
     },
     {
       "path": "src/slk_transport/dispatcher.py",
-      "sha256": "08ae9775533916f72ec223abb7208a19b510fbccaec9088f449be40b103cc55b"
+      "sha256": "25187a4d5adeb0e576ccffa67a1f421f09630ab54e308a15840b36afa9f339bc"
     },
     {
       "path": "src/slk_transport/drill_verify.py",
@@ -1424,11 +1432,11 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "6c878184728d6c37e0af8fc010ecb81f6d64f2589b6fd0e14bcc14236545e414"
+      "sha256": "e6e19867d03da47eac3e3c800bf783449becd8105f497a1decec039ed8752347"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
-      "sha256": "de57d2772fc69946ff724c3a05bd1622765020636e15b699662c818ce45e2997"
+      "sha256": "b9e374a67246ada7587c778d486d39ddff4c68ca43d6fe0cafd6a0aa85aae42e"
     },
     {
       "path": "src/slk_transport/subprocess_watch.py",
@@ -1452,7 +1460,7 @@
     },
     {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "efadb1788845650d556eb1477f7987fa527c53fee176c6607fab47a7e0d9906c"
+      "sha256": "65288c4f3ef1562a5029b37bcd19fd8326bc425bdaa54cc79246a2627dbd3d5c"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1468,7 +1476,7 @@
     },
     {
       "path": "tests/install/test_build_local_package.py",
-      "sha256": "8f64635ff981111b1dbf5788b032175f1b14ba35e43f30ae3f89d079c189f31a"
+      "sha256": "fca4a1d7b2a451c2d2fa3a08747c4717a980ceeecf06800c9e90f28fe3eabd8c"
     },
     {
       "path": "tests/install/test_dsh_integration.py",
@@ -1527,6 +1535,14 @@
       "sha256": "8f35c2b1f1a639c9d4141c9c4f39a74edc899e4111d20348f6b5feaf9f19ea40"
     },
     {
+      "path": "tests/temporal/test_delivery_client.py",
+      "sha256": "be736fb8d54fb74519b71d353a19b3146104d8902186d4c1019e841a24651948"
+    },
+    {
+      "path": "tests/temporal/test_delivery_client_integration.py",
+      "sha256": "411d441e0e61c48bf5936e04535d889d7dc82c9e2d24ea9507438d2146f59e0c"
+    },
+    {
       "path": "tests/temporal/test_optional_off.py",
       "sha256": "9aa7194eb20b1aef0e04ec805326d43cdc4ab4daf4047ea2299cf66111188948"
     },
@@ -1544,7 +1560,7 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "39943f85d74ba10e5b0ebfc47486944da450b0ae5b0a6a4372a06bbee5ac608a"
+      "sha256": "c584b596820d864b5d5abda1b4bf2085df2241bc7269e6c96c37ad5fa8437c2d"
     },
     {
       "path": "tests/test_skill_collection_300.py",
@@ -1684,7 +1700,7 @@
     },
     {
       "path": "tests/transport/test_run_readiness.py",
-      "sha256": "266262b031a713a183d5e35b31287edf1eb745ccd7976f6f68a9d578e8ab9347"
+      "sha256": "98206ef023708e028499537b260eec4248b9271384591bdea0434ad627bfaf84"
     },
     {
       "path": "tests/transport/test_sealed_role_credentials.py",
@@ -1705,6 +1721,10 @@
     {
       "path": "tests/transport/test_task_file.py",
       "sha256": "1a21b3707053b720f8011d1598078ebdf60c2f90b67bed8e1e0fe0c45556c160"
+    },
+    {
+      "path": "tests/transport/test_temporal_handoff_bridge.py",
+      "sha256": "463ccb842ddf431c3232e8f6d081172b74bb202174847726027281fdfd1bf167"
     },
     {
       "path": "tests/transport/test_temporal_reload.py",

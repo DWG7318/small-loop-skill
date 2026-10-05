@@ -100,15 +100,30 @@ def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A") -> 
             "evidence_sha256": "a" * 64,
         },
     )
+    temporal_attempt_root = tmp_path / "temporal-attempts"
+    temporal_attempt_root.mkdir(exist_ok=True)
+    temporal_identity = write_json(tmp_path / "temporal-workflow-identity.json", {
+        "schema_version": "slk.temporal-workflow-identity/v1", "run_id": run_id,
+        "address": "127.0.0.1:7233", "task_queue": "slk-test",
+        "start_workflow_id": f"slk-start-{run_id}",
+        "start_run_id": "11111111-1111-4111-8111-111111111111",
+        "run_workflow_id": f"slk-run-{run_id}",
+        "run_run_id": "22222222-2222-4222-8222-222222222222",
+        "startup_fingerprint": "b" * 64,
+    })
     temporal_receipt = write_json(
         tmp_path / "temporal-ready.json",
         {
-            "schema_version": "slk.temporal-readiness/v1",
-            "method_version": "4.4.0",
+            "schema_version": "slk.temporal-readiness/v2",
+            "method_version": "4.4.1",
             "run_id": run_id,
             "status": "READY",
             "service_mode": "SHARED_LOCAL",
             "workflow_templates": ["SLK.Start", "SLK.Run"],
+            "client_command": [sys.executable, "-m", "slk_temporal.delivery_client"],
+            "workflow_identity": {"path": str(temporal_identity),
+                                  "sha256": hashlib.sha256(temporal_identity.read_bytes()).hexdigest()},
+            "attempt_root": str(temporal_attempt_root.resolve()),
             "evidence_sha256": "b" * 64,
         },
     )
@@ -185,10 +200,15 @@ def _attach_verified_rehearsal(root, request):
         roles[role] = {"endpoint_path": ref["path"], "endpoint_sha256": ref["sha256"], "credential_path": str(sealed)}
     worker_payload = {"cell_id": "CELL-001", "cell_ordinal": 1, "required_cell_count": 1,
         "task": "sample", "d1_criteria": ["sample test passes"], "root_record_path": str(root / "SKILL.md")}
-    binding = proof("host-binding", {"schema_version": "slk.role-host/v1", "run_id": run_id, "plan_revision": 1,
+    temporal_receipt = json.loads(Path(request["temporal_readiness_receipt"]).read_text())
+    temporal = {"client_command": temporal_receipt["client_command"],
+        "workflow_identity_path": temporal_receipt["workflow_identity"]["path"],
+        "workflow_identity_sha256": temporal_receipt["workflow_identity"]["sha256"],
+        "attempt_root": temporal_receipt["attempt_root"]}
+    binding = proof("host-binding", {"schema_version": "slk.role-host/v2", "run_id": run_id, "plan_revision": 1,
         "state_command": ["isolated-state"], "transport_command": ["isolated-transport"], "roles": roles,
         "cells": [{"go_id": "GO-001", "cell_id": "CELL-001", "payload": worker_payload}],
-        "d2_criteria": ["one accepted CELL"]})
+        "d2_criteria": ["one accepted CELL"], "temporal": temporal})
     kinds = ["CELL_DISPATCH", "WORKER_TASK", "CANDIDATE_READY", "D1_FAILURE_ESCALATION", "D1_REWORK_DIRECTIVE", "D2_READY"]
     legs = []
     for index, (leg_id, sender, receiver) in enumerate(REQUIRED_LEGS):
@@ -414,6 +434,24 @@ def test_legacy_echo_hashes_are_not_normal_handoff_evidence(tmp_path):
     result = evaluate_run_readiness(request)
     assert result["status"] == "REPAIR_NEEDED"
     assert "COMMUNICATION_REHEARSAL_INVALID" in result["reason_codes"]
+
+
+def test_temporal_ready_run_rejects_current_host_without_exact_temporal_binding(tmp_path):
+    request = _request(tmp_path)
+    rehearsal_path = Path(request["communication_rehearsal"])
+    rehearsal = json.loads(rehearsal_path.read_text())
+    host_path = Path(rehearsal["host_binding"]["path"])
+    host = json.loads(host_path.read_text())
+    host["schema_version"] = "slk.role-host/v1"
+    host.pop("temporal")
+    write_json(host_path, host)
+    rehearsal["host_binding"]["sha256"] = hashlib.sha256(host_path.read_bytes()).hexdigest()
+    write_json(rehearsal_path, rehearsal)
+
+    result = evaluate_run_readiness(request)
+
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "TEMPORAL_BINDING_INVALID" in result["reason_codes"]
 
 
 @pytest.mark.parametrize("feature", REQUIRED_OPTIONS)

@@ -14,6 +14,7 @@ import time
 import uuid
 import ctypes
 from ctypes import wintypes
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -35,6 +36,7 @@ from .task_file import TaskFileError, verify_task_file
 
 INSPECTION_SCHEMA = "slk.worker-completion-inspection/v1"
 CONTINUATION_SCHEMA = "slk.worker-continuation/v1"
+CONTINUATION_SCHEMA_V2 = "slk.worker-continuation/v2"
 CHECKER_RECOVERY_SCHEMA = "slk.ocrv-worker-recovery-request/v1"
 CHECKER_RECOVERY_RESULT_SCHEMA = "slk.ocrv-worker-recovery-result/v1"
 COMMITTED_TERMINAL_SCHEMA = "slk.ocrv-committed-terminal-request/v1"
@@ -125,6 +127,17 @@ CONTINUATION_FIELDS = {
     "checker_token_already_committed",
     "occurred_at",
 }
+CONTINUATION_V2_FIELDS = CONTINUATION_FIELDS | {"temporal"}
+TEMPORAL_BINDING_FIELDS = {
+    "client_command", "workflow_identity_path", "workflow_identity_sha256", "attempt_root",
+}
+TEMPORAL_IDENTITY_FIELDS = {
+    "schema_version", "run_id", "address", "task_queue", "start_workflow_id",
+    "start_run_id", "run_workflow_id", "run_run_id", "startup_fingerprint",
+}
+TEMPORAL_UPDATE_RESULT_FIELDS = {
+    "schema_version", "status", "operation", "run_id", "operation_id", "message_id",
+}
 
 
 class CompletionError(ValueError):
@@ -169,6 +182,175 @@ def _file_timestamp(path: Path) -> datetime:
 
 def _stable_id(source_message_id: str, suffix: str) -> str:
     return str(uuid.uuid5(_NAMESPACE, f"{source_message_id}:{suffix}"))
+
+
+def validate_temporal_binding(value: object, run_id: str) -> dict[str, Any]:
+    """Validate one hash-bound client for the already-running Workflow pair."""
+
+    try:
+        if not isinstance(value, Mapping) or set(value) != TEMPORAL_BINDING_FIELDS:
+            raise ValueError("field set")
+        command = value["client_command"]
+        if (not isinstance(command, list) or len(command) != 3
+            or not all(isinstance(item, str) and item for item in command)
+            or not Path(command[0]).is_absolute() or not Path(command[0]).is_file()
+            or command[1:] != ["-m", "slk_temporal.delivery_client"]):
+            raise ValueError("client command")
+        identity_path = Path(str(value["workflow_identity_path"]))
+        identity_sha256 = str(value["workflow_identity_sha256"])
+        if (not identity_path.is_absolute() or not identity_path.is_file()
+            or not re.fullmatch(r"[0-9a-f]{64}", identity_sha256)
+            or _sha256(identity_path) != identity_sha256):
+            raise ValueError("identity proof")
+        identity = _read_object(identity_path, "Temporal workflow identity")
+        if (set(identity) != TEMPORAL_IDENTITY_FIELDS
+            or identity.get("schema_version") != "slk.temporal-workflow-identity/v1"
+            or identity.get("run_id") != run_id
+            or not all(isinstance(identity.get(field), str) and identity[field].strip() == identity[field]
+                       for field in TEMPORAL_IDENTITY_FIELDS - {"schema_version"})
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("startup_fingerprint", "")))):
+            raise ValueError("workflow identity")
+        attempt_root = Path(str(value["attempt_root"]))
+        if not attempt_root.is_absolute() or not attempt_root.is_dir():
+            raise ValueError("attempt root")
+        return {
+            "client_command": list(command),
+            "workflow_identity_path": str(identity_path.resolve()),
+            "workflow_identity_sha256": identity_sha256,
+            "attempt_root": str(attempt_root.resolve()),
+        }
+    except (OSError, TypeError, KeyError, ValueError, CompletionError) as exc:
+        raise CompletionError(
+            "TEMPORAL_BINDING_INVALID",
+            "Temporal delivery requires the exact existing Workflow identity, SDK client, and canonical ATTEMPT_ROOT",
+        ) from exc
+
+
+def _validate_temporal_result(value: Mapping[str, Any], *, operation: str, run_id: str,
+                              operation_id: str, message_id: str) -> None:
+    command = value.get("_slk_command")
+    core = {key: item for key, item in value.items() if key != "_slk_command"}
+    expected_operation = "request_delivery" if operation == "request-delivery" else "native_started"
+    allowed = ({"DELIVERY_REQUESTED", "RECOVERY_REQUIRED", "BLOCKED", "DELIVERY_ACKNOWLEDGED"}
+               if operation == "request-delivery" else {"DELIVERY_ACKNOWLEDGED"})
+    if (set(core) != TEMPORAL_UPDATE_RESULT_FIELDS
+        or core.get("schema_version") != "slk.temporal-delivery-update-result/v1"
+        or core.get("status") not in allowed or core.get("operation") != expected_operation
+        or core.get("run_id") != run_id or core.get("operation_id") != operation_id
+        or core.get("message_id") != message_id
+        or (command is not None and (not isinstance(command, Mapping) or command.get("process_exit") != 0))):
+        raise CompletionError("TEMPORAL_DELIVERY_UPDATE_INVALID", "Temporal update did not bind the exact handoff")
+
+
+def _temporal_result_path(request_path: Path, status: str) -> Path:
+    suffix = status.lower().replace("_", "-")
+    return request_path.with_name(f"{request_path.stem}.{suffix}.result.json")
+
+
+def start_temporal_delivery(
+    temporal_raw: object,
+    evidence_root: Path,
+    endpoint_raw: Mapping[str, Any],
+    envelope_raw: Mapping[str, Any],
+    *,
+    attempt: int,
+    source_runtime_revision: int,
+    required_attempt_root: Path | None = None,
+) -> Path:
+    """Let the original role request one Temporal-owned native start and ACK it."""
+
+    endpoint = Endpoint.from_dict(endpoint_raw)
+    envelope = Envelope.from_dict(envelope_raw)
+    temporal = validate_temporal_binding(temporal_raw, envelope.run_id)
+    attempt_root = Path(temporal["attempt_root"])
+    if required_attempt_root is not None and attempt_root.resolve() != required_attempt_root.resolve():
+        raise CompletionError("TEMPORAL_ATTEMPT_ROOT_MISMATCH", "handoff changed the adapter's canonical ATTEMPT_ROOT")
+    if (isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1
+        or isinstance(source_runtime_revision, bool) or not isinstance(source_runtime_revision, int)
+        or source_runtime_revision < 1):
+        raise CompletionError("TEMPORAL_DELIVERY_REQUEST_INVALID", "attempt and runtime revision must be positive")
+    native = attempt_root / envelope.run_id / envelope.message_id
+    native.mkdir(parents=True, exist_ok=True)
+    _write_or_reuse_stable_request(native / "endpoint.json", endpoint_raw)
+    _write_or_reuse_stable_request(native / "envelope.json", envelope_raw)
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    operation_id = _stable_id(envelope.message_id, "temporal-delivery")
+    request = {
+        "operation_id": operation_id,
+        "run_id": envelope.run_id,
+        "cell_id": envelope.cell_id,
+        "attempt": attempt,
+        "message_id": envelope.message_id,
+        "sender_role_instance_id": envelope.sender_role_instance_id,
+        "receiver_role_instance_id": envelope.receiver_role_instance_id,
+        "payload_sha256": envelope.payload_sha256,
+        "source_runtime_revision": source_runtime_revision,
+    }
+    request_path = _write_or_reuse_stable_request(
+        evidence_root / f"temporal-request-{operation_id}.json", request)
+    common = [
+        "--identity", temporal["workflow_identity_path"],
+        "--identity-sha256", temporal["workflow_identity_sha256"],
+    ]
+    requested = _run_json_command(
+        temporal["client_command"],
+        ["request-delivery", *common, "--request", str(request_path),
+         "--request-sha256", _sha256(request_path)],
+        credential=None,
+    )
+    _validate_temporal_result(requested, operation="request-delivery", run_id=envelope.run_id,
+                              operation_id=operation_id, message_id=envelope.message_id)
+    _write_or_reuse_stable_request(
+        _temporal_result_path(request_path, str(requested["status"])),
+        {key: value for key, value in requested.items() if key != "_slk_command"},
+    )
+    if requested["status"] in {"BLOCKED", "RECOVERY_REQUIRED"}:
+        raise CompletionError(
+            f"TEMPORAL_DELIVERY_{requested['status']}",
+            f"Temporal request returned {requested['status']}",
+        )
+    started_path = native / "started.json"
+    failed_path = native / "failed.json"
+    deadline = time.monotonic() + 300
+    while not started_path.is_file() and time.monotonic() < deadline:
+        if failed_path.is_file():
+            break
+        time.sleep(0.05)
+    try:
+        validate_native_start(
+            started_path,
+            adapter=endpoint.adapter,
+            run_id=envelope.run_id,
+            cell_id=envelope.cell_id,
+            message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256,
+        )
+    except NativeActivityError as exc:
+        raise CompletionError("TEMPORAL_NATIVE_START_UNPROVED", "Temporal delivery produced no exact native v2 start") from exc
+    if requested["status"] == "DELIVERY_ACKNOWLEDGED":
+        return native
+    acknowledgement = {
+        "operation_id": operation_id,
+        "message_id": envelope.message_id,
+        "receiver_role_instance_id": envelope.receiver_role_instance_id,
+        "payload_sha256": envelope.payload_sha256,
+        "started_receipt_sha256": _sha256(started_path),
+    }
+    acknowledgement_path = _write_or_reuse_stable_request(
+        evidence_root / f"temporal-native-started-{operation_id}.json", acknowledgement)
+    acknowledged = _run_json_command(
+        temporal["client_command"],
+        ["native-started", *common, "--request", str(acknowledgement_path),
+         "--request-sha256", _sha256(acknowledgement_path)],
+        credential=None,
+    )
+    _validate_temporal_result(acknowledged, operation="native-started", run_id=envelope.run_id,
+                              operation_id=operation_id, message_id=envelope.message_id)
+    _write_or_reuse_stable_request(
+        _temporal_result_path(acknowledgement_path, str(acknowledged["status"])),
+        {key: value for key, value in acknowledged.items() if key != "_slk_command"},
+    )
+    return native
 
 
 def _write_or_reuse_stable_request(path: Path, value: Mapping[str, Any]) -> Path:
@@ -786,6 +968,7 @@ def build_continuation_request(
     state_command: list[str],
     transport_command: list[str],
     occurred_at: str,
+    temporal: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build one immutable request for the already-started DSH Worker Session."""
 
@@ -952,8 +1135,9 @@ def build_continuation_request(
         raise CompletionError("WORKER_CONTINUATION_NOT_READY", "closed commands and positive revisions are required")
     _timestamp(occurred_at)
     credential = Path(credential_path).resolve()
-    return {
-        "schema_version": CONTINUATION_SCHEMA,
+    temporal_binding = validate_temporal_binding(temporal, envelope.run_id) if temporal is not None else None
+    result = {
+        "schema_version": CONTINUATION_SCHEMA_V2 if temporal_binding is not None else CONTINUATION_SCHEMA,
         "method_version": snapshot["method_version"],
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
@@ -1005,6 +1189,9 @@ def build_continuation_request(
         "checker_token_already_committed": checker_token_already_committed,
         "occurred_at": occurred_at,
     }
+    if temporal_binding is not None:
+        result["temporal"] = temporal_binding
+    return result
 
 
 def continuation_request_bytes(request: Mapping[str, Any]) -> bytes:
@@ -1014,12 +1201,16 @@ def continuation_request_bytes(request: Mapping[str, Any]) -> bytes:
 
 
 def _validate_continuation_request(request: Mapping[str, Any]) -> None:
+    version = request.get("schema_version")
+    fields = CONTINUATION_V2_FIELDS if version == CONTINUATION_SCHEMA_V2 else CONTINUATION_FIELDS
     if (
-        set(request) != CONTINUATION_FIELDS
-        or request.get("schema_version") != CONTINUATION_SCHEMA
+        set(request) != fields
+        or version not in {CONTINUATION_SCHEMA, CONTINUATION_SCHEMA_V2}
         or request.get("method_version") not in SUPPORTED_METHOD_VERSIONS
     ):
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation request is not closed")
+    if version == CONTINUATION_SCHEMA_V2:
+        validate_temporal_binding(request.get("temporal"), str(request.get("run_id")))
     snapshot = request.get("source_runtime_snapshot")
     snapshot_fields = {
         "method_version",
@@ -2421,8 +2612,21 @@ def _activate_staged_checker(
     started_path = attempt / "started.json"
     persisted_endpoint_path = attempt / "endpoint.json"
     persisted_envelope_path = attempt / "envelope.json"
-    existing = attempt.exists()
-    if existing:
+    temporal = continuation.get("temporal") if not checker_token_already_committed else None
+    if temporal is not None and failed_commit_request_path is None:
+        attempt = start_temporal_delivery(
+            temporal,
+            _continuation_root(continuation),
+            asdict(endpoint),
+            asdict(envelope),
+            attempt=int(continuation["attempt"]),
+            source_runtime_revision=staged_revision,
+            required_attempt_root=native_attempt_root,
+        )
+        started_path = attempt / "started.json"
+        persisted_endpoint_path = attempt / "endpoint.json"
+        persisted_envelope_path = attempt / "envelope.json"
+    elif attempt.exists():
         if not all(path.is_file() for path in (started_path, persisted_endpoint_path, persisted_envelope_path)):
             raise CompletionError("CHECKER_START_UNPROVED", "Checker attempt has incomplete immutable evidence")
     else:

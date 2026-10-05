@@ -113,18 +113,22 @@ def dispatch_once(
         existing = _existing_result(attempt)
         if existing is not None:
             return existing
-        raise ContractError("transport attempt exists without terminal evidence")
-
-    attempt.write_json_once("endpoint.json", endpoint_value)
-    attempt.write_json_once("envelope.json", envelope_value)
-    attempt.write_json_once(
-        "accepted.json",
-        {
-            "message_id": envelope.message_id,
-            "run_id": envelope.run_id,
-            "status": "accepted",
-        },
-    )
+        # A Temporal-owned handoff stages only the exact immutable identity
+        # before requesting the single delivery Activity. Any evidence beyond
+        # those two files is an interrupted native attempt and remains closed.
+        extras = {path.name for path in attempt.root.iterdir() if path.is_file()} - {
+            "endpoint.json", "envelope.json",
+        }
+        if extras:
+            raise ContractError("transport attempt exists without terminal evidence")
+    else:
+        attempt.write_json_once("endpoint.json", endpoint_value)
+        attempt.write_json_once("envelope.json", envelope_value)
+    attempt.write_json_once("accepted.json", {
+        "message_id": envelope.message_id,
+        "run_id": envelope.run_id,
+        "status": "accepted",
+    })
 
     try:
         result = adapter.deliver(endpoint, envelope, attempt)

@@ -188,7 +188,8 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         assert schema["additionalProperties"] is False
         optional_partial = ({'partial_terminal'} if relative.endswith('slk-ocrv-committed-terminal.schema.json')
-                            else {'partial_review'} if relative.endswith('slk-ocrv-incomplete-checker-resume.schema.json') else set())
+                            else {'partial_review'} if relative.endswith('slk-ocrv-incomplete-checker-resume.schema.json')
+                            else {'temporal'} if relative.endswith('slk-worker-continuation.schema.json') else set())
         assert set(schema["properties"]) == required | optional_partial
         if relative.endswith("slk-overwatcher-turn-resume.schema.json"):
             assert set(schema["required"]) == required - {
@@ -203,6 +204,26 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
                 'resume_request_path','resume_request_sha256','evidence_sha256'}
         else:
             assert set(schema["required"]) == required
+
+
+def test_441_temporal_handoff_schemas_are_closed_and_bind_the_standard_client() -> None:
+    host = json.loads(read("docs/contracts/slk-role-host.schema.json"))
+    continuation = json.loads(read("docs/contracts/slk-worker-continuation.schema.json"))
+    delivery = json.loads(read("docs/contracts/slk-temporal-delivery.schema.json"))
+
+    assert host["additionalProperties"] is continuation["additionalProperties"] is False
+    assert host["properties"]["schema_version"]["enum"] == ["slk.role-host/v1", "slk.role-host/v2"]
+    assert continuation["properties"]["schema_version"]["enum"] == [
+        "slk.worker-continuation/v1", "slk.worker-continuation/v2"]
+    for schema in (host, continuation):
+        command = schema["$defs"]["temporal"]["properties"]["client_command"]
+        assert command["prefixItems"][1:] == [
+            {"const": "-m"}, {"const": "slk_temporal.delivery_client"}]
+        assert schema["$defs"]["temporal"]["additionalProperties"] is False
+    assert len(delivery["oneOf"]) == 4
+    assert delivery["$defs"]["readiness"]["additionalProperties"] is False
+    assert delivery["$defs"]["result"]["properties"]["status"]["enum"] == [
+        "DELIVERY_REQUESTED", "DELIVERY_ACKNOWLEDGED", "RECOVERY_REQUIRED", "BLOCKED"]
 
 
 def test_overwatcher_resume_has_exactly_one_basis_and_cycle_enum_excludes_incident_code() -> None:

@@ -19,6 +19,7 @@ from .native_activity import validate_native_start
 
 
 FIELDS = {"schema_version", "run_id", "plan_revision", "state_command", "transport_command", "roles", "cells", "d2_criteria"}
+FIELDS_V2 = FIELDS | {"temporal"}
 ROLE_FIELDS = {"endpoint_path", "endpoint_sha256", "credential_path"}
 
 
@@ -42,7 +43,9 @@ def load_role_host(endpoint_raw: Mapping[str, Any]) -> "RoleHost | None":
 
 class RoleHost:
     def __init__(self, binding: Mapping[str, Any], digest: str, *, state_config_path: str | None = None):
-        if (set(binding) != FIELDS or binding.get("schema_version") != "slk.role-host/v1"
+        schema_version = binding.get("schema_version")
+        expected_fields = FIELDS_V2 if schema_version == "slk.role-host/v2" else FIELDS
+        if (set(binding) != expected_fields or schema_version not in {"slk.role-host/v1", "slk.role-host/v2"}
             or not isinstance(binding.get("roles"), Mapping) or set(binding["roles"]) != {"supervisor", "checker", "worker"}
             or type(binding.get("plan_revision")) is not int or binding["plan_revision"] < 1
             or not isinstance(binding.get("cells"), list) or not binding["cells"]):
@@ -51,6 +54,8 @@ class RoleHost:
             if not isinstance(binding[field], list) or not binding[field] or not all(isinstance(x, str) and x.strip() for x in binding[field]):
                 raise ValueError("host command or criteria are invalid")
         self.binding, self.digest = dict(binding), digest
+        if schema_version == "slk.role-host/v2":
+            self.binding["temporal"] = wc.validate_temporal_binding(binding["temporal"], str(binding["run_id"]))
         self.state_config_path = state_config_path
         self.state = list(binding["state_command"])
         self.transport = list(binding["transport_command"])
@@ -181,7 +186,8 @@ class RoleHost:
                 request = wc.build_continuation_request(source, self.endpoint("checker"), projection,
                     plan_revision=self.binding["plan_revision"], runtime_revision=snapshot["runtime_revision"],
                     token_sequence=snapshot["token_sequence"], credential_path=self.credential_path(role),
-                    state_command=self.state, transport_command=self.transport, occurred_at=occurred_at)
+                    state_command=self.state, transport_command=self.transport, occurred_at=occurred_at,
+                    temporal=self.binding.get("temporal"))
                 wc._write_or_reuse_stable_request(request_path, request)
             result = wc.execute_worker_host_continuation(request)
         elif envelope.payload_type == "CELL_DISPATCH":
@@ -284,7 +290,9 @@ class RoleHost:
             raise wc.CompletionError("SUPERVISOR_RESULT_INVALID", "decision evidence is not readable local evidence")
         wc._write_or_reuse_stable_request(root / "supervisor-decision.json", result)
         if outgoing is not None:
-            native = root / "rework" / "attempts" / outgoing.run_id / outgoing.message_id
+            attempts = (Path(str(self.binding["temporal"]["attempt_root"]))
+                        if "temporal" in self.binding else root / "rework" / "attempts")
+            native = attempts / outgoing.run_id / outgoing.message_id
             if self._committed_delivery(self.projection(), outgoing, native):
                 credential = wc.unprotect_dpapi_hex(self.credential_path("supervisor"))
                 try:
@@ -329,7 +337,9 @@ class RoleHost:
         finally:
             credential = ""
         latest = self.projection()
-        native = root / "attempts" / envelope.run_id / envelope.message_id
+        attempts = (Path(str(self.binding["temporal"]["attempt_root"]))
+                    if "temporal" in self.binding else root / "attempts")
+        native = attempts / envelope.run_id / envelope.message_id
         if self._committed_delivery(latest, envelope, native):
             return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": envelope.message_id,
                     "native_attempt_path": str(native)}
@@ -343,8 +353,16 @@ class RoleHost:
         root.mkdir(parents=True, exist_ok=True)
         endpoint_path = wc._write_or_reuse_stable_request(root / "endpoint.json", target)
         envelope_path = wc._write_or_reuse_stable_request(root / "envelope.json", asdict(envelope))
-        attempts = root / "attempts"
-        if not native.exists():
+        if "temporal" in self.binding:
+            revision = latest.get("runtime_snapshot", {}).get("runtime_revision")
+            if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+                raise wc.CompletionError("ROLE_HOST_BOUNDARY_CHANGED", "source runtime revision is unavailable")
+            native = wc.start_temporal_delivery(
+                self.binding["temporal"], root, target, asdict(envelope),
+                attempt=attempt_number, source_runtime_revision=revision,
+                required_attempt_root=attempts,
+            )
+        elif not native.exists():
             wc._run_json_command(self.transport, ["send", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
                                                   "--attempt-root", str(attempts)], credential=None)
         started_path = native / "started.json"
