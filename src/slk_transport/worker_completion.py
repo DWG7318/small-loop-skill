@@ -23,6 +23,7 @@ from .adapters.base import AdapterError
 from .adapters.ocrv import OcrvAdapter, VERDICT_EXIT_CODES
 from .contracts import (
     ENVELOPE_SCHEMA,
+    SHA256,
     ContractError,
     DeliveryResult,
     Endpoint,
@@ -144,6 +145,103 @@ class CompletionError(ValueError):
     def __init__(self, error_code: str, message: str) -> None:
         super().__init__(message)
         self.error_code = error_code
+
+
+def resolve_authoritative_token_boundary(
+    projection: Mapping[str, Any], *, run_id: str, plan_revision: int,
+) -> dict[str, Any]:
+    """Resolve one current TOKEN boundary without rewriting a historical NULL snapshot."""
+    try:
+        summary = projection["summary"]
+        snapshot = projection["runtime_snapshot"]
+        if not isinstance(summary, Mapping) or not isinstance(snapshot, Mapping):
+            raise ValueError("projection is incomplete")
+        summary_revision = summary.get("current_plan_revision", summary.get("plan_revision"))
+        sequence = snapshot.get("token_sequence")
+        holder = snapshot.get("token_holder_role_instance_id")
+        message_id = snapshot.get("latest_message_id")
+        method_version = snapshot.get("method_version")
+        if (
+            summary.get("run_id") != run_id
+            or projection.get("run_id", run_id) != run_id
+            or method_version not in SUPPORTED_METHOD_VERSIONS
+            or summary.get("slk_version") != method_version
+            or summary_revision != plan_revision
+            or snapshot.get("run_id", run_id) != run_id
+            or snapshot.get("plan_revision") != plan_revision
+            or isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1
+            or not isinstance(holder, str) or not holder
+        ):
+            raise ValueError("projection scope changed")
+        history = projection.get("token_history")
+        if isinstance(message_id, str) and message_id:
+            if isinstance(history, list):
+                token_rows = [row for row in history if isinstance(row, Mapping)
+                    and row.get("event_type") == "TOKEN_HANDED_OFF"]
+                same_sequence = [row for row in token_rows if row.get("token_sequence") == sequence]
+                if token_rows and (len(same_sequence) != 1 or token_rows[-1] is not same_sequence[0]
+                    or same_sequence[0].get("message_id") != message_id
+                    or same_sequence[0].get("to_role_instance_id") != holder):
+                    raise ValueError("snapshot conflicts with TOKEN history")
+            return {"message_id": message_id, "token_sequence": sequence, "holder_role_instance_id": holder,
+                    "source": "RUNTIME_SNAPSHOT", "go_id": None, "cell_id": None}
+        if message_id is not None or sequence < 1 or not isinstance(history, list):
+            raise ValueError("snapshot message identity is invalid")
+        token_rows = [row for row in history if isinstance(row, Mapping)
+            and row.get("event_type") == "TOKEN_HANDED_OFF"]
+        created_rows = [row for row in history if isinstance(row, Mapping)
+            and row.get("event_type") == "TOKEN_CREATED"]
+        if not token_rows and sequence == 1 and len(created_rows) == 1:
+            created = created_rows[0]
+            supervisors = [row for row in projection.get("roles", []) if isinstance(row, Mapping)
+                and row.get("role") == "supervisor" and row.get("lifecycle", "active") == "active"]
+            if (len(supervisors) != 1 or supervisors[0].get("role_instance_id") != holder
+                or created.get("token_sequence") != 1
+                or created.get("to_role_instance_id") != holder
+                or created.get("message_id") is not None or created.get("from_role_instance_id") is not None
+                or created.get("go_id") is not None or created.get("cell_id") is not None
+                or created.get("run_id", run_id) != run_id
+                or created.get("plan_revision", plan_revision) != plan_revision):
+                raise ValueError("initial TOKEN identity conflicts with snapshot")
+            return {"message_id": None, "token_sequence": 1, "holder_role_instance_id": holder,
+                    "source": "TOKEN_CREATED", "go_id": None, "cell_id": None}
+        matches = [row for row in token_rows if row.get("token_sequence") == sequence]
+        if len(matches) != 1 or not token_rows or token_rows[-1] is not matches[0]:
+            raise ValueError("current TOKEN is missing or ambiguous")
+        token = matches[0]
+        for field in ("message_id", "go_id", "cell_id", "from_role_instance_id", "to_role_instance_id"):
+            if not isinstance(token.get(field), str) or not token[field]:
+                raise ValueError("TOKEN identity is incomplete")
+        if (token["to_role_instance_id"] != holder
+            or token.get("run_id", run_id) != run_id
+            or token.get("plan_revision", plan_revision) != plan_revision):
+            raise ValueError("TOKEN scope conflicts with snapshot")
+        starts = []
+        for event in projection.get("events", []):
+            if not isinstance(event, Mapping) or event.get("event_type") != "TRANSPORT_STARTED":
+                continue
+            try:
+                details = json.loads(event.get("details_json", ""))
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if (isinstance(details, Mapping) and details.get("message_id") == token["message_id"]
+                and event.get("go_id") == token["go_id"] and event.get("cell_id") == token["cell_id"]):
+                starts.append((event, details))
+        if len(starts) != 1:
+            raise ValueError("TOKEN native start is missing or ambiguous")
+        event, details = starts[0]
+        if (event.get("corrects_event_id") is not None
+            or event.get("author_role_instance_id") != token["from_role_instance_id"]
+            or event.get("plan_revision", plan_revision) != plan_revision
+            or any(not isinstance(details.get(field), str) or not SHA256.fullmatch(details[field])
+                   for field in ("endpoint_sha256", "envelope_sha256", "start_evidence_sha256"))):
+            raise ValueError("TOKEN native start conflicts with authoritative identity")
+        return {"message_id": token["message_id"], "token_sequence": sequence,
+                "holder_role_instance_id": holder, "source": "TOKEN_HISTORY",
+                "go_id": token["go_id"], "cell_id": token["cell_id"]}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CompletionError("AUTHORITATIVE_TOKEN_BOUNDARY_INVALID",
+                              "current TOKEN boundary is missing, ambiguous, or contradictory") from exc
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:
@@ -1044,16 +1142,24 @@ def build_continuation_request(
     ):
         raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "supplement does not bind the frozen plan or Checker")
     snapshot = runtime_projection.get("runtime_snapshot")
+    try:
+        token_boundary = resolve_authoritative_token_boundary(
+            runtime_projection, run_id=envelope.run_id, plan_revision=plan_revision,
+        )
+    except CompletionError as exc:
+        raise CompletionError("WORKER_CONTINUATION_NOT_READY",
+                              "current Worker TOKEN boundary is not authoritative") from exc
+    boundary_message_id = token_boundary["message_id"]
     candidate_message_id = _stable_id(envelope.message_id, "candidate-ready")
     checker_token_already_committed = (
         isinstance(snapshot, Mapping)
         and snapshot.get("token_holder_role_instance_id") == checker.role_instance_id
-        and snapshot.get("latest_message_id") == candidate_message_id
+        and boundary_message_id == candidate_message_id
     )
     worker_holds_source_token = (
         isinstance(snapshot, Mapping)
         and snapshot.get("token_holder_role_instance_id") == endpoint.role_instance_id
-        and snapshot.get("latest_message_id") == envelope.message_id
+        and boundary_message_id == envelope.message_id
     )
     if recovery_mode == "INVALID_RESULT_CONTRACT":
         source_event_types = _event_types(
@@ -1156,7 +1262,7 @@ def build_continuation_request(
         "source_envelope_sha256": _sha256(envelope_path),
         "source_runtime_projection_sha256": canonical_json_sha256(runtime_projection),
         "source_runtime_snapshot": {
-            field: snapshot.get(field)
+            field: (boundary_message_id if field == "latest_message_id" else snapshot.get(field))
             for field in (
                 "method_version",
                 "plan_revision",
@@ -3789,6 +3895,12 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
     roles = projection.get("roles")
     token_history = projection.get("token_history")
     shared_state = {"run_id": request["run_id"], "state": "active", "closure_state": "open"}
+    try:
+        token_boundary = resolve_authoritative_token_boundary(
+            projection, run_id=request["run_id"], plan_revision=request["plan_revision"])
+    except CompletionError as exc:
+        raise CompletionError("CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
+                              "current Checker TOKEN boundary is not authoritative") from exc
     if (
         not _matches(projection, {"schema_version": "slk.bi.run/v1", "run_id": request["run_id"]})
         or not _matches(summary, {
@@ -3805,8 +3917,8 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             "runtime_revision": request["runtime_revision"],
             "token_sequence": request["token_sequence"],
             "token_holder_role_instance_id": request["checker_role_instance_id"],
-            "latest_message_id": request["candidate_message_id"],
         })
+        or token_boundary["message_id"] != request["candidate_message_id"]
         or not all(isinstance(value, list) for value in (events, roles, token_history))
         or not token_history
     ):

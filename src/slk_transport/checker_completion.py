@@ -13,7 +13,7 @@ from typing import Any, Callable, Mapping
 
 from .contracts import ENVELOPE_SCHEMA, IDENTIFIER, Endpoint, Envelope, canonical_json_sha256
 from .native_activity import NativeActivityError, validate_native_start
-from .worker_completion import _run_json_command, unprotect_dpapi_hex
+from .worker_completion import CompletionError, _run_json_command, resolve_authoritative_token_boundary, unprotect_dpapi_hex
 
 
 REQUEST_SCHEMA = "slk.checker-completion-request/v1"
@@ -239,6 +239,12 @@ def _validate_boundary(request: Mapping[str, Any]) -> dict[str, Any]:
         or not isinstance(events, list)
     ):
         raise CheckerCompletionError("CHECKER_COMPLETION_RUNTIME_MISMATCH", "runtime is not the exact Checker boundary")
+    try:
+        token_boundary = resolve_authoritative_token_boundary(
+            projection, run_id=request["run_id"], plan_revision=request["plan_revision"])
+    except CompletionError as exc:
+        raise CheckerCompletionError("CHECKER_COMPLETION_RUNTIME_MISMATCH",
+                                     "runtime TOKEN boundary is not authoritative") from exc
     terminals = [
         event for event in events
         if isinstance(event, Mapping)
@@ -256,7 +262,7 @@ def _validate_boundary(request: Mapping[str, Any]) -> dict[str, Any]:
         event.get("event_type") != "D1_PASSED"
         or event.get("author_role_instance_id") != request["checker_role_instance_id"]
         or details.get("verdict") != "PASS"
-        or snapshot.get("latest_message_id") != details.get("candidate_message_id")
+        or token_boundary["message_id"] != details.get("candidate_message_id")
     ):
         raise CheckerCompletionError("CHECKER_COMPLETION_D1_MISMATCH", "Checker completion requires exact D1 PASS")
     cells = _ordered_cells(projection)

@@ -1020,7 +1020,8 @@ def test_existing_handoffs_move_the_same_token_between_existing_roles() -> None:
     adjust = read_skill("slk-adjust-run")
     close = read_skill("slk-close-run")
     recover = read_skill("slk-recover-communication")
-    assert "Supervisor 用首枚 `SLK TOKEN T001`" in manage
+    assert "当前权威序列的下一枚单调递增 `SLK TOKEN`" in manage
+    assert "已有首轮交接不重派首 CELL" in manage
     assert "恢复原成员时重发原令牌编号" in manage
     assert "接管新成员确认后" in manage and "使旧令牌失效" in manage
     assert "Checker → Worker" in dispatch and "SLK TOKEN" in dispatch

@@ -34,7 +34,7 @@ Owner 已授权本 Run 启动准备且准备未完时，Supervisor 先查询当�
 
 正式工程成员对应已登记、可精确寻址并通过通讯测试的原生 Agent 端点；未登记端点的内部 subagent、隐藏执行或文字角色声明不作为正式成员。Overwatcher 使用单独 binding 与独立凭证，不要伪装 Supervisor、Checker 或 Worker。
 
-成员创建或更换时，上一级用 `slk-state register-role` 或 `replace-role` 登记真实 Agent、模型、reasoning、session 与端点并领取一次性写凭证。团队、BI、Temporal 与通讯演练收据闭合后，Supervisor 用首枚 `SLK TOKEN T001` 把首 CELL 交给 Checker；成员完成当前节点和必要交接后结束活动，不使用 `wait_threads`。Supervisor 不接收逐 CELL 噪音，只在 D1 FAIL、异常、规划决定或最终 D2 时激活。
+成员创建或更换时，上一级用 `slk-state register-role` 或 `replace-role` 登记真实 Agent、模型、reasoning、session 与端点并领取一次性写凭证。团队、BI、Temporal 与通讯演练收据闭合后，Supervisor 用当前权威序列的下一枚单调递增 `SLK TOKEN` 把首个未启动 CELL 交给 Checker；恢复既有 Run 时先核实已有首轮施工、合法 TOKEN 与未闭合后缀，已有首轮交接不重派首 CELL。成员完成当前节点和必要交接后结束活动，不使用 `wait_threads`。Supervisor 不接收逐 CELL 噪音，只在 D1 FAIL、异常、规划决定或最终 D2 时激活。
 
 ## 恢复或接管
 

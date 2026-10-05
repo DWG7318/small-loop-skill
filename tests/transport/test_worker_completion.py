@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -1408,6 +1409,89 @@ def test_patch_continuation_preserves_run_version(tmp_path, version):
     value["source_runtime_snapshot"]["method_version"] = "4.4.1" if version == "4.4.0" else "4.4.0"
     with pytest.raises(CompletionError):
         _validate_continuation_request(value)
+
+
+def test_continuation_uses_exact_authoritative_token_when_snapshot_message_is_historical_null(tmp_path):
+    attempt, _endpoint, checker = completion_fixture(tmp_path)
+    message_id = "c13ee3db-524e-4011-a7f3-ba02386e5599"
+    for name in ("envelope.json", "started.json", "worker-result.json", "completed.json"):
+        path = attempt / name
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["message_id"] = message_id
+        write_json(path, value)
+    envelope = json.loads((attempt / "envelope.json").read_text(encoding="utf-8"))
+    projection = runtime_projection(token_owner=envelope["receiver_role_instance_id"], attempt=1)
+    projection["summary"] = {"run_id": "RUN-A", "slk_version": "4.4.1", "current_plan_revision": 1}
+    projection["runtime_snapshot"].update(method_version="4.4.1", runtime_revision=15,
+        token_sequence=3, latest_message_id=None)
+    projection["token_history"] = [{"event_type": "TOKEN_HANDED_OFF", "message_id": message_id,
+        "token_sequence": 3, "go_id": envelope["go_id"], "cell_id": envelope["cell_id"],
+        "from_role_instance_id": envelope["sender_role_instance_id"],
+        "to_role_instance_id": envelope["receiver_role_instance_id"]}]
+    projection["events"] = [{"event_id": "transport-start-cell01-t003-mcp-startup-20261004t081141z",
+        "event_type": "TRANSPORT_STARTED", "corrects_event_id": None,
+        "go_id": envelope["go_id"], "cell_id": envelope["cell_id"], "attempt": 1,
+        "author_role_instance_id": envelope["sender_role_instance_id"], "plan_revision": 1,
+        "details_json": json.dumps({"message_id": message_id,
+            "endpoint_sha256": "348444cc80aef5a5e330dd576b57c542364db0191d8d44ec79fad17e6b2bbaa2",
+            "envelope_sha256": "19a436c76c220e91d1c9efca89bc14650b6cefcac849d1c7d596e19bfb77765d",
+            "start_evidence_sha256": "521542adc90d5fd07ea14ebf34d47f559613423b01b820e6d89357ac47b2111c"})}]
+
+    request = build_continuation_request(attempt, checker, projection, plan_revision=1,
+        runtime_revision=15, token_sequence=3, credential_path=tmp_path / "worker.dpapi",
+        state_command=["state"], transport_command=["transport"], occurred_at="2026-10-05T00:00:00Z")
+
+    assert request["source_message_id"] == message_id
+    assert request["source_runtime_snapshot"]["latest_message_id"] == message_id
+    worker_completion._validate_continuation_request(request)
+
+
+def test_authoritative_token_resolver_preserves_only_the_exact_initial_supervisor_boundary():
+    projection = {"run_id": "RUN-A",
+        "summary": {"run_id": "RUN-A", "slk_version": "4.4.1", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": "RUN-A", "method_version": "4.4.1", "plan_revision": 1,
+            "runtime_revision": 1, "token_sequence": 1,
+            "token_holder_role_instance_id": "RUN-A-supervisor", "latest_message_id": None},
+        "roles": [{"role": "supervisor", "role_instance_id": "RUN-A-supervisor", "lifecycle": "active"}],
+        "token_history": [{"event_type": "TOKEN_CREATED", "token_sequence": 1,
+            "to_role_instance_id": "RUN-A-supervisor", "from_role_instance_id": None,
+            "message_id": None, "go_id": None, "cell_id": None}], "events": []}
+
+    boundary = worker_completion.resolve_authoritative_token_boundary(
+        projection, run_id="RUN-A", plan_revision=1)
+    assert boundary == {"message_id": None, "token_sequence": 1,
+        "holder_role_instance_id": "RUN-A-supervisor", "source": "TOKEN_CREATED",
+        "go_id": None, "cell_id": None}
+
+    for mutation in ("wrong-holder", "created-message", "hidden-handoff"):
+        changed = copy.deepcopy(projection)
+        if mutation == "wrong-holder":
+            changed["token_history"][0]["to_role_instance_id"] = "RUN-A-worker"
+        elif mutation == "created-message":
+            changed["token_history"][0]["message_id"] = "not-an-initial-boundary"
+        else:
+            changed["token_history"].append({"event_type": "TOKEN_HANDED_OFF", "token_sequence": 2,
+                "to_role_instance_id": "RUN-A-checker", "from_role_instance_id": "RUN-A-supervisor",
+                "message_id": "handoff", "go_id": "GO-001", "cell_id": "CELL-001"})
+        with pytest.raises(CompletionError) as rejected:
+            worker_completion.resolve_authoritative_token_boundary(changed, run_id="RUN-A", plan_revision=1)
+        assert rejected.value.error_code == "AUTHORITATIVE_TOKEN_BOUNDARY_INVALID"
+
+
+def test_authoritative_token_resolver_rejects_non_null_snapshot_that_conflicts_with_newer_history():
+    projection = {"run_id": "RUN-A",
+        "summary": {"run_id": "RUN-A", "slk_version": "4.4.1", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": "RUN-A", "method_version": "4.4.1", "plan_revision": 1,
+            "runtime_revision": 4, "token_sequence": 2,
+            "token_holder_role_instance_id": "RUN-A-checker", "latest_message_id": "message-2"},
+        "token_history": [
+            {"event_type": "TOKEN_HANDED_OFF", "token_sequence": 2, "message_id": "message-2",
+             "to_role_instance_id": "RUN-A-checker"},
+            {"event_type": "TOKEN_HANDED_OFF", "token_sequence": 3, "message_id": "message-3",
+             "to_role_instance_id": "RUN-A-worker"}], "events": []}
+    with pytest.raises(CompletionError) as rejected:
+        worker_completion.resolve_authoritative_token_boundary(projection, run_id="RUN-A", plan_revision=1)
+    assert rejected.value.error_code == "AUTHORITATIVE_TOKEN_BOUNDARY_INVALID"
 
 
 def test_continuation_request_is_stable_resumes_exact_session_and_contains_no_secret(tmp_path: Path) -> None:

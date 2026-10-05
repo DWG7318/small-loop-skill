@@ -171,6 +171,18 @@ def isolated_consumer_boundary(monkeypatch):
     # Real Windows DPAPI + state binary tests live in test_sealed_role_credentials.
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda p: "isolated-test-credential")
     def authenticate(command, args, **kwargs):
+        if args[0] == "run":
+            run_id = args[2]
+            return {"schema_version": "slk.bi.run/v1", "run_id": run_id,
+                "summary": {"run_id": run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
+                "runtime_snapshot": {"run_id": run_id, "method_version": "4.4.1", "plan_revision": 1,
+                    "runtime_revision": 7, "token_sequence": 1,
+                    "token_holder_role_instance_id": f"{run_id}-supervisor", "latest_message_id": None},
+                "roles": [{"role": "supervisor", "role_instance_id": f"{run_id}-supervisor", "lifecycle": "active"}],
+                "token_history": [{"event_type": "TOKEN_CREATED", "token_sequence": 1,
+                    "to_role_instance_id": f"{run_id}-supervisor", "from_role_instance_id": None,
+                    "message_id": None, "go_id": None, "cell_id": None}],
+                "events": [], "_slk_command": {"process_exit": 0}}
         return {"status": "authenticated", "run_id": args[2], "role_instance_id": args[4],
                 "role": args[4].rsplit("-", 1)[1], "runtime_revision": 7}
     monkeypatch.setattr(wc, "_run_json_command", authenticate)
@@ -205,8 +217,11 @@ def _attach_verified_rehearsal(root, request):
         "workflow_identity_path": temporal_receipt["workflow_identity"]["path"],
         "workflow_identity_sha256": temporal_receipt["workflow_identity"]["sha256"],
         "attempt_root": temporal_receipt["attempt_root"]}
+    state_command = root / "slk-state.exe"
+    state_command.write_bytes(b"isolated state fixture")
+    (root / "slk-bi-query.exe").write_bytes(b"isolated query fixture")
     binding = proof("host-binding", {"schema_version": "slk.role-host/v2", "run_id": run_id, "plan_revision": 1,
-        "state_command": ["isolated-state"], "transport_command": ["isolated-transport"], "roles": roles,
+        "state_command": [str(state_command)], "transport_command": ["isolated-transport"], "roles": roles,
         "cells": [{"go_id": "GO-001", "cell_id": "CELL-001", "payload": worker_payload}],
         "d2_criteria": ["one accepted CELL"], "temporal": temporal})
     kinds = ["CELL_DISPATCH", "WORKER_TASK", "CANDIDATE_READY", "D1_FAILURE_ESCALATION", "D1_REWORK_DIRECTIVE", "D2_READY"]
@@ -322,6 +337,65 @@ def test_inflight_admission_separates_reusable_normal_chain_from_current_run_ide
     assert not Path(current["communication_rehearsal"]).exists()
 
 
+def test_inflight_admission_checks_the_same_historical_null_boundary_as_the_real_consumer(
+    tmp_path, monkeypatch,
+):
+    source_root, current_root = tmp_path / "source", tmp_path / "current"
+    source_root.mkdir()
+    current_root.mkdir()
+    source = _request(source_root, run_id="RUN-CONFORMANCE")
+    source_path = write_json(source_root / "readiness-request.json", source)
+    def proof(path):
+        return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    conformance = write_json(source_root / "normal-chain-conformance.json", {
+        "schema_version": "slk.normal-chain-conformance/v1", "method_version": "4.4.1",
+        "status": "PASS", "source_run_id": "RUN-CONFORMANCE",
+        "source_readiness_request": proof(source_path),
+        "source_communication_rehearsal": proof(Path(source["communication_rehearsal"])),
+    })
+    current = _request(current_root, run_id="RUN-CURRENT")
+    packet = json.loads(Path(current["communication_rehearsal"]).read_text())
+    admission = {"schema_version": "slk.run-admission-request/v1", "run_id": "RUN-CURRENT",
+        "plan_revision": 1, "roles": current["roles"], "optional_features": current["optional_features"],
+        "bi_open_receipt": current["bi_open_receipt"],
+        "temporal_readiness_receipt": current["temporal_readiness_receipt"],
+        "normal_chain_conformance": str(conformance), "current_host_binding": packet["host_binding"],
+        "sealed_role_receipts": packet["sealed_role_receipts"]}
+    registered = {row["role"]: row for row in current["roles"]}
+    message_id = "c13ee3db-524e-4011-a7f3-ba02386e5599"
+    projection = {"schema_version": "slk.bi.run/v1", "run_id": "RUN-CURRENT",
+        "summary": {"run_id": "RUN-CURRENT", "slk_version": "4.4.1", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": "RUN-CURRENT", "method_version": "4.4.1", "plan_revision": 1,
+            "runtime_revision": 15, "token_sequence": 3,
+            "token_holder_role_instance_id": registered["worker"]["role_instance_id"], "latest_message_id": None},
+        "token_history": [{"event_type": "TOKEN_HANDED_OFF", "message_id": message_id,
+            "token_sequence": 3, "go_id": "GO-001", "cell_id": "CELL-001",
+            "from_role_instance_id": registered["checker"]["role_instance_id"],
+            "to_role_instance_id": registered["worker"]["role_instance_id"]}],
+        "events": [{"event_id": "transport-start-cell01-t003-mcp-startup-20261004t081141z",
+            "event_type": "TRANSPORT_STARTED", "corrects_event_id": None,
+            "go_id": "GO-001", "cell_id": "CELL-001", "plan_revision": 1,
+            "author_role_instance_id": registered["checker"]["role_instance_id"],
+            "details_json": json.dumps({"message_id": message_id,
+                "endpoint_sha256": "348444cc80aef5a5e330dd576b57c542364db0191d8d44ec79fad17e6b2bbaa2",
+                "envelope_sha256": "19a436c76c220e91d1c9efca89bc14650b6cefcac849d1c7d596e19bfb77765d",
+                "start_evidence_sha256": "521542adc90d5fd07ea14ebf34d47f559613423b01b820e6d89357ac47b2111c"})}],
+        "_slk_command": {"process_exit": 0}}
+    def state_call(_command, args, **_kwargs):
+        if args[0] == "run":
+            return copy.deepcopy(projection)
+        return {"status": "authenticated", "run_id": args[2], "role_instance_id": args[4],
+            "role": args[4].rsplit("-", 1)[1], "runtime_revision": 15}
+    monkeypatch.setattr(wc, "_run_json_command", state_call)
+
+    assert evaluate_run_admission(admission)["status"] == "READY"
+    projection["events"][0]["details_json"] = json.dumps({"message_id": message_id,
+        "endpoint_sha256": "wrong", "envelope_sha256": "wrong", "start_evidence_sha256": "wrong"})
+    rejected = evaluate_run_admission(admission)
+    assert rejected["status"] == "REPAIR_NEEDED"
+    assert "CURRENT_TOKEN_BOUNDARY_INVALID" in rejected["reason_codes"]
+
+
 def test_narrow_normal_chain_source_uses_its_own_state_database_without_changing_current_run(
     tmp_path, monkeypatch,
 ):
@@ -374,6 +448,19 @@ def test_narrow_normal_chain_source_uses_its_own_state_database_without_changing
     calls = []
 
     def authenticate(command, args, *, state_config_path=None, **_kwargs):
+        if args[0] == "run":
+            run_id = args[2]
+            calls.append((run_id, state_config_path, os.environ["SLK_CONFIG_PATH"]))
+            return {"schema_version": "slk.bi.run/v1", "run_id": run_id,
+                "summary": {"run_id": run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
+                "runtime_snapshot": {"run_id": run_id, "method_version": "4.4.1", "plan_revision": 1,
+                    "runtime_revision": 7, "token_sequence": 1,
+                    "token_holder_role_instance_id": f"{run_id}-supervisor", "latest_message_id": None},
+                "roles": [{"role": "supervisor", "role_instance_id": f"{run_id}-supervisor", "lifecycle": "active"}],
+                "token_history": [{"event_type": "TOKEN_CREATED", "token_sequence": 1,
+                    "to_role_instance_id": f"{run_id}-supervisor", "from_role_instance_id": None,
+                    "message_id": None, "go_id": None, "cell_id": None}],
+                "events": [], "_slk_command": {"process_exit": 0}}
         run_id, role_instance_id = args[2], args[4]
         calls.append((run_id, state_config_path, os.environ["SLK_CONFIG_PATH"]))
         if run_id == "RUN-SOURCE" and state_config_path != str(source_config.resolve()):

@@ -137,9 +137,16 @@ class RoleHost:
             snapshot = projection.get("runtime_snapshot", {})
             if snapshot.get("plan_revision") != self.binding["plan_revision"]:
                 raise wc.CompletionError("ROLE_HOST_PLAN_CHANGED", "prepared host plan has been superseded")
-            if (snapshot.get("latest_message_id") == envelope.message_id
-                and snapshot.get("token_sequence") == envelope.token_sequence
-                and snapshot.get("token_holder_role_instance_id") == envelope.receiver_role_instance_id):
+            try:
+                boundary = wc.resolve_authoritative_token_boundary(
+                    projection, run_id=envelope.run_id, plan_revision=self.binding["plan_revision"])
+            except wc.CompletionError:
+                boundary = None
+            if (boundary is not None and boundary["message_id"] == envelope.message_id
+                and boundary["token_sequence"] == envelope.token_sequence
+                and boundary["holder_role_instance_id"] == envelope.receiver_role_instance_id
+                and boundary["go_id"] in {None, envelope.go_id}
+                and boundary["cell_id"] in {None, envelope.cell_id}):
                 return projection
             if time.monotonic() >= deadline:
                 raise wc.CompletionError("ROLE_HOST_TOKEN_UNCONFIRMED", "receiver started but the exact TOKEN commit is not confirmed")
@@ -344,10 +351,18 @@ class RoleHost:
             return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": envelope.message_id,
                     "native_attempt_path": str(native)}
         current = latest.get("runtime_snapshot", {})
+        try:
+            prepared_boundary = wc.resolve_authoritative_token_boundary(
+                projection, run_id=envelope.run_id, plan_revision=self.binding["plan_revision"])
+            current_boundary = wc.resolve_authoritative_token_boundary(
+                latest, run_id=envelope.run_id, plan_revision=self.binding["plan_revision"])
+        except wc.CompletionError as exc:
+            raise wc.CompletionError("ROLE_HOST_BOUNDARY_CHANGED", "sender TOKEN boundary is not authoritative") from exc
         if (current.get("plan_revision") != self.binding["plan_revision"]
             or current.get("token_holder_role_instance_id") != envelope.sender_role_instance_id
             or current.get("token_sequence") != envelope.token_sequence - 1
-            or current.get("latest_message_id") != projection.get("runtime_snapshot", {}).get("latest_message_id")):
+            or tuple(current_boundary[key] for key in ("message_id", "token_sequence", "holder_role_instance_id"))
+               != tuple(prepared_boundary[key] for key in ("message_id", "token_sequence", "holder_role_instance_id"))):
             raise wc.CompletionError("ROLE_HOST_BOUNDARY_CHANGED", "sender does not own the exact prepared handoff")
         attempt_number = self._outgoing_attempt(envelope, latest)
         root.mkdir(parents=True, exist_ok=True)
@@ -374,11 +389,18 @@ class RoleHost:
         credential = wc.unprotect_dpapi_hex(self.credential_path(envelope.sender_role))
         try:
             auth = self._authenticate(envelope.sender_role, credential)
-            current = self.projection()["runtime_snapshot"]
+            current_projection = self.projection()
+            current = current_projection["runtime_snapshot"]
+            try:
+                current_boundary = wc.resolve_authoritative_token_boundary(
+                    current_projection, run_id=envelope.run_id, plan_revision=self.binding["plan_revision"])
+            except wc.CompletionError as exc:
+                raise wc.CompletionError("ROLE_HOST_BOUNDARY_CHANGED", "remaining TOKEN boundary is not authoritative") from exc
             if (current.get("token_holder_role_instance_id") != envelope.sender_role_instance_id
                 or current.get("plan_revision") != self.binding["plan_revision"]
                 or current.get("token_sequence") != envelope.token_sequence - 1
-                or current.get("latest_message_id") != projection["runtime_snapshot"]["latest_message_id"]):
+                or tuple(current_boundary[key] for key in ("message_id", "token_sequence", "holder_role_instance_id"))
+                   != tuple(prepared_boundary[key] for key in ("message_id", "token_sequence", "holder_role_instance_id"))):
                 raise wc.CompletionError("ROLE_HOST_BOUNDARY_CHANGED", "only the exact remaining start commit is permitted")
             request = {"event_id": wc._stable_id(envelope.message_id, "host-transport-started"),
                 "transport_receipt_id": wc._stable_id(envelope.message_id, "host-start-receipt"),

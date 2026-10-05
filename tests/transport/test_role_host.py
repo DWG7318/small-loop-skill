@@ -10,6 +10,7 @@ from dataclasses import asdict
 import pytest
 
 from slk_transport import cli
+from slk_transport import role_host as role_host_module
 from slk_transport.contracts import DeliveryResult
 from slk_transport.contracts import Envelope
 from slk_transport.role_host import RoleHost
@@ -66,7 +67,10 @@ def prepared_host(tmp_path):
         secret.write_text("unit-test-placeholder", encoding="ascii")
         roles[role] = {"endpoint_path": str(path), "endpoint_sha256": wc._sha256(path),
                        "credential_path": str(secret)}
-    envelope = Envelope.from_dict(wc._read_object(attempt / "envelope.json", "test source"))
+    envelope_raw = wc._read_object(attempt / "envelope.json", "test source")
+    envelope_raw["token_sequence"] = 3
+    write_json(attempt / "envelope.json", envelope_raw)
+    envelope = Envelope.from_dict(envelope_raw)
     binding = {"schema_version": "slk.role-host/v1", "run_id": "RUN-A", "plan_revision": 1,
                "state_command": ["state"], "transport_command": ["transport"], "roles": roles,
                "cells": [{"go_id": envelope.go_id, "cell_id": envelope.cell_id, "payload": envelope.payload}],
@@ -139,11 +143,51 @@ def test_changed_sender_is_rejected_before_credentials_or_send(tmp_path, monkeyp
 
 
 def host_boundary(host, envelope):
-    return {"summary": {"run_id": envelope.run_id}, "events": [], "token_history": [],
-            "runtime_snapshot": {"plan_revision": 1, "runtime_revision": 7,
+    return {"summary": {"run_id": envelope.run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
+            "events": [], "token_history": [],
+            "runtime_snapshot": {"method_version": "4.4.1", "plan_revision": 1, "runtime_revision": 7,
                 "token_sequence": envelope.token_sequence - 1,
                 "token_holder_role_instance_id": envelope.sender_role_instance_id,
                 "latest_message_id": "source-message"}}
+
+
+def run06_historical_null_boundary(envelope):
+    message_id = "c13ee3db-524e-4011-a7f3-ba02386e5599"
+    projection = {
+        "summary": {"run_id": envelope.run_id, "slk_version": "4.4.1", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": envelope.run_id, "method_version": "4.4.1", "plan_revision": 1,
+            "runtime_revision": 15, "token_sequence": 3,
+            "token_holder_role_instance_id": envelope.receiver_role_instance_id,
+            "latest_message_id": None},
+        "token_history": [{"event_type": "TOKEN_HANDED_OFF", "message_id": message_id,
+            "token_sequence": 3, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
+            "from_role_instance_id": envelope.sender_role_instance_id,
+            "to_role_instance_id": envelope.receiver_role_instance_id}],
+        "events": [{"event_id": "transport-start-cell01-t003-mcp-startup-20261004t081141z",
+            "event_type": "TRANSPORT_STARTED", "corrects_event_id": None,
+            "go_id": envelope.go_id, "cell_id": envelope.cell_id,
+            "author_role_instance_id": envelope.sender_role_instance_id, "plan_revision": 1,
+            "details_json": json.dumps({"message_id": message_id,
+                "endpoint_sha256": "348444cc80aef5a5e330dd576b57c542364db0191d8d44ec79fad17e6b2bbaa2",
+                "envelope_sha256": "19a436c76c220e91d1c9efca89bc14650b6cefcac849d1c7d596e19bfb77765d",
+                "start_evidence_sha256": "521542adc90d5fd07ea14ebf34d47f559613423b01b820e6d89357ac47b2111c"})}],
+    }
+    return projection
+
+
+def test_role_host_boundary_uses_exact_authoritative_token_when_snapshot_message_is_historical_null(
+    tmp_path, monkeypatch,
+):
+    host, _attempt, original = prepared_host(tmp_path)
+    incoming = Envelope.from_dict({**asdict(original),
+        "message_id": "c13ee3db-524e-4011-a7f3-ba02386e5599", "token_sequence": 3})
+    projection = run06_historical_null_boundary(incoming)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    ticks = iter((0.0, 11.0))
+    monkeypatch.setattr(role_host_module.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(role_host_module.time, "sleep", lambda _seconds: None)
+
+    assert host._boundary(incoming) is projection
 
 
 def authenticated_commands(monkeypatch, host, envelope, calls):

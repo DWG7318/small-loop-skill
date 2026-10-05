@@ -503,6 +503,24 @@ def _valid_current_registration(host_reference: Any, consumers: Any, run_id: str
         return False
 
 
+def _valid_current_token_boundary(host_reference: Any, run_id: str, revision: int,
+                                  roles: list[Mapping[str, Any]]) -> bool:
+    """Prove that the admitted host can resolve the same current boundary it will consume."""
+    from . import worker_completion as wc
+    from .role_host import RoleHost
+    try:
+        binding = _proof(host_reference)
+        host = RoleHost(binding, host_reference["sha256"])
+        projection = host.projection()
+        boundary = wc.resolve_authoritative_token_boundary(
+            projection, run_id=run_id, plan_revision=revision)
+        supervisor = next(row for row in roles if row["role"] == "supervisor")
+        return boundary["source"] != "TOKEN_CREATED" or (
+            boundary["holder_role_instance_id"] == supervisor["role_instance_id"])
+    except (OSError, TypeError, ValueError, KeyError, StopIteration):
+        return False
+
+
 def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | None:
     value = _receipt(path_value)
     try:
@@ -819,6 +837,9 @@ def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
     elif temporal_binding is not None and not _host_has_temporal_binding(
             request["current_host_binding"], temporal_binding, run_id, revision):
         reason_codes.append("TEMPORAL_BINDING_INVALID")
+    if registration_valid and not _valid_current_token_boundary(
+            request["current_host_binding"], run_id, revision, raw_roles):
+        reason_codes.append("CURRENT_TOKEN_BOUNDARY_INVALID")
     if any(name not in options_by_name for name in REQUIRED_OPTIONS):
         reason_codes.append("REQUIRED_OPTION_MISSING")
     for option in options_by_name.values():

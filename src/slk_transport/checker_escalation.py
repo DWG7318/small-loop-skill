@@ -13,7 +13,7 @@ from typing import Any, Callable, Mapping
 
 from .contracts import ENVELOPE_SCHEMA, IDENTIFIER, Endpoint, Envelope, canonical_json_sha256
 from .native_activity import NativeActivityError, validate_native_start
-from .worker_completion import _run_json_command, unprotect_dpapi_hex
+from .worker_completion import CompletionError, _run_json_command, resolve_authoritative_token_boundary, unprotect_dpapi_hex
 
 
 REQUEST_SCHEMA = "slk.checker-post-d1-request/v1"
@@ -239,6 +239,12 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
             "CHECKER_ESCALATION_RUNTIME_MISMATCH",
             "runtime projection does not end at the exact Checker-owned D1 failure",
         )
+    try:
+        token_boundary = resolve_authoritative_token_boundary(
+            projection, run_id=request["run_id"], plan_revision=request["plan_revision"])
+    except CompletionError as exc:
+        raise CheckerEscalationError("CHECKER_ESCALATION_RUNTIME_MISMATCH",
+                                    "runtime TOKEN boundary is not authoritative") from exc
     d1_terminals = [
         event
         for event in events
@@ -265,7 +271,7 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
         or event.get("cell_id") != request["cell_id"]
         or event.get("attempt") != request["attempt"]
         or details.get("verdict") != "FAIL"
-        or snapshot.get("latest_message_id") != details.get("candidate_message_id")
+        or token_boundary["message_id"] != details.get("candidate_message_id")
     ):
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_D1_MISMATCH", "post-D1 suffix is limited to the exact current FAIL"
