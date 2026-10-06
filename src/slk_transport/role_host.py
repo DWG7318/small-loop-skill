@@ -566,6 +566,8 @@ class RoleHost:
             raise wc.CompletionError(
                 "CHECKER_CLASSIFICATION_CORRECTION_INVALID", "candidate acceptance contract is invalid"
             )
+        escalation_root = correction / "post-d1"
+        escalation_root.mkdir(parents=True, exist_ok=True)
         request = {
             "schema_version": failed.REQUEST_SCHEMA,
             "method_version": snapshot["method_version"],
@@ -585,7 +587,7 @@ class RoleHost:
             "checker_credential_path": self.credential_path("checker"),
             "state_command": self.state,
             "transport_command": self.transport,
-            "escalation_attempt_root": str(correction / "post-d1"),
+            "escalation_attempt_root": str(escalation_root),
             "rework_round": 1 + sum(
                 event.get("event_type") == "REWORK_REQUESTED"
                 and event.get("cell_id") == envelope.cell_id

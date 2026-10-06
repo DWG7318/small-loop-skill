@@ -251,8 +251,11 @@ def test_completed_tool_failure_with_blocker_is_corrected_without_rerunning_ocrv
 
     monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(wc, "_record_checker_d1", record)
-    monkeypatch.setattr(checker_escalation, "execute_checker_escalation",
-                        lambda *_args, **_kwargs: {"status": "CHECKER_ESCALATION_COMMITTED"})
+    def escalate(request, *_args, **_kwargs):
+        assert Path(request["escalation_attempt_root"]).is_dir()
+        return {"status": "CHECKER_ESCALATION_COMMITTED"}
+
+    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", escalate)
 
     value = host.reclassify_completed_checker(source)
 

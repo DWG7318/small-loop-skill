@@ -1504,7 +1504,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "9b602ac8354f2860f0ed5606ed2e130a809797c5a3ba7d6a985b7439587c2134"
+      "sha256": "2978660b7a3511725537ce6ed55145baac55344de9572baf315b86d2005fb2e2"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
@@ -1800,7 +1800,7 @@
     },
     {
       "path": "tests/transport/test_role_host.py",
-      "sha256": "9492883be8b5475ab42d1bc89990a85f1ef04fd813ef8a60437f0035eaa5dcb5"
+      "sha256": "ada06b2edc4047c00e3a7a738f1dabc10c90e989826e91273149edabe1af1e8f"
     },
     {
       "path": "tests/transport/test_run_readiness.py",
