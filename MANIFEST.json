@@ -1536,7 +1536,7 @@
     },
     {
       "path": "src/slk_transport/terminal_budget_fresh.py",
-      "sha256": "bdde4ab185c8cba5bd9f129eaa191ff547aeb7b8b7c29ab738eaca5c9f0e276b"
+      "sha256": "62d55b990ed75dfd71a6e1712f4eee6493585808b9312871024946f9059db226"
     },
     {
       "path": "src/slk_transport/terminal_budget_fresh_partial.py",
@@ -1840,7 +1840,7 @@
     },
     {
       "path": "tests/transport/test_terminal_budget_fresh_review.py",
-      "sha256": "a378eb5957006590d5939d38d643d1d7cad625afdb6f066d81087650c68b16ef"
+      "sha256": "3499acc801d4c37252e469084db7fbfc20cf11f2459c0ac61069e373b6362e87"
     },
     {
       "path": "tests/transport/test_terminal_budget_resume.py",

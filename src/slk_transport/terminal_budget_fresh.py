@@ -98,14 +98,16 @@ def _zero_token_predispatch_source(source: Mapping[str, Any]) -> tuple[dict[str,
     coverage = manifest.get("coverage") if isinstance(manifest, Mapping) else None
     selected = coverage.get("selected") if isinstance(coverage, Mapping) else None
     failed = coverage.get("failed") if isinstance(coverage, Mapping) else None
+    selected_count = len(selected) if isinstance(selected, list) else 0
+    session = source.get("ocrv_session")
     observed = source.get("capacity_revision", {}).get("observed")
     if (
         not isinstance(summary, Mapping)
         or not isinstance(tools, Mapping)
         or not isinstance(manifest, Mapping)
         or not isinstance(coverage, Mapping)
-        or not isinstance(selected, list) or len(selected) != 2
-        or not isinstance(failed, list) or len(failed) != 2
+        or not isinstance(selected, list) or selected_count < 1
+        or not isinstance(failed, list) or len(failed) != selected_count
         or coverage.get("completed") != [] or coverage.get("reused") != []
         or coverage.get("waived") != []
         or any(not isinstance(row, Mapping) or row.get("classification") != "budget" for row in failed)
@@ -117,8 +119,9 @@ def _zero_token_predispatch_source(source: Mapping[str, Any]) -> tuple[dict[str,
             "total_tokens", "input_tokens", "output_tokens", "cache_read_tokens"
         ))
         or tools.get("total") != 0 or tools.get("failure") != 0
-        or source.get("ocrv_session", {}).get("selected_files") != 2
-        or source.get("ocrv_session", {}).get("completed_files") != 0
+        or not isinstance(session, Mapping)
+        or session.get("selected_files") != selected_count
+        or session.get("completed_files") != 0
     ):
         raise ValueError("source is not the exact zero-token pre-dispatch budget stop")
     return dict(raw), dict(manifest)
@@ -128,6 +131,7 @@ def _validate_nonresumable_session(
     source: Mapping[str, Any], session_list: object, session_show: object,
 ) -> dict[str, Any]:
     raw, manifest = _zero_token_predispatch_source(source)
+    selected_count = len(manifest["coverage"]["selected"])
     session = source.get("ocrv_session")
     if not isinstance(session, Mapping) or not isinstance(session_list, list):
         raise ValueError("OCRV non-resumable Session identity is unavailable")
@@ -152,7 +156,7 @@ def _validate_nonresumable_session(
         != str(session.get("repo_dir", "")).replace("\\", "/")
         or Path(str(summary.get("file_path", ""))).resolve()
         != Path(str(source["session_record_path"])).resolve()
-        or summary.get("failed_files") != 2
+        or summary.get("failed_files") != selected_count
         or summary.get("reused_files") != 0 or summary.get("waived_files") != 0
         or summary.get("total_comments") != 0 or summary.get("llm_failures") != 0
         or summary.get("legacy") is not False

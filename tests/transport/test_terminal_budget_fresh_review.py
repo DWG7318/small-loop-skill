@@ -17,6 +17,7 @@ from slk_transport.terminal_budget import (
     prepare_terminal_budget_request,
 )
 from slk_transport.terminal_budget_fresh import (
+    _validate_nonresumable_session,
     claim_fresh_review_source,
     prepare_fresh_review_request,
     validate_fresh_review_request,
@@ -181,6 +182,40 @@ def nonresumable_predispatch_fixture(
         ),
     )
     return json.loads(source_path.read_text(encoding="utf-8")), source_path, projection_path, runner
+
+
+def test_zero_token_nonresumable_session_accepts_one_selected_file(tmp_path: Path) -> None:
+    source, _source_path, _projection, _runner = nonresumable_predispatch_fixture(tmp_path)
+    raw_path = Path(str(source["raw_review_path"]))
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    coverage = raw["manifest"]["coverage"]
+    coverage["selected"] = coverage["selected"][:1]
+    coverage["failed"] = coverage["failed"][:1]
+    raw["summary"]["files_reviewed"] = 1
+    write_json(raw_path, raw)
+    source["ocrv_session"]["selected_files"] = 1
+    session_path = Path(str(source["session_record_path"])).resolve()
+    summary = {
+        **source["ocrv_session"],
+        "file_path": str(session_path),
+        "end_time": "2026-10-06T07:15:05Z",
+        "failed_files": 1,
+        "reused_files": 0,
+        "waived_files": 0,
+        "total_comments": 0,
+        "llm_failures": 0,
+        "legacy": False,
+        "run_manifest": raw["manifest"],
+    }
+
+    validated = _validate_nonresumable_session(
+        source,
+        [summary],
+        {"summary": summary, "items": None},
+    )
+
+    assert validated["selected_files"] == 1
+    assert validated["failed_files"] == 1
 
 
 def test_preparer_selects_fresh_full_review_for_exact_zero_token_nonresumable_session(
