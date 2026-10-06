@@ -98,17 +98,20 @@ def _request(path: Path, expected_sha256: str) -> dict[str, Any]:
     return value
 
 
-def _assert_host(request: Mapping[str, Any]) -> None:
-    if (
-        os.environ.get("CODEX_THREAD_ID") != request["reader_thread_id"]
-        or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
+def _assert_host(request: Mapping[str, Any], *, frozen_reader: bool) -> str:
+    try:
+        reader_thread_id = _text(os.environ.get("CODEX_THREAD_ID"), "current reader thread")
+    except OverwatcherDesktopError as exc:
+        raise OverwatcherDesktopError("trusted Desktop reader capability was not inherited") from exc
+    if (not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
         or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"
-    ):
+        or (frozen_reader and reader_thread_id != request["reader_thread_id"])):
         raise OverwatcherDesktopError("trusted Desktop reader capability was not inherited")
+    return reader_thread_id
 
 
-def _platform_snapshot(request: Mapping[str, Any]) -> dict[str, Any]:
-    _assert_host(request)
+def _platform_snapshot(request: Mapping[str, Any], *, frozen_reader: bool) -> dict[str, Any]:
+    reader_thread_id = _assert_host(request, frozen_reader=frozen_reader)
     client = DesktopClient(list(request["command"]), Path(str(request["cwd"])))
     timeout = float(request["timeout_seconds"])
     try:
@@ -124,7 +127,7 @@ def _platform_snapshot(request: Mapping[str, Any]) -> dict[str, Any]:
         view = client.call(3, "read_thread", {
             "threadId": request["thread_id"], "hostId": request["host_id"],
             "turnLimit": 1, "includeOutputs": True, "maxOutputCharsPerItem": 20000,
-        }, str(request["reader_thread_id"]), timeout)
+        }, reader_thread_id, timeout)
     except TimeoutError as exc:
         raise OverwatcherDesktopError("Desktop OW read_thread timed out") from exc
     finally:
@@ -249,7 +252,7 @@ def attest_desktop_overwatcher(
             "started_path": str(started_path), "started_sha256": sha256_file(started_path),
             "attestation_path": str(attestation_path), "attestation_sha256": sha256_file(attestation_path),
         }
-    snapshot = _platform_snapshot(request)
+    snapshot = _platform_snapshot(request, frozen_reader=True)
     if snapshot["thread_status"] != "active" or snapshot["turn_status"] not in {"active", "inProgress"}:
         raise OverwatcherDesktopError("Desktop OW turn is not positively active")
     native_task_id = f"{request['thread_id']}:{request['turn_id']}:{request['platform_input_item_id']}"
@@ -387,7 +390,7 @@ def desktop_overwatcher_probe(
             or start.get("native_task", {}).get("id") != attestation["native_task_id"]
         ):
             raise OverwatcherDesktopError("Overwatcher native start does not match the attested turn")
-        snapshot = _platform_snapshot(request)
+        snapshot = _platform_snapshot(request, frozen_reader=False)
         if snapshot["platform_input_sha256"] != attestation["platform_input_sha256"]:
             raise OverwatcherDesktopError("Overwatcher platform input changed after attestation")
         return _activity(request, attestation, snapshot)

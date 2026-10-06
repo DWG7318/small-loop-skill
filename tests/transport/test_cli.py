@@ -92,6 +92,7 @@ def test_cli_exposes_standard_new_run_preparation_entries(tmp_path: Path) -> Non
     assert "seal-normal-chain-source" in result.stdout
     assert "preflight-conformance-sample" in result.stdout
     assert "preflight-new-run" in result.stdout
+    assert "continue-staged-handoff" in result.stdout
 
 
 def test_nested_windows_send_retries_access_denied_without_breakaway(

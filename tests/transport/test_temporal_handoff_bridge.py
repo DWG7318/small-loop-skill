@@ -223,10 +223,10 @@ def test_acknowledged_before_central_commit_retries_without_second_native_start(
     projection = host_boundary(host, envelope)
     monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _p: "sealed-test-secret")
-    requests = native_starts = acknowledgements = successful_commits = 0
+    requests = native_starts = acknowledgements = commit_attempts = successful_commits = 0
 
     def command(_command, arguments, **_kwargs):
-        nonlocal requests, native_starts, acknowledgements, successful_commits
+        nonlocal requests, native_starts, acknowledgements, commit_attempts, successful_commits
         kind = arguments[0]
         if kind == "authenticate-role":
             return {"status": "authenticated", "run_id": envelope.run_id, "role": envelope.sender_role,
@@ -254,7 +254,8 @@ def test_acknowledged_before_central_commit_retries_without_second_native_start(
                     "operation_id": wc._stable_id(envelope.message_id, "temporal-delivery"),
                     "message_id": envelope.message_id}
         if kind == "commit-delivery-start":
-            if successful_commits == 0 and requests == 1:
+            commit_attempts += 1
+            if commit_attempts == 1:
                 raise wc.CompletionError("SIMULATED_CRASH", "after ACK, before central commit")
             successful_commits += 1
             return {"status": "committed", "message_id": envelope.message_id,
@@ -269,8 +270,220 @@ def test_acknowledged_before_central_commit_retries_without_second_native_start(
     result = host._send_owned(source / "interrupted", envelope, "2026-10-05T00:00:00Z", projection)
 
     assert result["status"] == "OWNED_HANDOFF_COMMITTED"
-    assert requests == 2
+    assert requests == 1
     assert native_starts == acknowledgements == successful_commits == 1
+
+
+def test_public_sender_host_continues_exact_staged_handoff_without_second_native_start(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    host, _source, envelope = prepared_host(tmp_path)
+    canonical = tmp_path / "canonical-attempts"
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+                     "temporal": temporal_binding(tmp_path, canonical)}, "b" * 64)
+    source = canonical / envelope.run_id / envelope.message_id
+    endpoint = host.endpoint(envelope.receiver_role)
+    write_json(source / "endpoint.json", endpoint)
+    write_json(source / "envelope.json", asdict(envelope))
+    write_json(source / "started.json", make_native_start(
+        adapter=endpoint["adapter"], run_id=envelope.run_id, cell_id=envelope.cell_id,
+        message_id=envelope.message_id, request_sha256=envelope.payload_sha256,
+        native_request_sha256="e" * 64, native_task_kind="test-session",
+        native_task_id="native-existing", native_task_status="RUNNING", pid=os.getpid()))
+    operation_id = wc._stable_id(envelope.message_id, "temporal-delivery")
+    write_json(
+        source / "role-host" / "sender-handoff"
+        / f"temporal-native-started-{operation_id}.delivery-acknowledged.result.json",
+        {"schema_version": "slk.temporal-delivery-update-result/v1",
+         "status": "DELIVERY_ACKNOWLEDGED", "operation": "native_started",
+         "run_id": envelope.run_id, "operation_id": operation_id,
+         "message_id": envelope.message_id},
+    )
+    projection = host_boundary(host, envelope)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _p: "sealed-test-secret")
+    calls: list[str] = []
+
+    def command(_command, arguments, **_kwargs):
+        kind = arguments[0]
+        calls.append(kind)
+        if kind == "authenticate-role":
+            return {"status": "authenticated", "run_id": envelope.run_id,
+                    "role": envelope.sender_role,
+                    "role_instance_id": envelope.sender_role_instance_id,
+                    "runtime_revision": 7}
+        if kind == "commit-delivery-start":
+            return {"status": "committed", "message_id": envelope.message_id,
+                    "runtime_revision": 8, "token_sequence": envelope.token_sequence,
+                    "run_id": envelope.run_id,
+                    "token_owner_role_instance_id": envelope.receiver_role_instance_id}
+        pytest.fail(f"existing native start must be commit-only, got {kind}")
+
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    result = host.continue_staged_handoff(source)
+
+    assert result["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert calls == ["authenticate-role", "authenticate-role", "commit-delivery-start"]
+
+
+def test_public_sender_host_starts_one_not_yet_started_canonical_handoff(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    host, _source, envelope = prepared_host(tmp_path)
+    canonical = tmp_path / "canonical-attempts"
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+                     "temporal": temporal_binding(tmp_path, canonical)}, "b" * 64)
+    source = canonical / envelope.run_id / envelope.message_id
+    endpoint = host.endpoint(envelope.receiver_role)
+    write_json(source / "endpoint.json", endpoint)
+    write_json(source / "envelope.json", asdict(envelope))
+    projection = host_boundary(host, envelope)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _p: "sealed-test-secret")
+    starts: list[Path] = []
+
+    def start(_binding, _root, target, raw_envelope, **_kwargs):
+        starts.append(source)
+        assert target == endpoint and raw_envelope == asdict(envelope)
+        write_json(source / "started.json", make_native_start(
+            adapter=endpoint["adapter"], run_id=envelope.run_id, cell_id=envelope.cell_id,
+            message_id=envelope.message_id, request_sha256=envelope.payload_sha256,
+            native_request_sha256="f" * 64, native_task_kind="test-session",
+            native_task_id="native-new", native_task_status="RUNNING", pid=os.getpid()))
+        return source
+
+    def command(_command, arguments, **_kwargs):
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": envelope.run_id,
+                    "role": envelope.sender_role,
+                    "role_instance_id": envelope.sender_role_instance_id,
+                    "runtime_revision": 7}
+        if arguments[0] == "commit-delivery-start":
+            return {"status": "committed", "message_id": envelope.message_id,
+                    "runtime_revision": 8, "token_sequence": envelope.token_sequence,
+                    "run_id": envelope.run_id,
+                    "token_owner_role_instance_id": envelope.receiver_role_instance_id}
+        pytest.fail(f"unexpected command: {arguments[0]}")
+
+    monkeypatch.setattr(wc, "start_temporal_delivery", start)
+    monkeypatch.setattr(wc, "_run_json_command", command)
+
+    assert host.continue_staged_handoff(source)["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert starts == [source]
+
+
+def test_public_sender_host_acks_existing_external_operation_before_token_commit(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    host, _source, envelope = prepared_host(tmp_path)
+    canonical = tmp_path / "canonical-attempts"
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+                     "temporal": temporal_binding(tmp_path, canonical)}, "b" * 64)
+    source = canonical / envelope.run_id / envelope.message_id
+    endpoint = host.endpoint(envelope.receiver_role)
+    write_json(source / "endpoint.json", endpoint)
+    write_json(source / "envelope.json", asdict(envelope))
+    write_json(source / "started.json", make_native_start(
+        adapter=endpoint["adapter"], run_id=envelope.run_id, cell_id=envelope.cell_id,
+        message_id=envelope.message_id, request_sha256=envelope.payload_sha256,
+        native_request_sha256="1" * 64, native_task_kind="test-session",
+        native_task_id="native-external", native_task_status="RUNNING", pid=os.getpid()))
+    request = write_json(tmp_path / "original-temporal-request.json", {
+        "operation_id": f"deliver-{envelope.message_id}", "run_id": envelope.run_id,
+        "cell_id": envelope.cell_id, "attempt": 1, "message_id": envelope.message_id,
+        "sender_role_instance_id": envelope.sender_role_instance_id,
+        "receiver_role_instance_id": envelope.receiver_role_instance_id,
+        "payload_sha256": envelope.payload_sha256, "source_runtime_revision": 4,
+    })
+    projection = host_boundary(host, envelope)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _p: "sealed-test-secret")
+    calls: list[str] = []
+
+    def command(_command, arguments, **_kwargs):
+        kind = arguments[0]
+        calls.append(kind)
+        if kind == "native-started":
+            ack = json.loads(Path(arguments[arguments.index("--request") + 1]).read_text())
+            assert ack["operation_id"] == f"deliver-{envelope.message_id}"
+            assert ack["started_receipt_sha256"] == hashlib.sha256(
+                (source / "started.json").read_bytes()).hexdigest()
+            return {"schema_version": "slk.temporal-delivery-update-result/v1",
+                    "status": "DELIVERY_ACKNOWLEDGED", "operation": "native_started",
+                    "run_id": envelope.run_id, "operation_id": ack["operation_id"],
+                    "message_id": envelope.message_id}
+        if kind == "authenticate-role":
+            return {"status": "authenticated", "run_id": envelope.run_id,
+                    "role": envelope.sender_role,
+                    "role_instance_id": envelope.sender_role_instance_id,
+                    "runtime_revision": 7}
+        if kind == "commit-delivery-start":
+            return {"status": "committed", "message_id": envelope.message_id,
+                    "runtime_revision": 8, "token_sequence": envelope.token_sequence,
+                    "run_id": envelope.run_id,
+                    "token_owner_role_instance_id": envelope.receiver_role_instance_id}
+        pytest.fail(f"existing native start must not repeat request-delivery, got {kind}")
+
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    result = host.continue_staged_handoff(
+        source,
+        temporal_request_path=request,
+        temporal_request_sha256=hashlib.sha256(request.read_bytes()).hexdigest(),
+    )
+
+    assert result["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert calls == ["authenticate-role", "native-started", "authenticate-role", "commit-delivery-start"]
+
+
+def test_public_sender_host_rejects_noncanonical_staged_handoff_before_authentication(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    host, source, envelope = prepared_host(tmp_path)
+    canonical = tmp_path / "canonical-attempts"
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+                     "temporal": temporal_binding(tmp_path, canonical)}, "b" * 64)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("noncanonical source consumed a sealed credential")
+
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", forbidden)
+    with pytest.raises(wc.CompletionError, match="canonical Temporal attempt"):
+        host.continue_staged_handoff(source)
+
+
+def test_public_sender_host_rejects_existing_start_without_original_request_or_saved_ack(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    host, _source, envelope = prepared_host(tmp_path)
+    canonical = tmp_path / "canonical-attempts"
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+                     "temporal": temporal_binding(tmp_path, canonical)}, "b" * 64)
+    source = canonical / envelope.run_id / envelope.message_id
+    endpoint = host.endpoint(envelope.receiver_role)
+    write_json(source / "endpoint.json", endpoint)
+    write_json(source / "envelope.json", asdict(envelope))
+    write_json(source / "started.json", make_native_start(
+        adapter=endpoint["adapter"], run_id=envelope.run_id, cell_id=envelope.cell_id,
+        message_id=envelope.message_id, request_sha256=envelope.payload_sha256,
+        native_request_sha256="2" * 64, native_task_kind="test-session",
+        native_task_id="native-unacked", native_task_status="RUNNING", pid=os.getpid()))
+    projection = host_boundary(host, envelope)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _p: "sealed-test-secret")
+
+    def command(_command, arguments, **_kwargs):
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": envelope.run_id,
+                    "role": envelope.sender_role,
+                    "role_instance_id": envelope.sender_role_instance_id,
+                    "runtime_revision": 7}
+        pytest.fail("unacknowledged start reached an external continuation side effect")
+
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    with pytest.raises(wc.CompletionError) as rejected:
+        host.continue_staged_handoff(source)
+
+    assert rejected.value.error_code == "TEMPORAL_NATIVE_ACK_UNPROVED"
 
 
 def test_legacy_role_host_without_temporal_binding_keeps_direct_transport_compatibility(

@@ -54,6 +54,36 @@ def test_host_binding_is_checked_before_any_native_delivery(tmp_path, monkeypatc
         cli._job(args)
 
 
+def test_continue_staged_handoff_cli_uses_hash_bound_original_sender_host(
+    tmp_path, monkeypatch, capsys,
+):
+    binding = write_json(tmp_path / "role-host.json", {"binding": "test"})
+    digest = hashlib.sha256(binding.read_bytes()).hexdigest()
+    source = tmp_path / "canonical" / "RUN-A" / "message-a"
+    source.mkdir(parents=True)
+    seen = []
+
+    class Bound:
+        def continue_staged_handoff(self, staged, **options):
+            seen.append((staged, options))
+            return {"status": "OWNED_HANDOFF_COMMITTED", "message_id": "message-a"}
+
+    monkeypatch.setattr(
+        cli, "RoleHost",
+        lambda value, actual: Bound() if value == {"binding": "test"} and actual == digest
+        else pytest.fail("binding identity changed"),
+    )
+    args = argparse.Namespace(binding=binding, sha256=digest, source_attempt=source,
+                              temporal_request=None, temporal_request_sha256=None)
+
+    assert cli._continue_staged_handoff(args) == 0
+    assert seen == [(source.resolve(), {
+        "temporal_request_path": None,
+        "temporal_request_sha256": None,
+    })]
+    assert json.loads(capsys.readouterr().out)["status"] == "OWNED_HANDOFF_COMMITTED"
+
+
 def test_checker_findings_strip_provider_thinking_before_supervisor_escalation():
     findings = normalized_checker_findings([
         {"severity": "HIGH", "message": "real defect", "thinking": "private chain",
@@ -340,6 +370,33 @@ def test_native_started_commit_retry_preserves_original_request_and_does_not_res
     assert committed[0][0].read_bytes() == original
     assert committed[0][0] != committed[1][0]
     assert {**committed[0][1], "expected_runtime_revision": 8} == committed[1][1]
+
+
+def test_owned_handoff_preserves_safe_central_commit_rejection(tmp_path, monkeypatch):
+    host, attempt, envelope = prepared_host(tmp_path)
+    root = attempt / "owned"
+    native_delivery(root, host, envelope)
+    projection = host_boundary(host, envelope)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _p: "sealed-test-secret")
+
+    def command(_command, arguments, **_kwargs):
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": envelope.run_id,
+                    "role": envelope.sender_role,
+                    "role_instance_id": envelope.sender_role_instance_id,
+                    "runtime_revision": 7}
+        if arguments[0] == "commit-delivery-start":
+            return {"status": "error", "code": "SLK_OVERWATCHER_INACTIVE",
+                    "message": "foreground turn continuity violation blocks new dispatch"}
+        pytest.fail(f"unexpected command: {arguments[0]}")
+
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    with pytest.raises(wc.CompletionError) as rejected:
+        host._send_owned(root, envelope, "2026-10-04T00:00:00Z", projection)
+
+    assert rejected.value.error_code == "SLK_OVERWATCHER_INACTIVE"
+    assert str(rejected.value) == "foreground turn continuity violation blocks new dispatch"
 
 
 def test_saved_handoff_cannot_hide_changed_original_engineering_result(tmp_path):

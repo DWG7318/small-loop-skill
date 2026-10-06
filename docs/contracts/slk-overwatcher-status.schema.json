@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-overwatcher-status.schema.json",
+  "title": "SLK Overwatcher native status record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status_id", "run_id", "binding_revision", "role_instance_id", "session_id", "foreground_turn_id", "native_liveness", "evidence", "observed_at"],
+  "properties": {
+    "status_id": {"$ref": "#/$defs/identifier"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "binding_revision": {"type": "integer", "minimum": 1},
+    "role_instance_id": {"$ref": "#/$defs/identifier"},
+    "session_id": {"$ref": "#/$defs/identifier"},
+    "foreground_turn_id": {"$ref": "#/$defs/identifier"},
+    "native_liveness": {"enum": ["IN_PROGRESS", "COMPLETED", "MISSING", "MISMATCHED"]},
+    "evidence": {"$ref": "#/$defs/evidence"},
+    "observed_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+  }
+}

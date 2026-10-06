@@ -182,6 +182,11 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "foreground_turn_id", "expected_overwatcher_credential_id",
             "evidence", "reason", "occurred_at",
         },
+        "docs/contracts/slk-overwatcher-status.schema.json": {
+            "status_id", "run_id", "binding_revision", "role_instance_id",
+            "session_id", "foreground_turn_id", "native_liveness", "evidence",
+            "observed_at",
+        },
     }
     for relative, required in contracts.items():
         schema = json.loads(read(relative))

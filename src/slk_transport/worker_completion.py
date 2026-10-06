@@ -139,6 +139,11 @@ TEMPORAL_IDENTITY_FIELDS = {
 TEMPORAL_UPDATE_RESULT_FIELDS = {
     "schema_version", "status", "operation", "run_id", "operation_id", "message_id",
 }
+TEMPORAL_DELIVERY_REQUEST_FIELDS = {
+    "operation_id", "run_id", "cell_id", "attempt", "message_id",
+    "sender_role_instance_id", "receiver_role_instance_id", "payload_sha256",
+    "source_runtime_revision",
+}
 
 
 class CompletionError(ValueError):
@@ -343,6 +348,116 @@ def _validate_temporal_result(value: Mapping[str, Any], *, operation: str, run_i
 def _temporal_result_path(request_path: Path, status: str) -> Path:
     suffix = status.lower().replace("_", "-")
     return request_path.with_name(f"{request_path.stem}.{suffix}.result.json")
+
+
+def _temporal_ack_recorded(
+    evidence_root: Path, *, operation_id: str, run_id: str, message_id: str,
+) -> bool:
+    candidates = (
+        (evidence_root / f"temporal-native-started-{operation_id}.delivery-acknowledged.result.json", "native-started"),
+        (evidence_root / f"temporal-request-{operation_id}.delivery-acknowledged.result.json", "request-delivery"),
+    )
+    found = False
+    for path, operation in candidates:
+        if not path.is_file():
+            continue
+        value = _read_object(path, "Temporal acknowledgement result")
+        _validate_temporal_result(
+            value, operation=operation, run_id=run_id,
+            operation_id=operation_id, message_id=message_id,
+        )
+        if value.get("status") != "DELIVERY_ACKNOWLEDGED":
+            raise CompletionError(
+                "TEMPORAL_DELIVERY_UPDATE_INVALID",
+                "saved Temporal result is not an acknowledgement",
+            )
+        found = True
+    return found
+
+
+def acknowledge_temporal_delivery(
+    temporal_raw: object,
+    evidence_root: Path,
+    endpoint_raw: Mapping[str, Any],
+    envelope_raw: Mapping[str, Any],
+    *,
+    request_path: Path,
+    request_sha256: str,
+    attempt: int,
+    required_attempt_root: Path | None = None,
+) -> Path:
+    """ACK one previously requested exact operation without requesting delivery again."""
+
+    endpoint = Endpoint.from_dict(endpoint_raw)
+    envelope = Envelope.from_dict(envelope_raw)
+    temporal = validate_temporal_binding(temporal_raw, envelope.run_id)
+    attempt_root = Path(temporal["attempt_root"])
+    if required_attempt_root is not None and attempt_root.resolve() != required_attempt_root.resolve():
+        raise CompletionError("TEMPORAL_ATTEMPT_ROOT_MISMATCH", "handoff changed the adapter's canonical ATTEMPT_ROOT")
+    request_path = request_path.resolve()
+    if (not request_path.is_file() or not SHA256.fullmatch(request_sha256)
+        or _sha256(request_path) != request_sha256):
+        raise CompletionError("TEMPORAL_DELIVERY_REQUEST_INVALID", "original Temporal request hash changed")
+    request = _read_object(request_path, "original Temporal delivery request")
+    operation_id = request.get("operation_id")
+    if (set(request) != TEMPORAL_DELIVERY_REQUEST_FIELDS
+        or not isinstance(operation_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", operation_id)
+        or request.get("run_id") != envelope.run_id
+        or request.get("cell_id") != envelope.cell_id
+        or request.get("attempt") != attempt
+        or request.get("message_id") != envelope.message_id
+        or request.get("sender_role_instance_id") != envelope.sender_role_instance_id
+        or request.get("receiver_role_instance_id") != envelope.receiver_role_instance_id
+        or request.get("payload_sha256") != envelope.payload_sha256
+        or isinstance(request.get("source_runtime_revision"), bool)
+        or not isinstance(request.get("source_runtime_revision"), int)
+        or request["source_runtime_revision"] < 1):
+        raise CompletionError("TEMPORAL_DELIVERY_REQUEST_INVALID", "original Temporal request changed handoff identity")
+    native = attempt_root / envelope.run_id / envelope.message_id
+    started_path = native / "started.json"
+    validate_native_start(
+        started_path, adapter=endpoint.adapter, run_id=envelope.run_id,
+        cell_id=envelope.cell_id, message_id=envelope.message_id,
+        request_sha256=envelope.payload_sha256,
+    )
+    if (_read_object(native / "endpoint.json", "target endpoint") != dict(endpoint_raw)
+        or _read_object(native / "envelope.json", "target envelope") != dict(envelope_raw)):
+        raise CompletionError("TEMPORAL_NATIVE_START_UNPROVED", "native start changed the exact delivery")
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    if _temporal_ack_recorded(
+        evidence_root, operation_id=operation_id,
+        run_id=envelope.run_id, message_id=envelope.message_id,
+    ):
+        return native
+    acknowledgement = {
+        "operation_id": operation_id,
+        "message_id": envelope.message_id,
+        "receiver_role_instance_id": envelope.receiver_role_instance_id,
+        "payload_sha256": envelope.payload_sha256,
+        "started_receipt_sha256": _sha256(started_path),
+    }
+    acknowledgement_path = _write_or_reuse_stable_request(
+        evidence_root / f"temporal-native-started-{operation_id}.json", acknowledgement)
+    common = [
+        "--identity", temporal["workflow_identity_path"],
+        "--identity-sha256", temporal["workflow_identity_sha256"],
+    ]
+    acknowledged = _run_json_command(
+        temporal["client_command"],
+        ["native-started", *common, "--request", str(acknowledgement_path),
+         "--request-sha256", _sha256(acknowledgement_path)],
+        credential=None,
+    )
+    _validate_temporal_result(
+        acknowledged, operation="native-started", run_id=envelope.run_id,
+        operation_id=operation_id, message_id=envelope.message_id,
+    )
+    _write_or_reuse_stable_request(
+        _temporal_result_path(acknowledgement_path, str(acknowledged["status"])),
+        {key: value for key, value in acknowledged.items() if key != "_slk_command"},
+    )
+    return native
 
 
 def start_temporal_delivery(

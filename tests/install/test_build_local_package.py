@@ -65,6 +65,7 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
         "tools/slk/share/small-loop-skill/docs/contracts/slk-native-execution-outcome.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-overwatcher-cadence-inspection.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-overwatcher-credential-rotation.schema.json",
+        "tools/slk/share/small-loop-skill/docs/contracts/slk-overwatcher-status.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-desktop-overwatcher-attestation-request.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-desktop-overwatcher-attestation.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-temporal-delivery.schema.json",

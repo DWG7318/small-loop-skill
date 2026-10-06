@@ -569,6 +569,20 @@ def _resume_role_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _continue_staged_handoff(args: argparse.Namespace) -> int:
+    binding_path = args.binding.resolve()
+    digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
+    if digest != args.sha256:
+        raise ValueError("role host binding hash changed")
+    host = RoleHost(_read_object(binding_path, "role host binding"), digest)
+    _emit(host.continue_staged_handoff(
+        args.source_attempt.resolve(),
+        temporal_request_path=(args.temporal_request.resolve() if args.temporal_request else None),
+        temporal_request_sha256=args.temporal_request_sha256,
+    ))
+    return 0
+
+
 def _submit_supervisor_decision(args: argparse.Namespace) -> int:
     binding_path = args.binding.resolve()
     digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
@@ -800,6 +814,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     role_host_resume.add_argument("--binding", required=True, type=Path)
     role_host_resume.add_argument("--sha256", required=True)
     role_host_resume.add_argument("--source-attempt", required=True, type=Path)
+    staged_handoff = subparsers.add_parser("continue-staged-handoff")
+    staged_handoff.add_argument("--binding", required=True, type=Path)
+    staged_handoff.add_argument("--sha256", required=True)
+    staged_handoff.add_argument("--source-attempt", required=True, type=Path)
+    staged_handoff.add_argument("--temporal-request", type=Path)
+    staged_handoff.add_argument("--temporal-request-sha256")
     supervisor_submit = subparsers.add_parser("submit-supervisor-decision")
     supervisor_submit.add_argument("--binding", required=True, type=Path)
     supervisor_submit.add_argument("--sha256", required=True)
@@ -901,6 +921,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _preflight_conformance_sample(args)
         if args.command == "resume-role-host":
             return _resume_role_host(args)
+        if args.command == "continue-staged-handoff":
+            return _continue_staged_handoff(args)
         if args.command == "submit-supervisor-decision":
             return _submit_supervisor_decision(args)
         if args.command == "consume-desktop-readback":

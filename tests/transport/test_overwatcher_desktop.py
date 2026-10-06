@@ -119,6 +119,64 @@ def test_each_native_inspection_refreshes_from_real_platform_after_file_snapshot
     assert {call["name"] for call in calls} == {"read_thread"}
 
 
+@pytest.mark.parametrize("reader", ["thread-reader", "thread-ow", "thread-temporal-host"])
+def test_fresh_inspection_uses_the_current_trusted_desktop_reader_without_rebinding_target(
+    tmp_path: Path, monkeypatch, reader: str,
+) -> None:
+    prepare_host(monkeypatch)
+    request, digest = write_request(tmp_path)
+    evidence = tmp_path / "evidence"
+    result = attest_desktop_overwatcher(request, request_sha256=digest, evidence_root=evidence)
+    monkeypatch.setenv("CODEX_THREAD_ID", reader)
+
+    observed = inspect_native_activity(
+        evidence / "started.json",
+        native_probe=lambda start: desktop_overwatcher_probe(
+            evidence / "desktop-overwatcher-attestation.json",
+            attestation_sha256=result["attestation_sha256"],
+            started_path=evidence / "started.json",
+            start=start,
+        ),
+    )
+
+    assert observed["status"] == "ACTIVE"
+    assert observed["error"] is None
+
+
+def test_fresh_inspection_rejects_a_caller_without_current_desktop_reader_identity(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    prepare_host(monkeypatch)
+    request, digest = write_request(tmp_path)
+    evidence = tmp_path / "evidence"
+    result = attest_desktop_overwatcher(request, request_sha256=digest, evidence_root=evidence)
+    monkeypatch.delenv("CODEX_THREAD_ID")
+
+    observed = inspect_native_activity(
+        evidence / "started.json",
+        native_probe=lambda start: desktop_overwatcher_probe(
+            evidence / "desktop-overwatcher-attestation.json",
+            attestation_sha256=result["attestation_sha256"],
+            started_path=evidence / "started.json",
+            start=start,
+        ),
+    )
+
+    assert observed["status"] == "UNKNOWN"
+    assert observed["error"] == "NATIVE_QUERY_FAILED"
+
+
+def test_initial_attestation_still_requires_the_frozen_attesting_reader(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    prepare_host(monkeypatch)
+    request, digest = write_request(tmp_path)
+    monkeypatch.setenv("CODEX_THREAD_ID", "another-desktop-reader")
+
+    with pytest.raises(OverwatcherDesktopError, match="reader capability"):
+        attest_desktop_overwatcher(request, request_sha256=digest, evidence_root=tmp_path / "evidence")
+
+
 @pytest.mark.parametrize("mode", ["no-read", "tool-error", "idle-running"])
 def test_live_inspection_fails_closed_when_desktop_cannot_prove_active_work(
     tmp_path: Path, monkeypatch, mode: str,

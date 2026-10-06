@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -320,6 +321,56 @@ class RoleHost:
         wc._write_or_reuse_stable_request(result_path, result)
         return result
 
+    def continue_staged_handoff(
+        self,
+        source: Path,
+        *,
+        temporal_request_path: Path | None = None,
+        temporal_request_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        """Start or commit one exact canonical handoff as its original sender."""
+        if (temporal_request_path is None) != (temporal_request_sha256 is None):
+            raise wc.CompletionError(
+                "TEMPORAL_DELIVERY_REQUEST_INVALID",
+                "original Temporal request path and hash must be supplied together",
+            )
+        if "temporal" not in self.binding:
+            raise wc.CompletionError(
+                "ROLE_HOST_OPERATION_INVALID",
+                "staged handoff continuation requires the prepared Temporal binding",
+            )
+        source = source.resolve()
+        envelope_path = source / "envelope.json"
+        envelope = Envelope.from_dict(wc._read_object(envelope_path, "staged envelope"))
+        expected = (
+            Path(str(self.binding["temporal"]["attempt_root"]))
+            / envelope.run_id
+            / envelope.message_id
+        ).resolve()
+        if source != expected:
+            raise wc.CompletionError(
+                "ROLE_HOST_BINDING_INVALID",
+                "source is not the exact canonical Temporal attempt",
+            )
+        endpoint = wc._read_object(source / "endpoint.json", "staged endpoint")
+        if endpoint != self.endpoint(envelope.receiver_role):
+            raise wc.CompletionError(
+                "ROLE_HOST_BINDING_INVALID",
+                "staged receiver is not the prepared role",
+            )
+        parse_delivery(endpoint, wc._read_object(envelope_path, "staged envelope"))
+        occurred_at = datetime.fromtimestamp(
+            envelope_path.stat().st_mtime, timezone.utc
+        ).isoformat()
+        return self._send_owned(
+            source / "role-host" / "sender-handoff",
+            envelope,
+            occurred_at,
+            self.projection(),
+            temporal_request_path=temporal_request_path,
+            temporal_request_sha256=temporal_request_sha256,
+        )
+
     def _dispatch_envelope(self, incoming: Envelope, result: Mapping[str, Any]) -> Envelope:
         try:
             outgoing = parse_delivery(self.endpoint("worker"), result["next_envelope"]).envelope
@@ -444,7 +495,16 @@ class RoleHost:
             return self._send_owned(root / "rework", outgoing, occurred_at, self.projection())
         return {"status": "SUPERVISOR_D2_INCOMPLETE" if not events else "SUPERVISOR_D2_RECORDED", "verdict": decision["verdict"]}
 
-    def _send_owned(self, root: Path, envelope: Envelope, occurred_at: str, projection: Mapping[str, Any]) -> dict[str, Any]:
+    def _send_owned(
+        self,
+        root: Path,
+        envelope: Envelope,
+        occurred_at: str,
+        projection: Mapping[str, Any],
+        *,
+        temporal_request_path: Path | None = None,
+        temporal_request_sha256: str | None = None,
+    ) -> dict[str, Any]:
         from dataclasses import asdict
         target = self.endpoint(envelope.receiver_role)
         sender = self.endpoint(envelope.sender_role)
@@ -487,11 +547,30 @@ class RoleHost:
             revision = latest.get("runtime_snapshot", {}).get("runtime_revision")
             if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
                 raise wc.CompletionError("ROLE_HOST_BOUNDARY_CHANGED", "source runtime revision is unavailable")
-            native = wc.start_temporal_delivery(
-                self.binding["temporal"], root, target, asdict(envelope),
-                attempt=attempt_number, source_runtime_revision=revision,
-                required_attempt_root=attempts,
-            )
+            if temporal_request_path is not None and temporal_request_sha256 is not None:
+                native = wc.acknowledge_temporal_delivery(
+                    self.binding["temporal"], root, target, asdict(envelope),
+                    request_path=temporal_request_path,
+                    request_sha256=temporal_request_sha256,
+                    attempt=attempt_number,
+                    required_attempt_root=attempts,
+                )
+            elif not (native / "started.json").is_file():
+                native = wc.start_temporal_delivery(
+                    self.binding["temporal"], root, target, asdict(envelope),
+                    attempt=attempt_number, source_runtime_revision=revision,
+                    required_attempt_root=attempts,
+                )
+            else:
+                operation_id = wc._stable_id(envelope.message_id, "temporal-delivery")
+                if not wc._temporal_ack_recorded(
+                    root, operation_id=operation_id,
+                    run_id=envelope.run_id, message_id=envelope.message_id,
+                ):
+                    raise wc.CompletionError(
+                        "TEMPORAL_NATIVE_ACK_UNPROVED",
+                        "existing native start requires its exact original Temporal request or saved ACK",
+                    )
         elif not native.exists():
             wc._run_json_command(self.transport, ["send", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
                                                   "--attempt-root", str(attempts)], credential=None)
@@ -540,6 +619,13 @@ class RoleHost:
                     path.parent.mkdir(parents=True, exist_ok=True)
             path = wc._write_or_reuse_stable_request(path, request)
             value = self._state_json(["commit-delivery-start", "--request", str(path)], credential=credential)
+            if value.get("status") == "error":
+                code, message = value.get("code"), value.get("message")
+                sensitive = json.dumps({"code": code, "message": message}, ensure_ascii=False).lower()
+                if (isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,95}", code)
+                    and isinstance(message, str) and message.strip() == message and 0 < len(message) <= 512
+                    and not any(term in sensitive for term in ("credential", "secret", "password", "api_key"))):
+                    raise wc.CompletionError(code, message)
             if (value.get("status") not in {"committed", "idempotent_replay"}
                 or value.get("message_id") != envelope.message_id or value.get("run_id") != envelope.run_id
                 or type(value.get("runtime_revision")) is not int or value["runtime_revision"] != auth["runtime_revision"] + 1
