@@ -227,8 +227,8 @@ def _fresh_terminal_source(
     from . import worker_completion as wc
 
     recovery = committed.get("recovery_terminal")
-    if not isinstance(recovery, Mapping) or "compatibility_request_path" not in recovery:
-        raise ValueError("committed terminal is not one fresh compatibility review")
+    if not isinstance(recovery, Mapping):
+        raise ValueError("committed terminal has no sealed recovery evidence")
     wc._validate_committed_terminal_request(committed)
     receipt = _read_object(native.parent / "committed-terminal-result.json", "committed D1 result")
     runtime_revision = receipt.get("runtime_revision")
