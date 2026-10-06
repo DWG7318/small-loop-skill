@@ -217,6 +217,52 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     return dict(request)
 
 
+def _fresh_terminal_source(
+    committed_path: Path, committed: Mapping[str, Any], native: Path,
+    request: Mapping[str, Any],
+) -> Path:
+    from . import worker_completion as wc
+
+    recovery = committed.get("recovery_terminal")
+    if not isinstance(recovery, Mapping) or "compatibility_request_path" not in recovery:
+        raise ValueError("committed terminal is not one fresh compatibility review")
+    wc._validate_committed_terminal_request(committed)
+    receipt = _read_object(native.parent / "committed-terminal-result.json", "committed D1 result")
+    runtime_revision = receipt.get("runtime_revision")
+    source = Path(str(committed.get("native_attempt_path", ""))).resolve()
+    if (
+        Path(str(recovery.get("native_attempt_path", ""))).resolve() != native
+        or receipt.get("schema_version") != "slk.ocrv-committed-terminal-result/v1"
+        or receipt.get("status") != "CHECKER_D1_RECORDED"
+        or receipt.get("method_version") != request["method_version"]
+        or receipt.get("run_id") != request["run_id"]
+        or receipt.get("cell_id") != request["cell_id"]
+        or receipt.get("attempt") != request["attempt"]
+        or receipt.get("candidate_message_id") != committed.get("candidate_message_id")
+        or receipt.get("checker_role_instance_id") != request["checker_role_instance_id"]
+        or receipt.get("checker_endpoint_version") != committed.get("checker_endpoint_version")
+        or receipt.get("recovery_invocation_id") != committed.get("recovery_invocation_id")
+        or receipt.get("request_sha256") != _sha256(committed_path)
+        or isinstance(runtime_revision, bool)
+        or not isinstance(runtime_revision, int)
+        or runtime_revision <= int(committed.get("runtime_revision", 0))
+        or runtime_revision > request["runtime_revision"]
+        or receipt.get("token_sequence") != request["token_sequence"]
+        or receipt.get("token_sequence") != committed.get("token_sequence")
+        or receipt.get("d1_verdict") != "FAIL"
+        or receipt.get("d1_event_type") != "D1_FAILED"
+        or receipt.get("authorized_existing_terminal") is not True
+        or receipt.get("checker_authenticated") is not True
+        or Path(str(receipt.get("native_attempt_path", ""))).resolve() != native
+        or Path(str(receipt.get("native_result_path", ""))).resolve()
+        != native / "ocrv-result.json"
+        or not (source / "endpoint.json").is_file()
+        or not (source / "envelope.json").is_file()
+    ):
+        raise ValueError("fresh committed-terminal receipt or identity changed")
+    return source
+
+
 def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     projection = _read_object(Path(str(request["runtime_projection_path"])), "runtime projection")
     summary = projection.get("summary")
@@ -292,29 +338,32 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     endpoint_path = native / "endpoint.json"
     envelope_path = native / "envelope.json"
     if not endpoint_path.exists() and not envelope_path.exists():
-        # A closed partial-review aggregate preserves identity in its original
-        # delivery. Authenticate that lineage without changing the hashed aggregate.
-        from .partial_review import validate_partial_terminal
-
-        committed = _read_object(native.parent / "committed-terminal.json", "partial terminal")
+        # A recovery terminal preserves identity in its original delivery.
+        committed_path = native.parent / "committed-terminal.json"
+        committed = _read_object(committed_path, "recovery terminal")
         try:
-            recorded_d1 = {
-                **{key: event.get(key) for key in (
-                    "event_id", "event_type", "go_id", "cell_id", "attempt",
-                    "corrects_event_id", "occurred_at"
-                )},
-                "run_id": request["run_id"],
-                "plan_revision": request["plan_revision"],
-                "role_instance_id": request["checker_role_instance_id"],
-                "details": dict(details),
-            }
-            proof = validate_partial_terminal(committed, recorded_d1=recorded_d1)
-            if Path(proof["activation"]["native_attempt_path"]).resolve() != native:
-                raise ValueError("partial terminal does not bind this aggregate")
-            source = Path(committed["native_attempt_path"]).resolve()
-        except (ValueError, KeyError, TypeError, OSError) as exc:
+            if "recovery_terminal" in committed:
+                source = _fresh_terminal_source(committed_path, committed, native, request)
+            else:
+                from .partial_review import validate_partial_terminal
+
+                recorded_d1 = {
+                    **{key: event.get(key) for key in (
+                        "event_id", "event_type", "go_id", "cell_id", "attempt",
+                        "corrects_event_id", "occurred_at"
+                    )},
+                    "run_id": request["run_id"],
+                    "plan_revision": request["plan_revision"],
+                    "role_instance_id": request["checker_role_instance_id"],
+                    "details": dict(details),
+                }
+                proof = validate_partial_terminal(committed, recorded_d1=recorded_d1)
+                if Path(proof["activation"]["native_attempt_path"]).resolve() != native:
+                    raise ValueError("partial terminal does not bind this aggregate")
+                source = Path(committed["native_attempt_path"]).resolve()
+        except (CompletionError, ValueError, KeyError, TypeError, OSError) as exc:
             raise CheckerEscalationError(
-                "CHECKER_ESCALATION_D1_MISMATCH", "partial terminal lineage is invalid"
+                "CHECKER_ESCALATION_D1_MISMATCH", "recovery terminal lineage is invalid"
             ) from exc
         endpoint_path = source / "endpoint.json"
         envelope_path = source / "envelope.json"

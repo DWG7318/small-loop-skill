@@ -47,6 +47,69 @@ def test_sealed_partial_failure_reads_original_identity_without_changing_aggrega
     assert {p.name: p.read_bytes() for p in native.iterdir() if p.is_file()} == original
 
 
+@pytest.mark.parametrize("proof", ["valid", "corrupt-receipt", "wrong-root"])
+def test_sealed_fresh_failure_reads_hash_bound_original_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proof: str
+) -> None:
+    from slk_transport import checker_escalation as escalation, worker_completion
+
+    request, _ = fixture(tmp_path)
+    native = Path(str(request["native_attempt_path"]))
+    source = tmp_path / "original-delivery"
+    source.mkdir()
+    for name in ("endpoint.json", "envelope.json"):
+        (native / name).rename(source / name)
+    recovery_native = native if proof != "wrong-root" else source
+    committed = {
+        "native_attempt_path": str(source),
+        "candidate_message_id": CANDIDATE_MESSAGE_ID,
+        "checker_endpoint_version": 2,
+        "recovery_invocation_id": "fresh-review-001",
+        "runtime_revision": request["runtime_revision"] - 2,
+        "token_sequence": request["token_sequence"],
+        "recovery_terminal": {
+            "compatibility_request_path": str(tmp_path / "fresh-request.json"),
+            "native_attempt_path": str(recovery_native),
+        },
+    }
+    committed_path = write_json(native.parent / "committed-terminal.json", committed)
+    receipt = {
+        "schema_version": "slk.ocrv-committed-terminal-result/v1",
+        "status": "CHECKER_D1_RECORDED",
+        "method_version": request["method_version"],
+        "run_id": request["run_id"],
+        "cell_id": request["cell_id"],
+        "attempt": request["attempt"],
+        "candidate_message_id": CANDIDATE_MESSAGE_ID,
+        "checker_role_instance_id": request["checker_role_instance_id"],
+        "checker_endpoint_version": 2,
+        "recovery_invocation_id": "fresh-review-001",
+        "request_sha256": sha256(committed_path),
+        "runtime_revision": request["runtime_revision"] - 1,
+        "token_sequence": request["token_sequence"],
+        "d1_verdict": "FAIL",
+        "d1_event_type": "D1_FAILED",
+        "authorized_existing_terminal": True,
+        "checker_authenticated": True,
+        "native_attempt_path": str(native),
+        "native_result_path": str(native / "ocrv-result.json"),
+    }
+    if proof == "corrupt-receipt":
+        receipt["request_sha256"] = "0" * 64
+    write_json(native.parent / "committed-terminal-result.json", receipt)
+
+    def validate(value, **_kwargs):
+        assert value == committed
+        return {"checker": object(), "frozen_projection": {}}
+
+    monkeypatch.setattr(worker_completion, "_validate_committed_terminal_request", validate)
+    if proof == "valid":
+        assert escalation._validate_failure(request)["candidate"]["commit"] == CANDIDATE_COMMIT
+    else:
+        with pytest.raises(escalation.CheckerEscalationError, match="lineage"):
+            escalation._validate_failure(request)
+
+
 RUN_ID = "RUN-A"
 GO_ID = "GO-001"
 CELL_ID = "CELL-001"
