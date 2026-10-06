@@ -58,6 +58,25 @@ def test_sealed_fresh_failure_reads_hash_bound_original_identity(
 
     request, _ = fixture(tmp_path)
     native = Path(str(request["native_attempt_path"]))
+    projection_path = Path(str(request["runtime_projection_path"]))
+    projection = json.loads(projection_path.read_text(encoding="utf-8"))
+    projection["events"][0]["corrects_event_id"] = "d1-incomplete-001"
+    projection["events"].insert(
+        0,
+        {
+            "event_id": "d1-incomplete-001",
+            "event_type": "D1_INCOMPLETE",
+            "author_role_instance_id": CHECKER_ID,
+            "go_id": GO_ID,
+            "cell_id": CELL_ID,
+            "attempt": 1,
+            "details_json": json.dumps(
+                {"candidate_message_id": CANDIDATE_MESSAGE_ID, "verdict": "INCOMPLETE"},
+                sort_keys=True,
+            ),
+        },
+    )
+    write_json(projection_path, projection)
     source = tmp_path / "original-delivery"
     source.mkdir()
     for name in ("endpoint.json", "envelope.json"):

@@ -1436,7 +1436,7 @@
     },
     {
       "path": "src/slk_transport/checker_escalation.py",
-      "sha256": "49366270c0900978bc77dc77990dd1c18194326e53c0593b7968310f0b1719f9"
+      "sha256": "9371cdc1b7f3cd65bf603a5e25b384ce23bcaa43be65cc554379bd4625ee2abb"
     },
     {
       "path": "src/slk_transport/cli.py",
@@ -1696,7 +1696,7 @@
     },
     {
       "path": "tests/transport/test_checker_escalation.py",
-      "sha256": "73d147d271616b7d7ba12cc9e16cf1208ed838b13287468ba530dc0ba18584ba"
+      "sha256": "97712227b8f4c05856dc4ac5a2e2c6eb274977d09502a78226d205c127c948cf"
     },
     {
       "path": "tests/transport/test_cli.py",

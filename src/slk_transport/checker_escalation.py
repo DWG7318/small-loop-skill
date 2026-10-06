@@ -344,6 +344,7 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     native = Path(str(request["native_attempt_path"])).resolve()
     endpoint_path = native / "endpoint.json"
     envelope_path = native / "envelope.json"
+    recovery_terminal_validated = False
     if not endpoint_path.exists() and not envelope_path.exists():
         # A recovery terminal preserves identity in its original delivery.
         committed_path = native.parent / "committed-terminal.json"
@@ -351,6 +352,7 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
         try:
             if "recovery_terminal" in committed:
                 source = _fresh_terminal_source(committed_path, committed, native, request)
+                recovery_terminal_validated = True
             else:
                 from .partial_review import validate_partial_terminal
 
@@ -416,7 +418,7 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
             "CHECKER_ESCALATION_D1_MISMATCH",
             "D1 failure does not bind the immutable OCRV candidate and terminal evidence",
         )
-    if event.get("corrects_event_id") is not None:
+    if event.get("corrects_event_id") is not None and not recovery_terminal_validated:
         receipt_path = native / "normalization-correction.json"
         receipt = _read_object(receipt_path, "D1 normalization correction")
         receipt_fields = {
