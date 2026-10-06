@@ -62,6 +62,8 @@ slk-transport validate --endpoint ENDPOINT.json --envelope ENVELOPE.json
 slk-transport send --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 slk-transport inspect --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 slk-transport inspect-native-activity --started STARTED.json [--completed COMPLETED.json] [--failed FAILED.json]
+slk-transport attest-desktop-overwatcher --request OW-ATTEST.json --sha256 REQUEST-SHA256 --evidence-root EVIDENCE_ROOT
+slk-transport inspect-native-activity --started STARTED.json --desktop-overwatcher-attestation ATTESTATION.json --desktop-overwatcher-attestation-sha256 ATTESTATION-SHA256
 slk-transport retry-exact --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 slk-transport recover-active-writer --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 slk-transport prepare-desktop-current-turn --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
@@ -86,6 +88,8 @@ slk-transport supervisor-admin --request SUPERVISOR-ADMIN.json --sha256 REQUEST-
 slk-transport resume-role-host --binding ROLE-HOST.json --sha256 BINDING-SHA256 --source-attempt SOURCE-ATTEMPT
 slk-transport reload-temporal-worker --request TEMPORAL-RELOAD.json --sha256 REQUEST-SHA256
 ```
+
+`attest-desktop-overwatcher` is the separate read-only entrance for an already-running Codex Desktop OW, not an engineering-role delivery. Its closed request freezes the registered Run/OW endpoint and exact Desktop `thread_id`, `host_id`, `cwd`, foreground `turn_id`, inbound `platform_input_item_id`, trusted reader thread, installed plugin command/hash and timeout. The inherited Desktop host calls only `read_thread`; it neither sends/resumes/creates a turn nor invokes a model. Success writes the request copy, [`slk.desktop-overwatcher-attestation/v1`](../contracts/slk-desktop-overwatcher-attestation.schema.json), matching `slk.native-start/v2` and one initial bounded snapshot. Later inspection re-reads that exact platform turn; stale `native-activity.json`, OW self-report, changed plugin/input/identity or missing Desktop capability stays `UNKNOWN`.
 
 The managed install places `slk-transport.cmd` beside the hash-bound `slk-transport.pyz`; that launcher is the standard command. A stale user-site Python console script is not an accepted entrance, while explicit `python <managed-slk-transport.pyz>` remains the diagnostic fallback.
 

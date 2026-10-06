@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-desktop-overwatcher-attestation-request.schema.json",
+  "title": "SLK trusted read-only Desktop Overwatcher attestation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method_version", "attestation_id", "run_id", "role_instance_id", "endpoint_ref", "thread_id", "host_id", "cwd", "turn_id", "platform_input_item_id", "reader_thread_id", "command", "plugin_sha256", "timeout_seconds"],
+  "properties": {
+    "schema_version": {"const": "slk.desktop-overwatcher-attestation-request/v1"},
+    "method_version": {"const": "4.4.2"},
+    "attestation_id": {"type": "string", "format": "uuid"},
+    "run_id": {"$ref": "#/$defs/text"},
+    "role_instance_id": {"$ref": "#/$defs/text"},
+    "endpoint_ref": {"$ref": "#/$defs/text"},
+    "thread_id": {"$ref": "#/$defs/text"},
+    "host_id": {"$ref": "#/$defs/text"},
+    "cwd": {"$ref": "#/$defs/text"},
+    "turn_id": {"$ref": "#/$defs/text"},
+    "platform_input_item_id": {"$ref": "#/$defs/text"},
+    "reader_thread_id": {"$ref": "#/$defs/text"},
+    "command": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/text"}},
+    "plugin_sha256": {"$ref": "#/$defs/sha256"},
+    "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 60}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

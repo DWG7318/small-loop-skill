@@ -17,6 +17,12 @@ from slk_temporal import standard_adapter
 RUN_ID = "RUN-STANDARD-A"
 
 
+def test_standard_adapter_keeps_the_temporal_venv_dependency_closed() -> None:
+    source = Path(standard_adapter.__file__).read_text(encoding="utf-8")
+    assert "from slk_transport" not in source
+    assert "import slk_transport" not in source
+
+
 def write_json(path: Path, value: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
@@ -256,4 +262,101 @@ def test_standard_adapter_rejects_changed_role_host_hash(tmp_path):
     Path(config["role_host_binding"]["path"]).write_text("changed", encoding="utf-8")
     standard_adapter.configure(root)
     with pytest.raises(ValueError, match="role host"):
+        standard_adapter._load_config(RUN_ID)
+
+
+def test_standard_adapter_v2_binds_live_ow_attestation_and_passes_it_to_each_audit(
+    tmp_path, monkeypatch,
+):
+    root, config = config_root(tmp_path)
+    started = Path(config["overwatcher_activity"]["started_path"])
+    started.write_text(json.dumps({"native": "start"}), encoding="utf-8")
+    attestation = write_json(tmp_path / "ow" / "desktop-overwatcher-attestation.json", {
+        "schema_version": "slk.desktop-overwatcher-attestation/v1",
+        "method_version": "4.4.2",
+        "attestation_id": "11111111-1111-4111-8111-111111111111",
+        "run_id": RUN_ID,
+        "role_instance_id": "ow-a",
+        "endpoint_ref": "ow-endpoint-a",
+        "thread_id": "thread-ow",
+        "host_id": "local",
+        "cwd": str(tmp_path.resolve()),
+        "turn_id": "turn-ow",
+        "platform_input_item_id": "item-ow-input",
+        "platform_input_sha256": "a" * 64,
+        "request_sha256": "b" * 64,
+        "plugin_sha256": "c" * 64,
+        "observed_at": "2026-10-06T00:00:00Z",
+        "thread_status": "active",
+        "turn_status": "inProgress",
+        "native_task_id": "thread-ow:turn-ow:item-ow-input",
+        "started_sha256": hashlib.sha256(started.read_bytes()).hexdigest(),
+    })
+    config["schema_version"] = "slk.temporal-standard-adapter/v2"
+    config["overwatcher_activity"].update({
+        "attestation_path": str(attestation.resolve()),
+        "attestation_sha256": hashlib.sha256(attestation.read_bytes()).hexdigest(),
+    })
+    contracts = Path(__file__).resolve().parents[2] / "docs" / "contracts"
+    Draft202012Validator(json.loads(
+        (contracts / "slk-temporal-standard-adapter.schema.json").read_text(encoding="utf-8")
+    )).validate(config)
+    write_json(root / f"{RUN_ID}.json", config)
+    standard_adapter.configure(root)
+    calls = []
+
+    def run(command, arguments, **_kwargs):
+        calls.append(arguments)
+        return {"status": "ACTIVE"}
+
+    monkeypatch.setattr(standard_adapter, "_run_json", run)
+    result = asyncio.run(standard_adapter.inspect_overwatcher({
+        "run_id": RUN_ID,
+        "overwatcher_role_instance_id": "ow-a",
+        "endpoint_ref": "ow-endpoint-a",
+        "audit_cycle": 1,
+    }))
+
+    assert result["status"] == "CLEAR"
+    assert calls == [[
+        "inspect-native-activity",
+        "--started", str(started.resolve()),
+        "--desktop-overwatcher-attestation", str(attestation.resolve()),
+        "--desktop-overwatcher-attestation-sha256", hashlib.sha256(attestation.read_bytes()).hexdigest(),
+    ]]
+
+
+def test_standard_adapter_v2_rejects_ow_attestation_for_another_binding(tmp_path):
+    root, config = config_root(tmp_path)
+    started = Path(config["overwatcher_activity"]["started_path"])
+    attestation = write_json(tmp_path / "ow" / "desktop-overwatcher-attestation.json", {
+        "schema_version": "slk.desktop-overwatcher-attestation/v1",
+        "method_version": "4.4.2",
+        "attestation_id": "11111111-1111-4111-8111-111111111111",
+        "run_id": RUN_ID,
+        "role_instance_id": "some-other-ow",
+        "endpoint_ref": "ow-endpoint-a",
+        "thread_id": "thread-ow",
+        "host_id": "local",
+        "cwd": str(tmp_path.resolve()),
+        "turn_id": "turn-ow",
+        "platform_input_item_id": "item-ow-input",
+        "platform_input_sha256": "a" * 64,
+        "request_sha256": "b" * 64,
+        "plugin_sha256": "c" * 64,
+        "observed_at": "2026-10-06T00:00:00Z",
+        "thread_status": "active",
+        "turn_status": "inProgress",
+        "native_task_id": "thread-ow:turn-ow:item-ow-input",
+        "started_sha256": hashlib.sha256(started.read_bytes()).hexdigest(),
+    })
+    config["schema_version"] = "slk.temporal-standard-adapter/v2"
+    config["overwatcher_activity"].update({
+        "attestation_path": str(attestation.resolve()),
+        "attestation_sha256": hashlib.sha256(attestation.read_bytes()).hexdigest(),
+    })
+    write_json(root / f"{RUN_ID}.json", config)
+    standard_adapter.configure(root)
+
+    with pytest.raises(ValueError, match="Overwatcher attestation"):
         standard_adapter._load_config(RUN_ID)

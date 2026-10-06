@@ -1439,6 +1439,27 @@ def test_440_temporal_is_required_but_keeps_engineering_authority_outside_workfl
         assert marker in combined
 
 
+def test_442_existing_desktop_ow_uses_trusted_read_only_attestation_and_live_audits() -> None:
+    overwatch = read_skill("slk-overwatch-run")
+    temporal = read_skill("slk-manage-temporal")
+    combined = "\n".join((overwatch, temporal))
+
+    for marker in (
+        "attest-desktop-overwatcher",
+        "slk.desktop-overwatcher-attestation/v1",
+        "platform_input_item_id",
+        "slk.native-start/v2",
+        "desktop-overwatcher-attestation",
+        "每次 1200 秒审计重新调用",
+        "read_thread",
+        "不发送消息",
+        "不调用模型",
+        "不建 daemon",
+    ):
+        assert marker in combined
+    assert "native-activity.json` 的旧时间" in combined
+
+
 def test_430_role_eval_covers_temporal_start_authority_and_recovery_boundaries() -> None:
     pack = json.loads(
         (ROOT / "skills/small-loop-skill/assets/SLK-ROLE-EVAL.v1.json").read_text(

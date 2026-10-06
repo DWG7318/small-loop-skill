@@ -11,6 +11,7 @@
 - Unified Temporal Worker continuation on one canonical Checker attempt root, made explicit suffix failure visible before grace, and made reload tolerant only of an already-exited process whose frozen identity still matches.
 - Replaced OCRV's old line/file/background size gates with preparation-frozen token/time execution limits. Full original evidence remains local; compact changed-path summaries disclose omission and provider thinking is excluded from formal findings.
 - Required each Worker-held OW cycle to bind one exact read-only completion inspection and preserved safe state-core rejection details without leaking secrets or granting OW recovery authority.
+- Added a read-only Codex Desktop attestation for an already-running Overwatcher turn. It binds the exact Run/role/endpoint/thread/turn/input item and makes every Temporal audit query the live Desktop platform again; stale files, missing tools, inconsistent status or identity drift fail closed without rebinding, messaging or model work.
 - Made Supervisor size the frozen solution for DSH before dispatch. Large work becomes independently D0/D1-checkable small or medium CELLs; a second consecutive formal D1 failure stops ordinary rework and version-replans the unaccepted remainder without erasing failures or weakening acceptance.
 - Preserved 4.4.0/4.4.1 evidence compatibility, BI/WebBI 1.1.0 and all four role boundaries. This candidate performs no install, product-Run adoption or remote action.
 

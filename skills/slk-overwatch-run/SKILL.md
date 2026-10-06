@@ -19,7 +19,7 @@ Overwatcher 在持续 active 的 Agent Session 中核实 SLK 是否真的按当�
 OW 自己在同一前台 turn 内按 600 秒 cadence 继续循环；不是 Temporal 唤醒、heartbeat、automation、cron、计划任务、daemon 或后台 Agent。每轮只做以下直接步骤：
 
 1. 从中央状态读取本 Run 当前 plan revision、CELL/attempt、TOKEN、最后权威事件、四角色登记和最近消息；BI 仅作为只读投影。
-2. 用登记的 status adapter 与 `slk-transport inspect-native-activity` 读取当前责任成员和自身 Session 的最新原生状态；Worker 持有 TOKEN 时，本轮还须恰好一次无凭据、只读地执行 `inspect-worker-completion`，并把匹配当前 Run/CELL/attempt/message 的收据加入 cycle 证据；缺失、过期或不可查询保持 `UNKNOWN`。
+2. 用登记的 status adapter 与 `slk-transport inspect-native-activity` 读取当前责任成员和自身 Session 的最新原生状态。Codex Desktop OW 的准备证据来自 `attest-desktop-overwatcher` 所生成的 `slk.desktop-overwatcher-attestation/v1`，以准确 `platform_input_item_id` 绑定既有 turn；后续检查带 `desktop-overwatcher-attestation` 路径/哈希重新 `read_thread`，不接受 OW 自报。Worker 持有 TOKEN 时，本轮还须恰好一次无凭据、只读地执行 `inspect-worker-completion`，并把匹配当前 Run/CELL/attempt/message 的收据加入 cycle 证据；缺失、过期或不可查询保持 `UNKNOWN`。
 3. 交叉核对并逐一对准 Run/CELL/attempt/message：声称送达就查接收者 native start；声称工作就查该原生任务；有不可变终态就查应接手角色是否真实启动。中央 active、旧 TOKEN/PID 不能覆盖原生已结束的事实，BI 差异另报，不修改投影。
 4. 给出 `CLEAR`、`ANOMALY` 或 `UNKNOWN`：全员 inactive 无接手、终态无交接、FAIL 未交 Supervisor、D1 未完却申请 D2、超预期活动无阶段变化均上报；缺失/过期证据写 UNKNOWN，不把无法证明当正常或把工具失败算产品返工。
 5. 追加一条紧凑 cycle；只引用证据路径和 SHA-256，不复制日志、不增加工程进度。正常且无新事实时不产生可见消息，随后继续下一轮。

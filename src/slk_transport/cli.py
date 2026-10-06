@@ -28,6 +28,7 @@ from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
 from .evidence import Attempt
 from .native_activity import NativeActivityError, inspect_native_activity, validate_native_start
+from .overwatcher_desktop import attest_desktop_overwatcher, desktop_overwatcher_probe
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
 from .role_eval import load_pack, pack_sha256, validate_response
@@ -489,9 +490,24 @@ def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
 
 def _inspect_native_activity(args: argparse.Namespace) -> int:
     terminals = tuple(path for path in (args.completed, args.failed) if path is not None)
-    result = inspect_native_activity(args.started, terminal_paths=terminals)
+    supplied = (args.desktop_overwatcher_attestation, args.desktop_overwatcher_attestation_sha256)
+    if (supplied[0] is None) != (supplied[1] is None):
+        raise ValueError("Desktop Overwatcher attestation path and hash must be supplied together")
+    native_probe = None
+    if supplied[0] is not None:
+        native_probe = lambda start: desktop_overwatcher_probe(
+            supplied[0], attestation_sha256=supplied[1], started_path=args.started, start=start,
+        )
+    result = inspect_native_activity(args.started, terminal_paths=terminals, native_probe=native_probe)
     _emit(result)
     return 0 if result["status"] in {"ACTIVE", "IDLE", "PENDING", "COMPLETED", "FAILED"} else 3
+
+
+def _attest_desktop_overwatcher(args: argparse.Namespace) -> int:
+    _emit(attest_desktop_overwatcher(
+        args.request, request_sha256=args.sha256, evidence_root=args.evidence_root,
+    ))
+    return 0
 
 
 def _notify_supervisor(args: argparse.Namespace) -> int:
@@ -757,6 +773,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     native_activity.add_argument("--started", required=True, type=Path)
     native_activity.add_argument("--completed", type=Path)
     native_activity.add_argument("--failed", type=Path)
+    native_activity.add_argument("--desktop-overwatcher-attestation", type=Path)
+    native_activity.add_argument("--desktop-overwatcher-attestation-sha256")
+    ow_desktop = subparsers.add_parser("attest-desktop-overwatcher")
+    ow_desktop.add_argument("--request", required=True, type=Path)
+    ow_desktop.add_argument("--sha256", required=True)
+    ow_desktop.add_argument("--evidence-root", required=True, type=Path)
     notice = subparsers.add_parser("notify-supervisor")
     notice.add_argument("--request", required=True, type=Path)
     continuation = subparsers.add_parser("continue-worker")
@@ -861,6 +883,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _inspect_overwatcher_cadence(args)
         if args.command == "inspect-native-activity":
             return _inspect_native_activity(args)
+        if args.command == "attest-desktop-overwatcher":
+            return _attest_desktop_overwatcher(args)
         if args.command == "notify-supervisor":
             return _notify_supervisor(args)
         if args.command == "continue-worker":

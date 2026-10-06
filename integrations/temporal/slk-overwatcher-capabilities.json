@@ -1,0 +1,8 @@
+{
+  "schema_version": "slk.native-activity-capability/v1",
+  "method_version": "4.4.2",
+  "runtime": "codex",
+  "read_only_observation": true,
+  "model_call_required": false,
+  "native_events": ["thread/status", "turn/status", "platform-input/item"]
+}

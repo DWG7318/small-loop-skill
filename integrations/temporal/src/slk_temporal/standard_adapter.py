@@ -15,6 +15,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any, Mapping
+from uuid import UUID
 
 from .contracts import DeliveryRequest, StartSlkRequest
 
@@ -29,8 +30,16 @@ BOOTSTRAP_FIELDS = {
     "schema_version", "method_version", "run_id", "query_command", "state_config_path",
 }
 HOST_FIELDS = {"path", "sha256"}
-OW_FIELDS = {
+OW_FIELDS_V1 = {
     "endpoint_ref", "role_instance_id", "started_path", "completed_path", "failed_path",
+}
+OW_FIELDS_V2 = OW_FIELDS_V1 | {"attestation_path", "attestation_sha256"}
+OW_ATTESTATION_FIELDS = {
+    "schema_version", "method_version", "attestation_id", "run_id",
+    "role_instance_id", "endpoint_ref", "thread_id", "host_id", "cwd",
+    "turn_id", "platform_input_item_id", "platform_input_sha256",
+    "request_sha256", "plugin_sha256", "observed_at", "thread_status",
+    "turn_status", "native_task_id", "started_sha256",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
@@ -57,6 +66,44 @@ def _object(path: Path, label: str) -> dict[str, Any]:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _validate_ow_attestation(
+    path: Path,
+    *,
+    expected_sha256: str,
+    run_id: str,
+    role_instance_id: str,
+    endpoint_ref: str,
+    started_path: Path,
+) -> None:
+    if not SHA256.fullmatch(expected_sha256) or _sha256(path) != expected_sha256:
+        raise ValueError("Overwatcher attestation hash changed")
+    value = _object(path, "Overwatcher Desktop attestation")
+    if (set(value) != OW_ATTESTATION_FIELDS
+        or value.get("schema_version") != "slk.desktop-overwatcher-attestation/v1"
+        or value.get("method_version") != "4.4.2"):
+        raise ValueError("Overwatcher attestation is not closed")
+    for field in OW_ATTESTATION_FIELDS - {"schema_version", "method_version"}:
+        if not isinstance(value.get(field), str) or not value[field] or value[field] != value[field].strip():
+            raise ValueError(f"Overwatcher attestation {field} is invalid")
+    try:
+        UUID(value["attestation_id"])
+    except ValueError as exc:
+        raise ValueError("Overwatcher attestation identity is invalid") from exc
+    for field in ("platform_input_sha256", "request_sha256", "plugin_sha256", "started_sha256"):
+        if not SHA256.fullmatch(value[field]):
+            raise ValueError(f"Overwatcher attestation {field} is invalid")
+    if (value["run_id"] != run_id or value["role_instance_id"] != role_instance_id
+        or value["endpoint_ref"] != endpoint_ref
+        or value["started_sha256"] != _sha256(started_path)
+        or value["thread_status"] != "active"
+        or value["turn_status"] not in {"active", "inProgress"}
+        or value["native_task_id"] != (
+            f"{value['thread_id']}:{value['turn_id']}:{value['platform_input_item_id']}"
+        )
+        or not Path(value["cwd"]).is_absolute() or not Path(value["cwd"]).is_dir()):
+        raise ValueError("Overwatcher attestation does not match the frozen binding")
 
 
 def _command(value: object, label: str) -> list[str]:
@@ -88,7 +135,9 @@ def _load_config(run_id: str) -> dict[str, Any]:
         raise ValueError("standard adapter is not configured for a canonical Run")
     path = _CONFIG_ROOT / f"{run_id}.json"
     value = _object(path, "standard adapter Run config")
-    if (set(value) != CONFIG_FIELDS or value.get("schema_version") != "slk.temporal-standard-adapter/v1"
+    schema_version = value.get("schema_version")
+    if (set(value) != CONFIG_FIELDS or schema_version not in {
+            "slk.temporal-standard-adapter/v1", "slk.temporal-standard-adapter/v2"}
         or value.get("method_version") != "4.4.2" or value.get("run_id") != run_id):
         raise ValueError("standard adapter Run config is not closed")
     value["transport_command"] = _command(value["transport_command"], "transport command")
@@ -107,16 +156,29 @@ def _load_config(run_id: str) -> dict[str, Any]:
         raise ValueError("role host binding hash changed")
     value["role_host_binding"] = {"path": str(host_path), "sha256": host["sha256"]}
     ow = value.get("overwatcher_activity")
-    if (not isinstance(ow, Mapping) or set(ow) != OW_FIELDS
+    expected_ow_fields = OW_FIELDS_V2 if schema_version == "slk.temporal-standard-adapter/v2" else OW_FIELDS_V1
+    if (not isinstance(ow, Mapping) or set(ow) != expected_ow_fields
         or not all(isinstance(ow[field], str) and IDENTIFIER.fullmatch(ow[field])
                    for field in ("endpoint_ref", "role_instance_id"))):
         raise ValueError("Overwatcher activity binding is invalid")
-    value["overwatcher_activity"] = {
+    normalized_ow = {
         **dict(ow),
         "started_path": str(_existing_path(ow["started_path"], "Overwatcher native start")),
         "completed_path": str(path) if (path := _optional_path(ow["completed_path"], "Overwatcher completed evidence")) else None,
         "failed_path": str(path) if (path := _optional_path(ow["failed_path"], "Overwatcher failed evidence")) else None,
     }
+    if schema_version == "slk.temporal-standard-adapter/v2":
+        attestation_path = _existing_path(ow["attestation_path"], "Overwatcher Desktop attestation")
+        _validate_ow_attestation(
+            attestation_path,
+            expected_sha256=str(ow["attestation_sha256"]),
+            run_id=run_id,
+            role_instance_id=str(ow["role_instance_id"]),
+            endpoint_ref=str(ow["endpoint_ref"]),
+            started_path=Path(normalized_ow["started_path"]),
+        )
+        normalized_ow["attestation_path"] = str(attestation_path)
+    value["overwatcher_activity"] = normalized_ow
     return value
 
 
@@ -324,6 +386,11 @@ async def inspect_overwatcher(value: dict[str, Any]) -> dict[str, Any]:
 
     def perform() -> dict[str, Any]:
         arguments = ["inspect-native-activity", "--started", ow["started_path"]]
+        if config["schema_version"] == "slk.temporal-standard-adapter/v2":
+            arguments.extend((
+                "--desktop-overwatcher-attestation", ow["attestation_path"],
+                "--desktop-overwatcher-attestation-sha256", ow["attestation_sha256"],
+            ))
         for option, field in (("--completed", "completed_path"), ("--failed", "failed_path")):
             if ow[field] is not None:
                 arguments.extend((option, ow[field]))
