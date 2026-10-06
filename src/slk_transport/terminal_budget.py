@@ -180,6 +180,80 @@ def _discover_source_projection(
     return matches[0]
 
 
+def _recover_source_projection(
+    *, run_root: Path, role_host: Mapping[str, Any], endpoint: Mapping[str, Any],
+    run_id: str, message_id: str, go_id: object, cell_id: object,
+    terminal_sha256: str, result_sha256: str,
+    load_current_projection: Callable[[str, list[str]], Mapping[str, Any]],
+) -> tuple[Path, dict[str, Any], Mapping[str, Any], Mapping[str, Any]]:
+    """Freeze one exact live D1 INCOMPLETE boundary omitted by an older RoleHost."""
+
+    from . import worker_completion as wc
+
+    roles = role_host.get("roles")
+    checker = roles.get("checker") if isinstance(roles, Mapping) else None
+    state_command = role_host.get("state_command")
+    if (
+        not isinstance(checker, Mapping)
+        or not isinstance(state_command, list)
+        or not state_command
+        or not all(isinstance(item, str) and item for item in state_command)
+    ):
+        raise ValueError("authenticated Checker boundary is unavailable")
+    checker_endpoint_path = Path(str(checker.get("endpoint_path", ""))).resolve()
+    checker_endpoint = _read(checker_endpoint_path, "frozen Checker endpoint")
+    role_instance_id = str(checker_endpoint.get("role_instance_id", ""))
+    if (
+        checker_endpoint != endpoint
+        or checker_endpoint.get("role") != "checker"
+        or checker_endpoint.get("run_id") != run_id
+        or not role_instance_id
+    ):
+        raise ValueError("authenticated Checker boundary is unavailable")
+    authentication = wc._default_checker_authenticate(
+        run_id,
+        role_instance_id,
+        Path(str(checker.get("credential_path", ""))).resolve(),
+        list(state_command),
+    )
+    current = dict(load_current_projection(run_id, list(state_command)))
+    try:
+        _path, _value, started, incomplete = _discover_source_projection(
+            [(run_root / "live-projection.json", current)],
+            run_id=run_id,
+            message_id=message_id,
+            terminal_sha256=terminal_sha256,
+            result_sha256=result_sha256,
+        )
+    except ValueError as exc:
+        raise ValueError("authenticated Checker boundary is unavailable") from exc
+    runtime = current.get("runtime_snapshot")
+    event_id = incomplete.get("event_id")
+    if (
+        not isinstance(runtime, Mapping)
+        or authentication.get("status") != "authenticated"
+        or authentication.get("run_id") != run_id
+        or authentication.get("role") != "checker"
+        or authentication.get("role_instance_id") != role_instance_id
+        or type(authentication.get("runtime_revision")) is not int
+        or authentication.get("runtime_revision") != runtime.get("runtime_revision")
+        or runtime.get("token_holder_role_instance_id") != role_instance_id
+        or runtime.get("latest_event_id") != event_id
+        or any(
+            event.get("author_role_instance_id") != role_instance_id
+            or event.get("go_id") != go_id
+            or event.get("cell_id") != cell_id
+            for event in (started, incomplete)
+        )
+        or started.get("attempt") != incomplete.get("attempt")
+    ):
+        raise ValueError("authenticated Checker boundary is unavailable")
+    identity = uuid.uuid5(_PREPARATION_NAMESPACE, f"{run_id}|{message_id}|{event_id}|projection")
+    path = run_root / "prepared" / f"d1-incomplete-projection-{identity}.json"
+    frozen = wc._write_or_reuse_stable_request(path, current)
+    return frozen, current, started, incomplete
+
+
 def _discover_commit_request(
     candidates: list[tuple[Path, dict[str, Any]]], *, run_id: str,
     message_id: str, event_id: str,
@@ -363,13 +437,30 @@ def prepare_terminal_budget_request(
     message_id = str(envelope.get("message_id", ""))
     run_root = role_host_path.parent.parent.resolve()
     candidates = _json_candidates(run_root)
-    projection_path, projection, d1_started, d1_incomplete = _discover_source_projection(
-        candidates,
-        run_id=run_id,
-        message_id=message_id,
-        terminal_sha256=_sha256(attempt / "completed.json"),
-        result_sha256=_sha256(attempt / "ocrv-result.json"),
-    )
+    loader = load_current_projection or wc._default_load_current_projection
+    try:
+        projection_path, projection, d1_started, d1_incomplete = _discover_source_projection(
+            candidates,
+            run_id=run_id,
+            message_id=message_id,
+            terminal_sha256=_sha256(attempt / "completed.json"),
+            result_sha256=_sha256(attempt / "ocrv-result.json"),
+        )
+    except ValueError as exc:
+        if str(exc) != "frozen D1 INCOMPLETE projection is missing":
+            raise
+        projection_path, projection, d1_started, d1_incomplete = _recover_source_projection(
+            run_root=run_root,
+            role_host=role_host,
+            endpoint=endpoint,
+            run_id=run_id,
+            message_id=message_id,
+            go_id=envelope.get("go_id"),
+            cell_id=envelope.get("cell_id"),
+            terminal_sha256=_sha256(attempt / "completed.json"),
+            result_sha256=_sha256(attempt / "ocrv-result.json"),
+            load_current_projection=loader,
+        )
     events = projection.get("events")
     candidate_matches: list[Mapping[str, Any]] = []
     transport_matches: list[Mapping[str, Any]] = []
@@ -448,7 +539,7 @@ def prepare_terminal_budget_request(
         "schema_version": REVISION_SCHEMA,
         "reason": "TERMINAL_TOKEN_BUDGET_EXHAUSTED",
         "old": {name: old_capacity.get(name) for name in CAPACITY_FIELDS},
-        "observed": {name: summary.get(name) for name in USAGE_FIELDS},
+        "observed": {name: summary.get(name, 0) for name in USAGE_FIELDS},
         "new": {
             "max_tokens": old_capacity.get("max_tokens"),
             "max_tokens_budget": max_tokens_budget,
@@ -550,7 +641,6 @@ def prepare_terminal_budget_request(
         "recovery_root": str(recovery_root),
     }
     validate(request)
-    loader = load_current_projection or wc._default_load_current_projection
     current = loader(run_id, list(request["state_command"]))
     current_runtime = current.get("runtime_snapshot")
     current_revision = current_runtime.get("runtime_revision") if isinstance(
@@ -763,6 +853,38 @@ def _positive_map(value: object, fields: set[str]) -> bool:
         and all(isinstance(value[name], int) and not isinstance(value[name], bool) and value[name] > 0
                 for name in fields)
     )
+
+
+def _zero_token_predispatch_estimate(
+    raw: Mapping[str, Any], summary: Mapping[str, Any], tools: Mapping[str, Any],
+    selected: list[Any], old_budget: int,
+) -> int | None:
+    if (
+        any(summary.get(name, 0) != 0 for name in USAGE_FIELDS)
+        or tools.get("total") != 0
+        or tools.get("failure") != 0
+    ):
+        return None
+    warnings = raw.get("warnings")
+    if not isinstance(warnings, list) or len(warnings) != 1 or not isinstance(warnings[0], Mapping):
+        return None
+    warning = warnings[0]
+    paths = {item.get("path") for item in selected if isinstance(item, Mapping)}
+    match = re.fullmatch(
+        r"stopped dispatch: used 0 tokens \+ group estimate ([1-9]\d*) = "
+        r"projected \1 exceeds budget ([1-9]\d*)",
+        str(warning.get("message", "")),
+    )
+    if (
+        set(warning) != {"file", "message", "type"}
+        or warning.get("type") != "token_budget_reached"
+        or warning.get("file") not in paths
+        or match is None
+        or int(match.group(2)) != old_budget
+        or int(match.group(1)) <= old_budget
+    ):
+        return None
+    return int(match.group(1))
 
 
 def validate(request: Mapping[str, Any], *, consumed: bool = False) -> dict[str, Any]:
@@ -978,17 +1100,37 @@ def validate(request: Mapping[str, Any], *, consumed: bool = False) -> dict[str,
         or revision.get("schema_version") != REVISION_SCHEMA
         or revision.get("reason") != "TERMINAL_TOKEN_BUDGET_EXHAUSTED"
         or not _positive_map(old, CAPACITY_FIELDS)
-        or not _positive_map(observed, USAGE_FIELDS)
         or not _positive_map(new, CAPACITY_FIELDS)
+        or not isinstance(observed, Mapping)
+        or set(observed) != USAGE_FIELDS
+        or any(
+            not isinstance(observed[name], int) or isinstance(observed[name], bool)
+            or observed[name] < 0 for name in USAGE_FIELDS
+        )
         or not isinstance(old_capacity, Mapping)
         or any(old[name] != old_capacity.get(name) for name in CAPACITY_FIELDS)
-        or any(observed[name] != summary.get(name) for name in USAGE_FIELDS)
-        or observed["total_tokens"] <= old["max_tokens_budget"]
+        or any(observed[name] != summary.get(name, 0) for name in USAGE_FIELDS)
         or new["max_tokens"] != old["max_tokens"]
         or new["timeout_minutes"] != old["timeout_minutes"]
         or new["max_tokens_budget"] <= old["max_tokens_budget"]
-        or new["max_tokens_budget"] <= observed["total_tokens"]
     ):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_CAPACITY_INVALID",
+            "capacity revision is not a finite exact Owner-bound increase above observed use",
+        )
+    predispatch_estimate = _zero_token_predispatch_estimate(
+        raw, summary, tools, selected, old["max_tokens_budget"]
+    )
+    ordinary_exhaustion = (
+        all(observed[name] > 0 for name in USAGE_FIELDS)
+        and observed["total_tokens"] > old["max_tokens_budget"]
+        and new["max_tokens_budget"] > observed["total_tokens"]
+    )
+    predispatch_exhaustion = (
+        predispatch_estimate is not None
+        and new["max_tokens_budget"] > predispatch_estimate
+    )
+    if not ordinary_exhaustion and not predispatch_exhaustion:
         raise wc.CompletionError(
             "CHECKER_TERMINAL_BUDGET_CAPACITY_INVALID",
             "capacity revision is not a finite exact Owner-bound increase above observed use",

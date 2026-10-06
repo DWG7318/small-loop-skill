@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "0a15f16ce5c97f96f7289115cefa0b8b314fce6ae7f828ae28daa950f68a1b6e"
+      "sha256": "d42502d4764a1b7bf7a978b2986a9072bbb5f806b9d01f5eb052a8f6bd662f87"
     },
     {
       "path": "VERSION",
@@ -1504,7 +1504,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "53dcc0e8413a72e02326a7739ec61005fe944820e0d21af845cc6dac2a6d4505"
+      "sha256": "bdf0a9a0ac872d8b998b61ae7e0390fde94d9b09a6cddd17412355c55873baca"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
@@ -1532,7 +1532,7 @@
     },
     {
       "path": "src/slk_transport/terminal_budget.py",
-      "sha256": "fdb48f78e63a270b4d2a16087b6f3c706db4221ce9158e90327ef65a74e4e9ec"
+      "sha256": "fc589e33116e6ff5f12cb1455cb29cf7bc6b28aefcf0817ea4c2c6e6dac9061b"
     },
     {
       "path": "src/slk_transport/terminal_budget_fresh.py",
@@ -1796,7 +1796,7 @@
     },
     {
       "path": "tests/transport/test_role_host.py",
-      "sha256": "115447a413fbf78ae0ca1972347ea10bbda1a5f4c8ec41dcd9eadb4b31ada5f3"
+      "sha256": "01238c67a0662d7c73b9d031ae27c7fa387a31c783581c4e899e47097925d75c"
     },
     {
       "path": "tests/transport/test_run_readiness.py",
@@ -1836,7 +1836,7 @@
     },
     {
       "path": "tests/transport/test_terminal_budget_resume.py",
-      "sha256": "b1ecd449e7a9bf92c9d4fb81e8305d1183f9ea3cfe42073c2896c399ac55ad27"
+      "sha256": "d64d179dd2e21f49377a3c32aa141c0f57a840fa790b3b4251b2bc6510c66272"
     },
     {
       "path": "tests/transport/test_worker_completion.py",

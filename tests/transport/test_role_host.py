@@ -96,6 +96,32 @@ def test_checker_findings_strip_provider_thinking_before_supervisor_escalation()
     )]
 
 
+def test_checker_incomplete_freezes_the_exact_post_record_projection(tmp_path, monkeypatch):
+    host, source, envelope = prepared_host(tmp_path)
+    root = tmp_path / "checker-host"
+    root.mkdir()
+    current = host_boundary(host, envelope)
+    current["runtime_snapshot"]["latest_event_id"] = "d1-incomplete-event"
+    monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
+    monkeypatch.setattr(
+        wc,
+        "_record_checker_d1",
+        lambda *_args, **_kwargs: {
+            "status": "CHECKER_D1_RECORDED",
+            "d1_verdict": "INCOMPLETE",
+            "d1_event_type": "D1_INCOMPLETE",
+        },
+    )
+    monkeypatch.setattr(host, "projection", lambda: current)
+
+    result = host._checker_result(
+        source, envelope, root, "2026-10-06T08:00:00Z", host_boundary(host, envelope)
+    )
+
+    assert result["d1_verdict"] == "INCOMPLETE"
+    assert wc._read_object(root / "d1-projection.json", "D1 projection") == current
+
+
 def prepared_host(tmp_path):
     attempt, worker, checker = completion_fixture(tmp_path)
     supervisor = {**checker, "role": "supervisor", "agent_runtime": "codex",

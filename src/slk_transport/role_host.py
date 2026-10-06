@@ -706,11 +706,11 @@ class RoleHost:
                         "checker_endpoint": self.endpoint("checker"), "state_command": self.state, "occurred_at": occurred_at}
         recorded = wc._record_checker_d1({"native_attempt_path": str(source), "candidate_message_id": envelope.message_id},
                                         continuation, checker_credential_path=self.credential_path("checker"), timeout_seconds=1)
+        projection = self.projection()
+        projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", projection)
         if recorded["d1_verdict"] == "INCOMPLETE":
             return recorded
-        projection = self.projection()
         snapshot = projection["runtime_snapshot"]
-        projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", projection)
         common = {"method_version": projection["runtime_snapshot"]["method_version"], "run_id": envelope.run_id, "go_id": envelope.go_id,
                   "cell_id": envelope.cell_id, "attempt": attempt, "plan_revision": self.binding["plan_revision"],
                   "runtime_revision": snapshot["runtime_revision"], "token_sequence": snapshot["token_sequence"],

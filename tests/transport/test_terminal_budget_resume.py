@@ -575,10 +575,17 @@ def test_concurrent_distinct_authorizations_can_claim_the_source_only_once(
 
 
 def test_preparer_derives_the_closed_request_without_manual_ids_or_hashes(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected, role_host_path, projection_path, runner = preparation_fixture(tmp_path)
     output = tmp_path / "prepared" / "terminal-budget-request.json"
+    monkeypatch.setattr(
+        worker_completion,
+        "_default_checker_authenticate",
+        lambda *_args, **_kwargs: pytest.fail(
+            "an existing frozen projection must not consume the sealed credential"
+        ),
+    )
 
     result = prepare_terminal_budget_request(
         expected["native_attempt_path"],
@@ -605,6 +612,89 @@ def test_preparer_derives_the_closed_request_without_manual_ids_or_hashes(
     }
     assert request["ocrv_session"] == expected["ocrv_session"]
     assert result["prepare_only_command"][-1] == "--prepare-only"
+
+
+def test_preparer_recovers_a_missing_projection_from_the_exact_authenticated_checker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected, role_host_path, projection_path, runner = preparation_fixture(tmp_path)
+    current = json.loads(projection_path.read_text(encoding="utf-8"))
+    projection_path.unlink()
+    output = tmp_path / "prepared" / "terminal-budget-request.json"
+    calls: list[tuple[str, str]] = []
+
+    def authenticate(run_id: str, role_instance_id: str, *_args, **_kwargs):
+        calls.append((run_id, role_instance_id))
+        return {
+            "status": "authenticated",
+            "run_id": run_id,
+            "role": "checker",
+            "role_instance_id": role_instance_id,
+            "runtime_revision": current["runtime_snapshot"]["runtime_revision"],
+        }
+
+    monkeypatch.setattr(worker_completion, "_default_checker_authenticate", authenticate)
+    result = prepare_terminal_budget_request(
+        expected["native_attempt_path"],
+        role_host_path,
+        max_tokens_budget=256000,
+        authorization_id="owner-capacity-256k",
+        source_thread_id="owner-thread",
+        occurred_at="2026-10-06T08:00:00Z",
+        output_path=output,
+        run_command=runner,
+        load_current_projection=lambda _run_id, _command: current,
+    )
+
+    request = json.loads(output.read_text(encoding="utf-8"))
+    recovered = Path(request["runtime_projection_path"])
+    assert result["status"] == "CHECKER_TERMINAL_BUDGET_REQUEST_READY"
+    assert calls == [(expected["run_id"], expected["checker_role_instance_id"])]
+    assert recovered.is_file()
+    assert json.loads(recovered.read_text(encoding="utf-8")) == current
+
+
+@pytest.mark.parametrize("drift", ["token", "latest-event", "authenticated-revision"])
+def test_preparer_rejects_drift_while_recovering_a_missing_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drift: str,
+) -> None:
+    expected, role_host_path, projection_path, runner = preparation_fixture(tmp_path)
+    current = json.loads(projection_path.read_text(encoding="utf-8"))
+    projection_path.unlink()
+    if drift == "token":
+        current["runtime_snapshot"]["token_holder_role_instance_id"] = "other-role"
+    elif drift == "latest-event":
+        current["runtime_snapshot"]["latest_event_id"] = "later-event"
+    authenticated_revision = current["runtime_snapshot"]["runtime_revision"]
+    if drift == "authenticated-revision":
+        authenticated_revision += 1
+
+    monkeypatch.setattr(
+        worker_completion,
+        "_default_checker_authenticate",
+        lambda run_id, role_instance_id, *_args, **_kwargs: {
+            "status": "authenticated",
+            "run_id": run_id,
+            "role": "checker",
+            "role_instance_id": role_instance_id,
+            "runtime_revision": authenticated_revision,
+        },
+    )
+    output = tmp_path / "prepared" / "terminal-budget-request.json"
+    with pytest.raises(ValueError, match="authenticated Checker boundary"):
+        prepare_terminal_budget_request(
+            expected["native_attempt_path"],
+            role_host_path,
+            max_tokens_budget=256000,
+            authorization_id="owner-capacity-256k",
+            source_thread_id="owner-thread",
+            occurred_at="2026-10-06T08:00:00Z",
+            output_path=output,
+            run_command=runner,
+            load_current_projection=lambda _run_id, _command: current,
+        )
+
+    assert not output.exists()
 
 
 def test_preparer_rejects_preview_coverage_drift_before_writing_request(
@@ -640,6 +730,111 @@ def test_preparer_rejects_preview_coverage_drift_before_writing_request(
             occurred_at="2026-10-06T08:00:00Z",
             output_path=output,
             run_command=drifted,
+            load_current_projection=lambda _run_id, _command: json.loads(
+                projection_path.read_text(encoding="utf-8")
+            ),
+        )
+
+    assert not output.exists()
+
+
+def _make_zero_token_predispatch_budget_stop(expected: dict[str, object]) -> None:
+    raw_path = Path(str(expected["raw_review_path"]))
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    raw["summary"] = {
+        "files_reviewed": 2,
+        "comments": 0,
+        "total_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "elapsed": "0s",
+        "budget_exceeded": True,
+    }
+    raw["tool_calls"] = {
+        "total": 0,
+        "by_tool": {},
+        "failure": 0,
+        "failure_by_tool": {},
+        "failure_details": [],
+    }
+    raw["warnings"] = [{
+        "file": "src/example.py",
+        "message": (
+            "stopped dispatch: used 0 tokens + group estimate 65888 = "
+            "projected 65888 exceeds budget 64000"
+        ),
+        "type": "token_budget_reached",
+    }]
+    write_json(raw_path, raw)
+
+
+def test_preparer_accepts_an_exact_zero_token_predispatch_budget_stop(
+    tmp_path: Path,
+) -> None:
+    expected, role_host_path, projection_path, runner = preparation_fixture(tmp_path)
+    _make_zero_token_predispatch_budget_stop(expected)
+    output = tmp_path / "prepared" / "terminal-budget-request.json"
+
+    result = prepare_terminal_budget_request(
+        expected["native_attempt_path"],
+        role_host_path,
+        max_tokens_budget=128000,
+        authorization_id="owner-capacity-128k",
+        source_thread_id="owner-thread",
+        occurred_at="2026-10-06T08:00:00Z",
+        output_path=output,
+        run_command=runner,
+        load_current_projection=lambda _run_id, _command: json.loads(
+            projection_path.read_text(encoding="utf-8")
+        ),
+    )
+
+    request = json.loads(output.read_text(encoding="utf-8"))
+    assert result["status"] == "CHECKER_TERMINAL_BUDGET_REQUEST_READY"
+    assert request["capacity_revision"]["observed"] == {
+        "total_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+    }
+
+
+@pytest.mark.parametrize("damage", ["missing-warning", "used-tokens", "estimate-not-over", "new-not-over"])
+def test_preparer_rejects_an_unproved_zero_token_predispatch_budget_stop(
+    tmp_path: Path, damage: str,
+) -> None:
+    expected, role_host_path, projection_path, runner = preparation_fixture(tmp_path)
+    _make_zero_token_predispatch_budget_stop(expected)
+    raw_path = Path(str(expected["raw_review_path"]))
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    budget = 128000
+    if damage == "missing-warning":
+        raw["warnings"] = []
+    elif damage == "used-tokens":
+        raw["warnings"][0]["message"] = (
+            "stopped dispatch: used 1 tokens + group estimate 65888 = "
+            "projected 65889 exceeds budget 64000"
+        )
+    elif damage == "estimate-not-over":
+        raw["warnings"][0]["message"] = (
+            "stopped dispatch: used 0 tokens + group estimate 64000 = "
+            "projected 64000 exceeds budget 64000"
+        )
+    else:
+        budget = 65000
+    write_json(raw_path, raw)
+    output = tmp_path / "prepared" / "terminal-budget-request.json"
+
+    with pytest.raises(CompletionError, match="capacity revision"):
+        prepare_terminal_budget_request(
+            expected["native_attempt_path"],
+            role_host_path,
+            max_tokens_budget=budget,
+            authorization_id="owner-capacity-predispatch",
+            source_thread_id="owner-thread",
+            occurred_at="2026-10-06T08:00:00Z",
+            output_path=output,
+            run_command=runner,
             load_current_projection=lambda _run_id, _command: json.loads(
                 projection_path.read_text(encoding="utf-8")
             ),
