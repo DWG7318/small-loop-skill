@@ -32,6 +32,13 @@ def test_all_skills_have_discoverable_frontmatter_and_advisory_language() -> Non
     assert diagnostics == [], "\n".join(diagnostics)
 
 
+def test_team_preflight_does_not_fabricate_an_ocrv_chat_session_or_eval() -> None:
+    text = read_skill("slk-manage-team")
+    assert "OCRV 没有任意提示/chat 入口" in text
+    assert "runtime_root" in text
+    assert "ocr llm test" in text
+
+
 def test_main_skill_keeps_the_owner_approved_core() -> None:
     text = read_skill("small-loop-skill")
     for marker in (

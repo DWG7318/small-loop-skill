@@ -1,7 +1,8 @@
-"""Closed consumer for saved Supervisor authority.
+"""Closed consumer for Supervisor-orchestrated administrative authority.
 
 The caller supplies only paths and hashes.  DPAPI plaintext exists in this process
-for the two state calls and is never returned or persisted.
+and is never returned or persisted.  Worker registration consumes the exact saved
+Checker authority after independently authenticating the current Supervisor.
 """
 
 from __future__ import annotations
@@ -22,6 +23,9 @@ FIELDS = {
 }
 PROVISION_FIELDS = FIELDS | {
     "issued_role", "issued_role_instance_id", "credential_destination_path",
+}
+WORKER_PROVISION_FIELDS = PROVISION_FIELDS | {
+    "checker_role_instance_id", "sealed_checker_credential_path",
 }
 OPERATIONS = {
     "adopt-method-contract": {"applied", "idempotent_replay"},
@@ -104,7 +108,15 @@ def execute_sealed_supervisor_admin(
     if operation not in OPERATIONS:
         raise ValueError("Supervisor admin operation is not allowed")
     provisioning = operation in PROVISION_OPERATIONS
-    if (set(request) != (PROVISION_FIELDS if provisioning else FIELDS)
+    worker_provisioning = (
+        operation == "register-role" and request.get("issued_role") == "worker"
+    )
+    expected_fields = (
+        WORKER_PROVISION_FIELDS if worker_provisioning
+        else PROVISION_FIELDS if provisioning
+        else FIELDS
+    )
+    if (set(request) != expected_fields
         or request.get("schema_version") != "slk.supervisor-admin/v1"):
         raise ValueError("Supervisor admin request is not closed")
     run_id = request.get("run_id")
@@ -118,11 +130,19 @@ def execute_sealed_supervisor_admin(
         or not all(isinstance(item, str) and item for item in state_command)):
         raise ValueError("Supervisor admin identity or state command is invalid")
     sealed = Path(request["sealed_credential_path"])
+    checker_sealed = (
+        Path(request["sealed_checker_credential_path"])
+        if worker_provisioning else None
+    )
     operation_request = Path(request["operation_request_path"])
     result_path = Path(request["result_path"])
-    if not all(path.is_absolute() for path in (sealed, operation_request, result_path)):
+    input_paths = [sealed, operation_request, result_path]
+    if checker_sealed is not None:
+        input_paths.append(checker_sealed)
+    if not all(path.is_absolute() for path in input_paths):
         raise ValueError("Supervisor admin paths must be absolute")
-    if not sealed.is_file() or not operation_request.is_file():
+    if (not sealed.is_file() or not operation_request.is_file()
+        or (checker_sealed is not None and not checker_sealed.is_file())):
         raise ValueError("Supervisor admin input is missing")
     if _sha256(operation_request) != request.get("operation_request_sha256"):
         raise ValueError("Supervisor operation request hash changed")
@@ -141,6 +161,10 @@ def execute_sealed_supervisor_admin(
             or not isinstance(identity, Mapping) or identity.get("role") != issued_role
             or identity.get("role_instance_id") != issued_role_instance_id):
             raise ValueError("issued role identity or sealed destination is invalid")
+        if worker_provisioning:
+            checker_role_instance_id = request.get("checker_role_instance_id")
+            if not isinstance(checker_role_instance_id, str) or not checker_role_instance_id.strip():
+                raise ValueError("exact Checker authority is required for Worker registration")
     if result_path.exists():
         saved = _object(result_path, "Supervisor admin result")
         return _validated_saved_result(
@@ -150,6 +174,7 @@ def execute_sealed_supervisor_admin(
         raise ValueError("issued role sealed destination exists without a matching result")
 
     secret = wc.unprotect_dpapi_hex(sealed)
+    checker_secret = ""
     try:
         authenticated = wc._run_json_command(
             list(state_command),
@@ -162,10 +187,31 @@ def execute_sealed_supervisor_admin(
             or authenticated.get("role_instance_id") != role_instance_id
             or authenticated.get("runtime_revision") != revision):
             raise ValueError("saved credential does not authenticate the exact current Supervisor revision")
+        operation_secret = secret
+        if worker_provisioning:
+            checker_secret = wc.unprotect_dpapi_hex(checker_sealed)
+            checker_role_instance_id = request["checker_role_instance_id"]
+            checker_authenticated = wc._run_json_command(
+                list(state_command),
+                ["authenticate-role", "--run-id", run_id,
+                 "--role-instance-id", checker_role_instance_id],
+                credential=checker_secret,
+            )
+            if (checker_authenticated.get("status") != "authenticated"
+                or checker_authenticated.get("run_id") != run_id
+                or checker_authenticated.get("role") != "checker"
+                or checker_authenticated.get("role_instance_id") != checker_role_instance_id
+                or checker_authenticated.get("runtime_revision") != revision):
+                raise ValueError(
+                    "saved credential does not authenticate the exact current Checker revision"
+                )
+            operation_secret = checker_secret
         state_result = wc._run_json_command(
-            list(state_command), [operation, "--request", str(operation_request)], credential=secret,
+            list(state_command), [operation, "--request", str(operation_request)],
+            credential=operation_secret,
         )
     finally:
+        checker_secret = ""
         secret = ""
     if state_result.get("status") not in OPERATIONS[operation] or state_result.get("run_id") != run_id:
         raise ValueError("Supervisor administration did not produce the allowed closed result")

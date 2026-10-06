@@ -348,6 +348,12 @@ def test_441_saved_authority_and_reload_contracts_are_closed() -> None:
     assert set(supervisor["$defs"]["provisionRequest"]["properties"]["operation"]["enum"]) == {
         "register-role", "bind-overwatcher",
     }
+    assert supervisor["$defs"]["workerProvisionRequest"]["properties"]["issued_role"] == {
+        "const": "worker",
+    }
+    assert {
+        "checker_role_instance_id", "sealed_checker_credential_path",
+    }.issubset(supervisor["$defs"]["workerProvisionRequest"]["required"])
     assert overwatcher["oneOf"][0]["properties"]["operation"]["enum"] == [
         "record-overwatch-cycle", "record-overwatcher-status"
     ]

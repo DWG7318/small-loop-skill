@@ -2,6 +2,7 @@
 
 ## 4.4.2 — runtime recovery and DSH-aware capacity (local candidate)
 
+- Corrected preparation-time Worker registration: `supervisor-admin` now requires and authenticates the exact sealed Checker authority for the state mutation while independently verifying the current Supervisor; Supervisor credentials can no longer be presented as the Worker registrar.
 - Closed the first-source bootstrap without weakening product admission: the standard Temporal adapter now requires an explicit product/sample admission mode; only a disposable one-CELL Run with a closed `slk-conformance/<SLK-CONFORMANCE-…>` evidence root and separate clean, fixed-HEAD, no-remote sample Git can self-admit and seal the first real seven-leg source, while product Runs still require a distinct sealed source.
 - Added the built-in Temporal standard adapter and removed the first-start identity cycle: a minimal central-registry bootstrap creates the unique workflow pair in `AWAITING_ADMISSION`, then real identity/RoleHost/OW evidence and `preflight-new-run` complete admission before any CELL delivery. Ordinary Runs no longer require a project-authored adapter.
 - Made the second-or-later formal D1 failure mechanically reject ordinary RoleHost rework. Sealed Supervisor administration performs the real state-core CELL split, freezes a new plan-revision Host, and returns through standard `Supervisor → Checker CELL_DISPATCH`; the old Host cannot dispatch a successor or Worker rework.

@@ -15,14 +15,15 @@ SLK 4.4.2 is a minimal correction over 4.4.1. It keeps the existing Supervisor, 
 - Temporal owns the canonical Checker attempt root and now provides the built-in standard adapter. Bootstrap creates the deterministic workflow pair before full admission; delivery remains closed in `AWAITING_ADMISSION`.
 - The first real normal-chain source has one explicit non-product bootstrap: a `SLK-CONFORMANCE-*` Run stores runtime evidence under `slk-conformance/<run_id>`, binds Worker to one separate clean, fixed-HEAD, no-remote sample Git, preserves every other role's truthful native workspace/cwd, freezes one disposable CELL and selects `ISOLATED_CONFORMANCE_SAMPLE`. Product Runs select `PRODUCT` and still require a distinct sealed source. The adapter never guesses or silently switches modes.
 - OCRV's historical fixed line/file/token thresholds are advisory rather than D1 partition gates. The Checker receives the full candidate and performs one formal D1; optional runtime capacity data remains exact and bounded.
+- Preparation keeps the state authority chain intact: Supervisor authority registers Checker, while Worker registration independently authenticates the current Supervisor but presents only the exact sealed Checker credential to `register-role`. Stateless OCRV uses its real runtime harness locator and native capability/preflight evidence instead of a fabricated chat Session or Eval answer.
 - A registered active Supervisor Session may submit its decision while the parent turn remains active. A late Codex Desktop readback consumes the original accepted send without resending it.
 - Overwatcher administration preserves exact transport errors, Worker-held inspection remains exact, provider thinking fields are stripped recursively, and Temporal reload tolerates an exited-parent race without weakening identity checks.
 
 ## Test evidence
 
 - Isolated first-source admission matrix: 12 passed; standard Temporal adapter contract: 8 passed.
-- Full Python regression: 824 passed, 30 skipped.
-- Optimized Python critical regression (`python -O`): 670 passed, 11 skipped. The expected pytest warning records that Python assertions are disabled; validators use explicit fail-closed checks.
+- Full Python regression: 827 passed, 30 skipped.
+- Optimized Python critical regression (`python -O`): 672 passed, 11 skipped. The expected pytest warning records that Python assertions are disabled; validators use explicit fail-closed checks.
 - Real Temporal SDK workflow-order scenarios: 5 passed (admission/ACK, timeout recovery, member-residency notice, OW audit, OW exit guard).
 - Rust workspace: 140 passed with no failures using an isolated Cargo target directory; 4.4.2 state mechanically rejects a second ordinary `REWORK_REQUESTED` and requires the versioned CELL-split route.
 - Rust formatting: `cargo fmt --all -- --check` passes after mechanical formatting.
@@ -32,7 +33,7 @@ SLK 4.4.2 is a minimal correction over 4.4.1. It keeps the existing Supervisor, 
 
 ## Negative evidence
 
-The suite rejects or preserves failure for: product admission through sample mode; non-canonical sample Run/evidence roots; dirty, changed-HEAD or remote-backed sample Git; Worker workspace or evidence escape; a copied/fake root record outside the exact central state export; multiple sample CELLs; missing or unknown admission mode; delivery before admission; a second ordinary rework after two D1 FAILs; a claimed split without real state mutation; transport/tool failure, INCOMPLETE or duplicate receipts counted as D1 FAIL; oversized CELL dispatch; a second Checker attempt root; uncommitted handoff success; late Desktop resend; ambiguous readback; unregistered Supervisor submission; hidden Overwatcher errors; or retained provider thinking controls.
+The suite rejects or preserves failure for: product admission through sample mode; non-canonical sample Run/evidence roots; dirty, changed-HEAD or remote-backed sample Git; Worker workspace or evidence escape; a copied/fake root record outside the exact central state export; multiple sample CELLs; missing or unknown admission mode; delivery before admission; Supervisor-only Worker registration without the sealed Checker consumer; a second ordinary rework after two D1 FAILs; a claimed split without real state mutation; transport/tool failure, INCOMPLETE or duplicate receipts counted as D1 FAIL; oversized CELL dispatch; a second Checker attempt root; uncommitted handoff success; late Desktop resend; ambiguous readback; unregistered Supervisor submission; hidden Overwatcher errors; or retained provider thinking controls.
 
 ## Admission limits
 

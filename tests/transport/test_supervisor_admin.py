@@ -166,6 +166,127 @@ def test_supervisor_admin_registers_and_seals_new_role_without_returning_plainte
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
 
 
+def test_supervisor_admin_registers_worker_only_through_exact_sealed_checker_authority(
+    tmp_path, monkeypatch,
+):
+    worker_id = "RUN-A-worker-001"
+    checker_id = "RUN-A-checker-001"
+    operation_request = write_json(tmp_path / "register-worker.json", {
+        "run_id": "RUN-A",
+        "identity": {"role": "worker", "role_instance_id": worker_id},
+    })
+    supervisor_sealed = tmp_path / "supervisor.sealed"
+    checker_sealed = tmp_path / "checker.sealed"
+    supervisor_sealed.write_text("supervisor-sealed", encoding="ascii")
+    checker_sealed.write_text("checker-sealed", encoding="ascii")
+    destination = tmp_path / "worker.sealed"
+    request = write_json(tmp_path / "admin.json", {
+        "schema_version": "slk.supervisor-admin/v1",
+        "run_id": "RUN-A",
+        "supervisor_role_instance_id": "RUN-A-supervisor-001",
+        "expected_runtime_revision": 7,
+        "sealed_credential_path": str(supervisor_sealed),
+        "state_command": ["slk-state"],
+        "operation": "register-role",
+        "operation_request_path": str(operation_request),
+        "operation_request_sha256": hashlib.sha256(operation_request.read_bytes()).hexdigest(),
+        "result_path": str(tmp_path / "admin-result.json"),
+        "issued_role": "worker",
+        "issued_role_instance_id": worker_id,
+        "credential_destination_path": str(destination),
+        "checker_role_instance_id": checker_id,
+        "sealed_checker_credential_path": str(checker_sealed),
+    })
+    supervisor_secret = "slk_" + "a" * 64
+    checker_secret = "slk_" + "b" * 64
+    worker_secret = "slk_" + "c" * 64
+
+    monkeypatch.setattr(
+        admin.wc,
+        "unprotect_dpapi_hex",
+        lambda path: checker_secret if Path(path) == checker_sealed else supervisor_secret,
+    )
+    calls = []
+
+    def run(command, arguments, credential=None):
+        calls.append((arguments[0], credential))
+        if arguments[0] == "authenticate-role":
+            target = arguments[-1]
+            return {
+                "status": "authenticated",
+                "run_id": "RUN-A",
+                "role": "checker" if target == checker_id else "supervisor",
+                "role_instance_id": target,
+                "runtime_revision": 7,
+            }
+        assert credential == checker_secret
+        return {
+            "status": "registered",
+            "run_id": "RUN-A",
+            "role_credential": worker_secret,
+            "credential_id": "worker-credential-id",
+        }
+
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+
+    def seal(value, target, **kwargs):
+        assert value == worker_secret
+        assert kwargs["role"] == "worker"
+        Path(target).write_bytes(b"sealed-worker")
+        return {
+            "status": "SEALED_ROLE_VERIFIED",
+            "run_id": "RUN-A",
+            "role": "worker",
+            "role_instance_id": worker_id,
+            "sealed_path": str(target),
+            "sealed_sha256": hashlib.sha256(Path(target).read_bytes()).hexdigest(),
+            "runtime_revision": 8,
+        }
+
+    monkeypatch.setattr(admin.wc, "seal_role_credential", seal)
+    result = admin.execute_sealed_supervisor_admin(
+        request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+    assert calls == [
+        ("authenticate-role", supervisor_secret),
+        ("authenticate-role", checker_secret),
+        ("register-role", checker_secret),
+    ]
+    assert result["issued_role"] == "worker"
+    assert supervisor_secret not in json.dumps(result)
+    assert checker_secret not in json.dumps(result)
+    assert worker_secret not in json.dumps(result)
+
+
+def test_worker_registration_without_checker_consumer_fields_fails_before_state_mutation(
+    tmp_path, monkeypatch,
+):
+    role_instance_id = "RUN-A-worker-001"
+    operation_request = write_json(tmp_path / "operation.json", {
+        "run_id": "RUN-A", "identity": {"role": "worker", "role_instance_id": role_instance_id},
+    })
+    sealed = tmp_path / "supervisor.sealed"
+    sealed.write_text("sealed", encoding="ascii")
+    request = write_json(tmp_path / "admin.json", {
+        "schema_version": "slk.supervisor-admin/v1", "run_id": "RUN-A",
+        "supervisor_role_instance_id": "RUN-A-supervisor-001",
+        "expected_runtime_revision": 7, "sealed_credential_path": str(sealed),
+        "state_command": ["slk-state"], "operation": "register-role",
+        "operation_request_path": str(operation_request),
+        "operation_request_sha256": hashlib.sha256(operation_request.read_bytes()).hexdigest(),
+        "result_path": str(tmp_path / "admin-result.json"), "issued_role": "worker",
+        "issued_role_instance_id": role_instance_id,
+        "credential_destination_path": str(tmp_path / "worker.sealed"),
+    })
+    monkeypatch.setattr(
+        admin.wc, "unprotect_dpapi_hex", lambda _path: pytest.fail("must fail before credential access")
+    )
+
+    with pytest.raises(ValueError, match="closed"):
+        admin.execute_sealed_supervisor_admin(
+            request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+
 @pytest.mark.parametrize("damage", ["unknown-operation", "wrong-runtime", "changed-request"])
 def test_admin_consumer_fails_closed_before_mutation(tmp_path, monkeypatch, damage):
     request = request_fixture(tmp_path, "replace-role" if damage == "unknown-operation" else "revise-role-model")

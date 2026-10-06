@@ -24,9 +24,9 @@ Owner 已授权本 Run 启动准备且准备未完时，Supervisor 先查询当�
 4. 做角色理解确认：Checker 解释日常派发、隔离 D1、FAIL 上报与 PASS 后缀；Worker 解释施工、D0 与候选交付；OW 解释真实性核查、UNKNOWN 和只向对应 Supervisor 报告。回答模糊时先纠正再复测受影响项；Worker 不重复完整方法问答。
 5. 使用 `$slk-manage-temporal` 得到共享服务和本 Run 两工作流的 readiness 收据；四角色、BI、Temporal 或必要通讯任一未闭合时保持 `NOT_READY`。
 
-每个角色绑定前通过 `SLK-ROLE-EVAL.v1` 的 runtime-critical 场景。Supervisor 用 `slk-state bind-overwatcher` 为本 Run 绑定独立角色实例、凭证、端点、`FOREGROUND_ACTIVE_TURN` 和 600 秒 cadence。一个 Run 只绑定一个 OW；同一精确 OW Session 可服务多个 Run，但每个 Run 使用独立 role instance、scope、cycle 和 Supervisor 端点，且 Agent/runtime/model/reasoning/native address 保持一致。它不是 heartbeat、定时任务或第四个工程角色。
+提示型角色绑定前通过 `SLK-ROLE-EVAL.v1` 八题。OCRV 没有任意提示/chat 入口，不伪造回答；用 `ocr llm test`、wrapper/capability哈希与隔离样本 headless preview/D1 作为等价证据，首次 review 前以 `runtime_root` + host + endpoint version 定位 stateless harness，实际 review Session 写入 native start/result。Supervisor 为每个 Run 绑定独立角色实例和 `FOREGROUND_ACTIVE_TURN`；同一精确 OW Session 可服务多个 Run，但 scope、cycle、Supervisor 端点分别登记，并固定 Agent/runtime/model/reasoning/native address 与 600 秒 cadence。它不是 heartbeat、定时任务或第四工程角色。
 
-成员建立以原生身份、精确端点和启动证据为依据。准备宿主经 `supervisor-admin` 注册 Checker/Worker、绑定 OW、密封并验证各自凭据，再冻结 `SLK_TRANSPORT_ROLE_HOST` 路径及 SHA-256；普通 transport job 按所属角色执行记录/交接后缀，密封凭据不进入模型环境。发生纠正后冻结已验证调用方式；成员、模型、Session、设备或端点变化时追加登记 revision 并复测受影响通路，Supervisor 替换仍回 Owner 确认。角色只接收自身职责规则；准备 Goal 覆盖上述身份、实际模型权限、端点、工具、凭据消费者、真实演练、已选功能、OW/Temporal 和能力证明，不接受预设 JSON 替代。
+准备宿主用 `supervisor-admin` 注册并密封角色：Supervisor 凭据只注册 Checker 和绑定 OW；Worker 注册先验证 Supervisor，再只用密封 Checker 凭据写状态。随后冻结 Host 路径/哈希；凭据不进模型。身份或端点变化时追加 revision 并复测，Supervisor 替换回 Owner；准备 Goal 只认真实工具、权限、消费者、演练、OW/Temporal 和能力证据，不接受预设 JSON。
 
 可恢复错误、一次失败、上下文压缩或未完成步骤不是完成理由：从最后可信进展做最小合法纠正并续接；不重复已完成工作、不盲目派发、不升级模型或新增后台自唤醒。恢复只读当前 Goal、简明准备记录和最新事实；记录已完成项、具体阻塞、最后真实动作、下一合法动作，不倒灌长历史。
 

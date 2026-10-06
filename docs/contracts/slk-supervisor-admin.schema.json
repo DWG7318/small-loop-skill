@@ -3,6 +3,7 @@
   "title": "SLK sealed Supervisor administration",
   "oneOf": [
     {"$ref": "#/$defs/request"}, {"$ref": "#/$defs/provisionRequest"},
+    {"$ref": "#/$defs/workerProvisionRequest"},
     {"$ref": "#/$defs/result"}, {"$ref": "#/$defs/provisionResult"}
   ],
   "$defs": {
@@ -27,8 +28,23 @@
         "sealed_credential_path": {"type": "string", "minLength": 1}, "state_command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
         "operation": {"enum": ["register-role", "bind-overwatcher"]}, "operation_request_path": {"type": "string", "minLength": 1},
         "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "result_path": {"type": "string", "minLength": 1},
-        "issued_role": {"enum": ["checker", "worker", "overwatcher"]}, "issued_role_instance_id": {"type": "string", "minLength": 1},
+        "issued_role": {"enum": ["checker", "overwatcher"]}, "issued_role_instance_id": {"type": "string", "minLength": 1},
         "credential_destination_path": {"type": "string", "minLength": 1}
+      }
+    },
+    "workerProvisionRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "run_id", "supervisor_role_instance_id", "expected_runtime_revision", "sealed_credential_path", "state_command", "operation", "operation_request_path", "operation_request_sha256", "result_path", "issued_role", "issued_role_instance_id", "credential_destination_path", "checker_role_instance_id", "sealed_checker_credential_path"],
+      "properties": {
+        "schema_version": {"const": "slk.supervisor-admin/v1"}, "run_id": {"type": "string", "minLength": 1},
+        "supervisor_role_instance_id": {"type": "string", "minLength": 1}, "expected_runtime_revision": {"type": "integer", "minimum": 1},
+        "sealed_credential_path": {"type": "string", "minLength": 1}, "state_command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "operation": {"const": "register-role"}, "operation_request_path": {"type": "string", "minLength": 1},
+        "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "result_path": {"type": "string", "minLength": 1},
+        "issued_role": {"const": "worker"}, "issued_role_instance_id": {"type": "string", "minLength": 1},
+        "credential_destination_path": {"type": "string", "minLength": 1},
+        "checker_role_instance_id": {"type": "string", "minLength": 1},
+        "sealed_checker_credential_path": {"type": "string", "minLength": 1}
       }
     },
     "result": {

@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "0d61e83c4207e9ea24e7cc8da42f07acf6b56aee1762f815712f4e3e00934813"
+      "sha256": "75a258ba5e47a6fb30b2d936467f3c175b9777fcb553b9a81f3228c44fa64aad"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "023ab0c9615eb0f4a8ec2618422a5b76dc07b982f1cf74a4e43ae499b0eb3d6e"
+      "sha256": "31241ac6866fdbebbd746b16ecb8415590ff9933b3cb93df0832be58055691d3"
     },
     {
       "path": "VERSION",
@@ -800,7 +800,7 @@
     },
     {
       "path": "docs/contracts/slk-supervisor-admin.schema.json",
-      "sha256": "e6a2a23bac520874913e0a864f12d013704de60b3bc22feeae82b97cf6a66072"
+      "sha256": "2873cdd774fd0a154839a571101cbe35021396be583ee788ea1cc1c31759c17c"
     },
     {
       "path": "docs/contracts/slk-supervisor-model-revision.schema.json",
@@ -884,7 +884,7 @@
     },
     {
       "path": "docs/state/SLK-STATE.md",
-      "sha256": "b6d63fc212196d185b5ce849095cfa84a415a0c832c158950130d59c6c62e510"
+      "sha256": "5d86384e8b8ed29870fae514849abc54fa47c2684b6dceba48f8f1a8bc37798e"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -1116,7 +1116,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "0dda86e50ea3553164bf7c28971ce37f667db9355913434604a8a7cd7c1c15c3"
+      "sha256": "372c8c2fadeafed185f2cde894454781af94e3c878b2f174e20d13b0ab29c69f"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1144,7 +1144,7 @@
     },
     {
       "path": "integrations/ocrv/OCRV-SLK-CONFIGURATION.md",
-      "sha256": "e6542249198334a6c5d351d9dcd913c2c92adf2fd4e895ffd2f1d8e61338adba"
+      "sha256": "7d0fcada5076271efcc3c7d29a32b950c0afbe62e87374f753f838a95ce93dd2"
     },
     {
       "path": "integrations/ocrv/install.ps1",
@@ -1316,7 +1316,7 @@
     },
     {
       "path": "skills/slk-manage-team/SKILL.md",
-      "sha256": "8af682748b52dff783b97961b9a0dfac0949cffe606a1305626c9556ddcb28f4"
+      "sha256": "11eeeee2f74e052f8c05049c85b59216b028d33119133d89445f7610c2ec0685"
     },
     {
       "path": "skills/slk-manage-temporal/SKILL.md",
@@ -1476,7 +1476,7 @@
     },
     {
       "path": "src/slk_transport/supervisor_admin.py",
-      "sha256": "3d46ec1f2b6c13cc41f5cdb83f26dd6fc9833f30cee8fb48f21f451827d4e80a"
+      "sha256": "d468c4c7d10870479b9ba70076b7f8c0e22019c4b7b2558ba1e9147ff5a3baad"
     },
     {
       "path": "src/slk_transport/supervisor_notification.py",
@@ -1596,11 +1596,11 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "4a136badc77389735e5c992c1aac15741fbb28145f8beca4360e04f4cecbeb8d"
+      "sha256": "3433a60995c8a52a22774d32a90f7d27a1a63cd23dc6fbfbd471803b208656ad"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "e73d5545d953ba16589a45bf575e699c4879bdcd9b106ea5708e3380aaa4a3de"
+      "sha256": "0f69ef87b0f34cba0c1080c72a951387197fd3075ada62ad3a199a16238cf638"
     },
     {
       "path": "tests/transport/fake_app_server.py",
@@ -1748,7 +1748,7 @@
     },
     {
       "path": "tests/transport/test_supervisor_admin.py",
-      "sha256": "f900d2c5d25446da5f6600dbe5df593d50cfeed53dd9dd98f1917e205c3cd152"
+      "sha256": "30b3bde7572dacf4a290580dfb0a94cde3c3c7d8dd6e2ada90868e3c204f54ce"
     },
     {
       "path": "tests/transport/test_supervisor_notification.py",
