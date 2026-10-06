@@ -4,7 +4,7 @@ Date: 2026-10-06 Asia/Shanghai
 Branch: feature/slk-4.4.2-runtime-recovery
 Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
-Status: the one authorized fresh OCRV review completed once and the original Checker recorded immutable `D1_FAILED` event `51733b9f-131b-5530-a405-6fb0b3f8d93c`; the candidate is unchanged and OCRV must not run again. A suffix-only compatibility correction now admits that exact committed terminal and existing post-D1 request without rewriting D1. The branch is not merged, pushed, tagged or released.
+Status: the one authorized fresh OCRV review completed once and the original Checker recorded immutable `D1_FAILED` event `51733b9f-131b-5530-a405-6fb0b3f8d93c`; the candidate is unchanged and OCRV must not run again. Suffix-only compatibility now admits that exact committed terminal and existing post-D1 request without rewriting D1, and consumes the exact late Desktop readback after its preserved readback-failure terminal without resending. The branch is not merged, pushed, tagged or released.
 
 ## Bounded in-Run correction
 
@@ -14,7 +14,7 @@ Status: the one authorized fresh OCRV review completed once and the original Che
 - If that already-consumed continuation is rejected before any LLM because the managed OCRV rule identity changed, one exact Owner-authorized compatibility route may start a fresh full review of the same candidate through the same sealed Checker. It binds all six rejection files, requires the rejected process to be gone, preserves the incomplete 1.12.7 attempt, forbids checkpoint/review/session reuse, fixes OCRV v1.12.12 + `qwen3.8-max` + `dashscope-tokenplan` + 256000 finite capacity, and records explicit compatibility lineage. The thin request does not duplicate the transport command; the OCRV host derives it only from the unchanged hash-bound source request. A source-level atomic marker allows this route once; after D1 is recorded, suffix-only recovery requires the exact fresh terminal, full committed-terminal validation, committed D1 receipt and unchanged post-D1 request.
 - LE BI archived rows and the compact no-active-Run viewport remain fully opaque. Archive state, lower-saturation styling and read-only behavior are unchanged.
 - The route remains fail closed for any existing D0/candidate event, role/session/project/runtime/hash drift, another blocker, an active/repeated recovery, changed `PROTOC`, unproved D0, nonzero command result or altered candidate. The original blocked evidence is never overwritten; Root does not author product facts or start product recovery.
-- Final evidence: pre-D0 suite 27 passed in ordinary Python and 27 passed under `python -O`; fresh-review plus suffix-lineage coverage passed 46 cases in ordinary and optimized Python; repository/schema/package/Skill gate passed; final full Python passed 941 with 30 skipped; `slk-cargo` runner contract 8 passed; the full Rust workspace passed; formatting, compilation and `git diff --check` passed.
+- Final evidence: pre-D0 suite 27 passed in ordinary Python and 27 passed under `python -O`; fresh-review plus suffix-lineage coverage passed 46 cases in ordinary and optimized Python; late Desktop readback recovery passed 5 focused cases in ordinary and optimized Python; repository/schema/package/Skill gate passed; final full Python passed 946 with 30 skipped; `slk-cargo` runner contract 8 passed; the full Rust workspace passed; formatting, compilation and `git diff --check` passed.
 
 ## Bounded changes
 

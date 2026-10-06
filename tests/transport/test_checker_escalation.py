@@ -13,6 +13,7 @@ from slk_transport.contracts import canonical_json_sha256
 from slk_transport.native_activity import make_native_start
 
 from test_contracts import endpoint_value, envelope_value
+from late_desktop import desktop_endpoint, write_late_desktop_start
 
 
 @pytest.mark.parametrize('proof', ['valid', 'corrupt', 'wrong-root'])
@@ -388,6 +389,68 @@ def test_ordinary_supervisor_start_does_not_require_desktop_repair(tmp_path, sta
         assert receipt["status"] == "committed" and receipt["run_id"] == RUN_ID
         assert result["recovery_message_id"] is None
         assert operations == ["authenticate-role", "send", "commit-delivery-start"]
+
+
+@pytest.mark.parametrize("tamper", [None, "failure", "readback", "started"])
+def test_late_desktop_start_commits_without_resending_or_rewriting_failure(
+    tmp_path: Path, tamper: str | None,
+) -> None:
+    module = load_module()
+    request, path = fixture(tmp_path)
+    endpoint_path = Path(str(request["supervisor_endpoint_path"]))
+    endpoint = json.loads(endpoint_path.read_text(encoding="utf-8"))
+    desktop_endpoint(endpoint, tmp_path)
+    write_json(endpoint_path, endpoint)
+    prepared = module.materialize_escalation(request)
+    attempt = Path(prepared["delivery_path"])
+    failed_bytes = write_late_desktop_start(attempt, prepared["endpoint"], prepared["envelope"])
+    if tamper == "failure":
+        failure = json.loads((attempt / "failed.json").read_text(encoding="utf-8"))
+        failure["error_code"] = "CODEX_RPC_TIMEOUT"
+        write_json(attempt / "failed.json", failure)
+        failed_bytes = (attempt / "failed.json").read_bytes()
+    elif tamper == "readback":
+        proof = json.loads((attempt / "desktop-readback.json").read_text(encoding="utf-8"))
+        proof["message_id"] = "wrong-message"
+        write_json(attempt / "desktop-readback.json", proof)
+    elif tamper == "started":
+        started = json.loads((attempt / "started.json").read_text(encoding="utf-8"))
+        started["request_sha256"] = "0" * 64
+        write_json(attempt / "started.json", started)
+    operations: list[str] = []
+
+    def run(_command, arguments, *, credential):
+        operation = arguments[0]
+        operations.append(operation)
+        if operation == "authenticate-role":
+            return {"status": "authenticated", "run_id": RUN_ID, "role": "checker",
+                    "role_instance_id": CHECKER_ID, "runtime_revision": request["runtime_revision"]}
+        if operation == "send":
+            pytest.fail("a verified late Desktop start must never resend")
+        assert operation == "commit-delivery-start" and credential == "synthetic"
+        commit = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        return {"status": "committed", "run_id": RUN_ID,
+                "runtime_revision": request["runtime_revision"] + 1,
+                "token_sequence": request["token_sequence"] + 1,
+                "token_owner_role_instance_id": SUPERVISOR_ID,
+                "message_id": commit["message_id"]}
+
+    if tamper is None:
+        result = module.execute_checker_escalation(
+            request, request_sha256=sha256(path), request_path=path,
+            run_json_command=run, unprotect_credential=lambda _: "synthetic",
+        )
+        assert result["status"] == "CHECKER_ESCALATION_COMMITTED"
+        assert operations == ["authenticate-role", "commit-delivery-start"]
+    else:
+        with pytest.raises(module.CheckerEscalationError, match="late Desktop"):
+            module.execute_checker_escalation(
+                request, request_sha256=sha256(path), request_path=path,
+                run_json_command=run, unprotect_credential=lambda _: "synthetic",
+            )
+        assert operations == ["authenticate-role"]
+    assert (attempt / "failed.json").read_bytes() == failed_bytes
+    assert not (attempt / "completed.json").exists()
 
 
 def request_digest(path: Path) -> str:

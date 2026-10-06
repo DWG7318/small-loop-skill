@@ -12,6 +12,7 @@ from slk_transport.contracts import canonical_json_sha256
 from slk_transport.native_activity import make_native_start
 
 from test_contracts import endpoint_value
+from late_desktop import desktop_endpoint, write_late_desktop_start
 
 
 RUN_ID = "RUN-A"
@@ -296,6 +297,48 @@ def test_checker_pass_completes_only_after_target_start_and_atomic_commit(
     assert commands == ["authenticate-role", "send", "commit-delivery-start"]
     receipt = json.loads(Path(result["commit_request_path"]).with_suffix(".result.json").read_text())
     assert receipt["status"] == "committed" and receipt["message_id"] == result["message_id"]
+
+
+def test_final_completion_commits_verified_late_desktop_start_without_resending(
+    tmp_path: Path,
+) -> None:
+    from slk_transport import checker_completion as completion
+
+    request, request_path = fixture(tmp_path, final=True)
+    endpoint_path = Path(str(request["target_endpoint_path"]))
+    endpoint = json.loads(endpoint_path.read_text(encoding="utf-8"))
+    desktop_endpoint(endpoint, tmp_path)
+    write_json(endpoint_path, endpoint)
+    boundary = completion._validate_boundary(request)
+    prepared = completion._materialize(request, boundary)
+    envelope = prepared["envelope"]
+    attempt = Path(str(request["handoff_attempt_root"])) / RUN_ID / str(envelope["message_id"])
+    failed_bytes = write_late_desktop_start(attempt, endpoint, envelope)
+    commands: list[str] = []
+
+    def run(_command, arguments, *, credential):
+        operation = arguments[0]
+        commands.append(operation)
+        if operation == "authenticate-role":
+            return {"status": "authenticated", "run_id": RUN_ID, "role": "checker",
+                    "role_instance_id": CHECKER_ID, "runtime_revision": 25}
+        if operation == "send":
+            pytest.fail("a verified late Desktop start must never resend")
+        assert operation == "commit-delivery-start" and credential == "synthetic"
+        commit = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        return {"status": "committed", "run_id": RUN_ID, "runtime_revision": 26,
+                "token_sequence": 5, "token_owner_role_instance_id": SUPERVISOR_ID,
+                "message_id": commit["message_id"]}
+
+    result = completion.execute_checker_completion(
+        request, request_sha256=digest(request_path), request_path=request_path,
+        run_json_command=run, unprotect_credential=lambda _: "synthetic",
+    )
+
+    assert result["status"] == "CHECKER_COMPLETION_COMMITTED"
+    assert commands == ["authenticate-role", "commit-delivery-start"]
+    assert (attempt / "failed.json").read_bytes() == failed_bytes
+    assert not (attempt / "completed.json").exists()
 
 
 def test_next_cell_must_be_the_exact_next_required_cell(tmp_path: Path) -> None:

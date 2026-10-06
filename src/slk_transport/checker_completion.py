@@ -11,7 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .adapters.base import AdapterError
+from .adapters.codex_desktop import validate_late_desktop_start
 from .contracts import ENVELOPE_SCHEMA, IDENTIFIER, Endpoint, Envelope, canonical_json_sha256
+from .evidence import Attempt
 from .native_activity import NativeActivityError, validate_native_start
 from .worker_completion import CompletionError, _run_json_command, resolve_authoritative_token_boundary, unprotect_dpapi_hex
 
@@ -358,8 +361,23 @@ def _direct_start(
         "--endpoint", str(prepared["endpoint_path"]), "--envelope", str(prepared["envelope_path"]),
         "--attempt-root", str(Path(str(request["handoff_attempt_root"])).resolve()),
     ]
-    sent = run_json_command(list(request["transport_command"]), ["send", *common], credential=None)
     envelope = prepared["envelope"]
+    attempt = (
+        Path(str(request["handoff_attempt_root"])) / str(request["run_id"])
+        / str(envelope["message_id"])
+    ).resolve()
+    if request["route"] == "D2_READY":
+        try:
+            late = validate_late_desktop_start(
+                prepared["endpoint"], Envelope.from_dict(envelope), Attempt(attempt)
+            )
+        except AdapterError as exc:
+            raise CheckerCompletionError(
+                "CHECKER_COMPLETION_START_UNPROVEN", "late Desktop start is invalid"
+            ) from exc
+        if late is not None:
+            return str(envelope["message_id"]), attempt / "started.json"
+    sent = run_json_command(list(request["transport_command"]), ["send", *common], credential=None)
     failure_kind = sent.get("error_code")
     if request["route"] == "D2_READY" and sent.get("status") == "failed" and failure_kind in {
         "CODEX_ACTIVE_WRITER_UNRESOLVED", "CODEX_RPC_TIMEOUT",
@@ -422,10 +440,7 @@ def _direct_start(
         or sent.get("message_id") != envelope["message_id"]
     ):
         raise CheckerCompletionError("CHECKER_COMPLETION_DELIVERY_FAILED", "target native start was not proven")
-    started_path = (
-        Path(str(request["handoff_attempt_root"])) / str(request["run_id"])
-        / str(envelope["message_id"]) / "started.json"
-    ).resolve()
+    started_path = attempt / "started.json"
     try:
         validate_native_start(
             started_path,

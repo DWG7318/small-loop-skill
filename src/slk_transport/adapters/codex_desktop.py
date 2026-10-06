@@ -10,7 +10,7 @@ from typing import Any, Mapping
 from xml.sax.saxutils import escape
 
 from .base import AdapterError
-from ..contracts import DeliveryResult, Endpoint, Envelope, RESULT_SCHEMA, SHA256
+from ..contracts import ContractError, DeliveryResult, Endpoint, Envelope, RESULT_SCHEMA, SHA256
 from ..evidence import Attempt
 from ..jsonrpc import JsonRpcProcess
 from ..native_activity import (
@@ -174,6 +174,146 @@ def _readback_result(
         {"thread_id": target, "turn_id": turn["id"], "platform_item_id": item["id"],
          "turn_status": turn["status"]}, None,
         ("started.json", "desktop-send.json", "desktop-readback.json"),
+    )
+
+
+def validate_late_desktop_start(
+    endpoint: Endpoint, envelope: Envelope, attempt: Attempt,
+) -> DeliveryResult | None:
+    """Accept only the exact readback that arrived after one immutable readback failure."""
+    failed_path = attempt.root / "failed.json"
+    proof_path = attempt.root / "desktop-readback.json"
+    started_path = attempt.root / "started.json"
+    if not failed_path.is_file() or (not proof_path.exists() and not started_path.exists()):
+        return None
+    required = {
+        "endpoint.json", "envelope.json", "failed.json", "desktop-prompt.json",
+        "desktop-readback-anchor.json", "desktop-send.json", "desktop-readback.json",
+        "started.json",
+    }
+    if (attempt.root / "completed.json").exists() or any(
+        not (attempt.root / name).is_file() for name in required
+    ):
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop start evidence is incomplete"
+        )
+    try:
+        saved_endpoint = Endpoint.from_dict(_read_object(attempt.root / "endpoint.json", "endpoint"))
+        saved_envelope = Envelope.from_dict(_read_object(attempt.root / "envelope.json", "envelope"))
+        failed = DeliveryResult.from_dict(_read_object(attempt.root / "failed.json", "failed result"))
+    except (ContractError, KeyError, TypeError, ValueError) as exc:
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop terminal identity is invalid"
+        ) from exc
+    expected_failure_evidence = (
+        "accepted.json", "desktop-prompt.json", "desktop-readback-anchor.json",
+        "desktop-send.json", "endpoint.json", "envelope.json",
+    )
+    if (
+        saved_endpoint != endpoint
+        or saved_envelope != envelope
+        or failed.message_id != envelope.message_id
+        or failed.run_id != envelope.run_id
+        or failed.adapter != endpoint.adapter
+        or failed.status != "failed"
+        or failed.native_identity
+        or failed.error_code != "CODEX_DESKTOP_READBACK_UNPROVED"
+        or failed.evidence != expected_failure_evidence
+    ):
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop failure identity changed"
+        )
+
+    validate_desktop_address(endpoint.address)
+    address, binding = endpoint.address, endpoint.address["desktop"]
+    caller, target = str(binding["caller_thread_id"]), str(address["thread_id"])
+    prompt = _read_object(attempt.root / "desktop-prompt.json", "Desktop prompt evidence")
+    if (
+        set(prompt) != {"message_id", "prompt"}
+        or prompt.get("message_id") != envelope.message_id
+        or not isinstance(prompt.get("prompt"), str)
+    ):
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop prompt identity changed"
+        )
+    prompt_sha256 = hashlib.sha256(prompt["prompt"].encode()).hexdigest()
+    anchor = _read_object(attempt.root / "desktop-readback-anchor.json", "Desktop readback anchor")
+    if (
+        set(anchor) != READBACK_ANCHOR_FIELDS
+        or anchor.get("schema_version") != "slk.desktop-readback-anchor/v1"
+        or anchor.get("thread_id") != target
+        or anchor.get("host_id") != endpoint.host_id
+        or anchor.get("caller_thread_id") != caller
+        or anchor.get("message_id") != envelope.message_id
+        or anchor.get("prompt_sha256") != prompt_sha256
+        or any(
+            not isinstance(anchor.get(key), list)
+            or not all(isinstance(value, str) for value in anchor[key])
+            for key in ("previous_turn_ids", "previous_item_ids", "active_turn_ids")
+        )
+    ):
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop readback anchor changed"
+        )
+    sent = _read_object(attempt.root / "desktop-send.json", "Desktop send evidence")
+    if (
+        sent.get("thread_id") != target
+        or sent.get("caller_thread_id") != caller
+        or sent.get("message_id") != envelope.message_id
+        or sent.get("prompt_sha256") != prompt_sha256
+        or not isinstance(sent.get("result"), Mapping)
+        or sent["result"].get("threadId") != target
+    ):
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop accepted send changed"
+        )
+    proof = _read_object(proof_path, "Desktop readback proof")
+    item = proof.get("platform_item")
+    if (
+        set(proof) != {
+            "thread_id", "turn_id", "turn_status", "platform_item_id",
+            "caller_thread_id", "message_id", "platform_item",
+        }
+        or proof.get("thread_id") != target
+        or proof.get("caller_thread_id") != caller
+        or proof.get("message_id") != envelope.message_id
+        or proof.get("turn_status") not in {"completed", "inProgress", "active"}
+        or not isinstance(proof.get("turn_id"), str)
+        or not isinstance(proof.get("platform_item_id"), str)
+        or not isinstance(item, Mapping)
+        or item.get("id") != proof.get("platform_item_id")
+    ):
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop readback identity changed"
+        )
+    native_id = f"{target}:{proof['turn_id']}:{proof['platform_item_id']}"
+    try:
+        started = validate_native_start(
+            started_path,
+            adapter=endpoint.adapter,
+            run_id=envelope.run_id,
+            cell_id=envelope.cell_id,
+            message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256,
+            native_request_sha256=prompt_sha256,
+        )
+    except (OSError, KeyError, ValueError) as exc:
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop native start changed"
+        ) from exc
+    if (
+        started["native_task"]["kind"] != "codex-desktop-turn"
+        or started["native_task"]["id"] != native_id
+    ):
+        raise AdapterError(
+            "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop native task changed"
+        )
+    return DeliveryResult(
+        RESULT_SCHEMA, envelope.message_id, envelope.run_id, endpoint.adapter,
+        "completed" if proof["turn_status"] == "completed" else "started",
+        {"thread_id": target, "turn_id": proof["turn_id"],
+         "platform_item_id": proof["platform_item_id"], "turn_status": proof["turn_status"]},
+        None, ("started.json", "desktop-send.json", "desktop-readback.json"),
     )
 
 

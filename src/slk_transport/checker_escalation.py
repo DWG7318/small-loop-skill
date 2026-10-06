@@ -11,7 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .adapters.base import AdapterError
+from .adapters.codex_desktop import validate_late_desktop_start
 from .contracts import ENVELOPE_SCHEMA, IDENTIFIER, Endpoint, Envelope, canonical_json_sha256
+from .evidence import Attempt
 from .native_activity import NativeActivityError, validate_native_start
 from .worker_completion import CompletionError, _run_json_command, resolve_authoritative_token_boundary, unprotect_dpapi_hex
 
@@ -551,13 +554,30 @@ def _prepare(
         "--attempt-root",
         str(prepared["attempt_root"]),
     ]
+    native = Path(str(prepared["delivery_path"]))
+    try:
+        late = validate_late_desktop_start(
+            Endpoint.from_dict(prepared["endpoint"]),
+            Envelope.from_dict(prepared["envelope"]),
+            Attempt(native),
+        )
+    except AdapterError as exc:
+        raise CheckerEscalationError(
+            "CHECKER_ESCALATION_START_UNPROVEN", "late Desktop start is invalid"
+        ) from exc
+    if late is not None:
+        started_path = native / "started.json"
+        return _commit_started(
+            request, prepared, started_path, str(prepared["envelope"]["message_id"]),
+            _sha256(native / "endpoint.json"), _sha256(native / "envelope.json"),
+            credential, run_json_command, recovered=False,
+        )
     sent = run_json_command(
         list(request["transport_command"]),
         ["send", *common],
         credential=None,
     )
     if sent.get("status") in {"started", "completed"}:
-        native = Path(str(prepared["delivery_path"]))
         started_path = native / "started.json"
         message_id = str(prepared["envelope"]["message_id"])
         if (sent.get("run_id") != request["run_id"] or sent.get("message_id") != message_id
