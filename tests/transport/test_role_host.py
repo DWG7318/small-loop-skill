@@ -84,6 +84,30 @@ def test_continue_staged_handoff_cli_uses_hash_bound_original_sender_host(
     assert json.loads(capsys.readouterr().out)["status"] == "OWNED_HANDOFF_COMMITTED"
 
 
+def test_reclassify_checker_cli_uses_hash_bound_role_host(tmp_path, monkeypatch, capsys):
+    binding = write_json(tmp_path / "role-host.json", {"binding": "test"})
+    digest = hashlib.sha256(binding.read_bytes()).hexdigest()
+    source = tmp_path / "attempt"
+    source.mkdir()
+    seen = []
+
+    class Bound:
+        def reclassify_completed_checker(self, attempt):
+            seen.append(attempt)
+            return {"status": "CHECKER_ESCALATION_COMMITTED"}
+
+    monkeypatch.setattr(
+        cli, "RoleHost",
+        lambda value, actual: Bound() if value == {"binding": "test"} and actual == digest
+        else pytest.fail("binding identity changed"),
+    )
+    args = argparse.Namespace(binding=binding, sha256=digest, source_attempt=source)
+
+    assert cli._reclassify_completed_checker(args) == 0
+    assert seen == [source.resolve()]
+    assert json.loads(capsys.readouterr().out)["status"] == "CHECKER_ESCALATION_COMMITTED"
+
+
 def test_checker_findings_strip_provider_thinking_before_supervisor_escalation():
     findings = normalized_checker_findings([
         {"severity": "HIGH", "message": "real defect", "thinking": "private chain",
@@ -120,6 +144,124 @@ def test_checker_incomplete_freezes_the_exact_post_record_projection(tmp_path, m
 
     assert result["d1_verdict"] == "INCOMPLETE"
     assert wc._read_object(root / "d1-projection.json", "D1 projection") == current
+
+
+def test_completed_tool_failure_with_blocker_is_corrected_without_rerunning_ocrv(
+    tmp_path, monkeypatch,
+):
+    from slk_transport import checker_escalation
+
+    host, source, old = prepared_host(tmp_path)
+    checker = host.endpoint("checker")
+    worker = host.endpoint("worker")
+    payload = {
+        "repository": str((tmp_path / "repository").resolve()),
+        "candidate": {"kind": "commit", "commit": "b" * 40},
+        "cell_goal": "preserve first-use credential freshness",
+        "d1_criteria": ["freshness is fail-closed"],
+        "evidence_files": [str((source / "completed.json").resolve())],
+    }
+    incoming = Envelope.from_dict({
+        **asdict(old),
+        "sender_role": "worker",
+        "sender_role_instance_id": worker["role_instance_id"],
+        "receiver_role": "checker",
+        "receiver_role_instance_id": checker["role_instance_id"],
+        "receiver_endpoint_version": checker["endpoint_version"],
+        "payload_type": "CANDIDATE_READY",
+        "payload": payload,
+        "payload_sha256": wc.canonical_json_sha256(payload),
+    })
+    write_json(source / "endpoint.json", checker)
+    write_json(source / "envelope.json", asdict(incoming))
+    write_json(source / "started.json", make_native_start(
+        adapter="ocrv-checker", run_id=incoming.run_id, cell_id=incoming.cell_id,
+        message_id=incoming.message_id, request_sha256=incoming.payload_sha256,
+        native_request_sha256="d" * 64, native_task_kind="ocrv-review",
+        native_task_id="review-1", native_task_status="RUNNING", pid=os.getpid(),
+    ))
+    raw_path = write_json(tmp_path / "ocrv" / "review-1" / "ocrv-review.json", {
+        "status": "complete", "provider": "dashscope-tokenplan", "model": "qwen3.8-max",
+        "session_id": "session-review-1", "tool_calls": {"failure": 1},
+        "comments": [{"severity": "medium", "message": "real blocker"}],
+        "manifest": {"terminal_state": "complete", "coverage": {
+            "selected": [{"item_id": "criterion-1"}],
+            "completed": [{"item_id": "criterion-1"}], "reused": [],
+            "failed": [], "waived": [],
+        }},
+    })
+    result = {
+        "schema_version": "slk.ocrv-d1-result/v1", "run_id": incoming.run_id,
+        "cell_id": incoming.cell_id, "review_invocation_id": "review-1",
+        "verdict": "INCOMPLETE", "reason_codes": ["OCR_TOOL_FAILURE"],
+        "findings": [{"severity": "medium", "message": "real blocker"}],
+        "review": {"status": "complete", "provider": "dashscope-tokenplan",
+                   "model": "qwen3.8-max", "session_id": "session-review-1", "exit_code": 0},
+        "evidence": [], "request_sha256": "d" * 64,
+        "artifacts": {"raw_review": str(raw_path)},
+    }
+    write_json(source / "ocrv-result.json", result)
+    terminal = {
+        "schema_version": "slk.transport-result/v1", "message_id": incoming.message_id,
+        "run_id": incoming.run_id, "adapter": "ocrv-checker", "status": "completed",
+        "native_identity": {"run_id": incoming.run_id, "cell_id": incoming.cell_id,
+            "review_invocation_id": "review-1", "session_id": "session-review-1",
+            "provider": "dashscope-tokenplan", "model": "qwen3.8-max",
+            "verdict": "INCOMPLETE", "exit_code": 3, "review_segment_count": 0},
+        "error_code": None, "evidence": ["started.json", "ocrv-result.json"],
+    }
+    write_json(source / "completed.json", terminal)
+    source_event_id = "d1-incomplete"
+    event = {"event_id": source_event_id, "event_type": "D1_INCOMPLETE",
+        "author_role_instance_id": checker["role_instance_id"], "go_id": incoming.go_id,
+        "cell_id": incoming.cell_id, "attempt": 1, "corrects_event_id": None,
+        "details_json": json.dumps({"candidate_message_id": incoming.message_id,
+            "verdict": "INCOMPLETE", "native_terminal_sha256": wc._sha256(source / "completed.json"),
+            "native_result_sha256": wc._sha256(source / "ocrv-result.json")})}
+    projection = {"summary": {"run_id": incoming.run_id, "slk_version": "4.4.2",
+        "current_plan_revision": 1}, "events": [event], "token_history": [],
+        "runtime_snapshot": {"method_version": "4.4.2", "plan_revision": 1,
+            "runtime_revision": 8, "token_sequence": incoming.token_sequence,
+            "token_holder_role_instance_id": checker["role_instance_id"],
+            "latest_message_id": incoming.message_id, "latest_event_id": source_event_id}}
+    root = source / "role-host"
+    root.mkdir(exist_ok=True)
+    write_json(root / "result.json", {"binding_sha256": host.digest,
+        "source_message_id": incoming.message_id,
+        "source_sha256": host._source_sha256(source, "checker"),
+        "status": "CHECKER_D1_RECORDED", "d1_verdict": "INCOMPLETE",
+        "d1_event_type": "D1_INCOMPLETE"})
+
+    def record(activation, continuation, **_kwargs):
+        correction = Path(activation["native_attempt_path"])
+        assert wc._read_object(correction / "ocrv-result.json", "corrected")["verdict"] == "FAIL"
+        assert continuation["d1_correction_kind"] == "classification"
+        corrected_id = wc._stable_id(
+            incoming.message_id, "d1-classification-" + continuation["d1_correction_id"]
+        )
+        projection["events"].append({"event_id": corrected_id, "event_type": "D1_FAILED",
+            "author_role_instance_id": checker["role_instance_id"], "go_id": incoming.go_id,
+            "cell_id": incoming.cell_id, "attempt": 1,
+            "corrects_event_id": source_event_id,
+            "details_json": json.dumps({"candidate_message_id": incoming.message_id,
+                                         "verdict": "FAIL"})})
+        projection["runtime_snapshot"]["latest_event_id"] = corrected_id
+        projection["runtime_snapshot"]["runtime_revision"] = 9
+        return {"d1_verdict": "FAIL", "d1_event_type": "D1_FAILED"}
+
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "_record_checker_d1", record)
+    monkeypatch.setattr(checker_escalation, "execute_checker_escalation",
+                        lambda *_args, **_kwargs: {"status": "CHECKER_ESCALATION_COMMITTED"})
+
+    value = host.reclassify_completed_checker(source)
+
+    assert value["status"] == "CHECKER_ESCALATION_COMMITTED"
+    receipt = wc._read_object(
+        root / "classification-correction" / "normalization-correction.json", "receipt"
+    )
+    assert receipt["source_incomplete_event_id"] == source_event_id
+    assert receipt["reason_codes"] == ["OCR_BLOCKING_FINDINGS_PRESENT", "OCR_TOOL_FAILURE"]
 
 
 def prepared_host(tmp_path):

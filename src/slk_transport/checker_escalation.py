@@ -416,6 +416,53 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
             "CHECKER_ESCALATION_D1_MISMATCH",
             "D1 failure does not bind the immutable OCRV candidate and terminal evidence",
         )
+    if event.get("corrects_event_id") is not None:
+        receipt_path = native / "normalization-correction.json"
+        receipt = _read_object(receipt_path, "D1 normalization correction")
+        receipt_fields = {
+            "schema_version", "cause", "correction_id", "source_attempt_path",
+            "source_incomplete_event_id", "source_started_sha256",
+            "source_terminal_sha256", "source_result_sha256", "raw_review_path",
+            "raw_review_sha256", "corrected_terminal_sha256",
+            "corrected_result_sha256", "reason_codes",
+        }
+        source = Path(str(receipt.get("source_attempt_path", ""))).resolve()
+        raw = Path(str(receipt.get("raw_review_path", ""))).resolve()
+        source_events = [
+            item for item in d1_terminals
+            if item.get("event_id") == event.get("corrects_event_id")
+        ]
+        original = source_events[0] if len(source_events) == 1 else None
+        original_details = _details(original) if isinstance(original, Mapping) else {}
+        if (
+            set(receipt) != receipt_fields
+            or receipt.get("schema_version") != "slk.ocrv-classification-correction/v1"
+            or receipt.get("cause") != "BLOCKING_FINDINGS_PRECEDE_AUXILIARY_TOOL_FAILURE"
+            or receipt.get("source_incomplete_event_id") != event.get("corrects_event_id")
+            or not isinstance(original, Mapping)
+            or original.get("event_type") != "D1_INCOMPLETE"
+            or original.get("author_role_instance_id") != request["checker_role_instance_id"]
+            or original_details.get("candidate_message_id") != candidate_message_id
+            or original_details.get("verdict") != "INCOMPLETE"
+            or not source.is_dir()
+            or not raw.is_file()
+            or receipt.get("source_started_sha256") != _sha256(source / "started.json")
+            or receipt.get("source_terminal_sha256") != _sha256(source / "completed.json")
+            or receipt.get("source_result_sha256") != _sha256(source / "ocrv-result.json")
+            or receipt.get("raw_review_sha256") != _sha256(raw)
+            or receipt.get("corrected_terminal_sha256") != _sha256(terminal_path)
+            or receipt.get("corrected_result_sha256") != _sha256(result_path)
+            or receipt.get("reason_codes") != result.get("reason_codes")
+            or original_details.get("native_terminal_sha256")
+            != receipt.get("source_terminal_sha256")
+            or original_details.get("native_result_sha256")
+            != receipt.get("source_result_sha256")
+            or "normalization-correction.json" not in terminal.get("evidence", [])
+        ):
+            raise CheckerEscalationError(
+                "CHECKER_ESCALATION_D1_MISMATCH",
+                "corrected D1 failure does not bind its immutable source INCOMPLETE",
+            )
     supervisor = Endpoint.from_dict(
         _read_object(Path(str(request["supervisor_endpoint_path"])), "Supervisor endpoint")
     )

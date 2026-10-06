@@ -59,6 +59,18 @@ def test_material_finding_is_fail(severity: str) -> None:
     assert reasons == ["OCR_BLOCKING_FINDINGS_PRESENT"]
 
 
+def test_material_finding_remains_fail_when_an_auxiliary_tool_call_failed() -> None:
+    review = _complete_review(
+        [{"severity": "MEDIUM", "message": "acceptance criterion is violated"}]
+    )
+    review["tool_calls"] = {"failure": 1}
+
+    verdict, reasons = _module()._classify(review, 0)
+
+    assert verdict == "FAIL"
+    assert reasons == ["OCR_BLOCKING_FINDINGS_PRESENT", "OCR_TOOL_FAILURE"]
+
+
 def test_unknown_finding_classification_is_incomplete_not_pass() -> None:
     verdict, reasons = _module()._classify(
         _complete_review([{"severity": "MYSTERY", "message": "cannot classify"}]),

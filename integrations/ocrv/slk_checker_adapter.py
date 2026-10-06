@@ -525,23 +525,23 @@ def _classify(review: dict[str, Any] | None, exit_code: int) -> tuple[str, list[
     tools = review.get("tool_calls") if isinstance(review.get("tool_calls"), dict) else {}
     if tools.get("failure", 0) != 0:
         reasons.append("OCR_TOOL_FAILURE")
-    if reasons:
-        return "INCOMPLETE", reasons
     comments = review.get("comments")
     if not isinstance(comments, list):
-        return "INCOMPLETE", ["OCR_COMMENTS_INVALID"]
-    if not comments:
-        return "PASS", ["OCR_COMPLETE_ZERO_FINDINGS"]
+        return "INCOMPLETE", reasons + ["OCR_COMMENTS_INVALID"]
     severities: list[str] = []
     for comment in comments:
         if not isinstance(comment, dict) or not isinstance(comment.get("severity"), str):
-            return "INCOMPLETE", ["OCR_FINDING_SEVERITY_UNKNOWN"]
+            return "INCOMPLETE", reasons + ["OCR_FINDING_SEVERITY_UNKNOWN"]
         severity = comment["severity"].strip().upper()
         if severity not in {"INFO", "LOW", "MEDIUM", "HIGH", "BLOCKER", "CRITICAL"}:
-            return "INCOMPLETE", ["OCR_FINDING_SEVERITY_UNKNOWN"]
+            return "INCOMPLETE", reasons + ["OCR_FINDING_SEVERITY_UNKNOWN"]
         severities.append(severity)
     if any(value in {"MEDIUM", "HIGH", "BLOCKER", "CRITICAL"} for value in severities):
-        return "FAIL", ["OCR_BLOCKING_FINDINGS_PRESENT"]
+        return "FAIL", ["OCR_BLOCKING_FINDINGS_PRESENT", *reasons]
+    if reasons:
+        return "INCOMPLETE", reasons
+    if not comments:
+        return "PASS", ["OCR_COMPLETE_ZERO_FINDINGS"]
     return "PASS", ["OCR_COMPLETE_LOW_SEVERITY_OBSERVATIONS"]
 
 

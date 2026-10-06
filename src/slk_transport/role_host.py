@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -320,6 +321,303 @@ class RoleHost:
                   "source_sha256": source_sha256}
         wc._write_or_reuse_stable_request(result_path, result)
         return result
+
+    def reclassify_completed_checker(self, source: Path) -> dict[str, Any]:
+        """Correct one completed OCRV result whose proven blockers were masked by a tool error."""
+
+        from . import checker_escalation as failed
+
+        source = source.resolve()
+        endpoint = self.endpoint("checker")
+        if wc._read_object(source / "endpoint.json", "source endpoint") != endpoint:
+            raise wc.CompletionError(
+                "ROLE_HOST_BINDING_INVALID", "classification correction is outside the prepared Checker"
+            )
+        envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
+        if envelope.receiver_role != "checker" or envelope.payload_type != "CANDIDATE_READY":
+            raise wc.CompletionError(
+                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
+                "classification correction requires one completed candidate review",
+            )
+        prior_receipt = wc._read_object(source / "role-host" / "result.json", "original D1 receipt")
+        source_sha256 = self._source_sha256(source, "checker")
+        if (
+            prior_receipt.get("binding_sha256") != self.digest
+            or prior_receipt.get("source_message_id") != envelope.message_id
+            or prior_receipt.get("source_sha256") != source_sha256
+            or prior_receipt.get("status") != "CHECKER_D1_RECORDED"
+            or prior_receipt.get("d1_verdict") != "INCOMPLETE"
+            or prior_receipt.get("d1_event_type") != "D1_INCOMPLETE"
+        ):
+            raise wc.CompletionError(
+                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
+                "original RoleHost receipt is not the exact completed INCOMPLETE result",
+            )
+
+        original_result_path = source / "ocrv-result.json"
+        original_terminal_path = source / "completed.json"
+        started_path = source / "started.json"
+        original_result = wc._read_object(original_result_path, "original OCRV result")
+        original_terminal = wc._read_object(original_terminal_path, "original OCRV terminal")
+        raw_path = Path(str(original_result.get("artifacts", {}).get("raw_review", ""))).resolve()
+        raw = wc._read_object(raw_path, "original OCRV raw review")
+        manifest = raw.get("manifest")
+        coverage = manifest.get("coverage") if isinstance(manifest, Mapping) else None
+        selected = coverage.get("selected") if isinstance(coverage, Mapping) else None
+        completed = coverage.get("completed") if isinstance(coverage, Mapping) else None
+        reused = coverage.get("reused", []) if isinstance(coverage, Mapping) else None
+        comments = raw.get("comments")
+        tools = raw.get("tool_calls")
+        severities = [
+            str(item.get("severity", "")).strip().upper()
+            for item in comments or []
+            if isinstance(item, Mapping)
+        ]
+        blocking = {"MEDIUM", "HIGH", "BLOCKER", "CRITICAL"}
+        identity = original_terminal.get("native_identity")
+        try:
+            validate_native_start(
+                started_path,
+                adapter=endpoint["adapter"],
+                run_id=envelope.run_id,
+                cell_id=envelope.cell_id,
+                message_id=envelope.message_id,
+                request_sha256=envelope.payload_sha256,
+            )
+        except (OSError, ValueError) as exc:
+            raise wc.CompletionError(
+                "CHECKER_CLASSIFICATION_CORRECTION_INVALID", "original native start is invalid"
+            ) from exc
+        if (
+            original_result.get("verdict") != "INCOMPLETE"
+            or original_result.get("reason_codes") != ["OCR_TOOL_FAILURE"]
+            or original_result.get("run_id") != envelope.run_id
+            or original_result.get("cell_id") != envelope.cell_id
+            or not isinstance(identity, Mapping)
+            or original_terminal.get("status") != "completed"
+            or identity.get("verdict") != "INCOMPLETE"
+            or identity.get("exit_code") != 3
+            or raw.get("status") != "complete"
+            or raw.get("session_id") != original_result.get("review", {}).get("session_id")
+            or not isinstance(manifest, Mapping)
+            or manifest.get("terminal_state") != "complete"
+            or not isinstance(coverage, Mapping)
+            or not isinstance(selected, list)
+            or not selected
+            or not isinstance(completed, list)
+            or not isinstance(reused, list)
+            or coverage.get("failed") != []
+            or coverage.get("waived") != []
+            or {json.dumps(item, sort_keys=True) for item in selected}
+            != {json.dumps(item, sort_keys=True) for item in [*completed, *reused]}
+            or not isinstance(tools, Mapping)
+            or not isinstance(tools.get("failure"), int)
+            or tools.get("failure", 0) < 1
+            or not isinstance(comments, list)
+            or len(severities) != len(comments)
+            or any(value not in {"INFO", "LOW", *blocking} for value in severities)
+            or not any(value in blocking for value in severities)
+            or _without_provider_thinking(comments) != original_result.get("findings")
+        ):
+            raise wc.CompletionError(
+                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
+                "immutable OCRV evidence does not prove a blocker masked only by a tool failure",
+            )
+
+        projection = self.projection()
+        snapshot = projection.get("runtime_snapshot", {})
+        events = projection.get("events", [])
+        incomplete = [
+            event for event in events
+            if isinstance(event, Mapping)
+            and event.get("event_type") == "D1_INCOMPLETE"
+            and event.get("cell_id") == envelope.cell_id
+            and wc._event_details(event).get("candidate_message_id") == envelope.message_id
+        ]
+        if len(incomplete) != 1:
+            raise wc.CompletionError(
+                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
+                "current Run does not contain one exact source D1 INCOMPLETE",
+            )
+        source_event = incomplete[0]
+        source_details = wc._event_details(source_event)
+        if (
+            source_event.get("author_role_instance_id") != endpoint["role_instance_id"]
+            or source_details.get("verdict") != "INCOMPLETE"
+            or source_details.get("native_terminal_sha256") != wc._sha256(original_terminal_path)
+            or source_details.get("native_result_sha256") != wc._sha256(original_result_path)
+            or snapshot.get("plan_revision") != self.binding["plan_revision"]
+            or snapshot.get("token_holder_role_instance_id") != endpoint["role_instance_id"]
+            or snapshot.get("latest_message_id") != envelope.message_id
+        ):
+            raise wc.CompletionError(
+                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
+                "current Checker boundary differs from the immutable incomplete result",
+            )
+
+        correction_id = wc._stable_id(str(source_event["event_id"]), "ocr-tool-failure-reclassification")
+        correction = source / "role-host" / "classification-correction"
+        final_path = source / "role-host" / "classification-correction-result.json"
+        if final_path.is_file():
+            saved = wc._read_object(final_path, "classification correction result")
+            if (
+                saved.get("binding_sha256") != self.digest
+                or saved.get("source_message_id") != envelope.message_id
+                or saved.get("source_sha256") != source_sha256
+                or saved.get("correction_id") != correction_id
+            ):
+                raise wc.CompletionError(
+                    "ROLE_HOST_CONFLICT", "classification correction receipt changed identity"
+                )
+            return saved
+        correction.mkdir(parents=True, exist_ok=True)
+        for name in ("endpoint.json", "envelope.json", "started.json"):
+            destination = correction / name
+            if destination.is_file():
+                if destination.read_bytes() != (source / name).read_bytes():
+                    raise wc.CompletionError(
+                        "ROLE_HOST_CONFLICT", "classification correction source changed"
+                    )
+            else:
+                temporary = destination.with_suffix(destination.suffix + ".tmp")
+                shutil.copyfile(source / name, temporary)
+                temporary.replace(destination)
+        corrected_result = {
+            **original_result,
+            "verdict": "FAIL",
+            "reason_codes": ["OCR_BLOCKING_FINDINGS_PRESENT", "OCR_TOOL_FAILURE"],
+            "findings": _without_provider_thinking(comments),
+        }
+        corrected_terminal = {
+            **original_terminal,
+            "native_identity": {**identity, "verdict": "FAIL", "exit_code": 2},
+            "evidence": [
+                *[item for item in original_terminal.get("evidence", []) if item != "normalization-correction.json"],
+                "normalization-correction.json",
+            ],
+        }
+        corrected_result_path = wc._write_or_reuse_stable_request(
+            correction / "ocrv-result.json", corrected_result
+        )
+        corrected_terminal_path = wc._write_or_reuse_stable_request(
+            correction / "completed.json", corrected_terminal
+        )
+        correction_receipt = {
+            "schema_version": "slk.ocrv-classification-correction/v1",
+            "cause": "BLOCKING_FINDINGS_PRECEDE_AUXILIARY_TOOL_FAILURE",
+            "correction_id": correction_id,
+            "source_attempt_path": str(source),
+            "source_incomplete_event_id": source_event["event_id"],
+            "source_started_sha256": wc._sha256(started_path),
+            "source_terminal_sha256": wc._sha256(original_terminal_path),
+            "source_result_sha256": wc._sha256(original_result_path),
+            "raw_review_path": str(raw_path),
+            "raw_review_sha256": wc._sha256(raw_path),
+            "corrected_terminal_sha256": wc._sha256(corrected_terminal_path),
+            "corrected_result_sha256": wc._sha256(corrected_result_path),
+            "reason_codes": corrected_result["reason_codes"],
+        }
+        wc._write_or_reuse_stable_request(
+            correction / "normalization-correction.json", correction_receipt
+        )
+
+        corrected_event_id = wc._stable_id(envelope.message_id, "d1-classification-" + correction_id)
+        latest_event = snapshot.get("latest_event_id")
+        if latest_event == source_event["event_id"]:
+            continuation = {
+                "run_id": envelope.run_id,
+                "go_id": envelope.go_id,
+                "cell_id": envelope.cell_id,
+                "attempt": source_event["attempt"],
+                "plan_revision": self.binding["plan_revision"],
+                "checker_endpoint": endpoint,
+                "state_command": self.state,
+                "occurred_at": datetime.now(timezone.utc).isoformat(),
+                "d1_correction_event_id": source_event["event_id"],
+                "d1_correction_id": correction_id,
+                "d1_correction_kind": "classification",
+            }
+            recorded = wc._record_checker_d1(
+                {"native_attempt_path": str(correction), "candidate_message_id": envelope.message_id},
+                continuation,
+                checker_credential_path=self.credential_path("checker"),
+                timeout_seconds=1,
+            )
+            if recorded.get("d1_verdict") != "FAIL":
+                raise wc.CompletionError(
+                    "CHECKER_CLASSIFICATION_CORRECTION_INVALID", "corrected evidence did not record FAIL"
+                )
+            projection = self.projection()
+            snapshot = projection["runtime_snapshot"]
+        else:
+            matches = [event for event in events if event.get("event_id") == corrected_event_id]
+            if len(matches) != 1 or matches[0].get("corrects_event_id") != source_event["event_id"]:
+                raise wc.CompletionError(
+                    "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
+                    "Checker boundary advanced outside the exact correction",
+                )
+
+        projection_path = wc._write_or_reuse_stable_request(
+            correction / "d1-projection.json", projection
+        )
+        cell_goal = envelope.payload.get("cell_goal")
+        criteria = envelope.payload.get("d1_criteria")
+        if not isinstance(cell_goal, str) or not isinstance(criteria, list):
+            raise wc.CompletionError(
+                "CHECKER_CLASSIFICATION_CORRECTION_INVALID", "candidate acceptance contract is invalid"
+            )
+        request = {
+            "schema_version": failed.REQUEST_SCHEMA,
+            "method_version": snapshot["method_version"],
+            "post_d1_invocation_id": wc._stable_id(corrected_event_id, "classification-fail"),
+            "run_id": envelope.run_id,
+            "go_id": envelope.go_id,
+            "cell_id": envelope.cell_id,
+            "attempt": source_event["attempt"],
+            "plan_revision": self.binding["plan_revision"],
+            "runtime_revision": snapshot["runtime_revision"],
+            "token_sequence": snapshot["token_sequence"],
+            "checker_role_instance_id": endpoint["role_instance_id"],
+            "d1_failure_event_id": corrected_event_id,
+            "runtime_projection_path": str(projection_path),
+            "native_attempt_path": str(correction),
+            "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
+            "checker_credential_path": self.credential_path("checker"),
+            "state_command": self.state,
+            "transport_command": self.transport,
+            "escalation_attempt_root": str(correction / "post-d1"),
+            "rework_round": 1 + sum(
+                event.get("event_type") == "REWORK_REQUESTED"
+                and event.get("cell_id") == envelope.cell_id
+                for event in projection["events"]
+            ),
+            "cell_goal": cell_goal,
+            "acceptance_criteria": criteria,
+            "findings": normalized_checker_findings(corrected_result["findings"]),
+            "reproduction_steps": [
+                "Read the preserved Checker findings and cited evidence; do not infer a reproduction."
+            ],
+            "expected_result": "Satisfy the unchanged CELL acceptance criteria.",
+            "evidence_refs": [
+                str(corrected_result_path), str(correction / "normalization-correction.json")
+            ],
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+        }
+        request_path = wc._write_or_reuse_stable_request(
+            correction / "post-d1-request.json", request
+        )
+        result = failed.execute_checker_escalation(
+            request, request_path=request_path, request_sha256=wc._sha256(request_path)
+        )
+        receipt = {
+            **result,
+            "binding_sha256": self.digest,
+            "source_message_id": envelope.message_id,
+            "source_sha256": source_sha256,
+            "correction_id": correction_id,
+        }
+        wc._write_or_reuse_stable_request(final_path, receipt)
+        return receipt
 
     def continue_staged_handoff(
         self,

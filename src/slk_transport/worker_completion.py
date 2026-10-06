@@ -4279,7 +4279,8 @@ def _record_checker_d1(
             "+00:00", "Z"
         )
         suffix = (
-            'd1-budget-' + str(continuation['d1_correction_id'])
+            'd1-' + str(continuation.get('d1_correction_kind', 'budget')) + '-'
+            + str(continuation['d1_correction_id'])
             if continuation.get('d1_correction_event_id')
             else 'd1-partial-' + str(continuation['partial_recovery_invocation_id'])
             if continuation.get('partial_correction_event_id')

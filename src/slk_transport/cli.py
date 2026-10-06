@@ -659,6 +659,16 @@ def _resume_role_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reclassify_completed_checker(args: argparse.Namespace) -> int:
+    binding_path = args.binding.resolve()
+    digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
+    if digest != args.sha256:
+        raise ValueError("role host binding hash changed")
+    host = RoleHost(_read_object(binding_path, "role host binding"), digest)
+    _emit(host.reclassify_completed_checker(args.source_attempt.resolve()))
+    return 0
+
+
 def _continue_staged_handoff(args: argparse.Namespace) -> int:
     binding_path = args.binding.resolve()
     digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
@@ -960,6 +970,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     role_host_resume.add_argument("--binding", required=True, type=Path)
     role_host_resume.add_argument("--sha256", required=True)
     role_host_resume.add_argument("--source-attempt", required=True, type=Path)
+    reclassify_checker = subparsers.add_parser("reclassify-completed-checker")
+    reclassify_checker.add_argument("--binding", required=True, type=Path)
+    reclassify_checker.add_argument("--sha256", required=True)
+    reclassify_checker.add_argument("--source-attempt", required=True, type=Path)
     staged_handoff = subparsers.add_parser("continue-staged-handoff")
     staged_handoff.add_argument("--binding", required=True, type=Path)
     staged_handoff.add_argument("--sha256", required=True)
@@ -1083,6 +1097,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _preflight_conformance_sample(args)
         if args.command == "resume-role-host":
             return _resume_role_host(args)
+        if args.command == "reclassify-completed-checker":
+            return _reclassify_completed_checker(args)
         if args.command == "continue-staged-handoff":
             return _continue_staged_handoff(args)
         if args.command == "submit-supervisor-decision":
