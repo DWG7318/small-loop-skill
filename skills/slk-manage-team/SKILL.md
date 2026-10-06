@@ -20,13 +20,13 @@ Owner 已授权本 Run 启动准备且准备未完时，Supervisor 先查询当�
 
 1. 打开可见 BI 1.1.0，绑定设备与当前 SLK Run 身份；核对实际安装路径/版本、原生模型权限下的工作区、Skill、OCRV、DSH 和工具。角色凭据由准备宿主通过 `prepare-role-credential` 认证、DPAPI 密封并重新用保存后的消费者认证，不能把 `credential-out` 的明文误当密封文件；确定性失败先纠正，不自动轮换全部凭据。
 2. 登记 Owner 已确认的 Supervisor，并登记 OCRV Checker、DSH Worker 与 Supervisor 指定的 Overwatcher；四个 role instance 彼此唯一，模型和 reasoning 来自本 Run 冻结策略。
-3. 用标准 headless 入口演练七条必要腿：初始 `Supervisor → Checker`、`Checker → Worker`、`Worker → Checker`、D1 FAIL 的 `Checker → Supervisor → 同一 Worker`、最终 `Checker → Supervisor`，以及 `Overwatcher → Supervisor`。版本验收使用有真实小缺陷的隔离样本，覆盖 D0、独立 D1、Supervisor 正常返工决定与 PASS 后缀；每 Run 绑定自己的身份/授权并复核相同安装、模型和权限条件。保留可读取且哈希匹配的发送、原生启动、正式结果与 TOKEN 提交，不能用预设 JSON/echo 或 OW/其他角色代发证明正常通路。
+3. 用标准 headless 入口演练七条必要腿：`slk-conformance/<SLK-CONFORMANCE-run_id>` 证据根绑定独立 clean/no-remote 样本 Git 和单 CELL，经 `preflight-conformance-sample` 实走 `Supervisor → Checker → Worker → Checker`、FAIL 的 `Checker → Supervisor → 同一 Worker`、PASS 的 `Checker → Supervisor` 及 `Overwatcher → Supervisor`，再以 `seal-normal-chain-source` 密封。产品改走 `preflight-new-run`，核验初始 TOKEN、四角色/端点/消费者、BI、Temporal 和不同来源；预设 JSON/echo、假 D1/D2 或代发不合格。
 4. 做角色理解确认：Checker 解释日常派发、隔离 D1、FAIL 上报与 PASS 后缀；Worker 解释施工、D0 与候选交付；OW 解释真实性核查、UNKNOWN 和只向对应 Supervisor 报告。回答模糊时先纠正再复测受影响项；Worker 不重复完整方法问答。
 5. 使用 `$slk-manage-temporal` 得到共享服务和本 Run 两工作流的 readiness 收据；四角色、BI、Temporal 或必要通讯任一未闭合时保持 `NOT_READY`。
 
 每个角色绑定前通过 `SLK-ROLE-EVAL.v1` 的 runtime-critical 场景。Supervisor 用 `slk-state bind-overwatcher` 为本 Run 绑定独立角色实例、凭证、端点、`FOREGROUND_ACTIVE_TURN` 和 600 秒 cadence。一个 Run 只绑定一个 OW；同一精确 OW Session 可服务多个 Run，但每个 Run 使用独立 role instance、scope、cycle 和 Supervisor 端点，且 Agent/runtime/model/reasoning/native address 保持一致。它不是 heartbeat、定时任务或第四个工程角色。
 
-成员建立以原生身份、精确端点和启动证据为依据。准备宿主冻结 `SLK_TRANSPORT_ROLE_HOST` 路径及 SHA-256，普通 transport job 按所属角色执行记录/交接后缀；密封凭据不进入模型环境。发生纠正后冻结已验证调用方式；成员、模型、Session、设备或端点变化时追加登记 revision 并复测受影响通路，Supervisor 替换仍回 Owner 确认。角色只接收自身职责规则；准备 Goal 覆盖上述身份、实际模型权限、端点、工具、凭据消费者、真实演练、已选功能、OW/Temporal 和能力证明，不接受预设 JSON 替代。
+成员建立以原生身份、精确端点和启动证据为依据。准备宿主经 `supervisor-admin` 注册 Checker/Worker、绑定 OW、密封并验证各自凭据，再冻结 `SLK_TRANSPORT_ROLE_HOST` 路径及 SHA-256；普通 transport job 按所属角色执行记录/交接后缀，密封凭据不进入模型环境。发生纠正后冻结已验证调用方式；成员、模型、Session、设备或端点变化时追加登记 revision 并复测受影响通路，Supervisor 替换仍回 Owner 确认。角色只接收自身职责规则；准备 Goal 覆盖上述身份、实际模型权限、端点、工具、凭据消费者、真实演练、已选功能、OW/Temporal 和能力证明，不接受预设 JSON 替代。
 
 可恢复错误、一次失败、上下文压缩或未完成步骤不是完成理由：从最后可信进展做最小合法纠正并续接；不重复已完成工作、不盲目派发、不升级模型或新增后台自唤醒。恢复只读当前 Goal、简明准备记录和最新事实；记录已完成项、具体阻塞、最后真实动作、下一合法动作，不倒灌长历史。
 
@@ -47,6 +47,8 @@ Owner 已授权本 Run 启动准备且准备未完时，Supervisor 先查询当�
 明确失效可以依据任务 ID 不存在、平台显示失败或取消且无法继续，或者真实激活操作明确返回任务不可用。暂时没有回复不作为更换成员的依据。
 
 接管成员可以先用 `slk-bi-query` 读取 Run、当前计划、候选和未完成交接，再进行双向通讯测试。恢复原成员时重发原令牌编号并复用原消息身份；只有同一角色实例的会话 rebound 时用 `slk-state rebind-session` 退役旧端点并保留凭证，密封 Supervisor 权限经 hash-bound `supervisor-admin` 消费。OW 的 Desktop endpoint 修正由该入口为同一 OW role instance 与同一 Session 追加更高 endpoint version；不能替换 OW、借用 OW 写权限或手改数据库。接管新成员确认后则用 `replace-role` 退役旧凭证与端点、保留退役旧记录，再把当前节点交给新任务 ID，使旧令牌失效并保留身份历史。
+
+计划拆分后，用密封 `revise-plan` 写入新 revision 并冻结新 Host；首个后继仍走标准 `Supervisor → Checker CELL_DISPATCH`，不直派 Worker。
 
 Overwatcher 的一次性完整写凭证丢失、或调用方误存非秘密 `overwatcher_credential_id` 时，不构成角色/Session/turn/binding 失效。当前 Supervisor 使用精确当前身份、revision 与哈希证据执行 `slk-state rotate-overwatcher-credential`；响应中的 `overwatcher_write_credential` 只显示一次，应立即保存并用 `authenticate-role` 验证。不要用 credential ID 认证、伪造 cycle/continuity violation、替换原 Session 或直接改数据库。
 

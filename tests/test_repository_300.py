@@ -317,7 +317,7 @@ def test_436_readiness_and_ocrv_preflight_contracts_are_closed() -> None:
     ocrv = json.loads(read("docs/contracts/slk-ocrv-d1-preflight.schema.json"))
     for schema in (readiness, ocrv):
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-        assert len(schema["oneOf"]) == (7 if schema is readiness else 2)
+        assert len(schema["oneOf"]) == (9 if schema is readiness else 2)
     for name in ("request", "result"):
         assert readiness["$defs"][name]["additionalProperties"] is False
     option_name = readiness["$defs"]["option"]["properties"]["name"]
@@ -341,8 +341,12 @@ def test_441_saved_authority_and_reload_contracts_are_closed() -> None:
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     supervisor = json.loads(read("docs/contracts/slk-supervisor-admin.schema.json"))
     overwatcher = json.loads(read("docs/contracts/slk-overwatcher-admin.schema.json"))
-    assert set(supervisor["oneOf"][0]["properties"]["operation"]["enum"]) == {
-        "adopt-method-contract", "revise-role-model", "resume-overwatcher-turn", "rebind-session"
+    assert set(supervisor["$defs"]["request"]["properties"]["operation"]["enum"]) == {
+        "adopt-method-contract", "revise-role-model", "resume-overwatcher-turn", "rebind-session",
+        "revise-plan",
+    }
+    assert set(supervisor["$defs"]["provisionRequest"]["properties"]["operation"]["enum"]) == {
+        "register-role", "bind-overwatcher",
     }
     assert overwatcher["oneOf"][0]["properties"]["operation"]["enum"] == [
         "record-overwatch-cycle", "record-overwatcher-status"

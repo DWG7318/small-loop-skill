@@ -1,12 +1,15 @@
+use std::fs;
+
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
-    CellDefinition, CloseRoleRequest, EndpointIdentity, EventType, EvidenceReference, GoDefinition,
-    InitRunRequest, ProjectIdentity, RebindSessionRequest, RegisterRoleRequest, ReplaceRoleRequest,
-    RevisePlanRequest, ReviseRoleModelRequest, Role, RoleIdentity, TokenHandoffRequest,
-    WriteRequest,
+    CellDefinition, CloseRoleRequest, CommitDeliveryStartRequest, DeliveryStartEvidence,
+    EndpointIdentity, EventType, EvidenceReference, GoDefinition, InitRunRequest,
+    NativeStartStatus, ProjectIdentity, RebindSessionRequest, RegisterRoleRequest,
+    ReplaceRoleRequest, RevisePlanRequest, ReviseRoleModelRequest, Role, RoleIdentity,
+    TokenHandoffRequest, WriteRequest,
 };
 use slk_state_core::write::StateStore;
 
@@ -1355,6 +1358,149 @@ fn slk_442_second_d1_failure_requires_plan_split_not_another_rework_request() {
         Err(StateError::WorkEventInvalid(message))
             if message.contains("split") && message.contains("second consecutive D1 failure")
     ));
+
+    connection
+        .execute(
+            "INSERT INTO cell_nodes
+             (run_id,go_id,cell_id,ordinal,title,objective,state)
+             VALUES ('run-a','GO-001','CELL-002',2,'Existing next CELL','Existing objective','planned')",
+            [],
+        )
+        .unwrap();
+    let token_before = fixture.store.current_token("run-a").unwrap();
+    assert!(matches!(
+        fixture.store.revise_plan(
+            &fixture.supervisor,
+            RevisePlanRequest {
+                event_id: "invalid-single-successor-442".into(),
+                run_id: "run-a".into(),
+                snapshot: json!({
+                    "expected_plan_revision": 1,
+                    "cell_split": {
+                        "source_go_id": "GO-001",
+                        "source_cell_id": "CELL-001",
+                        "failure_event_ids": ["legacy-d1-failed", "second-d1-failed-442"],
+                        "successor_cells": [
+                            {"cell_id":"CELL-001-ONLY","title":"Still oversized","objective":"One replacement is not a split"}
+                        ]
+                    }
+                }),
+                reason: "invalid one-way replacement".into(),
+                occurred_at: "2026-09-20T00:00:04Z".into(),
+            },
+        ),
+        Err(StateError::InvalidPlan(_))
+    ));
+    let revision = fixture
+        .store
+        .revise_plan(
+            &fixture.supervisor,
+            RevisePlanRequest {
+                event_id: "split-after-second-failure-442".into(),
+                run_id: "run-a".into(),
+                snapshot: json!({
+                    "expected_plan_revision": 1,
+                    "cell_split": {
+                        "source_go_id": "GO-001",
+                        "source_cell_id": "CELL-001",
+                        "failure_event_ids": ["legacy-d1-failed", "second-d1-failed-442"],
+                        "successor_cells": [
+                            {"cell_id":"CELL-001-A","title":"Bounded fix A","objective":"First bounded correction"},
+                            {"cell_id":"CELL-001-B","title":"Bounded fix B","objective":"Second bounded correction"}
+                        ]
+                    }
+                }),
+                reason: "second consecutive formal D1 failure requires smaller successor CELLs".into(),
+                occurred_at: "2026-09-20T00:00:04Z".into(),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(revision, 2);
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), token_before);
+    let projection = fixture.store.query_run("run-a").unwrap();
+    let cells = &projection.go_nodes[0].cell_nodes;
+    assert_eq!(
+        cells
+            .iter()
+            .map(|cell| (cell.cell_id.as_str(), cell.ordinal, cell.state.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("CELL-001", 1, "split"),
+            ("CELL-001-A", 2, "planned"),
+            ("CELL-001-B", 3, "planned"),
+            ("CELL-002", 4, "planned"),
+        ]
+    );
+    assert!(projection
+        .events
+        .iter()
+        .any(|event| event.event_type == "CELL_SPLIT"));
+
+    assert!(matches!(
+        fixture.store.revise_plan(
+            &fixture.supervisor,
+            RevisePlanRequest {
+                event_id: "stale-split-442".into(),
+                run_id: "run-a".into(),
+                snapshot: json!({
+                    "expected_plan_revision": 1,
+                    "cell_split": {
+                        "source_go_id": "GO-001",
+                        "source_cell_id": "CELL-001",
+                        "failure_event_ids": ["legacy-d1-failed", "second-d1-failed-442"],
+                        "successor_cells": [
+                            {"cell_id":"CELL-001-C","title":"C","objective":"C"},
+                            {"cell_id":"CELL-001-D","title":"D","objective":"D"}
+                        ]
+                    }
+                }),
+                reason: "stale replay".into(),
+                occurred_at: "2026-09-20T00:00:05Z".into(),
+            },
+        ),
+        Err(StateError::PlanRevisionMismatch {
+            requested: 1,
+            current: 2
+        })
+    ));
+
+    fixture
+        .store
+        .commit_delivery_start(
+            &fixture.supervisor,
+            fixture.revisioned_start_request(
+                9,
+                "supervisor-a",
+                "checker-a",
+                "CELL-001",
+                "PLAN_REVISED",
+                "ocrv-checker",
+            ),
+        )
+        .unwrap();
+    fixture
+        .store
+        .commit_delivery_start(
+            &fixture.checker,
+            fixture.revisioned_start_request(
+                10,
+                "checker-a",
+                "worker-a",
+                "CELL-001-A",
+                "WORKER_TASK",
+                "dsh-worker",
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .current_token("run-a")
+            .unwrap()
+            .owner_role_instance_id,
+        "worker-a"
+    );
 }
 
 #[test]
@@ -1609,6 +1755,70 @@ impl Fixture {
             .handoff_token(&fixture.checker, handoff(3, "checker-a", "worker-a"))
             .unwrap();
         fixture
+    }
+
+    fn revisioned_start_request(
+        &self,
+        token_sequence: u64,
+        from: &str,
+        to: &str,
+        cell_id: &str,
+        payload_type: &str,
+        adapter: &str,
+    ) -> CommitDeliveryStartRequest {
+        let message_id = format!("revisioned-message-{token_sequence}");
+        let payload_sha256 = "b".repeat(64);
+        let path = self
+            ._root
+            .path()
+            .join(format!("revisioned-start-{token_sequence}.json"));
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "schema_version":"slk.native-start/v2",
+                "status":"STARTED",
+                "adapter":adapter,
+                "run_id":"run-a",
+                "cell_id":cell_id,
+                "message_id":message_id,
+                "request_sha256":payload_sha256,
+                "native_request_sha256":"e".repeat(64),
+                "observed_at":"2026-09-20T00:00:06Z",
+                "process":{"pid":4321,"creation_time":format!("win-filetime:{token_sequence}")},
+                "native_task":{"kind":adapter,"id":format!("task-{token_sequence}"),"status":"RUNNING"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let projection = self.store.query_run("run-a").unwrap();
+        CommitDeliveryStartRequest {
+            event_id: format!("revisioned-start-{token_sequence}"),
+            transport_receipt_id: format!("revisioned-receipt-{token_sequence}"),
+            run_id: "run-a".into(),
+            go_id: "GO-001".into(),
+            cell_id: cell_id.into(),
+            attempt: if cell_id == "CELL-001" { 2 } else { 1 },
+            plan_revision: projection.summary.current_plan_revision,
+            expected_runtime_revision: projection.runtime_snapshot.unwrap().runtime_revision,
+            message_id: message_id.clone(),
+            token_sequence,
+            from_role_instance_id: from.into(),
+            to_role_instance_id: to.into(),
+            endpoint_version: 1,
+            payload_type: payload_type.into(),
+            payload_sha256,
+            start_evidence: DeliveryStartEvidence {
+                evidence_id: format!("revisioned-evidence-{token_sequence}"),
+                stored_path: path.to_string_lossy().into_owned(),
+                sha256: format!("{:x}", Sha256::digest(bytes)),
+                message_id,
+                endpoint_sha256: "c".repeat(64),
+                envelope_sha256: "d".repeat(64),
+                native_status: NativeStartStatus::Started,
+            },
+            occurred_at: "2026-09-20T00:00:06Z".into(),
+        }
     }
 }
 

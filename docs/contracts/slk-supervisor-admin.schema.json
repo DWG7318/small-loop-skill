@@ -1,11 +1,68 @@
 {
-  "$schema":"https://json-schema.org/draft/2020-12/schema","title":"SLK sealed Supervisor administration","oneOf":[
-    {"type":"object","additionalProperties":false,"required":["schema_version","run_id","supervisor_role_instance_id","expected_runtime_revision","sealed_credential_path","state_command","operation","operation_request_path","operation_request_sha256","result_path"],
-      "properties":{"schema_version":{"const":"slk.supervisor-admin/v1"},"run_id":{"type":"string","minLength":1},"supervisor_role_instance_id":{"type":"string","minLength":1},"expected_runtime_revision":{"type":"integer","minimum":1},
-        "sealed_credential_path":{"type":"string","minLength":1},"state_command":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},"operation":{"enum":["adopt-method-contract","revise-role-model","resume-overwatcher-turn","rebind-session"]},
-        "operation_request_path":{"type":"string","minLength":1},"operation_request_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"result_path":{"type":"string","minLength":1}}},
-    {"type":"object","additionalProperties":false,"required":["schema_version","status","run_id","supervisor_role_instance_id","operation","request_sha256","operation_request_sha256","state_result"],
-      "properties":{"schema_version":{"const":"slk.supervisor-admin-result/v1"},"status":{"const":"SUPERVISOR_ADMIN_COMPLETED"},"run_id":{"type":"string","minLength":1},"supervisor_role_instance_id":{"type":"string","minLength":1},
-        "operation":{"enum":["adopt-method-contract","revise-role-model","resume-overwatcher-turn","rebind-session"]},"request_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"operation_request_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"state_result":{"type":"object"}}}
-  ]
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SLK sealed Supervisor administration",
+  "oneOf": [
+    {"$ref": "#/$defs/request"}, {"$ref": "#/$defs/provisionRequest"},
+    {"$ref": "#/$defs/result"}, {"$ref": "#/$defs/provisionResult"}
+  ],
+  "$defs": {
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "run_id", "supervisor_role_instance_id", "expected_runtime_revision", "sealed_credential_path", "state_command", "operation", "operation_request_path", "operation_request_sha256", "result_path"],
+      "properties": {
+        "schema_version": {"const": "slk.supervisor-admin/v1"}, "run_id": {"type": "string", "minLength": 1},
+        "supervisor_role_instance_id": {"type": "string", "minLength": 1}, "expected_runtime_revision": {"type": "integer", "minimum": 1},
+        "sealed_credential_path": {"type": "string", "minLength": 1}, "state_command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "operation": {"enum": ["adopt-method-contract", "revise-role-model", "resume-overwatcher-turn", "rebind-session", "revise-plan"]},
+        "operation_request_path": {"type": "string", "minLength": 1}, "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "result_path": {"type": "string", "minLength": 1}
+      }
+    },
+    "provisionRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "run_id", "supervisor_role_instance_id", "expected_runtime_revision", "sealed_credential_path", "state_command", "operation", "operation_request_path", "operation_request_sha256", "result_path", "issued_role", "issued_role_instance_id", "credential_destination_path"],
+      "properties": {
+        "schema_version": {"const": "slk.supervisor-admin/v1"}, "run_id": {"type": "string", "minLength": 1},
+        "supervisor_role_instance_id": {"type": "string", "minLength": 1}, "expected_runtime_revision": {"type": "integer", "minimum": 1},
+        "sealed_credential_path": {"type": "string", "minLength": 1}, "state_command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "operation": {"enum": ["register-role", "bind-overwatcher"]}, "operation_request_path": {"type": "string", "minLength": 1},
+        "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "result_path": {"type": "string", "minLength": 1},
+        "issued_role": {"enum": ["checker", "worker", "overwatcher"]}, "issued_role_instance_id": {"type": "string", "minLength": 1},
+        "credential_destination_path": {"type": "string", "minLength": 1}
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "status", "run_id", "supervisor_role_instance_id", "operation", "request_sha256", "operation_request_sha256", "state_result"],
+      "properties": {
+        "schema_version": {"const": "slk.supervisor-admin-result/v1"}, "status": {"const": "SUPERVISOR_ADMIN_COMPLETED"},
+        "run_id": {"type": "string", "minLength": 1}, "supervisor_role_instance_id": {"type": "string", "minLength": 1},
+        "operation": {"enum": ["adopt-method-contract", "revise-role-model", "resume-overwatcher-turn", "rebind-session", "revise-plan"]},
+        "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "state_result": {"type": "object"}
+      }
+    },
+    "provisionResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "status", "run_id", "supervisor_role_instance_id", "operation", "request_sha256", "operation_request_sha256", "state_result", "issued_role", "issued_role_instance_id", "sealed_credential"],
+      "properties": {
+        "schema_version": {"const": "slk.supervisor-admin-result/v1"}, "status": {"const": "SUPERVISOR_ADMIN_COMPLETED"},
+        "run_id": {"type": "string", "minLength": 1}, "supervisor_role_instance_id": {"type": "string", "minLength": 1},
+        "operation": {"enum": ["register-role", "bind-overwatcher"]}, "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "state_result": {"type": "object"},
+        "issued_role": {"enum": ["checker", "worker", "overwatcher"]}, "issued_role_instance_id": {"type": "string", "minLength": 1},
+        "sealed_credential": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "run_id", "role", "role_instance_id", "sealed_path", "sealed_sha256", "runtime_revision"],
+          "properties": {
+            "status": {"const": "SEALED_ROLE_VERIFIED"}, "run_id": {"type": "string", "minLength": 1},
+            "role": {"enum": ["checker", "worker", "overwatcher"]},
+            "role_instance_id": {"type": "string", "minLength": 1}, "sealed_path": {"type": "string", "minLength": 1},
+            "sealed_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "runtime_revision": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    }
+  }
 }

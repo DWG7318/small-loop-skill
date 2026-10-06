@@ -194,6 +194,24 @@ def test_compatible_patch_requires_exact_request_and_run_version(tmp_path, versi
         _validate_boundary(request)
 
 
+@pytest.mark.parametrize("final", [False, True])
+def test_split_parent_is_history_not_a_required_next_or_d2_cell(tmp_path, final):
+    from slk_transport.checker_completion import _validate_boundary
+    request, _ = fixture(tmp_path, final=final)
+    path = Path(request["runtime_projection_path"])
+    projection = json.loads(path.read_text())
+    projection["go_nodes"][0]["cell_nodes"].insert(0, {
+        "cell_id": "CELL-SPLIT-PARENT", "ordinal": 1, "title": "Historical parent",
+        "objective": "Superseded by bounded successors", "state": "split", "attempt": 2,
+        "outcome": None,
+    })
+    write_json(path, projection)
+
+    boundary = _validate_boundary(request)
+
+    assert [cell["cell_id"] for cell in boundary["cells"]] == ["CELL-001", "CELL-002"]
+
+
 def successful_runner(request: dict[str, object], commands: list[str]):
     def run(_command: list[str], arguments: list[str], *, credential: str | None):
         operation = arguments[0]

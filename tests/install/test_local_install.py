@@ -115,6 +115,9 @@ def test_successful_install_matches_package_manifest(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "PASS SLK_LOCAL_INSTALL 4.4.2" in completed.stdout
     assert (codex_home / "tools/slk/share/small-loop-skill/VERSION").read_text(encoding="utf-8").strip() == "4.4.2"
+    assert (codex_home / "docs/state/SLK-STATE.md").read_bytes() == (
+        codex_home / "tools/slk/share/small-loop-skill/docs/state/SLK-STATE.md"
+    ).read_bytes()
     launcher = codex_home / "tools/slk/bin/slk-transport.cmd"
     assert launcher.is_file()
     assert 'python "%~dp0slk-transport.pyz" %*' in launcher.read_text(encoding="utf-8")

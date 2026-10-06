@@ -38,7 +38,7 @@ Supervisor 可以按实际原因组合以下办法：
 
 调整通常保持原 Run 目标和已约定验收目标；Owner主动改变目标时，再更新相应定义。Supervisor 把原因、选择、影响、CELL n/N变化和未决风险写入根记录。
 
-Supervisor 用 `slk-state revise-plan` 或 `write` 追加有界处置决定，不把确认收信当接管完成。计划调整沿 `Supervisor → Checker` 用 `SLK TOKEN` 回到 `$slk-dispatch-cell`，正式 D1 FAIL 沿 `$slk-rework-cell` 给同一 Worker 返工指引；原角色宿主核验 native start 并提交 TOKEN，不重复已有施工或审查。结束处置前确认正确成员真实接手、OW 已恢复本 Run 巡查；否则保留明确未解决项和下一动作，不以“发现异常”结案。
+首次正式 D1 FAIL 可沿 `$slk-rework-cell` 给同一 Worker 一次普通返工。第二次及以后由旧 RoleHost 返回 `ROLE_HOST_CELL_SPLIT_REQUIRED`；Supervisor 对两轮证据做 AGGRESSIVE 调查，用密封 `supervisor-admin revise-plan` 版本化拆分，冻结新 revision RoleHost，并更新标准 Temporal Run 配置的 Host 路径/哈希。计划调整沿 `Supervisor → Checker` 用 `SLK TOKEN` 和标准 `CELL_DISPATCH` 回到 `$slk-dispatch-cell`，再由 Checker 派首个后继 CELL；不能直接发给 Worker或开始第三次普通返工。原角色宿主核验 native start 并提交 TOKEN。结束处置前确认正确成员真实接手、OW 已恢复本 Run 巡查；否则保留明确未解决项和下一动作。
 
 不要在线等待或持续介入普通 CELL；Overwatcher 只核实并报告运行证据，不能替 Supervisor 恢复成员、决定路线、修改计划、TOKEN 或 BI。同一 CELL 第二次正式 D1 FAIL 起，对照两轮 findings、candidate diff、实际步骤、复现/回归证据和环境假设做 `AGGRESSIVE` 调查，结果应进入版本化拆分或其他明确路线，不能只重复普通建议、接管 D1，或直接开始第三次普通返工。
 

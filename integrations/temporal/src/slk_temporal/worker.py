@@ -44,6 +44,17 @@ def _activities(module_name: str) -> list[Adapter]:
     return result
 
 
+def _selected_adapter(*, adapter_module: str | None, standard_config_root: Any | None) -> str:
+    if (adapter_module is None) == (standard_config_root is None):
+        raise ValueError("exactly one adapter module or standard config root is required")
+    if standard_config_root is not None:
+        from . import standard_adapter
+
+        standard_adapter.configure(standard_config_root)
+        return "slk_temporal.standard_adapter"
+    return str(adapter_module)
+
+
 async def run(address: str, task_queue: str, adapter_module: str) -> None:
     client = await Client.connect(address)
     async with Worker(
@@ -59,9 +70,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--address", default="localhost:7233")
     parser.add_argument("--task-queue", required=True)
-    parser.add_argument("--adapter-module", required=True)
+    adapter = parser.add_mutually_exclusive_group(required=True)
+    adapter.add_argument("--adapter-module")
+    adapter.add_argument("--standard-config-root")
     args = parser.parse_args()
-    asyncio.run(run(args.address, args.task_queue, args.adapter_module))
+    module = _selected_adapter(
+        adapter_module=args.adapter_module,
+        standard_config_root=args.standard_config_root,
+    )
+    asyncio.run(run(args.address, args.task_queue, module))
     return 0
 
 

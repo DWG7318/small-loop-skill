@@ -83,6 +83,17 @@ def test_cli_exposes_one_commit_only_checker_recovery_entry(tmp_path: Path) -> N
     assert "consume-committed-checker-terminal" in result.stdout
 
 
+def test_cli_exposes_standard_new_run_preparation_entries(tmp_path: Path) -> None:
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+
+    result = run_cli(artifact, "--help")
+
+    assert result.returncode == 0
+    assert "seal-normal-chain-source" in result.stdout
+    assert "preflight-conformance-sample" in result.stdout
+    assert "preflight-new-run" in result.stdout
+
+
 def test_nested_windows_send_retries_access_denied_without_breakaway(
     monkeypatch,
 ) -> None:

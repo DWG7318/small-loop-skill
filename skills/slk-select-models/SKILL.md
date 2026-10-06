@@ -14,7 +14,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs role-specific m
 
 ## 绑定规则
 
-- readiness 同时核对角色、runtime、provider、model、reasoning、session、adapter、endpoint、上下文/任务容量、可写工作区与 Run；使用 `slk-transport preflight-run` 形成闭合结果，提示词自称某角色不构成绑定。
+- readiness 同时核对角色、runtime、provider、model、reasoning、session、adapter、endpoint、上下文/任务容量、可写工作区与 Run；新 Run 使用 `slk-transport preflight-new-run`，续接使用 `preflight-admission`，提示词自称某角色不构成绑定。
 - Supervisor 与 Overwatcher 的具体型号由 Owner 在创建或绑定前决定并冻结；同能力等级替代也需要登记真实型号并通过同一 readiness，不能由角色自行推断、升级、降级或静默替换。
 - Checker 只使用登记的 `ocrv-checker` 端点，Worker 只使用登记的 `dsh-worker` 端点；Codex 对话不能代替二者。
 - D1 FAIL 不自动把 DSH Worker 升级成其他模型；按 `$slk-rework-cell` 由 Codex Supervisor 为同一 Worker 生成受限改进指引。

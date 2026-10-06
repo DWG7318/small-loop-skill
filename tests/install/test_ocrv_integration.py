@@ -429,6 +429,9 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert (ocrv / "slk-native-activity-capabilities.json").read_bytes() == (
         INTEGRATION / "slk-native-activity-capabilities.json"
     ).read_bytes()
+    assert (ocrv / "OCRV-SLK-CONFIGURATION.md").read_bytes() == (
+        INTEGRATION / "OCRV-SLK-CONFIGURATION.md"
+    ).read_bytes()
     assert set(receipt["installed_sha256"]) == {
         "slk_checker_adapter.py",
         "slk-checker.cmd",
@@ -436,6 +439,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
         "slk_checker_recovery.py",
         "slk-checker-capabilities.json",
         "slk-native-activity-capabilities.json",
+        "OCRV-SLK-CONFIGURATION.md",
     }
 
     rolled_back = run_script(
@@ -453,3 +457,4 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == adapter
     assert (ocrv / "slk-checker-capabilities.json").read_bytes() == original_capabilities
     assert not (ocrv / "slk-native-activity-capabilities.json").exists()
+    assert not (ocrv / "OCRV-SLK-CONFIGURATION.md").exists()

@@ -14,6 +14,7 @@ from temporalio.client import Client, WorkflowUpdateFailedError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
+from slk_temporal.contracts import StartSlkRequest
 from slk_temporal.workflows import RunSlkWorkflow, StartSlkWorkflow
 
 from .test_contracts import (
@@ -108,6 +109,18 @@ async def _wait_for_phase(handle, env: WorkflowEnvironment, phase: str) -> dict[
     raise AssertionError(f"workflow did not reach {phase}")
 
 
+async def _admit(handle, env: WorkflowEnvironment, start: dict[str, Any]) -> dict[str, Any]:
+    waiting = await _wait_for_phase(handle, env, "AWAITING_ADMISSION")
+    assert waiting["admitted"] is False
+    assert await handle.execute_update(
+        RunSlkWorkflow.request_admission,
+        {"run_id": start["run_id"],
+         "startup_fingerprint": StartSlkRequest.from_dict(start).startup_fingerprint,
+         "workflow_identity_sha256": "9" * 64},
+    ) == "ADMISSION_REQUESTED"
+    return await _wait_for_phase(handle, env, "IDLE")
+
+
 async def _environment(tmp_path: Path) -> WorkflowEnvironment:
     address = os.environ.get("SLK_TEMPORAL_TEST_ADDRESS")
     if address:
@@ -147,7 +160,11 @@ async def test_start_template_starts_one_run_and_ack_closes_delivery(tmp_path: P
                 task_queue=TEST_TASK_QUEUE,
             )
             child = env.client.get_workflow_handle(f"slk-run-{run_id}")
-            await _wait_for_phase(child, env, "IDLE")
+            await _wait_for_phase(child, env, "AWAITING_ADMISSION")
+            with pytest.raises(WorkflowUpdateFailedError) as rejected:
+                await child.execute_update(RunSlkWorkflow.request_delivery, delivery)
+            assert "admission" in str(rejected.value.__cause__)
+            await _admit(child, env, start)
 
             assert await child.execute_update(
                 RunSlkWorkflow.request_delivery, delivery
@@ -190,7 +207,7 @@ async def test_ack_timeout_requests_exact_recovery_then_matching_ack_stops_it(
                 task_queue=TEST_TASK_QUEUE,
             )
             child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
-            await _wait_for_phase(child, env, "IDLE")
+            await _admit(child, env, start)
             await child.execute_update(RunSlkWorkflow.request_delivery, delivery)
             await env.sleep(3)
             await _wait_for_phase(child, env, "RECOVERY_REQUIRED")
@@ -223,7 +240,7 @@ async def test_member_residency_over_thirty_minutes_notifies_supervisor_once(tmp
                 StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue=TEST_TASK_QUEUE
             )
             child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
-            await _wait_for_phase(child, env, "IDLE")
+            await _admit(child, env, start)
             await child.execute_update(RunSlkWorkflow.request_delivery, delivery)
             ack = ack_value()
             ack["operation_id"] = delivery["operation_id"]
@@ -253,7 +270,7 @@ async def test_temporal_independently_checks_overwatcher_every_twenty_minutes(tm
                 StartSlkWorkflow.run, start, id=f"slk-start-{start['run_id']}", task_queue=TEST_TASK_QUEUE
             )
             child = env.client.get_workflow_handle(f"slk-run-{start['run_id']}")
-            await _wait_for_phase(child, env, "IDLE")
+            await _admit(child, env, start)
             await env.sleep(1201)
             assert len(CALLS["inspect_overwatcher"]) == 1
             assert CALLS["inspect_overwatcher"][0]["overwatcher_role_instance_id"] == "overwatcher-a"
@@ -295,7 +312,7 @@ async def test_overwatcher_exit_blocks_next_delivery_until_exact_supervisor_repa
                 task_queue=TEST_TASK_QUEUE,
             )
             child = env.client.get_workflow_handle(f"slk-run-{run_id}")
-            await _wait_for_phase(child, env, "IDLE")
+            await _admit(child, env, start)
 
             assert await child.execute_update(
                 RunSlkWorkflow.overwatcher_exited, exit_notice

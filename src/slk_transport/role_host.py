@@ -380,6 +380,11 @@ class RoleHost:
             raise wc.CompletionError("SUPERVISOR_RESULT_INVALID", "decision does not bind the native incoming responsibility")
         decision, outgoing = result["decision"], None
         if operation == "rework":
+            if envelope.payload.get("rework_round", 0) >= 2:
+                raise wc.CompletionError(
+                    "ROLE_HOST_CELL_SPLIT_REQUIRED",
+                    "the second consecutive formal D1 failure requires a versioned CELL split; the old host cannot issue ordinary rework",
+                )
             for key in ("d1_failure_event_id", "failed_candidate_sha256", "rework_round", "cell_goal", "acceptance_criteria", "findings"):
                 if decision.get(key) != envelope.payload.get(key):
                     raise wc.CompletionError("SUPERVISOR_RESULT_INVALID", "rework changed the original D1 or acceptance")

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-temporal-standard-bootstrap.schema.json",
+  "title": "SLK 4.4.2 Temporal standard bootstrap configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method_version", "run_id", "query_command", "state_config_path"],
+  "properties": {
+    "schema_version": {"const": "slk.temporal-standard-bootstrap/v1"},
+    "method_version": {"const": "4.4.2"},
+    "run_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$"},
+    "query_command": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "state_config_path": {"type": "string", "minLength": 1}
+  }
+}

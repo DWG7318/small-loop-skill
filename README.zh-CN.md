@@ -15,7 +15,7 @@ Overwatcher：必需、非权威，只核实真假并向 Supervisor 报告
 Temporal：必需的连续性与计时保障，不拥有工程权威
 ```
 
-任何 CELL 开工前，Supervisor 必须打开 BI 1.1.0，建立四角色 `RUN_TEAM_REGISTRY`，证明工具/能力和设备 readiness，连接共享本地 Temporal 服务并启动本 Run 的确定性 `SLK.Start`/`SLK.Run`。新 Run 完成七条准确通讯演练；续接中的 Run 复用同版本完整正常链证明，但另行验证本 Run 的准确身份、端点和四个密封权限，不伪造未来 FAIL/返工/D2。证据缺失、过期、猜测、不可查询时禁止派工。
+任何 CELL 开工前，Supervisor 必须打开 BI 1.1.0，建立四角色 `RUN_TEAM_REGISTRY`，证明工具/能力和设备 readiness，并绑定由七条准确通讯演练产生的真实隔离来源。第一份来源只能由一次性单 CELL Run 通过 `preflight-conformance-sample` 产生：运行证据位于 `slk-conformance/<SLK-CONFORMANCE-…>`，Worker 工作区是与其分离、clean、固定 HEAD 且无 remote 的样本 Git，其他角色保留真实原生 cwd，绝不能派产品工作。Temporal 使用内置两阶段标准适配器：中央 bootstrap 只创建一次真实工作流对，得到真实 identity/Host/OW 证据后再按显式样本或产品模式准入；产品 Run 永远以 `preflight-new-run` 绑定另一 Run 的密封来源，不重放假 FAIL/返工/D2。证据缺失、过期、猜测、循环依赖或不可查询时禁止派工。
 
 Codex 担任 Supervisor，固定 canonical `gpt-6.1-sol`，每个 Run 由 Owner 选择 `high` 或 `xhigh`；OCRV 担任 Checker（Qwen3.8-Max）；DSH 担任 Worker（DeepSeek V4 Flash）。runtime、model、reasoning、Session、adapter、endpoint 与原生活动都由工具验证，不从提示词推断。Supervisor 还要按 DSH 实际能力给冻结方案定 CELL：大工作在派工前拆成可独立 D0/D1 的中小 CELL，不降低验收。目标是绝大部分 CELL 首轮 D1 PASS；同一 CELL 第二次连续正式 D1 FAIL 后停止普通返工，版本化拆分未接受范围，D1 权威仍属于 Checker。
 

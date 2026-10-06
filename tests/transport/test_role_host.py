@@ -436,6 +436,84 @@ def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkey
     assert len(seen) == (2 if d2 else 1)
 
 
+@pytest.mark.parametrize("rework_round", [2, 3])
+def test_second_or_later_d1_failure_cannot_use_old_host_as_ordinary_rework(
+    tmp_path, monkeypatch, rework_round,
+):
+    host, source, incoming, result, projection = supervisor_result_fixture(tmp_path)
+    payload = {**incoming.payload, "rework_round": rework_round}
+    incoming = Envelope.from_dict({**asdict(incoming), "payload": payload,
+        "payload_sha256": wc.canonical_json_sha256(payload)})
+    write_json(source / "envelope.json", asdict(incoming))
+    result["decision"]["rework_round"] = rework_round
+    result["decision"]["investigation_mode"] = "AGGRESSIVE"
+    write_json(source / "supervisor-result.json", result)
+    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
+    monkeypatch.setattr(host, "_boundary", lambda envelope: projection)
+    monkeypatch.setattr(host, "_send_owned", lambda *_args, **_kwargs: pytest.fail(
+        "second D1 failure must not be sent as ordinary rework"))
+
+    with pytest.raises(wc.CompletionError) as error:
+        host.complete(source)
+
+    assert error.value.error_code == "ROLE_HOST_CELL_SPLIT_REQUIRED"
+
+
+def test_revised_host_dispatches_first_split_successor_and_old_host_rejects_revision(tmp_path, monkeypatch):
+    old_host, source, original = prepared_host(tmp_path)
+    first_payload = {"cell_goal": "Implement bounded half A", "d1_criteria": ["A is independently accepted"]}
+    second_payload = {"cell_id": "CELL-001-B", "cell_ordinal": 2, "required_cell_count": 2,
+        "task": "Implement bounded half B", "d1_criteria": ["B is independently accepted"],
+        "root_record_path": str(source / "envelope.json")}
+    revised_binding = {**old_host.binding, "plan_revision": 2, "cells": [
+        {"go_id": original.go_id, "cell_id": "CELL-001-A", "payload": first_payload},
+        {"go_id": original.go_id, "cell_id": "CELL-001-B", "payload": second_payload},
+    ]}
+    revised = RoleHost(revised_binding, "b" * 64)
+    checker = revised.endpoint("checker")
+    dispatch_payload = {"worker_endpoint": revised.endpoint("worker"), "worker_payload": first_payload}
+    incoming = Envelope.from_dict({**asdict(original), "cell_id": "CELL-001-A",
+        "sender_role": "supervisor",
+        "sender_role_instance_id": revised.endpoint("supervisor")["role_instance_id"],
+        "receiver_role": "checker", "receiver_role_instance_id": checker["role_instance_id"],
+        "receiver_endpoint_version": checker["endpoint_version"], "payload_type": "CELL_DISPATCH",
+        "payload": dispatch_payload, "payload_sha256": wc.canonical_json_sha256(dispatch_payload)})
+    write_json(source / "endpoint.json", checker)
+    write_json(source / "envelope.json", asdict(incoming))
+    write_json(source / "started.json", make_native_start(
+        adapter=checker["adapter"], run_id=incoming.run_id, cell_id=incoming.cell_id,
+        message_id=incoming.message_id, request_sha256=incoming.payload_sha256,
+        native_request_sha256="c" * 64, native_task_kind="ocrv-review",
+        native_task_id="checker-dispatch-review", native_task_status="RUNNING", pid=os.getpid()))
+    write_json(source / "completed.json", DeliveryResult(
+        schema_version="slk.transport-result/v1", message_id=incoming.message_id,
+        run_id=incoming.run_id, adapter=checker["adapter"], status="completed",
+        native_identity={}, error_code=None, evidence=()).to_dict())
+    outgoing = Envelope.from_dict({**asdict(incoming),
+        "message_id": "33333333-3333-4333-8333-333333333333",
+        "token_sequence": incoming.token_sequence + 1, "sender_role": "checker",
+        "sender_role_instance_id": checker["role_instance_id"], "receiver_role": "worker",
+        "receiver_role_instance_id": revised.endpoint("worker")["role_instance_id"],
+        "receiver_endpoint_version": revised.endpoint("worker")["endpoint_version"],
+        "payload_type": "WORKER_TASK", "payload": first_payload,
+        "payload_sha256": wc.canonical_json_sha256(first_payload)})
+    write_json(source / "checker-result.json", {"schema_version": "slk.checker-result/v1",
+        "operation": "dispatch", "source_message_id": incoming.message_id,
+        "next_endpoint": revised.endpoint("worker"), "next_envelope": asdict(outgoing)})
+    revised_projection = host_boundary(revised, incoming)
+    revised_projection["summary"]["current_plan_revision"] = 2
+    revised_projection["runtime_snapshot"]["plan_revision"] = 2
+    monkeypatch.setattr(revised, "_boundary", lambda _envelope: revised_projection)
+    monkeypatch.setattr(revised, "_send_owned", lambda _root, envelope, *_args: {
+        "status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id})
+
+    assert revised.complete(source)["status"] == "OWNED_HANDOFF_COMMITTED"
+    monkeypatch.setattr(old_host, "projection", lambda: revised_projection)
+    with pytest.raises(wc.CompletionError) as error:
+        old_host._boundary(incoming)
+    assert error.value.error_code == "ROLE_HOST_PLAN_CHANGED"
+
+
 def test_supervisor_can_submit_decision_from_exact_session_before_turn_terminal(tmp_path, monkeypatch):
     host, source, incoming, result, projection = supervisor_result_fixture(tmp_path)
     (source / "completed.json").unlink()

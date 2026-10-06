@@ -23,16 +23,18 @@ The only positive activation fact is a matching `slk.native-start/v2` acknowledg
 ## Windows local setup
 
 1. Provision the official Temporal CLI/service outside this repository and operate it headlessly on the local machine. SLK never installs Docker or a service.
-2. Install `integrations/temporal` without network/dependency changes in the Run's registered Python environment and start `slk-temporal-worker` on the frozen task queue. Prove `python -m slk_temporal.delivery_client --help` from that exact environment.
-3. Supply an adapter whose five async functions call existing authoritative entrances: `prepare_run`, `deliver_message`, `request_recovery`, `inspect_overwatcher`, and `notify_supervisor`.
-4. Before CELL dispatch, pass `slk-run-readiness/v1` with exact service/worker health plus both deterministic workflow identities, then start the closed 4.4.2 request once.
-5. Preserve startup fingerprint, workflow IDs, update receipts and terminal closure as Run evidence.
+2. Install `integrations/temporal` without network/dependency changes in the Run's registered Python environment and start `slk-temporal-worker --standard-config-root <root>` on the frozen task queue. Prove the installed `start`, `admit` and `delivery` entries from that exact environment; no caller adapter module is required.
+3. Write the closed `<run>.bootstrap.json`, then call `slk-temporal-start ... --identity-out <absolute path>`. It validates the live central four-role registry and creates the deterministic pair once; the child remains `AWAITING_ADMISSION` and rejects delivery.
+4. Inspect the real pair, freeze its identity into RoleHost/OW/readiness evidence, and write the full `<run>.json` with an explicit admission kind/path. A product Run uses `PRODUCT` + `preflight-new-run` and a distinct sealed source. Only a disposable one-CELL Run may use `ISOLATED_CONFORMANCE_SAMPLE` + `preflight-conformance-sample`: runtime evidence is contained by `slk-conformance/<SLK-CONFORMANCE-…>`, Worker uses the exact separate sample Git proven clean, fixed at the contracted HEAD and without a remote, and Supervisor/Checker/OW preserve their truthful native workspaces/cwd. The CELL `root_record_path` remains the exact automatically exported record under the active `SLK_CONFIG_PATH` data root; it is not copied into the sample Git. Call `slk-temporal-admit` with the hash-bound identity; only `READY/IDLE` permits its bounded dispatch.
+5. Preserve bootstrap receipt, startup fingerprint, native workflow IDs, admission receipt, update receipts and terminal closure as Run evidence. After a plan split, freeze the new RoleHost revision and atomically replace only the current Host path/hash in that Run's full config before standard `CELL_DISPATCH`.
 
 A development server is suitable only for local evaluation. Durable production operation needs separately governed backup, access control and availability. A missing SDK may not break import of the SLK core, but a 4.4.2 Run without proven Temporal readiness is blocked.
 
 ## Closed operation
 
 The startup request binds version 4.4.2, Run/revision/task queue, timeouts, idempotency key and exactly one Supervisor, Checker, Worker and Overwatcher endpoint. Unknown fields, padded identities, duplicate role instances, missing OW, invalid hashes, wrong versions, stale update events and mismatched acknowledgements fail closed.
+
+Startup is deliberately two-stage. Bootstrap proves current central identities and service reachability, then creates the unique workflow pair; it cannot claim product readiness. Full admission runs only after that pair's native IDs are available and the exact Host/OW evidence exists. It is idempotent for the same identity and never rebuilds the pair. A first-start circular dependency, synthetic native IDs, or delivery while admission is pending fails closed.
 
 Each delivery update freezes operation/message, sender/receiver, payload, GO/CELL/round, runtime revision and start deadline. Duplicate identical updates are idempotent; changed duplicates, extra unresolved deliveries and wrong-scope ACKs are rejected. Temporal records no synthetic progress and cannot turn recovery, terminal completion or elapsed time into acceptance.
 

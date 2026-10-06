@@ -141,6 +141,9 @@ def _repository_sources(repository: Path, listed: dict[str, str]) -> list[tuple[
             if listed.get(relative) != sha256(source):
                 raise PackageError(f"document is not the current repository manifest entry: {relative}")
             mappings.append((source, share / source.relative_to(repository)))
+            if tree.startswith("docs/"):
+                # Installed Skills resolve ../../docs against CodexHome, not the share mirror.
+                mappings.append((source, source.relative_to(repository)))
 
     migrations = _files(repository / SQLITE_SCHEMA_ROOT)
     if [path.name for path in migrations] != [f"{index:04}.sql" for index in range(1, 10)]:

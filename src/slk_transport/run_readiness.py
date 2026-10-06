@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Mapping
@@ -24,6 +25,15 @@ ADMISSION_FIELDS = frozenset(
         "schema_version", "run_id", "plan_revision", "roles", "optional_features",
         "bi_open_receipt", "temporal_readiness_receipt", "normal_chain_conformance",
         "current_host_binding", "sealed_role_receipts",
+    }
+)
+CONFORMANCE_SAMPLE_ADMISSION_FIELDS = frozenset(
+    (ADMISSION_FIELDS - {"normal_chain_conformance"}) | {"isolation_contract"}
+)
+CONFORMANCE_SAMPLE_ISOLATION_FIELDS = frozenset(
+    {
+        "schema_version", "method_version", "run_id", "kind", "evidence_root",
+        "sample_workspace_root", "sample_head", "disposable", "product_dispatch_allowed",
     }
 )
 ROLE_FIELDS = frozenset(
@@ -503,8 +513,8 @@ def _valid_current_registration(host_reference: Any, consumers: Any, run_id: str
         return False
 
 
-def _valid_current_token_boundary(host_reference: Any, run_id: str, revision: int,
-                                  roles: list[Mapping[str, Any]]) -> bool:
+def _current_token_boundary(host_reference: Any, run_id: str, revision: int,
+                            roles: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
     """Prove that the admitted host can resolve the same current boundary it will consume."""
     from . import worker_completion as wc
     from .role_host import RoleHost
@@ -515,10 +525,17 @@ def _valid_current_token_boundary(host_reference: Any, run_id: str, revision: in
         boundary = wc.resolve_authoritative_token_boundary(
             projection, run_id=run_id, plan_revision=revision)
         supervisor = next(row for row in roles if row["role"] == "supervisor")
-        return boundary["source"] != "TOKEN_CREATED" or (
-            boundary["holder_role_instance_id"] == supervisor["role_instance_id"])
+        if (boundary["source"] == "TOKEN_CREATED"
+            and boundary["holder_role_instance_id"] != supervisor["role_instance_id"]):
+            return None
+        return boundary
     except (OSError, TypeError, ValueError, KeyError, StopIteration):
-        return False
+        return None
+
+
+def _valid_current_token_boundary(host_reference: Any, run_id: str, revision: int,
+                                  roles: list[Mapping[str, Any]]) -> bool:
+    return _current_token_boundary(host_reference, run_id, revision, roles) is not None
 
 
 def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | None:
@@ -562,6 +579,155 @@ def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | Non
         return value["source_run_id"]
     except (OSError, TypeError, ValueError, KeyError):
         return None
+
+
+def _inside(root: Path, value: Any, *, directory: bool = False) -> Path:
+    path = Path(_nonempty(value, "isolated sample path"))
+    if not path.is_absolute() or not (path.is_dir() if directory else path.is_file()):
+        raise ValueError("isolated sample path is unavailable")
+    resolved = path.resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError("isolated sample evidence escaped its workspace")
+    return resolved
+
+
+def _clean_fixed_sample_git(value: Any, expected_head: Any) -> Path:
+    root = Path(_nonempty(value, "sample Git workspace"))
+    if not root.is_absolute() or not root.is_dir() or not (root / ".git").exists():
+        raise ValueError("sample workspace is not an existing Git worktree")
+    root = root.resolve()
+    git = shutil.which("git")
+    if git is None:
+        raise ValueError("Git is unavailable for sample isolation")
+    creationflags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0
+
+    def query(*arguments: str) -> str:
+        completed = subprocess.run(
+            [git, "-C", str(root), *arguments], stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, encoding="utf-8", errors="strict",
+            check=False, timeout=10, creationflags=creationflags,
+        )
+        if completed.returncode != 0:
+            raise ValueError("sample Git identity is unavailable")
+        return completed.stdout.strip()
+
+    top = Path(query("rev-parse", "--show-toplevel")).resolve()
+    head = query("rev-parse", "HEAD")
+    expected = _nonempty(expected_head, "sample Git HEAD")
+    if (top != root or len(head) not in {40, 64} or set(head) - SHA256
+        or head != expected or query("remote")
+        or query("status", "--porcelain=v1", "--untracked-files=all")):
+        raise ValueError("sample Git must be clean, fixed and have no remote")
+    return root
+
+
+def _valid_current_root_record(value: Any, run_id: str) -> Path:
+    config_path = Path(_nonempty(os.environ.get("SLK_CONFIG_PATH"), "SLK state config"))
+    if not config_path.is_absolute() or not config_path.is_file():
+        raise ValueError("SLK state config is unavailable")
+    config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    if (not isinstance(config, Mapping) or set(config) != {"schema_version", "data_root"}
+        or config.get("schema_version") != "slk.config/v1"):
+        raise ValueError("SLK state config is invalid")
+    data_root = Path(_nonempty(config["data_root"], "SLK data root"))
+    if (not data_root.is_absolute() or not data_root.is_dir()
+        or not (data_root / "slk.db").is_file()):
+        raise ValueError("SLK data root is unavailable")
+    exports = (data_root / "exports").resolve()
+    record = Path(_nonempty(value, "sample Run root record"))
+    if not record.is_absolute() or not record.is_file():
+        raise ValueError("sample Run root record is unavailable")
+    record = record.resolve()
+    try:
+        relative = record.relative_to(exports)
+    except ValueError as exc:
+        raise ValueError("sample root record is outside the configured export root") from exc
+    if (len(relative.parts) != 3 or relative.parts[1] != run_id
+        or relative.parts[2] != f"SLK-RUN-{run_id}.md"):
+        raise ValueError("sample root record does not bind the exact Run export")
+    return record
+
+
+def _valid_conformance_sample_isolation(
+    contract_path: Any,
+    request: Mapping[str, Any],
+    roles: list[Mapping[str, Any]],
+) -> bool:
+    """Limit first-source bootstrap to one disposable, non-product sample CELL."""
+    try:
+        contract = _receipt(contract_path)
+        if contract is None:
+            raise ValueError("isolation contract is unavailable")
+        _closed(contract, CONFORMANCE_SAMPLE_ISOLATION_FIELDS, "isolation contract")
+        run_id = _nonempty(request["run_id"], "run_id")
+        evidence_root = Path(_nonempty(contract["evidence_root"], "sample evidence root"))
+        if (contract["schema_version"] != "slk.conformance-sample-isolation/v1"
+            or contract["method_version"] != "4.4.2"
+            or contract["run_id"] != run_id
+            or contract["kind"] != "ISOLATED_NORMAL_CHAIN_SAMPLE"
+            or contract["disposable"] is not True
+            or contract["product_dispatch_allowed"] is not False
+            or not run_id.startswith("SLK-CONFORMANCE-")
+            or not evidence_root.is_absolute() or not evidence_root.is_dir()):
+            raise ValueError("isolation contract is not a disposable conformance sample")
+        evidence_root = evidence_root.resolve()
+        if evidence_root.name != run_id or evidence_root.parent.name.lower() != "slk-conformance":
+            raise ValueError("sample evidence must be a named child of slk-conformance")
+        sample_root = _clean_fixed_sample_git(
+            contract["sample_workspace_root"], contract["sample_head"])
+        if sample_root.is_relative_to(evidence_root) or evidence_root.is_relative_to(sample_root):
+            raise ValueError("sample Git and runtime evidence roots must be separate")
+        _inside(evidence_root, contract_path)
+        for role in roles:
+            workspace = Path(_nonempty(role["workspace_root"], "role workspace root"))
+            if not workspace.is_absolute() or not workspace.is_dir():
+                raise ValueError("sample role workspace is unavailable")
+            if role["role"] == "worker" and workspace.resolve() != sample_root:
+                raise ValueError("sample Worker must use the exact isolated Git workspace")
+            _inside(evidence_root, role["endpoint_path"])
+        _inside(evidence_root, request["bi_open_receipt"])
+        temporal_path = _inside(evidence_root, request["temporal_readiness_receipt"])
+        temporal = _receipt(str(temporal_path))
+        if temporal is None:
+            raise ValueError("Temporal receipt is unavailable")
+        identity = temporal.get("workflow_identity")
+        if not isinstance(identity, Mapping):
+            raise ValueError("Temporal workflow identity is missing")
+        _inside(evidence_root, identity.get("path"))
+        _inside(evidence_root, temporal.get("attempt_root"), directory=True)
+        host_reference = request["current_host_binding"]
+        if not isinstance(host_reference, Mapping):
+            raise ValueError("RoleHost reference is missing")
+        _inside(evidence_root, host_reference.get("path"))
+        host = _proof(host_reference)
+        cells = host.get("cells")
+        if not isinstance(cells, list) or len(cells) != 1:
+            raise ValueError("conformance sample must freeze exactly one CELL")
+        payload = cells[0].get("payload") if isinstance(cells[0], Mapping) else None
+        if (not isinstance(payload, Mapping)
+            or set(payload) != {
+                "cell_id", "cell_ordinal", "required_cell_count", "task",
+                "d1_criteria", "root_record_path",
+            }
+            or payload.get("cell_ordinal") != 1
+            or payload.get("required_cell_count") != 1
+            or payload.get("cell_id") != cells[0].get("cell_id")):
+            raise ValueError("conformance sample CELL is not the fixed one-CELL shape")
+        _nonempty(payload["task"], "sample task")
+        _string_array(payload["d1_criteria"], "sample D1 criteria")
+        _valid_current_root_record(payload["root_record_path"], run_id)
+        consumers = request["sealed_role_receipts"]
+        if not isinstance(consumers, Mapping) or set(consumers) != set(REQUIRED_ROLES):
+            raise ValueError("sample saved-consumer evidence is incomplete")
+        for reference in consumers.values():
+            if not isinstance(reference, Mapping):
+                raise ValueError("sample saved-consumer reference is invalid")
+            _inside(evidence_root, reference.get("path"))
+            receipt = _proof(reference)
+            _inside(evidence_root, receipt.get("sealed_path"))
+        return True
+    except (OSError, TypeError, ValueError, KeyError):
+        return False
 
 
 def _tool_exists(value: str) -> bool:
@@ -687,7 +853,8 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
+def evaluate_run_readiness(request: Mapping[str, Any], *,
+                           state_config_path: str | None = None) -> dict[str, Any]:
     """Evaluate one closed three-role Run request without inferring missing facts."""
 
     if not isinstance(request, Mapping):
@@ -745,7 +912,8 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
     if temporal_binding is None:
         reason_codes.append("TEMPORAL_READINESS_INVALID")
     communication_valid = _valid_communication_rehearsal(
-        request["communication_rehearsal"], run_id, revision, raw_roles)
+        request["communication_rehearsal"], run_id, revision, raw_roles,
+        state_config_path=state_config_path)
     if not communication_valid:
         reason_codes.append("COMMUNICATION_REHEARSAL_INVALID")
     elif temporal_binding is not None and not _rehearsal_has_temporal_binding(
@@ -782,12 +950,75 @@ def evaluate_run_readiness(request: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
-    """Admit an in-flight Run without replaying a synthetic product failure or D2."""
+def seal_normal_chain_source(readiness_request_path: Path, state_config_path: Path,
+                             output_path: Path) -> dict[str, Any]:
+    """Seal one real isolated READY rehearsal as reusable version conformance."""
+    request_path = readiness_request_path.resolve()
+    config_path = state_config_path.resolve()
+    target = output_path.resolve()
+    if not request_path.is_file():
+        raise ValueError("readiness request is unavailable")
+    try:
+        request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("readiness request is not readable JSON") from exc
+    if not isinstance(request, Mapping):
+        raise ValueError("readiness request must be an object")
+    config_bytes = config_path.read_bytes()
+    state_context = {
+        "config_path": str(config_path),
+        "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
+    }
+    _source_state_config(state_context)
+    result = evaluate_run_readiness(request, state_config_path=str(config_path))
+    if result["status"] != "READY":
+        raise ValueError("isolated normal-chain source must be READY before sealing")
+    if target.exists():
+        raise ValueError("normal-chain source output already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    rehearsal_path = Path(request["communication_rehearsal"]).resolve()
+    contract = {
+        "schema_version": "slk.normal-chain-source/v1",
+        "method_version": "4.4.2",
+        "status": "PASS",
+        "source_run_id": request["run_id"],
+        "plan_revision": request["plan_revision"],
+        "source_state_context": state_context,
+        "source_roles": [
+            {key: role[key] for key in SOURCE_ROLE_FIELDS}
+            for role in request["roles"]
+        ],
+        "source_communication_rehearsal": {
+            "path": str(rehearsal_path),
+            "sha256": hashlib.sha256(rehearsal_path.read_bytes()).hexdigest(),
+        },
+    }
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        if _normal_chain_conformance(str(temporary), "__SLK_SEAL_VALIDATION__") != request["run_id"]:
+            raise ValueError("sealed normal-chain source could not be independently recomputed")
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return contract
+
+
+def _evaluate_run_admission(request: Mapping[str, Any], *,
+                            require_initial_boundary: bool,
+                            conformance_sample: bool = False) -> dict[str, Any]:
+    """Admit a Run without replaying a synthetic product failure or D2."""
     if not isinstance(request, Mapping):
         raise ValueError("request must be an object")
-    _closed(request, ADMISSION_FIELDS, "admission request")
-    if request["schema_version"] != "slk.run-admission-request/v1":
+    fields = CONFORMANCE_SAMPLE_ADMISSION_FIELDS if conformance_sample else ADMISSION_FIELDS
+    schema = ("slk.conformance-sample-admission-request/v1" if conformance_sample
+              else "slk.run-admission-request/v1")
+    _closed(request, fields, "admission request")
+    if request["schema_version"] != schema:
         raise ValueError("Run admission schema mismatch")
     run_id = _nonempty(request["run_id"], "run_id")
     revision = _positive_int(request["plan_revision"], "plan_revision")
@@ -827,9 +1058,15 @@ def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
     temporal_binding = _temporal_binding_from_receipt(request["temporal_readiness_receipt"], run_id)
     if temporal_binding is None:
         reason_codes.append("TEMPORAL_READINESS_INVALID")
-    conformance_run_id = _normal_chain_conformance(request["normal_chain_conformance"], run_id)
-    if conformance_run_id is None:
-        reason_codes.append("NORMAL_CHAIN_CONFORMANCE_INVALID")
+    conformance_run_id = None
+    if conformance_sample:
+        if not _valid_conformance_sample_isolation(
+                request["isolation_contract"], request, raw_roles):
+            reason_codes.append("CONFORMANCE_SAMPLE_ISOLATION_INVALID")
+    else:
+        conformance_run_id = _normal_chain_conformance(request["normal_chain_conformance"], run_id)
+        if conformance_run_id is None:
+            reason_codes.append("NORMAL_CHAIN_CONFORMANCE_INVALID")
     registration_valid = _valid_current_registration(
         request["current_host_binding"], request["sealed_role_receipts"], run_id, revision, raw_roles)
     if not registration_valid:
@@ -837,9 +1074,13 @@ def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
     elif temporal_binding is not None and not _host_has_temporal_binding(
             request["current_host_binding"], temporal_binding, run_id, revision):
         reason_codes.append("TEMPORAL_BINDING_INVALID")
-    if registration_valid and not _valid_current_token_boundary(
-            request["current_host_binding"], run_id, revision, raw_roles):
-        reason_codes.append("CURRENT_TOKEN_BOUNDARY_INVALID")
+    if registration_valid:
+        boundary = _current_token_boundary(
+            request["current_host_binding"], run_id, revision, raw_roles)
+        if boundary is None:
+            reason_codes.append("CURRENT_TOKEN_BOUNDARY_INVALID")
+        elif require_initial_boundary and boundary["source"] != "TOKEN_CREATED":
+            reason_codes.append("NEW_RUN_INITIAL_TOKEN_REQUIRED")
     if any(name not in options_by_name for name in REQUIRED_OPTIONS):
         reason_codes.append("REQUIRED_OPTION_MISSING")
     for option in options_by_name.values():
@@ -858,3 +1099,19 @@ def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
             "optional_features": list(options_by_name.values()),
             "conformance_run_id": conformance_run_id,
             "request_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
+
+
+def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Admit an in-flight Run against reusable normal-chain conformance."""
+    return _evaluate_run_admission(request, require_initial_boundary=False)
+
+
+def evaluate_new_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Admit only a new product Run still at its initial Supervisor TOKEN."""
+    return _evaluate_run_admission(request, require_initial_boundary=True)
+
+
+def evaluate_conformance_sample_admission(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Admit only a disposable one-CELL Run that can create the first source receipt."""
+    return _evaluate_run_admission(
+        request, require_initial_boundary=True, conformance_sample=True)

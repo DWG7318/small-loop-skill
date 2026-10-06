@@ -16,8 +16,8 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 
 1. 检查本机登记的 Temporal 地址、namespace、task queue、执行进程和持久数据库可达；不为每个 Run 另装服务、另开端口或另建数据库。
 2. 用 `RUN_TEAM_REGISTRY` 的四角色端点和当前 runtime revision 构造闭合 `StartSlkRequest`；方法版本为 4.4.2，未知字段、旧版本、重复角色或缺少 OW 都保持未就绪。
-3. 取得 `slk.prepare_run` 的哈希绑定 READY 收据，再以稳定 Run ID 启动该 Run 的一对工作流；同 ID 改参数不重建、不覆盖。
-4. 把 Temporal readiness 收据交给 `$slk-manage-team`；服务、worker、adapter 或收据未证明时不派首 CELL。
+3. 标准 worker 使用 `--standard-config-root`，不要求项目自写 adapter。先用 `<run>.bootstrap.json` 校验真实中央初始登记和启动输入，再以稳定 Run ID 创建且仅创建一次工作流对并保存真实 identity；此时 `SLK.Run` 应停在 `AWAITING_ADMISSION`，任何投递均被拒绝。
+4. 取得真实 identity 后才冻结 RoleHost、OW 活动证据和 `<run>.json`；配置明确写 `admission_kind=PRODUCT|ISOLATED_CONFORMANCE_SAMPLE` 和对应 `admission_path`，前者只执行 `preflight-new-run`，后者只允许团队准备规则中的一次性单 CELL 样本执行 `preflight-conformance-sample`。再用 `slk-temporal-admit` 触发唯一 `slk.prepare_run`；只有状态成为 `READY/IDLE` 才把 readiness 收据交给 `$slk-manage-team`，未证明时不派首 CELL，同 ID 改参数不重建、不覆盖。
 
 ## 运行边界
 
@@ -39,4 +39,5 @@ Run 的工程终结顺序完成后，Supervisor 关闭本 Run 的 `SLK.Run` 与 
 - 不要把 `BLOCKED`/`RECOVERY_REQUIRED` 变成等待超时，也不要在 ACK 后、中央 commit 前的重试中再次启动接收者或覆盖旧 update 结果。
 - 不要让重试重新施工、重跑 D1、重复移动 TOKEN 或生成第二候选；不确定时保持阻断并交 Supervisor。
 - 不要让单个 Run 关闭共享服务，也不要让一个 Run 的 ID、计时、恢复或证据污染另一个 Run。
+- 不要在工作流身份尚不存在时伪造 identity/readiness，也不要让启动依赖尚未创建的 child identity；`PAIR_CREATED` 不是产品准入，`AWAITING_ADMISSION` 期间任何 CELL 投递均应被拒绝。
 - 不要弹出 PowerShell/控制台窗口；服务和 worker 使用 headless 方式，BI 窗口仍按准备规则可见。

@@ -45,6 +45,9 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
     launcher = (package / "tools/slk/bin/slk-transport.cmd").read_text(encoding="utf-8")
     assert 'python "%~dp0slk-transport.pyz" %*' in launcher
     assert {
+        "docs/state/SLK-STATE.md",
+        "docs/transport/SLK-TRANSPORT.md",
+        "docs/runtime/SLK-TEMPORAL.md",
         "tools/slk/share/small-loop-skill/docs/state/SLK-STATE.md",
         "tools/slk/share/small-loop-skill/docs/state/SLK-BI.md",
         "tools/slk/share/small-loop-skill/docs/transport/SLK-TRANSPORT.md",
@@ -79,6 +82,9 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
         "tools/slk/share/small-loop-skill/schema/sqlite/0009.sql",
         "tools/slk/share/small-loop-skill/VERSION",
     } <= paths
+    assert (package / "docs/state/SLK-STATE.md").read_bytes() == (
+        package / "tools/slk/share/small-loop-skill/docs/state/SLK-STATE.md"
+    ).read_bytes()
     assert sorted(paths) == [entry["path"] for entry in manifest["files"]]
     assert all(len(entry["sha256"]) == 64 and entry["size"] >= 0 for entry in manifest["files"])
 

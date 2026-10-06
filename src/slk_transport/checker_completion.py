@@ -148,6 +148,8 @@ def _ordered_cells(projection: Mapping[str, Any]) -> list[dict[str, Any]]:
         ):
             if not isinstance(cell, Mapping):
                 raise CheckerCompletionError("CHECKER_COMPLETION_PLAN_INVALID", "current plan CELL is malformed")
+            if cell.get("state") == "split":
+                continue
             cell_id = cell.get("cell_id")
             ordinal = cell.get("ordinal")
             if (

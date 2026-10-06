@@ -2531,15 +2531,9 @@ def prepare_sealed_role_credential(
     Input is the existing one-time credential-out file, never a CLI secret value.
     Neither source nor an existing destination is rewritten or removed.
     """
-    if os.name != "nt" or role not in {"supervisor", "checker", "worker", "overwatcher"}:
-        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "Windows and an exact role are required")
     source, destination = Path(source), Path(destination)
-    if not source.is_absolute() or not destination.is_absolute() or destination.exists():
-        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "use absolute paths and a new sealed destination")
-    if not all(isinstance(item, str) and item.strip() for item in (run_id, role_instance_id)) or not isinstance(state_command, list) or not state_command or not all(
-        isinstance(part, str) and part for part in state_command
-    ):
-        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "frozen identity and state command are required")
+    if not source.is_absolute():
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "use an absolute credential source")
     try:
         raw = source.read_bytes()
         if len(raw) > 512:
@@ -2547,6 +2541,33 @@ def prepare_sealed_role_credential(
         secret = _decode_dpapi_plaintext(raw.rstrip(b"\r\n"))
     except (OSError, ValueError) as exc:
         raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "credential source is unreadable or invalid") from exc
+    try:
+        return seal_role_credential(
+            secret, destination, run_id=run_id, role=role,
+            role_instance_id=role_instance_id, state_command=state_command,
+        )
+    finally:
+        secret = ""
+
+
+def seal_role_credential(
+    secret: str, destination: Path | str, *, run_id: str, role: str,
+    role_instance_id: str, state_command: list[str],
+) -> dict[str, Any]:
+    """Authenticate and DPAPI-seal an in-memory one-time role credential."""
+    if os.name != "nt" or role not in {"supervisor", "checker", "worker", "overwatcher"}:
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "Windows and an exact role are required")
+    destination = Path(destination)
+    if not destination.is_absolute() or destination.exists():
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "use a new absolute sealed destination")
+    if not all(isinstance(item, str) and item.strip() for item in (run_id, role_instance_id)) or not isinstance(state_command, list) or not state_command or not all(
+        isinstance(part, str) and part for part in state_command
+    ):
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "frozen identity and state command are required")
+    try:
+        secret = _decode_dpapi_plaintext(secret.encode("utf-8"))
+    except (AttributeError, UnicodeError, ValueError) as exc:
+        raise CompletionError("ROLE_CREDENTIAL_PREPARATION_INVALID", "issued credential is invalid") from exc
 
     def authenticate(credential: str) -> Mapping[str, Any]:
         result = _run_json_command(

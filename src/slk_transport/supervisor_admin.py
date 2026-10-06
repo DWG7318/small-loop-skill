@@ -20,11 +20,29 @@ FIELDS = {
     "sealed_credential_path", "state_command", "operation", "operation_request_path",
     "operation_request_sha256", "result_path",
 }
+PROVISION_FIELDS = FIELDS | {
+    "issued_role", "issued_role_instance_id", "credential_destination_path",
+}
 OPERATIONS = {
     "adopt-method-contract": {"applied", "idempotent_replay"},
     "revise-role-model": {"model_revised", "already_applied"},
     "resume-overwatcher-turn": {"overwatcher_turn_resumed"},
     "rebind-session": {"rebound"},
+    "revise-plan": {"revised"},
+    "register-role": {"registered"},
+    "bind-overwatcher": {"overwatcher_bound"},
+}
+PROVISION_OPERATIONS = {"register-role", "bind-overwatcher"}
+RESULT_FIELDS = {
+    "schema_version", "status", "run_id", "supervisor_role_instance_id", "operation",
+    "request_sha256", "operation_request_sha256", "state_result",
+}
+PROVISION_RESULT_FIELDS = RESULT_FIELDS | {
+    "issued_role", "issued_role_instance_id", "sealed_credential",
+}
+SEALED_RESULT_FIELDS = {
+    "status", "run_id", "role", "role_instance_id", "sealed_path", "sealed_sha256",
+    "runtime_revision",
 }
 
 
@@ -42,6 +60,39 @@ def _object(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def _validated_saved_result(
+    saved: dict[str, Any], request: Mapping[str, Any], *, request_sha256: str,
+    provisioning: bool,
+) -> dict[str, Any]:
+    expected_fields = PROVISION_RESULT_FIELDS if provisioning else RESULT_FIELDS
+    if (set(saved) != expected_fields
+        or saved.get("schema_version") != "slk.supervisor-admin-result/v1"
+        or saved.get("status") != "SUPERVISOR_ADMIN_COMPLETED"
+        or saved.get("run_id") != request["run_id"]
+        or saved.get("supervisor_role_instance_id") != request["supervisor_role_instance_id"]
+        or saved.get("operation") != request["operation"]
+        or saved.get("request_sha256") != request_sha256
+        or saved.get("operation_request_sha256") != request["operation_request_sha256"]
+        or not isinstance(saved.get("state_result"), Mapping)):
+        raise ValueError("Supervisor admin result conflicts with this request")
+    if not provisioning:
+        return saved
+    sealed_result = saved.get("sealed_credential")
+    destination = Path(str(request["credential_destination_path"]))
+    if (saved.get("issued_role") != request["issued_role"]
+        or saved.get("issued_role_instance_id") != request["issued_role_instance_id"]
+        or not isinstance(sealed_result, Mapping) or set(sealed_result) != SEALED_RESULT_FIELDS
+        or sealed_result.get("status") != "SEALED_ROLE_VERIFIED"
+        or sealed_result.get("run_id") != request["run_id"]
+        or sealed_result.get("role") != request["issued_role"]
+        or sealed_result.get("role_instance_id") != request["issued_role_instance_id"]
+        or Path(str(sealed_result.get("sealed_path"))).resolve() != destination.resolve()
+        or not destination.is_file()
+        or sealed_result.get("sealed_sha256") != _sha256(destination)):
+        raise ValueError("saved issued sealed credential is missing or changed")
+    return saved
+
+
 def execute_sealed_supervisor_admin(
     request_path: Path | str, *, request_sha256: str,
 ) -> dict[str, Any]:
@@ -49,11 +100,13 @@ def execute_sealed_supervisor_admin(
     if _sha256(request_path) != request_sha256:
         raise ValueError("Supervisor admin request hash changed")
     request = _object(request_path, "Supervisor admin request")
-    if set(request) != FIELDS or request.get("schema_version") != "slk.supervisor-admin/v1":
-        raise ValueError("Supervisor admin request is not closed")
     operation = request.get("operation")
     if operation not in OPERATIONS:
         raise ValueError("Supervisor admin operation is not allowed")
+    provisioning = operation in PROVISION_OPERATIONS
+    if (set(request) != (PROVISION_FIELDS if provisioning else FIELDS)
+        or request.get("schema_version") != "slk.supervisor-admin/v1"):
+        raise ValueError("Supervisor admin request is not closed")
     run_id = request.get("run_id")
     role_instance_id = request.get("supervisor_role_instance_id")
     revision = request.get("expected_runtime_revision")
@@ -76,11 +129,25 @@ def execute_sealed_supervisor_admin(
     operation_value = _object(operation_request, "Supervisor operation request")
     if operation_value.get("run_id") != run_id:
         raise ValueError("Supervisor operation changed Run identity")
+    if provisioning:
+        issued_role = request.get("issued_role")
+        issued_role_instance_id = request.get("issued_role_instance_id")
+        destination = Path(request["credential_destination_path"])
+        identity = operation_value.get("identity")
+        expected_role = "overwatcher" if operation == "bind-overwatcher" else issued_role
+        if (issued_role != expected_role or issued_role not in {"checker", "worker", "overwatcher"}
+            or not isinstance(issued_role_instance_id, str) or not issued_role_instance_id
+            or not destination.is_absolute()
+            or not isinstance(identity, Mapping) or identity.get("role") != issued_role
+            or identity.get("role_instance_id") != issued_role_instance_id):
+            raise ValueError("issued role identity or sealed destination is invalid")
     if result_path.exists():
         saved = _object(result_path, "Supervisor admin result")
-        if saved.get("request_sha256") != request_sha256 or saved.get("operation_request_sha256") != request["operation_request_sha256"]:
-            raise ValueError("Supervisor admin result conflicts with this request")
-        return saved
+        return _validated_saved_result(
+            saved, request, request_sha256=request_sha256, provisioning=provisioning,
+        )
+    if provisioning and Path(request["credential_destination_path"]).exists():
+        raise ValueError("issued role sealed destination exists without a matching result")
 
     secret = wc.unprotect_dpapi_hex(sealed)
     try:
@@ -100,10 +167,29 @@ def execute_sealed_supervisor_admin(
         )
     finally:
         secret = ""
-    if (state_result.get("status") not in OPERATIONS[operation]
-        or state_result.get("run_id") != run_id
-        or any("credential" in str(key).lower() for key in state_result)):
+    if state_result.get("status") not in OPERATIONS[operation] or state_result.get("run_id") != run_id:
         raise ValueError("Supervisor administration did not produce the allowed closed result")
+    sealed_result = None
+    if provisioning:
+        secret_field = "overwatcher_write_credential" if operation == "bind-overwatcher" else "role_credential"
+        issued_secret = state_result.get(secret_field)
+        if not isinstance(issued_secret, str):
+            raise ValueError("role registration did not return its one-time credential")
+        try:
+            sealed_result = wc.seal_role_credential(
+                issued_secret, Path(request["credential_destination_path"]),
+                run_id=run_id, role=request["issued_role"],
+                role_instance_id=request["issued_role_instance_id"],
+                state_command=list(state_command),
+            )
+        finally:
+            issued_secret = ""
+        state_result = {
+            key: value for key, value in state_result.items()
+            if "credential" not in str(key).lower()
+        }
+    elif any("credential" in str(key).lower() for key in state_result):
+        raise ValueError("Supervisor administration returned credential material unexpectedly")
     receipt = {
         "schema_version": "slk.supervisor-admin-result/v1",
         "status": "SUPERVISOR_ADMIN_COMPLETED",
@@ -114,5 +200,11 @@ def execute_sealed_supervisor_admin(
         "operation_request_sha256": request["operation_request_sha256"],
         "state_result": state_result,
     }
+    if sealed_result is not None:
+        receipt.update({
+            "issued_role": request["issued_role"],
+            "issued_role_instance_id": request["issued_role_instance_id"],
+            "sealed_credential": sealed_result,
+        })
     wc._write_or_reuse_stable_request(result_path, receipt)
     return receipt

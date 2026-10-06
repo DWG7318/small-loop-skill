@@ -50,6 +50,23 @@ struct NativeStartReceipt {
     native_task: NativeTaskIdentity,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CellSplitSpec {
+    source_go_id: String,
+    source_cell_id: String,
+    failure_event_ids: [String; 2],
+    successor_cells: Vec<CellSplitSuccessor>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CellSplitSuccessor {
+    cell_id: String,
+    title: String,
+    objective: String,
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct NativeProcessIdentity {
@@ -1378,6 +1395,7 @@ impl StateStore {
                 "plan revision reason must not be blank".into(),
             ));
         }
+        let split = parse_cell_split(&request.snapshot)?;
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(
                 transaction,
@@ -1386,18 +1404,42 @@ impl StateStore {
                 EventType::PlanRevised,
             )?;
             let previous = current_plan_revision(transaction, &request.run_id)?;
+            let revision = previous + 1;
+            let mut stored_snapshot = request.snapshot.clone();
+            let split_details = if let Some((expected_revision, specification)) = split.as_ref() {
+                if *expected_revision != previous {
+                    return Err(StateError::PlanRevisionMismatch {
+                        requested: *expected_revision,
+                        current: previous,
+                    });
+                }
+                let details = apply_cell_split(
+                    transaction,
+                    &request.run_id,
+                    &actor,
+                    specification,
+                )?;
+                if let Some(snapshot) = stored_snapshot.as_object_mut() {
+                    snapshot.insert(
+                        "authoritative_cell_nodes".into(),
+                        authoritative_cell_nodes(transaction, &request.run_id)?,
+                    );
+                }
+                Some(details)
+            } else {
+                None
+            };
             let previous_snapshot: String = transaction.query_row(
                 "SELECT snapshot_json FROM plan_revisions WHERE run_id=?1 AND revision=?2",
                 params![request.run_id, previous],
                 |row| row.get(0),
             )?;
             let previous_snapshot: serde_json::Value = serde_json::from_str(&previous_snapshot)?;
-            if previous_snapshot == request.snapshot {
+            if previous_snapshot == stored_snapshot {
                 return Err(StateError::InvalidPlan(
                     "plan revision must change the current snapshot".into(),
                 ));
             }
-            let revision = previous + 1;
             transaction.execute(
                 "INSERT INTO plan_revisions
                  (run_id, revision, author_role_instance_id, snapshot_json, reason, previous_revision, created_at)
@@ -1406,7 +1448,7 @@ impl StateStore {
                     request.run_id,
                     revision,
                     actor.role_instance_id,
-                    serde_json::to_string(&request.snapshot)?,
+                    serde_json::to_string(&stored_snapshot)?,
                     request.reason,
                     previous,
                     request.occurred_at
@@ -1432,6 +1474,25 @@ impl StateStore {
                     request.occurred_at
                 ],
             )?;
+            if let Some(details) = split_details {
+                transaction.execute(
+                    "INSERT INTO work_events
+                     (event_id, run_id, go_id, cell_id, attempt, plan_revision,
+                      author_role_instance_id, event_type, details_json, occurred_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'CELL_SPLIT', ?8, ?9)",
+                    params![
+                        format!("cell-split-{}", sha256_hex(request.event_id.as_bytes())),
+                        request.run_id,
+                        details["source_go_id"].as_str(),
+                        details["source_cell_id"].as_str(),
+                        details["source_attempt"].as_u64(),
+                        revision,
+                        actor.role_instance_id,
+                        serde_json::to_string(&details)?,
+                        request.occurred_at,
+                    ],
+                )?;
+            }
             advance_runtime_snapshot_if_revisioned(
                 transaction,
                 &request.run_id,
@@ -4094,6 +4155,269 @@ fn validate_linear_plan(request: &InitRunRequest) -> Result<(), StateError> {
     Ok(())
 }
 
+fn parse_cell_split(
+    snapshot: &serde_json::Value,
+) -> Result<Option<(u32, CellSplitSpec)>, StateError> {
+    let Some(split_value) = snapshot.get("cell_split") else {
+        return Ok(None);
+    };
+    let expected = snapshot
+        .get("expected_plan_revision")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| {
+            StateError::InvalidPlan("CELL split requires a positive expected_plan_revision".into())
+        })?;
+    let specification: CellSplitSpec =
+        serde_json::from_value(split_value.clone()).map_err(|_| {
+            StateError::InvalidPlan("CELL split contract must use the closed 4.4.2 shape".into())
+        })?;
+    Ok(Some((expected, specification)))
+}
+
+fn apply_cell_split(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+    actor: &AuthorizedActor,
+    specification: &CellSplitSpec,
+) -> Result<serde_json::Value, StateError> {
+    let version: String = transaction.query_row(
+        "SELECT slk_version FROM runs WHERE run_id=?1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    if version != "4.4.2" {
+        return Err(StateError::InvalidPlan(
+            "second-failure CELL split is owned by the SLK 4.4.2 contract".into(),
+        ));
+    }
+    let token_owner: String = transaction.query_row(
+        "SELECT to_role_instance_id FROM token_events
+         WHERE run_id=?1 ORDER BY token_sequence DESC LIMIT 1",
+        [run_id],
+        |row| row.get(0),
+    )?;
+    if token_owner != actor.role_instance_id {
+        return Err(StateError::TokenOwnerMismatch {
+            requested_owner: actor.role_instance_id.clone(),
+            current_owner: token_owner,
+        });
+    }
+    if !valid_identifier(&specification.source_go_id)
+        || !valid_identifier(&specification.source_cell_id)
+        || specification.failure_event_ids[0] == specification.failure_event_ids[1]
+        || specification
+            .failure_event_ids
+            .iter()
+            .any(|event_id| !valid_identifier(event_id))
+        || !(2..=32).contains(&specification.successor_cells.len())
+    {
+        return Err(StateError::InvalidPlan(
+            "CELL split identity, two failure events, or successor count is invalid".into(),
+        ));
+    }
+    let source: Option<(u32, String, u32, u32)> = transaction
+        .query_row(
+            "SELECT c.ordinal,c.state,c.attempt,g.ordinal
+             FROM cell_nodes c JOIN go_nodes g ON g.run_id=c.run_id AND g.go_id=c.go_id
+             WHERE c.run_id=?1 AND c.go_id=?2 AND c.cell_id=?3",
+            params![
+                run_id,
+                specification.source_go_id,
+                specification.source_cell_id
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    let Some((source_ordinal, source_state, source_attempt, source_go_ordinal)) = source else {
+        return Err(StateError::CellNotFound(
+            specification.source_cell_id.clone(),
+        ));
+    };
+    if source_state != "rework_required" {
+        return Err(StateError::InvalidPlan(
+            "only the current rework-required CELL can be split".into(),
+        ));
+    }
+    let mut decisions = transaction.prepare(
+        "SELECT event_id,event_type FROM work_events
+         WHERE run_id=?1 AND go_id=?2 AND cell_id=?3
+           AND event_type IN ('D1_FAILED','D1_PASSED')
+         ORDER BY rowid DESC LIMIT 2",
+    )?;
+    let recent = decisions
+        .query_map(
+            params![
+                run_id,
+                specification.source_go_id,
+                specification.source_cell_id
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    if recent.len() != 2
+        || recent[0]
+            != (
+                specification.failure_event_ids[1].clone(),
+                "D1_FAILED".into(),
+            )
+        || recent[1]
+            != (
+                specification.failure_event_ids[0].clone(),
+                "D1_FAILED".into(),
+            )
+    {
+        return Err(StateError::InvalidPlan(
+            "CELL split requires the exact latest two consecutive formal D1 failures".into(),
+        ));
+    }
+    let mut rework_rows = transaction.prepare(
+        "SELECT details_json FROM work_events
+         WHERE run_id=?1 AND go_id=?2 AND cell_id=?3 AND event_type='REWORK_REQUESTED'",
+    )?;
+    let reworks = rework_rows
+        .query_map(
+            params![
+                run_id,
+                specification.source_go_id,
+                specification.source_cell_id
+            ],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    if reworks.len() != 1
+        || serde_json::from_str::<serde_json::Value>(&reworks[0])?
+            .get("d1_failure_event_id")
+            .and_then(serde_json::Value::as_str)
+            != Some(specification.failure_event_ids[0].as_str())
+    {
+        return Err(StateError::InvalidPlan(
+            "CELL split requires exactly one ordinary rework after the first D1 failure".into(),
+        ));
+    }
+    let accepted_later: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM cell_nodes c
+         JOIN go_nodes g ON g.run_id=c.run_id AND g.go_id=c.go_id
+         WHERE c.run_id=?1 AND c.state='d1_passed'
+           AND (g.ordinal>?2 OR (g.ordinal=?2 AND c.ordinal>?3))",
+        params![run_id, source_go_ordinal, source_ordinal],
+        |row| row.get(0),
+    )?;
+    if accepted_later != 0 {
+        return Err(StateError::InvalidPlan(
+            "CELL split cannot rewrite an already accepted later plan range".into(),
+        ));
+    }
+    let mut successor_ids = BTreeSet::new();
+    for successor in &specification.successor_cells {
+        if !valid_identifier(&successor.cell_id)
+            || successor.cell_id == specification.source_cell_id
+            || !successor_ids.insert(successor.cell_id.as_str())
+            || successor.title.trim().is_empty()
+            || successor.title.trim() != successor.title
+            || successor.objective.trim().is_empty()
+            || successor.objective.trim() != successor.objective
+            || successor.title.len() > 512
+            || successor.objective.len() > 4096
+        {
+            return Err(StateError::InvalidPlan(
+                "successor CELL identities and bounded descriptions must be unique and canonical"
+                    .into(),
+            ));
+        }
+        let collision: Option<i64> = transaction
+            .query_row(
+                "SELECT 1 FROM cell_nodes WHERE run_id=?1 AND cell_id=?2",
+                params![run_id, successor.cell_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if collision.is_some() {
+            return Err(StateError::InvalidPlan(
+                "successor CELL identity already exists in this Run".into(),
+            ));
+        }
+    }
+    let max_ordinal: u32 = transaction.query_row(
+        "SELECT MAX(ordinal) FROM cell_nodes WHERE run_id=?1 AND go_id=?2",
+        params![run_id, specification.source_go_id],
+        |row| row.get(0),
+    )?;
+    let shift = i64::from(max_ordinal) + specification.successor_cells.len() as i64 + 1024;
+    transaction.execute(
+        "UPDATE cell_nodes SET ordinal=ordinal+?4
+         WHERE run_id=?1 AND go_id=?2 AND ordinal>?3",
+        params![run_id, specification.source_go_id, source_ordinal, shift],
+    )?;
+    transaction.execute(
+        "UPDATE cell_nodes SET ordinal=ordinal-?4+?5
+         WHERE run_id=?1 AND go_id=?2 AND ordinal>?3",
+        params![
+            run_id,
+            specification.source_go_id,
+            i64::from(source_ordinal) + shift,
+            shift,
+            specification.successor_cells.len() as i64,
+        ],
+    )?;
+    transaction.execute(
+        "UPDATE cell_nodes SET state='split'
+         WHERE run_id=?1 AND go_id=?2 AND cell_id=?3",
+        params![
+            run_id,
+            specification.source_go_id,
+            specification.source_cell_id
+        ],
+    )?;
+    for (index, successor) in specification.successor_cells.iter().enumerate() {
+        transaction.execute(
+            "INSERT INTO cell_nodes
+             (run_id,go_id,cell_id,ordinal,title,objective,state)
+             VALUES (?1,?2,?3,?4,?5,?6,'planned')",
+            params![
+                run_id,
+                specification.source_go_id,
+                successor.cell_id,
+                source_ordinal + index as u32 + 1,
+                successor.title,
+                successor.objective,
+            ],
+        )?;
+    }
+    Ok(serde_json::json!({
+        "source_go_id": specification.source_go_id,
+        "source_cell_id": specification.source_cell_id,
+        "source_attempt": source_attempt,
+        "failure_event_ids": specification.failure_event_ids,
+        "successor_cell_ids": specification.successor_cells.iter()
+            .map(|cell| cell.cell_id.as_str()).collect::<Vec<_>>(),
+    }))
+}
+
+fn authoritative_cell_nodes(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+) -> Result<serde_json::Value, StateError> {
+    let mut statement = transaction.prepare(
+        "SELECT go_id,cell_id,ordinal,title,objective,state FROM cell_nodes
+         WHERE run_id=?1 ORDER BY go_id,ordinal",
+    )?;
+    let rows = statement
+        .query_map([run_id], |row| {
+            Ok(serde_json::json!({
+                "go_id": row.get::<_, String>(0)?,
+                "cell_id": row.get::<_, String>(1)?,
+                "ordinal": row.get::<_, u32>(2)?,
+                "title": row.get::<_, String>(3)?,
+                "objective": row.get::<_, String>(4)?,
+                "state": row.get::<_, String>(5)?,
+            }))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(serde_json::Value::Array(rows))
+}
+
 fn validate_engineering_role_binding(
     identity: &crate::model::RoleIdentity,
     endpoint: &crate::model::EndpointIdentity,
@@ -4665,7 +4989,8 @@ fn valid_token_handoff_route(
                 }
                 if to == Role::Supervisor && request.payload_type == "D2_READY" {
                     let open_cells: i64 = connection.query_row(
-                        "SELECT COUNT(*) FROM cell_nodes WHERE run_id=?1 AND state!='d1_passed'",
+                        "SELECT COUNT(*) FROM cell_nodes
+                         WHERE run_id=?1 AND state NOT IN ('d1_passed','split')",
                         [&request.run_id],
                         |row| row.get(0),
                     )?;
@@ -4674,6 +4999,11 @@ fn valid_token_handoff_route(
                         && open_cells == 0);
                 }
                 return Ok(false);
+            }
+            if state == "CELL_SPLIT" {
+                return Ok(to == Role::Worker
+                    && request.payload_type == "WORKER_TASK"
+                    && first_cell_after_split(connection, request, &go_id, &cell_id)?);
             }
         }
     }
@@ -4691,7 +5021,7 @@ fn latest_run_d1_state(
     connection
         .query_row(
             "SELECT event_type, go_id, cell_id FROM work_events
-             WHERE run_id=?1 AND event_type IN ('D1_FAILED', 'D1_PASSED', 'D1_INCOMPLETE')
+             WHERE run_id=?1 AND event_type IN ('D1_FAILED', 'D1_PASSED', 'D1_INCOMPLETE', 'CELL_SPLIT')
              ORDER BY rowid DESC LIMIT 1",
             [run_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -4709,7 +5039,7 @@ fn exact_next_required_cell(
     let mut statement = connection.prepare(
         "SELECT c.go_id, c.cell_id FROM cell_nodes c
          JOIN go_nodes g ON g.run_id=c.run_id AND g.go_id=c.go_id
-         WHERE c.run_id=?1 ORDER BY g.ordinal, c.ordinal",
+         WHERE c.run_id=?1 AND c.state!='split' ORDER BY g.ordinal, c.ordinal",
     )?;
     let cells = statement
         .query_map([&request.run_id], |row| {
@@ -4725,6 +5055,35 @@ fn exact_next_required_cell(
     Ok(cells
         .get(position + 1)
         .is_some_and(|(go_id, cell_id)| go_id == &request.go_id && cell_id == &request.cell_id))
+}
+
+fn first_cell_after_split(
+    connection: &Connection,
+    request: &TokenHandoffRequest,
+    split_go_id: &str,
+    split_cell_id: &str,
+) -> Result<bool, StateError> {
+    let source_ordinal: Option<u32> = connection
+        .query_row(
+            "SELECT ordinal FROM cell_nodes
+             WHERE run_id=?1 AND go_id=?2 AND cell_id=?3 AND state='split'",
+            params![request.run_id, split_go_id, split_cell_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(source_ordinal) = source_ordinal else {
+        return Ok(false);
+    };
+    let next: Option<(String, String)> = connection
+        .query_row(
+            "SELECT go_id,cell_id FROM cell_nodes
+             WHERE run_id=?1 AND go_id=?2 AND ordinal>?3 AND state!='split'
+             ORDER BY ordinal LIMIT 1",
+            params![request.run_id, split_go_id, source_ordinal],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    Ok(next.is_some_and(|(go_id, cell_id)| go_id == request.go_id && cell_id == request.cell_id))
 }
 
 fn valid_supervisor_rework_route(

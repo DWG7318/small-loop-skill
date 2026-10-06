@@ -90,6 +90,8 @@ def verify(root: Path | str, *, package_mode: bool = False) -> dict[str, object]
             raise VerificationError(f"managed Skill is missing: {name}")
     if {path.split("/", 2)[1] for path in listed if path.startswith("skills/")} != set(EXPECTED_SKILLS):
         raise VerificationError("installed Skill set is not exact")
+    if not any(path.startswith("docs/state/") for path in listed):
+        raise VerificationError("installed Skill-linked docs are missing")
 
     if package_mode:
         actual = {

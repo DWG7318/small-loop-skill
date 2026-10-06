@@ -46,6 +46,9 @@ function Get-ManagedRoots([string]$Root) {
     if ($skills.Count -ne 16) { throw "Package does not enumerate exactly 16 Skill roots" }
     $roots = [System.Collections.Generic.List[string]]::new()
     foreach ($skill in $skills) { $roots.Add("skills/$skill") }
+    foreach ($document in @($manifest.files.path | Where-Object { $_ -like 'docs/*' } | Sort-Object)) {
+        $roots.Add([string]$document)
+    }
     $roots.Add('tools/slk/bin')
     $roots.Add('tools/slk/share/small-loop-skill')
     $roots.Add('tools/slk/install-manifest.json')

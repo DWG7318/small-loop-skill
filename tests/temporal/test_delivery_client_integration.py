@@ -109,6 +109,23 @@ async def _run_standard_client_drives_one_real_sdk_update_and_one_fake_ocrv_nati
                                   inspect_overwatcher, notify_supervisor]):
         parent = await client.start_workflow(StartSlkWorkflow.run, start, id=f"slk-start-{run_id}", task_queue=queue)
         child = client.get_workflow_handle(f"slk-run-{run_id}")
+        for _ in range(100):
+            try:
+                waiting = await child.query(RunSlkWorkflow.status)
+            except Exception:
+                await asyncio.sleep(0.05)
+                continue
+            if waiting["phase"] == "AWAITING_ADMISSION":
+                break
+            await asyncio.sleep(0.05)
+        else:
+            raise AssertionError("isolated SLK.Run did not await admission")
+        assert await child.execute_update(
+            RunSlkWorkflow.request_admission,
+            {"run_id": run_id,
+             "startup_fingerprint": StartSlkRequest.from_dict(start).startup_fingerprint,
+             "workflow_identity_sha256": "9" * 64},
+        ) == "ADMISSION_REQUESTED"
         await _idle(child)
         parent_description, child_description = await asyncio.gather(parent.describe(), child.describe())
         identity = {"schema_version": "slk.temporal-workflow-identity/v1", "run_id": run_id,

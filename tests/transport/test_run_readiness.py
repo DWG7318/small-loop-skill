@@ -4,13 +4,20 @@ import copy
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import uuid
 from pathlib import Path
 
 import pytest
 
-from slk_transport.run_readiness import evaluate_run_admission, evaluate_run_readiness
+from slk_transport.run_readiness import (
+    evaluate_conformance_sample_admission,
+    evaluate_new_run_admission,
+    evaluate_run_admission,
+    evaluate_run_readiness,
+    seal_normal_chain_source,
+)
 from slk_transport.contracts import canonical_json_sha256
 from slk_transport.native_activity import make_native_start
 from slk_transport import worker_completion as wc
@@ -300,6 +307,210 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
 
 
+def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundary(tmp_path):
+    source_root, current_root = tmp_path / "source", tmp_path / "current"
+    source_root.mkdir()
+    current_root.mkdir()
+    source = _request(source_root, run_id="RUN-SOURCE")
+    source_request = write_json(source_root / "readiness-request.json", source)
+    source_state = source_root / "state"
+    source_state.mkdir()
+    (source_state / "slk.db").write_bytes(b"isolated-source-database")
+    source_config = write_json(source_root / "config.json", {
+        "schema_version": "slk.config/v1", "data_root": str(source_state.resolve()),
+    })
+    normal_chain = source_root / "normal-chain-source.json"
+
+    sealed = seal_normal_chain_source(source_request, source_config, normal_chain)
+
+    assert sealed["schema_version"] == "slk.normal-chain-source/v1"
+    assert sealed["source_run_id"] == "RUN-SOURCE"
+    assert normal_chain.is_file()
+    current = _request(current_root, run_id="RUN-CURRENT")
+    packet = json.loads(Path(current["communication_rehearsal"]).read_text())
+    admission = {
+        "schema_version": "slk.run-admission-request/v1", "run_id": "RUN-CURRENT",
+        "plan_revision": 1, "roles": current["roles"],
+        "optional_features": current["optional_features"],
+        "bi_open_receipt": current["bi_open_receipt"],
+        "temporal_readiness_receipt": current["temporal_readiness_receipt"],
+        "normal_chain_conformance": str(normal_chain),
+        "current_host_binding": packet["host_binding"],
+        "sealed_role_receipts": packet["sealed_role_receipts"],
+    }
+
+    result = evaluate_new_run_admission(admission)
+
+    assert result["status"] == "READY"
+    assert result["conformance_run_id"] == "RUN-SOURCE"
+
+
+def _conformance_sample_admission(tmp_path: Path, monkeypatch) -> tuple[dict[str, object], Path]:
+    run_id = "SLK-CONFORMANCE-BOOTSTRAP-001"
+    evidence_root = tmp_path / "slk-conformance" / run_id
+    evidence_root.mkdir(parents=True)
+    sample_root = tmp_path / "preflight" / "seven-leg-sample"
+    sample_root.mkdir(parents=True)
+    sample_record = write_json(sample_root / "sample-contract.json", {
+        "task": "parse one bounded sample port", "acceptance": "1..65535",
+    })
+    subprocess.run(["git", "init", "-q", str(sample_root)], check=True)
+    subprocess.run(["git", "-C", str(sample_root), "config", "user.email", "slk-test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(sample_root), "config", "user.name", "SLK Test"], check=True)
+    subprocess.run(["git", "-C", str(sample_root), "add", "sample-contract.json"], check=True)
+    subprocess.run(["git", "-C", str(sample_root), "commit", "-q", "-m", "isolated sample"], check=True)
+    sample_head = subprocess.run(
+        ["git", "-C", str(sample_root), "rev-parse", "HEAD"], check=True,
+        text=True, capture_output=True,
+    ).stdout.strip()
+    state_root = tmp_path / "central-state"
+    state_root.mkdir()
+    (state_root / "slk.db").write_bytes(b"isolated-state-fixture")
+    root_record = state_root / "exports" / "sample-project" / run_id / f"SLK-RUN-{run_id}.md"
+    root_record.parent.mkdir(parents=True)
+    root_record.write_text(f"# {run_id}\n", encoding="utf-8")
+    state_config = write_json(tmp_path / "state-config.json", {
+        "schema_version": "slk.config/v1", "data_root": str(state_root.resolve()),
+    })
+    monkeypatch.setenv("SLK_CONFIG_PATH", str(state_config.resolve()))
+    current = _request(evidence_root, run_id=run_id)
+    for role in current["roles"]:
+        if role["role"] == "worker":
+            role["workspace_root"] = str(sample_root.resolve())
+        else:
+            native_root = tmp_path / "native-cwd" / role["role"]
+            native_root.mkdir(parents=True)
+            role["workspace_root"] = str(native_root.resolve())
+    packet = json.loads(Path(current["communication_rehearsal"]).read_text())
+    host_path = Path(packet["host_binding"]["path"])
+    host = json.loads(host_path.read_text())
+    host["cells"][0]["payload"]["root_record_path"] = str(root_record.resolve())
+    write_json(host_path, host)
+    packet["host_binding"]["sha256"] = hashlib.sha256(host_path.read_bytes()).hexdigest()
+    contract = write_json(evidence_root / "isolation-contract.json", {
+        "schema_version": "slk.conformance-sample-isolation/v1",
+        "method_version": "4.4.2",
+        "run_id": run_id,
+        "kind": "ISOLATED_NORMAL_CHAIN_SAMPLE",
+        "evidence_root": str(evidence_root.resolve()),
+        "sample_workspace_root": str(sample_root.resolve()),
+        "sample_head": sample_head,
+        "disposable": True,
+        "product_dispatch_allowed": False,
+    })
+    return {
+        "schema_version": "slk.conformance-sample-admission-request/v1",
+        "run_id": run_id,
+        "plan_revision": 1,
+        "roles": current["roles"],
+        "optional_features": current["optional_features"],
+        "bi_open_receipt": current["bi_open_receipt"],
+        "temporal_readiness_receipt": current["temporal_readiness_receipt"],
+        "isolation_contract": str(contract.resolve()),
+        "current_host_binding": packet["host_binding"],
+        "sealed_role_receipts": packet["sealed_role_receipts"],
+    }, evidence_root
+
+
+def test_first_real_normal_chain_source_has_an_explicit_isolated_admission(tmp_path, monkeypatch):
+    admission, _sample_root = _conformance_sample_admission(tmp_path, monkeypatch)
+
+    result = evaluate_conformance_sample_admission(admission)
+
+    assert result["status"] == "READY"
+    assert result["conformance_run_id"] is None
+
+
+@pytest.mark.parametrize("damage", [
+    "product-run-id", "product-dispatch", "workspace-escape", "multiple-cells",
+    "evidence-escape", "wrong-parent", "fake-root-record",
+])
+def test_isolated_conformance_admission_cannot_be_used_as_product_dispatch(tmp_path, monkeypatch, damage):
+    admission, evidence_root = _conformance_sample_admission(tmp_path, monkeypatch)
+    contract_path = Path(admission["isolation_contract"])
+    contract = json.loads(contract_path.read_text())
+    if damage == "product-run-id":
+        admission["run_id"] = "RUN-PRODUCT"
+    elif damage == "product-dispatch":
+        contract["product_dispatch_allowed"] = True
+        write_json(contract_path, contract)
+    elif damage == "workspace-escape":
+        admission["roles"][1]["workspace_root"] = str(tmp_path.resolve())
+    elif damage == "multiple-cells":
+        host_path = Path(admission["current_host_binding"]["path"])
+        host = json.loads(host_path.read_text())
+        host["cells"].append(copy.deepcopy(host["cells"][0]))
+        host["cells"][1]["cell_id"] = "CELL-002"
+        write_json(host_path, host)
+        admission["current_host_binding"]["sha256"] = hashlib.sha256(host_path.read_bytes()).hexdigest()
+    elif damage == "evidence-escape":
+        escaped = write_json(tmp_path / "escaped-bi.json", json.loads(Path(admission["bi_open_receipt"]).read_text()))
+        admission["bi_open_receipt"] = str(escaped.resolve())
+    elif damage == "wrong-parent":
+        moved = tmp_path / "wrong-parent" / admission["run_id"]
+        moved.mkdir(parents=True)
+        contract["evidence_root"] = str(moved.resolve())
+        write_json(contract_path, contract)
+    else:
+        host_path = Path(admission["current_host_binding"]["path"])
+        host = json.loads(host_path.read_text())
+        host["cells"][0]["payload"]["root_record_path"] = str(
+            Path(contract["sample_workspace_root"]) / "sample-contract.json")
+        write_json(host_path, host)
+        admission["current_host_binding"]["sha256"] = hashlib.sha256(host_path.read_bytes()).hexdigest()
+
+    result = evaluate_conformance_sample_admission(admission)
+
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "CONFORMANCE_SAMPLE_ISOLATION_INVALID" in result["reason_codes"]
+
+
+@pytest.mark.parametrize("damage", ["dirty", "remote", "head-drift"])
+def test_isolated_conformance_requires_a_clean_fixed_no_remote_sample_git(tmp_path, monkeypatch, damage):
+    admission, _evidence_root = _conformance_sample_admission(tmp_path, monkeypatch)
+    contract_path = Path(admission["isolation_contract"])
+    contract = json.loads(contract_path.read_text())
+    sample_root = Path(contract["sample_workspace_root"])
+    if damage == "dirty":
+        (sample_root / "dirty.txt").write_text("dirty", encoding="utf-8")
+    elif damage == "remote":
+        subprocess.run([
+            "git", "-C", str(sample_root), "remote", "add", "origin",
+            "https://example.invalid/product.git",
+        ], check=True)
+    else:
+        contract["sample_head"] = "0" * len(contract["sample_head"])
+        write_json(contract_path, contract)
+
+    result = evaluate_conformance_sample_admission(admission)
+
+    assert result["status"] == "REPAIR_NEEDED"
+    assert "CONFORMANCE_SAMPLE_ISOLATION_INVALID" in result["reason_codes"]
+
+
+def test_product_admission_cannot_substitute_an_isolation_contract(tmp_path, monkeypatch):
+    admission, _sample_root = _conformance_sample_admission(tmp_path, monkeypatch)
+    admission["schema_version"] = "slk.run-admission-request/v1"
+
+    with pytest.raises(ValueError, match="exact field set"):
+        evaluate_new_run_admission(admission)
+
+
+def test_normal_chain_seal_rejects_a_non_ready_source(tmp_path):
+    source = _request(tmp_path, run_id="RUN-SOURCE")
+    Path(source["communication_rehearsal"]).unlink()
+    request_path = write_json(tmp_path / "readiness-request.json", source)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "slk.db").write_bytes(b"isolated-source-database")
+    config = write_json(tmp_path / "config.json", {
+        "schema_version": "slk.config/v1", "data_root": str(state.resolve()),
+    })
+
+    with pytest.raises(ValueError, match="READY"):
+        seal_normal_chain_source(request_path, config, tmp_path / "normal-chain-source.json")
+
+
 def test_inflight_admission_separates_reusable_normal_chain_from_current_run_identity(tmp_path):
     source_root = tmp_path / "source"
     current_root = tmp_path / "current"
@@ -335,6 +546,9 @@ def test_inflight_admission_separates_reusable_normal_chain_from_current_run_ide
     assert result["conformance_run_id"] == "RUN-CONFORMANCE"
     assert result["run_id"] == "RUN-CURRENT"
     assert not Path(current["communication_rehearsal"]).exists()
+
+    new_run_result = evaluate_new_run_admission(admission)
+    assert new_run_result["status"] == "READY"
 
 
 def test_inflight_admission_checks_the_same_historical_null_boundary_as_the_real_consumer(
@@ -389,6 +603,9 @@ def test_inflight_admission_checks_the_same_historical_null_boundary_as_the_real
     monkeypatch.setattr(wc, "_run_json_command", state_call)
 
     assert evaluate_run_admission(admission)["status"] == "READY"
+    new_run_result = evaluate_new_run_admission(admission)
+    assert new_run_result["status"] == "REPAIR_NEEDED"
+    assert "NEW_RUN_INITIAL_TOKEN_REQUIRED" in new_run_result["reason_codes"]
     projection["events"][0]["details_json"] = json.dumps({"message_id": message_id,
         "endpoint_sha256": "wrong", "envelope_sha256": "wrong", "start_evidence_sha256": "wrong"})
     rejected = evaluate_run_admission(admission)

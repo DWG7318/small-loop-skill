@@ -31,7 +31,13 @@ from .native_activity import NativeActivityError, inspect_native_activity, valid
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
 from .role_eval import load_pack, pack_sha256, validate_response
-from .run_readiness import evaluate_run_admission, evaluate_run_readiness
+from .run_readiness import (
+    evaluate_conformance_sample_admission,
+    evaluate_new_run_admission,
+    evaluate_run_admission,
+    evaluate_run_readiness,
+    seal_normal_chain_source,
+)
 from .role_host import RoleHost, load_role_host
 from .overwatcher_admin import execute_sealed_overwatcher_admin
 from .supervisor_admin import execute_sealed_supervisor_admin
@@ -518,6 +524,24 @@ def _preflight_admission(args: argparse.Namespace) -> int:
     return 0 if result["status"] == "READY" else 3
 
 
+def _seal_normal_chain_source(args: argparse.Namespace) -> int:
+    _emit(seal_normal_chain_source(args.readiness_request, args.state_config, args.output))
+    return 0
+
+
+def _preflight_new_run(args: argparse.Namespace) -> int:
+    result = evaluate_new_run_admission(_read_object(args.request, "new Run admission request"))
+    _emit(result)
+    return 0 if result["status"] == "READY" else 3
+
+
+def _preflight_conformance_sample(args: argparse.Namespace) -> int:
+    result = evaluate_conformance_sample_admission(
+        _read_object(args.request, "conformance sample admission request"))
+    _emit(result)
+    return 0 if result["status"] == "READY" else 3
+
+
 def _resume_role_host(args: argparse.Namespace) -> int:
     binding_path = args.binding.resolve()
     source = args.source_attempt.resolve()
@@ -742,6 +766,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     readiness.add_argument("--request", required=True, type=Path)
     admission = subparsers.add_parser("preflight-admission")
     admission.add_argument("--request", required=True, type=Path)
+    seal_source = subparsers.add_parser("seal-normal-chain-source")
+    seal_source.add_argument("--readiness-request", required=True, type=Path)
+    seal_source.add_argument("--state-config", required=True, type=Path)
+    seal_source.add_argument("--output", required=True, type=Path)
+    new_run = subparsers.add_parser("preflight-new-run")
+    new_run.add_argument("--request", required=True, type=Path)
+    conformance_sample = subparsers.add_parser("preflight-conformance-sample")
+    conformance_sample.add_argument("--request", required=True, type=Path)
     role_host_resume = subparsers.add_parser("resume-role-host")
     role_host_resume.add_argument("--binding", required=True, type=Path)
     role_host_resume.add_argument("--sha256", required=True)
@@ -837,6 +869,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _preflight_run(args)
         if args.command == "preflight-admission":
             return _preflight_admission(args)
+        if args.command == "seal-normal-chain-source":
+            return _seal_normal_chain_source(args)
+        if args.command == "preflight-new-run":
+            return _preflight_new_run(args)
+        if args.command == "preflight-conformance-sample":
+            return _preflight_conformance_sample(args)
         if args.command == "resume-role-host":
             return _resume_role_host(args)
         if args.command == "submit-supervisor-decision":

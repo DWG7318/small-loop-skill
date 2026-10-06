@@ -68,42 +68,38 @@ class StartSlkWorkflow:
             "startup_fingerprint": fingerprint,
             "child_workflow_id": child_id,
         }
-        receipt = await workflow.execute_activity(
-            "slk.prepare_run",
-            {"request": request.to_dict(), "startup_fingerprint": fingerprint},
-            result_type=dict,
-            start_to_close_timeout=timedelta(seconds=60),
-            retry_policy=ONE_ATTEMPT,
-            activity_id=f"prepare-{request.startup_idempotency_key}",
-        )
-        receipt = _closed_receipt(
-            receipt,
-            {
-                "status",
-                "run_id",
-                "runtime_revision",
-                "startup_fingerprint",
-                "receipt_sha256",
-            },
-            status={"READY"},
-        )
-        expected = (request.run_id, request.runtime_revision, fingerprint)
-        actual = (
-            receipt.get("run_id"),
-            receipt.get("runtime_revision"),
-            receipt.get("startup_fingerprint"),
-        )
-        if actual != expected:
-            raise ValueError("startup readiness receipt does not match the request")
-        self._identity["phase"] = "RUNNING"
+        two_stage = workflow.patched("slk-4.4.2-two-stage-admission")
+        if two_stage:
+            child_input = {"startup": request.to_dict(), "admission_required": True}
+        else:
+            receipt = await workflow.execute_activity(
+                "slk.prepare_run",
+                {"request": request.to_dict(), "startup_fingerprint": fingerprint},
+                result_type=dict,
+                start_to_close_timeout=timedelta(seconds=60),
+                retry_policy=ONE_ATTEMPT,
+                activity_id=f"prepare-{request.startup_idempotency_key}",
+            )
+            receipt = _closed_receipt(
+                receipt,
+                {"status", "run_id", "runtime_revision", "startup_fingerprint", "receipt_sha256"},
+                status={"READY"},
+            )
+            expected = (request.run_id, request.runtime_revision, fingerprint)
+            actual = (receipt.get("run_id"), receipt.get("runtime_revision"),
+                      receipt.get("startup_fingerprint"))
+            if actual != expected:
+                raise ValueError("startup readiness receipt does not match the request")
+            child_input = {"startup": request.to_dict(), "startup_receipt": dict(receipt)}
         child = await workflow.start_child_workflow(
             RunSlkWorkflow.run,
-            {"startup": request.to_dict(), "startup_receipt": dict(receipt)},
+            child_input,
             id=child_id,
             task_queue=request.task_queue,
             id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
             retry_policy=ONE_ATTEMPT,
         )
+        self._identity["phase"] = "PAIR_CREATED" if two_stage else "RUNNING"
         result = await child
         self._identity["phase"] = "TERMINAL"
         return {**result, "startup_fingerprint": fingerprint, "child_workflow_id": child_id}
@@ -130,13 +126,63 @@ class RunSlkWorkflow:
         self._next_overwatcher_audit_at = None
         self._runtime_guard_blocker: dict[str, Any] | None = None
         self._notification_failure: dict[str, Any] | None = None
+        self._admitted = False
+        self._admission_requested = False
+        self._admission_request_sha256: str | None = None
+        self._admission_attempt = 0
+        self._admission_failure: str | None = None
 
     @workflow.run
     async def run(self, value: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(value, Mapping) or set(value) != {"startup", "startup_receipt"}:
+        if not isinstance(value, Mapping):
+            raise ValueError("SLK Run input must be an object")
+        two_stage = workflow.patched("slk-4.4.2-two-stage-admission")
+        expected_fields = {"startup", "admission_required"} if two_stage else {"startup", "startup_receipt"}
+        if set(value) != expected_fields or (two_stage and value.get("admission_required") is not True):
             raise ValueError("SLK Run input must use the exact field set")
         self._startup = StartSlkRequest.from_dict(value["startup"])
         self._continuity = RunContinuity(self._startup.run_id)
+        self._admitted = not two_stage
+        if two_stage:
+            while not self._admitted and not self._continuity.is_terminal():
+                await workflow.wait_condition(
+                    lambda: self._admission_requested or (
+                        self._continuity is not None and self._continuity.is_terminal()
+                    )
+                )
+                if self._continuity.is_terminal():
+                    break
+                self._admission_attempt += 1
+                try:
+                    receipt = await workflow.execute_activity(
+                        "slk.prepare_run",
+                        {"request": self._startup.to_dict(),
+                         "startup_fingerprint": self._startup.startup_fingerprint},
+                        result_type=dict,
+                        start_to_close_timeout=timedelta(seconds=60),
+                        retry_policy=ONE_ATTEMPT,
+                        activity_id=(f"prepare-{self._startup.startup_idempotency_key}-"
+                                     f"{self._admission_attempt}"),
+                    )
+                    receipt = _closed_receipt(
+                        receipt,
+                        {"status", "run_id", "runtime_revision", "startup_fingerprint",
+                         "receipt_sha256"},
+                        status={"READY"},
+                    )
+                    expected = (self._startup.run_id, self._startup.runtime_revision,
+                                self._startup.startup_fingerprint)
+                    actual = (receipt.get("run_id"), receipt.get("runtime_revision"),
+                              receipt.get("startup_fingerprint"))
+                    if actual != expected:
+                        raise ValueError("startup readiness receipt does not match the request")
+                    self._admitted = True
+                    self._admission_failure = None
+                except Exception as error:
+                    self._admission_failure = type(error).__name__
+                    self._admission_requested = False
+        if self._continuity.is_terminal():
+            return self._continuity.snapshot()
         self._next_overwatcher_audit_at = workflow.now() + OVERWATCHER_AUDIT_INTERVAL
         while not self._continuity.is_terminal():
             if self._continuity.pending_delivery() is None:
@@ -418,9 +464,36 @@ class RunSlkWorkflow:
             raise ApplicationError(str(exc), type="SLK_UPDATE_REJECTED", non_retryable=True) from exc
 
     @workflow.update
+    def request_admission(self, value: dict[str, Any]) -> str:
+        if self._startup is None or self._continuity is None:
+            raise ApplicationError("SLK Run has not initialized", non_retryable=True)
+        if not isinstance(value, Mapping) or set(value) != {
+            "run_id", "startup_fingerprint", "workflow_identity_sha256",
+        }:
+            raise ApplicationError("admission request is not closed", non_retryable=True)
+        digest = value.get("workflow_identity_sha256")
+        if (value.get("run_id") != self._startup.run_id
+            or value.get("startup_fingerprint") != self._startup.startup_fingerprint
+            or not isinstance(digest, str) or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)):
+            raise ApplicationError("admission request changed workflow identity", non_retryable=True)
+        if self._admission_request_sha256 not in (None, digest):
+            raise ApplicationError("admission request changed its identity evidence", non_retryable=True)
+        if self._admitted:
+            return "READY"
+        if self._continuity.is_terminal():
+            raise ApplicationError("terminal Run cannot be admitted", non_retryable=True)
+        self._admission_request_sha256 = digest
+        self._admission_requested = True
+        self._admission_failure = None
+        return "ADMISSION_REQUESTED"
+
+    @workflow.update
     def request_delivery(self, value: dict[str, Any]) -> str:
         if self._continuity is None:
             raise ApplicationError("SLK Run has not initialized", non_retryable=True)
+        if not self._admitted:
+            raise ApplicationError("full new-Run admission must pass before delivery", non_retryable=True)
         if self._runtime_guard_blocker is not None:
             raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
         request = self._update_value(DeliveryRequest.from_dict, value)
@@ -486,8 +559,14 @@ class RunSlkWorkflow:
     def status(self) -> dict[str, Any]:
         if self._continuity is None:
             return {"phase": "NOT_STARTED"}
+        snapshot = self._continuity.snapshot()
+        if not self._admitted and not self._continuity.is_terminal():
+            snapshot["phase"] = "ADMISSION_FAILED" if self._admission_failure else "AWAITING_ADMISSION"
         return {
-            **self._continuity.snapshot(),
+            **snapshot,
+            "admitted": self._admitted,
+            "admission_attempt": self._admission_attempt,
+            "admission_failure": self._admission_failure,
             "responsible_role_instance_id": self._responsible_role_instance_id,
             "responsibility_operation_id": self._responsibility_operation_id,
             "member_residency_since": (

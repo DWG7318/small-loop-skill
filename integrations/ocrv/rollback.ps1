@@ -26,7 +26,8 @@ $names = @(
     'slk_checker_post_d1.py',
     'slk_checker_recovery.py',
     'slk-checker-capabilities.json',
-    'slk-native-activity-capabilities.json'
+    'slk-native-activity-capabilities.json',
+    'OCRV-SLK-CONFIGURATION.md'
 )
 foreach ($name in $names) {
     $active = Join-Path $root $name
