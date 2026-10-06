@@ -1504,7 +1504,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "2978660b7a3511725537ce6ed55145baac55344de9572baf315b86d2005fb2e2"
+      "sha256": "a65422c7b0e6823a1e46f7957bedad3d2733dd2abeec60b09aa81b03901202ad"
     },
     {
       "path": "src/slk_transport/run_readiness.py",

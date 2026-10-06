@@ -568,6 +568,14 @@ class RoleHost:
             )
         escalation_root = correction / "post-d1"
         escalation_root.mkdir(parents=True, exist_ok=True)
+        request_path = correction / "post-d1-request.json"
+        saved_request = (
+            wc._read_object(request_path, "existing classification escalation request")
+            if request_path.is_file() else {}
+        )
+        request_occurred_at = saved_request.get("occurred_at")
+        if not isinstance(request_occurred_at, str) or not request_occurred_at:
+            request_occurred_at = datetime.now(timezone.utc).isoformat()
         request = {
             "schema_version": failed.REQUEST_SCHEMA,
             "method_version": snapshot["method_version"],
@@ -603,11 +611,9 @@ class RoleHost:
             "evidence_refs": [
                 str(corrected_result_path), str(correction / "normalization-correction.json")
             ],
-            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "occurred_at": request_occurred_at,
         }
-        request_path = wc._write_or_reuse_stable_request(
-            correction / "post-d1-request.json", request
-        )
+        request_path = wc._write_or_reuse_stable_request(request_path, request)
         result = failed.execute_checker_escalation(
             request, request_path=request_path, request_sha256=wc._sha256(request_path)
         )
