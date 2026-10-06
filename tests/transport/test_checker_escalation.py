@@ -48,7 +48,9 @@ def test_sealed_partial_failure_reads_original_identity_without_changing_aggrega
     assert {p.name: p.read_bytes() for p in native.iterdir() if p.is_file()} == original
 
 
-@pytest.mark.parametrize("proof", ["valid", "corrupt-receipt", "wrong-root"])
+@pytest.mark.parametrize(
+    "proof", ["valid", "valid-pre-record-revision", "corrupt-receipt", "wrong-root"]
+)
 def test_sealed_fresh_failure_reads_hash_bound_original_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proof: str
 ) -> None:
@@ -86,7 +88,9 @@ def test_sealed_fresh_failure_reads_hash_bound_original_identity(
         "checker_endpoint_version": 2,
         "recovery_invocation_id": "fresh-review-001",
         "request_sha256": sha256(committed_path),
-        "runtime_revision": request["runtime_revision"] - 1,
+        "runtime_revision": request["runtime_revision"] - (
+            2 if proof == "valid-pre-record-revision" else 1
+        ),
         "token_sequence": request["token_sequence"],
         "d1_verdict": "FAIL",
         "d1_event_type": "D1_FAILED",
@@ -104,7 +108,7 @@ def test_sealed_fresh_failure_reads_hash_bound_original_identity(
         return {"checker": object(), "frozen_projection": {}}
 
     monkeypatch.setattr(worker_completion, "_validate_committed_terminal_request", validate)
-    if proof == "valid":
+    if proof in {"valid", "valid-pre-record-revision"}:
         assert escalation._validate_failure(request)["candidate"]["commit"] == CANDIDATE_COMMIT
     else:
         with pytest.raises(escalation.CheckerEscalationError, match="lineage"):

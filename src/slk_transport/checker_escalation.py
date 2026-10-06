@@ -232,6 +232,7 @@ def _fresh_terminal_source(
     wc._validate_committed_terminal_request(committed)
     receipt = _read_object(native.parent / "committed-terminal-result.json", "committed D1 result")
     runtime_revision = receipt.get("runtime_revision")
+    committed_revision = committed.get("runtime_revision")
     source = Path(str(committed.get("native_attempt_path", ""))).resolve()
     if (
         Path(str(recovery.get("native_attempt_path", ""))).resolve() != native
@@ -248,7 +249,10 @@ def _fresh_terminal_source(
         or receipt.get("request_sha256") != _sha256(committed_path)
         or isinstance(runtime_revision, bool)
         or not isinstance(runtime_revision, int)
-        or runtime_revision <= int(committed.get("runtime_revision", 0))
+        or isinstance(committed_revision, bool)
+        or not isinstance(committed_revision, int)
+        or runtime_revision < committed_revision
+        or committed_revision >= request["runtime_revision"]
         or runtime_revision > request["runtime_revision"]
         or receipt.get("token_sequence") != request["token_sequence"]
         or receipt.get("token_sequence") != committed.get("token_sequence")
