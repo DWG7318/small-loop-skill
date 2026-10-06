@@ -50,6 +50,7 @@ RUNTIME_CONFIG_FIELDS = {
     "concurrency", "source_sha256", "target_sha256",
 }
 PREPARATION_SCHEMA = "slk.ocrv-terminal-budget-resume-preparation/v1"
+SOURCE_CONSUMPTION_SCHEMA = "slk.ocrv-terminal-budget-source-consumption/v1"
 _PREPARATION_NAMESPACE = uuid.UUID("2b8fd4cf-a1bb-5dd4-8b7b-c043f9633388")
 _MAX_DISCOVERY_FILES = 10_000
 _MAX_DISCOVERY_JSON_BYTES = 32 * 1024 * 1024
@@ -713,6 +714,48 @@ def read_session_records(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _source_claim_payload(request: Mapping[str, Any]) -> dict[str, Any]:
+    authorization = request.get("owner_authorization")
+    return {
+        "schema_version": SOURCE_CONSUMPTION_SCHEMA,
+        "run_id": request.get("run_id"),
+        "candidate_message_id": request.get("candidate_message_id"),
+        "d1_incomplete_event_id": request.get("d1_incomplete_event_id"),
+        "recovery_invocation_id": request.get("recovery_invocation_id"),
+        "authorization_id": (
+            authorization.get("authorization_id")
+            if isinstance(authorization, Mapping)
+            else None
+        ),
+        "request_canonical_sha256": canonical_json_sha256(request),
+    }
+
+
+def claim_terminal_budget_source(request: Mapping[str, Any]) -> Path:
+    """Atomically consume the original attempt/D1 boundary across all invocation IDs."""
+
+    from . import worker_completion as wc
+
+    source_root = (
+        Path(str(request.get("native_attempt_path", ""))).resolve()
+        / "resume-terminal-budget-checker"
+    )
+    source_root.mkdir(parents=True, exist_ok=True)
+    marker = source_root / "source-consumed.json"
+    encoded = json.dumps(
+        _source_claim_payload(request), sort_keys=True, separators=(",", ":")
+    ) + "\n"
+    try:
+        with marker.open("x", encoding="utf-8") as stream:
+            stream.write(encoded)
+    except FileExistsError as exc:
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_ALREADY_CONSUMED",
+            "the original Checker attempt and D1 INCOMPLETE already consumed its one continuation",
+        ) from exc
+    return marker
+
+
 def _positive_map(value: object, fields: set[str]) -> bool:
     return (
         isinstance(value, Mapping)
@@ -750,7 +793,6 @@ def validate(request: Mapping[str, Any], *, consumed: bool = False) -> dict[str,
     if (
         recovery != attempt / "resume-terminal-budget-checker" / str(request["recovery_invocation_id"])
         or result_path != recovery / "result.json"
-        or (recovery / "resume-consumed.json").exists() != consumed
         or not isinstance(immutable, Mapping)
         or set(immutable) != {
             "endpoint.json", "envelope.json", "started.json", "ocrv-request.json",
@@ -760,6 +802,23 @@ def validate(request: Mapping[str, Any], *, consumed: bool = False) -> dict[str,
     ):
         raise wc.CompletionError(
             "CHECKER_TERMINAL_BUDGET_REQUEST_INVALID", "terminal-budget request is already consumed or malformed"
+        )
+    source_marker = attempt / "resume-terminal-budget-checker" / "source-consumed.json"
+    invocation_marker = recovery / "resume-consumed.json"
+    if not consumed and (source_marker.exists() or invocation_marker.exists()):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_ALREADY_CONSUMED",
+            "the original Checker attempt and D1 INCOMPLETE already consumed its one continuation",
+        )
+    if consumed and (
+        not source_marker.is_file()
+        or not invocation_marker.is_file()
+        or _read(source_marker, "terminal-budget source consumption")
+        != _source_claim_payload(request)
+    ):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_REQUEST_INVALID",
+            "terminal-budget source consumption is missing or changed",
         )
 
     correction = {

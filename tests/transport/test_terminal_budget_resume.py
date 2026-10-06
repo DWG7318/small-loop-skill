@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import importlib
 import json
 import os
@@ -14,8 +15,10 @@ import pytest
 import slk_transport.worker_completion as worker_completion
 from slk_transport.contracts import canonical_json_sha256
 from slk_transport.terminal_budget import (
+    claim_terminal_budget_source,
     ocrv_runtime_config_sha256,
     prepare_terminal_budget_request,
+    validate,
     validate_resumed_child,
 )
 from slk_transport.worker_completion import CompletionError
@@ -485,6 +488,69 @@ def preparation_fixture(
         raise AssertionError(command)
 
     return expected, role_host_path, evidence / "projection.json", run
+
+
+def distinct_terminal_budget_invocation(
+    request: dict[str, object], invocation_id: str, authorization_id: str
+) -> dict[str, object]:
+    value = copy.deepcopy(request)
+    attempt = Path(str(value["native_attempt_path"]))
+    recovery = attempt / "resume-terminal-budget-checker" / invocation_id
+    value["recovery_invocation_id"] = invocation_id
+    value["recovery_root"] = str(recovery.resolve())
+    value["result_path"] = str((recovery / "result.json").resolve())
+    value["owner_authorization"]["authorization_id"] = authorization_id
+    return value
+
+
+def test_source_d1_one_shot_rejects_a_new_authorization_before_model_start(
+    tmp_path: Path,
+) -> None:
+    request, _ = budget_resume_fixture(tmp_path)
+    marker = claim_terminal_budget_source(request)
+    second = distinct_terminal_budget_invocation(
+        request,
+        "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "owner-capacity-second",
+    )
+
+    with pytest.raises(CompletionError) as rejected:
+        validate(second)
+
+    assert rejected.value.error_code == "CHECKER_TERMINAL_BUDGET_ALREADY_CONSUMED"
+    claim = json.loads(marker.read_text(encoding="utf-8"))
+    assert claim["d1_incomplete_event_id"] == request["d1_incomplete_event_id"]
+    assert claim["candidate_message_id"] == request["candidate_message_id"]
+
+
+def test_concurrent_distinct_authorizations_can_claim_the_source_only_once(
+    tmp_path: Path,
+) -> None:
+    request, _ = budget_resume_fixture(tmp_path)
+    attempts = [
+        distinct_terminal_budget_invocation(
+            request,
+            "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            "owner-capacity-a",
+        ),
+        distinct_terminal_budget_invocation(
+            request,
+            "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            "owner-capacity-b",
+        ),
+    ]
+
+    def claim(value: dict[str, object]) -> str:
+        try:
+            claim_terminal_budget_source(value)
+            return "CLAIMED"
+        except CompletionError as exc:
+            return exc.error_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(claim, attempts))
+
+    assert sorted(results) == ["CHECKER_TERMINAL_BUDGET_ALREADY_CONSUMED", "CLAIMED"]
 
 
 def test_preparer_derives_the_closed_request_without_manual_ids_or_hashes(

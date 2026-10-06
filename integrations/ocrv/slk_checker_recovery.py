@@ -444,6 +444,7 @@ def _resume_terminal_budget(
     from slk_transport.contracts import canonical_json_sha256
     from slk_transport.terminal_budget import (
         RESULT_SCHEMA,
+        claim_terminal_budget_source,
         read_session_records,
         validate,
         validate_resumed_child,
@@ -481,6 +482,7 @@ def _resume_terminal_budget(
     mode, session_detail = _session_resume_mode(request, session)
     if mode != "RESUME_SESSION":
         raise ValueError("terminal-budget continuation requires the exact resumable OCRV Session")
+    claim_terminal_budget_source(request)
     root = Path(request["recovery_root"]).resolve()
     root.mkdir(parents=True, exist_ok=True)
     detail_path = root / "session-show.json"
