@@ -27,6 +27,36 @@ def windows_no_window_kwargs() -> dict[str, object]:
     return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0), "startupinfo": startup}
 
 
+def _transport_runtime_path(command: list[str]) -> Path:
+    """Resolve only the two managed transport command forms to their real zipapp."""
+
+    if len(command) == 2:
+        python_path = Path(command[0]).resolve()
+        zipapp = Path(command[1]).resolve()
+        if (
+            python_path == Path(sys.executable).resolve()
+            and zipapp.name.lower() == "slk-transport.pyz"
+            and zipapp.is_file()
+        ):
+            return zipapp
+    elif len(command) == 1:
+        launcher = Path(command[0]).resolve()
+        zipapp = launcher.with_name("slk-transport.pyz")
+        try:
+            text = launcher.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+        except (OSError, UnicodeError):
+            text = ""
+        if (
+            launcher.name.lower() == "slk-transport.cmd"
+            and launcher.is_file()
+            and zipapp.is_file()
+            and text
+            == '@echo off\npython "%~dp0slk-transport.pyz" %*\nexit /b %ERRORLEVEL%\n'
+        ):
+            return zipapp
+    raise ValueError("managed SLK transport runtime is unavailable or changed")
+
+
 def _creation_time(pid: int) -> str:
     if os.name != "nt":
         fields = Path(f"/proc/{pid}/stat").read_text(encoding="ascii").split()
@@ -439,7 +469,7 @@ def _resume_terminal_budget(
 ) -> int:
     """Consume one Owner-authorized, evidence-bounded terminal budget continuation."""
 
-    sys.path.insert(0, command[-1])
+    sys.path.insert(0, str(_transport_runtime_path(command)))
     from slk_transport import worker_completion as wc
     from slk_transport.contracts import canonical_json_sha256
     from slk_transport.terminal_budget import (

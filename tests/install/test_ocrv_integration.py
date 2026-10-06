@@ -26,6 +26,20 @@ def _load_adapter():
     return module
 
 
+def _load_recovery():
+    specification = importlib.util.spec_from_file_location(
+        "slk_test_ocrv_recovery", INTEGRATION / "slk_checker_recovery.py"
+    )
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    sys.path.insert(0, str(INTEGRATION))
+    try:
+        specification.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
+    return module
+
+
 def test_compact_evidence_discloses_path_omission_and_keeps_source(tmp_path: Path) -> None:
     module = _load_adapter()
     evidence = tmp_path / "worker-result.json"
@@ -105,6 +119,53 @@ def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     assert '"%~1"=="--slk-consume-existing-partial"' in wrapper
     assert "slk_checker_recovery.py" in wrapper
     assert "slk_checker_adapter.py" in wrapper
+
+
+def test_terminal_budget_resolves_the_canonical_launcher_to_a_real_zipapp(
+    tmp_path: Path,
+) -> None:
+    module = _load_recovery()
+    runtime = tmp_path / "bin"
+    runtime.mkdir()
+    zipapp = runtime / "slk-transport.pyz"
+    built = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "build_transport_zipapp.py"),
+            "--output",
+            str(zipapp),
+        ],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    launcher = runtime / "slk-transport.cmd"
+    launcher.write_text(
+        '@echo off\npython "%~dp0slk-transport.pyz" %*\nexit /b %ERRORLEVEL%\n',
+        encoding="utf-8",
+    )
+
+    assert module._transport_runtime_path([str(launcher)]) == zipapp.resolve()
+
+    if os.name == "nt":
+        launched = subprocess.run(
+            [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", str(launcher), "--help"],
+            cwd=ROOT,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        assert launched.returncode == 0, launched.stdout + launched.stderr
+        assert "resume-terminal-budget-checker" in launched.stdout
 
 
 def test_checker_capability_freezes_the_managed_terminal_budget_target() -> None:

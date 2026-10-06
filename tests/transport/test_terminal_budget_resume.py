@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -25,6 +26,26 @@ from slk_transport.worker_completion import CompletionError
 
 from test_committed_checker_terminal import fixture as committed_fixture
 from test_committed_checker_terminal import sha256, write_json
+
+
+def built_transport_command(tmp_path: Path) -> list[str]:
+    zipapp = tmp_path / "managed-runtime" / "slk-transport.pyz"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[2] / "scripts" / "build_transport_zipapp.py"),
+            "--output",
+            str(zipapp),
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    return [str(Path(sys.executable).resolve()), str(zipapp.resolve())]
 
 
 def budget_resume_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
@@ -785,6 +806,7 @@ def test_sealed_budget_host_records_truthful_child_session_and_one_d1_correction
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, final_verdict: str
 ) -> None:
     request, request_path = budget_resume_fixture(tmp_path)
+    transport_command = built_transport_command(tmp_path)
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "integrations" / "ocrv"))
     recovery = importlib.import_module("slk_checker_recovery")
     monkeypatch.setenv(
@@ -1022,7 +1044,7 @@ def test_sealed_budget_host_records_truthful_child_session_and_one_d1_correction
     result_code = recovery._resume_terminal_budget(
         request,
         request_path,
-        [os.fspath(Path(os.sys.executable).resolve()), os.fspath(Path(worker_completion.__file__).parent.parent)],
+        transport_command,
     )
 
     assert result_code == 0
