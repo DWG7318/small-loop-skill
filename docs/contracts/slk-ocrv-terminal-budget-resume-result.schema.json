@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-ocrv-terminal-budget-resume-result.schema.json",
+  "title": "SLK OCRV terminal-budget continuation result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "method_version", "status", "run_id", "cell_id", "attempt",
+    "candidate_message_id", "checker_role_instance_id", "checker_endpoint_version",
+    "recovery_invocation_id", "request_sha256", "capacity_revision_sha256",
+    "ocrv_transition_sha256", "runtime_config_binding_sha256",
+    "source_d1_incomplete_event_id", "parent_session_id", "child_session_id",
+    "d1_verdict", "d1_event_type", "corrected_d1_event_id", "suffix_mode",
+    "suffix_request_path", "suffix_result_path", "suffix_status",
+    "native_attempt_path", "native_result_path"
+  ],
+  "properties": {
+    "schema_version": {"const": "slk.ocrv-terminal-budget-resume-result/v1"},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2"]},
+    "status": {"enum": ["CHECKER_D1_RECORDED", "CHECKER_D1_STILL_INCOMPLETE"]},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "cell_id": {"$ref": "#/$defs/identifier"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "candidate_message_id": {"$ref": "#/$defs/identifier"},
+    "checker_role_instance_id": {"$ref": "#/$defs/identifier"},
+    "checker_endpoint_version": {"type": "integer", "minimum": 1},
+    "recovery_invocation_id": {"$ref": "#/$defs/identifier"},
+    "request_sha256": {"$ref": "#/$defs/sha256"},
+    "capacity_revision_sha256": {"$ref": "#/$defs/sha256"},
+    "ocrv_transition_sha256": {"$ref": "#/$defs/sha256"},
+    "runtime_config_binding_sha256": {"$ref": "#/$defs/sha256"},
+    "source_d1_incomplete_event_id": {"$ref": "#/$defs/identifier"},
+    "parent_session_id": {"$ref": "#/$defs/identifier"},
+    "child_session_id": {"$ref": "#/$defs/identifier"},
+    "d1_verdict": {"enum": ["PASS", "FAIL", "INCOMPLETE"]},
+    "d1_event_type": {"enum": ["D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"]},
+    "corrected_d1_event_id": {"oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]},
+    "suffix_mode": {"enum": ["--slk-complete-d1", "--slk-post-d1", null]},
+    "suffix_request_path": {"type": ["string", "null"]},
+    "suffix_result_path": {"type": ["string", "null"]},
+    "suffix_status": {"enum": ["CHECKER_COMPLETION_COMMITTED", "CHECKER_ESCALATION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED", "NOT_APPLICABLE"]},
+    "native_attempt_path": {"type": "string", "minLength": 1},
+    "native_result_path": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 
@@ -68,6 +69,18 @@ def test_bi_window_is_compact_and_not_maximizable():
     assert window["decorations"] is False
     assert window["title"] == "LE BI"
     assert config["version"] == "1.1.0"
+
+
+def test_archived_runs_keep_an_opaque_readable_surface():
+    styles = (BI_ROOT / "src" / "styles" / "app.css").read_text(encoding="utf-8")
+
+    shell = re.search(r"\.app-shell\s*\{(?P<body>[^}]*)\}", styles, re.S)
+    archived = re.search(r"\.is-archived\s*\{(?P<body>[^}]*)\}", styles, re.S)
+
+    assert shell is not None
+    assert "min-height: 100vh" in shell.group("body")
+    assert archived is not None
+    assert "opacity" not in archived.group("body")
 
 
 def test_desktop_and_agent_read_surfaces_share_all_projection_methods():

@@ -141,7 +141,7 @@ def main() -> int:
     try:
         result = json.loads(completed.stdout)
         accepted_statuses = (
-            {"CHECKER_COMPLETION_COMMITTED"}
+            {"CHECKER_COMPLETION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED"}
             if pass_route
             else {"DESKTOP_BRIDGE_REQUIRED", "CHECKER_ESCALATION_COMMITTED"}
         )

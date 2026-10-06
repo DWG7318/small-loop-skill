@@ -8,6 +8,7 @@ import ctypes
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -106,6 +107,23 @@ def _run_ocrv_json(arguments: list[str]) -> object:
     if completed.returncode:
         raise ValueError(f"OCRV read-only precheck failed ({completed.returncode})")
     return json.loads(completed.stdout)
+
+
+def _ocrv_version() -> str:
+    completed = subprocess.run(
+        checker_adapter._ocr_command() + ["--version"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        **windows_no_window_kwargs(),
+    )
+    match = re.search(r"(?m)^open-code-review (v\d+\.\d+\.\d+)\b", completed.stdout)
+    if completed.returncode or match is None:
+        raise ValueError("OCRV version precheck failed")
+    return match.group(1)
 
 
 def _session_resume_mode(request: dict[str, object], session: dict[str, object]) -> tuple[str, dict[str, object]]:
@@ -238,6 +256,494 @@ def _resume_incomplete(request: dict[str, object], request_path: Path, command: 
         sys.stdout.buffer.write(completed.stdout)
     sys.stderr.buffer.write(completed.stderr)
     return completed.returncode
+
+
+def _terminal_budget_post_d1_suffix(
+    request: dict[str, object], validated: dict[str, object], result: dict[str, object],
+    attempt: Path, root: Path, command: list[str],
+) -> dict[str, object]:
+    """Route a corrected PASS/FAIL through the existing sealed Checker suffix."""
+
+    from slk_transport import checker_completion as passed
+    from slk_transport import checker_escalation as failed
+    from slk_transport import worker_completion as wc
+    from slk_transport.role_host import normalized_checker_findings
+
+    event_id = wc._stable_id(
+        str(request["candidate_message_id"]),
+        "d1-budget-" + str(request["recovery_invocation_id"]),
+    )
+    projection = dict(
+        wc._default_load_current_projection(str(request["run_id"]), list(request["state_command"]))
+    )
+    snapshot = projection.get("runtime_snapshot")
+    events = projection.get("events")
+    matches = [
+        event for event in events or []
+        if isinstance(event, dict) and event.get("event_id") == event_id
+    ]
+    if (
+        not isinstance(snapshot, dict)
+        or snapshot.get("token_holder_role_instance_id") != request["checker_role_instance_id"]
+        or not isinstance(events, list)
+        or len(matches) != 1
+        or matches[0].get("event_type")
+        != {"PASS": "D1_PASSED", "FAIL": "D1_FAILED"}.get(result.get("verdict"))
+        or matches[0].get("corrects_event_id") != request["d1_incomplete_event_id"]
+    ):
+        raise ValueError("corrected D1 is not the exact current Checker terminal")
+    details = matches[0].get("details")
+    if not isinstance(details, dict):
+        serialized = matches[0].get("details_json")
+        details = json.loads(serialized) if isinstance(serialized, str) else None
+    if (
+        not isinstance(details, dict)
+        or details.get("verdict") != result.get("verdict")
+        or details.get("candidate_message_id") != request["candidate_message_id"]
+    ):
+        raise ValueError("corrected D1 details do not bind the resumed candidate")
+
+    projection_path = wc._write_or_reuse_stable_request(
+        root / "post-d1-projection.json", projection
+    )
+    binding = validated["role_host_binding"]
+    if not isinstance(binding, dict):
+        raise ValueError("frozen RoleHost binding is unavailable")
+    cells = passed._ordered_cells(projection)
+    bound_cells = binding.get("cells")
+    if (
+        not isinstance(bound_cells, list)
+        or [cell.get("cell_id") for cell in bound_cells]
+        != [cell.get("cell_id") for cell in cells]
+    ):
+        raise ValueError("current required CELL set differs from the frozen RoleHost binding")
+    common = {
+        "method_version": request["method_version"],
+        "run_id": request["run_id"],
+        "go_id": request["go_id"],
+        "cell_id": request["cell_id"],
+        "attempt": request["attempt"],
+        "plan_revision": request["plan_revision"],
+        "runtime_revision": snapshot["runtime_revision"],
+        "token_sequence": snapshot["token_sequence"],
+        "checker_role_instance_id": request["checker_role_instance_id"],
+        "runtime_projection_path": str(projection_path),
+        "checker_credential_path": request["checker_credential_path"],
+        "state_command": request["state_command"],
+        "transport_command": request["transport_command"],
+        "occurred_at": matches[0].get("occurred_at"),
+    }
+    roles = binding["roles"]
+    verdict = result["verdict"]
+    if verdict == "FAIL":
+        current = next(
+            cell for cell in bound_cells if cell.get("cell_id") == request["cell_id"]
+        )
+        payload = current.get("payload")
+        if not isinstance(payload, dict):
+            raise ValueError("frozen current CELL payload is unavailable")
+        suffix_request = {
+            **common,
+            "schema_version": failed.REQUEST_SCHEMA,
+            "post_d1_invocation_id": wc._stable_id(event_id, "normal-fail"),
+            "d1_failure_event_id": event_id,
+            "native_attempt_path": str(attempt),
+            "supervisor_endpoint_path": roles["supervisor"]["endpoint_path"],
+            "escalation_attempt_root": str(root),
+            "rework_round": 1 + sum(
+                event.get("event_type") == "REWORK_REQUESTED"
+                and event.get("cell_id") == request["cell_id"]
+                for event in events
+            ),
+            "cell_goal": payload["task"],
+            "acceptance_criteria": payload["d1_criteria"],
+            "findings": normalized_checker_findings(result.get("findings", [])),
+            "reproduction_steps": [
+                "Read the original Checker findings and cited evidence; do not infer a reproduction."
+            ],
+            "expected_result": "Satisfy the unchanged CELL acceptance criteria.",
+            "evidence_refs": [str(attempt / "ocrv-result.json")],
+        }
+        mode = "--slk-post-d1"
+        output = root / ".checker-post-d1" / suffix_request["post_d1_invocation_id"] / "prepared-result.json"
+        accepted_statuses = {"DESKTOP_BRIDGE_REQUIRED", "CHECKER_ESCALATION_COMMITTED"}
+    else:
+        ids = [str(cell["cell_id"]) for cell in cells]
+        index = ids.index(str(request["cell_id"]))
+        final = index == len(ids) - 1
+        target_role = "supervisor" if final else "worker"
+        payload = (
+            {
+                "d1_event_id": event_id,
+                "required_cell_ids": ids,
+                "accepted_cell_ids": ids,
+                "final_candidate_message_id": request["candidate_message_id"],
+                "d2_criteria": binding["d2_criteria"],
+                "evidence_refs": [str(attempt / "ocrv-result.json")],
+            }
+            if final
+            else bound_cells[index + 1]["payload"]
+        )
+        suffix_request = {
+            **common,
+            "schema_version": passed.REQUEST_SCHEMA,
+            "completion_invocation_id": wc._stable_id(event_id, "normal-pass"),
+            "d1_event_id": event_id,
+            "target_cell_id": str(request["cell_id"]) if final else ids[index + 1],
+            "route": "D2_READY" if final else "NEXT_CELL",
+            "target_endpoint_path": roles[target_role]["endpoint_path"],
+            "handoff_attempt_root": str(root),
+            "payload": payload,
+        }
+        mode = "--slk-complete-d1"
+        output = root / ".checker-completion" / suffix_request["completion_invocation_id"] / "result.json"
+        accepted_statuses = {"CHECKER_COMPLETION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED"}
+
+    suffix_path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", suffix_request)
+    checker_command = request["checker_endpoint"].get("address", {}).get("command")
+    if (
+        not isinstance(checker_command, list)
+        or not checker_command
+        or not all(isinstance(item, str) and item for item in checker_command)
+    ):
+        raise ValueError("sealed Checker host command is unavailable")
+    environment = os.environ.copy()
+    environment.pop("SLK_ROLE_CREDENTIAL", None)
+    environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
+    completed = subprocess.run(
+        [*checker_command, mode, "--request", str(suffix_path), "--output", str(output)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+        env=environment,
+        **windows_no_window_kwargs(),
+    )
+    if completed.returncode != 0:
+        sys.stdout.buffer.write(completed.stdout)
+        sys.stderr.buffer.write(completed.stderr)
+        raise ValueError("sealed Checker post-D1 suffix failed")
+    suffix_result = json.loads(completed.stdout)
+    if not isinstance(suffix_result, dict) or suffix_result.get("status") not in accepted_statuses:
+        raise ValueError("sealed Checker post-D1 suffix returned an invalid result")
+    return {
+        "corrected_d1_event_id": event_id,
+        "suffix_mode": mode,
+        "suffix_request_path": str(suffix_path),
+        "suffix_result_path": str(output),
+        "suffix_status": suffix_result["status"],
+    }
+
+
+def _resume_terminal_budget(
+    request: dict[str, object], request_path: Path, command: list[str]
+) -> int:
+    """Consume one Owner-authorized, evidence-bounded terminal budget continuation."""
+
+    sys.path.insert(0, command[-1])
+    from slk_transport import worker_completion as wc
+    from slk_transport.contracts import canonical_json_sha256
+    from slk_transport.terminal_budget import (
+        RESULT_SCHEMA,
+        read_session_records,
+        validate,
+        validate_resumed_child,
+    )
+
+    validated = validate(request)
+    checker = validated["checker"]
+    if (
+        os.environ.get("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID") != checker.role_instance_id
+        or os.environ.get("SLK_OCRV_RECOVERY_ENDPOINT_VERSION") != str(checker.endpoint_version)
+        or os.environ.get("SLK_OCRV_RECOVERY_INVOCATION_ID") != request["recovery_invocation_id"]
+    ):
+        raise ValueError("terminal-budget continuation is outside the original sealed Checker")
+    authentication = wc._default_checker_authenticate(
+        request["run_id"], checker.role_instance_id,
+        Path(request["checker_credential_path"]), request["state_command"]
+    )
+    if (
+        authentication.get("status") != "authenticated"
+        or authentication.get("role") != "checker"
+        or authentication.get("role_instance_id") != checker.role_instance_id
+    ):
+        raise ValueError("terminal-budget Checker authentication failed before model start")
+    if authentication.get("runtime_revision") != request["runtime_revision"]:
+        wc._rebind_overwatcher_only_committed_boundary(
+            request,
+            validated["frozen_projection"],
+            wc._default_load_current_projection(request["run_id"], request["state_command"]),
+            authentication["runtime_revision"],
+        )
+
+    session = validated["session"]
+    if _ocrv_version() != validated["target_ocrv_version"]:
+        raise ValueError("terminal-budget continuation OCRV version is not the exact Owner-approved target")
+    mode, session_detail = _session_resume_mode(request, session)
+    if mode != "RESUME_SESSION":
+        raise ValueError("terminal-budget continuation requires the exact resumable OCRV Session")
+    root = Path(request["recovery_root"]).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    detail_path = root / "session-show.json"
+    detail_path.write_text(json.dumps(session_detail, sort_keys=True) + "\n", encoding="utf-8")
+    attempt = root / "native-attempt"
+    attempt.mkdir()
+
+    original_path = Path(request["native_attempt_path"]).resolve() / "ocrv-request.json"
+    revised = json.loads(original_path.read_text(encoding="utf-8-sig"))
+    revised_capacity = dict(revised["capacity"])
+    revised_capacity.update(request["capacity_revision"]["new"])
+    revised["capacity"] = revised_capacity
+    capacity_path = attempt / "ocrv-capacity-request.json"
+    capacity_path.write_text(json.dumps(revised, sort_keys=True) + "\n", encoding="utf-8")
+    with (root / "resume-consumed.json").open("x", encoding="utf-8") as stream:
+        json.dump(
+            {
+                "request_sha256": _sha256(request_path),
+                "source_d1_incomplete_event_id": request["d1_incomplete_event_id"],
+                "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+                "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
+            },
+            stream,
+            sort_keys=True,
+        )
+        stream.write("\n")
+
+    os.environ["SLK_NATIVE_START_RECEIPT"] = str(attempt / "native-start.received.json")
+    os.environ["SLK_NATIVE_START_CONTEXT"] = json.dumps(
+        {
+            "adapter": "ocrv-checker",
+            "run_id": request["run_id"],
+            "cell_id": request["cell_id"],
+            "message_id": request["candidate_message_id"],
+            "request_sha256": request["payload_sha256"],
+            "native_request_sha256": _sha256(capacity_path),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    invocation_id = str(uuid.uuid4())
+    code = checker_adapter.run(
+        capacity_path,
+        attempt / "ocrv-result.json",
+        invocation_override=invocation_id,
+        background_override=Path(request["background_path"]).resolve(),
+        resume_session=str(session["session_id"]),
+        result_request_path=capacity_path,
+    )
+    result = json.loads((attempt / "ocrv-result.json").read_text(encoding="utf-8"))
+    child_session_id = result.get("review", {}).get("session_id")
+    if (
+        result.get("review_invocation_id") != invocation_id
+        or not isinstance(child_session_id, str)
+        or not child_session_id
+        or child_session_id == session["session_id"]
+        or result.get("review", {}).get("provider") != "dashscope-tokenplan"
+        or result.get("review", {}).get("model") != "qwen3.8-max"
+        or result.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
+    ):
+        raise ValueError("terminal-budget OCRV result changed the frozen model or did not create a child Session")
+    raw_path = attempt / "ocrv-review.json"
+    raw_review = json.loads(raw_path.read_text(encoding="utf-8-sig"))
+    child_detail = _run_ocrv_json([
+        "session", "show", "--json", "--repo", str(request["candidate_repository"]),
+        child_session_id,
+    ])
+    if not isinstance(child_detail, dict) or set(child_detail) != {"summary", "items"}:
+        raise ValueError("terminal-budget child Session detail is invalid")
+    child_summary = child_detail.get("summary")
+    if (
+        not isinstance(child_summary, dict)
+        or child_summary.get("session_id") != child_session_id
+        or child_summary.get("run_manifest") != raw_review.get("manifest")
+    ):
+        raise ValueError("terminal-budget child Session does not match the native result")
+    child_path = Path(str(child_summary.get("file_path", ""))).resolve()
+    expected_child_path = Path(str(request["session_record_path"])).resolve().parent / (
+        child_session_id + ".jsonl"
+    )
+    if child_path != expected_child_path or not child_path.is_file():
+        raise ValueError("terminal-budget child Session escaped the frozen OCRV store")
+    native_session_path = attempt / "native-session.jsonl"
+    native_session_path.write_bytes(child_path.read_bytes())
+    child_records = read_session_records(native_session_path)
+    native_lineage = [row for row in child_records if row.get("type") == "resume_lineage"]
+    session_ends = [row for row in child_records if row.get("type") == "session_end"]
+    if (
+        len(native_lineage) != 1
+        or len(session_ends) != 1
+        or session_ends[0].get("run_manifest") != raw_review.get("manifest")
+    ):
+        raise ValueError("terminal-budget child Session lineage or terminal manifest is incomplete")
+    parent_raw = json.loads(Path(str(request["raw_review_path"])).read_text(encoding="utf-8-sig"))
+    validate_resumed_child(
+        parent_raw,
+        raw_review,
+        native_lineage[0],
+        target_ocrv_version=validated["target_ocrv_version"],
+        target_rule_config_sha256=validated["target_rule_config_sha256"],
+        target_runtime_config_sha256=validated["target_runtime_config_sha256"],
+    )
+    lineage = {
+        "schema_version": "slk.ocrv-terminal-budget-resume-lineage/v1",
+        "source_request_path": str(request_path.resolve()),
+        "source_request_sha256": _sha256(request_path),
+        "original_native_request_sha256": request["immutable_sha256"]["ocrv-request.json"],
+        "original_terminal_sha256": request["immutable_sha256"]["completed.json"],
+        "original_result_sha256": request["immutable_sha256"]["ocrv-result.json"],
+        "original_raw_review_sha256": request["immutable_sha256"]["raw_review"],
+        "session_show_sha256": _sha256(detail_path),
+        "parent_session_id": session["session_id"],
+        "child_session_id": child_session_id,
+        "review_invocation_id": invocation_id,
+        "native_session_sha256": _sha256(native_session_path),
+        "d1_started_event_id": request["d1_started_event_id"],
+        "d1_incomplete_event_id": request["d1_incomplete_event_id"],
+        "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+        "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
+                "runtime_config_binding_sha256": canonical_json_sha256(
+                    request["runtime_config_binding"]
+                ),
+        "owner_authorization": request["owner_authorization"],
+        "capacity_request_sha256": _sha256(capacity_path),
+    }
+    lineage_path = attempt / "resume-lineage.json"
+    lineage_path.write_text(json.dumps(lineage, sort_keys=True) + "\n", encoding="utf-8")
+    started = json.loads(
+        (attempt / "native-start.received.json").read_text(encoding="utf-8")
+    )
+    (attempt / "started.json").write_text(
+        json.dumps(started, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    terminal = {
+        "schema_version": "slk.transport-result/v1",
+        "message_id": request["candidate_message_id"],
+        "run_id": request["run_id"],
+        "adapter": "ocrv-checker",
+        "status": "completed",
+        "native_identity": {
+            "run_id": request["run_id"],
+            "cell_id": request["cell_id"],
+            "review_invocation_id": invocation_id,
+            "session_id": child_session_id,
+            "provider": "dashscope-tokenplan",
+            "model": "qwen3.8-max",
+            "verdict": result["verdict"],
+            "exit_code": code,
+            "review_segment_count": 0,
+        },
+        "error_code": None,
+        "evidence": [
+            "started.json", "ocrv-capacity-request.json", "resume-lineage.json",
+            "native-session.jsonl", "ocrv-result.json",
+        ],
+    }
+    (attempt / "completed.json").write_text(
+        json.dumps(terminal, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    status = "CHECKER_D1_STILL_INCOMPLETE"
+    d1_event_type = "D1_INCOMPLETE"
+    suffix = {
+        "corrected_d1_event_id": None,
+        "suffix_mode": None,
+        "suffix_request_path": None,
+        "suffix_result_path": None,
+        "suffix_status": "NOT_APPLICABLE",
+    }
+    if result["verdict"] != "INCOMPLETE":
+        raw = raw_path
+        committed = {key: request[key] for key in (
+            "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id",
+            "attempt", "plan_revision", "runtime_revision", "token_sequence",
+            "worker_role_instance_id", "checker_role_instance_id", "checker_endpoint_version",
+            "checker_endpoint", "runtime_projection_path", "runtime_projection_sha256",
+            "candidate_repository", "candidate_commit", "candidate_parent",
+            "candidate_message_id", "payload_sha256", "candidate_submitted_event_id",
+            "transport_started_event_id", "commit_request_path", "commit_request_sha256",
+            "native_attempt_path", "checker_credential_path", "state_command", "transport_command",
+        )}
+        committed.update(
+            schema_version=wc.COMMITTED_TERMINAL_SCHEMA,
+            raw_review_path=str(raw),
+            result_path=str(root / "committed-terminal-result.json"),
+            immutable_sha256={name: request["immutable_sha256"][name] for name in (
+                "endpoint.json", "envelope.json", "started.json", "ocrv-request.json"
+            )},
+            recovery_terminal={
+                "native_attempt_path": str(attempt),
+                "started_sha256": _sha256(attempt / "started.json"),
+                "completed_sha256": _sha256(attempt / "completed.json"),
+                "ocrv_result_sha256": _sha256(attempt / "ocrv-result.json"),
+                "resume_request_sha256": _sha256(lineage_path),
+                "raw_review_sha256": _sha256(raw),
+                "source_request_path": str(request_path.resolve()),
+                "source_request_sha256": _sha256(request_path),
+                "capacity_request_sha256": _sha256(capacity_path),
+                "resume_lineage_sha256": _sha256(lineage_path),
+                "native_session_sha256": _sha256(native_session_path),
+                "d1_correction": validated["d1_correction"],
+            },
+        )
+        committed_path = root / "committed-terminal.json"
+        committed_path.write_text(json.dumps(committed, sort_keys=True) + "\n", encoding="utf-8")
+        wc._validate_committed_terminal_request(committed)
+        completed = subprocess.run(
+            command + [
+                "checker-record-committed-terminal", "--request", str(committed_path),
+                "--sha256", _sha256(committed_path),
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+            env=os.environ.copy(),
+            **windows_no_window_kwargs(),
+        )
+        if completed.returncode != 0:
+            sys.stdout.buffer.write(completed.stdout)
+            sys.stderr.buffer.write(completed.stderr)
+            return completed.returncode
+        recorded = json.loads(completed.stdout)
+        if (
+            recorded.get("request_sha256") != _sha256(committed_path)
+            or recorded.get("d1_verdict") != result["verdict"]
+        ):
+            raise ValueError("terminal-budget committed D1 response is not exact")
+        status = "CHECKER_D1_RECORDED"
+        d1_event_type = recorded["d1_event_type"]
+        suffix = _terminal_budget_post_d1_suffix(
+            request, validated, result, attempt, root, command
+        )
+
+    outer = {
+        "schema_version": RESULT_SCHEMA,
+        "method_version": request["method_version"],
+        "status": status,
+        "run_id": request["run_id"],
+        "cell_id": request["cell_id"],
+        "attempt": request["attempt"],
+        "candidate_message_id": request["candidate_message_id"],
+        "checker_role_instance_id": request["checker_role_instance_id"],
+        "checker_endpoint_version": request["checker_endpoint_version"],
+        "recovery_invocation_id": request["recovery_invocation_id"],
+        "request_sha256": _sha256(request_path),
+        "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+        "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
+        "runtime_config_binding_sha256": canonical_json_sha256(
+            request["runtime_config_binding"]
+        ),
+        "source_d1_incomplete_event_id": request["d1_incomplete_event_id"],
+        "parent_session_id": session["session_id"],
+        "child_session_id": child_session_id,
+        "d1_verdict": result["verdict"],
+        "d1_event_type": d1_event_type,
+        **suffix,
+        "native_attempt_path": str(attempt),
+        "native_result_path": str(attempt / "ocrv-result.json"),
+    }
+    encoded = (json.dumps(outer, sort_keys=True) + "\n").encode("utf-8")
+    Path(request["result_path"]).write_bytes(encoded)
+    sys.stdout.buffer.write(encoded)
+    return 0
 
 
 def _resume_partial(
@@ -725,6 +1231,7 @@ def main() -> int:
     mode.add_argument("--slk-existing-terminal", action="store_true")
     mode.add_argument("--slk-committed-terminal", action="store_true")
     mode.add_argument("--slk-resume-incomplete-checker", action="store_true")
+    mode.add_argument("--slk-resume-terminal-budget", action="store_true")
     mode.add_argument("--slk-continue-consumed-partial", action="store_true")
     mode.add_argument("--slk-resume-consumed-partial", action="store_true")
     mode.add_argument("--slk-refine-consumed-partial", action="store_true")
@@ -740,7 +1247,9 @@ def main() -> int:
         print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
         return 4
     expected_schema = (
-        "slk.ocrv-incomplete-checker-resume-request/v1"
+        "slk.ocrv-terminal-budget-resume-request/v1"
+        if args.slk_resume_terminal_budget
+        else "slk.ocrv-incomplete-checker-resume-request/v1"
         if args.slk_resume_incomplete_checker or args.slk_continue_consumed_partial
         or args.slk_resume_consumed_partial or args.slk_refine_consumed_partial
         or args.slk_consume_existing_partial
@@ -763,6 +1272,7 @@ def main() -> int:
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
     if (args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker
+        or args.slk_resume_terminal_budget
         or args.slk_continue_consumed_partial or args.slk_resume_consumed_partial
         or args.slk_refine_consumed_partial
         or args.slk_consume_existing_partial):
@@ -783,6 +1293,8 @@ def main() -> int:
                 raise ValueError('existing partial evidence root is required')
             return _consume_existing_partial(
                 request, args.request.resolve(), command, args.evidence_root.resolve())
+        if args.slk_resume_terminal_budget:
+            return _resume_terminal_budget(request, args.request.resolve(), command)
         if args.slk_resume_consumed_partial:
             return _resume_partial(request, args.request.resolve(), command, consumed=True, resume_later=True)
         if args.slk_refine_consumed_partial:

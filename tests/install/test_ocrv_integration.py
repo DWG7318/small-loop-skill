@@ -98,12 +98,35 @@ def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     assert '"%~1"=="--slk-existing-terminal"' in wrapper
     assert '"%~1"=="--slk-committed-terminal"' in wrapper
     assert '"%~1"=="--slk-resume-incomplete-checker"' in wrapper
+    assert '"%~1"=="--slk-resume-terminal-budget"' in wrapper
     assert '"%~1"=="--slk-continue-consumed-partial"' in wrapper
     assert '"%~1"=="--slk-resume-consumed-partial"' in wrapper
     assert '"%~1"=="--slk-refine-consumed-partial"' in wrapper
     assert '"%~1"=="--slk-consume-existing-partial"' in wrapper
     assert "slk_checker_recovery.py" in wrapper
     assert "slk_checker_adapter.py" in wrapper
+
+
+def test_checker_capability_freezes_the_managed_terminal_budget_target() -> None:
+    capability = json.loads(
+        (INTEGRATION / "slk-checker-capabilities.json").read_text(encoding="utf-8")
+    )
+    identity = capability["terminal_budget_resume_identity"]
+
+    assert identity["ocrv_version"] == "v1.12.12"
+    assert identity["provider"] == "dashscope-tokenplan"
+    assert identity["model"] == "qwen3.8-max"
+    assert identity["rule_config_sha256"] == (
+        "03406157658b5549e2088b45059ea9cc7528c38eeb30f268b3decb6538737640"
+    )
+    assert identity["managed_rule_files"] == {
+        "slk/slk-d1-rule.json": (
+            "fb7ab06a64579a185a683a120c39e13ee82625aa29354b0df837462fcd4e166b"
+        ),
+        "slk/SLK-D1-REVIEW.md": (
+            "0ffdba9cf7c5934f4966f35e08a6000b7c630ce33a5d7d1e2626d4f13ed65693"
+        ),
+    }
 
 
 def test_ocrv_atomic_replace_retries_busy_and_cleans_temporary(
@@ -274,6 +297,58 @@ print(json.dumps({'schema_version':'slk.checker-completion-result/v1','status':'
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == "CHECKER_COMPLETION_COMMITTED"
+
+
+def test_complete_d1_wrapper_preserves_desktop_bridge_as_pending_suffix(
+    tmp_path: Path,
+) -> None:
+    fake = tmp_path / "fake_transport.py"
+    fake.write_text(
+        """import json, sys
+assert sys.argv[1] == 'checker-complete-d1'
+assert '--host-receipt' not in sys.argv
+print(json.dumps({'schema_version':'slk.checker-completion-result/v1','status':'DESKTOP_BRIDGE_REQUIRED'}))
+""",
+        encoding="utf-8",
+    )
+    attempt_root = tmp_path / "attempts"
+    attempt_root.mkdir()
+    request = tmp_path / "request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema_version": "slk.checker-completion-request/v1",
+                "completion_invocation_id": "completion-bridge-1",
+                "handoff_attempt_root": str(attempt_root),
+                "transport_command": [sys.executable, str(fake)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = attempt_root / ".checker-completion" / "completion-bridge-1" / "result.json"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(INTEGRATION / "slk_checker_post_d1.py"),
+            "--slk-complete-d1",
+            "--request",
+            str(request),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "DESKTOP_BRIDGE_REQUIRED"
 
 
 def test_existing_terminal_wrapper_reuses_checker_command_without_publishing_new_start(

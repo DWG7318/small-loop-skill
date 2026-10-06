@@ -44,6 +44,20 @@ CHECKER_RECOVERY_RESULT_SCHEMA = "slk.ocrv-worker-recovery-result/v1"
 COMMITTED_TERMINAL_SCHEMA = "slk.ocrv-committed-terminal-request/v1"
 COMMITTED_TERMINAL_RESULT_SCHEMA = "slk.ocrv-committed-terminal-result/v1"
 INCOMPLETE_RESUME_SCHEMA = "slk.ocrv-incomplete-checker-resume-request/v1"
+TERMINAL_BUDGET_RESUME_SCHEMA = "slk.ocrv-terminal-budget-resume-request/v1"
+TERMINAL_BUDGET_RESUME_RESULT_SCHEMA = "slk.ocrv-terminal-budget-resume-result/v1"
+TERMINAL_BUDGET_RESUME_RESULT_FIELDS = frozenset(
+    {
+        "schema_version", "method_version", "status", "run_id", "cell_id", "attempt",
+        "candidate_message_id", "checker_role_instance_id", "checker_endpoint_version",
+        "recovery_invocation_id", "request_sha256", "capacity_revision_sha256",
+        "ocrv_transition_sha256", "runtime_config_binding_sha256",
+        "source_d1_incomplete_event_id", "d1_verdict", "d1_event_type",
+        "corrected_d1_event_id", "suffix_mode", "suffix_request_path",
+        "suffix_result_path", "suffix_status", "parent_session_id", "child_session_id",
+        "native_attempt_path", "native_result_path",
+    }
+)
 COMMITTED_TERMINAL_RESULT_FIELDS = frozenset(
     {
         "schema_version", "method_version", "status", "run_id", "cell_id", "attempt",
@@ -3845,6 +3859,7 @@ def _run_sealed_checker_terminal(
     result_schema: str,
     error_code: str,
     extra_args: tuple[str, ...] = (),
+    result_statuses: tuple[str, ...] = ("CHECKER_D1_RECORDED",),
 ) -> Mapping[str, Any]:
     """Use the one registered headless OCRV host for an existing terminal."""
 
@@ -3892,11 +3907,11 @@ def _run_sealed_checker_terminal(
     if (
         not _matches(value, {
             "schema_version": result_schema,
-            "status": "CHECKER_D1_RECORDED",
             "run_id": request["run_id"],
             "checker_role_instance_id": endpoint.role_instance_id,
             "request_sha256": request_sha256,
         })
+        or value.get("status") not in result_statuses
     ):
         raise CompletionError(error_code, stderr.strip() or "original Checker terminal consumer failed")
     return value
@@ -4052,7 +4067,10 @@ def _record_checker_d1(
             "role_instance_id": checker.role_instance_id,
             "event_type": event_type,
             "details": dict(details),
-            "corrects_event_id": continuation.get('partial_correction_event_id') if event_type != 'D1_STARTED' else None,
+            "corrects_event_id": (
+                continuation.get('d1_correction_event_id')
+                or continuation.get('partial_correction_event_id')
+            ) if event_type != 'D1_STARTED' else None,
             "occurred_at": occurred_at,
         }
         request_path = _write_or_reuse_stable_request(event_root / f"{suffix}.json", request)
@@ -4065,7 +4083,7 @@ def _record_checker_d1(
             raise CompletionError("CHECKER_D1_STATE_WRITE_FAILED", f"{event_type} was not recorded")
 
     try:
-        if not continuation.get('partial_correction_event_id'): write_checker_event(
+        if not (continuation.get('d1_correction_event_id') or continuation.get('partial_correction_event_id')): write_checker_event(
             "D1_STARTED",
             "d1-started-v2",
             {
@@ -4246,8 +4264,13 @@ def _record_checker_d1(
         occurred_at = datetime.fromtimestamp(terminal_path.stat().st_mtime, tz=timezone.utc).isoformat().replace(
             "+00:00", "Z"
         )
-        suffix = ('d1-partial-' + str(continuation['partial_recovery_invocation_id'])
-                  if continuation.get('partial_correction_event_id') else 'd1-result-v2')
+        suffix = (
+            'd1-budget-' + str(continuation['d1_correction_id'])
+            if continuation.get('d1_correction_event_id')
+            else 'd1-partial-' + str(continuation['partial_recovery_invocation_id'])
+            if continuation.get('partial_correction_event_id')
+            else 'd1-result-v2'
+        )
         write_checker_event(event_type, suffix, details, occurred_at)
     finally:
         credential = ""
@@ -4494,7 +4517,8 @@ def _committed_event_details(event: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_only: bool = False,
-                                         partial_review: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                                         partial_review: Mapping[str, Any] | None = None,
+                                         d1_correction: Mapping[str, Any] | None = None) -> dict[str, Any]:
     if 'partial_terminal' in request and not source_only:
         from .partial_review import validate_partial_terminal
         try:
@@ -4536,6 +4560,25 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
         "result_path",
     }
     recovery_terminal = request.get("recovery_terminal")
+    if d1_correction is None and isinstance(recovery_terminal, Mapping):
+        candidate_correction = recovery_terminal.get("d1_correction")
+        d1_correction = candidate_correction if isinstance(candidate_correction, Mapping) else None
+    if d1_correction is not None and partial_review is None and (
+        set(d1_correction) != {
+            "correction_id", "d1_started_event_id", "d1_incomplete_event_id",
+            "native_terminal_sha256", "native_result_sha256",
+        }
+        or not all(
+            isinstance(d1_correction.get(name), str) and bool(d1_correction[name])
+            for name in ("correction_id", "d1_started_event_id", "d1_incomplete_event_id")
+        )
+        or not _exact_digest(d1_correction.get("native_terminal_sha256"))
+        or not _exact_digest(d1_correction.get("native_result_sha256"))
+    ):
+        raise CompletionError(
+            "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID", "D1 correction identity is not closed"
+        )
+    correction = d1_correction or partial_review
     if recovery_terminal is not None:
         fields.add("recovery_terminal")
     if (
@@ -4653,8 +4696,8 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             "current_plan_revision": request["plan_revision"],
         })
         or not _matches(administrative, {
-            **shared_state, "latest_event_id": (partial_review['d1_incomplete_event_id']
-                if partial_review is not None else request["transport_started_event_id"]),
+            **shared_state, "latest_event_id": (correction['d1_incomplete_event_id']
+                if correction is not None else request["transport_started_event_id"]),
         })
         or not _matches(runtime, {
             "run_id": request["run_id"], "method_version": request["method_version"],
@@ -4724,11 +4767,24 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             and event.get("attempt") == request["attempt"]
             and event.get("event_type") in {"D1_STARTED", "D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"}
         ):
-            if partial_review is not None and event.get('event_id') == partial_review.get(
+            if correction is not None and event.get('event_id') == correction.get(
                 {'D1_STARTED': 'd1_started_event_id', 'D1_INCOMPLETE': 'd1_incomplete_event_id'}.get(event.get('event_type'), '')
             ) and event.get('author_role_instance_id') == request['checker_role_instance_id'] and (
                 _committed_event_details(event).get('candidate_message_id') == request['candidate_message_id']
             ):
+                details = _committed_event_details(event)
+                if event.get('event_type') == 'D1_INCOMPLETE' and (
+                    correction.get('native_terminal_sha256') is not None
+                    and (
+                        details.get('verdict') != 'INCOMPLETE'
+                        or details.get('native_terminal_sha256') != correction.get('native_terminal_sha256')
+                        or details.get('native_result_sha256') != correction.get('native_result_sha256')
+                    )
+                ):
+                    raise CompletionError(
+                        "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+                        "source D1 INCOMPLETE does not bind the terminal-budget evidence",
+                    )
                 continue
             raise CompletionError(
                 "CHECKER_COMMITTED_TERMINAL_ALREADY_ADVANCED",
@@ -4977,24 +5033,36 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             "native_attempt_path", "started_sha256", "completed_sha256",
             "ocrv_result_sha256", "resume_request_sha256", "raw_review_sha256",
         }
+        budget_fields = {
+            "source_request_path", "source_request_sha256", "capacity_request_sha256",
+            "resume_lineage_sha256", "native_session_sha256", "d1_correction",
+        }
+        is_budget_resume = d1_correction is not None
+        expected_recovery_fields = recovery_fields | budget_fields if is_budget_resume else recovery_fields
         terminal_attempt = Path(str(recovery_terminal.get("native_attempt_path", ""))).resolve()
+        native_request_name = "ocrv-capacity-request.json" if is_budget_resume else "ocrv-resume-request.json"
         recovered = {
             "started.json": recovery_terminal.get("started_sha256"),
             "completed.json": recovery_terminal.get("completed_sha256"),
             "ocrv-result.json": recovery_terminal.get("ocrv_result_sha256"),
-            "ocrv-resume-request.json": recovery_terminal.get("resume_request_sha256"),
+            native_request_name: (
+                recovery_terminal.get("capacity_request_sha256")
+                if is_budget_resume else recovery_terminal.get("resume_request_sha256")
+            ),
             "raw_review": recovery_terminal.get("raw_review_sha256"),
         }
         recovered_paths = {
             "started.json": terminal_attempt / "started.json",
             "completed.json": terminal_attempt / "completed.json",
             "ocrv-result.json": terminal_attempt / "ocrv-result.json",
-            "ocrv-resume-request.json": terminal_attempt / "ocrv-resume-request.json",
+            native_request_name: terminal_attempt / native_request_name,
             "raw_review": raw_review_path,
         }
         if (
-            set(recovery_terminal) != recovery_fields
-            or terminal_attempt.parent.parent != native_attempt / "resume-incomplete-checker"
+            set(recovery_terminal) != expected_recovery_fields
+            or terminal_attempt.parent.parent != native_attempt / (
+                "resume-terminal-budget-checker" if is_budget_resume else "resume-incomplete-checker"
+            )
             or any(not _exact_digest(value) for value in recovered.values())
             or any(not path.is_file() or _sha256(path) != recovered[name]
                    for name, path in recovered_paths.items())
@@ -5002,21 +5070,110 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             raise CompletionError(
                 "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID", "recovery terminal evidence is invalid"
             )
+        if is_budget_resume:
+            from .terminal_budget import (
+                read_session_records,
+                validate as validate_terminal_budget,
+                validate_resumed_child,
+            )
+
+            source_request_path = Path(str(recovery_terminal["source_request_path"])).resolve()
+            lineage_path = terminal_attempt / "resume-lineage.json"
+            if (
+                not source_request_path.is_file()
+                or _sha256(source_request_path) != recovery_terminal["source_request_sha256"]
+                or not lineage_path.is_file()
+                or _sha256(lineage_path) != recovery_terminal["resume_lineage_sha256"]
+                or recovery_terminal["resume_request_sha256"] != recovery_terminal["resume_lineage_sha256"]
+            ):
+                raise CompletionError(
+                    "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+                    "terminal-budget source request or lineage changed",
+                )
+            source_request = _read_object(source_request_path, "terminal-budget source request")
+            source_validated = validate_terminal_budget(source_request, consumed=True)
+            revised_request = _read_object(
+                recovered_paths[native_request_name], "terminal-budget revised OCRV request"
+            )
+            original_request = _read_object(
+                native_attempt / "ocrv-request.json", "terminal-budget original OCRV request"
+            )
+            expected_revised = dict(original_request)
+            expected_capacity = dict(original_request["capacity"])
+            expected_capacity.update(source_request["capacity_revision"]["new"])
+            expected_revised["capacity"] = expected_capacity
+            native_session_path = terminal_attempt / "native-session.jsonl"
+            lineage_value = _read_object(lineage_path, "terminal-budget resume lineage")
+            child_raw = _read_object(raw_review_path, "terminal-budget resumed OCRV review")
+            parent_raw = _read_object(
+                Path(str(source_request["raw_review_path"])).resolve(),
+                "terminal-budget parent OCRV review",
+            )
+            if not native_session_path.is_file():
+                raise CompletionError(
+                    "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+                    "terminal-budget native child Session is missing",
+                )
+            try:
+                native_records = read_session_records(native_session_path)
+            except ValueError as exc:
+                raise CompletionError(
+                    "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+                    "terminal-budget native child Session is invalid",
+                ) from exc
+            native_lineages = [row for row in native_records if row.get("type") == "resume_lineage"]
+            native_ends = [row for row in native_records if row.get("type") == "session_end"]
+            if (
+                source_validated["d1_correction"] != d1_correction
+                or revised_request != expected_revised
+                or recovery_terminal["source_request_sha256"]
+                != _sha256(source_request_path)
+                or _sha256(native_session_path) != recovery_terminal["native_session_sha256"]
+                or len(native_lineages) != 1
+                or len(native_ends) != 1
+                or native_ends[0].get("run_manifest") != child_raw.get("manifest")
+                or lineage_value.get("parent_session_id") != parent_raw.get("session_id")
+                or lineage_value.get("child_session_id") != child_raw.get("session_id")
+                or lineage_value.get("native_session_sha256")
+                != recovery_terminal["native_session_sha256"]
+            ):
+                raise CompletionError(
+                    "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+                    "terminal-budget revision or D1 correction changed",
+                )
+            try:
+                validate_resumed_child(
+                    parent_raw,
+                    child_raw,
+                    native_lineages[0],
+                    target_ocrv_version=source_validated["target_ocrv_version"],
+                        target_rule_config_sha256=source_validated[
+                            "target_rule_config_sha256"
+                        ],
+                        target_runtime_config_sha256=source_validated[
+                            "target_runtime_config_sha256"
+                        ],
+                )
+            except ValueError as exc:
+                raise CompletionError(
+                    "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
+                    "terminal-budget OCRV parent/child lineage is invalid",
+                ) from exc
         try:
             started = validate_native_start(
                 recovered_paths["started.json"], adapter=checker.adapter,
                 run_id=str(request["run_id"]), cell_id=str(request["cell_id"]),
                 message_id=str(request["candidate_message_id"]),
                 request_sha256=str(request["payload_sha256"]),
-                native_request_sha256=str(recovered["ocrv-resume-request.json"]),
+                native_request_sha256=str(recovered[native_request_name]),
             )
         except NativeActivityError as exc:
             raise CompletionError(
                 "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID", "recovery OCRV start is invalid"
             ) from exc
         evidence_paths.update(recovered_paths)
-        result_request_path = recovered_paths["ocrv-resume-request.json"]
-        terminal_request_name = "ocrv-resume-request.json"
+        result_request_path = recovered_paths[native_request_name]
+        terminal_request_name = native_request_name
     try:
         terminal = DeliveryResult.from_dict(
             _read_object(evidence_paths["completed.json"], "OCRV terminal")
@@ -5118,6 +5275,11 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
         "state_command": request["state_command"],
         "occurred_at": str(started["observed_at"]),
     }
+    if d1_correction is not None:
+        continuation.update(
+            d1_correction_event_id=d1_correction["d1_incomplete_event_id"],
+            d1_correction_id=d1_correction["correction_id"],
+        )
     activation = {
         "status": "CHECKER_STARTED",
         "runtime_revision": request["runtime_revision"],
@@ -5604,6 +5766,64 @@ def resume_incomplete_checker(request_path: Path, *, request_sha256: str, prepar
         mode="--slk-resume-incomplete-checker", result_schema=COMMITTED_TERMINAL_RESULT_SCHEMA,
         error_code="CHECKER_INCOMPLETE_RESUME_COMMAND_FAILED",
     )
+
+
+def resume_terminal_budget_checker(
+    request_path: Path, *, request_sha256: str, prepare_only: bool = False
+) -> Mapping[str, Any]:
+    """Resume one terminal budget-only OCRV D1 inside the original sealed Checker."""
+
+    from .terminal_budget import RESULT_SCHEMA, validate
+
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError(
+            "CHECKER_TERMINAL_BUDGET_REQUEST_MISMATCH", "terminal-budget request hash mismatch"
+        )
+    request = _read_object(request_path, "terminal-budget Checker resume request")
+    validated = validate(request)
+    if prepare_only:
+        return {
+            "schema_version": "slk.ocrv-terminal-budget-resume-preflight/v1",
+            "status": "READY_FOR_SEALED_CHECKER_PREFLIGHT",
+            "request_sha256": request_sha256,
+            **{
+                key: request[key]
+                for key in (
+                    "run_id", "go_id", "cell_id", "attempt", "candidate_message_id",
+                    "runtime_revision", "token_sequence", "checker_role_instance_id",
+                    "checker_endpoint_version", "d1_incomplete_event_id",
+                )
+            },
+            "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+            "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
+            "runtime_config_binding_sha256": canonical_json_sha256(
+                request["runtime_config_binding"]
+            ),
+        }
+    value = _run_sealed_checker_terminal(
+        request_path,
+        request,
+        validated["checker"],
+        request_sha256=request_sha256,
+        mode="--slk-resume-terminal-budget",
+        result_schema=RESULT_SCHEMA,
+        error_code="CHECKER_TERMINAL_BUDGET_COMMAND_FAILED",
+        result_statuses=("CHECKER_D1_RECORDED", "CHECKER_D1_STILL_INCOMPLETE"),
+    )
+    if (
+        set(value) != TERMINAL_BUDGET_RESUME_RESULT_FIELDS
+        or value.get("status") not in {"CHECKER_D1_RECORDED", "CHECKER_D1_STILL_INCOMPLETE"}
+        or value.get("d1_verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
+        or value.get("d1_event_type")
+        != {"PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE"}.get(
+            value.get("d1_verdict")
+        )
+    ):
+        raise CompletionError(
+            "CHECKER_TERMINAL_BUDGET_COMMAND_FAILED", "sealed Checker returned an invalid continuation result"
+        )
+    return value
 
 
 def continue_consumed_partial_checker(

@@ -58,7 +58,7 @@ Supervisor 通过结构化角色 Eval 后，用 `slk-state init-run --credential
 ## 负面提示词
 
 - 不要把 Goal 用于启动准备／预检之外；该阶段允许 Supervisor 按团队准备子 Skill 启动或续用；不要把例外扩到正常 CELL、D0、D1、返工、OW 巡查、D2，或让 Worker/Checker/OW 使用 Goal；不要用一个对话的 Goal 驱动整 Run、替代逐节点 `SLK TOKEN` 流转或保证自动重启。
-- 不要把 D1 INCOMPLETE 当成 FAIL 或返工，不要把正式 D1 FAIL 的受限 Supervisor 指引扩成普通 Worker 派工或 D1 裁决。
+- 不要把 D1 INCOMPLETE 当 FAIL/返工；预算续跑只用 Owner 授权且身份绑定的标准 Tool，不手填请求或改全局预算；补审 PASS/FAIL 回原 Checker 既有后缀。
 - 不要把针对某个 CELL、某类工作或一次经验形成的容量估计、数字边界或经验规则，泛化为所有 CELL、整个 Run 或其他项目共同遵守的一刀切定额；不要为了平均、整齐或便于管理，要求每个 CELL 满足相同指标。这不排除根据具体 CELL 的目标、难度、依赖、模型、电脑和余量，形成只适用于该 CELL 的、有事实依据的容量边界。
 - 不要把 SLK TOKEN、SQLite、BI 或 Overwatcher 当成逐条命令队列、常驻运行时、裁决者或额外确认层；令牌不构成真实运行证明，界面 running 或无法证明的活动也不是；不要让 Owner、Overwatcher、其他 Agent 或 BI 越权改写工程事实、TOKEN 或只读投影，不要让相同或更旧的令牌编号创建新工作、回退指针或重开 CELL；不要把 Checker 的 D1 交给 Supervisor，把 DELIVERED 当成 D1_ACCEPTED，按标题合并 Run，在同一实际 Run 的继续过程中另造 run_id，或让三工程角色用正时长 `wait_threads`、旧状态和 heartbeat 代替真实交接与活动证据。
 - 不要编辑 SQLite、伪造凭证/Run、文本升级合同，或借身份对账改写 CELL、D0/D1/D2、角色、证据与 TOKEN；OW 按合同绑定，不要先写 `RUN_CLOSED` 后补 final cycle/close。

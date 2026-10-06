@@ -88,6 +88,8 @@ def test_cli_exposes_one_commit_only_checker_recovery_entry(tmp_path: Path) -> N
     assert "recover-staged-checker-commit" in result.stdout
     assert "consume-staged-checker-terminal" in result.stdout
     assert "consume-committed-checker-terminal" in result.stdout
+    assert "prepare-terminal-budget-checker" in result.stdout
+    assert "resume-terminal-budget-checker" in result.stdout
 
 
 def test_cli_exposes_standard_new_run_preparation_entries(tmp_path: Path) -> None:
@@ -347,6 +349,28 @@ def test_checker_post_d1_cli_is_exposed_and_fails_closed_on_an_open_request(tmp_
     result = json.loads(rejected.stdout)
     assert result["status"] == "rejected"
     assert result["error_code"] == "CHECKER_ESCALATION_REQUEST_INVALID"
+
+
+def test_terminal_budget_resume_cli_is_exposed_and_fails_closed_on_an_open_request(
+    tmp_path: Path,
+) -> None:
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+    request = write_json(tmp_path / "terminal-budget.json", {})
+
+    rejected = run_cli(
+        artifact,
+        "resume-terminal-budget-checker",
+        "--request",
+        str(request),
+        "--sha256",
+        hashlib.sha256(request.read_bytes()).hexdigest(),
+        "--prepare-only",
+    )
+
+    assert rejected.returncode == 2
+    result = json.loads(rejected.stdout)
+    assert result["status"] == "rejected"
+    assert result["error_code"] == "CHECKER_TERMINAL_BUDGET_REQUEST_INVALID"
 
 
 def test_prepare_invalid_result_recovery_is_read_only_and_emits_closed_checker_envelope(

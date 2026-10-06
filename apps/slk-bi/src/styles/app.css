@@ -1,5 +1,6 @@
 .app-shell {
   width: 100%;
+  min-height: 100vh;
   overflow: hidden;
   border: 1px solid var(--frame);
   border-radius: 3px;
@@ -305,7 +306,7 @@
 
 .archive-panel > header strong { font-size: var(--text-10); }
 .archive-panel > header span { margin-left: auto; font: var(--text-8)/1 var(--mono); }
-.is-archived { filter: saturate(.55); opacity: .86; }
+.is-archived { filter: saturate(.55); }
 .quiet-empty { margin: 0; padding: 18px; color: var(--ink-3); text-align: center; }
 
 .app-state {

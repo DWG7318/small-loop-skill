@@ -60,6 +60,8 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
         "tools/slk/share/small-loop-skill/docs/contracts/slk-ocrv-worker-recovery.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-ocrv-incomplete-checker-resume.schema.json",
+        "tools/slk/share/small-loop-skill/docs/contracts/slk-ocrv-terminal-budget-resume.schema.json",
+        "tools/slk/share/small-loop-skill/docs/contracts/slk-ocrv-terminal-budget-resume-result.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-checker-post-d1.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-checker-completion.schema.json",
         "tools/slk/share/small-loop-skill/docs/contracts/slk-native-execution-outcome.schema.json",

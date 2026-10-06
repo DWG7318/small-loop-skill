@@ -73,7 +73,23 @@
         "completed_sha256": {"$ref": "#/$defs/sha256"},
         "ocrv_result_sha256": {"$ref": "#/$defs/sha256"},
         "resume_request_sha256": {"$ref": "#/$defs/sha256"},
-        "raw_review_sha256": {"$ref": "#/$defs/sha256"}
+        "raw_review_sha256": {"$ref": "#/$defs/sha256"},
+        "source_request_path": {"$ref": "#/$defs/path"},
+        "source_request_sha256": {"$ref": "#/$defs/sha256"},
+        "capacity_request_sha256": {"$ref": "#/$defs/sha256"},
+        "resume_lineage_sha256": {"$ref": "#/$defs/sha256"},
+        "native_session_sha256": {"$ref": "#/$defs/sha256"},
+        "d1_correction": {
+          "type": "object", "additionalProperties": false,
+          "required": ["correction_id", "d1_started_event_id", "d1_incomplete_event_id", "native_terminal_sha256", "native_result_sha256"],
+          "properties": {
+            "correction_id": {"$ref": "#/$defs/identifier"},
+            "d1_started_event_id": {"$ref": "#/$defs/identifier"},
+            "d1_incomplete_event_id": {"$ref": "#/$defs/identifier"},
+            "native_terminal_sha256": {"$ref": "#/$defs/sha256"},
+            "native_result_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        }
       }
     },
     "partial_terminal": {
