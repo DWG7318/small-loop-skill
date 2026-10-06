@@ -228,14 +228,34 @@ def execute_sealed_supervisor_admin(
             overwatcher_secret = wc.unprotect_dpapi_hex(overwatcher_sealed)
             operation_secret = overwatcher_secret
         state_operation = "write" if operation == "close-run" else operation
-        state_result = wc._run_json_command(
-            list(state_command), [state_operation, "--request", str(operation_request)],
-            credential=operation_secret,
-        )
+        state_arguments = [state_operation, "--request", str(operation_request)]
+        if overwatcher_closing:
+            state_result = wc._run_json_command(
+                list(state_command), state_arguments, credential=operation_secret,
+                credential_scope="overwatcher",
+            )
+        else:
+            state_result = wc._run_json_command(
+                list(state_command), state_arguments, credential=operation_secret,
+            )
     finally:
         overwatcher_secret = ""
         checker_secret = ""
         secret = ""
+    command_meta = state_result.get("_slk_command")
+    if isinstance(command_meta, Mapping) and command_meta.get("process_exit") != 0:
+        error_code = state_result.get("error_code")
+        message = state_result.get("message")
+        safe_code = (
+            isinstance(error_code, str) and 0 < len(error_code) <= 128
+            and all(character.isupper() or character.isdigit() or character == "_" for character in error_code)
+        )
+        safe_message = (
+            isinstance(message, str) and 0 < len(message) <= 512 and "slk_" not in message
+        )
+        if safe_code and safe_message:
+            raise ValueError(f"Supervisor state command rejected: {error_code}: {message}")
+        raise ValueError("Supervisor state command rejected without safe structured details")
     if state_result.get("status") not in OPERATIONS[operation] or state_result.get("run_id") != run_id:
         raise ValueError("Supervisor administration did not produce the allowed closed result")
     sealed_result = None

@@ -114,8 +114,8 @@ def test_closed_admin_consumer_executes_only_exact_terminal_operations(
         else supervisor_secret,
     )
 
-    def run(command, arguments, credential=None):
-        calls.append((arguments[0], credential))
+    def run(command, arguments, credential=None, credential_scope="role"):
+        calls.append((arguments[0], credential, credential_scope))
         if arguments[0] == "authenticate-role":
             return {
                 "status": "authenticated",
@@ -131,8 +131,12 @@ def test_closed_admin_consumer_executes_only_exact_terminal_operations(
         request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
 
     assert calls == [
-        ("authenticate-role", supervisor_secret),
-        (state_operation, overwatcher_secret if uses_overwatcher else supervisor_secret),
+        ("authenticate-role", supervisor_secret, "role"),
+        (
+            state_operation,
+            overwatcher_secret if uses_overwatcher else supervisor_secret,
+            "overwatcher" if uses_overwatcher else "role",
+        ),
     ]
     assert result["operation"] == operation
     assert supervisor_secret not in json.dumps(result)
@@ -154,6 +158,38 @@ def test_close_run_admin_rejects_nonterminal_write_before_credential_access(tmp_
     )
 
     with pytest.raises(ValueError, match="RUN_CLOSED"):
+        admin.execute_sealed_supervisor_admin(
+            request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+
+def test_terminal_admin_preserves_safe_state_rejection_details(tmp_path, monkeypatch):
+    request = terminal_request_fixture(tmp_path, "close-run")
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _path: "slk_" + "s" * 64)
+
+    def run(command, arguments, credential=None):
+        if arguments[0] == "authenticate-role":
+            return {
+                "status": "authenticated",
+                "run_id": "RUN-A",
+                "role": "supervisor",
+                "role_instance_id": "RUN-A-supervisor-001",
+                "runtime_revision": 7,
+            }
+        return {
+            "error_code": "SLK_STATE_TERMINAL_ORDER_INVALID",
+            "message": "final cycle is missing",
+            "_slk_command": {
+                "process_exit": 1,
+                "json_parse": "PARSED_STDERR",
+                "business_status": None,
+            },
+        }
+
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(
+        ValueError,
+        match="SLK_STATE_TERMINAL_ORDER_INVALID: final cycle is missing",
+    ):
         admin.execute_sealed_supervisor_admin(
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
 

@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "e874b9fe6c0179a2350e580d807b611094fb9b526c1e168e89360565e916e60f"
+      "sha256": "4c2705ca7440b746e6cbadd8ec2c229e74c094d147102b09ced782d14cd534d5"
     },
     {
       "path": "VERSION",
@@ -1496,7 +1496,7 @@
     },
     {
       "path": "src/slk_transport/supervisor_admin.py",
-      "sha256": "66313eec07506aaae9c9c51fb8137099c969948b4cc88c70ce8996bc3cb85bfb"
+      "sha256": "d6e3b477bc56f03827908e396594b678b1522566e89e5b3a8a5ba859218cea5c"
     },
     {
       "path": "src/slk_transport/supervisor_notification.py",
@@ -1776,7 +1776,7 @@
     },
     {
       "path": "tests/transport/test_supervisor_admin.py",
-      "sha256": "08b303d913b658a810e84ea8655e9d6f4e985267b09659892836bc233388eb25"
+      "sha256": "463833166951ac38f5117ec190212845f036b6b34c0e3617d513dbbd99ee85da"
     },
     {
       "path": "tests/transport/test_supervisor_notification.py",
