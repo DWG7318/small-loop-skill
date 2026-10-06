@@ -425,7 +425,10 @@ def prepare_terminal_budget_request(
     if not isinstance(session_summary, Mapping):
         raise ValueError("original OCRV Session cannot be inspected")
     session_record = Path(str(session_summary.get("file_path", ""))).resolve()
-    state_root = session_record.parent.parent
+    session_store = session_record.parent.parent
+    if session_store.name != "sessions":
+        raise ValueError("original OCRV Session store is not canonical")
+    state_root = session_store.parent
     repository = Path(str(envelope.get("payload", {}).get("repository", ""))).resolve()
     binding, transition, preview = _validate_managed_target(
         runtime_root=runtime_root,

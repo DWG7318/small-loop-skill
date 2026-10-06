@@ -1524,7 +1524,7 @@
     },
     {
       "path": "src/slk_transport/terminal_budget.py",
-      "sha256": "33d7fd1bb0664c6ff56bd769c2e1a02b4190d531f921e5a8094d7622699e6d76"
+      "sha256": "bea0e92cc14127c094311891926ef50c0f149ed64c2d75b99ab8ae951d6d25b4"
     },
     {
       "path": "src/slk_transport/worker_completion.py",
@@ -1816,7 +1816,7 @@
     },
     {
       "path": "tests/transport/test_terminal_budget_resume.py",
-      "sha256": "72c07eea3a0e0f0a45265a7ed519003500ce6b29c96e784e744447a2390c4485"
+      "sha256": "3b3310cc0f82e3ca74fb4cdd09e2dd7f499fa341efe56eb77280ce3ed366d570"
     },
     {
       "path": "tests/transport/test_worker_completion.py",

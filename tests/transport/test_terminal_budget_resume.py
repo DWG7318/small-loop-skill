@@ -230,8 +230,14 @@ def budget_resume_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
             "waiting_on": None,
         },
     )
-    session_path = tmp_path / "ocrv-sessions" / "ocrv-session-1.jsonl"
-    session_path.parent.mkdir()
+    session_path = (
+        tmp_path
+        / ".opencodereview"
+        / "sessions"
+        / "D_fixture-repository"
+        / "ocrv-session-1.jsonl"
+    )
+    session_path.parent.mkdir(parents=True)
     session_path.write_text(
         json.dumps(
             {
@@ -436,7 +442,7 @@ def preparation_fixture(
         },
     )
     session_path = Path(str(expected["session_record_path"]))
-    state_root = session_path.parent.parent
+    state_root = session_path.parents[2]
     write_json(
         state_root / "config.json",
         {
