@@ -39,8 +39,8 @@ Checker → Worker → Checker
 
 唯一顺序：`D2_PASSED → terminal snapshot → OW final cycle → close-overwatcher → RUN_CLOSED → close-role`；本 Run 从未绑定 OW 时跳过两个 OW 节点，不改变其余顺序。
 
-1. 用 `slk-state write` 记录 `D2_PASSED`，冻结同一 runtime revision 的 `terminal snapshot`；若本 Run 绑定 Overwatcher，Supervisor 应在 `RUN_CLOSED` 前恢复仍属同一 Session 的必要 foreground turn，由 OW 写唯一 `OW final cycle`，再用该 cycle ID 与同一 revision 执行 `close-overwatcher`。关闭成功只归档 OW，不改变工程历史或 TOKEN。
-2. OW 已关闭（或本 Run 从未绑定 OW）后才写 `RUN_CLOSED`，调用 `$slk-record-run` 导出最终 CELL 数、D0、D1通过数、Supervisor豁免数、限制和证据位置，并把最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。随后调用 `$slk-manage-team`：Supervisor 用自己的有效写凭证，按准确身份分别执行 `slk-state close-role` 归档 Worker、Checker；重放同一请求是安全的，event ID 复用来表达不同内容会被拒绝。只有中央投影同时显示 `lifecycle=exited`、`display_state=archived` 且没有 `active endpoint`，才可称该角色已经归档。保留 Supervisor 对话，不执行 `close-role`。本 Run 使用过 Cargo 隔离目录时，在相关命令全部结束后执行 `slk-cargo cleanup` 清理其精确 Run runtime。
+1. 用密封 `supervisor-admin` 之外的既有 D2 路径记录 `D2_PASSED`，冻结同一 runtime revision 的 `terminal snapshot`；若本 Run 绑定 Overwatcher，Supervisor 应在 `RUN_CLOSED` 前恢复仍属同一 Session 的必要 foreground turn，由 OW 写唯一 `OW final cycle`，再让 `supervisor-admin close-overwatcher` 同时消费密封 Supervisor/OW 凭据并绑定该 cycle ID 与同一 revision。关闭成功只归档本 Run 的 OW 绑定，不改变工程历史或 TOKEN。
+2. OW 已关闭（或本 Run 从未绑定 OW）后才让密封 `supervisor-admin close-run` 写唯一 `RUN_CLOSED`，调用 `$slk-record-run` 导出最终 CELL 数、D0、D1通过数、Supervisor豁免数、限制和证据位置，并把最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。随后调用 `$slk-manage-team`：Supervisor 以 `supervisor-admin close-role` 按准确身份分别归档 Worker、Checker；重放同一请求是安全的，event ID 复用来表达不同内容会被拒绝。模型和普通 shell 均不接触角色凭据明文。只有中央投影同时显示 `lifecycle=exited`、`display_state=archived` 且没有 `active endpoint`，才可称该角色已经归档。保留 Supervisor 对话，不对其执行 `close-role`。本 Run 使用过 Cargo 隔离目录时，在相关命令全部结束后执行 `slk-cargo cleanup` 清理其精确 Run runtime。
 3. 向 Owner 发送一个简洁结论，例如：Run 已完工，D0/D1/D2结果、豁免数量、已知限制和根记录路径。
 
 Owner 可以根据结论继续查询；Supervisor 保留最终交接、D2结论和根记录路径，需要时再查阅详细工程历史。

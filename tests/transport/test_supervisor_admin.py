@@ -35,6 +35,129 @@ def request_fixture(tmp_path: Path, operation: str = "revise-role-model") -> Pat
     })
 
 
+def terminal_request_fixture(tmp_path: Path, operation: str) -> Path:
+    operation_value = {
+        "event_id": "close-checker-1",
+        "run_id": "RUN-A",
+        "role_instance_id": "RUN-A-checker-001",
+        "role": "checker",
+        "reason": "terminal Run member retirement",
+        "occurred_at": "2026-10-06T00:00:02Z",
+    }
+    if operation == "close-run":
+        operation_value = {
+            "event_id": "run-closed-1",
+            "run_id": "RUN-A",
+            "go_id": None,
+            "cell_id": None,
+            "attempt": None,
+            "plan_revision": 1,
+            "role_instance_id": "RUN-A-supervisor-001",
+            "event_type": "RUN_CLOSED",
+            "details": {},
+            "corrects_event_id": None,
+            "occurred_at": "2026-10-06T00:00:01Z",
+        }
+    elif operation == "close-overwatcher":
+        operation_value = {
+            "event_id": "close-overwatcher-1",
+            "run_id": "RUN-A",
+            "archive_evidence_ref": "state/final-cycle.json",
+            "final_cycle_id": "final-cycle-1",
+            "runtime_revision": 7,
+            "occurred_at": "2026-10-06T00:00:00Z",
+        }
+    operation_request = write_json(tmp_path / f"{operation}.json", operation_value)
+    sealed = tmp_path / "supervisor.sealed"
+    sealed.write_text("sealed-supervisor", encoding="ascii")
+    request = {
+        "schema_version": "slk.supervisor-admin/v1",
+        "run_id": "RUN-A",
+        "supervisor_role_instance_id": "RUN-A-supervisor-001",
+        "expected_runtime_revision": 7,
+        "sealed_credential_path": str(sealed),
+        "state_command": ["slk-state"],
+        "operation": operation,
+        "operation_request_path": str(operation_request),
+        "operation_request_sha256": hashlib.sha256(operation_request.read_bytes()).hexdigest(),
+        "result_path": str(tmp_path / f"{operation}-result.json"),
+    }
+    if operation == "close-overwatcher":
+        overwatcher = tmp_path / "overwatcher.sealed"
+        overwatcher.write_text("sealed-overwatcher", encoding="ascii")
+        request["sealed_overwatcher_credential_path"] = str(overwatcher)
+    return write_json(tmp_path / f"{operation}-admin.json", request)
+
+
+@pytest.mark.parametrize(
+    ("operation", "state_operation", "state_status", "uses_overwatcher"),
+    [
+        ("close-overwatcher", "close-overwatcher", "overwatcher_closed", True),
+        ("close-run", "write", "recorded", False),
+        ("close-role", "close-role", "closed", False),
+    ],
+)
+def test_closed_admin_consumer_executes_only_exact_terminal_operations(
+    tmp_path, monkeypatch, operation, state_operation, state_status, uses_overwatcher,
+):
+    request = terminal_request_fixture(tmp_path, operation)
+    value = json.loads(request.read_text())
+    supervisor_secret = "slk_" + "s" * 64
+    overwatcher_secret = "slk_" + "o" * 64
+    calls = []
+
+    monkeypatch.setattr(
+        admin.wc,
+        "unprotect_dpapi_hex",
+        lambda path: overwatcher_secret
+        if Path(path) == Path(value.get("sealed_overwatcher_credential_path", "missing"))
+        else supervisor_secret,
+    )
+
+    def run(command, arguments, credential=None):
+        calls.append((arguments[0], credential))
+        if arguments[0] == "authenticate-role":
+            return {
+                "status": "authenticated",
+                "run_id": "RUN-A",
+                "role": "supervisor",
+                "role_instance_id": "RUN-A-supervisor-001",
+                "runtime_revision": 7,
+            }
+        return {"status": state_status, "run_id": "RUN-A"}
+
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    result = admin.execute_sealed_supervisor_admin(
+        request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+    assert calls == [
+        ("authenticate-role", supervisor_secret),
+        (state_operation, overwatcher_secret if uses_overwatcher else supervisor_secret),
+    ]
+    assert result["operation"] == operation
+    assert supervisor_secret not in json.dumps(result)
+    assert overwatcher_secret not in json.dumps(result)
+
+
+def test_close_run_admin_rejects_nonterminal_write_before_credential_access(tmp_path, monkeypatch):
+    request = terminal_request_fixture(tmp_path, "close-run")
+    value = json.loads(request.read_text())
+    operation_path = Path(value["operation_request_path"])
+    operation_value = json.loads(operation_path.read_text())
+    operation_value["event_type"] = "D2_PASSED"
+    operation_path.write_text(json.dumps(operation_value), encoding="utf-8")
+    value["operation_request_sha256"] = hashlib.sha256(operation_path.read_bytes()).hexdigest()
+    request.write_text(json.dumps(value), encoding="utf-8")
+    monkeypatch.setattr(
+        admin.wc, "unprotect_dpapi_hex",
+        lambda _path: pytest.fail("invalid terminal operation must fail before credential access"),
+    )
+
+    with pytest.raises(ValueError, match="RUN_CLOSED"):
+        admin.execute_sealed_supervisor_admin(
+            request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+
 def test_closed_admin_consumer_authenticates_then_executes_without_exposing_secret(tmp_path, monkeypatch):
     request = request_fixture(tmp_path)
     calls = []

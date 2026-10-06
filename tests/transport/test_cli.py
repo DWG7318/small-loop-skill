@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,7 +16,12 @@ import pytest
 from scripts.build_transport_zipapp import build_zipapp
 from scripts.run_transport_drill import run_drill
 import slk_transport.cli as transport_cli
+from slk_transport.adapters.base import AdapterError
+from slk_transport.adapters.codex import CodexAdapter
+from slk_transport.evidence import AttemptStore
 
+from test_codex_adapter import supervisor_envelope
+from test_codex_desktop import prepared as prepared_desktop
 from test_contracts import endpoint_value, envelope_value, payload_hash
 from test_worker_completion import (
     completion_fixture,
@@ -93,6 +99,36 @@ def test_cli_exposes_standard_new_run_preparation_entries(tmp_path: Path) -> Non
     assert "preflight-conformance-sample" in result.stdout
     assert "preflight-new-run" in result.stdout
     assert "continue-staged-handoff" in result.stdout
+
+
+def test_consume_desktop_readback_cli_uses_existing_native_evidence_without_resend(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    endpoint = prepared_desktop(tmp_path, monkeypatch, "unconfirmed")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    attempt.write_json_once("endpoint.json", asdict(endpoint))
+    attempt.write_json_once("envelope.json", asdict(envelope))
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, envelope, attempt)
+    assert error.value.error_code == "CODEX_DESKTOP_READBACK_UNPROVED"
+
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "late-confirmed")
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+    result = run_cli(
+        artifact,
+        "consume-desktop-readback",
+        "--source-attempt",
+        str(attempt.root),
+    )
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["status"] == "completed"
+    calls = [
+        json.loads(line)
+        for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()
+    ]
+    assert sum(call["name"] == "send_message_to_thread" for call in calls) == 1
 
 
 def test_nested_windows_send_retries_access_denied_without_breakaway(

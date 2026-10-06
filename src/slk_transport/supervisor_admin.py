@@ -27,6 +27,7 @@ PROVISION_FIELDS = FIELDS | {
 WORKER_PROVISION_FIELDS = PROVISION_FIELDS | {
     "checker_role_instance_id", "sealed_checker_credential_path",
 }
+OVERWATCHER_CLOSE_FIELDS = FIELDS | {"sealed_overwatcher_credential_path"}
 OPERATIONS = {
     "adopt-method-contract": {"applied", "idempotent_replay"},
     "revise-role-model": {"model_revised", "already_applied"},
@@ -35,6 +36,9 @@ OPERATIONS = {
     "revise-plan": {"revised"},
     "register-role": {"registered"},
     "bind-overwatcher": {"overwatcher_bound"},
+    "close-overwatcher": {"overwatcher_closed"},
+    "close-run": {"recorded"},
+    "close-role": {"closed", "already_closed"},
 }
 PROVISION_OPERATIONS = {"register-role", "bind-overwatcher"}
 RESULT_FIELDS = {
@@ -111,9 +115,11 @@ def execute_sealed_supervisor_admin(
     worker_provisioning = (
         operation == "register-role" and request.get("issued_role") == "worker"
     )
+    overwatcher_closing = operation == "close-overwatcher"
     expected_fields = (
         WORKER_PROVISION_FIELDS if worker_provisioning
         else PROVISION_FIELDS if provisioning
+        else OVERWATCHER_CLOSE_FIELDS if overwatcher_closing
         else FIELDS
     )
     if (set(request) != expected_fields
@@ -134,21 +140,32 @@ def execute_sealed_supervisor_admin(
         Path(request["sealed_checker_credential_path"])
         if worker_provisioning else None
     )
+    overwatcher_sealed = (
+        Path(request["sealed_overwatcher_credential_path"])
+        if overwatcher_closing else None
+    )
     operation_request = Path(request["operation_request_path"])
     result_path = Path(request["result_path"])
     input_paths = [sealed, operation_request, result_path]
     if checker_sealed is not None:
         input_paths.append(checker_sealed)
+    if overwatcher_sealed is not None:
+        input_paths.append(overwatcher_sealed)
     if not all(path.is_absolute() for path in input_paths):
         raise ValueError("Supervisor admin paths must be absolute")
     if (not sealed.is_file() or not operation_request.is_file()
-        or (checker_sealed is not None and not checker_sealed.is_file())):
+        or (checker_sealed is not None and not checker_sealed.is_file())
+        or (overwatcher_sealed is not None and not overwatcher_sealed.is_file())):
         raise ValueError("Supervisor admin input is missing")
     if _sha256(operation_request) != request.get("operation_request_sha256"):
         raise ValueError("Supervisor operation request hash changed")
     operation_value = _object(operation_request, "Supervisor operation request")
     if operation_value.get("run_id") != run_id:
         raise ValueError("Supervisor operation changed Run identity")
+    if operation == "close-run" and operation_value.get("event_type") != "RUN_CLOSED":
+        raise ValueError("close-run requires the exact RUN_CLOSED event")
+    if operation == "close-role" and operation_value.get("role") not in {"checker", "worker"}:
+        raise ValueError("close-role may retire only the exact Checker or Worker")
     if provisioning:
         issued_role = request.get("issued_role")
         issued_role_instance_id = request.get("issued_role_instance_id")
@@ -175,6 +192,7 @@ def execute_sealed_supervisor_admin(
 
     secret = wc.unprotect_dpapi_hex(sealed)
     checker_secret = ""
+    overwatcher_secret = ""
     try:
         authenticated = wc._run_json_command(
             list(state_command),
@@ -206,11 +224,16 @@ def execute_sealed_supervisor_admin(
                     "saved credential does not authenticate the exact current Checker revision"
                 )
             operation_secret = checker_secret
+        elif overwatcher_closing:
+            overwatcher_secret = wc.unprotect_dpapi_hex(overwatcher_sealed)
+            operation_secret = overwatcher_secret
+        state_operation = "write" if operation == "close-run" else operation
         state_result = wc._run_json_command(
-            list(state_command), [operation, "--request", str(operation_request)],
+            list(state_command), [state_operation, "--request", str(operation_request)],
             credential=operation_secret,
         )
     finally:
+        overwatcher_secret = ""
         checker_secret = ""
         secret = ""
     if state_result.get("status") not in OPERATIONS[operation] or state_result.get("run_id") != run_id:

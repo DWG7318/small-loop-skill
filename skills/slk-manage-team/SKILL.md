@@ -54,9 +54,9 @@ Overwatcher 的一次性完整写凭证丢失、或调用方误存非秘密 `ove
 
 ## 收尾归档
 
-D2 通过后先按 `$slk-close-run` 的固定顺序完成 terminal snapshot、OW final cycle 与 `close-overwatcher`，再写 `RUN_CLOSED`。Run 已进入终态且最终记录完整后，归档 Worker、Checker 的中央事实由 Supervisor 写入：对同一 Run 的准确 Worker、Checker 身份分别执行 `slk-state close-role --request <json>`；目标仍持有 TOKEN、身份或角色不匹配、Run 未终结、凭证错误时均被拒绝。成功事务只追加 `ROLE_CLOSED`、令角色 `lifecycle=exited`、退役 `active endpoint` 并撤销其凭证，不创建继任者、不移动 TOKEN、不改写 D1/D2/`RUN_CLOSED`；完全相同请求可安全重放。随后用 `slk-bi-query roles` 确认 Worker/Checker 均为 `display_state=archived`。Supervisor 保留。
+D2 通过后按 `$slk-close-run` 完成 terminal snapshot、OW final cycle、`close-overwatcher` 和 `RUN_CLOSED`。终态完整后，Supervisor 用 hash-bound `supervisor-admin close-role` 归档准确的 Worker/Checker，消费者内部调用 `slk-state close-role`；TOKEN、身份、终态或凭证不符即拒绝，凭据只在消费者内解封。成功仅追加 `ROLE_CLOSED`、令角色 `lifecycle=exited`、退役 `active endpoint` 并撤销凭证，不创建继任者、不移动 TOKEN、不改写 D1/D2/`RUN_CLOSED`；相同请求可重放。再用 `slk-bi-query roles` 确认二者均为 `display_state=archived`。Supervisor 保留。
 
-Overwatcher 继续使用独立的 `close-overwatcher`：在 `D2_PASSED` 后、`RUN_CLOSED` 前先记录本 Run 最后 cycle，再以同一 runtime revision 解除该 Run 绑定。若该 Session 仍服务其他 Run 就继续 active；全部绑定解除后也只在 Supervisor 确认停止及退出 Hook 二次回报后归档。计划更换与连续性恢复由 Supervisor 以显式证据执行非重叠 replacement，并保留旧绑定历史。
+`supervisor-admin close-overwatcher` 同时消费密封 Supervisor/OW 凭据：在 `D2_PASSED` 后、`RUN_CLOSED` 前记录本 Run 最后 cycle，再以同一 runtime revision 解除绑定。Session 仍服务其他 Run 时继续 active；全部解除后也在 Supervisor 确认停止及退出 Hook 二次回报后归档。更换与恢复保留旧绑定历史。
 
 ## 完成后
 

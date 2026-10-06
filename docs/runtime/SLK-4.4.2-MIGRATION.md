@@ -8,4 +8,6 @@ Before the next dispatch, produce fresh 4.4.2 readiness and Role Eval evidence. 
 
 The ordinary loop still belongs to Checker and Worker. The first formal product D1 failure may use the bounded same-CELL rework path. A second-or-later formal D1 failure makes the old RoleHost return `ROLE_HOST_CELL_SPLIT_REQUIRED`: Supervisor compares both rounds, consumes sealed `supervisor-admin revise-plan`, freezes a new revision Host, updates the standard Temporal Run config, and returns the first successor through normal `Supervisor → Checker CELL_DISPATCH`. INCOMPLETE, tool/transport failure and duplicate receipts do not count. If no honest split remains, keep the Run blocked rather than dispatching Worker directly or issuing another ordinary retry.
 
+Terminal migration keeps credentials sealed: use `supervisor-admin close-overwatcher` with the exact saved OW credential and final cycle, then `supervisor-admin close-run` for the sole `RUN_CLOSED` event, then `supervisor-admin close-role` for Worker and Checker. Do not decrypt a role credential or substitute an ordinary shell command.
+
 BI/WebBI remain 1.1.0. No Docker installation, extra role, scheduler, daemon, wmux substrate, push, tag or Release is part of this migration.

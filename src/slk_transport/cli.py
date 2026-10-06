@@ -597,10 +597,11 @@ def _consume_desktop_readback(args: argparse.Namespace) -> int:
     from .adapters.codex_desktop import consume_desktop_readback
 
     source = args.source_attempt.resolve()
-    endpoint = Endpoint.from_dict(_read_object(source / "endpoint.json", "source endpoint"))
-    envelope = Envelope.from_dict(_read_object(source / "envelope.json", "source envelope"))
-    parse_delivery(endpoint, envelope)
-    result = consume_desktop_readback(endpoint, envelope, Attempt(source))
+    parsed = parse_delivery(
+        _read_object(source / "endpoint.json", "source endpoint"),
+        _read_object(source / "envelope.json", "source envelope"),
+    )
+    result = consume_desktop_readback(parsed.endpoint, parsed.envelope, Attempt(source))
     _emit(result.to_dict())
     return 0 if result.status in {"completed", "started"} else 3
 
