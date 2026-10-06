@@ -2,9 +2,16 @@
 
 Date: 2026-10-06 Asia/Shanghai
 Branch: feature/slk-4.4.2-runtime-recovery
-Base: 6c12be8bb1f56793e9134a2a05ffa8f79ad006b2
+Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
-Status: validated and locally deployed candidate. It is not merged, pushed, tagged, or released; no product Run was initialized, dispatched, resumed, or rewritten by this maintenance task.
+Status: bounded in-Run correction validated and ready for transactional local deployment. It has not resumed or rewritten the product Run and is not merged, pushed, tagged, or released.
+
+## Bounded in-Run correction
+
+- `slk-cargo` keeps the canonical Run-isolated target, lease, cleanup and override guards but gives the Cargo/MSVC child an ordinary Windows spelling of that same physical target. No product path or Cargo scope is changed.
+- The exact preserved Worker attempt stopped at `blocked/D0/null candidate` may use one closed `PRE_D0_BLOCKED_RECOVERY`. Fresh runtime/TOKEN/project identity, original endpoint/Session/task/start/terminal hashes, unchanged clean candidate, corrected Tool bytes, state-config bytes and exact data-root spelling, plus the existing `PROTOC` path and bytes are all bound before the original Checker can resume the original Worker Session once.
+- The route remains fail closed for any existing D0/candidate event, role/session/project/runtime/hash drift, another blocker, an active/repeated recovery, changed `PROTOC`, unproved D0, nonzero command result or altered candidate. The original blocked evidence is never overwritten; Root does not author product facts or start product recovery.
+- Final evidence: pre-D0 suite 27 passed in ordinary Python and 27 passed under `python -O`; prior continuation compatibility 182 passed with 2 skipped; repository/schema/package/Skill gate 112 passed; full Python 887 passed with 30 skipped; optimized critical Python 751 passed with 24 skipped; `slk-cargo` runner contract 8 passed; Rust workspace 135 passed; formatting, compilation and `git diff --check` passed.
 
 ## Bounded changes
 
@@ -29,10 +36,10 @@ SLK 4.4.2 is a minimal correction over 4.4.1. It keeps the existing Supervisor, 
 - Real existing-OW attestation for `SLK-CONFORMANCE-442-LCAS-MCP-R2-20261006` returned `ATTESTED` without start/admit or engineering mutation: `started.json` SHA-256 `db1f1884f4d212ac67f071f7858050f995a43758645b0380b6b0939ece6c5e7a`; Desktop attestation SHA-256 `2b53fd1826f251c545526feb8490f8477efc3a0c620c496f0daaaa3384f56cd7`.
 - The real isolated first Checker handoff retained its original `deliver-90a2a865-916a-414c-9e11-29c03b74abae` Temporal operation and native `started.json` SHA-256 `a463ca045f3475d963ed3d8eac7ad8fee81b3b2eec168405705552554eb8c4db`. After the same OW Session recorded its first valid cycle, the original sender wrote only immutable `commit-only/revision-8.json`; result SHA-256 `ee3a238be9d43f0674604e0ec3210bf402d91c684c715b34a3c297eb0757b41f`. Central state became runtime revision 9 with TOKEN T002 at the registered Checker and the same message ID; no second request or native start occurred. The standard `resume-role-host` then consumed that completed Checker suffix and committed the exact next Worker message `4f8c73cd-692c-4cfb-97a4-f217664e221c`, without replaying the initial Checker.
 - A fresh Desktop OW query from the current Root caller returned the target's actual `COMPLETED_WITHOUT_TERMINAL` state rather than `NATIVE_QUERY_FAILED`, proving the target/caller separation. The later standard same-Session resume and valid cycle remained Supervisor/OW-owned.
-- Full Python regression: 859 passed, 30 skipped.
-- Optimized Python critical regression (`python -O`): 754 passed, 30 skipped. The expected pytest warning records that Python assertions are disabled; validators use explicit fail-closed checks.
+- Full Python regression: 887 passed, 30 skipped.
+- Optimized Python critical regression (`python -O`): 751 passed, 24 skipped. The expected pytest warning records that Python assertions are disabled; validators use explicit fail-closed checks.
 - Real Temporal SDK workflow-order scenarios: 5 passed (admission/ACK, timeout recovery, member-residency notice, OW audit, OW exit guard).
-- Rust workspace: 140 passed with no failures using an isolated Cargo target directory; 4.4.2 state mechanically rejects a second ordinary `REWORK_REQUESTED` and requires the versioned CELL-split route.
+- Rust workspace: 135 passed with no failures; 4.4.2 state mechanically rejects a second ordinary `REWORK_REQUESTED` and requires the versioned CELL-split route.
 - Rust formatting: `cargo fmt --all -- --check` passes after mechanical formatting.
 - BI/WebBI regression: 18 files / 84 tests passed; production UI build passed. BI/WebBI remain version 1.1.0 and are not part of this method bump.
 - Repository validator, JSON Schema checks, regenerated Manifest, package/install mirrors and local installed identity pass.

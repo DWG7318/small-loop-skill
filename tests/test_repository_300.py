@@ -100,6 +100,11 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "checker_token_already_committed", "native_attempt_path", "d1_verdict",
             "d1_event_type", "native_result_path",
         },
+        "docs/contracts/slk-pre-d0-blocked-recovery.schema.json": {
+            "schema_version", "recovery_kind", "source_message_id",
+            "candidate_repository", "candidate_commit", "tool_path", "tool_sha256",
+            "state_config_path", "state_config_sha256", "d0_environment", "d0_command",
+        },
         "docs/contracts/slk-ocrv-committed-terminal.schema.json": {
             "schema_version", "method_version", "recovery_invocation_id", "run_id",
             "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision",
@@ -194,7 +199,12 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
         assert schema["additionalProperties"] is False
         optional_partial = ({'partial_terminal'} if relative.endswith('slk-ocrv-committed-terminal.schema.json')
                             else {'partial_review'} if relative.endswith('slk-ocrv-incomplete-checker-resume.schema.json')
-                            else {'temporal'} if relative.endswith('slk-worker-continuation.schema.json') else set())
+                            else {
+                                'temporal', 'source_blocked_result_sha256', 'source_project_id',
+                                'environment_adjustment_path', 'environment_adjustment_sha256',
+                            } if relative.endswith('slk-worker-continuation.schema.json')
+                            else {'environment_adjustment_path', 'environment_adjustment_sha256'}
+                            if relative.endswith('slk-ocrv-worker-recovery.schema.json') else set())
         assert set(schema["properties"]) == required | optional_partial
         if relative.endswith("slk-overwatcher-turn-resume.schema.json"):
             assert set(schema["required"]) == required - {
@@ -219,7 +229,8 @@ def test_441_temporal_handoff_schemas_are_closed_and_bind_the_standard_client() 
     assert host["additionalProperties"] is continuation["additionalProperties"] is False
     assert host["properties"]["schema_version"]["enum"] == ["slk.role-host/v1", "slk.role-host/v2"]
     assert continuation["properties"]["schema_version"]["enum"] == [
-        "slk.worker-continuation/v1", "slk.worker-continuation/v2"]
+        "slk.worker-continuation/v1", "slk.worker-continuation/v2",
+        "slk.worker-continuation/v3"]
     for schema in (host, continuation):
         command = schema["$defs"]["temporal"]["properties"]["client_command"]
         assert command["prefixItems"][1:] == [

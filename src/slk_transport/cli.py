@@ -54,6 +54,7 @@ from .worker_completion import (
     execute_worker_continuation,
     inspect_worker_completion,
     prepare_invalid_result_recovery_envelope,
+    prepare_pre_d0_blocked_recovery_envelope,
     prepare_incomplete_worker_handoff,
     recover_staged_checker_commit,
     continue_consumed_partial_checker,
@@ -419,6 +420,28 @@ def _prepare_invalid_result_recovery(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prepare_pre_d0_blocked_recovery(args: argparse.Namespace) -> int:
+    result = prepare_pre_d0_blocked_recovery_envelope(
+        args.source_attempt,
+        _read_object(args.checker_endpoint, "Checker endpoint"),
+        args.runtime_projection,
+        supervisor_role_instance_id=args.supervisor_role_instance_id,
+        plan_revision=args.plan_revision,
+        runtime_revision=args.runtime_revision,
+        token_sequence=args.token_sequence,
+        worker_credential_path=args.worker_credential,
+        checker_credential_path=args.checker_credential,
+        state_command=list(args.state_command),
+        transport_command=list(args.transport_command),
+        environment_adjustment_path=args.environment_adjustment,
+        environment_adjustment_sha256=args.environment_adjustment_sha256,
+        occurred_at=args.occurred_at,
+        output_path=args.output,
+    )
+    _emit(result)
+    return 0
+
+
 def _recover_staged_checker_commit(args: argparse.Namespace) -> int:
     result = recover_staged_checker_commit(
         _read_object(args.continuation, "Worker continuation request"),
@@ -742,6 +765,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     invalid_result_recovery.add_argument("--transport-command", required=True, nargs="+")
     invalid_result_recovery.add_argument("--occurred-at", required=True)
     invalid_result_recovery.add_argument("--output", required=True, type=Path)
+    pre_d0_recovery = subparsers.add_parser("prepare-pre-d0-blocked-recovery")
+    pre_d0_recovery.add_argument("--source-attempt", required=True, type=Path)
+    pre_d0_recovery.add_argument("--checker-endpoint", required=True, type=Path)
+    pre_d0_recovery.add_argument("--runtime-projection", required=True, type=Path)
+    pre_d0_recovery.add_argument("--supervisor-role-instance-id", required=True)
+    pre_d0_recovery.add_argument("--plan-revision", required=True, type=int)
+    pre_d0_recovery.add_argument("--runtime-revision", required=True, type=int)
+    pre_d0_recovery.add_argument("--token-sequence", required=True, type=int)
+    pre_d0_recovery.add_argument("--worker-credential", required=True, type=Path)
+    pre_d0_recovery.add_argument("--checker-credential", required=True, type=Path)
+    pre_d0_recovery.add_argument("--state-command", required=True, nargs="+")
+    pre_d0_recovery.add_argument("--transport-command", required=True, nargs="+")
+    pre_d0_recovery.add_argument("--environment-adjustment", required=True, type=Path)
+    pre_d0_recovery.add_argument("--environment-adjustment-sha256", required=True)
+    pre_d0_recovery.add_argument("--occurred-at", required=True)
+    pre_d0_recovery.add_argument("--output", required=True, type=Path)
     commit_recovery = subparsers.add_parser("recover-staged-checker-commit")
     commit_recovery.add_argument("--continuation", required=True, type=Path)
     commit_recovery.add_argument("--outcome", required=True, type=Path)
@@ -880,6 +919,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _checker_record_committed_terminal(args)
         if args.command == "prepare-invalid-result-recovery":
             return _prepare_invalid_result_recovery(args)
+        if args.command == "prepare-pre-d0-blocked-recovery":
+            return _prepare_pre_d0_blocked_recovery(args)
         if args.command == "recover-staged-checker-commit":
             return _recover_staged_checker_commit(args)
         if args.command == "consume-staged-checker-terminal":

@@ -212,6 +212,42 @@ def _worker_completion_recovery(value: Mapping[str, Any]) -> None:
         _text_list(value[field], field)
 
 
+def _pre_d0_blocked_recovery(value: Mapping[str, Any]) -> None:
+    fields = frozenset(
+        {
+            "source_attempt_root",
+            "runtime_projection_path",
+            "plan_revision",
+            "runtime_revision",
+            "token_sequence",
+            "worker_credential_path",
+            "checker_credential_path",
+            "state_command",
+            "transport_command",
+            "environment_adjustment_path",
+            "environment_adjustment_sha256",
+            "occurred_at",
+        }
+    )
+    _closed(value, fields, "pre-D0 blocked recovery")
+    for field in (
+        "source_attempt_root",
+        "runtime_projection_path",
+        "worker_credential_path",
+        "checker_credential_path",
+        "environment_adjustment_path",
+        "occurred_at",
+    ):
+        _text(value[field], field)
+    digest = _text(value["environment_adjustment_sha256"], "environment_adjustment_sha256")
+    if not SHA256.fullmatch(digest):
+        raise ContractError("environment_adjustment_sha256 must be 64 lowercase hexadecimal characters")
+    for field in ("plan_revision", "runtime_revision", "token_sequence"):
+        _positive_int(value[field], field)
+    for field in ("state_command", "transport_command"):
+        _text_list(value[field], field)
+
+
 def _json(value: Any, label: str) -> JsonValue:
     if value is None or isinstance(value, (bool, str)):
         return value
@@ -364,6 +400,10 @@ class Envelope:
             if (sender_role, receiver_role) != ("supervisor", "checker"):
                 raise ContractError("WORKER_COMPLETION_RECOVERY requires supervisor->checker")
             _worker_completion_recovery(payload)
+        elif payload_type == "PRE_D0_BLOCKED_RECOVERY":
+            if (sender_role, receiver_role) != ("supervisor", "checker"):
+                raise ContractError("PRE_D0_BLOCKED_RECOVERY requires supervisor->checker")
+            _pre_d0_blocked_recovery(payload)
         elif payload_type == "D2_READY":
             if (sender_role, receiver_role) != ("checker", "supervisor"):
                 raise ContractError("D2_READY requires checker->supervisor")

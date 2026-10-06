@@ -38,6 +38,7 @@ from .task_file import TaskFileError, verify_task_file
 INSPECTION_SCHEMA = "slk.worker-completion-inspection/v1"
 CONTINUATION_SCHEMA = "slk.worker-continuation/v1"
 CONTINUATION_SCHEMA_V2 = "slk.worker-continuation/v2"
+CONTINUATION_SCHEMA_V3 = "slk.worker-continuation/v3"
 CHECKER_RECOVERY_SCHEMA = "slk.ocrv-worker-recovery-request/v1"
 CHECKER_RECOVERY_RESULT_SCHEMA = "slk.ocrv-worker-recovery-result/v1"
 COMMITTED_TERMINAL_SCHEMA = "slk.ocrv-committed-terminal-request/v1"
@@ -129,6 +130,27 @@ CONTINUATION_FIELDS = {
     "occurred_at",
 }
 CONTINUATION_V2_FIELDS = CONTINUATION_FIELDS | {"temporal"}
+PRE_D0_CONTINUATION_FIELDS = CONTINUATION_FIELDS | {
+    "source_blocked_result_sha256",
+    "source_project_id",
+    "environment_adjustment_path",
+    "environment_adjustment_sha256",
+}
+PRE_D0_ENVIRONMENT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "recovery_kind",
+        "source_message_id",
+        "candidate_repository",
+        "candidate_commit",
+        "tool_path",
+        "tool_sha256",
+        "state_config_path",
+        "state_config_sha256",
+        "d0_environment",
+        "d0_command",
+    }
+)
 TEMPORAL_BINDING_FIELDS = {
     "client_command", "workflow_identity_path", "workflow_identity_sha256", "attempt_root",
 }
@@ -921,12 +943,243 @@ def _invalid_result_contract_source(
     }
 
 
+def _pre_d0_environment(
+    path: Path,
+    expected_sha256: str,
+    *,
+    envelope: Envelope,
+    attempt_number: int,
+    project_id: str,
+) -> dict[str, Any]:
+    """Verify one closed environment adjustment for the exact blocked D0 command."""
+
+    try:
+        if not path.is_absolute() or not path.is_file() or _sha256(path) != expected_sha256:
+            raise ValueError("environment adjustment hash changed")
+        value = _read_object(path, "pre-D0 environment adjustment")
+        if (
+            set(value) != PRE_D0_ENVIRONMENT_FIELDS
+            or value.get("schema_version") != "slk.pre-d0-blocked-recovery/v1"
+            or value.get("recovery_kind") != "WINDOWS_CARGO_TARGET_PLAIN_PATH"
+            or value.get("source_message_id") != envelope.message_id
+            or not isinstance(value.get("candidate_repository"), str)
+            or not isinstance(value.get("candidate_commit"), str)
+            or not re.fullmatch(r"[0-9a-f]{40}", str(value["candidate_commit"]))
+            or not isinstance(value.get("tool_path"), str)
+            or not isinstance(value.get("tool_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(value["tool_sha256"]))
+            or not isinstance(value.get("state_config_path"), str)
+            or not isinstance(value.get("state_config_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(value["state_config_sha256"]))
+            or not isinstance(value.get("d0_environment"), Mapping)
+            or set(value["d0_environment"]) != {"PROTOC", "PROTOC_SHA256"}
+            or not isinstance(value["d0_environment"].get("PROTOC"), str)
+            or not value["d0_environment"]["PROTOC"]
+            or not isinstance(value["d0_environment"].get("PROTOC_SHA256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", value["d0_environment"]["PROTOC_SHA256"])
+            or not isinstance(value.get("d0_command"), list)
+            or not value["d0_command"]
+            or not all(isinstance(item, str) and item for item in value["d0_command"])
+        ):
+            raise ValueError("environment adjustment is not closed")
+        repository = Path(str(value["candidate_repository"])).resolve()
+        tool = Path(str(value["tool_path"])).resolve()
+        state_config_path = Path(str(value["state_config_path"])).resolve()
+        protoc = Path(str(value["d0_environment"]["PROTOC"]))
+        command = list(value["d0_command"])
+        if (
+            Path(command[0]).resolve() != tool
+            or not tool.is_file()
+            or _sha256(tool) != value["tool_sha256"]
+            or not state_config_path.is_file()
+            or _sha256(state_config_path) != value["state_config_sha256"]
+            or not protoc.is_absolute()
+            or not protoc.is_file()
+            or _sha256(protoc) != value["d0_environment"]["PROTOC_SHA256"]
+        ):
+            raise ValueError("environment adjustment tool or repository changed")
+        required = {
+            "--run-id": envelope.run_id,
+            "--go-id": envelope.go_id,
+            "--cell-id": envelope.cell_id,
+            "--attempt": str(attempt_number),
+        }
+        if len(command) < 4 or command[1] != "run" or "--" not in command:
+            raise ValueError("D0 command is not one slk-cargo run")
+        separator = command.index("--")
+        prefix = command[2:separator]
+        for flag, expected in required.items():
+            if prefix.count(flag) != 1:
+                raise ValueError(f"D0 command does not bind {flag}")
+            index = prefix.index(flag)
+            if index + 1 >= len(prefix) or prefix[index + 1] != expected:
+                raise ValueError(f"D0 command changed {flag}")
+        for flag in ("--data-root", "--project-id", "--cargo-program"):
+            if prefix.count(flag) != 1:
+                raise ValueError(f"D0 command does not bind {flag}")
+            index = prefix.index(flag)
+            if index + 1 >= len(prefix) or not prefix[index + 1]:
+                raise ValueError(f"D0 command changed {flag}")
+        data_root = Path(prefix[prefix.index("--data-root") + 1])
+        cargo_program = Path(prefix[prefix.index("--cargo-program") + 1])
+        command_project_id = prefix[prefix.index("--project-id") + 1]
+        config = _read_object(state_config_path, "SLK state config")
+        if (
+            not data_root.is_absolute()
+            or not data_root.is_dir()
+            or not cargo_program.is_absolute()
+            or not cargo_program.is_file()
+            or set(config) != {"schema_version", "data_root"}
+            or config.get("schema_version") != "slk.config/v1"
+            or Path(str(config.get("data_root"))).resolve() != data_root.resolve()
+            or not (data_root / "slk.db").is_file()
+            or command_project_id != project_id
+        ):
+            raise ValueError("D0 command dependencies are unavailable")
+        return {
+            **value,
+            "candidate_repository": str(repository),
+            "tool_path": str(tool),
+            "state_config_path": str(state_config_path),
+        }
+    except (CompletionError, OSError, TypeError, ValueError) as exc:
+        raise CompletionError(
+            "WORKER_PRE_D0_RECOVERY_NOT_READY",
+            "pre-D0 environment adjustment is absent, changed, or out of scope",
+        ) from exc
+
+
+def _pre_d0_blocked_source(
+    attempt: Path,
+    endpoint: Endpoint,
+    envelope: Envelope,
+    started: Mapping[str, Any],
+    environment_path: Path,
+    environment_sha256: str,
+    *,
+    attempt_number: int,
+    runtime_projection: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prove the one 4.4.2 Windows Cargo blocker without rewriting its evidence."""
+
+    try:
+        result_path = attempt / "worker-result.json"
+        failed_path = attempt / "failed.json"
+        task_path = attempt / "transport-task.json"
+        if (
+            not result_path.is_file()
+            or not failed_path.is_file()
+            or not task_path.is_file()
+            or (attempt / "completed.json").exists()
+        ):
+            raise ValueError("blocked source evidence is incomplete")
+        result = _read_object(result_path, "blocked Worker result")
+        failed = _read_object(failed_path, "blocked Worker terminal")
+        blocker = result.get("blocker")
+        identity = failed.get("native_identity")
+        if (
+            set(result)
+            != {
+                "schema_version", "message_id", "run_id", "role_instance_id", "status",
+                "candidate", "next_payload", "blocker",
+            }
+            or result.get("schema_version") != "slk.worker-result/v1"
+            or result.get("message_id") != envelope.message_id
+            or result.get("run_id") != envelope.run_id
+            or result.get("role_instance_id") != endpoint.role_instance_id
+            or result.get("status") != "blocked"
+            or result.get("candidate") is not None
+            or result.get("next_payload") is not None
+            or not isinstance(blocker, Mapping)
+            or set(blocker) != {"phase", "cause", "summary", "evidence"}
+            or blocker.get("phase") != "D0"
+            or blocker.get("cause")
+            != "ENVIRONMENT_SLK_CARGO_TARGET_UNC_PREFIX_BREAKS_MSVC_INCLUDE"
+            or not isinstance(blocker.get("summary"), str)
+            or not blocker["summary"].strip()
+            or not isinstance(blocker.get("evidence"), list)
+            or not all(isinstance(item, str) and item.strip() for item in blocker["evidence"])
+            or failed.get("schema_version") != "slk.transport-result/v1"
+            or failed.get("message_id") != envelope.message_id
+            or failed.get("run_id") != envelope.run_id
+            or failed.get("adapter") != "dsh-worker"
+            or failed.get("status") != "failed"
+            or failed.get("error_code") != "DSH_WORKER_BLOCKED"
+            or not isinstance(identity, Mapping)
+            or identity.get("instance_id") != endpoint.address.get("instance_id")
+            or identity.get("session_id") != endpoint.address.get("session_id")
+            or identity.get("worker_outcome") != "blocked"
+            or identity.get("blocker_cause") != blocker.get("cause")
+        ):
+            raise ValueError("blocked source identity changed")
+        session_id = _native_v2_worker_session(attempt / "started.json", endpoint, envelope)
+        if session_id != endpoint.address.get("session_id"):
+            raise ValueError("blocked source Session changed")
+        task_sha256 = started.get("native_request_sha256")
+        if not isinstance(task_sha256, str):
+            raise ValueError("blocked source task hash is absent")
+        task = verify_task_file(task_path.resolve(), task_sha256)
+        if (
+            Endpoint.from_dict(task["endpoint"]) != endpoint
+            or Envelope.from_dict(task["envelope"]) != envelope
+            or task.get("result_path")
+            != str(
+                (
+                    Path(str(endpoint.address["cwd"]))
+                    / ".slk-transport"
+                    / envelope.message_id
+                    / "worker-result.json"
+                ).resolve()
+            )
+        ):
+            raise ValueError("blocked source task changed")
+        summary = runtime_projection.get("summary")
+        administrative = runtime_projection.get("administrative_snapshot")
+        project_id = summary.get("project_id") if isinstance(summary, Mapping) else None
+        if (
+            not isinstance(project_id, str)
+            or not project_id
+            or not isinstance(administrative, Mapping)
+            or administrative.get("project_id") != project_id
+        ):
+            raise ValueError("Run project identity is unavailable")
+        environment = _pre_d0_environment(
+            environment_path,
+            environment_sha256,
+            envelope=envelope,
+            attempt_number=attempt_number,
+            project_id=project_id,
+        )
+        repository = Path(str(environment["candidate_repository"])).resolve()
+        if repository != Path(str(endpoint.address["cwd"])).resolve():
+            raise ValueError("candidate repository changed")
+        snapshot = _candidate_repository_snapshot(repository)
+        if snapshot["head"] != environment["candidate_commit"]:
+            raise ValueError("candidate commit changed")
+        return {
+            "result": result,
+            "failed": failed,
+            "session_id": session_id,
+            "environment": environment,
+            "environment_path": str(environment_path),
+            "environment_sha256": environment_sha256,
+            "project_id": project_id,
+            **snapshot,
+        }
+    except (AdapterError, CompletionError, KeyError, OSError, TaskFileError, TypeError, ValueError) as exc:
+        if isinstance(exc, CompletionError) and exc.error_code == "WORKER_PRE_D0_RECOVERY_NOT_READY":
+            raise
+        raise CompletionError(
+            "WORKER_PRE_D0_RECOVERY_NOT_READY",
+            "source is not the exact preserved pre-D0 Windows Cargo blocker",
+        ) from exc
+
+
 def _continuation_root(request: Mapping[str, Any]) -> Path:
-    name = (
-        "invalid-result-supplement"
-        if request.get("recovery_mode") == "INVALID_RESULT_CONTRACT"
-        else "worker-continuation"
-    )
+    name = {
+        "INVALID_RESULT_CONTRACT": "invalid-result-supplement",
+        "PRE_D0_BLOCKED_RECOVERY": "pre-d0-blocked-recovery",
+    }.get(str(request.get("recovery_mode")), "worker-continuation")
     return Path(str(request["source_attempt_root"])) / name
 
 
@@ -1182,6 +1435,8 @@ def build_continuation_request(
     transport_command: list[str],
     occurred_at: str,
     temporal: Mapping[str, Any] | None = None,
+    environment_adjustment_path: Path | str | None = None,
+    environment_adjustment_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Build one immutable request for the already-started DSH Worker Session."""
 
@@ -1195,8 +1450,30 @@ def build_continuation_request(
     envelope = Envelope.from_dict(_read_object(envelope_path, "Worker envelope"))
     checker = Endpoint.from_dict(checker_endpoint_raw)
     started = _read_object(started_path, "Worker started evidence")
+    attempt_number = _source_attempt(runtime_projection, envelope)
     missing_result_failure = _missing_result_failure(attempt, envelope)
     invalid_result_source = _invalid_result_contract_source(attempt, endpoint, envelope, started)
+    pre_d0_source = None
+    if environment_adjustment_path is not None or environment_adjustment_sha256 is not None:
+        if (
+            environment_adjustment_path is None
+            or not isinstance(environment_adjustment_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", environment_adjustment_sha256)
+        ):
+            raise CompletionError(
+                "WORKER_PRE_D0_RECOVERY_NOT_READY",
+                "environment adjustment path and SHA-256 must be supplied together",
+            )
+        pre_d0_source = _pre_d0_blocked_source(
+            attempt,
+            endpoint,
+            envelope,
+            started,
+            Path(environment_adjustment_path).resolve(),
+            environment_adjustment_sha256,
+            attempt_number=attempt_number,
+            runtime_projection=runtime_projection,
+        )
     source_task_sha256: str | None = None
     source_started_sha256: str | None = None
     source_invalid_result_sha256: str | None = None
@@ -1205,8 +1482,31 @@ def build_continuation_request(
     source_repository: str | None = None
     source_changed_paths: list[str] | None = None
     supplement_result_contract: dict[str, Any] | None = None
+    source_blocked_result_sha256: str | None = None
+    bound_environment_path: str | None = None
+    bound_environment_sha256: str | None = None
+    source_project_id: str | None = None
     incomplete_evidence = None
-    if result_path.is_file() and completed_path.is_file():
+    if pre_d0_source is not None:
+        recovery_mode = "PRE_D0_BLOCKED_RECOVERY"
+        result = completed = None
+        continuation_result_path = (
+            attempt / "pre-d0-blocked-recovery" / "recovered-worker-result.json"
+        )
+        worker_result_sha256 = None
+        source_terminal_path = attempt / "failed.json"
+        source_task_sha256 = _sha256(attempt / "transport-task.json")
+        source_started_sha256 = _sha256(started_path)
+        source_candidate = {"kind": "commit", "commit": pre_d0_source["head"]}
+        source_candidate_parent = str(pre_d0_source["parent"])
+        source_repository = str(pre_d0_source["repository"])
+        source_changed_paths = list(pre_d0_source["changed_paths"])
+        supplement_result_contract = dict(INVALID_SUPPLEMENT_RESULT_CONTRACT)
+        source_blocked_result_sha256 = _sha256(result_path)
+        bound_environment_path = str(pre_d0_source["environment_path"])
+        bound_environment_sha256 = str(pre_d0_source["environment_sha256"])
+        source_project_id = str(pre_d0_source["project_id"])
+    elif result_path.is_file() and completed_path.is_file():
         recovery_mode = "COMPLETED_RESULT"
         result = _read_object(result_path, "Worker result")
         completed = _read_object(completed_path, "Worker terminal result")
@@ -1249,7 +1549,6 @@ def build_continuation_request(
             "WORKER_CONTINUATION_NOT_READY",
             "Worker attempt has no exact recoverable completed, missing, or invalid-result source",
         )
-    attempt_number = _source_attempt(runtime_projection, envelope)
     if incomplete_evidence is not None and (
         incomplete_evidence["attempt"] != attempt_number or incomplete_evidence["plan_revision"] != plan_revision
         or incomplete_evidence["checker_role_instance_id"] != checker.role_instance_id
@@ -1276,7 +1575,7 @@ def build_continuation_request(
         and snapshot.get("token_holder_role_instance_id") == endpoint.role_instance_id
         and boundary_message_id == envelope.message_id
     )
-    if recovery_mode == "INVALID_RESULT_CONTRACT":
+    if recovery_mode in {"INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"}:
         source_event_types = _event_types(
             runtime_projection,
             cell_id=envelope.cell_id,
@@ -1289,7 +1588,7 @@ def build_continuation_request(
         ):
             raise CompletionError(
                 "WORKER_CONTINUATION_NOT_READY",
-                "invalid-result supplement requires the original Worker TOKEN and no Worker engineering facts",
+                "recovery requires the original Worker TOKEN and no Worker engineering facts",
             )
     session_id = (
         _native_v2_worker_session(started_path, endpoint, envelope)
@@ -1358,7 +1657,13 @@ def build_continuation_request(
     credential = Path(credential_path).resolve()
     temporal_binding = validate_temporal_binding(temporal, envelope.run_id) if temporal is not None else None
     result = {
-        "schema_version": CONTINUATION_SCHEMA_V2 if temporal_binding is not None else CONTINUATION_SCHEMA,
+        "schema_version": (
+            CONTINUATION_SCHEMA_V3
+            if recovery_mode == "PRE_D0_BLOCKED_RECOVERY"
+            else CONTINUATION_SCHEMA_V2
+            if temporal_binding is not None
+            else CONTINUATION_SCHEMA
+        ),
         "method_version": snapshot["method_version"],
         "run_id": envelope.run_id,
         "go_id": envelope.go_id,
@@ -1370,7 +1675,10 @@ def build_continuation_request(
         "source_attempt_root": str(attempt),
         "continuation_result_path": str(
             attempt
-            / ("invalid-result-supplement" if recovery_mode == "INVALID_RESULT_CONTRACT" else "worker-continuation")
+            / {
+                "INVALID_RESULT_CONTRACT": "invalid-result-supplement",
+                "PRE_D0_BLOCKED_RECOVERY": "pre-d0-blocked-recovery",
+            }.get(recovery_mode, "worker-continuation")
             / "result.json"
         ),
         "source_endpoint_sha256": _sha256(endpoint_path),
@@ -1410,6 +1718,15 @@ def build_continuation_request(
         "checker_token_already_committed": checker_token_already_committed,
         "occurred_at": occurred_at,
     }
+    if recovery_mode == "PRE_D0_BLOCKED_RECOVERY":
+        result.update(
+            {
+                "source_blocked_result_sha256": source_blocked_result_sha256,
+                "source_project_id": source_project_id,
+                "environment_adjustment_path": bound_environment_path,
+                "environment_adjustment_sha256": bound_environment_sha256,
+            }
+        )
     if temporal_binding is not None:
         result["temporal"] = temporal_binding
     return result
@@ -1423,10 +1740,16 @@ def continuation_request_bytes(request: Mapping[str, Any]) -> bytes:
 
 def _validate_continuation_request(request: Mapping[str, Any]) -> None:
     version = request.get("schema_version")
-    fields = CONTINUATION_V2_FIELDS if version == CONTINUATION_SCHEMA_V2 else CONTINUATION_FIELDS
+    fields = (
+        CONTINUATION_V2_FIELDS
+        if version == CONTINUATION_SCHEMA_V2
+        else PRE_D0_CONTINUATION_FIELDS
+        if version == CONTINUATION_SCHEMA_V3
+        else CONTINUATION_FIELDS
+    )
     if (
         set(request) != fields
-        or version not in {CONTINUATION_SCHEMA, CONTINUATION_SCHEMA_V2}
+        or version not in {CONTINUATION_SCHEMA, CONTINUATION_SCHEMA_V2, CONTINUATION_SCHEMA_V3}
         or request.get("method_version") not in SUPPORTED_METHOD_VERSIONS
     ):
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation request is not closed")
@@ -1450,7 +1773,8 @@ def _validate_continuation_request(request: Mapping[str, Any]) -> None:
         or snapshot.get("token_sequence") != request.get("token_sequence")
     ):
         raise CompletionError("WORKER_CONTINUATION_INVALID", "frozen runtime snapshot is inconsistent")
-    if request.get("recovery_mode") == "INVALID_RESULT_CONTRACT":
+    if request.get("recovery_mode") in {"INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"}:
+        pre_d0 = request.get("recovery_mode") == "PRE_D0_BLOCKED_RECOVERY"
         if (
             snapshot.get("token_holder_role_instance_id") != request.get("worker_role_instance_id")
             or snapshot.get("latest_message_id") != request.get("source_message_id")
@@ -1461,17 +1785,35 @@ def _validate_continuation_request(request: Mapping[str, Any]) -> None:
                 for field in (
                     "source_task_sha256",
                     "source_started_sha256",
-                    "source_invalid_result_sha256",
                     "source_candidate",
                     "source_candidate_parent",
                     "source_repository",
                     "source_changed_paths",
                 )
             )
+            or (
+                not pre_d0
+                and request.get("source_invalid_result_sha256") is None
+            )
+            or (pre_d0 and version != CONTINUATION_SCHEMA_V3)
+            or (
+                pre_d0
+                and (
+                    not isinstance(request.get("source_blocked_result_sha256"), str)
+                    or not SHA256.fullmatch(str(request["source_blocked_result_sha256"]))
+                    or not isinstance(request.get("environment_adjustment_path"), str)
+                    or not Path(str(request["environment_adjustment_path"])).is_absolute()
+                    or not isinstance(request.get("environment_adjustment_sha256"), str)
+                    or not SHA256.fullmatch(str(request["environment_adjustment_sha256"]))
+                    or not isinstance(request.get("source_project_id"), str)
+                    or not str(request["source_project_id"]).strip()
+                )
+            )
+            or (not pre_d0 and version == CONTINUATION_SCHEMA_V3)
         ):
             raise CompletionError(
                 "WORKER_CONTINUATION_INVALID",
-                "invalid-result supplement does not bind the original Worker snapshot",
+                "recovery does not bind the original Worker snapshot",
             )
     elif request.get("recovery_mode") in {"COMPLETED_RESULT", "MISSING_RESULT", "INCOMPLETE_HANDOFF"}:
         if request.get("supplement_result_contract") is not None:
@@ -1581,6 +1923,119 @@ def prepare_invalid_result_recovery_envelope(
     }
 
 
+def prepare_pre_d0_blocked_recovery_envelope(
+    source_attempt_root: Path | str,
+    checker_endpoint_raw: Mapping[str, Any],
+    runtime_projection_path: Path | str,
+    *,
+    supervisor_role_instance_id: str,
+    plan_revision: int,
+    runtime_revision: int,
+    token_sequence: int,
+    worker_credential_path: Path | str,
+    checker_credential_path: Path | str,
+    state_command: list[str],
+    transport_command: list[str],
+    environment_adjustment_path: Path | str,
+    environment_adjustment_sha256: str,
+    occurred_at: str,
+    output_path: Path | str,
+) -> dict[str, Any]:
+    """Prepare one read-only Supervisor→original-Checker pre-D0 recovery envelope."""
+
+    try:
+        projection_path = Path(runtime_projection_path).resolve()
+        projection = _read_object(projection_path, "runtime projection")
+        checker = Endpoint.from_dict(checker_endpoint_raw)
+        worker_credential = Path(worker_credential_path).resolve()
+        checker_credential = Path(checker_credential_path).resolve()
+        environment_path = Path(environment_adjustment_path).resolve()
+        if (
+            checker.role != "checker"
+            or not worker_credential.is_file()
+            or not checker_credential.is_file()
+            or not projection_path.is_file()
+            or not environment_path.is_file()
+            or not isinstance(supervisor_role_instance_id, str)
+            or not supervisor_role_instance_id.strip()
+        ):
+            raise ValueError("required recovery identity or evidence is absent")
+        continuation = build_continuation_request(
+            source_attempt_root,
+            checker_endpoint_raw,
+            projection,
+            plan_revision=plan_revision,
+            runtime_revision=runtime_revision,
+            token_sequence=token_sequence,
+            credential_path=worker_credential,
+            state_command=state_command,
+            transport_command=transport_command,
+            occurred_at=occurred_at,
+            environment_adjustment_path=environment_path,
+            environment_adjustment_sha256=environment_adjustment_sha256,
+        )
+        if continuation.get("recovery_mode") != "PRE_D0_BLOCKED_RECOVERY":
+            raise ValueError("source is not the exact pre-D0 blocked recovery")
+        source_message_id = str(continuation["source_message_id"])
+        payload = {
+            "source_attempt_root": str(Path(source_attempt_root).resolve()),
+            "runtime_projection_path": str(projection_path),
+            "plan_revision": plan_revision,
+            "runtime_revision": runtime_revision,
+            "token_sequence": token_sequence,
+            "worker_credential_path": str(worker_credential),
+            "checker_credential_path": str(checker_credential),
+            "state_command": list(state_command),
+            "transport_command": list(transport_command),
+            "environment_adjustment_path": str(environment_path),
+            "environment_adjustment_sha256": environment_adjustment_sha256,
+            "occurred_at": occurred_at,
+        }
+        envelope = {
+            "schema_version": ENVELOPE_SCHEMA,
+            "message_id": _stable_id(source_message_id, "pre-d0-blocked-recovery"),
+            "token_sequence": token_sequence,
+            "run_id": continuation["run_id"],
+            "go_id": continuation["go_id"],
+            "cell_id": continuation["cell_id"],
+            "sender_role": "supervisor",
+            "sender_role_instance_id": supervisor_role_instance_id,
+            "receiver_role": "checker",
+            "receiver_role_instance_id": checker.role_instance_id,
+            "receiver_endpoint_version": checker.endpoint_version,
+            "payload_type": "PRE_D0_BLOCKED_RECOVERY",
+            "payload_sha256": canonical_json_sha256(payload),
+            "payload": payload,
+        }
+        Envelope.from_dict(envelope)
+        destination = Path(output_path).resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _write_or_reuse_stable_request(destination, envelope)
+        return {
+            "schema_version": "slk.pre-d0-blocked-recovery-readiness/v1",
+            "method_version": continuation["method_version"],
+            "status": "PRE_D0_BLOCKED_RECOVERY_READY",
+            "run_id": continuation["run_id"],
+            "cell_id": continuation["cell_id"],
+            "source_message_id": source_message_id,
+            "recovery_message_id": envelope["message_id"],
+            "recovery_mode": continuation["recovery_mode"],
+            "candidate": continuation["source_candidate"],
+            "worker_session_id": continuation["worker_session_id"],
+            "runtime_revision": runtime_revision,
+            "token_sequence": token_sequence,
+            "envelope_path": str(destination),
+            "envelope_sha256": _sha256(destination),
+        }
+    except (AdapterError, CompletionError, ContractError, KeyError, OSError, TypeError, ValueError) as exc:
+        if isinstance(exc, CompletionError) and exc.error_code == "WORKER_CONTINUATION_CONFLICT":
+            raise
+        raise CompletionError(
+            "WORKER_PRE_D0_RECOVERY_NOT_READY",
+            "pre-D0 blocked recovery identity, evidence, runtime, or environment is not exact",
+        ) from exc
+
+
 def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     """Resume exactly the recorded DSH Session and let it execute one bounded suffix."""
 
@@ -1606,10 +2061,12 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     recovery_mode = request.get("recovery_mode")
     terminal_path = attempt / (
         "failed.json"
-        if recovery_mode in {"MISSING_RESULT", "INVALID_RESULT_CONTRACT"}
+        if recovery_mode in {"MISSING_RESULT", "INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"}
         else "completed.json"
     )
-    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT"} or (
+    if recovery_mode not in {
+        "COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY",
+    } or (
         _sha256(terminal_path) != request.get("source_terminal_sha256")
     ):
         raise CompletionError(
@@ -1632,7 +2089,8 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     )
     adapter.validate_address(resumed_endpoint)
     continuation_root = _continuation_root(request)
-    if recovery_mode != "INVALID_RESULT_CONTRACT" and any(
+    recovery_process_environment: dict[str, str] = {}
+    if recovery_mode not in {"INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"} and any(
         (continuation_root / name).exists()
         for name in ("launch-attempt.json", "started.json", "native.stdout.txt", "native.stderr.txt")
     ):
@@ -1640,17 +2098,29 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             "WORKER_CONTINUATION_ALREADY_ATTEMPTED",
             "the one allowed same-Session continuation already has execution evidence",
         )
-    if recovery_mode == "INVALID_RESULT_CONTRACT":
+    if recovery_mode in {"INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"}:
         if continuation_root.exists():
             raise CompletionError(
-                "WORKER_INVALID_RESULT_SUPPLEMENT_ALREADY_ATTEMPTED",
-                "the one allowed invalid-result supplement already has evidence",
+                (
+                    "WORKER_PRE_D0_RECOVERY_ALREADY_ATTEMPTED"
+                    if recovery_mode == "PRE_D0_BLOCKED_RECOVERY"
+                    else "WORKER_INVALID_RESULT_SUPPLEMENT_ALREADY_ATTEMPTED"
+                ),
+                "the one allowed same-Session recovery already has evidence",
             )
         if (
             _sha256(attempt / "transport-task.json") != request.get("source_task_sha256")
             or _sha256(attempt / "started.json") != request.get("source_started_sha256")
-            or _sha256(attempt / "worker-result.invalid.txt")
-            != request.get("source_invalid_result_sha256")
+            or (
+                recovery_mode == "INVALID_RESULT_CONTRACT"
+                and _sha256(attempt / "worker-result.invalid.txt")
+                != request.get("source_invalid_result_sha256")
+            )
+            or (
+                recovery_mode == "PRE_D0_BLOCKED_RECOVERY"
+                and _sha256(attempt / "worker-result.json")
+                != request.get("source_blocked_result_sha256")
+            )
         ):
             raise CompletionError(
                 "WORKER_CONTINUATION_SOURCE_CHANGED",
@@ -1666,6 +2136,25 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
                 "WORKER_CONTINUATION_SOURCE_CHANGED",
                 "candidate repository changed before result-only supplement",
             )
+        if recovery_mode == "PRE_D0_BLOCKED_RECOVERY":
+            source_envelope = Envelope.from_dict(_read_object(envelope_path, "Worker envelope"))
+            environment = _pre_d0_environment(
+                Path(str(request["environment_adjustment_path"])),
+                str(request["environment_adjustment_sha256"]),
+                envelope=source_envelope,
+                attempt_number=int(request["attempt"]),
+                project_id=str(request["source_project_id"]),
+            )
+            if (
+                environment["candidate_repository"] != request.get("source_repository")
+                or environment["candidate_commit"]
+                != request.get("source_candidate", {}).get("commit")
+            ):
+                raise CompletionError(
+                    "WORKER_CONTINUATION_SOURCE_CHANGED",
+                    "pre-D0 environment no longer binds the frozen candidate",
+                )
+            recovery_process_environment = {"PROTOC": str(environment["d0_environment"]["PROTOC"])}
     continuation_root.mkdir(parents=True, exist_ok=True)
     request_path = continuation_root / "request.json"
     data = continuation_request_bytes(request)
@@ -1701,6 +2190,19 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
             f"--sha256 {digest}`. Do not read, print, copy, or return credential plaintext. "
             f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
         )
+    elif recovery_mode == "PRE_D0_BLOCKED_RECOVERY":
+        instruction = (
+            "Resume this exact SLK Worker Session for the one sealed pre-D0 environment recovery. Do not edit "
+            "product files, change commits, create a rework round, or repeat construction. Verify the immutable "
+            "request SHA-256 and unchanged blocked evidence, execute only environment_adjustment.d0_command, then "
+            "write one flat completed slk.worker-result/v1 object at worker_result_path using exactly the "
+            "worker_result_fields, next_payload_fields, and d0_fields frozen in supplement_result_contract. "
+            "The result must bind the existing source_candidate, source_candidate_parent, source_changed_paths, "
+            "source_repository, original message, role and Session. Then execute the request's transport_command "
+            f"with `continue-worker --request {json.dumps(str(request_path))} --sha256 {digest}`. Do not read, "
+            "print, copy, or return credential plaintext. "
+            f"<slk-worker-continuation-task path={json.dumps(str(request_path))} sha256={json.dumps(digest)} />"
+        )
     else:
         instruction = (
             "Resume this exact SLK Worker Session only to finish its already-completed CELL handoff. "
@@ -1716,6 +2218,7 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     environment["DSH_RUNTIME_ROOT"] = str(resumed_endpoint.address["runtime_root"])
     environment["SLK_DSH_INSTANCE_ID"] = str(request["worker_instance_id"])
     environment["SLK_DSH_SESSION_ID"] = str(request["worker_session_id"])
+    environment.update(recovery_process_environment)
     timeout = _positive_seconds(resumed_endpoint.address["timeout_seconds"])
     launch_attempt_path = continuation_root / "launch-attempt.json"
     launch_attempt_path.write_bytes(
@@ -1775,7 +2278,7 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     (continuation_root / "native.stderr.txt").write_text(completed.stderr, encoding="utf-8")
     if completed.returncode != 0:
         raise CompletionError("WORKER_CONTINUATION_FAILED", f"resumed Worker exited with {completed.returncode}")
-    if recovery_mode == "INVALID_RESULT_CONTRACT":
+    if recovery_mode in {"INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"}:
         snapshot = _candidate_repository_snapshot(Path(str(request["source_repository"])))
         if (
             snapshot["head"] != request.get("source_candidate", {}).get("commit")
@@ -2173,18 +2676,23 @@ def run_worker_continuation(
         raise CompletionError("WORKER_RUNTIME_REVISION_INVALID", "fresh runtime revision is unavailable")
     attempt = Path(str(request["source_attempt_root"]))
     recovery_mode = request.get("recovery_mode")
-    if recovery_mode not in {"COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT", "INCOMPLETE_HANDOFF"}:
+    if recovery_mode not in {
+        "COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT",
+        "INCOMPLETE_HANDOFF", "PRE_D0_BLOCKED_RECOVERY",
+    }:
         raise CompletionError("WORKER_CONTINUATION_INVALID", "continuation recovery mode is invalid")
-    if recovery_mode == "INVALID_RESULT_CONTRACT" and fresh_runtime_revision != request.get("runtime_revision"):
+    if recovery_mode in {"INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"} and fresh_runtime_revision != request.get("runtime_revision"):
         raise CompletionError(
             "WORKER_RUNTIME_REVISION_INVALID",
-            "invalid-result supplement requires the frozen Worker runtime revision",
+            "same-Session recovery requires the frozen Worker runtime revision",
         )
     result_path = Path(str(request.get("worker_result_path", ""))).resolve()
     if recovery_mode == "MISSING_RESULT":
         expected_result_path = attempt / "worker-continuation" / "recovered-worker-result.json"
     elif recovery_mode == "INVALID_RESULT_CONTRACT":
         expected_result_path = attempt / "invalid-result-supplement" / "recovered-worker-result.json"
+    elif recovery_mode == "PRE_D0_BLOCKED_RECOVERY":
+        expected_result_path = attempt / "pre-d0-blocked-recovery" / "recovered-worker-result.json"
     elif recovery_mode == "INCOMPLETE_HANDOFF":
         expected_result_path = attempt / "incomplete-handoff" / "evidence.json"
     else:
@@ -2218,6 +2726,40 @@ def run_worker_continuation(
             or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")):
             raise CompletionError("WORKER_INCOMPLETE_EVIDENCE_INVALID", "incomplete handoff source changed")
         _load_incomplete_handoff(attempt)
+    elif recovery_mode == "PRE_D0_BLOCKED_RECOVERY":
+        source_envelope = Envelope.from_dict(_read_object(attempt / "envelope.json", "Worker envelope"))
+        if (
+            request.get("worker_result_sha256") is not None
+            or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")
+            or _sha256(attempt / "transport-task.json") != request.get("source_task_sha256")
+            or _sha256(attempt / "started.json") != request.get("source_started_sha256")
+            or _sha256(attempt / "worker-result.json")
+            != request.get("source_blocked_result_sha256")
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "pre-D0 blocked recovery source is not exact",
+            )
+        environment = _pre_d0_environment(
+            Path(str(request["environment_adjustment_path"])),
+            str(request["environment_adjustment_sha256"]),
+            envelope=source_envelope,
+            attempt_number=int(request["attempt"]),
+            project_id=str(request["source_project_id"]),
+        )
+        snapshot = _candidate_repository_snapshot(Path(str(request["source_repository"])))
+        if (
+            environment["candidate_repository"] != request.get("source_repository")
+            or environment["candidate_commit"]
+            != request.get("source_candidate", {}).get("commit")
+            or snapshot["head"] != request.get("source_candidate", {}).get("commit")
+            or snapshot["parent"] != request.get("source_candidate_parent")
+            or snapshot["changed_paths"] != request.get("source_changed_paths")
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "pre-D0 environment or candidate changed",
+            )
     elif (
         request.get("worker_result_sha256") is not None
         or _sha256(attempt / "failed.json") != request.get("source_terminal_sha256")
@@ -2283,7 +2825,7 @@ def run_worker_continuation(
     repository = Path(str(repository_value)).resolve()
     if not repository.is_dir():
         raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "candidate repository is unavailable")
-    if recovery_mode == "INVALID_RESULT_CONTRACT":
+    if recovery_mode in {"INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"}:
         required_payload_fields = set(INVALID_SUPPLEMENT_RESULT_CONTRACT["next_payload_fields"])
         required_d0_fields = set(INVALID_SUPPLEMENT_RESULT_CONTRACT["d0_fields"])
         suffix_blocker = next_payload.get("suffix_blocker")
@@ -2327,7 +2869,25 @@ def run_worker_continuation(
         ):
             raise CompletionError(
                 "WORKER_COMPLETION_EVIDENCE_INVALID",
-                "invalid-result supplement lacks the closed D0, changed-path, or evidence fields",
+                "recovery result lacks the closed D0, changed-path, or evidence fields",
+            )
+        if recovery_mode == "PRE_D0_BLOCKED_RECOVERY" and (
+            suffix_blocker is not None
+            or d0.get("frozen_command")
+            != json.dumps(
+                environment["d0_command"],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            or not isinstance(d0.get("frozen_command_result"), Mapping)
+            or d0["frozen_command_result"].get("exit_code") != 0
+            or isinstance(d0["frozen_command_result"].get("exit_code"), bool)
+            or d0.get("green", {}).get("status") != "PASS"
+            or not all(Path(item).is_absolute() and Path(item).is_file() for item in d0["evidence_files"])
+        ):
+            raise CompletionError(
+                "WORKER_COMPLETION_EVIDENCE_INVALID",
+                "pre-D0 result does not prove the one bound successful command",
             )
         snapshot = _candidate_repository_snapshot(repository)
         if (
@@ -2340,7 +2900,7 @@ def run_worker_continuation(
         ):
             raise CompletionError(
                 "WORKER_COMPLETION_EVIDENCE_INVALID",
-                "corrected Worker result does not bind the frozen candidate",
+                "recovered Worker result does not bind the frozen candidate",
             )
     source_message_id = str(request["source_message_id"])
     handoff_message_id = _stable_id(source_message_id, "candidate-ready")
@@ -2367,7 +2927,10 @@ def run_worker_continuation(
         )
     source_terminal_path = attempt / (
         "failed.json"
-        if recovery_mode in {"MISSING_RESULT", "INVALID_RESULT_CONTRACT", "INCOMPLETE_HANDOFF"}
+        if recovery_mode in {
+            "MISSING_RESULT", "INVALID_RESULT_CONTRACT", "INCOMPLETE_HANDOFF",
+            "PRE_D0_BLOCKED_RECOVERY",
+        }
         else "completed.json"
     )
     raw_evidence = [
@@ -3746,7 +4309,10 @@ def execute_checker_recovery(
         "occurred_at",
         "result_path",
     }
-    if set(request) != fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
+    pre_d0_fields = {"environment_adjustment_path", "environment_adjustment_sha256"}
+    pre_d0 = bool(set(request) & pre_d0_fields)
+    expected_fields = fields | pre_d0_fields if pre_d0 else fields
+    if set(request) != expected_fields or request.get("schema_version") != CHECKER_RECOVERY_SCHEMA:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery request is not closed")
     if request.get("method_version") not in SUPPORTED_METHOD_VERSIONS:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker recovery requires a supported SLK patch")
@@ -3814,6 +4380,12 @@ def execute_checker_recovery(
         state_command=list(state_command),
         transport_command=list(transport_command),
         occurred_at=str(request["occurred_at"]),
+        environment_adjustment_path=(
+            str(request["environment_adjustment_path"]) if pre_d0 else None
+        ),
+        environment_adjustment_sha256=(
+            str(request["environment_adjustment_sha256"]) if pre_d0 else None
+        ),
     )
     if continuation["method_version"] != request["method_version"]:
         raise CompletionError("CHECKER_RECOVERY_REQUEST_INVALID", "Checker request and Run versions differ")

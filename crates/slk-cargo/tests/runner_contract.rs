@@ -144,6 +144,42 @@ fn ordinary_failure_streams_output_and_preserves_exit_code() {
     assert!(text(&capture.stderr).contains("ERR ordinary failure"));
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_cargo_child_receives_plain_spelling_for_the_same_verbatim_run_target() {
+    let root = tempdir().unwrap();
+    let verbatim_root = root.path().canonicalize().unwrap();
+    assert!(verbatim_root
+        .as_os_str()
+        .to_string_lossy()
+        .starts_with(r"\\?\"));
+    let paths = RunPaths::new(&verbatim_root, "project-a", "run-verbatim").unwrap();
+    let script = fake_cargo_script(root.path());
+    let marker = root.path().join("verbatim.marker");
+    let mut capture = Capture::default();
+
+    let result = run_cargo(
+        &invocation(&script, "capture", &marker),
+        &paths,
+        &quick_config(),
+        &mut capture,
+    )
+    .unwrap();
+
+    assert!(result.success());
+    assert!(paths
+        .primary_target()
+        .as_os_str()
+        .to_string_lossy()
+        .starts_with(r"\\?\"));
+    let child_target = fs::read_to_string(marker).unwrap();
+    assert!(!child_target.starts_with(r"\\?\"));
+    assert_eq!(
+        Path::new(&child_target).canonicalize().unwrap(),
+        paths.primary_target().canonicalize().unwrap()
+    );
+}
+
 #[test]
 fn package_cache_wait_is_bounded_and_retries_same_target_once() {
     let root = tempdir().unwrap();

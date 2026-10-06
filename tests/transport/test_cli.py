@@ -28,6 +28,7 @@ from test_worker_completion import (
     invalid_result_contract_fixture,
     runtime_projection,
 )
+from test_pre_d0_blocked_recovery import fixture as pre_d0_fixture
 
 
 TESTS = Path(__file__).parent
@@ -402,6 +403,40 @@ def test_prepare_invalid_result_recovery_is_read_only_and_emits_closed_checker_e
     assert envelope["sender_role"] == "supervisor"
     assert envelope["receiver_role"] == "checker"
     assert not (attempt / "invalid-result-supplement").exists()
+
+
+def test_prepare_pre_d0_blocked_recovery_cli_is_read_only_and_closed(tmp_path: Path) -> None:
+    case = pre_d0_fixture(tmp_path)
+    checker_path = write_json(tmp_path / "checker-endpoint.json", case["checker"])
+    output = tmp_path / "pre-d0-recovery-envelope-cli.json"
+    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
+
+    prepared = run_cli(
+        artifact,
+        "prepare-pre-d0-blocked-recovery",
+        "--source-attempt", str(case["attempt"]),
+        "--checker-endpoint", str(checker_path),
+        "--runtime-projection", str(case["projection_path"]),
+        "--supervisor-role-instance-id", "RUN-A-supervisor-001",
+        "--plan-revision", "1",
+        "--runtime-revision", "7",
+        "--token-sequence", "14",
+        "--worker-credential", str(case["worker_credential"]),
+        "--checker-credential", str(case["checker_credential"]),
+        "--state-command", "slk-state",
+        "--transport-command", "python", "slk-transport.pyz",
+        "--environment-adjustment", str(case["environment_path"]),
+        "--environment-adjustment-sha256", str(case["environment_sha256"]),
+        "--occurred-at", "2026-10-06T05:30:00Z",
+        "--output", str(output),
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    readiness = json.loads(prepared.stdout)
+    envelope = json.loads(output.read_text(encoding="utf-8"))
+    assert readiness["status"] == "PRE_D0_BLOCKED_RECOVERY_READY"
+    assert envelope["payload_type"] == "PRE_D0_BLOCKED_RECOVERY"
+    assert not (Path(str(case["attempt"])) / "pre-d0-blocked-recovery").exists()
 
 
 def test_retry_exact_uses_persisted_identity_and_stops_after_one_attempt(

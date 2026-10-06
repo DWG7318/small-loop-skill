@@ -53,6 +53,10 @@ RECOVERY_FIELDS = frozenset(
         "occurred_at",
     }
 )
+PRE_D0_RECOVERY_FIELDS = RECOVERY_FIELDS | {
+    "environment_adjustment_path",
+    "environment_adjustment_sha256",
+}
 OCRV_RESULT_FIELDS = frozenset(
     {
         "schema_version",
@@ -642,7 +646,12 @@ class OcrvAdapter:
         result_path: Path,
     ) -> dict[str, Any]:
         payload = envelope.payload
-        _closed(payload, RECOVERY_FIELDS, "WORKER_COMPLETION_RECOVERY payload")
+        pre_d0 = envelope.payload_type == "PRE_D0_BLOCKED_RECOVERY"
+        _closed(
+            payload,
+            PRE_D0_RECOVERY_FIELDS if pre_d0 else RECOVERY_FIELDS,
+            f"{envelope.payload_type} payload",
+        )
         paths: dict[str, str] = {}
         for field in (
             "source_attempt_root",
@@ -667,7 +676,7 @@ class OcrvAdapter:
         version = projection.get("summary", {}).get("slk_version")
         if version not in SUPPORTED_METHOD_VERSIONS or projection.get("runtime_snapshot", {}).get("method_version") != version:
             raise AdapterError("OCRV_PAYLOAD_INVALID", "recovery Run version is unsupported or inconsistent")
-        return {
+        request = {
             "schema_version": "slk.ocrv-worker-recovery-request/v1",
             "method_version": version,
             "recovery_invocation_id": recovery_invocation_id,
@@ -685,6 +694,26 @@ class OcrvAdapter:
             "occurred_at": _nonempty(payload["occurred_at"], "occurred_at"),
             "result_path": str(result_path.resolve()),
         }
+        if pre_d0:
+            environment_path = Path(_nonempty(payload["environment_adjustment_path"], "environment_adjustment_path"))
+            digest = _nonempty(payload["environment_adjustment_sha256"], "environment_adjustment_sha256")
+            if (
+                not environment_path.is_absolute()
+                or not environment_path.is_file()
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                raise AdapterError(
+                    "OCRV_PAYLOAD_INVALID",
+                    "pre-D0 environment adjustment must be an existing absolute SHA-bound file",
+                )
+            request.update(
+                {
+                    "environment_adjustment_path": str(environment_path.resolve()),
+                    "environment_adjustment_sha256": digest,
+                }
+            )
+        return request
 
     def _read_recovery_result(
         self,
@@ -1247,6 +1276,6 @@ class OcrvAdapter:
             return self._dispatch(endpoint, envelope, attempt)
         if envelope.payload_type == "CANDIDATE_READY":
             return self._review(endpoint, envelope, attempt)
-        if envelope.payload_type == "WORKER_COMPLETION_RECOVERY":
+        if envelope.payload_type in {"WORKER_COMPLETION_RECOVERY", "PRE_D0_BLOCKED_RECOVERY"}:
             return self._recover(endpoint, envelope, attempt)
         raise AdapterError("OCRV_PAYLOAD_UNSUPPORTED", "OCRV Checker payload type is unsupported")

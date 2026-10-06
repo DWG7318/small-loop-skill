@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "method_version", "run_id", "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision", "source_message_id", "source_attempt_root", "continuation_result_path", "source_endpoint_sha256", "source_envelope_sha256", "source_runtime_projection_sha256", "source_runtime_snapshot", "recovery_mode", "worker_result_path", "worker_result_sha256", "source_terminal_sha256", "source_task_sha256", "source_started_sha256", "source_invalid_result_sha256", "source_candidate", "source_candidate_parent", "source_repository", "source_changed_paths", "supplement_result_contract", "worker_role_instance_id", "worker_instance_id", "worker_session_id", "checker_endpoint", "credential_path", "state_command", "transport_command", "token_sequence", "checker_token_already_committed", "occurred_at"],
   "properties": {
-    "schema_version": {"enum": ["slk.worker-continuation/v1", "slk.worker-continuation/v2"]},
+    "schema_version": {"enum": ["slk.worker-continuation/v1", "slk.worker-continuation/v2", "slk.worker-continuation/v3"]},
     "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2"]},
     "run_id": {"$ref": "#/$defs/identifier"},
     "go_id": {"$ref": "#/$defs/identifier"},
@@ -33,13 +33,17 @@
         "latest_message_id": {"type": "string", "format": "uuid"}
       }
     },
-    "recovery_mode": {"enum": ["COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT"]},
+    "recovery_mode": {"enum": ["COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT", "PRE_D0_BLOCKED_RECOVERY"]},
     "worker_result_path": {"type": "string", "minLength": 1},
     "worker_result_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
     "source_terminal_sha256": {"$ref": "#/$defs/sha256"},
     "source_task_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
     "source_started_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
     "source_invalid_result_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "source_blocked_result_sha256": {"$ref": "#/$defs/sha256"},
+    "source_project_id": {"$ref": "#/$defs/identifier"},
+    "environment_adjustment_path": {"type": "string", "minLength": 1},
+    "environment_adjustment_sha256": {"$ref": "#/$defs/sha256"},
     "source_candidate": {"anyOf": [{"type": "object"}, {"type": "null"}]},
     "source_candidate_parent": {"anyOf": [{"type": "string", "pattern": "^[0-9a-f]{40}$"}, {"type": "null"}]},
     "source_repository": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
@@ -57,8 +61,25 @@
     "checker_token_already_committed": {"type": "boolean"},
     "occurred_at": {"type": "string", "format": "date-time"}
   },
-  "allOf": [{"if": {"properties": {"schema_version": {"const": "slk.worker-continuation/v1"}}},
-    "then": {"not": {"required": ["temporal"]}}, "else": {"required": ["temporal"]}}],
+  "allOf": [
+    {"if": {"properties": {"schema_version": {"const": "slk.worker-continuation/v1"}}},
+      "then": {
+        "properties": {"recovery_mode": {"enum": ["COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT"]}},
+        "not": {"anyOf": [{"required": ["temporal"]}, {"required": ["source_blocked_result_sha256"]}]}
+      }},
+    {"if": {"properties": {"schema_version": {"const": "slk.worker-continuation/v2"}}},
+      "then": {
+        "required": ["temporal"],
+        "properties": {"recovery_mode": {"enum": ["COMPLETED_RESULT", "MISSING_RESULT", "INVALID_RESULT_CONTRACT"]}},
+        "not": {"required": ["source_blocked_result_sha256"]}
+      }},
+    {"if": {"properties": {"schema_version": {"const": "slk.worker-continuation/v3"}}},
+      "then": {
+        "required": ["source_blocked_result_sha256", "source_project_id", "environment_adjustment_path", "environment_adjustment_sha256"],
+        "properties": {"recovery_mode": {"const": "PRE_D0_BLOCKED_RECOVERY"}},
+        "not": {"required": ["temporal"]}
+      }}
+  ],
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

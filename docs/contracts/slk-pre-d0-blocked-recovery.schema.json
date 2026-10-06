@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-pre-d0-blocked-recovery.schema.json",
+  "title": "SLK one-shot pre-D0 blocked environment adjustment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "recovery_kind", "source_message_id", "candidate_repository",
+    "candidate_commit", "tool_path", "tool_sha256", "state_config_path",
+    "state_config_sha256", "d0_environment", "d0_command"
+  ],
+  "properties": {
+    "schema_version": {"const": "slk.pre-d0-blocked-recovery/v1"},
+    "recovery_kind": {"const": "WINDOWS_CARGO_TARGET_PLAIN_PATH"},
+    "source_message_id": {"type": "string", "format": "uuid"},
+    "candidate_repository": {"type": "string", "minLength": 1},
+    "candidate_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "tool_path": {"type": "string", "minLength": 1},
+    "tool_sha256": {"$ref": "#/$defs/sha256"},
+    "state_config_path": {"type": "string", "minLength": 1},
+    "state_config_sha256": {"$ref": "#/$defs/sha256"},
+    "d0_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["PROTOC", "PROTOC_SHA256"],
+      "properties": {
+        "PROTOC": {"type": "string", "minLength": 1},
+        "PROTOC_SHA256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "d0_command": {
+      "type": "array",
+      "minItems": 16,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

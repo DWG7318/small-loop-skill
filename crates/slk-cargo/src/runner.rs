@@ -200,9 +200,10 @@ fn run_attempt(
     config: &RunnerConfig,
     sink: &mut dyn OutputSink,
 ) -> Result<AttemptOutcome, CargoGuardError> {
+    let cargo_target = cargo_process_target(target);
     let mut child = Command::new(invocation.program())
         .args(invocation.arguments())
-        .env("CARGO_TARGET_DIR", target)
+        .env("CARGO_TARGET_DIR", &cargo_target)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -222,7 +223,8 @@ fn run_attempt(
         if let Ok(chunk) = receiver.recv_timeout(Duration::from_millis(10)) {
             forward_chunk(chunk, sink, &mut stderr_bytes);
             if contention.is_none() {
-                contention = classify_contention(&String::from_utf8_lossy(&stderr_bytes), target);
+                contention =
+                    classify_contention(&String::from_utf8_lossy(&stderr_bytes), &cargo_target);
                 if let Some(kind) = contention {
                     deadline = Some(Instant::now() + config.contention_wait);
                     sink.stderr(
@@ -260,9 +262,38 @@ fn run_attempt(
         .map_err(|_| CargoGuardError::new("SLK_CARGO_IO", "stderr reader panicked"))??;
     drain_chunks(&receiver, sink, &mut stderr_bytes);
     if contention.is_none() {
-        contention = classify_contention(&String::from_utf8_lossy(&stderr_bytes), target);
+        contention = classify_contention(&String::from_utf8_lossy(&stderr_bytes), &cargo_target);
     }
     Ok(AttemptOutcome { status, contention })
+}
+
+#[cfg(windows)]
+fn cargo_process_target(target: &Path) -> PathBuf {
+    use std::path::{Component, Prefix};
+
+    let mut components = target.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return target.to_path_buf();
+    };
+    let mut plain = match prefix.kind() {
+        Prefix::VerbatimDisk(letter) => PathBuf::from(format!("{}:", char::from(letter))),
+        Prefix::VerbatimUNC(server, share) => {
+            let mut value = PathBuf::from(r"\\");
+            value.push(server);
+            value.push(share);
+            value
+        }
+        _ => return target.to_path_buf(),
+    };
+    for component in components {
+        plain.push(component.as_os_str());
+    }
+    plain
+}
+
+#[cfg(not(windows))]
+fn cargo_process_target(target: &Path) -> PathBuf {
+    target.to_path_buf()
 }
 
 fn spawn_reader<R: Read + Send + 'static>(
