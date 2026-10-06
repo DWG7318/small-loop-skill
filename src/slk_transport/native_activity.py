@@ -378,14 +378,15 @@ def validate_native_task_activity(
 def _inspect_native_projection(
     start: Mapping[str, Any],
     native_probe: Callable[[Mapping[str, Any]], Mapping[str, Any]],
-    observed: str,
+    observed: str | None,
     max_activity_age_seconds: int,
-) -> tuple[dict[str, Any], str, str | None]:
+) -> tuple[dict[str, Any], str, str | None, str]:
     try:
         native = dict(native_probe(start))
+        validation_observed = observed or utc_now()
         native_error = native.get("error")
         if native_error is not None:
-            return native, "UNKNOWN", str(native_error)
+            return native, "UNKNOWN", str(native_error), validation_observed
         validate_native_task_activity(
             native,
             adapter=str(start["adapter"]),
@@ -393,7 +394,7 @@ def _inspect_native_projection(
             cell_id=str(start["cell_id"]),
             message_id=str(start["message_id"]),
             native_task_id=str(start["native_task"]["id"]),
-            observed_at=observed,
+            observed_at=validation_observed,
             max_activity_age_seconds=max_activity_age_seconds,
         )
         mapped = {
@@ -403,7 +404,12 @@ def _inspect_native_projection(
             "COMPLETED": "COMPLETED_WITHOUT_TERMINAL",
             "FAILED": "FAILED_WITHOUT_TERMINAL",
         }.get(str(native.get("status")), "UNKNOWN")
-        return native, mapped, None if mapped != "UNKNOWN" else "NATIVE_STATUS_UNKNOWN"
+        return (
+            native,
+            mapped,
+            None if mapped != "UNKNOWN" else "NATIVE_STATUS_UNKNOWN",
+            validation_observed,
+        )
     except NativeActivityError as exc:
         detail = str(exc)
         if "stale" in detail:
@@ -414,9 +420,14 @@ def _inspect_native_projection(
             error = "NATIVE_ACTIVITY_IDENTITY_MISMATCH"
         else:
             error = "NATIVE_QUERY_FAILED"
-        return {"last_event": None, "waiting_on": None}, "UNKNOWN", error
+        return {"last_event": None, "waiting_on": None}, "UNKNOWN", error, observed or utc_now()
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return {"last_event": None, "waiting_on": None}, "UNKNOWN", "NATIVE_QUERY_FAILED"
+        return (
+            {"last_event": None, "waiting_on": None},
+            "UNKNOWN",
+            "NATIVE_QUERY_FAILED",
+            observed or utc_now(),
+        )
 
 
 def _terminal_result(
@@ -509,13 +520,13 @@ def inspect_native_activity(
     # executor of the already-running Desktop turn, so platform activity is the
     # authoritative liveness source for this backend.
     if current_start["native_task"]["kind"] in PLATFORM_ACTIVITY_TASK_KINDS:
-        native, mapped, error = _inspect_native_projection(
-            current_start, native_probe, observed, max_activity_age_seconds
+        native, mapped, error, projection_observed = _inspect_native_projection(
+            current_start, native_probe, observed_at, max_activity_age_seconds
         )
         return {
             "schema_version": ACTIVITY_SCHEMA,
             "status": mapped,
-            "observed_at": observed,
+            "observed_at": projection_observed,
             "process": None,
             "native_task": current_start["native_task"],
             "last_event": native.get("last_event"),
@@ -559,13 +570,13 @@ def inspect_native_activity(
             "terminal_evidence": None,
             "error": None,
         }
-    native, mapped, error = _inspect_native_projection(
-        current_start, native_probe, observed, max_activity_age_seconds
+    native, mapped, error, projection_observed = _inspect_native_projection(
+        current_start, native_probe, observed_at, max_activity_age_seconds
     )
     return {
         "schema_version": ACTIVITY_SCHEMA,
         "status": mapped,
-        "observed_at": observed,
+        "observed_at": projection_observed,
         "process": process,
         "native_task": current_start["native_task"],
         "last_event": native.get("last_event"),

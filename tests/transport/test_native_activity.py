@@ -349,6 +349,37 @@ def test_desktop_turn_uses_platform_activity_not_short_lived_cli_pid(tmp_path: P
     assert result["error"] is None
 
 
+def test_platform_probe_activity_is_validated_after_the_probe_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import slk_transport.native_activity as activity
+
+    receipt = _start_receipt(tmp_path, native_task_kind="codex-desktop-turn")
+    timestamps = iter(("2026-10-01T00:05:00Z", "2026-10-01T00:05:03Z"))
+    monkeypatch.setattr(activity, "utc_now", lambda: next(timestamps))
+
+    result = inspect_native_activity(
+        receipt,
+        native_probe=lambda _start: {
+            "schema_version": "slk.native-task-activity/v1",
+            "adapter": "ocrv-checker",
+            "run_id": "RUN-A",
+            "cell_id": "CELL-001",
+            "message_id": "11111111-1111-4111-8111-111111111111",
+            "native_task_id": "ocrv-session-a",
+            "status": "RUNNING",
+            "sequence": 9,
+            "observed_at": "2026-10-01T00:05:02Z",
+            "last_event": {"kind": "PLATFORM_TURN_ACTIVE", "sequence": 9},
+            "waiting_on": "CODEX_TURN",
+        },
+    )
+
+    assert result["status"] == "ACTIVE"
+    assert result["observed_at"] == "2026-10-01T00:05:03Z"
+    assert result["error"] is None
+
+
 def test_live_wrapper_without_current_native_projection_is_unknown(tmp_path: Path) -> None:
     receipt = _start_receipt(tmp_path)
 

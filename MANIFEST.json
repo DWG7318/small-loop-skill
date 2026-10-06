@@ -1472,7 +1472,7 @@
     },
     {
       "path": "src/slk_transport/native_activity.py",
-      "sha256": "8f38ea18c54561688bbb2c0ac6941d2458cc69a676c849d91d2bb808cb252161"
+      "sha256": "2cf07a96b719df9a627cd0be67f2d3529ef7828b2bf2b546501ed32e644f84cd"
     },
     {
       "path": "src/slk_transport/overwatcher_admin.py",
@@ -1764,7 +1764,7 @@
     },
     {
       "path": "tests/transport/test_native_activity.py",
-      "sha256": "d9fdf2350177c0b24a2e2c40f6a3b5bd6639788c07607054870d3f207c1a1dc6"
+      "sha256": "44a43925473e98921ac47ddaf139dd41cf33025a2eb10952d20be18b94057e7b"
     },
     {
       "path": "tests/transport/test_ocrv_adapter.py",
