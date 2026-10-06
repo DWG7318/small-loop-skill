@@ -45,6 +45,7 @@ from .supervisor_admin import execute_sealed_supervisor_admin
 from .temporal_reload import reload_temporal_worker
 from .terminal_budget import prepare_terminal_budget_request
 from .terminal_budget_fresh import prepare_fresh_review_request
+from .terminal_budget_fresh_partial import prepare_fresh_partial_request
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
 from .worker_completion import (
     CompletionError,
@@ -65,6 +66,7 @@ from .worker_completion import (
     resume_consumed_partial_checker,
     resume_incomplete_checker,
     resume_terminal_budget_checker,
+    resume_terminal_budget_fresh_partial,
     resume_terminal_budget_fresh_review,
 )
 
@@ -517,6 +519,24 @@ def _resume_terminal_budget_fresh_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prepare_terminal_budget_fresh_partial(args: argparse.Namespace) -> int:
+    _emit(prepare_fresh_partial_request(
+        args.fresh_request,
+        max_tokens_budget=args.max_tokens_budget,
+        authorization_id=args.authorization_id,
+        source_thread_id=args.source_thread_id,
+        occurred_at=args.occurred_at,
+        output_path=args.output,
+    ))
+    return 0
+
+
+def _resume_terminal_budget_fresh_partial(args: argparse.Namespace) -> int:
+    _emit(resume_terminal_budget_fresh_partial(
+        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
+    return 0
+
+
 def _continue_consumed_partial_checker(args: argparse.Namespace) -> int:
     _emit(continue_consumed_partial_checker(
         args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
@@ -857,6 +877,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     fresh_budget.add_argument("--request", required=True, type=Path)
     fresh_budget.add_argument("--sha256", required=True)
     fresh_budget.add_argument("--prepare-only", action="store_true")
+    fresh_partial_preparer = subparsers.add_parser("prepare-terminal-budget-fresh-partial")
+    fresh_partial_preparer.add_argument("--fresh-request", required=True, type=Path)
+    fresh_partial_preparer.add_argument("--max-tokens-budget", required=True, type=int)
+    fresh_partial_preparer.add_argument("--authorization-id", required=True)
+    fresh_partial_preparer.add_argument("--source-thread-id", required=True)
+    fresh_partial_preparer.add_argument("--occurred-at", required=True)
+    fresh_partial_preparer.add_argument("--output", required=True, type=Path)
+    fresh_partial = subparsers.add_parser("resume-terminal-budget-fresh-partial")
+    fresh_partial.add_argument("--request", required=True, type=Path)
+    fresh_partial.add_argument("--sha256", required=True)
+    fresh_partial.add_argument("--prepare-only", action="store_true")
     consumed_partial = subparsers.add_parser("continue-consumed-partial")
     consumed_partial.add_argument("--request", required=True, type=Path)
     consumed_partial.add_argument("--sha256", required=True)
@@ -999,6 +1030,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _prepare_terminal_budget_fresh_review(args)
         if args.command == "resume-terminal-budget-fresh-review":
             return _resume_terminal_budget_fresh_review(args)
+        if args.command == "prepare-terminal-budget-fresh-partial":
+            return _prepare_terminal_budget_fresh_partial(args)
+        if args.command == "resume-terminal-budget-fresh-partial":
+            return _resume_terminal_budget_fresh_partial(args)
         if args.command == "continue-consumed-partial":
             return _continue_consumed_partial_checker(args)
         if args.command == "resume-consumed-partial":

@@ -5079,11 +5079,21 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             "capacity_request_sha256", "compatibility_lineage_sha256",
             "native_session_sha256", "d1_correction",
         }
+        fresh_partial_budget_fields = {
+            "fresh_partial_request_path", "fresh_partial_request_sha256",
+            "capacity_request_sha256", "resume_lineage_sha256",
+            "native_session_sha256", "d1_correction",
+        }
         is_budget_resume = d1_correction is not None
         is_fresh_budget = is_budget_resume and "compatibility_request_path" in recovery_terminal
+        is_fresh_partial_budget = (
+            is_budget_resume and "fresh_partial_request_path" in recovery_terminal
+        )
         expected_recovery_fields = (
             recovery_fields | fresh_budget_fields
             if is_fresh_budget
+            else recovery_fields | fresh_partial_budget_fields
+            if is_fresh_partial_budget
             else ordinary_fields | budget_fields
             if is_budget_resume
             else ordinary_fields
@@ -5110,7 +5120,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
         if (
             set(recovery_terminal) != expected_recovery_fields
             or (
-                not is_fresh_budget
+                not is_fresh_budget and not is_fresh_partial_budget
                 and terminal_attempt.parent.parent != native_attempt / (
                     "resume-terminal-budget-checker" if is_budget_resume else "resume-incomplete-checker"
                 )
@@ -5142,6 +5152,27 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
                 compatibility = _read_object(source_path, "terminal-budget fresh-review request")
                 budget_validated = validate_fresh_review_request(compatibility, consumed=True)
                 source_request = budget_validated["source_request"]
+                budget_basis = budget_validated
+            elif is_fresh_partial_budget:
+                from .terminal_budget_fresh_partial import (
+                    validate_fresh_partial_child,
+                    validate_fresh_partial_request,
+                )
+
+                source_path = Path(
+                    str(recovery_terminal["fresh_partial_request_path"])
+                ).resolve()
+                source_digest = recovery_terminal["fresh_partial_request_sha256"]
+                lineage_path = terminal_attempt / "resume-lineage.json"
+                lineage_digest = recovery_terminal["resume_lineage_sha256"]
+                partial_request = _read_object(
+                    source_path, "terminal-budget fresh-partial request"
+                )
+                budget_validated = validate_fresh_partial_request(
+                    partial_request, consumed=True
+                )
+                source_request = budget_validated["source_request"]
+                budget_basis = budget_validated["source_validated"]
             else:
                 source_path = Path(str(recovery_terminal["source_request_path"])).resolve()
                 source_digest = recovery_terminal["source_request_sha256"]
@@ -5149,10 +5180,14 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
                 lineage_digest = recovery_terminal["resume_lineage_sha256"]
                 source_request = _read_object(source_path, "terminal-budget source request")
                 budget_validated = validate_terminal_budget(source_request, consumed=True)
+                budget_basis = budget_validated
             if (
                 not source_path.is_file() or _sha256(source_path) != source_digest
                 or not lineage_path.is_file() or _sha256(lineage_path) != lineage_digest
-                or (not is_fresh_budget and recovery_terminal["resume_request_sha256"] != lineage_digest)
+                or (
+                    not is_fresh_budget and not is_fresh_partial_budget
+                    and recovery_terminal["resume_request_sha256"] != lineage_digest
+                )
             ):
                 raise CompletionError(
                     "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
@@ -5178,7 +5213,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
                     "terminal-budget native child Session is invalid",
                 ) from exc
             if (
-                budget_validated["d1_correction"] != d1_correction
+                budget_basis["d1_correction"] != d1_correction
                 or revised != expected
                 or _sha256(native_session_path) != recovery_terminal["native_session_sha256"]
                 or lineage.get("parent_session_id") != parent_raw.get("session_id")
@@ -5191,9 +5226,9 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
                 )
             try:
                 target = {
-                    "target_ocrv_version": budget_validated["target_ocrv_version"],
-                    "target_rule_config_sha256": budget_validated["target_rule_config_sha256"],
-                    "target_runtime_config_sha256": budget_validated["target_runtime_config_sha256"],
+                    "target_ocrv_version": budget_basis["target_ocrv_version"],
+                    "target_rule_config_sha256": budget_basis["target_rule_config_sha256"],
+                    "target_runtime_config_sha256": budget_basis["target_runtime_config_sha256"],
                 }
                 if is_fresh_budget:
                     validate_fresh_child(parent_raw, child_raw, child_records=records, **target)
@@ -5222,6 +5257,16 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
                     ) != child_raw.get("manifest"):
                         raise ValueError("resume lineage is incomplete")
                     validate_resumed_child(parent_raw, child_raw, resumes[0], **target)
+                    if is_fresh_partial_budget:
+                        validate_fresh_partial_child(parent_raw, child_raw)
+                        if (
+                            terminal_attempt
+                            != Path(str(partial_request["recovery_root"])).resolve()
+                            / "native-attempt"
+                            or lineage.get("source_request_path") != str(source_path)
+                            or lineage.get("source_request_sha256") != source_digest
+                        ):
+                            raise ValueError("fresh-partial continuation identity changed")
             except ValueError as exc:
                 raise CompletionError(
                     "CHECKER_COMMITTED_TERMINAL_EVIDENCE_INVALID",
@@ -5953,6 +5998,78 @@ def resume_terminal_budget_fresh_review(
         raise CompletionError(
             "CHECKER_TERMINAL_BUDGET_FRESH_COMMAND_FAILED",
             "sealed Checker returned an invalid fresh-review result",
+        )
+    return value
+
+
+def resume_terminal_budget_fresh_partial(
+    request_path: Path, *, request_sha256: str, prepare_only: bool = False
+) -> Mapping[str, Any]:
+    """Resume only the remaining item(s) of one consumed fresh budget-partial review."""
+
+    from .terminal_budget_fresh_partial import RESULT_SCHEMA, validate_fresh_partial_request
+
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_REQUEST_MISMATCH",
+            "fresh-partial continuation request hash mismatch",
+        )
+    request = _read_object(request_path, "terminal-budget fresh-partial request")
+    validated = validate_fresh_partial_request(request)
+    source = validated["source_request"]
+    current = _default_load_current_projection(str(source["run_id"]), list(source["state_command"]))
+    runtime = current.get("runtime_snapshot")
+    current_revision = runtime.get("runtime_revision") if isinstance(runtime, Mapping) else None
+    if isinstance(current_revision, bool) or not isinstance(current_revision, int):
+        _committed_terminal_drift_invalid()
+    if current_revision != source["runtime_revision"]:
+        current_revision = _rebind_overwatcher_only_committed_boundary(
+            source, validated["source_validated"]["frozen_projection"], current, current_revision
+        )
+    if prepare_only:
+        return {
+            "schema_version": "slk.ocrv-terminal-budget-fresh-partial-preflight/v1",
+            "status": "READY_FOR_SEALED_CHECKER_FRESH_PARTIAL_RESUME",
+            "request_sha256": request_sha256,
+            **{
+                key: source[key]
+                for key in (
+                    "run_id", "cell_id", "attempt", "candidate_commit",
+                    "candidate_message_id", "checker_role_instance_id", "checker_endpoint_version",
+                    "runtime_revision", "token_sequence",
+                )
+            },
+            "current_runtime_revision": current_revision,
+            "recovery_invocation_id": request["recovery_invocation_id"],
+            "parent_session_id": request["parent_session_id"],
+            "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+            "completed_paths": sorted(validated["parent_completed_paths"]),
+            "remaining_paths": sorted(validated["remaining_paths"]),
+        }
+    value = _run_sealed_checker_terminal(
+        request_path,
+        request,
+        validated["source_validated"]["checker"],
+        request_sha256=request_sha256,
+        mode="--slk-resume-terminal-budget-fresh-partial",
+        result_schema=RESULT_SCHEMA,
+        error_code="CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_COMMAND_FAILED",
+        result_statuses=("CHECKER_D1_RECORDED", "CHECKER_D1_STILL_INCOMPLETE"),
+        identity_source=source,
+    )
+    if (
+        set(value) != TERMINAL_BUDGET_RESUME_RESULT_FIELDS
+        or value.get("status") not in {"CHECKER_D1_RECORDED", "CHECKER_D1_STILL_INCOMPLETE"}
+        or value.get("d1_verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
+        or value.get("d1_event_type")
+        != {"PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE"}.get(
+            value.get("d1_verdict")
+        )
+    ):
+        raise CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_COMMAND_FAILED",
+            "sealed Checker returned an invalid fresh-partial continuation result",
         )
     return value
 

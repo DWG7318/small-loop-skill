@@ -126,23 +126,28 @@ def _sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdige
 def _request_transport_command(request: dict[str, object], *, fresh: bool) -> list[str]:
     source = request
     if fresh:
-        raw_path = request.get("source_request_path")
-        expected = request.get("source_request_sha256")
-        path = Path(raw_path) if isinstance(raw_path, str) else Path()
-        if (
-            not path.is_absolute()
-            or not path.is_file()
-            or not isinstance(expected, str)
-            or re.fullmatch(r"[0-9a-f]{64}", expected) is None
-            or _sha256(path) != expected
+        for path_key, digest_key in (
+            ("fresh_request_path", "fresh_request_sha256"),
+            ("source_request_path", "source_request_sha256"),
         ):
-            raise ValueError("fresh-review source request is unavailable or changed")
-        try:
-            source = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise ValueError("fresh-review source request is unreadable") from exc
-        if not isinstance(source, dict):
-            raise ValueError("fresh-review source request is not an object")
+            if isinstance(source.get("transport_command"), list):
+                break
+            raw_path = source.get(path_key)
+            expected = source.get(digest_key)
+            if raw_path is None and expected is None:
+                continue
+            path = Path(raw_path) if isinstance(raw_path, str) else Path()
+            if (
+                not path.is_absolute() or not path.is_file() or not isinstance(expected, str)
+                or re.fullmatch(r"[0-9a-f]{64}", expected) is None or _sha256(path) != expected
+            ):
+                raise ValueError("fresh-review source request is unavailable or changed")
+            try:
+                source = json.loads(path.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise ValueError("fresh-review source request is unreadable") from exc
+            if not isinstance(source, dict):
+                raise ValueError("fresh-review source request is not an object")
     command = source.get("transport_command")
     if not isinstance(command, list) or not command or not all(
         isinstance(item, str) and item for item in command
@@ -525,7 +530,7 @@ def _authenticate_terminal_budget(
 
 def _run_terminal_budget_review(
     source: dict[str, object], validated: dict[str, object], recovery: dict[str, object],
-    request_path: Path, command: list[str], *, fresh: bool,
+    request_path: Path, command: list[str], *, fresh: bool, fresh_partial: bool = False,
 ) -> int:
     """Shared sealed OCRV execution; fresh changes only checkpoint and lineage semantics."""
 
@@ -536,6 +541,9 @@ def _run_terminal_budget_review(
     )
     from slk_transport.terminal_budget_fresh import (
         MODEL, PROVIDER, RESULT_SCHEMA as FRESH_RESULT_SCHEMA, validate_fresh_child,
+    )
+    from slk_transport.terminal_budget_fresh_partial import (
+        RESULT_SCHEMA as FRESH_PARTIAL_RESULT_SCHEMA, validate_fresh_partial_child,
     )
 
     session = source["ocrv_session"]
@@ -632,6 +640,8 @@ def _run_terminal_budget_review(
         ) != raw_review.get("manifest"):
             raise ValueError("terminal-budget child Session lineage or terminal manifest is incomplete")
         validate_resumed_child(parent_raw, raw_review, native_lineage[0], **validation)
+        if fresh_partial:
+            validate_fresh_partial_child(parent_raw, raw_review)
         lineage = {
             "schema_version": "slk.ocrv-terminal-budget-resume-lineage/v1",
             "source_request_path": str(request_path.resolve()),
@@ -709,6 +719,12 @@ def _run_terminal_budget_review(
                 compatibility_request_sha256=_sha256(request_path),
                 compatibility_lineage_sha256=_sha256(lineage_path),
             )
+        elif fresh_partial:
+            recovery_terminal.update(
+                fresh_partial_request_path=str(request_path.resolve()),
+                fresh_partial_request_sha256=_sha256(request_path),
+                resume_lineage_sha256=_sha256(lineage_path),
+            )
         else:
             recovery_terminal.update(
                 resume_request_sha256=_sha256(lineage_path),
@@ -749,7 +765,9 @@ def _run_terminal_budget_review(
         )
 
     outer = {
-        "schema_version": FRESH_RESULT_SCHEMA if fresh else RESULT_SCHEMA,
+        "schema_version": (
+            FRESH_RESULT_SCHEMA if fresh else FRESH_PARTIAL_RESULT_SCHEMA if fresh_partial else RESULT_SCHEMA
+        ),
         "method_version": source["method_version"], "status": status,
         "run_id": source["run_id"], "cell_id": source["cell_id"], "attempt": source["attempt"],
         "candidate_message_id": source["candidate_message_id"],
@@ -845,6 +863,46 @@ def _fresh_terminal_budget_review(
         }, stream, sort_keys=True)
         stream.write("\n")
     return _run_terminal_budget_review(source, validated, request, request_path, command, fresh=True)
+
+
+def _fresh_terminal_budget_partial(
+    request: dict[str, object], request_path: Path, command: list[str]
+) -> int:
+    sys.path.insert(0, str(_transport_runtime_path(command)))
+    from slk_transport.contracts import canonical_json_sha256
+    from slk_transport.terminal_budget_fresh_partial import (
+        claim_fresh_partial_source, validate_fresh_partial_request, verify_managed_target,
+    )
+
+    validated = validate_fresh_partial_request(request)
+    source = validated["source_request"]
+    _authenticate_terminal_budget(source, validated, str(request["recovery_invocation_id"]))
+    if _ocrv_version() != validated["source_validated"]["target_ocrv_version"]:
+        raise ValueError("fresh-partial OCRV version is not the approved target")
+    verify_managed_target(request, validated)
+    mode, detail = _session_resume_mode(source, source["ocrv_session"])
+    if (
+        mode != "RESUME_SESSION"
+        or detail.get("summary") != validated["session_summary"]
+        or not isinstance(detail.get("items"), list) or not detail["items"]
+    ):
+        raise ValueError("fresh-partial parent Session is no longer the exact resumable checkpoint")
+    claim_fresh_partial_source(request)
+    root = Path(request["recovery_root"]).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "session-show.json").write_text(json.dumps(detail, sort_keys=True) + "\n", encoding="utf-8")
+    with (root / "resume-consumed.json").open("x", encoding="utf-8") as stream:
+        json.dump({
+            "request_sha256": _sha256(request_path),
+            "parent_session_id": request["parent_session_id"],
+            "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+            "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
+        }, stream, sort_keys=True)
+        stream.write("\n")
+    return _run_terminal_budget_review(
+        source, validated["source_validated"], request, request_path, command,
+        fresh=False, fresh_partial=True,
+    )
 
 
 def _resume_partial(
@@ -1334,6 +1392,7 @@ def main() -> int:
     mode.add_argument("--slk-resume-incomplete-checker", action="store_true")
     mode.add_argument("--slk-resume-terminal-budget", action="store_true")
     mode.add_argument("--slk-fresh-terminal-budget-review", action="store_true")
+    mode.add_argument("--slk-resume-terminal-budget-fresh-partial", action="store_true")
     mode.add_argument("--slk-continue-consumed-partial", action="store_true")
     mode.add_argument("--slk-resume-consumed-partial", action="store_true")
     mode.add_argument("--slk-refine-consumed-partial", action="store_true")
@@ -1349,7 +1408,9 @@ def main() -> int:
         print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
         return 4
     expected_schema = (
-        "slk.ocrv-terminal-budget-fresh-review-request/v1"
+        "slk.ocrv-terminal-budget-fresh-partial-request/v1"
+        if args.slk_resume_terminal_budget_fresh_partial
+        else "slk.ocrv-terminal-budget-fresh-review-request/v1"
         if args.slk_fresh_terminal_budget_review
         else "slk.ocrv-terminal-budget-resume-request/v1"
         if args.slk_resume_terminal_budget
@@ -1370,7 +1431,10 @@ def main() -> int:
         return 4
     try:
         command = _request_transport_command(
-            request, fresh=args.slk_fresh_terminal_budget_review
+            request, fresh=(
+                args.slk_fresh_terminal_budget_review
+                or args.slk_resume_terminal_budget_fresh_partial
+            )
         )
     except ValueError as exc:
         print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
@@ -1381,6 +1445,7 @@ def main() -> int:
     if (args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker
         or args.slk_resume_terminal_budget
         or args.slk_fresh_terminal_budget_review
+        or args.slk_resume_terminal_budget_fresh_partial
         or args.slk_continue_consumed_partial or args.slk_resume_consumed_partial
         or args.slk_refine_consumed_partial
         or args.slk_consume_existing_partial):
@@ -1405,6 +1470,8 @@ def main() -> int:
             return _resume_terminal_budget(request, args.request.resolve(), command)
         if args.slk_fresh_terminal_budget_review:
             return _fresh_terminal_budget_review(request, args.request.resolve(), command)
+        if args.slk_resume_terminal_budget_fresh_partial:
+            return _fresh_terminal_budget_partial(request, args.request.resolve(), command)
         if args.slk_resume_consumed_partial:
             return _resume_partial(request, args.request.resolve(), command, consumed=True, resume_later=True)
         if args.slk_refine_consumed_partial:

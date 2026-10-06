@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "ef7241caeee9ceee3fa9766d45145d92207dfdc56ab03214c37d14532a7d1e94"
+      "sha256": "df3ad3b063bd148de5606e3a6f6a79c3715a6004e4e9773769195d08a47787d2"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "d42502d4764a1b7bf7a978b2986a9072bbb5f806b9d01f5eb052a8f6bd662f87"
+      "sha256": "466d8381f4c9779615b00e82d24505e3714b31bc4e34e95347262039a2f6ec72"
     },
     {
       "path": "VERSION",
@@ -1192,7 +1192,7 @@
     },
     {
       "path": "integrations/ocrv/slk-checker.cmd",
-      "sha256": "a8fff26578e4973cf111f093b33176c368f9238a9cd5bc1dceb494b754feaa7a"
+      "sha256": "146d1e34ba7e31a14b7f2e40c5b64e41e4625d79217351aff199d79fe1bcb2a4"
     },
     {
       "path": "integrations/ocrv/slk-native-activity-capabilities.json",
@@ -1208,7 +1208,7 @@
     },
     {
       "path": "integrations/ocrv/slk_checker_recovery.py",
-      "sha256": "c4dd40427d907d964695b60403a113b399637aa4fc8076aad69d1be184ba9e53"
+      "sha256": "249cf3081e0a2d2b79ada5ae630cb5a93ba2bba0d7725a23ffed7aba1c7f01c3"
     },
     {
       "path": "integrations/temporal/README.md",
@@ -1440,7 +1440,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "8001a7836ed23e8cfb1bde90c3533fa76339c752cb80ef909210358c3f824aa7"
+      "sha256": "3ab3bef70cd75660d2e6deef08ef399298c591f340a98c102a96bd24855ddc0d"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1539,8 +1539,12 @@
       "sha256": "bdde4ab185c8cba5bd9f129eaa191ff547aeb7b8b7c29ab738eaca5c9f0e276b"
     },
     {
+      "path": "src/slk_transport/terminal_budget_fresh_partial.py",
+      "sha256": "eff414f1bb64d486f6f33035af10ea143229f7d2240132bfa7ac766316be62ed"
+    },
+    {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "32953669992756c5523e232ce51843aa1f4f7bf89d321f2e7ceb004519ac00c7"
+      "sha256": "455e65b12b3b59c46239037e7fe2390b5db7492c0c412d58da1a4191fc17c943"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1829,6 +1833,10 @@
     {
       "path": "tests/transport/test_temporal_reload.py",
       "sha256": "93caeed4bcd2887ab40402291445ebc9870192f8918257bceaf6b10db2029664"
+    },
+    {
+      "path": "tests/transport/test_terminal_budget_fresh_partial.py",
+      "sha256": "ee6515427a3cb5e5af090dd17c0fa9ac2d8289cf6db487faead030cbd457fd1a"
     },
     {
       "path": "tests/transport/test_terminal_budget_fresh_review.py",
