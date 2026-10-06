@@ -113,6 +113,7 @@ def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
     assert '"%~1"=="--slk-committed-terminal"' in wrapper
     assert '"%~1"=="--slk-resume-incomplete-checker"' in wrapper
     assert '"%~1"=="--slk-resume-terminal-budget"' in wrapper
+    assert '"%~1"=="--slk-fresh-terminal-budget-review"' in wrapper
     assert '"%~1"=="--slk-continue-consumed-partial"' in wrapper
     assert '"%~1"=="--slk-resume-consumed-partial"' in wrapper
     assert '"%~1"=="--slk-refine-consumed-partial"' in wrapper
@@ -166,6 +167,21 @@ def test_terminal_budget_resolves_the_canonical_launcher_to_a_real_zipapp(
         )
         assert launched.returncode == 0, launched.stdout + launched.stderr
         assert "resume-terminal-budget-checker" in launched.stdout
+
+
+def test_fresh_review_resolves_transport_only_from_its_hash_bound_source(tmp_path: Path) -> None:
+    module = _load_recovery()
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"transport_command": ["managed-transport"]}), encoding="utf-8")
+    request = {
+        "source_request_path": str(source.resolve()),
+        "source_request_sha256": module._sha256(source),
+    }
+
+    assert module._request_transport_command(request, fresh=True) == ["managed-transport"]
+    request["source_request_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="source request"):
+        module._request_transport_command(request, fresh=True)
 
 
 def test_checker_capability_freezes_the_managed_terminal_budget_target() -> None:

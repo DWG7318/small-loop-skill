@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-ocrv-terminal-budget-fresh-review.schema.json",
+  "title": "SLK OCRV terminal-budget fresh-review compatibility request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "strategy", "recovery_invocation_id", "source_request_path",
+    "source_request_sha256", "rejection_native_attempt_path", "rejection_evidence_sha256",
+    "source_rejection_sha256", "owner_authorization", "recovery_root", "result_path"
+  ],
+  "properties": {
+    "schema_version": {"const": "slk.ocrv-terminal-budget-fresh-review-request/v1"},
+    "strategy": {"const": "FRESH_FULL_REVIEW_NO_CHECKPOINT_REUSE"},
+    "recovery_invocation_id": {"type": "string", "format": "uuid"},
+    "source_request_path": {"$ref": "#/$defs/path"},
+    "source_request_sha256": {"$ref": "#/$defs/sha256"},
+    "rejection_native_attempt_path": {"$ref": "#/$defs/path"},
+    "rejection_evidence_sha256": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native-start.received.json", "native-activity.json", "ocrv-capacity-request.json",
+        "ocrv-result.json", "ocrv.stderr.txt", "ocrv.stdout.txt"
+      ],
+      "properties": {
+        "native-start.received.json": {"$ref": "#/$defs/sha256"},
+        "native-activity.json": {"$ref": "#/$defs/sha256"},
+        "ocrv-capacity-request.json": {"$ref": "#/$defs/sha256"},
+        "ocrv-result.json": {"$ref": "#/$defs/sha256"},
+        "ocrv.stderr.txt": {"$ref": "#/$defs/sha256"},
+        "ocrv.stdout.txt": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "source_rejection_sha256": {"$ref": "#/$defs/sha256"},
+    "owner_authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "authority", "decision", "authorization_id", "source_thread_id",
+        "source_request_sha256", "source_rejection_sha256", "occurred_at"
+      ],
+      "properties": {
+        "schema_version": {"const": "slk.owner-terminal-budget-fresh-review-authorization/v1"},
+        "authority": {"const": "OWNER"},
+        "decision": {"const": "APPROVED"},
+        "authorization_id": {"$ref": "#/$defs/identifier"},
+        "source_thread_id": {"$ref": "#/$defs/identifier"},
+        "source_request_sha256": {"$ref": "#/$defs/sha256"},
+        "source_rejection_sha256": {"$ref": "#/$defs/sha256"},
+        "occurred_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "recovery_root": {"$ref": "#/$defs/path"},
+    "result_path": {"$ref": "#/$defs/path"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "path": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

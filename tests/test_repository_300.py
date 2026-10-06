@@ -158,6 +158,22 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
                     "suffix_request_path", "suffix_result_path", "suffix_status",
             "native_attempt_path", "native_result_path",
         },
+        "docs/contracts/slk-ocrv-terminal-budget-fresh-review.schema.json": {
+            "schema_version", "strategy", "recovery_invocation_id", "source_request_path",
+            "source_request_sha256", "rejection_native_attempt_path",
+            "rejection_evidence_sha256", "source_rejection_sha256", "owner_authorization",
+            "recovery_root", "result_path",
+        },
+        "docs/contracts/slk-ocrv-terminal-budget-fresh-review-result.schema.json": {
+            "schema_version", "method_version", "status", "run_id", "cell_id", "attempt",
+            "candidate_message_id", "checker_role_instance_id", "checker_endpoint_version",
+            "recovery_invocation_id", "request_sha256", "capacity_revision_sha256",
+            "source_rejection_sha256", "compatibility_authorization_sha256",
+            "source_d1_incomplete_event_id", "parent_session_id", "child_session_id",
+            "d1_verdict", "d1_event_type", "corrected_d1_event_id", "suffix_mode",
+            "suffix_request_path", "suffix_result_path", "suffix_status",
+            "native_attempt_path", "native_result_path",
+        },
         "docs/contracts/slk-ocrv-committed-terminal-result.schema.json": {
             "schema_version", "method_version", "status", "run_id", "cell_id",
             "attempt", "candidate_message_id", "checker_role_instance_id",

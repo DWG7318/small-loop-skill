@@ -13,6 +13,8 @@ if /I "%~1"=="--slk-post-d1" (
   python "%~dp0slk_checker_recovery.py" %*
 ) else if /I "%~1"=="--slk-resume-terminal-budget" (
   python "%~dp0slk_checker_recovery.py" %*
+) else if /I "%~1"=="--slk-fresh-terminal-budget-review" (
+  python "%~dp0slk_checker_recovery.py" %*
 ) else if /I "%~1"=="--slk-continue-consumed-partial" (
   python "%~dp0slk_checker_recovery.py" %*
 ) else if /I "%~1"=="--slk-resume-consumed-partial" (

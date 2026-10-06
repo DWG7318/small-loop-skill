@@ -123,6 +123,34 @@ def _publish_start(native_request_sha256: str, invocation_id: str) -> None:
 def _sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _request_transport_command(request: dict[str, object], *, fresh: bool) -> list[str]:
+    source = request
+    if fresh:
+        raw_path = request.get("source_request_path")
+        expected = request.get("source_request_sha256")
+        path = Path(raw_path) if isinstance(raw_path, str) else Path()
+        if (
+            not path.is_absolute()
+            or not path.is_file()
+            or not isinstance(expected, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected) is None
+            or _sha256(path) != expected
+        ):
+            raise ValueError("fresh-review source request is unavailable or changed")
+        try:
+            source = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("fresh-review source request is unreadable") from exc
+        if not isinstance(source, dict):
+            raise ValueError("fresh-review source request is not an object")
+    command = source.get("transport_command")
+    if not isinstance(command, list) or not command or not all(
+        isinstance(item, str) and item for item in command
+    ):
+        raise ValueError("transport command is invalid")
+    return command
+
+
 def _run_ocrv_json(arguments: list[str]) -> object:
     completed = subprocess.run(
         checker_adapter._ocr_command() + arguments,
@@ -464,270 +492,246 @@ def _terminal_budget_post_d1_suffix(
     }
 
 
-def _resume_terminal_budget(
-    request: dict[str, object], request_path: Path, command: list[str]
-) -> int:
-    """Consume one Owner-authorized, evidence-bounded terminal budget continuation."""
-
-    sys.path.insert(0, str(_transport_runtime_path(command)))
+def _authenticate_terminal_budget(
+    source: dict[str, object], validated: dict[str, object], invocation_id: str,
+) -> None:
     from slk_transport import worker_completion as wc
-    from slk_transport.contracts import canonical_json_sha256
-    from slk_transport.terminal_budget import (
-        RESULT_SCHEMA,
-        claim_terminal_budget_source,
-        read_session_records,
-        validate,
-        validate_resumed_child,
-    )
 
-    validated = validate(request)
-    checker = validated["checker"]
+    role_id = source["checker_role_instance_id"]
     if (
-        os.environ.get("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID") != checker.role_instance_id
-        or os.environ.get("SLK_OCRV_RECOVERY_ENDPOINT_VERSION") != str(checker.endpoint_version)
-        or os.environ.get("SLK_OCRV_RECOVERY_INVOCATION_ID") != request["recovery_invocation_id"]
+        os.environ.get("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID") != role_id
+        or os.environ.get("SLK_OCRV_RECOVERY_ENDPOINT_VERSION")
+        != str(source["checker_endpoint_version"])
+        or os.environ.get("SLK_OCRV_RECOVERY_INVOCATION_ID") != invocation_id
     ):
-        raise ValueError("terminal-budget continuation is outside the original sealed Checker")
+        raise ValueError("terminal-budget review is outside the original sealed Checker")
     authentication = wc._default_checker_authenticate(
-        request["run_id"], checker.role_instance_id,
-        Path(request["checker_credential_path"]), request["state_command"]
+        source["run_id"], role_id, Path(source["checker_credential_path"]), source["state_command"]
     )
     if (
         authentication.get("status") != "authenticated"
         or authentication.get("role") != "checker"
-        or authentication.get("role_instance_id") != checker.role_instance_id
+        or authentication.get("role_instance_id") != role_id
     ):
         raise ValueError("terminal-budget Checker authentication failed before model start")
-    if authentication.get("runtime_revision") != request["runtime_revision"]:
+    if authentication.get("runtime_revision") != source["runtime_revision"]:
+        frozen = validated.get("frozen_projection") or validated["source_validated"]["frozen_projection"]
         wc._rebind_overwatcher_only_committed_boundary(
-            request,
-            validated["frozen_projection"],
-            wc._default_load_current_projection(request["run_id"], request["state_command"]),
+            source, frozen,
+            wc._default_load_current_projection(source["run_id"], source["state_command"]),
             authentication["runtime_revision"],
         )
 
-    session = validated["session"]
-    if _ocrv_version() != validated["target_ocrv_version"]:
-        raise ValueError("terminal-budget continuation OCRV version is not the exact Owner-approved target")
-    mode, session_detail = _session_resume_mode(request, session)
-    if mode != "RESUME_SESSION":
-        raise ValueError("terminal-budget continuation requires the exact resumable OCRV Session")
-    claim_terminal_budget_source(request)
-    root = Path(request["recovery_root"]).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    detail_path = root / "session-show.json"
-    detail_path.write_text(json.dumps(session_detail, sort_keys=True) + "\n", encoding="utf-8")
+
+def _run_terminal_budget_review(
+    source: dict[str, object], validated: dict[str, object], recovery: dict[str, object],
+    request_path: Path, command: list[str], *, fresh: bool,
+) -> int:
+    """Shared sealed OCRV execution; fresh changes only checkpoint and lineage semantics."""
+
+    from slk_transport import worker_completion as wc
+    from slk_transport.contracts import canonical_json_sha256
+    from slk_transport.terminal_budget import (
+        RESULT_SCHEMA, read_session_records, validate_resumed_child,
+    )
+    from slk_transport.terminal_budget_fresh import (
+        MODEL, PROVIDER, RESULT_SCHEMA as FRESH_RESULT_SCHEMA, validate_fresh_child,
+    )
+
+    session = source["ocrv_session"]
+    root = Path(recovery["recovery_root"]).resolve()
     attempt = root / "native-attempt"
     attempt.mkdir()
-
-    original_path = Path(request["native_attempt_path"]).resolve() / "ocrv-request.json"
-    revised = json.loads(original_path.read_text(encoding="utf-8-sig"))
-    revised_capacity = dict(revised["capacity"])
-    revised_capacity.update(request["capacity_revision"]["new"])
-    revised["capacity"] = revised_capacity
-    capacity_path = attempt / "ocrv-capacity-request.json"
-    capacity_path.write_text(json.dumps(revised, sort_keys=True) + "\n", encoding="utf-8")
-    with (root / "resume-consumed.json").open("x", encoding="utf-8") as stream:
-        json.dump(
-            {
-                "request_sha256": _sha256(request_path),
-                "source_d1_incomplete_event_id": request["d1_incomplete_event_id"],
-                "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
-                "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
-            },
-            stream,
-            sort_keys=True,
+    original = json.loads(
+        (Path(source["native_attempt_path"]).resolve() / "ocrv-request.json").read_text(
+            encoding="utf-8-sig"
         )
-        stream.write("\n")
-
+    )
+    original["capacity"] = {**original["capacity"], **source["capacity_revision"]["new"]}
+    capacity_path = attempt / "ocrv-capacity-request.json"
+    capacity_path.write_text(json.dumps(original, sort_keys=True) + "\n", encoding="utf-8")
     os.environ["SLK_NATIVE_START_RECEIPT"] = str(attempt / "native-start.received.json")
     os.environ["SLK_NATIVE_START_CONTEXT"] = json.dumps(
         {
-            "adapter": "ocrv-checker",
-            "run_id": request["run_id"],
-            "cell_id": request["cell_id"],
-            "message_id": request["candidate_message_id"],
-            "request_sha256": request["payload_sha256"],
+            "adapter": "ocrv-checker", "run_id": source["run_id"], "cell_id": source["cell_id"],
+            "message_id": source["candidate_message_id"], "request_sha256": source["payload_sha256"],
             "native_request_sha256": _sha256(capacity_path),
         },
-        sort_keys=True,
-        separators=(",", ":"),
+        sort_keys=True, separators=(",", ":"),
     )
     invocation_id = str(uuid.uuid4())
     code = checker_adapter.run(
-        capacity_path,
-        attempt / "ocrv-result.json",
-        invocation_override=invocation_id,
-        background_override=Path(request["background_path"]).resolve(),
-        resume_session=str(session["session_id"]),
+        capacity_path, attempt / "ocrv-result.json", invocation_override=invocation_id,
+        background_override=Path(source["background_path"]).resolve(),
+        resume_session=None if fresh else str(session["session_id"]),
         result_request_path=capacity_path,
     )
     result = json.loads((attempt / "ocrv-result.json").read_text(encoding="utf-8"))
     child_session_id = result.get("review", {}).get("session_id")
     if (
         result.get("review_invocation_id") != invocation_id
-        or not isinstance(child_session_id, str)
-        or not child_session_id
+        or not isinstance(child_session_id, str) or not child_session_id
         or child_session_id == session["session_id"]
-        or result.get("review", {}).get("provider") != "dashscope-tokenplan"
-        or result.get("review", {}).get("model") != "qwen3.8-max"
+        or result.get("review", {}).get("provider") != PROVIDER
+        or result.get("review", {}).get("model") != MODEL
         or result.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
     ):
-        raise ValueError("terminal-budget OCRV result changed the frozen model or did not create a child Session")
+        raise ValueError("terminal-budget OCRV result changed the model or Session identity")
     raw_path = attempt / "ocrv-review.json"
     raw_review = json.loads(raw_path.read_text(encoding="utf-8-sig"))
     child_detail = _run_ocrv_json([
-        "session", "show", "--json", "--repo", str(request["candidate_repository"]),
-        child_session_id,
+        "session", "show", "--json", "--repo", str(source["candidate_repository"]), child_session_id,
     ])
-    if not isinstance(child_detail, dict) or set(child_detail) != {"summary", "items"}:
-        raise ValueError("terminal-budget child Session detail is invalid")
-    child_summary = child_detail.get("summary")
+    child_summary = child_detail.get("summary") if isinstance(child_detail, dict) else None
     if (
-        not isinstance(child_summary, dict)
+        not isinstance(child_detail, dict) or set(child_detail) != {"summary", "items"}
+        or not isinstance(child_summary, dict)
         or child_summary.get("session_id") != child_session_id
         or child_summary.get("run_manifest") != raw_review.get("manifest")
     ):
         raise ValueError("terminal-budget child Session does not match the native result")
     child_path = Path(str(child_summary.get("file_path", ""))).resolve()
-    expected_child_path = Path(str(request["session_record_path"])).resolve().parent / (
+    expected_child = Path(str(source["session_record_path"])).resolve().parent / (
         child_session_id + ".jsonl"
     )
-    if child_path != expected_child_path or not child_path.is_file():
+    if child_path != expected_child or not child_path.is_file():
         raise ValueError("terminal-budget child Session escaped the frozen OCRV store")
     native_session_path = attempt / "native-session.jsonl"
     native_session_path.write_bytes(child_path.read_bytes())
-    child_records = read_session_records(native_session_path)
-    native_lineage = [row for row in child_records if row.get("type") == "resume_lineage"]
-    session_ends = [row for row in child_records if row.get("type") == "session_end"]
-    if (
-        len(native_lineage) != 1
-        or len(session_ends) != 1
-        or session_ends[0].get("run_manifest") != raw_review.get("manifest")
-    ):
-        raise ValueError("terminal-budget child Session lineage or terminal manifest is incomplete")
-    parent_raw = json.loads(Path(str(request["raw_review_path"])).read_text(encoding="utf-8-sig"))
-    validate_resumed_child(
-        parent_raw,
-        raw_review,
-        native_lineage[0],
-        target_ocrv_version=validated["target_ocrv_version"],
-        target_rule_config_sha256=validated["target_rule_config_sha256"],
-        target_runtime_config_sha256=validated["target_runtime_config_sha256"],
-    )
-    lineage = {
-        "schema_version": "slk.ocrv-terminal-budget-resume-lineage/v1",
-        "source_request_path": str(request_path.resolve()),
-        "source_request_sha256": _sha256(request_path),
-        "original_native_request_sha256": request["immutable_sha256"]["ocrv-request.json"],
-        "original_terminal_sha256": request["immutable_sha256"]["completed.json"],
-        "original_result_sha256": request["immutable_sha256"]["ocrv-result.json"],
-        "original_raw_review_sha256": request["immutable_sha256"]["raw_review"],
-        "session_show_sha256": _sha256(detail_path),
-        "parent_session_id": session["session_id"],
-        "child_session_id": child_session_id,
-        "review_invocation_id": invocation_id,
-        "native_session_sha256": _sha256(native_session_path),
-        "d1_started_event_id": request["d1_started_event_id"],
-        "d1_incomplete_event_id": request["d1_incomplete_event_id"],
-        "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
-        "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
-                "runtime_config_binding_sha256": canonical_json_sha256(
-                    request["runtime_config_binding"]
-                ),
-        "owner_authorization": request["owner_authorization"],
-        "capacity_request_sha256": _sha256(capacity_path),
+    records = read_session_records(native_session_path)
+    parent_raw = json.loads(Path(str(source["raw_review_path"])).read_text(encoding="utf-8-sig"))
+    validation = {
+        "target_ocrv_version": validated["target_ocrv_version"],
+        "target_rule_config_sha256": validated["target_rule_config_sha256"],
+        "target_runtime_config_sha256": validated["target_runtime_config_sha256"],
     }
-    lineage_path = attempt / "resume-lineage.json"
-    lineage_path.write_text(json.dumps(lineage, sort_keys=True) + "\n", encoding="utf-8")
-    started = json.loads(
-        (attempt / "native-start.received.json").read_text(encoding="utf-8")
-    )
-    (attempt / "started.json").write_text(
-        json.dumps(started, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    terminal = {
-        "schema_version": "slk.transport-result/v1",
-        "message_id": request["candidate_message_id"],
-        "run_id": request["run_id"],
-        "adapter": "ocrv-checker",
-        "status": "completed",
-        "native_identity": {
-            "run_id": request["run_id"],
-            "cell_id": request["cell_id"],
+    if fresh:
+        validate_fresh_child(parent_raw, raw_review, child_records=records, **validation)
+        lineage = {
+            "schema_version": "slk.ocrv-terminal-budget-fresh-compatibility-lineage/v1",
+            "strategy": recovery["strategy"],
+            "source_request_path": recovery["source_request_path"],
+            "source_request_sha256": recovery["source_request_sha256"],
+            "source_rejection_sha256": recovery["source_rejection_sha256"],
+            "compatibility_request_path": str(request_path.resolve()),
+            "compatibility_request_sha256": _sha256(request_path),
+            "parent_session_id": session["session_id"], "child_session_id": child_session_id,
+            "review_invocation_id": invocation_id, "candidate_commit": source["candidate_commit"],
+            "candidate_message_id": source["candidate_message_id"],
+            "d1_started_event_id": source["d1_started_event_id"],
+            "d1_incomplete_event_id": source["d1_incomplete_event_id"],
+            "authorization_sha256": canonical_json_sha256(recovery["owner_authorization"]),
+            "native_session_sha256": _sha256(native_session_path), "checkpoint_reuse": False,
+        }
+        lineage_name = "compatibility-lineage.json"
+    else:
+        native_lineage = [row for row in records if row.get("type") == "resume_lineage"]
+        ends = [row for row in records if row.get("type") == "session_end"]
+        if len(native_lineage) != 1 or len(ends) != 1 or ends[0].get(
+            "run_manifest"
+        ) != raw_review.get("manifest"):
+            raise ValueError("terminal-budget child Session lineage or terminal manifest is incomplete")
+        validate_resumed_child(parent_raw, raw_review, native_lineage[0], **validation)
+        lineage = {
+            "schema_version": "slk.ocrv-terminal-budget-resume-lineage/v1",
+            "source_request_path": str(request_path.resolve()),
+            "source_request_sha256": _sha256(request_path),
+            "original_native_request_sha256": source["immutable_sha256"]["ocrv-request.json"],
+            "original_terminal_sha256": source["immutable_sha256"]["completed.json"],
+            "original_result_sha256": source["immutable_sha256"]["ocrv-result.json"],
+            "original_raw_review_sha256": source["immutable_sha256"]["raw_review"],
+            "session_show_sha256": _sha256(root / "session-show.json"),
+            "parent_session_id": session["session_id"], "child_session_id": child_session_id,
             "review_invocation_id": invocation_id,
-            "session_id": child_session_id,
-            "provider": "dashscope-tokenplan",
-            "model": "qwen3.8-max",
-            "verdict": result["verdict"],
-            "exit_code": code,
-            "review_segment_count": 0,
+            "native_session_sha256": _sha256(native_session_path),
+            "d1_started_event_id": source["d1_started_event_id"],
+            "d1_incomplete_event_id": source["d1_incomplete_event_id"],
+            "capacity_revision_sha256": canonical_json_sha256(source["capacity_revision"]),
+            "ocrv_transition_sha256": canonical_json_sha256(source["ocrv_transition"]),
+            "runtime_config_binding_sha256": canonical_json_sha256(source["runtime_config_binding"]),
+            "owner_authorization": source["owner_authorization"],
+            "capacity_request_sha256": _sha256(capacity_path),
+        }
+        lineage_name = "resume-lineage.json"
+    lineage_path = attempt / lineage_name
+    lineage_path.write_text(json.dumps(lineage, sort_keys=True) + "\n", encoding="utf-8")
+    (attempt / "started.json").write_bytes((attempt / "native-start.received.json").read_bytes())
+    terminal = {
+        "schema_version": "slk.transport-result/v1", "message_id": source["candidate_message_id"],
+        "run_id": source["run_id"], "adapter": "ocrv-checker", "status": "completed",
+        "native_identity": {
+            "run_id": source["run_id"], "cell_id": source["cell_id"],
+            "review_invocation_id": invocation_id, "session_id": child_session_id,
+            "provider": PROVIDER, "model": MODEL, "verdict": result["verdict"],
+            "exit_code": code, "review_segment_count": 0,
         },
         "error_code": None,
         "evidence": [
-            "started.json", "ocrv-capacity-request.json", "resume-lineage.json",
+            "started.json", "ocrv-capacity-request.json", lineage_name,
             "native-session.jsonl", "ocrv-result.json",
         ],
     }
-    (attempt / "completed.json").write_text(
-        json.dumps(terminal, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    (attempt / "completed.json").write_text(json.dumps(terminal, sort_keys=True) + "\n", encoding="utf-8")
 
-    status = "CHECKER_D1_STILL_INCOMPLETE"
-    d1_event_type = "D1_INCOMPLETE"
+    status, event_type = "CHECKER_D1_STILL_INCOMPLETE", "D1_INCOMPLETE"
     suffix = {
-        "corrected_d1_event_id": None,
-        "suffix_mode": None,
-        "suffix_request_path": None,
-        "suffix_result_path": None,
-        "suffix_status": "NOT_APPLICABLE",
+        "corrected_d1_event_id": None, "suffix_mode": None, "suffix_request_path": None,
+        "suffix_result_path": None, "suffix_status": "NOT_APPLICABLE",
     }
+    route_source = dict(source)
+    route_source.update(
+        recovery_invocation_id=recovery["recovery_invocation_id"],
+        recovery_root=str(root), result_path=str(root / "result.json"),
+    )
     if result["verdict"] != "INCOMPLETE":
-        raw = raw_path
-        committed = {key: request[key] for key in (
-            "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id",
-            "attempt", "plan_revision", "runtime_revision", "token_sequence",
-            "worker_role_instance_id", "checker_role_instance_id", "checker_endpoint_version",
-            "checker_endpoint", "runtime_projection_path", "runtime_projection_sha256",
-            "candidate_repository", "candidate_commit", "candidate_parent",
-            "candidate_message_id", "payload_sha256", "candidate_submitted_event_id",
-            "transport_started_event_id", "commit_request_path", "commit_request_sha256",
-            "native_attempt_path", "checker_credential_path", "state_command", "transport_command",
-        )}
+        fields = (
+            "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id", "attempt",
+            "plan_revision", "runtime_revision", "token_sequence", "worker_role_instance_id",
+            "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint",
+            "runtime_projection_path", "runtime_projection_sha256", "candidate_repository",
+            "candidate_commit", "candidate_parent", "candidate_message_id", "payload_sha256",
+            "candidate_submitted_event_id", "transport_started_event_id", "commit_request_path",
+            "commit_request_sha256", "native_attempt_path", "checker_credential_path",
+            "state_command", "transport_command",
+        )
+        recovery_terminal = {
+            "native_attempt_path": str(attempt), "started_sha256": _sha256(attempt / "started.json"),
+            "completed_sha256": _sha256(attempt / "completed.json"),
+            "ocrv_result_sha256": _sha256(attempt / "ocrv-result.json"),
+            "raw_review_sha256": _sha256(raw_path),
+            "capacity_request_sha256": _sha256(capacity_path),
+            "native_session_sha256": _sha256(native_session_path),
+            "d1_correction": validated["d1_correction"],
+        }
+        if fresh:
+            recovery_terminal.update(
+                compatibility_request_path=str(request_path.resolve()),
+                compatibility_request_sha256=_sha256(request_path),
+                compatibility_lineage_sha256=_sha256(lineage_path),
+            )
+        else:
+            recovery_terminal.update(
+                resume_request_sha256=_sha256(lineage_path),
+                source_request_path=str(request_path.resolve()), source_request_sha256=_sha256(request_path),
+                resume_lineage_sha256=_sha256(lineage_path),
+            )
+        committed = {key: route_source[key] for key in fields}
         committed.update(
-            schema_version=wc.COMMITTED_TERMINAL_SCHEMA,
-            raw_review_path=str(raw),
+            schema_version=wc.COMMITTED_TERMINAL_SCHEMA, raw_review_path=str(raw_path),
             result_path=str(root / "committed-terminal-result.json"),
-            immutable_sha256={name: request["immutable_sha256"][name] for name in (
-                "endpoint.json", "envelope.json", "started.json", "ocrv-request.json"
-            )},
-            recovery_terminal={
-                "native_attempt_path": str(attempt),
-                "started_sha256": _sha256(attempt / "started.json"),
-                "completed_sha256": _sha256(attempt / "completed.json"),
-                "ocrv_result_sha256": _sha256(attempt / "ocrv-result.json"),
-                "resume_request_sha256": _sha256(lineage_path),
-                "raw_review_sha256": _sha256(raw),
-                "source_request_path": str(request_path.resolve()),
-                "source_request_sha256": _sha256(request_path),
-                "capacity_request_sha256": _sha256(capacity_path),
-                "resume_lineage_sha256": _sha256(lineage_path),
-                "native_session_sha256": _sha256(native_session_path),
-                "d1_correction": validated["d1_correction"],
+            immutable_sha256={
+                name: source["immutable_sha256"][name]
+                for name in ("endpoint.json", "envelope.json", "started.json", "ocrv-request.json")
             },
+            recovery_terminal=recovery_terminal,
         )
         committed_path = root / "committed-terminal.json"
         committed_path.write_text(json.dumps(committed, sort_keys=True) + "\n", encoding="utf-8")
         wc._validate_committed_terminal_request(committed)
         completed = subprocess.run(
-            command + [
-                "checker-record-committed-terminal", "--request", str(committed_path),
-                "--sha256", _sha256(committed_path),
-            ],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            check=False,
-            env=os.environ.copy(),
+            command + ["checker-record-committed-terminal", "--request", str(committed_path),
+                       "--sha256", _sha256(committed_path)],
+            stdin=subprocess.DEVNULL, capture_output=True, check=False, env=os.environ.copy(),
             **windows_no_window_kwargs(),
         )
         if completed.returncode != 0:
@@ -735,47 +739,107 @@ def _resume_terminal_budget(
             sys.stderr.buffer.write(completed.stderr)
             return completed.returncode
         recorded = json.loads(completed.stdout)
-        if (
-            recorded.get("request_sha256") != _sha256(committed_path)
-            or recorded.get("d1_verdict") != result["verdict"]
-        ):
+        if recorded.get("request_sha256") != _sha256(committed_path) or recorded.get(
+            "d1_verdict"
+        ) != result["verdict"]:
             raise ValueError("terminal-budget committed D1 response is not exact")
-        status = "CHECKER_D1_RECORDED"
-        d1_event_type = recorded["d1_event_type"]
+        status, event_type = "CHECKER_D1_RECORDED", recorded["d1_event_type"]
         suffix = _terminal_budget_post_d1_suffix(
-            request, validated, result, attempt, root, command
+            route_source, validated, result, attempt, root, command
         )
 
     outer = {
-        "schema_version": RESULT_SCHEMA,
-        "method_version": request["method_version"],
-        "status": status,
-        "run_id": request["run_id"],
-        "cell_id": request["cell_id"],
-        "attempt": request["attempt"],
-        "candidate_message_id": request["candidate_message_id"],
-        "checker_role_instance_id": request["checker_role_instance_id"],
-        "checker_endpoint_version": request["checker_endpoint_version"],
-        "recovery_invocation_id": request["recovery_invocation_id"],
+        "schema_version": FRESH_RESULT_SCHEMA if fresh else RESULT_SCHEMA,
+        "method_version": source["method_version"], "status": status,
+        "run_id": source["run_id"], "cell_id": source["cell_id"], "attempt": source["attempt"],
+        "candidate_message_id": source["candidate_message_id"],
+        "checker_role_instance_id": source["checker_role_instance_id"],
+        "checker_endpoint_version": source["checker_endpoint_version"],
+        "recovery_invocation_id": recovery["recovery_invocation_id"],
         "request_sha256": _sha256(request_path),
-        "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
-        "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
-        "runtime_config_binding_sha256": canonical_json_sha256(
-            request["runtime_config_binding"]
-        ),
-        "source_d1_incomplete_event_id": request["d1_incomplete_event_id"],
-        "parent_session_id": session["session_id"],
-        "child_session_id": child_session_id,
-        "d1_verdict": result["verdict"],
-        "d1_event_type": d1_event_type,
-        **suffix,
+        "capacity_revision_sha256": canonical_json_sha256(source["capacity_revision"]),
+        "source_d1_incomplete_event_id": source["d1_incomplete_event_id"],
+        "parent_session_id": session["session_id"], "child_session_id": child_session_id,
+        "d1_verdict": result["verdict"], "d1_event_type": event_type, **suffix,
         "native_attempt_path": str(attempt),
         "native_result_path": str(attempt / "ocrv-result.json"),
     }
+    if fresh:
+        outer.update(
+            source_rejection_sha256=recovery["source_rejection_sha256"],
+            compatibility_authorization_sha256=canonical_json_sha256(recovery["owner_authorization"]),
+        )
+    else:
+        outer.update(
+            ocrv_transition_sha256=canonical_json_sha256(source["ocrv_transition"]),
+            runtime_config_binding_sha256=canonical_json_sha256(source["runtime_config_binding"]),
+        )
     encoded = (json.dumps(outer, sort_keys=True) + "\n").encode("utf-8")
-    Path(request["result_path"]).write_bytes(encoded)
+    Path(recovery["result_path"]).write_bytes(encoded)
     sys.stdout.buffer.write(encoded)
     return 0
+
+
+def _resume_terminal_budget(
+    request: dict[str, object], request_path: Path, command: list[str]
+) -> int:
+    sys.path.insert(0, str(_transport_runtime_path(command)))
+    from slk_transport.contracts import canonical_json_sha256
+    from slk_transport.terminal_budget import claim_terminal_budget_source, validate
+
+    validated = validate(request)
+    _authenticate_terminal_budget(request, validated, str(request["recovery_invocation_id"]))
+    if _ocrv_version() != validated["target_ocrv_version"]:
+        raise ValueError("terminal-budget continuation OCRV version is not the approved target")
+    mode, detail = _session_resume_mode(request, validated["session"])
+    if mode != "RESUME_SESSION":
+        raise ValueError("terminal-budget continuation requires the exact resumable OCRV Session")
+    claim_terminal_budget_source(request)
+    root = Path(request["recovery_root"]).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "session-show.json").write_text(json.dumps(detail, sort_keys=True) + "\n", encoding="utf-8")
+    with (root / "resume-consumed.json").open("x", encoding="utf-8") as stream:
+        json.dump({
+            "request_sha256": _sha256(request_path),
+            "source_d1_incomplete_event_id": request["d1_incomplete_event_id"],
+            "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+            "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
+        }, stream, sort_keys=True)
+        stream.write("\n")
+    return _run_terminal_budget_review(request, validated, request, request_path, command, fresh=False)
+
+
+def _fresh_terminal_budget_review(
+    request: dict[str, object], request_path: Path, command: list[str]
+) -> int:
+    sys.path.insert(0, str(_transport_runtime_path(command)))
+    from slk_transport.contracts import canonical_json_sha256
+    from slk_transport.terminal_budget_fresh import (
+        claim_fresh_review_source, validate_fresh_review_request, verify_managed_target,
+    )
+
+    validated = validate_fresh_review_request(request)
+    source = validated["source_request"]
+    _authenticate_terminal_budget(source, validated, str(request["recovery_invocation_id"]))
+    if _ocrv_version() != validated["target_ocrv_version"]:
+        raise ValueError("fresh-review OCRV version is not the approved target")
+    verify_managed_target(source)
+    mode, detail = _session_resume_mode(source, source["ocrv_session"])
+    if mode != "RESUME_SESSION":
+        raise ValueError("fresh review lost the exact rejected parent Session")
+    claim_fresh_review_source(request)
+    root = Path(request["recovery_root"]).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "session-show.json").write_text(json.dumps(detail, sort_keys=True) + "\n", encoding="utf-8")
+    with (root / "fresh-consumed.json").open("x", encoding="utf-8") as stream:
+        json.dump({
+            "request_sha256": _sha256(request_path),
+            "source_request_sha256": request["source_request_sha256"],
+            "source_rejection_sha256": request["source_rejection_sha256"],
+            "authorization_sha256": canonical_json_sha256(request["owner_authorization"]),
+        }, stream, sort_keys=True)
+        stream.write("\n")
+    return _run_terminal_budget_review(source, validated, request, request_path, command, fresh=True)
 
 
 def _resume_partial(
@@ -1264,6 +1328,7 @@ def main() -> int:
     mode.add_argument("--slk-committed-terminal", action="store_true")
     mode.add_argument("--slk-resume-incomplete-checker", action="store_true")
     mode.add_argument("--slk-resume-terminal-budget", action="store_true")
+    mode.add_argument("--slk-fresh-terminal-budget-review", action="store_true")
     mode.add_argument("--slk-continue-consumed-partial", action="store_true")
     mode.add_argument("--slk-resume-consumed-partial", action="store_true")
     mode.add_argument("--slk-refine-consumed-partial", action="store_true")
@@ -1279,7 +1344,9 @@ def main() -> int:
         print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
         return 4
     expected_schema = (
-        "slk.ocrv-terminal-budget-resume-request/v1"
+        "slk.ocrv-terminal-budget-fresh-review-request/v1"
+        if args.slk_fresh_terminal_budget_review
+        else "slk.ocrv-terminal-budget-resume-request/v1"
         if args.slk_resume_terminal_budget
         else "slk.ocrv-incomplete-checker-resume-request/v1"
         if args.slk_resume_incomplete_checker or args.slk_continue_consumed_partial
@@ -1296,15 +1363,19 @@ def main() -> int:
     ):
         print("SLK_OCRV_RECOVERY_INVALID: request identity mismatch", file=sys.stderr)
         return 4
-    command = request.get("transport_command")
-    if not isinstance(command, list) or not command or not all(isinstance(item, str) and item for item in command):
-        print("SLK_OCRV_RECOVERY_INVALID: transport command is invalid", file=sys.stderr)
+    try:
+        command = _request_transport_command(
+            request, fresh=args.slk_fresh_terminal_budget_review
+        )
+    except ValueError as exc:
+        print(f"SLK_OCRV_RECOVERY_INVALID: {exc}", file=sys.stderr)
         return 4
     environment = os.environ.copy()
     environment.pop("SLK_ROLE_CREDENTIAL", None)
     environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
     if (args.slk_existing_terminal or args.slk_committed_terminal or args.slk_resume_incomplete_checker
         or args.slk_resume_terminal_budget
+        or args.slk_fresh_terminal_budget_review
         or args.slk_continue_consumed_partial or args.slk_resume_consumed_partial
         or args.slk_refine_consumed_partial
         or args.slk_consume_existing_partial):
@@ -1327,6 +1398,8 @@ def main() -> int:
                 request, args.request.resolve(), command, args.evidence_root.resolve())
         if args.slk_resume_terminal_budget:
             return _resume_terminal_budget(request, args.request.resolve(), command)
+        if args.slk_fresh_terminal_budget_review:
+            return _fresh_terminal_budget_review(request, args.request.resolve(), command)
         if args.slk_resume_consumed_partial:
             return _resume_partial(request, args.request.resolve(), command, consumed=True, resume_later=True)
         if args.slk_refine_consumed_partial:

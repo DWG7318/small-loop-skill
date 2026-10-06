@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "0b6fffbf42a9eb1a8583809a8b130f793f6c109f7f7200e36a958fdef036da1a"
+      "sha256": "51ec3a6740b6e34d1def114afc0c97903a73f674beb82aba9a1b6dec115ac8a1"
     },
     {
       "path": "Cargo.lock",
@@ -48,7 +48,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "17a41cbaf3ffa3326cb47ab6f072accfda5393b7a2d9a52ca72c33b9fe765928"
+      "sha256": "905a27c1efae81fe7dbd1b7b9eefe0ad206f32054366a8443a1d4a00d434edc9"
     },
     {
       "path": "README.zh-CN.md",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "493f5047fbb5089b6526806ebb918ff3c095f7a169fe9bd544a008dbb739edf4"
+      "sha256": "e568c40aaddd74723430e94cce7a0b90827b8ea6754eeb90ea5c0e7247465b4e"
     },
     {
       "path": "VERSION",
@@ -767,6 +767,14 @@
       "sha256": "525b6793d9d4205bd105b1b2f82b398c098fe5203bd254e2c83285fa1e12cbb6"
     },
     {
+      "path": "docs/contracts/slk-ocrv-terminal-budget-fresh-review-result.schema.json",
+      "sha256": "956bd5fc592e3e3118cc45fa13ba1ee5ebaaf1134a852c43c7e1a8df0725a968"
+    },
+    {
+      "path": "docs/contracts/slk-ocrv-terminal-budget-fresh-review.schema.json",
+      "sha256": "467c3c1aae6ea7f3c800502a18a93ecfc336a402804339cca26bc559eba3bada"
+    },
+    {
       "path": "docs/contracts/slk-ocrv-terminal-budget-resume-result.schema.json",
       "sha256": "f399e7cc0a28946b48596823c79d7565622acfc073fc066c435da51f13ad1f82"
     },
@@ -884,7 +892,7 @@
     },
     {
       "path": "docs/runtime/SLK-4.4.2-MIGRATION.md",
-      "sha256": "92dfe0b460feb1e552766316887c95138af6b887cd31bab045fd316d3a134d57"
+      "sha256": "b9a2d9bb80c3964eaf435959b3d99aa09f0b32ff74e4c63e9cf469986efca994"
     },
     {
       "path": "docs/runtime/SLK-TEMPORAL.md",
@@ -1140,7 +1148,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "fa1a9c42ac71969af8c6a4072a6948acdb44437c66d7e5efc3b569dd0e8f38b7"
+      "sha256": "ff660504c00eac065836462bc7387aa03cb96a0b1285ee8ef68cdcb659125b19"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1184,7 +1192,7 @@
     },
     {
       "path": "integrations/ocrv/slk-checker.cmd",
-      "sha256": "9ca6c45d28f5da1e16dd0c10a8e61af3373f659248f63e82ff0f8420632b495b"
+      "sha256": "a8fff26578e4973cf111f093b33176c368f9238a9cd5bc1dceb494b754feaa7a"
     },
     {
       "path": "integrations/ocrv/slk-native-activity-capabilities.json",
@@ -1200,7 +1208,7 @@
     },
     {
       "path": "integrations/ocrv/slk_checker_recovery.py",
-      "sha256": "8762b8b7bb3611d683fe80bfb14f82e87acc18de73efd23cfb57890839b3045b"
+      "sha256": "0edb8d72fa8644db37d6143e432c58a95efc5bbfaeb9f13aaa0e3dec2f05dfab"
     },
     {
       "path": "integrations/temporal/README.md",
@@ -1432,7 +1440,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "d1753a727035c27d381f98da628ad80dbae9157f95341355f989453a8e594cf9"
+      "sha256": "8001a7836ed23e8cfb1bde90c3533fa76339c752cb80ef909210358c3f824aa7"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1527,8 +1535,12 @@
       "sha256": "fdb48f78e63a270b4d2a16087b6f3c706db4221ce9158e90327ef65a74e4e9ec"
     },
     {
+      "path": "src/slk_transport/terminal_budget_fresh.py",
+      "sha256": "0901ffe13835a42d5478d8ed904d5513788587ba8054b5fbfbf368e21c2ccd26"
+    },
+    {
       "path": "src/slk_transport/worker_completion.py",
-      "sha256": "a20da6a67a3d63a6c9cb20e6d68be970b9b01913049f576afb5fbb32a1fadcad"
+      "sha256": "32953669992756c5523e232ce51843aa1f4f7bf89d321f2e7ceb004519ac00c7"
     },
     {
       "path": "src/slk_transport/workspace.py",
@@ -1544,7 +1556,7 @@
     },
     {
       "path": "tests/install/test_build_local_package.py",
-      "sha256": "be9e1062b107a887b1b2f6759eee00691bc86ca142095ea30a1d5e4819323061"
+      "sha256": "b478774aad5f89a817b76aeabb22982bab0055be993f338e8787d8ff15c24cad"
     },
     {
       "path": "tests/install/test_dsh_integration.py",
@@ -1560,7 +1572,7 @@
     },
     {
       "path": "tests/install/test_ocrv_integration.py",
-      "sha256": "5ab9842e4f49c59f7d854056670676248d77576af5e65ee1d420058a35f52cca"
+      "sha256": "6ef11628a04d4bc67baa63c5d52934eb4ebe39e9f7d570026d43add97fbd1ef9"
     },
     {
       "path": "tests/install/test_ocrv_preflight.py",
@@ -1632,7 +1644,7 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "4156a8167d49028a58bd78d7aca7f9964884fcdf9388ce9812550fbb5dfac503"
+      "sha256": "095709ea030936ca874ae4bd75b0e3802786b76de46cabc3521720fa4dbc93ba"
     },
     {
       "path": "tests/test_skill_collection_300.py",
@@ -1680,7 +1692,7 @@
     },
     {
       "path": "tests/transport/test_cli.py",
-      "sha256": "5a3ac809e84786e65c9caa0118c0600d5b3339b73b0190c33ca4f524c5097142"
+      "sha256": "e8ff13ece819653d64b1382ba758e6dbf402f6122becdd29f382863624df0694"
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
@@ -1813,6 +1825,10 @@
     {
       "path": "tests/transport/test_temporal_reload.py",
       "sha256": "93caeed4bcd2887ab40402291445ebc9870192f8918257bceaf6b10db2029664"
+    },
+    {
+      "path": "tests/transport/test_terminal_budget_fresh_review.py",
+      "sha256": "e943645bbfef39ef3408624f648ab9eaa0b7b5e0e4c97cd463a2bd66c7308d5b"
     },
     {
       "path": "tests/transport/test_terminal_budget_resume.py",

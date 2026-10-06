@@ -90,6 +90,8 @@ def test_cli_exposes_one_commit_only_checker_recovery_entry(tmp_path: Path) -> N
     assert "consume-committed-checker-terminal" in result.stdout
     assert "prepare-terminal-budget-checker" in result.stdout
     assert "resume-terminal-budget-checker" in result.stdout
+    assert "prepare-terminal-budget-fresh-review" in result.stdout
+    assert "resume-terminal-budget-fresh-review" in result.stdout
 
 
 def test_cli_exposes_standard_new_run_preparation_entries(tmp_path: Path) -> None:
