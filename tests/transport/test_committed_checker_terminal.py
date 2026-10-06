@@ -458,6 +458,39 @@ def test_outer_consumer_validates_chain_then_starts_only_the_sealed_checker_host
     assert "SLK_OVERWATCHER_CREDENTIAL" not in environment
 
 
+def test_committed_terminal_accepts_the_installed_canonical_cmd_launcher(
+    tmp_path: Path,
+) -> None:
+    request, _ = fixture(tmp_path)
+    state_path = Path(request["state_command"][0])
+    state_path.with_name("slk-transport.pyz").write_bytes(b"transport")
+    launcher = state_path.with_name("slk-transport.cmd")
+    launcher.write_text(
+        '@echo off\npython "%~dp0slk-transport.pyz" %*\nexit /b %ERRORLEVEL%\n',
+        encoding="utf-8",
+    )
+    request["transport_command"] = [str(launcher.resolve())]
+
+    validated = worker_completion._validate_committed_terminal_request(request)
+
+    assert validated["checker"].role == "checker"
+
+
+def test_committed_terminal_rejects_a_tampered_cmd_launcher(tmp_path: Path) -> None:
+    request, _ = fixture(tmp_path)
+    state_path = Path(request["state_command"][0])
+    state_path.with_name("slk-transport.pyz").write_bytes(b"transport")
+    launcher = state_path.with_name("slk-transport.cmd")
+    launcher.write_text("@echo off\npython other.py %*\n", encoding="utf-8")
+    request["transport_command"] = [str(launcher.resolve())]
+
+    with pytest.raises(
+        CompletionError,
+        match="state or transport command is not the installed closed runtime",
+    ):
+        worker_completion._validate_committed_terminal_request(request)
+
+
 def test_checker_host_authenticates_current_revision_and_reuses_existing_d1_recorder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

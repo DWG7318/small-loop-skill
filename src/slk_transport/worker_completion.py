@@ -4652,17 +4652,39 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
     state_command = request["state_command"]
     transport_command = request["transport_command"]
     state_path = Path(state_command[0]).resolve()
-    python_path = Path(transport_command[0]).resolve()
-    transport_path = Path(transport_command[-1]).resolve()
+    direct_transport = False
+    launcher_transport = False
+    if len(transport_command) == 2:
+        python_path = Path(transport_command[0]).resolve()
+        transport_path = Path(transport_command[1]).resolve()
+        direct_transport = (
+            python_path == Path(sys.executable).resolve()
+            and transport_path.name.lower() == "slk-transport.pyz"
+            and transport_path.is_file()
+            and state_path.parent == transport_path.parent
+        )
+    elif len(transport_command) == 1:
+        launcher_path = Path(transport_command[0]).resolve()
+        zipapp_path = launcher_path.with_name("slk-transport.pyz")
+        try:
+            launcher_text = launcher_path.read_text(encoding="utf-8-sig").replace(
+                "\r\n", "\n"
+            )
+        except (OSError, UnicodeError):
+            launcher_text = ""
+        launcher_transport = (
+            launcher_path.name.lower() == "slk-transport.cmd"
+            and launcher_path.is_file()
+            and zipapp_path.is_file()
+            and state_path.parent == launcher_path.parent
+            and launcher_text
+            == '@echo off\npython "%~dp0slk-transport.pyz" %*\nexit /b %ERRORLEVEL%\n'
+        )
     if (
         len(state_command) != 1
         or state_path.name.lower() != "slk-state.exe"
         or not state_path.is_file()
-        or len(transport_command) != 2
-        or python_path != Path(sys.executable).resolve()
-        or transport_path.name.lower() != "slk-transport.pyz"
-        or not transport_path.is_file()
-        or state_path.parent != transport_path.parent
+        or not (direct_transport or launcher_transport)
     ):
         raise CompletionError(
             "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID",
