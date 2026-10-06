@@ -67,6 +67,7 @@ from .worker_completion import (
     resume_incomplete_checker,
     resume_terminal_budget_checker,
     resume_terminal_budget_fresh_partial,
+    resume_terminal_budget_fresh_partial_suffix,
     resume_terminal_budget_fresh_review,
 )
 
@@ -537,6 +538,12 @@ def _resume_terminal_budget_fresh_partial(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resume_terminal_budget_fresh_partial_suffix(args: argparse.Namespace) -> int:
+    _emit(resume_terminal_budget_fresh_partial_suffix(
+        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
+    return 0
+
+
 def _continue_consumed_partial_checker(args: argparse.Namespace) -> int:
     _emit(continue_consumed_partial_checker(
         args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
@@ -888,6 +895,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     fresh_partial.add_argument("--request", required=True, type=Path)
     fresh_partial.add_argument("--sha256", required=True)
     fresh_partial.add_argument("--prepare-only", action="store_true")
+    fresh_partial_suffix = subparsers.add_parser(
+        "resume-terminal-budget-fresh-partial-suffix"
+    )
+    fresh_partial_suffix.add_argument("--request", required=True, type=Path)
+    fresh_partial_suffix.add_argument("--sha256", required=True)
+    fresh_partial_suffix.add_argument("--prepare-only", action="store_true")
     consumed_partial = subparsers.add_parser("continue-consumed-partial")
     consumed_partial.add_argument("--request", required=True, type=Path)
     consumed_partial.add_argument("--sha256", required=True)
@@ -1034,6 +1047,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _prepare_terminal_budget_fresh_partial(args)
         if args.command == "resume-terminal-budget-fresh-partial":
             return _resume_terminal_budget_fresh_partial(args)
+        if args.command == "resume-terminal-budget-fresh-partial-suffix":
+            return _resume_terminal_budget_fresh_partial_suffix(args)
         if args.command == "continue-consumed-partial":
             return _continue_consumed_partial_checker(args)
         if args.command == "resume-consumed-partial":

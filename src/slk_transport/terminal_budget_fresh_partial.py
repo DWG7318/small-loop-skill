@@ -34,6 +34,7 @@ REQUEST_SCHEMA = "slk.ocrv-terminal-budget-fresh-partial-request/v1"
 RESULT_SCHEMA = "slk.ocrv-terminal-budget-fresh-partial-result/v1"
 AUTHORIZATION_SCHEMA = "slk.owner-terminal-budget-fresh-partial-authorization/v1"
 SOURCE_CONSUMPTION_SCHEMA = "slk.ocrv-terminal-budget-fresh-partial-consumption/v1"
+SUFFIX_CONSUMPTION_SCHEMA = "slk.ocrv-terminal-budget-fresh-partial-suffix-consumption/v1"
 STRATEGY = "RESUME_EXACT_FRESH_PARTIAL_CHILD"
 _NAMESPACE = uuid.UUID("16336df6-1d3c-5de4-a76c-eb9b687f1ba7")
 _NATIVE_FILES = {
@@ -132,6 +133,197 @@ def claim_fresh_partial_source(request: Mapping[str, Any]) -> Path:
             "the exact fresh partial Session already consumed its one continuation",
         ) from exc
     return marker
+
+
+def _suffix_marker(request: Mapping[str, Any]) -> Path:
+    return Path(str(request["recovery_root"])).resolve() / "suffix-only-consumed.json"
+
+
+def _suffix_claim_payload(
+    request_path: Path, request: Mapping[str, Any], basis: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": SUFFIX_CONSUMPTION_SCHEMA,
+        "request_sha256": _sha256(request_path),
+        "committed_request_sha256": basis["committed_request_sha256"],
+        "committed_result_sha256": basis["committed_result_sha256"],
+        "corrected_d1_event_id": basis["corrected_d1_event_id"],
+        "recovery_invocation_id": request["recovery_invocation_id"],
+    }
+
+
+def claim_fresh_partial_suffix(
+    request_path: Path, request: Mapping[str, Any], basis: Mapping[str, Any],
+) -> Path:
+    from . import worker_completion as wc
+
+    marker = _suffix_marker(request)
+    try:
+        with marker.open("x", encoding="utf-8") as stream:
+            json.dump(_suffix_claim_payload(request_path, request, basis), stream, sort_keys=True)
+            stream.write("\n")
+    except FileExistsError as exc:
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_ALREADY_CONSUMED",
+            "the exact recorded D1 already consumed its one post-D1 suffix",
+        ) from exc
+    return marker
+
+
+def validate_fresh_partial_suffix_source(
+    request_path: Path, request: Mapping[str, Any], *, consumed: bool = False,
+) -> dict[str, Any]:
+    """Validate one recorded D1 whose deterministic post-D1 suffix never ran."""
+
+    from . import worker_completion as wc
+
+    validated = validate_fresh_partial_request(request, consumed=True)
+    source = validated["source_request"]
+    source_validated = validated["source_validated"]
+    root = Path(str(request["recovery_root"])).resolve()
+    attempt = root / "native-attempt"
+    committed_path = root / "committed-terminal.json"
+    committed_result_path = root / "committed-terminal-result.json"
+    outer_result_path = Path(str(request["result_path"])).resolve()
+    marker = _suffix_marker(request)
+    if (
+        not committed_path.is_file()
+        or not committed_result_path.is_file()
+        or not attempt.is_dir()
+        or (not consumed and outer_result_path.exists())
+        or (not consumed and (root / "post-d1-request.json").exists())
+    ):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_SOURCE_INVALID",
+            "the exact recorded D1-only boundary is unavailable",
+        )
+    committed = _read(committed_path, "fresh-partial committed terminal")
+    receipt = _read(committed_result_path, "fresh-partial committed result")
+    committed_validated = wc._validate_committed_terminal_request(committed)
+    recovery = committed.get("recovery_terminal")
+    correction = recovery.get("d1_correction") if isinstance(recovery, Mapping) else None
+    expected_correction = source_validated.get("d1_correction")
+    identity_fields = (
+        "method_version", "recovery_invocation_id", "run_id", "go_id", "cell_id",
+        "attempt", "plan_revision", "runtime_revision", "token_sequence",
+        "worker_role_instance_id", "checker_role_instance_id", "checker_endpoint_version",
+        "candidate_repository", "candidate_commit", "candidate_parent",
+        "candidate_message_id", "payload_sha256", "candidate_submitted_event_id",
+        "transport_started_event_id", "checker_credential_path", "state_command",
+        "transport_command",
+    )
+    if (
+        not isinstance(recovery, Mapping)
+        or correction != expected_correction
+        or any(committed.get(name) != source.get(name) for name in identity_fields)
+        or committed.get("checker_endpoint") != source.get("checker_endpoint")
+        or Path(str(recovery.get("native_attempt_path", ""))).resolve() != attempt
+        or Path(str(committed.get("raw_review_path", ""))).resolve()
+        != attempt / "ocrv-review.json"
+        or Path(str(committed.get("result_path", ""))).resolve() != committed_result_path
+        or Path(str(recovery.get("fresh_partial_request_path", ""))).resolve()
+        != request_path.resolve()
+        or recovery.get("fresh_partial_request_sha256") != _sha256(request_path)
+    ):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_SOURCE_INVALID",
+            "committed D1 does not bind the exact fresh-partial continuation",
+        )
+    corrected_event_id = wc._stable_id(
+        str(source["candidate_message_id"]),
+        "d1-budget-" + str(correction["correction_id"]),
+    )
+    native_result_path = attempt / "ocrv-result.json"
+    native_result = _read(native_result_path, "fresh-partial native result")
+    verdict = native_result.get("verdict")
+    expected_event_type = {"PASS": "D1_PASSED", "FAIL": "D1_FAILED"}.get(verdict)
+    if (
+        set(receipt) != wc.COMMITTED_TERMINAL_RESULT_FIELDS
+        or receipt.get("schema_version") != wc.COMMITTED_TERMINAL_RESULT_SCHEMA
+        or receipt.get("status") != "CHECKER_D1_RECORDED"
+        or receipt.get("checker_authenticated") is not True
+        or receipt.get("authorized_existing_terminal") is not True
+        or receipt.get("request_sha256") != _sha256(committed_path)
+        or receipt.get("recovery_invocation_id") != request["recovery_invocation_id"]
+        or receipt.get("runtime_revision") != committed["runtime_revision"]
+        or receipt.get("token_sequence") != committed["token_sequence"]
+        or receipt.get("d1_verdict") != verdict
+        or receipt.get("d1_event_type") != expected_event_type
+        or Path(str(receipt.get("native_attempt_path", ""))).resolve() != attempt
+        or Path(str(receipt.get("native_result_path", ""))).resolve() != native_result_path
+        or any(receipt.get(name) != source.get(name) for name in (
+            "method_version", "run_id", "cell_id", "attempt", "candidate_message_id",
+            "checker_role_instance_id", "checker_endpoint_version",
+        ))
+    ):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_SOURCE_INVALID",
+            "recorded D1 receipt is missing, changed, or not terminal",
+        )
+    projection = dict(
+        wc._default_load_current_projection(str(source["run_id"]), list(source["state_command"]))
+    )
+    snapshot = projection.get("runtime_snapshot")
+    events = projection.get("events")
+    matches = [
+        event for event in events or []
+        if isinstance(event, Mapping) and event.get("event_id") == corrected_event_id
+    ]
+    event = matches[0] if len(matches) == 1 else None
+    details = event.get("details") if isinstance(event, Mapping) else None
+    if not isinstance(details, Mapping) and isinstance(event, Mapping):
+        try:
+            details = json.loads(str(event.get("details_json", "")))
+        except json.JSONDecodeError:
+            details = None
+    if (
+        not isinstance(snapshot, Mapping)
+        or isinstance(snapshot.get("runtime_revision"), bool)
+        or not isinstance(snapshot.get("runtime_revision"), int)
+        or snapshot.get("token_sequence") != source["token_sequence"]
+        or snapshot.get("token_holder_role_instance_id") != source["checker_role_instance_id"]
+        or not isinstance(events, list)
+        or not isinstance(event, Mapping)
+        or event.get("event_type") != expected_event_type
+        or event.get("author_role_instance_id") != source["checker_role_instance_id"]
+        or event.get("go_id") != source["go_id"]
+        or event.get("cell_id") != source["cell_id"]
+        or event.get("attempt") != source["attempt"]
+        or event.get("corrects_event_id") != source["d1_incomplete_event_id"]
+        or not isinstance(details, Mapping)
+        or details.get("candidate_message_id") != source["candidate_message_id"]
+        or details.get("verdict") != verdict
+    ):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_ALREADY_ADVANCED",
+            "current Run is not at the exact recorded Checker D1 boundary",
+        )
+    basis = {
+        "request": request, "validated": validated, "source": source,
+        "source_validated": source_validated, "committed": committed,
+        "committed_validated": committed_validated, "receipt": receipt,
+        "native_result": native_result, "native_attempt": attempt,
+        "current_projection": projection,
+        "current_runtime_revision": snapshot["runtime_revision"],
+        "corrected_d1_event_id": corrected_event_id,
+        "committed_request_sha256": _sha256(committed_path),
+        "committed_result_sha256": _sha256(committed_result_path),
+    }
+    if not consumed and marker.exists():
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_ALREADY_CONSUMED",
+            "the exact recorded D1 already consumed its one post-D1 suffix",
+        )
+    if consumed and (
+        not marker.is_file()
+        or _read(marker, "fresh-partial suffix claim")
+        != _suffix_claim_payload(request_path, request, basis)
+    ):
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_SOURCE_INVALID",
+            "fresh-partial suffix claim is missing or changed",
+        )
+    return basis
 
 
 def _validate_partial_evidence(

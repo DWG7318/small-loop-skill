@@ -332,9 +332,12 @@ def _terminal_budget_post_d1_suffix(
     from slk_transport import worker_completion as wc
     from slk_transport.role_host import normalized_checker_findings
 
+    correction = validated.get("d1_correction")
+    correction_id = correction.get("correction_id") if isinstance(correction, dict) else None
+    if not isinstance(correction_id, str) or not correction_id:
+        raise ValueError("validated D1 correction identity is unavailable")
     event_id = wc._stable_id(
-        str(request["candidate_message_id"]),
-        "d1-budget-" + str(request["recovery_invocation_id"]),
+        str(request["candidate_message_id"]), "d1-budget-" + correction_id,
     )
     projection = dict(
         wc._default_load_current_projection(str(request["run_id"]), list(request["state_command"]))
@@ -905,6 +908,80 @@ def _fresh_terminal_budget_partial(
     )
 
 
+def _fresh_terminal_budget_partial_suffix(
+    request: dict[str, object], request_path: Path, command: list[str],
+) -> int:
+    """Run only the deterministic suffix after an already-recorded fresh-partial D1."""
+
+    sys.path.insert(0, str(_transport_runtime_path(command)))
+    from slk_transport import worker_completion as wc
+    from slk_transport.contracts import canonical_json_sha256
+    from slk_transport.terminal_budget_fresh_partial import (
+        RESULT_SCHEMA as FRESH_PARTIAL_RESULT_SCHEMA,
+        claim_fresh_partial_suffix,
+        validate_fresh_partial_suffix_source,
+    )
+
+    basis = validate_fresh_partial_suffix_source(request_path, request)
+    source = basis["source"]
+    checker = basis["committed_validated"]["checker"]
+    if (
+        os.environ.get("SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID") != checker.role_instance_id
+        or os.environ.get("SLK_OCRV_RECOVERY_ENDPOINT_VERSION")
+        != str(checker.endpoint_version)
+        or os.environ.get("SLK_OCRV_RECOVERY_INVOCATION_ID")
+        != request["recovery_invocation_id"]
+    ):
+        raise ValueError("fresh-partial suffix is outside the original sealed Checker")
+    authentication = wc._default_checker_authenticate(
+        str(source["run_id"]), checker.role_instance_id,
+        Path(str(source["checker_credential_path"])), list(source["state_command"]),
+    )
+    if (
+        authentication.get("status") != "authenticated"
+        or authentication.get("role") != "checker"
+        or authentication.get("role_instance_id") != checker.role_instance_id
+    ):
+        raise ValueError("fresh-partial suffix Checker authentication failed")
+    if authentication.get("runtime_revision") != basis["current_runtime_revision"]:
+        basis = validate_fresh_partial_suffix_source(request_path, request)
+        if authentication.get("runtime_revision") != basis["current_runtime_revision"]:
+            raise ValueError("fresh-partial suffix runtime changed during authentication")
+    claim_fresh_partial_suffix(request_path, request, basis)
+    suffix = _terminal_budget_post_d1_suffix(
+        source, basis["source_validated"], basis["native_result"],
+        basis["native_attempt"], Path(str(request["recovery_root"])).resolve(), command,
+    )
+    native_result = basis["native_result"]
+    receipt = basis["receipt"]
+    outer = {
+        "schema_version": FRESH_PARTIAL_RESULT_SCHEMA,
+        "method_version": source["method_version"], "status": "CHECKER_D1_RECORDED",
+        "run_id": source["run_id"], "cell_id": source["cell_id"],
+        "attempt": source["attempt"], "candidate_message_id": source["candidate_message_id"],
+        "checker_role_instance_id": source["checker_role_instance_id"],
+        "checker_endpoint_version": source["checker_endpoint_version"],
+        "recovery_invocation_id": request["recovery_invocation_id"],
+        "request_sha256": _sha256(request_path),
+        "capacity_revision_sha256": canonical_json_sha256(request["capacity_revision"]),
+        "ocrv_transition_sha256": canonical_json_sha256(request["ocrv_transition"]),
+        "runtime_config_binding_sha256": canonical_json_sha256(
+            request["runtime_config_binding"]
+        ),
+        "source_d1_incomplete_event_id": source["d1_incomplete_event_id"],
+        "d1_verdict": native_result["verdict"], "d1_event_type": receipt["d1_event_type"],
+        **suffix,
+        "parent_session_id": request["parent_session_id"],
+        "child_session_id": native_result["review"]["session_id"],
+        "native_attempt_path": str(basis["native_attempt"]),
+        "native_result_path": str(basis["native_attempt"] / "ocrv-result.json"),
+    }
+    encoded = (json.dumps(outer, sort_keys=True) + "\n").encode("utf-8")
+    Path(str(request["result_path"])).write_bytes(encoded)
+    sys.stdout.buffer.write(encoded)
+    return 0
+
+
 def _resume_partial(
     request: dict[str, object], request_path: Path, command: list[str], *, consumed: bool = False,
     resume_later: bool = False, refine_zero_complete: bool = False,
@@ -1393,6 +1470,7 @@ def main() -> int:
     mode.add_argument("--slk-resume-terminal-budget", action="store_true")
     mode.add_argument("--slk-fresh-terminal-budget-review", action="store_true")
     mode.add_argument("--slk-resume-terminal-budget-fresh-partial", action="store_true")
+    mode.add_argument("--slk-resume-terminal-budget-fresh-partial-suffix", action="store_true")
     mode.add_argument("--slk-continue-consumed-partial", action="store_true")
     mode.add_argument("--slk-resume-consumed-partial", action="store_true")
     mode.add_argument("--slk-refine-consumed-partial", action="store_true")
@@ -1410,6 +1488,7 @@ def main() -> int:
     expected_schema = (
         "slk.ocrv-terminal-budget-fresh-partial-request/v1"
         if args.slk_resume_terminal_budget_fresh_partial
+        or args.slk_resume_terminal_budget_fresh_partial_suffix
         else "slk.ocrv-terminal-budget-fresh-review-request/v1"
         if args.slk_fresh_terminal_budget_review
         else "slk.ocrv-terminal-budget-resume-request/v1"
@@ -1434,6 +1513,7 @@ def main() -> int:
             request, fresh=(
                 args.slk_fresh_terminal_budget_review
                 or args.slk_resume_terminal_budget_fresh_partial
+                or args.slk_resume_terminal_budget_fresh_partial_suffix
             )
         )
     except ValueError as exc:
@@ -1446,6 +1526,7 @@ def main() -> int:
         or args.slk_resume_terminal_budget
         or args.slk_fresh_terminal_budget_review
         or args.slk_resume_terminal_budget_fresh_partial
+        or args.slk_resume_terminal_budget_fresh_partial_suffix
         or args.slk_continue_consumed_partial or args.slk_resume_consumed_partial
         or args.slk_refine_consumed_partial
         or args.slk_consume_existing_partial):
@@ -1472,6 +1553,10 @@ def main() -> int:
             return _fresh_terminal_budget_review(request, args.request.resolve(), command)
         if args.slk_resume_terminal_budget_fresh_partial:
             return _fresh_terminal_budget_partial(request, args.request.resolve(), command)
+        if args.slk_resume_terminal_budget_fresh_partial_suffix:
+            return _fresh_terminal_budget_partial_suffix(
+                request, args.request.resolve(), command
+            )
         if args.slk_resume_consumed_partial:
             return _resume_partial(request, args.request.resolve(), command, consumed=True, resume_later=True)
         if args.slk_refine_consumed_partial:

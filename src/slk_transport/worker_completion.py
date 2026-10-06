@@ -6074,6 +6074,69 @@ def resume_terminal_budget_fresh_partial(
     return value
 
 
+def resume_terminal_budget_fresh_partial_suffix(
+    request_path: Path, *, request_sha256: str, prepare_only: bool = False,
+) -> Mapping[str, Any]:
+    """Continue only the missing suffix after the exact fresh-partial D1 was recorded."""
+
+    from .terminal_budget_fresh_partial import (
+        RESULT_SCHEMA,
+        validate_fresh_partial_suffix_source,
+    )
+
+    data = request_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != request_sha256:
+        raise CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_REQUEST_MISMATCH",
+            "fresh-partial suffix request hash mismatch",
+        )
+    request = _read_object(request_path, "terminal-budget fresh-partial suffix request")
+    basis = validate_fresh_partial_suffix_source(request_path, request)
+    source = basis["source"]
+    if prepare_only:
+        return {
+            "schema_version": "slk.ocrv-terminal-budget-fresh-partial-suffix-preflight/v1",
+            "status": "READY_FOR_SEALED_CHECKER_FRESH_PARTIAL_SUFFIX",
+            "request_sha256": request_sha256,
+            **{
+                key: source[key]
+                for key in (
+                    "run_id", "cell_id", "attempt", "candidate_commit",
+                    "candidate_message_id", "checker_role_instance_id",
+                    "checker_endpoint_version", "token_sequence",
+                )
+            },
+            "current_runtime_revision": basis["current_runtime_revision"],
+            "recovery_invocation_id": request["recovery_invocation_id"],
+            "d1_verdict": basis["native_result"]["verdict"],
+            "corrected_d1_event_id": basis["corrected_d1_event_id"],
+        }
+    value = _run_sealed_checker_terminal(
+        request_path,
+        request,
+        basis["committed_validated"]["checker"],
+        request_sha256=request_sha256,
+        mode="--slk-resume-terminal-budget-fresh-partial-suffix",
+        result_schema=RESULT_SCHEMA,
+        error_code="CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_COMMAND_FAILED",
+        result_statuses=("CHECKER_D1_RECORDED",),
+        identity_source=source,
+    )
+    if (
+        set(value) != TERMINAL_BUDGET_RESUME_RESULT_FIELDS
+        or value.get("d1_verdict") not in {"PASS", "FAIL"}
+        or value.get("d1_event_type")
+        != {"PASS": "D1_PASSED", "FAIL": "D1_FAILED"}.get(value.get("d1_verdict"))
+        or value.get("corrected_d1_event_id") != basis["corrected_d1_event_id"]
+        or value.get("suffix_status") == "NOT_APPLICABLE"
+    ):
+        raise CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_PARTIAL_SUFFIX_COMMAND_FAILED",
+            "sealed Checker returned an invalid post-D1 suffix result",
+        )
+    return value
+
+
 def continue_consumed_partial_checker(
     request_path: Path, *, request_sha256: str, prepare_only: bool = False
 ) -> Mapping[str, Any]:

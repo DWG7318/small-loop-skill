@@ -470,15 +470,18 @@ def test_fresh_partial_host_resumes_only_remaining_and_commits_same_d1(
     monkeypatch.setenv(
         "SLK_OCRV_RECOVERY_INVOCATION_ID", str(request["recovery_invocation_id"])
     )
-    monkeypatch.setattr(
-        worker_completion,
-        "_default_checker_authenticate",
-        lambda *_args, **_kwargs: {
+    authentication_calls = 0
+
+    def authenticate(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal authentication_calls
+        authentication_calls += 1
+        return {
             "status": "authenticated", "role": "checker",
             "role_instance_id": source["checker_role_instance_id"],
-            "runtime_revision": source["runtime_revision"],
-        },
-    )
+            "runtime_revision": source["runtime_revision"] + (authentication_calls > 1),
+        }
+
+    monkeypatch.setattr(worker_completion, "_default_checker_authenticate", authenticate)
     parent_detail = {
         "summary": validated["session_summary"],
         "items": [{"path": path} for path in validated["parent_completed_paths"]],
@@ -491,11 +494,14 @@ def test_fresh_partial_host_resumes_only_remaining_and_commits_same_d1(
 
     monkeypatch.setattr(partial_module, "verify_managed_target", lambda *_args: None)
     child_session = "fresh-partial-child"
+    adapter_calls = 0
 
     def run_adapter(
         capacity_path: Path, output_path: Path, *, invocation_override: str,
         background_override: Path, resume_session: str | None, result_request_path: Path,
     ) -> int:
+        nonlocal adapter_calls
+        adapter_calls += 1
         assert resume_session == request["parent_session_id"]
         assert background_override == Path(str(source["background_path"])).resolve()
         revised = json.loads(capacity_path.read_text(encoding="utf-8"))
@@ -590,7 +596,8 @@ def test_fresh_partial_host_resumes_only_remaining_and_commits_same_d1(
         )
         projection["runtime_snapshot"]["runtime_revision"] += 1
         event_id = worker_completion._stable_id(
-            source["candidate_message_id"], "d1-budget-" + request["recovery_invocation_id"]
+            source["candidate_message_id"],
+            "d1-budget-" + validated["source_validated"]["d1_correction"]["correction_id"],
         )
         projection["administrative_snapshot"]["latest_event_id"] = event_id
         projection["runtime_snapshot"]["latest_event_id"] = event_id
@@ -615,17 +622,82 @@ def test_fresh_partial_host_resumes_only_remaining_and_commits_same_d1(
             write_json(output, value)
             return subprocess.CompletedProcess(command_line, 0, json.dumps(value).encode(), b"")
         committed_path = Path(command_line[command_line.index("--request") + 1])
+        committed = json.loads(committed_path.read_text(encoding="utf-8"))
         value = {
-            "request_sha256": sha256(committed_path), "d1_verdict": "FAIL",
-            "d1_event_type": "D1_FAILED",
+            "schema_version": "slk.ocrv-committed-terminal-result/v1",
+            "method_version": source["method_version"],
+            "status": "CHECKER_D1_RECORDED", "run_id": source["run_id"],
+            "cell_id": source["cell_id"], "attempt": source["attempt"],
+            "candidate_message_id": source["candidate_message_id"],
+            "checker_role_instance_id": source["checker_role_instance_id"],
+            "checker_endpoint_version": source["checker_endpoint_version"],
+            "checker_authenticated": True, "authorized_existing_terminal": True,
+            "recovery_invocation_id": request["recovery_invocation_id"],
+            "request_sha256": sha256(committed_path),
+            "runtime_revision": source["runtime_revision"],
+            "token_sequence": source["token_sequence"],
+            "native_attempt_path": committed["recovery_terminal"]["native_attempt_path"],
+            "d1_verdict": "FAIL", "d1_event_type": "D1_FAILED",
+            "native_result_path": str(
+                Path(committed["recovery_terminal"]["native_attempt_path"])
+                / "ocrv-result.json"
+            ),
         }
+        write_json(Path(committed["result_path"]), value)
         return subprocess.CompletedProcess(command_line, 0, json.dumps(value).encode(), b"")
 
     monkeypatch.setattr(recovery.subprocess, "run", record)
-    assert recovery._fresh_terminal_budget_partial(request, request_path, command) == 0
-    result = json.loads(Path(str(request["result_path"])).read_text(encoding="utf-8"))
+    original_suffix = recovery._terminal_budget_post_d1_suffix
+    monkeypatch.setattr(
+        recovery,
+        "_terminal_budget_post_d1_suffix",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("simulated suffix failure")),
+    )
+    with pytest.raises(ValueError, match="simulated suffix failure"):
+        recovery._fresh_terminal_budget_partial(request, request_path, command)
+    assert adapter_calls == 1
+    assert not Path(str(request["result_path"])).exists()
+    recovery_root = Path(str(request["recovery_root"]))
+    assert (recovery_root / "committed-terminal.json").is_file()
+
+    monkeypatch.setattr(recovery, "_terminal_budget_post_d1_suffix", original_suffix)
+    request_digest = sha256(request_path)
+    receipt_path = recovery_root / "committed-terminal-result.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    write_json(receipt_path, {**receipt, "d1_event_type": "D1_PASSED"})
+    with pytest.raises(
+        worker_completion.CompletionError,
+        match="recorded D1 receipt is missing, changed, or not terminal",
+    ):
+        worker_completion.resume_terminal_budget_fresh_partial_suffix(
+            request_path, request_sha256=request_digest, prepare_only=True
+        )
+    write_json(receipt_path, receipt)
+    preflight = worker_completion.resume_terminal_budget_fresh_partial_suffix(
+        request_path, request_sha256=request_digest, prepare_only=True
+    )
+    assert preflight["status"] == "READY_FOR_SEALED_CHECKER_FRESH_PARTIAL_SUFFIX"
+    assert preflight["d1_verdict"] == "FAIL"
+
+    captured: dict[str, object] = {}
+
+    def sealed_suffix(*_args: object, **kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        assert recovery._fresh_terminal_budget_partial_suffix(request, request_path, command) == 0
+        return json.loads(Path(str(request["result_path"])).read_text(encoding="utf-8"))
+
+    monkeypatch.setattr(worker_completion, "_run_sealed_checker_terminal", sealed_suffix)
+    result = worker_completion.resume_terminal_budget_fresh_partial_suffix(
+        request_path, request_sha256=request_digest
+    )
+    assert captured["mode"] == "--slk-resume-terminal-budget-fresh-partial-suffix"
+    assert adapter_calls == 1
     assert result["status"] == "CHECKER_D1_RECORDED"
     assert result["d1_verdict"] == "FAIL"
+    with pytest.raises(worker_completion.CompletionError):
+        worker_completion.resume_terminal_budget_fresh_partial_suffix(
+            request_path, request_sha256=request_digest, prepare_only=True
+        )
     assert result["parent_session_id"] == request["parent_session_id"]
     child_raw = json.loads(
         (Path(str(request["recovery_root"])) / "native-attempt" / "ocrv-review.json")
@@ -644,3 +716,4 @@ def test_ocrv_launcher_exposes_fresh_partial_route() -> None:
         Path(__file__).resolve().parents[2] / "integrations" / "ocrv" / "slk-checker.cmd"
     ).read_text(encoding="utf-8")
     assert "--slk-resume-terminal-budget-fresh-partial" in launcher
+    assert "--slk-resume-terminal-budget-fresh-partial-suffix" in launcher
