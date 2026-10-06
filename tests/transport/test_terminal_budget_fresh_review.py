@@ -12,7 +12,10 @@ import pytest
 
 from slk_transport import worker_completion
 from slk_transport.contracts import canonical_json_sha256
-from slk_transport.terminal_budget import claim_terminal_budget_source
+from slk_transport.terminal_budget import (
+    claim_terminal_budget_source,
+    prepare_terminal_budget_request,
+)
 from slk_transport.terminal_budget_fresh import (
     claim_fresh_review_source,
     prepare_fresh_review_request,
@@ -20,7 +23,11 @@ from slk_transport.terminal_budget_fresh import (
 )
 
 from test_committed_checker_terminal import sha256, write_json
-from test_terminal_budget_resume import built_transport_command, preparation_fixture
+from test_terminal_budget_resume import (
+    _make_zero_token_predispatch_budget_stop,
+    built_transport_command,
+    preparation_fixture,
+)
 
 
 def rule_rejection_fixture(
@@ -128,6 +135,141 @@ def rule_rejection_fixture(
     )
     assert result.is_file()
     return source, source_path, projection_path, runner
+
+
+def nonresumable_predispatch_fixture(
+    tmp_path: Path,
+) -> tuple[dict[str, object], Path, Path, callable]:
+    expected, role_host_path, projection_path, base_runner = preparation_fixture(tmp_path)
+    _make_zero_token_predispatch_budget_stop(expected)
+    raw = json.loads(Path(str(expected["raw_review_path"])).read_text(encoding="utf-8"))
+    session_path = Path(str(expected["session_record_path"])).resolve()
+    summary = {
+        **expected["ocrv_session"],
+        "file_path": str(session_path),
+        "end_time": "2026-10-06T07:15:05Z",
+        "failed_files": 2,
+        "reused_files": 0,
+        "waived_files": 0,
+        "total_comments": 0,
+        "llm_failures": 0,
+        "legacy": False,
+        "run_manifest": raw["manifest"],
+    }
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if "session" in command and "list" in command:
+            return subprocess.CompletedProcess(command, 0, json.dumps([summary]), "")
+        if "session" in command and "show" in command:
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps({"summary": summary, "items": None}), ""
+            )
+        return base_runner(command)
+
+    source_path = tmp_path / "prepared" / "terminal-budget-source.json"
+    prepare_terminal_budget_request(
+        expected["native_attempt_path"],
+        role_host_path,
+        max_tokens_budget=128000,
+        authorization_id="owner-capacity-128k",
+        source_thread_id="owner-thread",
+        occurred_at="2026-10-06T08:00:00Z",
+        output_path=source_path,
+        run_command=runner,
+        load_current_projection=lambda _run_id, _command: json.loads(
+            projection_path.read_text(encoding="utf-8")
+        ),
+    )
+    return json.loads(source_path.read_text(encoding="utf-8")), source_path, projection_path, runner
+
+
+def test_preparer_selects_fresh_full_review_for_exact_zero_token_nonresumable_session(
+    tmp_path: Path,
+) -> None:
+    source, source_path, _projection, runner = nonresumable_predispatch_fixture(tmp_path)
+    output = tmp_path / "prepared" / "fresh-review.json"
+
+    prepared = prepare_fresh_review_request(
+        source_path,
+        authorization_id="owner-nonresumable-predispatch",
+        source_thread_id="owner-thread",
+        occurred_at="2026-10-06T11:30:00Z",
+        output_path=output,
+        run_command=runner,
+    )
+
+    request = json.loads(output.read_text(encoding="utf-8"))
+    assert prepared["status"] == "CHECKER_TERMINAL_BUDGET_FRESH_REQUEST_READY"
+    assert prepared["source_basis"] == "ZERO_TOKEN_PREDISPATCH_NON_RESUMABLE"
+    assert request["source_request_path"] == str(source_path.resolve())
+    assert request["strategy"] == "FRESH_FULL_REVIEW_NO_CHECKPOINT_REUSE"
+    assert set(request["rejection_evidence_sha256"]) == {
+        "session-list.json", "session-show.json", "non-resumable.json",
+    }
+    assert not (
+        Path(str(source["native_attempt_path"]))
+        / "resume-terminal-budget-checker"
+        / "source-consumed.json"
+    ).exists()
+    validated = validate_fresh_review_request(request)
+    assert validated["source_basis"] == "ZERO_TOKEN_PREDISPATCH_NON_RESUMABLE"
+    retried = prepare_fresh_review_request(
+        source_path,
+        authorization_id="owner-nonresumable-predispatch",
+        source_thread_id="owner-thread",
+        occurred_at="2026-10-06T11:30:00Z",
+        output_path=output,
+        run_command=runner,
+    )
+    assert retried == prepared
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["checkpoint", "completed", "llm-call", "manifest-drift", "source-consumed"],
+)
+def test_preparer_rejects_unproved_zero_token_nonresumable_session(
+    tmp_path: Path, damage: str,
+) -> None:
+    source, source_path, _projection, runner = nonresumable_predispatch_fixture(tmp_path)
+    original_runner = runner
+
+    def damaged_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        completed = original_runner(command)
+        if "session" not in command or ("list" not in command and "show" not in command):
+            return completed
+        value = json.loads(completed.stdout)
+        if "list" in command:
+            rows = value
+            if damage == "completed":
+                rows[0]["completed_files"] = 1
+            elif damage == "llm-call":
+                rows[0]["llm_failures"] = 1
+            elif damage == "manifest-drift":
+                rows[0]["run_manifest"]["input"]["resolved_head"] = "f" * 40
+        else:
+            if damage == "checkpoint":
+                value["items"] = [{"type": "review_item", "path": "src/example.py"}]
+            elif damage == "completed":
+                value["summary"]["completed_files"] = 1
+            elif damage == "llm-call":
+                value["summary"]["llm_failures"] = 1
+            elif damage == "manifest-drift":
+                value["summary"]["run_manifest"]["input"]["resolved_head"] = "f" * 40
+        return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
+
+    if damage == "source-consumed":
+        claim_terminal_budget_source(source)
+
+    with pytest.raises((ValueError, worker_completion.CompletionError)):
+        prepare_fresh_review_request(
+            source_path,
+            authorization_id="owner-nonresumable-predispatch",
+            source_thread_id="owner-thread",
+            occurred_at="2026-10-06T11:30:00Z",
+            output_path=tmp_path / "prepared" / "fresh-review.json",
+            run_command=damaged_runner,
+        )
 
 
 def test_preparer_admits_only_the_consumed_real_rule_identity_rejection(
@@ -363,11 +505,16 @@ def test_sealed_fresh_review_route_keeps_the_original_checker(tmp_path: Path, mo
     assert captured["mode"] == "--slk-fresh-terminal-budget-review"
 
 
+@pytest.mark.parametrize("source_kind", ["rule-rejection", "zero-token-nonresumable"])
 @pytest.mark.parametrize("verdict", ["PASS", "FAIL", "INCOMPLETE"])
 def test_fresh_host_runs_full_review_without_resume_and_preserves_d1_truth(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verdict: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verdict: str, source_kind: str,
 ) -> None:
-    source, source_path, _projection, runner = rule_rejection_fixture(tmp_path)
+    source, source_path, _projection, runner = (
+        rule_rejection_fixture(tmp_path)
+        if source_kind == "rule-rejection"
+        else nonresumable_predispatch_fixture(tmp_path)
+    )
     request_path = tmp_path / "prepared" / "fresh-review.json"
     prepare_fresh_review_request(
         source_path,
@@ -398,7 +545,8 @@ def test_fresh_host_runs_full_review_without_resume_and_preserves_d1_truth(
         recovery,
         "_session_resume_mode",
         lambda _source, session: (
-            "RESUME_SESSION", {"summary": {"session_id": session["session_id"]}, "items": []}
+            "RESUME_SESSION" if source_kind == "rule-rejection" else "FRESH_REVIEW",
+            {"summary": {"session_id": session["session_id"]}, "items": []},
         ),
     )
     monkeypatch.setattr(recovery, "_ocrv_version", lambda: "v1.12.12")

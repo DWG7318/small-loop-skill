@@ -1208,7 +1208,7 @@
     },
     {
       "path": "integrations/ocrv/slk_checker_recovery.py",
-      "sha256": "0edb8d72fa8644db37d6143e432c58a95efc5bbfaeb9f13aaa0e3dec2f05dfab"
+      "sha256": "c4dd40427d907d964695b60403a113b399637aa4fc8076aad69d1be184ba9e53"
     },
     {
       "path": "integrations/temporal/README.md",
@@ -1536,7 +1536,7 @@
     },
     {
       "path": "src/slk_transport/terminal_budget_fresh.py",
-      "sha256": "0901ffe13835a42d5478d8ed904d5513788587ba8054b5fbfbf368e21c2ccd26"
+      "sha256": "bdde4ab185c8cba5bd9f129eaa191ff547aeb7b8b7c29ab738eaca5c9f0e276b"
     },
     {
       "path": "src/slk_transport/worker_completion.py",
@@ -1832,7 +1832,7 @@
     },
     {
       "path": "tests/transport/test_terminal_budget_fresh_review.py",
-      "sha256": "e943645bbfef39ef3408624f648ab9eaa0b7b5e0e4c97cd463a2bd66c7308d5b"
+      "sha256": "a378eb5957006590d5939d38d643d1d7cad625afdb6f066d81087650c68b16ef"
     },
     {
       "path": "tests/transport/test_terminal_budget_resume.py",

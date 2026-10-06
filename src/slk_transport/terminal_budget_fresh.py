@@ -1,4 +1,4 @@
-"""Thin fresh-review adapter for one consumed OCRV rule-identity rejection."""
+"""Thin fresh-review adapter for one strictly proven OCRV compatibility source."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from typing import Any
 from .contracts import canonical_json_sha256
 from .native_activity import process_probe as default_process_probe
 from .terminal_budget import (
+    _ocr_command,
     _read,
     _run_command,
     _sha256,
@@ -33,6 +34,10 @@ _REJECTION_FILES = {
     "native-start.received.json", "native-activity.json", "ocrv-capacity-request.json",
     "ocrv-result.json", "ocrv.stderr.txt", "ocrv.stdout.txt",
 }
+_NONRESUMABLE_FILES = {"session-list.json", "session-show.json", "non-resumable.json"}
+_RULE_REJECTION_BASIS = "RULE_IDENTITY_REJECTION"
+_NONRESUMABLE_BASIS = "ZERO_TOKEN_PREDISPATCH_NON_RESUMABLE"
+_NONRESUMABLE_SCHEMA = "slk.ocrv-terminal-budget-non-resumable-evidence/v1"
 _REQUEST_FIELDS = {
     "schema_version", "strategy", "recovery_invocation_id", "source_request_path",
     "source_request_sha256", "rejection_native_attempt_path", "rejection_evidence_sha256",
@@ -68,6 +73,199 @@ def _authorized_at(value: object) -> bool:
 def _rejection_paths(source: Mapping[str, Any]) -> dict[str, Path]:
     root = Path(str(source["recovery_root"])).resolve() / "native-attempt"
     return {name: root / name for name in _REJECTION_FILES}
+
+
+def _nonresumable_paths(source: Mapping[str, Any]) -> dict[str, Path]:
+    root = Path(str(source["recovery_root"])).resolve() / "non-resumable-evidence"
+    return {name: root / name for name in _NONRESUMABLE_FILES}
+
+
+def _command_value(command: list[str], runner: CommandRunner) -> object:
+    completed = runner(command)
+    if completed.returncode != 0:
+        raise ValueError("OCRV non-resumable inspection failed")
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError("OCRV non-resumable inspection returned invalid JSON") from exc
+
+
+def _zero_token_predispatch_source(source: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    raw = _read(Path(str(source["raw_review_path"])).resolve(), "parent OCRV review")
+    summary = raw.get("summary")
+    tools = raw.get("tool_calls")
+    manifest = raw.get("manifest")
+    coverage = manifest.get("coverage") if isinstance(manifest, Mapping) else None
+    selected = coverage.get("selected") if isinstance(coverage, Mapping) else None
+    failed = coverage.get("failed") if isinstance(coverage, Mapping) else None
+    observed = source.get("capacity_revision", {}).get("observed")
+    if (
+        not isinstance(summary, Mapping)
+        or not isinstance(tools, Mapping)
+        or not isinstance(manifest, Mapping)
+        or not isinstance(coverage, Mapping)
+        or not isinstance(selected, list) or len(selected) != 2
+        or not isinstance(failed, list) or len(failed) != 2
+        or coverage.get("completed") != [] or coverage.get("reused") != []
+        or coverage.get("waived") != []
+        or any(not isinstance(row, Mapping) or row.get("classification") != "budget" for row in failed)
+        or not isinstance(observed, Mapping)
+        or any(observed.get(name) != 0 for name in (
+            "total_tokens", "input_tokens", "output_tokens", "cache_read_tokens"
+        ))
+        or any(summary.get(name, 0) != 0 for name in (
+            "total_tokens", "input_tokens", "output_tokens", "cache_read_tokens"
+        ))
+        or tools.get("total") != 0 or tools.get("failure") != 0
+        or source.get("ocrv_session", {}).get("selected_files") != 2
+        or source.get("ocrv_session", {}).get("completed_files") != 0
+    ):
+        raise ValueError("source is not the exact zero-token pre-dispatch budget stop")
+    return dict(raw), dict(manifest)
+
+
+def _validate_nonresumable_session(
+    source: Mapping[str, Any], session_list: object, session_show: object,
+) -> dict[str, Any]:
+    raw, manifest = _zero_token_predispatch_source(source)
+    session = source.get("ocrv_session")
+    if not isinstance(session, Mapping) or not isinstance(session_list, list):
+        raise ValueError("OCRV non-resumable Session identity is unavailable")
+    matches = [
+        row for row in session_list
+        if isinstance(row, Mapping) and row.get("session_id") == session.get("session_id")
+    ]
+    if not isinstance(session_show, Mapping) or set(session_show) != {"summary", "items"}:
+        raise ValueError("OCRV non-resumable Session detail is invalid")
+    summary, items = session_show["summary"], session_show["items"]
+    facts = (
+        "session_id", "diff_commit", "model", "review_mode", "start_time", "aborted",
+        "selected_files", "completed_files",
+    )
+    if (
+        len(matches) != 1
+        or not isinstance(summary, Mapping)
+        or dict(matches[0]) != dict(summary)
+        or items not in (None, [])
+        or any(summary.get(name) != session.get(name) for name in facts)
+        or str(summary.get("repo_dir", "")).replace("\\", "/")
+        != str(session.get("repo_dir", "")).replace("\\", "/")
+        or Path(str(summary.get("file_path", ""))).resolve()
+        != Path(str(source["session_record_path"])).resolve()
+        or summary.get("failed_files") != 2
+        or summary.get("reused_files") != 0 or summary.get("waived_files") != 0
+        or summary.get("total_comments") != 0 or summary.get("llm_failures") != 0
+        or summary.get("legacy") is not False
+        or summary.get("run_manifest") != manifest
+        or raw.get("session_id") != session.get("session_id")
+    ):
+        raise ValueError("OCRV Session does not prove a zero-token non-resumable stop")
+    return dict(summary)
+
+
+def _stable_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = (
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    if path.exists():
+        try:
+            existing = json.loads(path.read_bytes())
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"immutable evidence is invalid: {path.name}") from exc
+        if existing != value:
+            raise ValueError(f"immutable evidence conflicts: {path.name}")
+        return
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_bytes(encoded)
+    temporary.replace(path)
+
+
+def _prepare_nonresumable_evidence(
+    source: Mapping[str, Any], source_digest: str, *, run_command: CommandRunner,
+) -> dict[str, Any]:
+    endpoint = source.get("checker_endpoint")
+    address = endpoint.get("address") if isinstance(endpoint, Mapping) else None
+    runtime_root = Path(str(address.get("runtime_root", ""))).resolve() if isinstance(
+        address, Mapping
+    ) else Path()
+    wrapper = runtime_root / "ocr-slk.ps1"
+    repository = str(Path(str(source["candidate_repository"])).resolve())
+    session_id = str(source["ocrv_session"]["session_id"])
+    if not wrapper.is_file():
+        raise ValueError("managed OCRV wrapper is unavailable")
+    session_list = _command_value(
+        _ocr_command(wrapper, "session", "list", "--json", "--repo", repository), run_command
+    )
+    session_show = _command_value(
+        _ocr_command(
+            wrapper, "session", "show", "--json", "--repo", repository, session_id
+        ),
+        run_command,
+    )
+    _validate_nonresumable_session(source, session_list, session_show)
+    paths = _nonresumable_paths(source)
+    _stable_json(paths["session-list.json"], session_list)
+    _stable_json(paths["session-show.json"], session_show)
+    attestation = {
+        "schema_version": _NONRESUMABLE_SCHEMA,
+        "status": "NON_RESUMABLE",
+        "reason": "ZERO_TOKEN_PREDISPATCH_NO_CHECKPOINT",
+        "source_request_sha256": source_digest,
+        "session_id": session_id,
+        "session_list_sha256": _sha256(paths["session-list.json"]),
+        "session_show_sha256": _sha256(paths["session-show.json"]),
+        "raw_review_sha256": _sha256(Path(str(source["raw_review_path"])).resolve()),
+        "session_record_sha256": _sha256(Path(str(source["session_record_path"])).resolve()),
+    }
+    _stable_json(paths["non-resumable.json"], attestation)
+    return _validate_nonresumable_evidence(source, source_digest)
+
+
+def _validate_nonresumable_evidence(
+    source: Mapping[str, Any], source_digest: str,
+) -> dict[str, Any]:
+    paths = _nonresumable_paths(source)
+    root = next(iter(paths.values())).parent
+    if (
+        any(not path.is_file() for path in paths.values())
+        or {path.name for path in root.iterdir()} != _NONRESUMABLE_FILES
+    ):
+        raise ValueError("terminal-budget non-resumable evidence is incomplete")
+    source_marker = (
+        Path(str(source["native_attempt_path"])).resolve()
+        / "resume-terminal-budget-checker" / "source-consumed.json"
+    )
+    if (
+        source_marker.exists()
+        or (Path(str(source["recovery_root"])).resolve() / "resume-consumed.json").exists()
+        or Path(str(source["result_path"])).exists()
+    ):
+        raise ValueError("non-resumable source was already consumed or produced a result")
+    session_list = json.loads(paths["session-list.json"].read_text(encoding="utf-8"))
+    session_show = _read(paths["session-show.json"], "non-resumable Session detail")
+    _validate_nonresumable_session(source, session_list, session_show)
+    attestation = _read(paths["non-resumable.json"], "non-resumable attestation")
+    expected = {
+        "schema_version": _NONRESUMABLE_SCHEMA,
+        "status": "NON_RESUMABLE",
+        "reason": "ZERO_TOKEN_PREDISPATCH_NO_CHECKPOINT",
+        "source_request_sha256": source_digest,
+        "session_id": source["ocrv_session"]["session_id"],
+        "session_list_sha256": _sha256(paths["session-list.json"]),
+        "session_show_sha256": _sha256(paths["session-show.json"]),
+        "raw_review_sha256": _sha256(Path(str(source["raw_review_path"])).resolve()),
+        "session_record_sha256": _sha256(Path(str(source["session_record_path"])).resolve()),
+    }
+    if attestation != expected:
+        raise ValueError("terminal-budget non-resumable attestation changed")
+    evidence = {name: _sha256(path) for name, path in paths.items()}
+    return {
+        "native_attempt_path": str(root),
+        "evidence_sha256": evidence,
+        "source_rejection_sha256": canonical_json_sha256(evidence),
+        "source_basis": _NONRESUMABLE_BASIS,
+    }
 
 
 def _expected_diagnostic(parent_session_id: str) -> str:
@@ -166,6 +364,7 @@ def _validate_rejection(
         "native_attempt_path": str(root),
         "evidence_sha256": evidence,
         "source_rejection_sha256": canonical_json_sha256(evidence),
+        "source_basis": _RULE_REJECTION_BASIS,
     }
 
 
@@ -221,7 +420,7 @@ def claim_fresh_review_source(request: Mapping[str, Any]) -> Path:
     except FileExistsError as exc:
         raise wc.CompletionError(
             "CHECKER_TERMINAL_BUDGET_FRESH_ALREADY_CONSUMED",
-            "the exact rule-identity rejection already consumed its one fresh review",
+            "the exact compatibility source already consumed its one fresh review",
         ) from exc
     return marker
 
@@ -255,16 +454,32 @@ def validate_fresh_review_request(
             "CHECKER_TERMINAL_BUDGET_FRESH_SOURCE_INVALID", "terminal-budget source request changed"
         )
     source = _read(source_path, "terminal-budget source request")
-    source_validated = validate_terminal_budget(source, consumed=True)
-    rejection = _validate_rejection(source, process_probe=process_probe)
+    evidence = request.get("rejection_evidence_sha256")
+    evidence_names = set(evidence) if isinstance(evidence, Mapping) else set()
+    if evidence_names == _REJECTION_FILES:
+        source_basis = _RULE_REJECTION_BASIS
+        source_validated = validate_terminal_budget(source, consumed=True)
+        rejection = _validate_rejection(source, process_probe=process_probe)
+    elif evidence_names == _NONRESUMABLE_FILES:
+        source_basis = _NONRESUMABLE_BASIS
+        source_validated = validate_terminal_budget(source, consumed=False)
+        rejection = _validate_nonresumable_evidence(source, request["source_request_sha256"])
+    else:
+        raise wc.CompletionError(
+            "CHECKER_TERMINAL_BUDGET_FRESH_IDENTITY_INVALID",
+            "fresh review source basis is absent or ambiguous",
+        )
     authorization = request["owner_authorization"]
     if (
         request.get("strategy") != STRATEGY
         or request.get("rejection_native_attempt_path") != rejection["native_attempt_path"]
         or request.get("rejection_evidence_sha256") != rejection["evidence_sha256"]
         or request.get("source_rejection_sha256") != rejection["source_rejection_sha256"]
-        or source["ocrv_transition"]["source_rule_config_sha256"]
-        == source["ocrv_transition"]["target_rule_config_sha256"]
+        or (
+            source_basis == _RULE_REJECTION_BASIS
+            and source["ocrv_transition"]["source_rule_config_sha256"]
+            == source["ocrv_transition"]["target_rule_config_sha256"]
+        )
     ):
         raise wc.CompletionError(
             "CHECKER_TERMINAL_BUDGET_FRESH_IDENTITY_INVALID",
@@ -297,7 +512,7 @@ def validate_fresh_review_request(
     if not consumed and marker.exists():
         raise wc.CompletionError(
             "CHECKER_TERMINAL_BUDGET_FRESH_ALREADY_CONSUMED",
-            "the exact rule-identity rejection already consumed its one fresh review",
+            "the exact compatibility source already consumed its one fresh review",
         )
     if consumed and (
         not marker.is_file()
@@ -312,6 +527,7 @@ def validate_fresh_review_request(
         "source_request": source,
         "source_validated": source_validated,
         "rejection": rejection,
+        "source_basis": source_basis,
         "recovery_root": recovery,
         "role_host_binding": source_validated["role_host_binding"],
         "d1_correction": correction,
@@ -335,11 +551,21 @@ def prepare_fresh_review_request(
     ):
         raise ValueError("fresh-review compatibility authorization is incomplete")
     source_path = Path(source_request_path).resolve()
-    source = _read(source_path, "terminal-budget source request")
-    validate_terminal_budget(source, consumed=True)
-    rejection = _validate_rejection(source, process_probe=process_probe)
-    verify_managed_target(source, run_command=run_command)
     source_digest = _sha256(source_path)
+    source = _read(source_path, "terminal-budget source request")
+    source_marker = (
+        Path(str(source["native_attempt_path"])).resolve()
+        / "resume-terminal-budget-checker" / "source-consumed.json"
+    )
+    if source_marker.exists():
+        validate_terminal_budget(source, consumed=True)
+        rejection = _validate_rejection(source, process_probe=process_probe)
+    else:
+        validate_terminal_budget(source, consumed=False)
+        rejection = _prepare_nonresumable_evidence(
+            source, source_digest, run_command=run_command
+        )
+    verify_managed_target(source, run_command=run_command)
     authorization = {
         "schema_version": AUTHORIZATION_SCHEMA, "authority": "OWNER", "decision": "APPROVED",
         "authorization_id": authorization_id, "source_thread_id": source_thread_id,
@@ -372,6 +598,7 @@ def prepare_fresh_review_request(
         "run_id": source["run_id"], "cell_id": source["cell_id"],
         "candidate_commit": source["candidate_commit"],
         "parent_session_id": source["ocrv_session"]["session_id"],
+        "source_basis": rejection["source_basis"],
         "source_rejection_sha256": rejection["source_rejection_sha256"],
         "request_path": str(output), "request_sha256": digest,
         "prepare_only_command": [

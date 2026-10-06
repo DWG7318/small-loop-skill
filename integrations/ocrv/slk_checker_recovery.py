@@ -825,8 +825,13 @@ def _fresh_terminal_budget_review(
         raise ValueError("fresh-review OCRV version is not the approved target")
     verify_managed_target(source)
     mode, detail = _session_resume_mode(source, source["ocrv_session"])
-    if mode != "RESUME_SESSION":
-        raise ValueError("fresh review lost the exact rejected parent Session")
+    expected_mode = (
+        "FRESH_REVIEW"
+        if validated["source_basis"] == "ZERO_TOKEN_PREDISPATCH_NON_RESUMABLE"
+        else "RESUME_SESSION"
+    )
+    if mode != expected_mode:
+        raise ValueError("fresh review source resumability changed after preparation")
     claim_fresh_review_source(request)
     root = Path(request["recovery_root"]).resolve()
     root.mkdir(parents=True, exist_ok=True)
