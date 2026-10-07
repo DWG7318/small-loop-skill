@@ -387,7 +387,7 @@ def test_preparer_materializes_v2_endpoint_host_config_and_closed_two_stage_requ
     _request, value = fixture(tmp_path)
     final_host_path = Path(value["target_role_host_path"])
     draft_value = json.loads(final_host_path.read_text())
-    draft_value["roles"]["checker"]["endpoint_sha256"] = "PENDING"
+    draft_value["roles"]["checker"]["endpoint_sha256"] = "PENDING_STANDARD_MIGRATION_ENDPOINT_HASH"
     output_root = tmp_path / "prepared-output"
     output_root.mkdir()
     expected_endpoint_path = output_root / "checker-endpoint-v2.json"

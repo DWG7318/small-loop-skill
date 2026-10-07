@@ -484,7 +484,7 @@ def prepare_runtime_binding_migration(
     source_checker_binding = source_host.get("roles", {}).get("checker")
     if (not isinstance(checker_binding, dict) or not isinstance(source_checker_binding, Mapping)
         or checker_binding.get("credential_path") != source_checker_binding.get("credential_path")
-        or checker_binding.get("endpoint_sha256") != "PENDING"
+        or checker_binding.get("endpoint_sha256") != "PENDING_STANDARD_MIGRATION_ENDPOINT_HASH"
         or Path(str(checker_binding.get("endpoint_path"))).resolve() != target_endpoint_path.resolve()):
         raise ValueError("RoleHost draft Checker placeholder is not exact")
     checker_binding["endpoint_path"] = str(target_endpoint_path.resolve()).replace("\\", "/")

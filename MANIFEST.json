@@ -1532,7 +1532,7 @@
     },
     {
       "path": "src/slk_transport/runtime_binding_migration.py",
-      "sha256": "9c5e00af25b9fdeb1ae6e3ef00b001e4886c9341abfe2542eeda80bbe58d00e3"
+      "sha256": "a83e7d56fb3ff97a08ddfab5f2be46fa43dfca54f6474ac35b8a7a8aba3eabb6"
     },
     {
       "path": "src/slk_transport/subprocess_watch.py",
@@ -1836,7 +1836,7 @@
     },
     {
       "path": "tests/transport/test_runtime_binding_migration.py",
-      "sha256": "f0cdd19d0eb8815bcb90c4f64ac1ed1caa696f183cc7b6993a00840f91d81786"
+      "sha256": "1acc5a7a105015b397a4fb448bf844b646d76b6d48d50ad996588764c973ebdb"
     },
     {
       "path": "tests/transport/test_sealed_role_credentials.py",
