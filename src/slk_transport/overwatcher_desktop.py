@@ -110,7 +110,12 @@ def _assert_host(request: Mapping[str, Any], *, frozen_reader: bool) -> str:
     return reader_thread_id
 
 
-def _platform_snapshot(request: Mapping[str, Any], *, frozen_reader: bool) -> dict[str, Any]:
+def _platform_snapshot(
+    request: Mapping[str, Any],
+    *,
+    frozen_reader: bool,
+    require_platform_input: bool,
+) -> dict[str, Any]:
     reader_thread_id = _assert_host(request, frozen_reader=frozen_reader)
     client = DesktopClient(list(request["command"]), Path(str(request["cwd"])))
     timeout = float(request["timeout_seconds"])
@@ -153,20 +158,23 @@ def _platform_snapshot(request: Mapping[str, Any], *, frozen_reader: bool) -> di
     if not isinstance(items, list):
         raise OverwatcherDesktopError("Desktop OW turn items are unavailable")
     matching_items = [item for item in items if isinstance(item, Mapping) and item.get("id") == request["platform_input_item_id"]]
-    if len(matching_items) != 1:
+    if len(matching_items) > 1 or (require_platform_input and len(matching_items) != 1):
         raise OverwatcherDesktopError("Desktop OW input item identity is absent or ambiguous")
-    item = matching_items[0]
-    output = item.get("output")
-    if (
-        item.get("type") != "functionCallOutput"
-        or item.get("name") != "send_message_to_thread"
-        or item.get("namespace") != "codex_app"
-        or not isinstance(output, Mapping)
-        or output.get("truncated") is not False
-        or not isinstance(output.get("text"), str)
-        or not output["text"]
-    ):
-        raise OverwatcherDesktopError("Desktop OW platform input is not an exact accepted delivery")
+    platform_input_sha256 = None
+    if matching_items:
+        item = matching_items[0]
+        output = item.get("output")
+        if (
+            item.get("type") != "functionCallOutput"
+            or item.get("name") != "send_message_to_thread"
+            or item.get("namespace") != "codex_app"
+            or not isinstance(output, Mapping)
+            or output.get("truncated") is not False
+            or not isinstance(output.get("text"), str)
+            or not output["text"]
+        ):
+            raise OverwatcherDesktopError("Desktop OW platform input is not an exact accepted delivery")
+        platform_input_sha256 = hashlib.sha256(output["text"].encode("utf-8")).hexdigest()
     thread_status = thread["status"].get("type")
     turn_status = turn.get("status")
     if thread_status not in {"active", "idle"} or turn_status not in {
@@ -180,7 +188,7 @@ def _platform_snapshot(request: Mapping[str, Any], *, frozen_reader: bool) -> di
     return {
         "thread_status": thread_status,
         "turn_status": turn_status,
-        "platform_input_sha256": hashlib.sha256(output["text"].encode("utf-8")).hexdigest(),
+        "platform_input_sha256": platform_input_sha256,
         "sequence": sequence,
     }
 
@@ -252,7 +260,7 @@ def attest_desktop_overwatcher(
             "started_path": str(started_path), "started_sha256": sha256_file(started_path),
             "attestation_path": str(attestation_path), "attestation_sha256": sha256_file(attestation_path),
         }
-    snapshot = _platform_snapshot(request, frozen_reader=True)
+    snapshot = _platform_snapshot(request, frozen_reader=True, require_platform_input=True)
     if snapshot["thread_status"] != "active" or snapshot["turn_status"] not in {"active", "inProgress"}:
         raise OverwatcherDesktopError("Desktop OW turn is not positively active")
     native_task_id = f"{request['thread_id']}:{request['turn_id']}:{request['platform_input_item_id']}"
@@ -390,9 +398,13 @@ def desktop_overwatcher_probe(
             or start.get("native_task", {}).get("id") != attestation["native_task_id"]
         ):
             raise OverwatcherDesktopError("Overwatcher native start does not match the attested turn")
-        snapshot = _platform_snapshot(request, frozen_reader=False)
-        if snapshot["platform_input_sha256"] != attestation["platform_input_sha256"]:
+        snapshot = _platform_snapshot(request, frozen_reader=False, require_platform_input=False)
+        if (
+            snapshot["platform_input_sha256"] is not None
+            and snapshot["platform_input_sha256"] != attestation["platform_input_sha256"]
+        ):
             raise OverwatcherDesktopError("Overwatcher platform input changed after attestation")
+        snapshot["platform_input_sha256"] = attestation["platform_input_sha256"]
         return _activity(request, attestation, snapshot)
     except (AdapterError, OSError, ValueError, TypeError, KeyError):
         return {"status": "UNKNOWN", "error": "NATIVE_QUERY_FAILED"}

@@ -6,6 +6,15 @@ Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
 Status: the authorized fresh-partial OCRV continuation completed once and the original Checker recorded immutable `D1_PASSED` event `4e078228-ca65-5ca0-8e3f-55b0ea8bb274`; the candidate is unchanged and OCRV must not run again. A sealed suffix-only entrance now derives that event from correction `c19cb0d1-8c29-52a8-8dff-729917512a28`, revalidates the exact committed request/result, native PASS, current TOKEN and Checker identity, and invokes only the missing deterministic post-D1 suffix. The branch is not merged, pushed, tagged or released.
 
+## 2026-10-07 bounded Desktop OW liveness correction
+
+- Field evidence `D:\LCaS\.codex\.tmp\SLK-RUN-LCAS-RC08-MCP-STARTUP-BOUNDARY-R2\prepared\overwatcher-native-resume9\latest-page-identity-gap-20261007.json` proves the same OW turn remained `active`/`inProgress` while the 100-item latest page had `hasMore=true` and no longer included its early attested delivery item. Requiring that old item on every audit therefore produced a false `NATIVE_QUERY_FAILED` rather than proving liveness.
+- Initial attestation remains strict and freezes the exact accepted input item/hash, immutable request, plugin, native start, Run/role/endpoint, thread/host/cwd/turn and trusted creator. Later audits still make a fresh bounded `read_thread` platform call and require the same live thread/host/cwd/turn/status; they no longer backfill history merely to find the old input. If the original item is still visible, it must retain the attested hash; visible mutation remains fail closed.
+- Regression covers the paged-out positive case and live wrong-thread, wrong-host, wrong-cwd, wrong-turn and visible-input mutation negatives, in addition to the existing missing tool, inconsistent status, changed attestation/start and caller-capability negatives.
+- Focused Desktop OW/native activity/Supervisor notice/readiness/Temporal regression passes 108 with 3 skipped in ordinary Python and 108 with 3 skipped under `python -O`; the optimized warning only records disabled Python assertions.
+- Headless combined artifacts were rebuilt into `C:\Users\DWG\.codex\.tmp\slk-4.4.2-ow-bounded-liveness-artifacts-20261007-01`: `slk-transport.pyz` SHA-256 `200782565871b6ee7290bfbb3ca97a4354021f641fc93fcb2ce4f626b7fd134a` and `slk-bi-desktop.exe` SHA-256 `bec57bcce89d624e441d2af07e19ee9eb63de1f0d0fba3e431ad168c956093e1`.
+- A separate field note is retained without expanding this repair: the legacy `notify-supervisor` endpoint rejected the Root caller binding, while direct registered `send_message_to_thread` delivery reached Supervisor. The direct notice path is currently usable; no notification contract or endpoint authority was changed here.
+
 ## 2026-10-07 public management-return completion correction
 
 - Independent Supervisor verification found one public-entry omission: `RoleHost._checker_result` already implemented `D1_MANAGEMENT_RETURN`, but `RoleHost.complete` dispatched only `CANDIDATE_READY`, so a valid returned Checker terminal could stop at `ROLE_HOST_OPERATION_INVALID` after paid D1 work.

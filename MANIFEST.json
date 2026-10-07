@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "3a8c76580db174481060926dd3161f1b669c3a815e82036351d26ce8c9356e7b"
+      "sha256": "e09d2b5bf9885a34c88343244600ac34dbcab26293d6a1e68a92f6a65b9a337d"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "b3584b176ee7f78d8d3a58549cb4416f45ddd092c170a3675708d13f0a278898"
+      "sha256": "c2f1052b5f3df580a9cdcb6089af3e44ddca5efd1fd2ff1114ee6af83e7e7dec"
     },
     {
       "path": "VERSION",
@@ -1500,7 +1500,7 @@
     },
     {
       "path": "src/slk_transport/overwatcher_desktop.py",
-      "sha256": "5068cdfc6651742e913737cb0897ed77ebc99879e32126f85daf0261fe8a86d9"
+      "sha256": "85b5eb682cf781a86325f456005864ef3671015a48381053c29e4487eb3189ca"
     },
     {
       "path": "src/slk_transport/partial_review.py",
@@ -1692,7 +1692,7 @@
     },
     {
       "path": "tests/transport/fake_overwatcher_desktop_mcp.py",
-      "sha256": "9a78c7df3bf4e3c5ea9b1312083085495e90b30103d6696e8ba14b83236c7e3e"
+      "sha256": "89ec84169a2285e8e459da9d3a9c2d4744852374a810fba1d311a796b237b0ca"
     },
     {
       "path": "tests/transport/late_desktop.py",
@@ -1800,7 +1800,7 @@
     },
     {
       "path": "tests/transport/test_overwatcher_desktop.py",
-      "sha256": "3ce7ab3944bf02218c4266d3a0f6a10effeee295d0e942e611af38ad2631b6a3"
+      "sha256": "49ce054a6ebff351d6a12a205cfaf747550358c4e24bdd52999b7330bda3f999"
     },
     {
       "path": "tests/transport/test_partial_checker_resume.py",

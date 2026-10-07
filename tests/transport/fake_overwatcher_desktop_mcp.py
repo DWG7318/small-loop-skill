@@ -42,26 +42,27 @@ for line in sys.stdin:
             continue
         turn_status = "completed" if MODE == "completed" else "inProgress"
         thread_status = "idle" if MODE in {"completed", "idle-running"} else "active"
-        item_id = "wrong-item" if MODE == "wrong-item" else "item-ow-input"
+        item_id = "wrong-item" if MODE in {"wrong-item", "paged"} else "item-ow-input"
+        input_text = "tampered input" if MODE == "tampered-input" else INPUT_TEXT
         value = {
             "schemaVersion": 1,
             "thread": {
                 "id": "wrong-thread" if MODE == "wrong-thread" else "thread-ow",
-                "hostId": "local",
-                "cwd": str(Path.cwd()),
+                "hostId": "wrong-host" if MODE == "wrong-host" else "local",
+                "cwd": str(Path.cwd() / "wrong-cwd") if MODE == "wrong-cwd" else str(Path.cwd()),
                 "status": {"type": thread_status},
                 "updatedAt": 1791251486,
             },
-            "page": {"hasMore": False},
+            "page": {"hasMore": MODE == "paged"},
             "turns": [{
-                "id": "turn-ow",
+                "id": "wrong-turn" if MODE == "wrong-turn" else "turn-ow",
                 "status": turn_status,
                 "items": [{
                     "id": item_id,
                     "type": "functionCallOutput",
                     "name": "send_message_to_thread",
                     "namespace": "codex_app",
-                    "output": {"text": INPUT_TEXT, "truncated": False},
+                    "output": {"text": input_text, "truncated": False},
                 }],
             }],
         }

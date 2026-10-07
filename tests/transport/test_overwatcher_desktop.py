@@ -119,6 +119,56 @@ def test_each_native_inspection_refreshes_from_real_platform_after_file_snapshot
     assert {call["name"] for call in calls} == {"read_thread"}
 
 
+def test_fresh_inspection_accepts_live_turn_after_attested_input_rolls_out_of_latest_page(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    prepare_host(monkeypatch)
+    request, digest = write_request(tmp_path)
+    evidence = tmp_path / "evidence"
+    result = attest_desktop_overwatcher(request, request_sha256=digest, evidence_root=evidence)
+    monkeypatch.setenv("FAKE_OW_DESKTOP_MODE", "paged")
+
+    observed = inspect_native_activity(
+        evidence / "started.json",
+        native_probe=lambda start: desktop_overwatcher_probe(
+            evidence / "desktop-overwatcher-attestation.json",
+            attestation_sha256=result["attestation_sha256"],
+            started_path=evidence / "started.json",
+            start=start,
+        ),
+    )
+
+    assert observed["status"] == "ACTIVE"
+    assert observed["error"] is None
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["wrong-thread", "wrong-host", "wrong-cwd", "wrong-turn", "tampered-input"],
+)
+def test_fresh_inspection_rejects_live_identity_or_visible_input_drift(
+    tmp_path: Path, monkeypatch, mode: str,
+) -> None:
+    prepare_host(monkeypatch)
+    request, digest = write_request(tmp_path)
+    evidence = tmp_path / "evidence"
+    result = attest_desktop_overwatcher(request, request_sha256=digest, evidence_root=evidence)
+    monkeypatch.setenv("FAKE_OW_DESKTOP_MODE", mode)
+
+    observed = inspect_native_activity(
+        evidence / "started.json",
+        native_probe=lambda start: desktop_overwatcher_probe(
+            evidence / "desktop-overwatcher-attestation.json",
+            attestation_sha256=result["attestation_sha256"],
+            started_path=evidence / "started.json",
+            start=start,
+        ),
+    )
+
+    assert observed["status"] == "UNKNOWN"
+    assert observed["error"] == "NATIVE_QUERY_FAILED"
+
+
 @pytest.mark.parametrize("reader", ["thread-reader", "thread-ow", "thread-temporal-host"])
 def test_fresh_inspection_uses_the_current_trusted_desktop_reader_without_rebinding_target(
     tmp_path: Path, monkeypatch, reader: str,
