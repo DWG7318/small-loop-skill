@@ -6,6 +6,14 @@ Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
 Status: the authorized fresh-partial OCRV continuation completed once and the original Checker recorded immutable `D1_PASSED` event `4e078228-ca65-5ca0-8e3f-55b0ea8bb274`; the candidate is unchanged and OCRV must not run again. A sealed suffix-only entrance now derives that event from correction `c19cb0d1-8c29-52a8-8dff-729917512a28`, revalidates the exact committed request/result, native PASS, current TOKEN and Checker identity, and invokes only the missing deterministic post-D1 suffix. The branch is not merged, pushed, tagged or released.
 
+## 2026-10-07 frozen Checker suffix-only recovery correction
+
+- A recorded D1 failure can leave immutable `d1-projection.json`, `post-d1-request.json` and the original failure receipt before the Checker-to-Supervisor escalation is materialized. `resume-role-host` now recognizes only that exact three-file boundary and consumes the frozen post-D1 request without recording D1 or regenerating the projection.
+- Recovery reconstructs the closed request from the original candidate, source attempt, RoleHost binding and terminal time; validates the frozen D1 lineage; requires the current runtime revision, TOKEN, holder, latest message and D1 event to remain exact; and permits unrelated later Overwatcher observations outside that authority boundary.
+- A new immutable suffix seal binds the SHA-256 of the old projection, request and failure receipt before the suffix executes. Changed bytes, candidate/source/runtime drift, incomplete evidence, or any already-materialized escalation fail closed. A successful RoleHost receipt remains idempotent.
+- The preserved product evidence passed a read-only validation at runtime revision 164 and TOKEN T52 with request SHA-256 `09a366ab0fe15acfec4b326aa45cb7144be2d6bf3330fb67015fb37bbad5ba48`; no product suffix or state mutation was performed during validation.
+- Focused RoleHost and Checker escalation regression passes 97 tests; the new suffix-only matrix passes 7 tests in ordinary and optimized Python. Full Python passes 1025 with 30 skipped in both modes, and the Rust workspace, repository, package/install rollback and Manifest gates pass.
+
 ## 2026-10-07 management-return cross-attempt lineage correction
 
 - Owner withdrew the earlier defer-until-Run-end restriction and authorized this immediate, bounded 4.4.2 correction. No unrelated candidate, version, role topology or release scope is included.

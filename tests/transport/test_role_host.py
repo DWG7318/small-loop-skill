@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 import pytest
 
@@ -18,6 +19,7 @@ from slk_transport.native_activity import make_native_start
 from slk_transport import worker_completion as wc
 from slk_transport import checker_management
 from test_worker_completion import completion_fixture, write_json
+from test_contracts import endpoint_value
 
 
 def test_normal_job_consumes_frozen_host_binding_after_terminal(tmp_path, monkeypatch):
@@ -175,6 +177,197 @@ def test_checker_incomplete_hands_control_to_supervisor_without_a_fail_or_rework
     assert result["status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
     assert result["d1_incomplete_event_id"] == event_id
     assert wc._read_object(root / "d1-projection.json", "D1 projection") == current
+
+
+def frozen_checker_failure_suffix(tmp_path):
+    from test_checker_escalation import fixture as checker_failure_fixture
+
+    request, _original_request_path = checker_failure_fixture(tmp_path)
+    source = Path(str(request["native_attempt_path"]))
+    envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
+    checker = wc._read_object(source / "endpoint.json", "Checker endpoint")
+    supervisor_path = Path(str(request["supervisor_endpoint_path"]))
+    supervisor = wc._read_object(supervisor_path, "Supervisor endpoint")
+    worker = endpoint_value(role="worker", version=1)
+    worker.update({"run_id": envelope.run_id, "role_instance_id": envelope.sender_role_instance_id})
+    roles = {}
+    for role, endpoint, endpoint_path in (
+        ("supervisor", supervisor, supervisor_path),
+        ("checker", checker, source / "endpoint.json"),
+        ("worker", worker, write_json(tmp_path / "worker-endpoint.json", worker)),
+    ):
+        credential = tmp_path / f"{role}.dpapi"
+        credential.write_text("00", encoding="ascii")
+        roles[role] = {
+            "endpoint_path": str(endpoint_path.resolve()),
+            "endpoint_sha256": wc._sha256(endpoint_path),
+            "credential_path": str(credential.resolve()),
+        }
+    binding = {
+        "schema_version": "slk.role-host/v1",
+        "run_id": envelope.run_id,
+        "plan_revision": 1,
+        "state_command": ["slk-state"],
+        "transport_command": ["slk-transport"],
+        "roles": roles,
+        "cells": [{"go_id": envelope.go_id, "cell_id": envelope.cell_id,
+                   "payload": {"cell_goal": envelope.payload["cell_goal"],
+                               "d1_criteria": list(envelope.payload["d1_criteria"])}}],
+        "d2_criteria": ["The accepted Run remains coherent."],
+    }
+    host = RoleHost(binding, "a" * 64)
+    root = source / "role-host"
+    root.mkdir()
+    frozen = wc._read_object(Path(str(request["runtime_projection_path"])), "runtime projection")
+    event_id = wc._stable_id(envelope.message_id, "d1-result-v2")
+    frozen["events"].insert(0, {
+        "event_id": "transport-started-candidate",
+        "event_type": "TRANSPORT_STARTED",
+        "author_role_instance_id": envelope.sender_role_instance_id,
+        "go_id": envelope.go_id,
+        "cell_id": envelope.cell_id,
+        "attempt": 1,
+        "corrects_event_id": None,
+        "details_json": json.dumps({"message_id": envelope.message_id}),
+    })
+    frozen["events"][1]["event_id"] = event_id
+    frozen["runtime_snapshot"]["latest_event_id"] = event_id
+    projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", frozen)
+    result = wc._read_object(source / "ocrv-result.json", "D1 result")
+    occurred_at = datetime.fromtimestamp(
+        (source / "completed.json").stat().st_mtime, timezone.utc
+    ).isoformat()
+    request.update({
+        "post_d1_invocation_id": wc._stable_id(event_id, "normal-fail"),
+        "d1_failure_event_id": event_id,
+        "runtime_projection_path": str(projection_path.resolve()),
+        "native_attempt_path": str(source.resolve()),
+        "supervisor_endpoint_path": str(supervisor_path.resolve()),
+        "checker_credential_path": host.credential_path("checker"),
+        "state_command": host.state,
+        "transport_command": host.transport,
+        "escalation_attempt_root": str(root.resolve()),
+        "cell_goal": envelope.payload["cell_goal"],
+        "acceptance_criteria": list(envelope.payload["d1_criteria"]),
+        "findings": normalized_checker_findings(result["findings"]),
+        "reproduction_steps": [
+            "Read the original Checker findings and cited evidence; do not infer a reproduction."
+        ],
+        "expected_result": "Satisfy the unchanged CELL acceptance criteria.",
+        "evidence_refs": [str((source / "ocrv-result.json").resolve())],
+        "occurred_at": occurred_at,
+    })
+    request_path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
+    failure_path = wc._write_or_reuse_stable_request(
+        root / "failure-CHECKER_ESCALATION_D1_MISMATCH.json",
+        {"status": "HOST_HANDOFF_FAILED", "run_id": envelope.run_id,
+         "source_message_id": envelope.message_id,
+         "error_code": "CHECKER_ESCALATION_D1_MISMATCH"},
+    )
+    current = json.loads(json.dumps(frozen))
+    current["overwatch_cycles"] = [{"cycle_id": "later-unrelated-observation"}]
+    return host, source, envelope, current, projection_path, request_path, failure_path
+
+
+def test_existing_checker_failure_artifacts_resume_only_the_frozen_suffix_and_are_idempotent(
+    tmp_path, monkeypatch,
+):
+    from slk_transport import checker_escalation
+
+    host, source, envelope, current, projection_path, request_path, failure_path = (
+        frozen_checker_failure_suffix(tmp_path)
+    )
+    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
+    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail(
+        "a frozen D1 failure must not be recorded again"
+    ))
+    calls = []
+
+    def resume(request, **kwargs):
+        calls.append((dict(request), kwargs))
+        assert kwargs["request_path"] == request_path
+        assert kwargs["request_sha256"] == wc._sha256(request_path)
+        return {"status": "CHECKER_ESCALATION_COMMITTED", "d1_failure_event_id": request["d1_failure_event_id"]}
+
+    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", resume)
+
+    receipt = host.complete(source)
+
+    assert receipt["status"] == "CHECKER_ESCALATION_COMMITTED"
+    assert host.complete(source) == receipt
+    assert len(calls) == 1
+    seal = wc._read_object(source / "role-host" / "post-d1-suffix-seal.json", "suffix seal")
+    assert seal["runtime_projection_sha256"] == wc._sha256(projection_path)
+    assert seal["post_d1_request_sha256"] == wc._sha256(request_path)
+    assert seal["failure_sha256"] == wc._sha256(failure_path)
+    assert seal["source_message_id"] == envelope.message_id
+
+
+@pytest.mark.parametrize("artifact", ["projection", "request", "failure"])
+def test_frozen_checker_suffix_rejects_any_sealed_artifact_byte_drift(
+    tmp_path, monkeypatch, artifact,
+):
+    from slk_transport import checker_escalation
+
+    host, source, _envelope, current, projection_path, request_path, failure_path = (
+        frozen_checker_failure_suffix(tmp_path)
+    )
+    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
+    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail(
+        "a frozen D1 failure must not be recorded again"
+    ))
+    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", lambda *_args, **_kwargs: (
+        (_ for _ in ()).throw(checker_escalation.CheckerEscalationError(
+            "EXPECTED_TEST_STOP", "seal was established before the suffix"
+        ))
+    ))
+    with pytest.raises(checker_escalation.CheckerEscalationError):
+        host.complete(source)
+    target = {"projection": projection_path, "request": request_path, "failure": failure_path}[artifact]
+    target.write_bytes(target.read_bytes() + b" \n")
+
+    with pytest.raises(wc.CompletionError) as error:
+        host.complete(source)
+
+    assert error.value.error_code == "ROLE_HOST_SUFFIX_RECOVERY_INVALID"
+
+
+@pytest.mark.parametrize("damage", ["runtime", "candidate", "source"])
+def test_frozen_checker_suffix_rejects_wrong_runtime_candidate_or_source(
+    tmp_path, monkeypatch, damage,
+):
+    from slk_transport import checker_escalation
+
+    host, source, _envelope, current, _projection_path, request_path, _failure_path = (
+        frozen_checker_failure_suffix(tmp_path)
+    )
+    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
+    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail(
+        "an invalid frozen suffix must not record D1 again"
+    ))
+    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", lambda *_args, **_kwargs: pytest.fail(
+        "an invalid frozen suffix must not be consumed"
+    ))
+    if damage == "runtime":
+        current["runtime_snapshot"]["runtime_revision"] += 1
+    else:
+        request = wc._read_object(request_path, "post-D1 request")
+        if damage == "candidate":
+            request["cell_goal"] = "A different candidate goal."
+        else:
+            other = tmp_path / "other-source"
+            other.mkdir()
+            request["native_attempt_path"] = str(other.resolve())
+        request_path.write_text(
+            json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+    with pytest.raises((wc.CompletionError, checker_escalation.CheckerEscalationError)):
+        host.complete(source)
 
 
 def test_completed_tool_failure_with_blocker_is_corrected_without_rerunning_ocrv(

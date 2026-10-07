@@ -1112,6 +1112,141 @@ class RoleHost:
             raise wc.CompletionError("ROLE_HOST_CONFLICT", "committed native evidence changed")
         return True
 
+    def _resume_checker_failure_suffix(
+        self, source: Path, envelope: Envelope, root: Path, occurred_at: str,
+        current_projection: Mapping[str, Any], failed: Any,
+    ) -> dict[str, Any]:
+        projection_path = root / "d1-projection.json"
+        request_path = root / "post-d1-request.json"
+        failure_path = root / "failure-CHECKER_ESCALATION_D1_MISMATCH.json"
+        try:
+            frozen = wc._read_object(projection_path, "frozen D1 projection")
+            request = wc._read_object(request_path, "frozen post-D1 request")
+            failure = wc._read_object(failure_path, "frozen post-D1 failure")
+        except (OSError, ValueError) as exc:
+            raise wc.CompletionError(
+                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix evidence is unavailable"
+            ) from exc
+        expected_failure = {
+            "status": "HOST_HANDOFF_FAILED",
+            "run_id": envelope.run_id,
+            "source_message_id": envelope.message_id,
+            "error_code": "CHECKER_ESCALATION_D1_MISMATCH",
+        }
+        management_return = envelope.payload_type == "D1_MANAGEMENT_RETURN"
+        candidate_payload = (
+            dict(envelope.payload["candidate_payload"])
+            if management_return else dict(envelope.payload)
+        )
+        candidate_message_id = (
+            str(envelope.payload["candidate_message_id"])
+            if management_return else envelope.message_id
+        )
+        correction_id = wc._stable_id(envelope.message_id, "management-review") if management_return else None
+        event_id = wc._stable_id(
+            candidate_message_id,
+            f"d1-management-{correction_id}" if management_return else "d1-result-v2",
+        )
+        snapshot = frozen.get("runtime_snapshot", {})
+        try:
+            attempt = wc._source_attempt(frozen, envelope)
+            native = wc._read_object(source / "ocrv-result.json", "D1 result")
+        except (OSError, ValueError) as exc:
+            raise wc.CompletionError(
+                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker source identity is invalid"
+            ) from exc
+        expected_request = {
+            "schema_version": failed.REQUEST_SCHEMA,
+            "method_version": snapshot.get("method_version"),
+            "post_d1_invocation_id": wc._stable_id(event_id, "normal-fail"),
+            "run_id": envelope.run_id,
+            "go_id": envelope.go_id,
+            "cell_id": envelope.cell_id,
+            "attempt": attempt,
+            "plan_revision": self.binding["plan_revision"],
+            "runtime_revision": snapshot.get("runtime_revision"),
+            "token_sequence": snapshot.get("token_sequence"),
+            "checker_role_instance_id": envelope.receiver_role_instance_id,
+            "d1_failure_event_id": event_id,
+            "runtime_projection_path": str(projection_path),
+            "native_attempt_path": str(source),
+            "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
+            "checker_credential_path": self.credential_path("checker"),
+            "state_command": self.state,
+            "transport_command": self.transport,
+            "escalation_attempt_root": str(root),
+            "rework_round": 1 + sum(
+                event.get("event_type") == "REWORK_REQUESTED"
+                and event.get("cell_id") == envelope.cell_id
+                for event in frozen.get("events", []) if isinstance(event, Mapping)
+            ),
+            "cell_goal": candidate_payload["cell_goal"],
+            "acceptance_criteria": candidate_payload["d1_criteria"],
+            "findings": normalized_checker_findings(native["findings"]),
+            "reproduction_steps": [
+                "Read the original Checker findings and cited evidence; do not infer a reproduction."
+            ],
+            "expected_result": "Satisfy the unchanged CELL acceptance criteria.",
+            "evidence_refs": [str(source / "ocrv-result.json")],
+            "occurred_at": occurred_at,
+        }
+        frozen_snapshot = frozen.get("runtime_snapshot", {})
+        current_snapshot = current_projection.get("runtime_snapshot", {})
+        boundary_fields = {
+            "method_version", "plan_revision", "runtime_revision", "token_sequence",
+            "token_holder_role_instance_id", "latest_event_id", "latest_message_id",
+        }
+        frozen_event = [
+            item for item in frozen.get("events", [])
+            if isinstance(item, Mapping) and item.get("event_id") == event_id
+        ]
+        current_event = [
+            item for item in current_projection.get("events", [])
+            if isinstance(item, Mapping) and item.get("event_id") == event_id
+        ]
+        if (
+            failure != expected_failure
+            or request != expected_request
+            or any(frozen_snapshot.get(key) != current_snapshot.get(key) for key in boundary_fields)
+            or len(frozen_event) != 1
+            or current_event != frozen_event
+        ):
+            raise wc.CompletionError(
+                "ROLE_HOST_SUFFIX_RECOVERY_INVALID",
+                "frozen Checker suffix no longer matches its current D1 boundary",
+            )
+        try:
+            validated = failed._validate_request(request)
+            failed._validate_failure(validated)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise wc.CompletionError(
+                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix validation failed"
+            ) from exc
+        staged = root / ".checker-post-d1" / str(request["post_d1_invocation_id"])
+        delivery = root / str(request["run_id"]) / failed.escalation_message_id(request)
+        if any((staged / name).exists() for name in ("endpoint.json", "envelope.json")) or delivery.exists():
+            raise wc.CompletionError(
+                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "Checker escalation was already materialized"
+            )
+        seal = {
+            "schema_version": "slk.role-host-post-d1-suffix-seal/v1",
+            "run_id": envelope.run_id,
+            "source_message_id": envelope.message_id,
+            "binding_sha256": self.digest,
+            "runtime_projection_sha256": wc._sha256(projection_path),
+            "post_d1_request_sha256": wc._sha256(request_path),
+            "failure_sha256": wc._sha256(failure_path),
+        }
+        try:
+            wc._write_or_reuse_stable_request(root / "post-d1-suffix-seal.json", seal)
+        except wc.CompletionError as exc:
+            raise wc.CompletionError(
+                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix hash changed"
+            ) from exc
+        return failed.execute_checker_escalation(
+            request, request_path=request_path, request_sha256=wc._sha256(request_path)
+        )
+
     def _checker_result(self, source: Path, envelope: Envelope, root: Path, occurred_at: str,
                         projection: Mapping[str, Any]) -> dict[str, Any]:
         from . import checker_completion as passed, checker_escalation as failed
@@ -1126,6 +1261,19 @@ class RoleHost:
             str(envelope.payload["candidate_message_id"])
             if management_return else envelope.message_id
         )
+        frozen_suffix = (
+            root / "d1-projection.json",
+            root / "post-d1-request.json",
+            root / "failure-CHECKER_ESCALATION_D1_MISMATCH.json",
+        )
+        if any(path.exists() for path in frozen_suffix):
+            if not all(path.is_file() for path in frozen_suffix):
+                raise wc.CompletionError(
+                    "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix evidence is incomplete"
+                )
+            return self._resume_checker_failure_suffix(
+                source, envelope, root, occurred_at, projection, failed
+            )
         attempt = wc._source_attempt(projection, envelope)
         continuation = {"run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
                         "attempt": attempt, "plan_revision": self.binding["plan_revision"],
