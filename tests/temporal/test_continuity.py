@@ -83,6 +83,15 @@ def test_exact_failed_pre_start_rejection_is_abandoned_without_forging_ack() -> 
     assert state.request_delivery(DeliveryRequest.from_dict(replacement)) == "DELIVERY_REQUESTED"
 
 
+def test_exact_historical_activity_error_can_use_same_proven_pre_start_rejection() -> None:
+    state = RunContinuity("RUN-A")
+    state.request_delivery(request())
+    state.record_delivery_result(request().operation_id, "TOOL_ERROR:ActivityError")
+    assert state.abandon_pre_start(
+        PreStartRejection.from_dict(pre_start_rejection_value())
+    ) == "PRE_START_REJECTION_ABANDONED"
+
+
 @pytest.mark.parametrize("delivery_result", [None, "DELIVERED", "TOOL_ERROR:RuntimeError"])
 def test_pre_start_abandonment_rejects_unproved_or_ambiguous_native_state(delivery_result) -> None:
     state = RunContinuity("RUN-A")

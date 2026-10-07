@@ -6319,6 +6319,7 @@ def _run_json_command(
     credential: str | None,
     credential_scope: str = "role",
     state_config_path: str | None = None,
+    pythonpath: str | None = None,
 ) -> dict[str, Any]:
     from .process import windows_no_window_kwargs
 
@@ -6344,6 +6345,14 @@ def _run_json_command(
                 "state command config path is unavailable",
             )
         environment["SLK_CONFIG_PATH"] = str(config.resolve())
+    if pythonpath is not None:
+        roots = [Path(item) for item in pythonpath.split(os.pathsep)]
+        if not roots or any(not root.is_absolute() or not root.is_dir() for root in roots):
+            raise CompletionError(
+                "WORKER_CONTINUATION_PYTHONPATH_INVALID",
+                "continuation command Python source path is unavailable",
+            )
+        environment["PYTHONPATH"] = pythonpath
     environment["PYTHONIOENCODING"] = "utf-8"
     environment["PYTHONUTF8"] = "1"
     completed = subprocess.run(

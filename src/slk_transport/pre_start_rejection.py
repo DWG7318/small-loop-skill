@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -30,6 +31,18 @@ FORBIDDEN_NATIVE_NAMES = {
     "ocrv-review-progress.json", "native.stdout.txt", "native.stderr.txt",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _temporal_source_root() -> Path:
+    invoked = Path(sys.argv[0]).resolve()
+    candidates = [
+        invoked.parent.parent / "share" / "small-loop-skill" / "integrations" / "temporal" / "src",
+        Path(__file__).resolve().parents[2] / "integrations" / "temporal" / "src",
+    ]
+    for candidate in candidates:
+        if (candidate / "slk_temporal" / "delivery_client.py").is_file():
+            return candidate
+    raise ValueError("installed Temporal client source is unavailable")
 
 
 def _sha256(path: Path) -> str:
@@ -228,7 +241,10 @@ def execute_pre_start_rejection(
         "--request", str(update_path), "--request-sha256", _sha256(update_path),
     ]
     if run_temporal is None:
-        result = wc._run_json_command(binding["temporal"]["client_command"], arguments, credential=None)
+        result = wc._run_json_command(
+            binding["temporal"]["client_command"], arguments, credential=None,
+            pythonpath=str(_temporal_source_root()),
+        )
     else:
         result = run_temporal(list(binding["temporal"]["client_command"]), arguments)
     expected_result = {

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from slk_transport import worker_completion as wc
 from slk_transport.pre_start_rejection import execute_pre_start_rejection
 
 from test_contracts import endpoint_value, payload_hash
@@ -120,22 +121,29 @@ def fixture(tmp_path: Path) -> tuple[Path, str, dict[str, object]]:
     return request, digest(request), projection
 
 
-def test_pre_start_rejection_command_binds_exact_failure_and_current_supervisor(tmp_path: Path) -> None:
+def test_pre_start_rejection_command_binds_exact_failure_and_current_supervisor(
+    tmp_path: Path, monkeypatch,
+) -> None:
     request, request_sha, projection = fixture(tmp_path)
     calls = []
+    def temporal(command, arguments, **kwargs):
+        calls.append((command, arguments, kwargs))
+        return {
+            "schema_version": "slk.temporal-delivery-update-result/v1",
+            "status": "PRE_START_REJECTION_ABANDONED", "operation": "abandon_pre_start_rejection",
+            "run_id": RUN_ID, "operation_id": OPERATION_ID, "message_id": MESSAGE_ID,
+        }
+    monkeypatch.setattr(wc, "_run_json_command", temporal)
     result = execute_pre_start_rejection(
         request, request_sha256=request_sha,
         authenticate=lambda _host: {"status": "authenticated", "run_id": RUN_ID, "role": "supervisor",
                                     "role_instance_id": "supervisor-a", "runtime_revision": 168},
         load_projection=lambda _host: projection,
-        run_temporal=lambda command, arguments: calls.append((command, arguments)) or {
-            "schema_version": "slk.temporal-delivery-update-result/v1",
-            "status": "PRE_START_REJECTION_ABANDONED", "operation": "abandon_pre_start_rejection",
-            "run_id": RUN_ID, "operation_id": OPERATION_ID, "message_id": MESSAGE_ID,
-        },
     )
     assert result["status"] == "PRE_START_REJECTION_ABANDONED"
     assert calls[0][1][0] == "abandon-pre-start-rejection"
+    temporal_source = Path(calls[0][2]["pythonpath"])
+    assert (temporal_source / "slk_temporal" / "delivery_client.py").is_file()
     assert Path(json.loads(request.read_text())["result_path"]).is_file()
 
 

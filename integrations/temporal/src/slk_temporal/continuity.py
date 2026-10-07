@@ -84,7 +84,7 @@ class RunContinuity:
                 raise ContinuityError("changed duplicate pre-start rejection is forbidden")
             return "PRE_START_REJECTION_ABANDONED"
         pending = self._require_pending(rejection.operation_id)
-        if pending.delivery_result != "FAILED":
+        if pending.delivery_result not in {"FAILED", "TOOL_ERROR:ActivityError"}:
             raise ContinuityError("delivery lacks a proven pre-start FAILED result")
         try:
             rejection.require_match(pending.delivery)

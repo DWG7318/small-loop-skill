@@ -225,6 +225,34 @@ def test_standard_adapter_delivers_exact_staged_message_with_current_role_host(t
     assert seen["environment"]["SLK_TRANSPORT_ROLE_HOST_SHA256"] == config["role_host_binding"]["sha256"]
 
 
+def test_standard_adapter_preserves_failed_send_as_activity_error(tmp_path, monkeypatch):
+    root, config = config_root(tmp_path)
+    standard_adapter.configure(root)
+    message_id = "11111111-1111-4111-8111-111111111111"
+    attempt = Path(config["attempt_root"]) / RUN_ID / message_id
+    write_json(attempt / "endpoint.json", {"run_id": RUN_ID, "role_instance_id": "worker-a"})
+    write_json(attempt / "envelope.json", {
+        "run_id": RUN_ID, "cell_id": "CELL-001", "message_id": message_id,
+        "sender_role_instance_id": "checker-a", "receiver_role_instance_id": "worker-a",
+        "payload_sha256": "b" * 64,
+    })
+    monkeypatch.setattr(
+        standard_adapter,
+        "_run_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("standard adapter command failed")
+        ),
+    )
+    with pytest.raises(RuntimeError, match="standard adapter command failed"):
+        asyncio.run(standard_adapter.deliver_message({
+            "operation_id": "22222222-2222-4222-8222-222222222222",
+            "run_id": RUN_ID, "cell_id": "CELL-001", "attempt": 1,
+            "message_id": message_id, "sender_role_instance_id": "checker-a",
+            "receiver_role_instance_id": "worker-a", "payload_sha256": "b" * 64,
+            "source_runtime_revision": 9,
+        }))
+
+
 def test_standard_adapter_inspects_ow_and_notifies_with_fresh_projection(tmp_path, monkeypatch):
     root, _config = config_root(tmp_path)
     standard_adapter.configure(root)

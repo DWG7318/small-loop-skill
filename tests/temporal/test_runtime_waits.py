@@ -150,6 +150,53 @@ def test_audit_still_runs_while_waiting_for_recovery_ack(monkeypatch):
     assert activities == ["slk.deliver_message", "slk.request_recovery"]
 
 
+def test_activity_failure_is_persisted_as_exact_activity_error(monkeypatch):
+    run = RunSlkWorkflow()
+    delivery = delivery_value()
+
+    class Persisted(Exception):
+        pass
+
+    async def wait(predicate, *, timeout=None):
+        run.request_delivery(delivery)
+
+    async def activity(*_args, **_kwargs):
+        raise workflows.ActivityError(
+            "Activity task failed",
+            scheduled_event_id=1,
+            started_event_id=2,
+            identity="test-worker",
+            activity_type="slk.deliver_message",
+            activity_id=f"deliver-{delivery['operation_id']}",
+            retry_state=None,
+        )
+
+    async def completion(operation_id, timeout_seconds):
+        pending = run._continuity.pending_delivery()
+        assert pending is not None
+        assert pending.operation_id == operation_id
+        assert run.abandon_pre_start_rejection(
+            pre_start_rejection_value()
+        ) == "PRE_START_REJECTION_ABANDONED"
+        raise Persisted
+
+    monkeypatch.setattr(workflows.workflow, "wait_condition", wait)
+    monkeypatch.setattr(workflows.workflow, "execute_activity", activity)
+    monkeypatch.setattr(
+        workflows.workflow,
+        "now",
+        lambda: datetime(2026, 10, 7, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(
+        workflows.workflow,
+        "patched",
+        lambda patch: patch != "slk-4.4.2-two-stage-admission",
+    )
+    monkeypatch.setattr(run, "_wait_for_completion", completion)
+    with pytest.raises(Persisted):
+        asyncio.run(run.run({"startup": start_value(), "startup_receipt": {}}))
+
+
 def test_later_runtime_alarm_does_not_crash_an_already_guarded_run():
     run = RunSlkWorkflow()
     run._startup = workflows.StartSlkRequest.from_dict(start_value())
