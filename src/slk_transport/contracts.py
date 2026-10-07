@@ -93,6 +93,25 @@ def _text_list(value: Any, label: str) -> list[str]:
     return [_text(item, f"{label} item") for item in value]
 
 
+def _candidate_ready_payload(value: Mapping[str, Any]) -> None:
+    _closed(
+        value,
+        frozenset({"repository", "candidate", "cell_goal", "d1_criteria", "evidence_files"}),
+        "candidate payload",
+    )
+    _text(value["repository"], "candidate repository")
+    candidate = _mapping(value["candidate"], "candidate")
+    if not candidate:
+        raise ContractError("candidate must not be empty")
+    _text(value["cell_goal"], "cell_goal")
+    _text_list(value["d1_criteria"], "d1_criteria")
+    evidence = value["evidence_files"]
+    if not isinstance(evidence, list):
+        raise ContractError("evidence_files must be an array")
+    for item in evidence:
+        _text(item, "evidence_files item")
+
+
 def _d1_rework_directive(value: Mapping[str, Any]) -> None:
     fields = frozenset(
         {
@@ -169,6 +188,8 @@ def _d1_incomplete_escalation(value: Mapping[str, Any]) -> None:
         {
             "d1_incomplete_event_id",
             "candidate_message_id",
+            "candidate_payload",
+            "candidate_payload_sha256",
             "reason_codes",
             "evidence",
             "native_terminal_sha256",
@@ -179,6 +200,11 @@ def _d1_incomplete_escalation(value: Mapping[str, Any]) -> None:
     _closed(value, fields, "D1 incomplete escalation")
     _identifier(value["d1_incomplete_event_id"], "d1_incomplete_event_id")
     _text(value["candidate_message_id"], "candidate_message_id")
+    candidate_payload = _mapping(value["candidate_payload"], "candidate_payload")
+    _candidate_ready_payload(candidate_payload)
+    candidate_digest = _text(value["candidate_payload_sha256"], "candidate_payload_sha256")
+    if not SHA256.fullmatch(candidate_digest) or canonical_json_sha256(candidate_payload) != candidate_digest:
+        raise ContractError("candidate_payload_sha256 does not match candidate_payload")
     _text_list(value["reason_codes"], "reason_codes")
     evidence = value["evidence"]
     if not isinstance(evidence, list) or not evidence:
@@ -198,6 +224,53 @@ def _d1_incomplete_escalation(value: Mapping[str, Any]) -> None:
         raise ContractError("native_result_sha256 must be null or 64 lowercase hexadecimal characters")
     if value["decision_required"] != "CAPACITY_OR_ENVIRONMENT_MANAGEMENT":
         raise ContractError("D1 incomplete escalation requires capacity or environment management")
+
+
+def _d1_management_return(value: Mapping[str, Any]) -> None:
+    _closed(
+        value,
+        frozenset(
+            {
+                "source_d1_incomplete_event_id",
+                "candidate_message_id",
+                "candidate_payload",
+                "candidate_payload_sha256",
+                "management_action",
+                "management_summary",
+                "management_evidence_refs",
+                "review_policy",
+            }
+        ),
+        "D1 management return",
+    )
+    _identifier(value["source_d1_incomplete_event_id"], "source_d1_incomplete_event_id")
+    _text(value["candidate_message_id"], "candidate_message_id")
+    candidate_payload = _mapping(value["candidate_payload"], "candidate_payload")
+    _candidate_ready_payload(candidate_payload)
+    candidate_digest = _text(value["candidate_payload_sha256"], "candidate_payload_sha256")
+    if not SHA256.fullmatch(candidate_digest) or canonical_json_sha256(candidate_payload) != candidate_digest:
+        raise ContractError("candidate_payload_sha256 does not match candidate_payload")
+    _choice(
+        value["management_action"],
+        frozenset({"ADJUST_CAPACITY", "ADJUST_ENVIRONMENT", "MECHANICAL_RECOVERY"}),
+        "management_action",
+    )
+    _text(value["management_summary"], "management_summary")
+    _text_list(value["management_evidence_refs"], "management_evidence_refs")
+    policy = _mapping(value["review_policy"], "review_policy")
+    _closed(
+        policy,
+        frozenset({"profile", "aggregate_budget", "review_timeout", "tool_rounds"}),
+        "review_policy",
+    )
+    expected = {
+        "profile": "NORMAL_D1_DEFAULT",
+        "aggregate_budget": "NATIVE_UNLIMITED",
+        "review_timeout": "NATIVE_UNLIMITED",
+        "tool_rounds": "TEMPLATE_DEFAULT",
+    }
+    if dict(policy) != expected:
+        raise ContractError("review_policy must select the exact normal D1 defaults")
 
 
 def _d2_ready(value: Mapping[str, Any]) -> None:
@@ -432,6 +505,10 @@ class Envelope:
             if (sender_role, receiver_role) != ("checker", "supervisor"):
                 raise ContractError("D1_INCOMPLETE_ESCALATION requires checker->supervisor")
             _d1_incomplete_escalation(payload)
+        if payload_type == "D1_MANAGEMENT_RETURN":
+            if (sender_role, receiver_role) != ("supervisor", "checker"):
+                raise ContractError("D1_MANAGEMENT_RETURN requires supervisor->checker")
+            _d1_management_return(payload)
         if payload_type == "D1_REWORK_DIRECTIVE":
             if (sender_role, receiver_role) != ("supervisor", "worker"):
                 raise ContractError("D1_REWORK_DIRECTIVE requires supervisor->worker")

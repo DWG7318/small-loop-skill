@@ -177,6 +177,27 @@ def fixture(tmp_path: Path, *, final: bool = False) -> tuple[dict[str, object], 
     return request, write_json(tmp_path / "checker-completion.json", request)
 
 
+def test_management_return_pass_uses_return_delivery_boundary_and_original_candidate(
+    tmp_path: Path,
+) -> None:
+    from slk_transport.checker_completion import _validate_boundary
+
+    request, _ = fixture(tmp_path)
+    projection_path = Path(str(request["runtime_projection_path"]))
+    projection = json.loads(projection_path.read_text(encoding="utf-8"))
+    return_message_id = "77777777-7777-4777-8777-777777777777"
+    details = json.loads(projection["events"][0]["details_json"])
+    details["native_message_id"] = return_message_id
+    projection["events"][0]["details_json"] = json.dumps(details, sort_keys=True)
+    projection["runtime_snapshot"]["latest_message_id"] = return_message_id
+    write_json(projection_path, projection)
+
+    boundary = _validate_boundary(request)
+
+    assert boundary["event"]["event_id"] == request["d1_event_id"]
+    assert details["candidate_message_id"] == CANDIDATE_MESSAGE_ID
+
+
 @pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2"])
 def test_compatible_patch_requires_exact_request_and_run_version(tmp_path, version):
     from slk_transport.checker_completion import _validate_request, _validate_boundary, CheckerCompletionError

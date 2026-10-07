@@ -910,6 +910,22 @@ fn d1_incomplete_keeps_checker_token_and_cell_open() {
         .unwrap();
     assert_eq!(result.sequence, 3);
     assert_eq!(result.owner_role_instance_id, "supervisor-a");
+    let mut unrelated_return = handoff(4, "supervisor-a", "checker-a");
+    unrelated_return.payload_type = "TRANSPORT_PROBE".into();
+    assert!(matches!(
+        fixture
+            .store
+            .handoff_token(&fixture.supervisor, unrelated_return),
+        Err(StateError::InvalidTokenRoute { .. })
+    ));
+    let mut management_return = handoff(4, "supervisor-a", "checker-a");
+    management_return.payload_type = "D1_MANAGEMENT_RETURN".into();
+    let returned = fixture
+        .store
+        .handoff_token(&fixture.supervisor, management_return)
+        .unwrap();
+    assert_eq!(returned.sequence, 4);
+    assert_eq!(returned.owner_role_instance_id, "checker-a");
     assert_eq!(
         fixture.store.d1_rework_count("run-a", "CELL-001").unwrap(),
         0

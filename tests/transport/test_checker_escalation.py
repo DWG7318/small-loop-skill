@@ -406,6 +406,93 @@ def load_module():
     return importlib.import_module("slk_transport.checker_escalation")
 
 
+def test_management_return_failure_preserves_original_candidate_and_correction_lineage(
+    tmp_path: Path,
+) -> None:
+    module = load_module()
+    request, _ = fixture(tmp_path)
+    native = Path(str(request["native_attempt_path"]))
+    return_message_id = "77777777-7777-4777-8777-777777777777"
+    source_incomplete_event_id = "d1-incomplete-before-management"
+    envelope_path = native / "envelope.json"
+    original = json.loads(envelope_path.read_text(encoding="utf-8"))
+    management_payload = {
+        "source_d1_incomplete_event_id": source_incomplete_event_id,
+        "candidate_message_id": CANDIDATE_MESSAGE_ID,
+        "candidate_payload": original["payload"],
+        "candidate_payload_sha256": original["payload_sha256"],
+        "management_action": "ADJUST_CAPACITY",
+        "management_summary": "Return to the normal unlimited D1 profile.",
+        "management_evidence_refs": [str((native / "ocrv-result.json").resolve())],
+        "review_policy": {
+            "profile": "NORMAL_D1_DEFAULT",
+            "aggregate_budget": "NATIVE_UNLIMITED",
+            "review_timeout": "NATIVE_UNLIMITED",
+            "tool_rounds": "TEMPLATE_DEFAULT",
+        },
+    }
+    returned = {
+        **original,
+        "message_id": return_message_id,
+        "token_sequence": int(original["token_sequence"]) + 2,
+        "sender_role": "supervisor",
+        "sender_role_instance_id": SUPERVISOR_ID,
+        "payload_type": "D1_MANAGEMENT_RETURN",
+        "payload": management_payload,
+        "payload_sha256": canonical_json_sha256(management_payload),
+    }
+    write_json(envelope_path, returned)
+    started_path = write_json(
+        native / "started.json",
+        make_native_start(
+            adapter="ocrv-checker",
+            run_id=RUN_ID,
+            cell_id=CELL_ID,
+            message_id=return_message_id,
+            request_sha256=returned["payload_sha256"],
+            native_request_sha256="b" * 64,
+            native_task_kind="ocrv-review",
+            native_task_id="review-1",
+            native_task_status="RUNNING",
+            pid=os.getpid(),
+        ),
+    )
+    terminal_path = native / "completed.json"
+    terminal = json.loads(terminal_path.read_text(encoding="utf-8"))
+    terminal["message_id"] = return_message_id
+    write_json(terminal_path, terminal)
+    projection_path = Path(str(request["runtime_projection_path"]))
+    projection = json.loads(projection_path.read_text(encoding="utf-8"))
+    current = projection["events"][0]
+    current["corrects_event_id"] = source_incomplete_event_id
+    details = json.loads(current["details_json"])
+    details.update(
+        native_message_id=return_message_id,
+        native_start_sha256=sha256(started_path),
+        native_terminal_sha256=sha256(terminal_path),
+    )
+    current["details_json"] = json.dumps(details, sort_keys=True)
+    projection["events"].insert(0, {
+        "event_id": source_incomplete_event_id,
+        "event_type": "D1_INCOMPLETE",
+        "author_role_instance_id": CHECKER_ID,
+        "go_id": GO_ID,
+        "cell_id": CELL_ID,
+        "attempt": 1,
+        "details_json": json.dumps({
+            "candidate_message_id": CANDIDATE_MESSAGE_ID,
+            "verdict": "INCOMPLETE",
+        }, sort_keys=True),
+    })
+    projection["runtime_snapshot"]["latest_message_id"] = return_message_id
+    write_json(projection_path, projection)
+
+    validated = module._validate_failure(request)
+
+    assert validated["candidate"]["commit"] == CANDIDATE_COMMIT
+    assert validated["event"]["corrects_event_id"] == source_incomplete_event_id
+
+
 @pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2"])
 def test_patch_failure_requires_exact_request_and_run_version(tmp_path, version):
     module = load_module()

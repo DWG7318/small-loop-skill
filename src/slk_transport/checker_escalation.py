@@ -329,7 +329,8 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
         or event.get("cell_id") != request["cell_id"]
         or event.get("attempt") != request["attempt"]
         or details.get("verdict") != "FAIL"
-        or token_boundary["message_id"] != details.get("candidate_message_id")
+        or token_boundary["message_id"]
+        != details.get("native_message_id", details.get("candidate_message_id"))
     ):
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_D1_MISMATCH", "post-D1 suffix is limited to the exact current FAIL"
@@ -389,7 +390,49 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     result = _read_object(result_path, "OCRV D1 result")
     terminal = _read_object(terminal_path, "OCRV terminal")
     candidate_message_id = details.get("candidate_message_id")
-    candidate = envelope.payload.get("candidate")
+    native_message_id = details.get("native_message_id", candidate_message_id)
+    management_return = envelope.payload_type == "D1_MANAGEMENT_RETURN"
+    candidate_payload = (
+        envelope.payload.get("candidate_payload")
+        if management_return
+        else envelope.payload
+    )
+    candidate = (
+        candidate_payload.get("candidate")
+        if isinstance(candidate_payload, Mapping)
+        else None
+    )
+    ordinary_candidate = (
+        envelope.payload_type == "CANDIDATE_READY"
+        and envelope.message_id == candidate_message_id
+        and native_message_id == candidate_message_id
+    )
+    management_source = None
+    if management_return:
+        sources = [
+            item
+            for item in d1_terminals
+            if item.get("event_id") == event.get("corrects_event_id")
+        ]
+        management_source = sources[0] if len(sources) == 1 else None
+    management_source_details = (
+        _details(management_source) if isinstance(management_source, Mapping) else {}
+    )
+    management_lineage_valid = (
+        management_return
+        and envelope.message_id == native_message_id
+        and envelope.payload.get("candidate_message_id") == candidate_message_id
+        and envelope.payload.get("source_d1_incomplete_event_id")
+        == event.get("corrects_event_id")
+        and isinstance(management_source, Mapping)
+        and management_source.get("event_type") == "D1_INCOMPLETE"
+        and management_source.get("author_role_instance_id")
+        == request["checker_role_instance_id"]
+        and management_source.get("go_id") == request["go_id"]
+        and management_source.get("cell_id") == request["cell_id"]
+        and management_source_details.get("candidate_message_id") == candidate_message_id
+        and management_source_details.get("verdict") == "INCOMPLETE"
+    )
     if (
         endpoint.run_id != request["run_id"]
         or endpoint.role != "checker"
@@ -399,13 +442,12 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
         or envelope.cell_id != request["cell_id"]
         or envelope.receiver_role != "checker"
         or envelope.receiver_role_instance_id != request["checker_role_instance_id"]
-        or envelope.payload_type != "CANDIDATE_READY"
-        or envelope.message_id != candidate_message_id
+        or not (ordinary_candidate or management_lineage_valid)
         or not isinstance(candidate, Mapping)
         or result.get("run_id") != request["run_id"]
         or result.get("cell_id") != request["cell_id"]
         or result.get("verdict") != "FAIL"
-        or terminal.get("message_id") != candidate_message_id
+        or terminal.get("message_id") != native_message_id
         or terminal.get("run_id") != request["run_id"]
         or terminal.get("status") != "completed"
         or not isinstance(terminal.get("native_identity"), Mapping)
@@ -423,7 +465,11 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
             "CHECKER_ESCALATION_D1_MISMATCH",
             "D1 failure does not bind the immutable OCRV candidate and terminal evidence",
         )
-    if event.get("corrects_event_id") is not None and not recovery_terminal_validated:
+    if (
+        event.get("corrects_event_id") is not None
+        and not recovery_terminal_validated
+        and not management_lineage_valid
+    ):
         receipt_path = native / "normalization-correction.json"
         receipt = _read_object(receipt_path, "D1 normalization correction")
         receipt_fields = {

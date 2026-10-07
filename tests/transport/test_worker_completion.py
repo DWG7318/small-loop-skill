@@ -2400,13 +2400,15 @@ def test_false_legacy_start_with_token_at_checker_recovers_same_candidate_withou
         "terminal_exit_code",
         "terminal_session_id",
         "expected_event_type",
+        "management_return",
     ),
     [
-        ("PASS", 0, 0, "ocrv-session-1", "D1_PASSED"),
-        ("FAIL", 0, 2, "ocrv-session-1", "D1_FAILED"),
-        ("INCOMPLETE", 7, 3, "ocrv-session-1", "D1_INCOMPLETE"),
-        ("FAIL", 0, 0, "ocrv-session-1", None),
-        ("FAIL", 0, 2, "forged-session", None),
+        ("PASS", 0, 0, "ocrv-session-1", "D1_PASSED", False),
+        ("PASS", 0, 0, "ocrv-session-1", "D1_PASSED", True),
+        ("FAIL", 0, 2, "ocrv-session-1", "D1_FAILED", False),
+        ("INCOMPLETE", 7, 3, "ocrv-session-1", "D1_INCOMPLETE", False),
+        ("FAIL", 0, 0, "ocrv-session-1", None, False),
+        ("FAIL", 0, 2, "forged-session", None, False),
     ],
 )
 def test_native_ocrv_result_is_recorded_only_with_bound_terminal_identity(
@@ -2417,15 +2419,17 @@ def test_native_ocrv_result_is_recorded_only_with_bound_terminal_identity(
     terminal_exit_code: int,
     terminal_session_id: str,
     expected_event_type: str | None,
+    management_return: bool,
 ) -> None:
     native_attempt = tmp_path / "native-attempt"
+    native_message_id = "management-return-1" if management_return else "candidate-message-1"
     write_json(
         native_attempt / "started.json",
         make_native_start(
             adapter="ocrv-checker",
             run_id="RUN-A",
             cell_id="CELL-001",
-            message_id="candidate-message-1",
+            message_id=native_message_id,
             request_sha256="a" * 64,
             native_request_sha256="b" * 64,
             native_task_kind="ocrv-review",
@@ -2466,7 +2470,7 @@ def test_native_ocrv_result_is_recorded_only_with_bound_terminal_identity(
         native_attempt / "completed.json",
         {
             "schema_version": "slk.transport-result/v1",
-            "message_id": "candidate-message-1",
+            "message_id": native_message_id,
             "run_id": "RUN-A",
             "adapter": "ocrv-checker",
             "status": "completed",
@@ -2507,6 +2511,13 @@ def test_native_ocrv_result_is_recorded_only_with_bound_terminal_identity(
         "state_command": ["slk-state"],
         "occurred_at": "2026-10-01T00:00:00Z",
     }
+    if management_return:
+        continuation.update({
+            "native_message_id": native_message_id,
+            "d1_correction_event_id": "d1-incomplete-before-management",
+            "d1_correction_id": "management-review-1",
+            "d1_correction_kind": "management",
+        })
     activation = {
         "status": "CHECKER_STARTED",
         "candidate_message_id": "candidate-message-1",
@@ -2532,9 +2543,14 @@ def test_native_ocrv_result_is_recorded_only_with_bound_terminal_identity(
 
         assert result["status"] == "CHECKER_D1_RECORDED"
         assert result["d1_verdict"] == verdict
-        assert [request["event_type"] for request, _ in writes] == ["D1_STARTED", expected_event_type]
+        expected_events = ([] if management_return else ["D1_STARTED"]) + [expected_event_type]
+        assert [request["event_type"] for request, _ in writes] == expected_events
+        if management_return:
+            assert writes[0][0]["corrects_event_id"] == "d1-incomplete-before-management"
+            assert writes[0][0]["details"]["candidate_message_id"] == "candidate-message-1"
+            assert writes[0][0]["details"]["native_message_id"] == native_message_id
         assert {credential for _, credential in writes} == {"slk_" + "c" * 64}
-        assert writes[1][0]["details"]["native_result_sha256"] == hashlib.sha256(
+        assert writes[-1][0]["details"]["native_result_sha256"] == hashlib.sha256(
             (native_attempt / "ocrv-result.json").read_bytes()
         ).hexdigest()
 

@@ -776,6 +776,36 @@ class RoleHost:
                     "INCOMPLETE management must record one bounded Supervisor action",
                 )
             events = []
+            if decision["action"] != "WAIT_FOR_NATIVE_WORK":
+                checker = self.endpoint("checker")
+                return_payload = {
+                    "source_d1_incomplete_event_id": envelope.payload["d1_incomplete_event_id"],
+                    "candidate_message_id": envelope.payload["candidate_message_id"],
+                    "candidate_payload": envelope.payload["candidate_payload"],
+                    "candidate_payload_sha256": envelope.payload["candidate_payload_sha256"],
+                    "management_action": decision["action"],
+                    "management_summary": decision["summary"],
+                    "management_evidence_refs": list(decision["evidence_refs"]),
+                    "review_policy": {
+                        "profile": "NORMAL_D1_DEFAULT",
+                        "aggregate_budget": "NATIVE_UNLIMITED",
+                        "review_timeout": "NATIVE_UNLIMITED",
+                        "tool_rounds": "TEMPLATE_DEFAULT",
+                    },
+                }
+                outgoing = parse_delivery(checker, {
+                    **asdict(envelope),
+                    "message_id": wc._stable_id(envelope.message_id, "supervisor-management-return"),
+                    "token_sequence": envelope.token_sequence + 1,
+                    "sender_role": "supervisor",
+                    "sender_role_instance_id": envelope.receiver_role_instance_id,
+                    "receiver_role": "checker",
+                    "receiver_role_instance_id": checker["role_instance_id"],
+                    "receiver_endpoint_version": checker["endpoint_version"],
+                    "payload_type": "D1_MANAGEMENT_RETURN",
+                    "payload": return_payload,
+                    "payload_sha256": canonical_json_sha256(return_payload),
+                }).envelope
         else:
             if (set(decision) != {"verdict", "summary", "evidence_refs"}
                 or decision.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
@@ -819,7 +849,8 @@ class RoleHost:
         finally:
             credential = ""
         if outgoing is not None:
-            return self._send_owned(root / "rework", outgoing, occurred_at, self.projection())
+            suffix = "rework" if operation == "rework" else "management-return"
+            return self._send_owned(root / suffix, outgoing, occurred_at, self.projection())
         if operation == "management":
             return {"status": "SUPERVISOR_MANAGEMENT_RECORDED", "action": decision["action"]}
         return {"status": "SUPERVISOR_D2_INCOMPLETE" if not events else "SUPERVISOR_D2_RECORDED", "verdict": decision["verdict"]}
@@ -1030,11 +1061,28 @@ class RoleHost:
         from . import checker_completion as passed, checker_escalation as failed
         from . import checker_management as incomplete
 
+        management_return = envelope.payload_type == "D1_MANAGEMENT_RETURN"
+        candidate_payload = (
+            dict(envelope.payload["candidate_payload"])
+            if management_return else dict(envelope.payload)
+        )
+        candidate_message_id = (
+            str(envelope.payload["candidate_message_id"])
+            if management_return else envelope.message_id
+        )
         attempt = wc._source_attempt(projection, envelope)
         continuation = {"run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
                         "attempt": attempt, "plan_revision": self.binding["plan_revision"],
                         "checker_endpoint": self.endpoint("checker"), "state_command": self.state, "occurred_at": occurred_at}
-        recorded = wc._record_checker_d1({"native_attempt_path": str(source), "candidate_message_id": envelope.message_id},
+        if management_return:
+            correction_id = wc._stable_id(envelope.message_id, "management-review")
+            continuation.update({
+                "native_message_id": envelope.message_id,
+                "d1_correction_event_id": envelope.payload["source_d1_incomplete_event_id"],
+                "d1_correction_id": correction_id,
+                "d1_correction_kind": "management",
+            })
+        recorded = wc._record_checker_d1({"native_attempt_path": str(source), "candidate_message_id": candidate_message_id},
                                         continuation, checker_credential_path=self.credential_path("checker"), timeout_seconds=1)
         projection = self.projection()
         projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", projection)
@@ -1049,7 +1097,10 @@ class RoleHost:
                   "checker_credential_path": self.credential_path("checker"),
                   "state_command": self.state, "transport_command": self.transport,
                   "occurred_at": occurred_at}
-        event_id = wc._stable_id(envelope.message_id, "d1-result-v2")
+        event_id = wc._stable_id(
+            candidate_message_id,
+            f"d1-management-{correction_id}" if management_return else "d1-result-v2",
+        )
         if recorded["d1_verdict"] == "INCOMPLETE":
             matching = [event for event in projection["events"] if event.get("event_id") == event_id]
             if len(matching) != 1:
@@ -1076,7 +1127,7 @@ class RoleHost:
                 "native_attempt_path": str(source), "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
                 "escalation_attempt_root": str(root),
                 "rework_round": 1 + sum(e.get("event_type") == "REWORK_REQUESTED" and e.get("cell_id") == envelope.cell_id for e in projection["events"]),
-                "cell_goal": envelope.payload["cell_goal"], "acceptance_criteria": envelope.payload["d1_criteria"],
+                "cell_goal": candidate_payload["cell_goal"], "acceptance_criteria": candidate_payload["d1_criteria"],
                 "findings": normalized_checker_findings(native["findings"]),
                 "reproduction_steps": ["Read the original Checker findings and cited evidence; do not infer a reproduction."],
                 "expected_result": "Satisfy the unchanged CELL acceptance criteria.", "evidence_refs": [str(source / "ocrv-result.json")]}
@@ -1090,7 +1141,7 @@ class RoleHost:
             final = index == len(ids) - 1
             target_role = "supervisor" if final else "worker"
             payload = ({"d1_event_id": event_id, "required_cell_ids": ids, "accepted_cell_ids": ids,
-                        "final_candidate_message_id": envelope.message_id, "d2_criteria": self.binding["d2_criteria"],
+                        "final_candidate_message_id": candidate_message_id, "d2_criteria": self.binding["d2_criteria"],
                         "evidence_refs": [str(source / "ocrv-result.json")]} if final else self.binding["cells"][index + 1]["payload"])
             request = {**common, "schema_version": passed.REQUEST_SCHEMA,
                 "completion_invocation_id": wc._stable_id(event_id, "normal-pass"), "d1_event_id": event_id,

@@ -267,7 +267,8 @@ def _validate_boundary(request: Mapping[str, Any]) -> dict[str, Any]:
         event.get("event_type") != "D1_PASSED"
         or event.get("author_role_instance_id") != request["checker_role_instance_id"]
         or details.get("verdict") != "PASS"
-        or token_boundary["message_id"] != details.get("candidate_message_id")
+        or token_boundary["message_id"]
+        != details.get("native_message_id", details.get("candidate_message_id"))
     ):
         raise CheckerCompletionError("CHECKER_COMPLETION_D1_MISMATCH", "Checker completion requires exact D1 PASS")
     cells = _ordered_cells(projection)

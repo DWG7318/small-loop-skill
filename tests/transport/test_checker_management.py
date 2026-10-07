@@ -84,6 +84,14 @@ def test_current_incomplete_can_transfer_management_without_d1_fail_or_rework(
     tmp_path: Path,
 ) -> None:
     request, path = fixture(tmp_path)
+    consumed_marker = (
+        Path(str(request["native_attempt_path"]))
+        / "resume-terminal-budget-checker"
+        / "source-consumed.json"
+    )
+    consumed_marker.parent.mkdir(parents=True)
+    consumed_marker.write_bytes(b'{"status":"CONSUMED","budget":128000}\n')
+    consumed_before = consumed_marker.read_bytes()
 
     def run(_command, arguments, *, credential):
         operation = arguments[0]
@@ -117,8 +125,15 @@ def test_current_incomplete_can_transfer_management_without_d1_fail_or_rework(
     assert result["status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
     prepared = management.materialize_management_escalation(request)
     assert prepared["envelope"]["payload_type"] == "D1_INCOMPLETE_ESCALATION"
+    source_envelope = json.loads(
+        (Path(str(request["native_attempt_path"])) / "envelope.json").read_text(encoding="utf-8")
+    )
+    assert prepared["envelope"]["payload"]["candidate_message_id"] == CANDIDATE_MESSAGE_ID
+    assert prepared["envelope"]["payload"]["candidate_payload"] == source_envelope["payload"]
+    assert prepared["envelope"]["payload"]["candidate_payload_sha256"] == source_envelope["payload_sha256"]
     assert "rework_round" not in prepared["envelope"]["payload"]
     assert "findings" not in prepared["envelope"]["payload"]
+    assert consumed_marker.read_bytes() == consumed_before
     schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-checker-management.schema.json").read_text())
     Draft202012Validator(schema).validate(request)
 

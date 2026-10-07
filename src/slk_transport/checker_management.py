@@ -131,7 +131,6 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
         event.get("event_type") != "D1_INCOMPLETE"
         or event.get("author_role_instance_id") != request["checker_role_instance_id"]
         or details.get("verdict") != "INCOMPLETE"
-        or boundary["message_id"] != candidate_message_id
     ):
         raise CheckerEscalationError(
             "CHECKER_MANAGEMENT_D1_MISMATCH", "request does not bind the current INCOMPLETE"
@@ -140,6 +139,28 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
     native = Path(str(request["native_attempt_path"])).resolve()
     endpoint = Endpoint.from_dict(_read_object(native / "endpoint.json", "OCRV endpoint"))
     envelope = Envelope.from_dict(_read_object(native / "envelope.json", "OCRV envelope"))
+    if envelope.payload_type == "CANDIDATE_READY":
+        candidate_payload = dict(envelope.payload)
+        native_message_id = envelope.message_id
+        continuation_valid = (
+            envelope.message_id == candidate_message_id
+            and event.get("corrects_event_id") is None
+        )
+    elif envelope.payload_type == "D1_MANAGEMENT_RETURN":
+        candidate_payload = dict(envelope.payload.get("candidate_payload", {}))
+        native_message_id = envelope.message_id
+        continuation_valid = (
+            envelope.payload.get("candidate_message_id") == candidate_message_id
+            and envelope.payload.get("candidate_payload_sha256")
+            == canonical_json_sha256(candidate_payload)
+            and event.get("corrects_event_id")
+            == envelope.payload.get("source_d1_incomplete_event_id")
+            and details.get("native_message_id") == native_message_id
+        )
+    else:
+        candidate_payload = {}
+        native_message_id = ""
+        continuation_valid = False
     started = native / "started.json"
     terminal_path = Path(str(details.get("native_terminal_path", ""))).resolve()
     result_path_value = details.get("native_result_path")
@@ -152,8 +173,8 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
         or envelope.go_id != request["go_id"]
         or envelope.cell_id != request["cell_id"]
         or envelope.receiver_role_instance_id != request["checker_role_instance_id"]
-        or envelope.payload_type != "CANDIDATE_READY"
-        or envelope.message_id != candidate_message_id
+        or not continuation_valid
+        or boundary["message_id"] != native_message_id
         or not started.is_file()
         or details.get("native_start_sha256") != _sha256(started)
         or terminal_path.parent != native
@@ -165,7 +186,7 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
             "CHECKER_MANAGEMENT_EVIDENCE_INVALID", "native Checker evidence changed"
         )
     terminal = _read_object(terminal_path, "OCRV terminal")
-    if terminal.get("message_id") != candidate_message_id or terminal.get("run_id") != request["run_id"]:
+    if terminal.get("message_id") != native_message_id or terminal.get("run_id") != request["run_id"]:
         raise CheckerEscalationError(
             "CHECKER_MANAGEMENT_EVIDENCE_INVALID", "native terminal identity changed"
         )
@@ -211,6 +232,8 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
         )
     return {
         "candidate_message_id": str(candidate_message_id),
+        "candidate_payload": candidate_payload,
+        "candidate_payload_sha256": canonical_json_sha256(candidate_payload),
         "native_terminal_sha256": _sha256(terminal_path),
         "native_result_sha256": _sha256(result_path) if result_path is not None else None,
         "evidence": evidence,
@@ -225,6 +248,8 @@ def materialize_management_escalation(request: Mapping[str, Any]) -> dict[str, A
     payload = {
         "d1_incomplete_event_id": request["d1_incomplete_event_id"],
         "candidate_message_id": validated["candidate_message_id"],
+        "candidate_payload": validated["candidate_payload"],
+        "candidate_payload_sha256": validated["candidate_payload_sha256"],
         "reason_codes": list(request["reason_codes"]),
         "evidence": validated["evidence"],
         "native_terminal_sha256": validated["native_terminal_sha256"],

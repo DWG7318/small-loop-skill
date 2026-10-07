@@ -345,7 +345,11 @@ class OcrvAdapter:
         envelope: Envelope,
         review_capacity: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        payload = envelope.payload
+        payload = (
+            envelope.payload["candidate_payload"]
+            if envelope.payload_type == "D1_MANAGEMENT_RETURN"
+            else envelope.payload
+        )
         _closed(payload, CANDIDATE_FIELDS, "CANDIDATE_READY payload")
         repository = Path(_nonempty(payload["repository"], "repository"))
         if not repository.is_absolute() or not repository.is_dir():
@@ -882,7 +886,9 @@ class OcrvAdapter:
     ) -> DeliveryResult:
         request = self._candidate_request(
             envelope,
-            self._executing_capacity(endpoint.address),
+            None
+            if envelope.payload_type == "D1_MANAGEMENT_RETURN"
+            else self._executing_capacity(endpoint.address),
         )
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
@@ -1281,7 +1287,7 @@ class OcrvAdapter:
         self.validate_address(endpoint)
         if envelope.payload_type == "CELL_DISPATCH":
             return self._dispatch(endpoint, envelope, attempt)
-        if envelope.payload_type == "CANDIDATE_READY":
+        if envelope.payload_type in {"CANDIDATE_READY", "D1_MANAGEMENT_RETURN"}:
             return self._review(endpoint, envelope, attempt)
         if envelope.payload_type in {"WORKER_COMPLETION_RECOVERY", "PRE_D0_BLOCKED_RECOVERY"}:
             return self._recover(endpoint, envelope, attempt)

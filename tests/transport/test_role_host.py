@@ -699,9 +699,18 @@ def test_native_supervisor_can_record_incomplete_management_without_fabricating_
     tmp_path, monkeypatch,
 ):
     host, source, incoming, _result, projection = supervisor_result_fixture(tmp_path)
+    candidate_payload = {
+        "repository": str((tmp_path / "repository").resolve()),
+        "candidate": {"kind": "commit", "commit": "b" * 40},
+        "cell_goal": host.binding["cells"][0]["payload"]["cell_goal"],
+        "d1_criteria": host.binding["cells"][0]["payload"]["d1_criteria"],
+        "evidence_files": [str((source / "completed.json").resolve())],
+    }
     payload = {
         "d1_incomplete_event_id": "D1-incomplete",
         "candidate_message_id": incoming.message_id,
+        "candidate_payload": candidate_payload,
+        "candidate_payload_sha256": wc.canonical_json_sha256(candidate_payload),
         "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
         "evidence": [{"path": str(source / "envelope.json"), "sha256": "a" * 64}],
         "native_terminal_sha256": "b" * 64,
@@ -728,6 +737,7 @@ def test_native_supervisor_can_record_incomplete_management_without_fabricating_
     })
     monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
     monkeypatch.setattr(host, "_boundary", lambda _envelope: projection)
+    monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _path: "sealed-supervisor")
     monkeypatch.setattr(host, "_authenticate", lambda role, credential: {
         "status": "authenticated", "run_id": incoming.run_id, "role": role,
@@ -736,14 +746,127 @@ def test_native_supervisor_can_record_incomplete_management_without_fabricating_
     monkeypatch.setattr(wc, "_run_json_command", lambda *_args, **_kwargs: pytest.fail(
         "management decision must not invent a D1 event or rework delivery"
     ))
-    monkeypatch.setattr(host, "_send_owned", lambda *_args, **_kwargs: pytest.fail(
-        "management decision must not dispatch ordinary rework"
+    sent = []
+    monkeypatch.setattr(host, "_send_owned", lambda _root, envelope, *_args, **_kwargs: (
+        sent.append(envelope) or {
+            "status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id,
+        }
     ))
 
     receipt = host.complete(source)
 
-    assert receipt["status"] == "SUPERVISOR_MANAGEMENT_RECORDED"
-    assert receipt["action"] == "MECHANICAL_RECOVERY"
+    assert receipt["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert len(sent) == 1
+    returned = sent[0]
+    assert returned.payload_type == "D1_MANAGEMENT_RETURN"
+    assert returned.sender_role == "supervisor" and returned.receiver_role == "checker"
+    assert returned.payload["source_d1_incomplete_event_id"] == "D1-incomplete"
+    assert returned.payload["candidate_message_id"] == incoming.message_id
+    assert returned.payload["candidate_payload"] == candidate_payload
+    assert returned.payload["review_policy"] == {
+        "profile": "NORMAL_D1_DEFAULT",
+        "aggregate_budget": "NATIVE_UNLIMITED",
+        "review_timeout": "NATIVE_UNLIMITED",
+        "tool_rounds": "TEMPLATE_DEFAULT",
+    }
+
+
+def test_returned_management_review_corrects_original_incomplete_and_can_escalate_again(
+    tmp_path, monkeypatch,
+):
+    host, source, original = prepared_host(tmp_path)
+    source_event_id = "d1-incomplete-original"
+    candidate_payload = {
+        "repository": str((tmp_path / "repository").resolve()),
+        "candidate": {"kind": "commit", "commit": "b" * 40},
+        "cell_goal": original.payload["cell_goal"],
+        "d1_criteria": original.payload["d1_criteria"],
+        "evidence_files": [str((source / "completed.json").resolve())],
+    }
+    return_payload = {
+        "source_d1_incomplete_event_id": source_event_id,
+        "candidate_message_id": original.message_id,
+        "candidate_payload": candidate_payload,
+        "candidate_payload_sha256": wc.canonical_json_sha256(candidate_payload),
+        "management_action": "ADJUST_CAPACITY",
+        "management_summary": "Use the normal unlimited D1 profile.",
+        "management_evidence_refs": [str(source / "envelope.json")],
+        "review_policy": {
+            "profile": "NORMAL_D1_DEFAULT",
+            "aggregate_budget": "NATIVE_UNLIMITED",
+            "review_timeout": "NATIVE_UNLIMITED",
+            "tool_rounds": "TEMPLATE_DEFAULT",
+        },
+    }
+    returned = Envelope.from_dict({
+        **asdict(original),
+        "message_id": "77777777-7777-4777-8777-777777777777",
+        "token_sequence": original.token_sequence + 2,
+        "sender_role": "supervisor",
+        "sender_role_instance_id": host.endpoint("supervisor")["role_instance_id"],
+        "receiver_role": "checker",
+        "receiver_role_instance_id": host.endpoint("checker")["role_instance_id"],
+        "receiver_endpoint_version": host.endpoint("checker")["endpoint_version"],
+        "payload_type": "D1_MANAGEMENT_RETURN",
+        "payload": return_payload,
+        "payload_sha256": wc.canonical_json_sha256(return_payload),
+    })
+    root = tmp_path / "returned-checker-host"
+    root.mkdir()
+    correction_id = wc._stable_id(returned.message_id, "management-review")
+    corrected_event_id = wc._stable_id(
+        original.message_id, f"d1-management-{correction_id}"
+    )
+    current = host_boundary(host, returned)
+    current["runtime_snapshot"].update({
+        "runtime_revision": 12,
+        "token_sequence": returned.token_sequence,
+        "token_holder_role_instance_id": returned.receiver_role_instance_id,
+        "latest_message_id": returned.message_id,
+        "latest_event_id": corrected_event_id,
+    })
+    current["events"] = [{
+        "event_id": corrected_event_id,
+        "event_type": "D1_INCOMPLETE",
+        "author_role_instance_id": returned.receiver_role_instance_id,
+        "go_id": returned.go_id,
+        "cell_id": returned.cell_id,
+        "attempt": 1,
+        "corrects_event_id": source_event_id,
+        "details_json": json.dumps({
+            "candidate_message_id": original.message_id,
+            "native_message_id": returned.message_id,
+            "verdict": "INCOMPLETE",
+            "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
+        }),
+    }]
+    monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
+
+    def record(activation, continuation, **_kwargs):
+        assert activation["candidate_message_id"] == original.message_id
+        assert continuation["native_message_id"] == returned.message_id
+        assert continuation["d1_correction_event_id"] == source_event_id
+        assert continuation["d1_correction_kind"] == "management"
+        return {"status": "CHECKER_D1_RECORDED", "d1_verdict": "INCOMPLETE",
+                "d1_event_type": "D1_INCOMPLETE"}
+
+    monkeypatch.setattr(wc, "_record_checker_d1", record)
+    monkeypatch.setattr(host, "projection", lambda: current)
+    captured = {}
+
+    def manage(request, **_kwargs):
+        captured.update(request)
+        return {"status": "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"}
+
+    monkeypatch.setattr(checker_management, "execute_checker_management", manage)
+
+    result = host._checker_result(
+        source, returned, root, "2026-10-07T05:00:00Z", host_boundary(host, returned)
+    )
+
+    assert result["status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
+    assert captured["d1_incomplete_event_id"] == corrected_event_id
+    assert captured["native_attempt_path"] == str(source)
 
 
 @pytest.mark.parametrize("rework_round", [2, 3])

@@ -4048,13 +4048,14 @@ def _record_checker_d1(
     started_path = native_attempt / "started.json"
     checker = Endpoint.from_dict(continuation["checker_endpoint"])
     candidate_message_id = str(activation.get("candidate_message_id", ""))
+    native_message_id = str(continuation.get("native_message_id", candidate_message_id))
     try:
         started = validate_native_start(
             started_path,
             adapter=checker.adapter,
             run_id=str(continuation["run_id"]),
             cell_id=str(continuation["cell_id"]),
-            message_id=candidate_message_id,
+            message_id=native_message_id,
         )
     except NativeActivityError as exc:
         raise CompletionError("CHECKER_D1_EVIDENCE_INVALID", "D1 native start evidence is invalid") from exc
@@ -4130,7 +4131,7 @@ def _record_checker_d1(
         if (
             set(terminal) != terminal_fields
             or terminal.get("schema_version") != "slk.transport-result/v1"
-            or terminal.get("message_id") != candidate_message_id
+            or terminal.get("message_id") != native_message_id
             or terminal.get("run_id") != continuation["run_id"]
             or terminal.get("adapter") != checker.adapter
             or terminal.get("status") != expected_terminal_status
@@ -4274,6 +4275,8 @@ def _record_checker_d1(
             "session_id": result["review"].get("session_id") if result is not None else None,
             "reason_codes": result.get("reason_codes") if result is not None else [terminal.get("error_code")],
         }
+        if native_message_id != candidate_message_id:
+            details["native_message_id"] = native_message_id
         occurred_at = datetime.fromtimestamp(terminal_path.stat().st_mtime, tz=timezone.utc).isoformat().replace(
             "+00:00", "Z"
         )

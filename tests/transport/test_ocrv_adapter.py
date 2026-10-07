@@ -213,6 +213,52 @@ def test_registered_checker_accepts_native_unlimited_budget_and_duration(tmp_pat
     OcrvAdapter().validate_address(Endpoint.from_dict(raw))
 
 
+def test_management_return_reuses_same_candidate_with_normal_unlimited_profile(
+    tmp_path: Path,
+) -> None:
+    original = candidate_envelope(tmp_path)
+    endpoint = checker_endpoint(tmp_path)
+    endpoint_raw = {**endpoint.__dict__, "address": dict(endpoint.address)}
+    endpoint_raw["address"]["review_capacity"] = {
+        "max_tokens": 32_000,
+        "max_tokens_budget": 128_000,
+        "timeout_minutes": 15,
+    }
+    endpoint = Endpoint.from_dict(endpoint_raw)
+    payload = {
+        "source_d1_incomplete_event_id": "d1-incomplete-001",
+        "candidate_message_id": original.message_id,
+        "candidate_payload": dict(original.payload),
+        "candidate_payload_sha256": original.payload_sha256,
+        "management_action": "ADJUST_CAPACITY",
+        "management_summary": "Use the normal unlimited D1 profile.",
+        "management_evidence_refs": [str(tmp_path / "supervisor-decision.json")],
+        "review_policy": {
+            "profile": "NORMAL_D1_DEFAULT",
+            "aggregate_budget": "NATIVE_UNLIMITED",
+            "review_timeout": "NATIVE_UNLIMITED",
+            "tool_rounds": "TEMPLATE_DEFAULT",
+        },
+    }
+    returned = Envelope.from_dict({
+        **original.__dict__,
+        "message_id": "77777777-7777-4777-8777-777777777777",
+        "token_sequence": original.token_sequence + 2,
+        "sender_role": "supervisor",
+        "sender_role_instance_id": "RUN-A-supervisor-001",
+        "payload_type": "D1_MANAGEMENT_RETURN",
+        "payload": payload,
+        "payload_sha256": canonical_json_sha256(payload),
+    })
+
+    request = OcrvAdapter()._candidate_request(returned)
+
+    assert request["candidate"] == original.payload["candidate"]
+    assert request["capacity"]["max_tokens"] == 200_000
+    assert request["capacity"]["max_tokens_budget"] == 0
+    assert request["capacity"]["timeout_minutes"] == 0
+
+
 def test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

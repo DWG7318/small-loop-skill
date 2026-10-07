@@ -4,8 +4,10 @@ import copy
 import hashlib
 import json
 import uuid
+from pathlib import Path
 
 import pytest
+import jsonschema
 
 from slk_transport.contracts import ContractError, Endpoint, Envelope, parse_delivery
 
@@ -258,9 +260,18 @@ def test_d1_failure_escalation_is_closed_and_checker_owned() -> None:
 
 def test_d1_incomplete_escalation_is_closed_and_checker_owned() -> None:
     endpoint = endpoint_value(role="supervisor")
+    candidate_payload = {
+        "repository": "D:/run/repository",
+        "candidate": {"kind": "commit", "commit": "a" * 40},
+        "cell_goal": "Verify the unchanged candidate.",
+        "d1_criteria": ["The candidate satisfies the frozen CELL."],
+        "evidence_files": ["D:/run/worker-result.json"],
+    }
     payload = {
         "d1_incomplete_event_id": "d1-incomplete-001",
         "candidate_message_id": MESSAGE_ID,
+        "candidate_payload": candidate_payload,
+        "candidate_payload_sha256": payload_hash(candidate_payload),
         "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
         "evidence": [{"path": "D:/run/ocrv-result.json", "sha256": "a" * 64}],
         "native_terminal_sha256": "b" * 64,
@@ -284,6 +295,56 @@ def test_d1_incomplete_escalation_is_closed_and_checker_owned() -> None:
     missing["payload_sha256"] = payload_hash(missing["payload"])
     with pytest.raises(ContractError, match="D1 incomplete escalation"):
         parse_delivery(endpoint, missing)
+
+
+def test_d1_management_return_is_closed_supervisor_to_original_checker() -> None:
+    candidate_payload = {
+        "repository": "D:/run/repository",
+        "candidate": {"kind": "commit", "commit": "a" * 40},
+        "cell_goal": "Verify the unchanged candidate.",
+        "d1_criteria": ["The candidate satisfies the frozen CELL."],
+        "evidence_files": ["D:/run/worker-result.json"],
+    }
+    payload = {
+        "source_d1_incomplete_event_id": "d1-incomplete-001",
+        "candidate_message_id": MESSAGE_ID,
+        "candidate_payload": candidate_payload,
+        "candidate_payload_sha256": payload_hash(candidate_payload),
+        "management_action": "ADJUST_CAPACITY",
+        "management_summary": "Return the unchanged candidate to its original Checker.",
+        "management_evidence_refs": ["D:/run/supervisor-decision.json"],
+        "review_policy": {
+            "profile": "NORMAL_D1_DEFAULT",
+            "aggregate_budget": "NATIVE_UNLIMITED",
+            "review_timeout": "NATIVE_UNLIMITED",
+            "tool_rounds": "TEMPLATE_DEFAULT",
+        },
+    }
+    envelope = envelope_value(sender_role="supervisor", receiver_role="checker")
+    envelope["payload_type"] = "D1_MANAGEMENT_RETURN"
+    envelope["payload"] = payload
+    envelope["payload_sha256"] = payload_hash(payload)
+
+    parsed = parse_delivery(endpoint_value(role="checker"), envelope)
+    assert parsed.envelope.payload_type == "D1_MANAGEMENT_RETURN"
+    schema = json.loads(
+        (Path(__file__).parents[2] / "docs/contracts/slk-d1-management-return.schema.json")
+        .read_text(encoding="utf-8")
+    )
+    jsonschema.Draft202012Validator.check_schema(schema)
+    jsonschema.validate(payload, schema)
+
+    wrong_edge = copy.deepcopy(envelope)
+    wrong_edge["sender_role"] = "worker"
+    wrong_edge["sender_role_instance_id"] = "RUN-A-worker-001"
+    with pytest.raises(ContractError, match="supervisor->checker"):
+        Envelope.from_dict(wrong_edge)
+
+    changed_candidate = copy.deepcopy(envelope)
+    changed_candidate["payload"]["candidate_payload"]["cell_goal"] = "Different goal"
+    changed_candidate["payload_sha256"] = payload_hash(changed_candidate["payload"])
+    with pytest.raises(ContractError, match="candidate_payload_sha256"):
+        Envelope.from_dict(changed_candidate)
 
 
 def test_d2_ready_payload_is_closed_and_role_bound() -> None:
