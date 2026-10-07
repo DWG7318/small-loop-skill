@@ -179,11 +179,15 @@ function cells(run: RunView) {
   return run.go_nodes.flatMap((legacyGroup) => legacyGroup.cell_nodes);
 }
 
+function effectiveCells(run: RunView) {
+  return cells(run).filter((cell) => cell.state !== "split");
+}
+
 function currentCellId(run: RunView) {
   return (
     run.token_history.at(-1)?.cell_id ??
     run.roles.find((role) => role.lifecycle === "active" && role.current_cell_id)?.current_cell_id ??
-    cells(run).find((cell) => cell.state !== "d1_passed")?.cell_id ??
+    effectiveCells(run).find((cell) => cell.state !== "d1_passed")?.cell_id ??
     null
   );
 }
@@ -213,7 +217,7 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
   if (event === "CANDIDATE_SUBMITTED") return ["等待 Checker", "wait"];
   if (event === "D1_STARTED") return ["Checker 检验中", "active"];
   if (event === "D1_PASSED") {
-    const allCells = cells(run);
+    const allCells = effectiveCells(run);
     const allPassed = allCells.length > 0 && allCells.every((cell) => cell.state === "d1_passed");
     return allPassed ? ["等待 D2", "wait"] : ["等待下一 CELL", "wait"];
   }
@@ -237,7 +241,10 @@ function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): Ru
   const latest = events.at(-1)?.event_type;
   let tone: RunTone = "wait";
   let state = "未开始";
-  if (cell.state === "d1_passed" || latest === "D1_PASSED") {
+  if (cell.state === "split") {
+    tone = "exempt";
+    state = "已拆分 · 历史";
+  } else if (cell.state === "d1_passed" || latest === "D1_PASSED") {
     tone = "done";
     state = "已完成 · D1 PASS";
   } else if (latest === "D1_FAILED" || latest === "REWORK_REQUESTED") {
@@ -324,7 +331,8 @@ function overwatcher(run: RunView): RunStripView["overwatcher"] {
 
 export function buildRunStripView(project: ProjectSummary, run: RunView, now: Date): RunStripView {
   const allCells = cells(run);
-  const passed = allCells.filter((cell) => cell.state === "d1_passed").length;
+  const effective = effectiveCells(run);
+  const passed = effective.filter((cell) => cell.state === "d1_passed").length;
   const cellId = currentCellId(run);
   const intervals = workIntervals(run, now);
   const responsibleId = run.token_history.at(-1)?.to_role_instance_id;
@@ -354,7 +362,7 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
     runName: run.summary.run_name || allCells[0]?.title || run.summary.goal,
     description: run.summary.run_description || run.summary.goal,
     startDate,
-    progress: { passed, total: allCells.length },
+    progress: { passed, total: effective.length },
     currentCellId: cellId,
     totalWorkMs: unionDuration(intervals),
     currentCellWorkMs: unionDuration(intervals.filter((interval) => interval.cellId === cellId)),

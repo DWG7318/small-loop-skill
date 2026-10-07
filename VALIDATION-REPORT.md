@@ -2,9 +2,18 @@
 
 Date: 2026-10-08 Asia/Shanghai
 Branch: feature/slk-4.4.2-runtime-recovery
-Base for this bounded correction: bc239daffdc58b5af5fcecc956b954a7c47f3db2
+Base for this bounded correction: e4b2769453b80a3c5691a7da5193156bb9d82d88
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
-Status: bounded native Desktop Checker return and operational-notice recovery; original D1, candidate, semantic roles, models and failed attempts are preserved. Product recovery remains Supervisor-owned. The branch is not merged, pushed, tagged or released.
+Status: bounded BI effective-CELL display and existing OW guidance correction; original D1, candidate, semantic roles, models and failed attempts are preserved. Product recovery remains Supervisor-owned. The branch is not merged, pushed, tagged or released.
+
+## 2026-10-08 effective-CELL BI display and OW practical guidance
+
+- The real plan-5 projection has 16 historical CELL records, including four `split` parents and 12 effective CELLs. BI counted the historical parents in its progress denominator, all-D1-complete decision and fallback current-CELL selection. One presentation helper now excludes `split` from those calculations, while expanded history retains all 16 records and explicitly labels split parents as history. The raw projection, plan, Host5, database, candidate and in-flight D1 are unchanged.
+- Three RED regressions reproduced 6/16 instead of 6/12, an incorrect next-CELL state after all effective CELLs passed, and selection of a split parent as current. GREEN passes presentation 13/13, full frontend 92/92, typecheck, production UI/Tauri build and related repository/Skill/package/BI Python 131/131.
+- Existing `slk-overwatch-run` stays at 61 lines: sentence replacements clarify actual bounded waiting inside the same active foreground turn, complete raw run JSON for completion inspection, the separate overall/checklist enums, fresh recollection after `SNAPSHOT_STALE`, and no re-registration merely for a runtime revision change. No new Skill, script, state machine, role, heartbeat or authority is introduced. Quick Skill validation passes.
+- Live evidence distinguishes the failed turn-11 fake-wait/empty-final exit from turn 12's genuine bounded wait and continued native `ACTIVE/RUNNING`; cycles 25/26 remain real observations, not recreated tests. Current TOKEN belongs to Checker, so the future Worker-held completion branch is not claimed as live acceptance. Source guidance and a recorded cycle alone are not proof that OW remains active.
+- Standard headless build produced BI SHA-256 `c6b179e03902be21f13e4a142481b10c4d7260d929ae9fa9d2755613723aba6d`. Packaging preserves the already-deployed three Rust CLI files and transport zipapp byte-for-byte; no Temporal code, workflow identity or live member is changed. The old transparent/double-window fix remains intact; repeated native pixel capture timed out and is not claimed as fresh screenshot acceptance.
+- Package/install and single-window native readback are deployment-phase gates. Runtime-created Python caches are not deleted to conceal a strict managed-tree mismatch; the standard installer preserves the previous managed tree in its backup. No remote action is performed.
 
 ## 2026-10-08 native Desktop return and operational-notice correction
 

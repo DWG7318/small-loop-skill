@@ -1,10 +1,63 @@
 import { describe, expect, it } from "vitest";
 
-import type { EventProjection, RunSummary } from "./contracts";
+import type { EventProjection, RunSummary, RunView } from "./contracts";
 import { archivedRunSummaries, buildRunStripView, visibleRunSummaries } from "./runPresentation";
 import { runFixture } from "./test/fixtures";
 
+function splitHistoryRun(): RunView {
+  const split = new Set(["CELL02", "CELL02-A", "CELL02-A3", "CELL03"]);
+  const passed = new Set(["CELL01", "CELL02-A1", "CELL02-A2", "CELL02-A3A", "CELL02-A3B", "CELL02-B"]);
+  const ids = ["CELL01", "CELL02", "CELL02-A", "CELL02-A1", "CELL02-A2", "CELL02-A3", "CELL02-A3A", "CELL02-A3B", "CELL02-B", "CELL03", "CELL03-A", "CELL03-B", "CELL04", "CELL05", "CELL06", "CELL07"];
+  return {
+    ...runFixture,
+    summary: { ...runFixture.summary, current_plan_revision: 5 },
+    go_nodes: [{
+      ...runFixture.go_nodes[0]!,
+      cell_nodes: ids.map((cell_id, index) => ({
+        ...runFixture.go_nodes[0]!.cell_nodes[0]!, cell_id, ordinal: index + 1, title: cell_id,
+        state: split.has(cell_id) ? "split" : passed.has(cell_id) ? "d1_passed" : "planned",
+      })),
+    }],
+  };
+}
+
 describe("compact Run presentation", () => {
+  const project = { project_id: "project-a", name: "LCaS", repository_url: null, last_known_path: "D:/LCaS", run_count: 1 };
+
+  it("counts only effective CELLs while preserving every split history record", () => {
+    const run = splitHistoryRun();
+    const before = JSON.stringify(run);
+    const view = buildRunStripView(project, run, new Date("2026-09-20T02:00:00Z"));
+
+    expect(view.progress).toEqual({ passed: 6, total: 12 });
+    expect(view.cells).toHaveLength(16);
+    for (const id of ["CELL02", "CELL02-A", "CELL02-A3", "CELL03"]) {
+      const history = view.cells.find((cell) => cell.name === id)!;
+      expect(history.meta).toContain("已拆分");
+      expect(history.tone).toBe("exempt");
+    }
+    expect(JSON.stringify(run)).toBe(before);
+  });
+
+  it("does not let split parents prevent the effective CELLs from waiting for D2", () => {
+    const run = splitHistoryRun();
+    run.go_nodes[0]!.cell_nodes = run.go_nodes[0]!.cell_nodes.map((cell) =>
+      cell.state === "split" ? cell : { ...cell, state: "d1_passed" });
+    run.events = [{ ...runFixture.events[0]!, event_type: "D1_PASSED" }];
+    const view = buildRunStripView(project, run, new Date("2026-09-20T02:00:00Z"));
+
+    expect(view.status).toBe("等待 D2");
+    expect(view.progress).toEqual({ passed: 12, total: 12 });
+    expect(view.cells).toHaveLength(16);
+  });
+
+  it("does not select a split parent as the fallback current CELL", () => {
+    const run = splitHistoryRun();
+    run.token_history = [];
+    run.roles = run.roles.map((role) => ({ ...role, current_cell_id: null }));
+    expect(buildRunStripView(project, run, new Date()).currentCellId).toBe("CELL03-A");
+  });
+
   it("keeps archived Runs out of the primary surface", () => {
     const current = runFixture.summary;
     const archived: RunSummary = {
