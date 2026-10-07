@@ -49,7 +49,7 @@ Supervisor 通过结构化角色 Eval 用 `slk-state init-run --credential-out` 
 - Checker 隔离执行 D1：`$slk-check-cell`
 - 各成员写入共享 Run 记录：`$slk-record-run`
 - D1 未通过后的普通返工：`$slk-rework-cell`
-- Supervisor 处理升级决策、返工路线、能力安排、Owner 授权建议或豁免：`$slk-adjust-run`
+- Supervisor 处理升级、返工、能力、授权、豁免或旧 Checker 端点迁移：`$slk-adjust-run`
 - Worker 向 Checker 交付后缺少当前 CELL 的接收证据：`$slk-recover-communication`
 - 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
 

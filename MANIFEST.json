@@ -1336,7 +1336,7 @@
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
-      "sha256": "5772f8a98ef2be5da2287a9a7623dff1fb3cefa0325f2af507f0cf199c5cb7f3"
+      "sha256": "06c115d5dd6203eb62d799bc13a1105d5aea90961f8ff95d319d108cd8929fac"
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
@@ -1404,7 +1404,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "118f000b171f21191751198f9a647879f47558de9b18c7398e4f7d893edaa449"
+      "sha256": "5415ad0c029ef9eb10cadbb453d467af80161648ebf4f02522ae181f3d5f6000"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -1676,7 +1676,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "c91ef4e126f5e159d80a88e51844daa257c5b11269ca5aace15370f64c57ef2a"
+      "sha256": "87a58928ea06cbefaa57b88acc8e6f70a1c2b325bdccc9e6ff6c53229284fe47"
     },
     {
       "path": "tests/transport/fake_app_server.py",

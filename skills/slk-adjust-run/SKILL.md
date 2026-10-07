@@ -41,6 +41,8 @@ Supervisor 可以按实际原因组合以下办法：
 
 首次正式 D1 FAIL 可沿 `$slk-rework-cell` 给同一 Worker 一次普通返工。第二次及以后由旧 RoleHost 返回 `ROLE_HOST_CELL_SPLIT_REQUIRED`；Supervisor 对两轮证据做 AGGRESSIVE 调查，用密封 `supervisor-admin revise-plan` 版本化拆分，冻结新 revision RoleHost，并更新标准 Temporal Run 配置的 Host 路径/哈希。计划调整沿 `Supervisor → Checker` 用 `SLK TOKEN` 和标准 `CELL_DISPATCH` 回到 `$slk-dispatch-cell`，再由 Checker 派首个后继 CELL；不能直接发给 Worker或开始第三次普通返工。原角色宿主核验 native start 并提交 TOKEN。结束处置前确认正确成员真实接手、OW 已恢复本 Run 巡查；否则保留明确未解决项和下一动作。
 
+旧 Checker 端点的有限 aggregate budget/timeout 导致 INCOMPLETE，且 Supervisor 选择容量调整时，使用 `prepare-runtime-binding-migration` 按 [`slk-runtime-binding-migration.schema.json`](../../docs/contracts/slk-runtime-binding-migration.schema.json) 冻结同一角色、Session、模型、凭据、目标 RoleHost 与同一 Run Temporal config；Owner 明确冻结有限预算时不要迁移。Supervisor 先执行一次 `migrate-runtime-binding`，只在结果为 `RUNTIME_BINDING_REBOUND_AWAITING_PLAN_REVISION` 后执行既有 `supervisor-admin revise-plan`，再原样重放 `migrate-runtime-binding` 核验并发布目标 config。任一步失败或结果不匹配都保留 dispatch guard，不要派发下一 CELL；旧端点、历史 attempt 和结果不改写。
+
 不要在线等待或持续介入普通 CELL；Overwatcher 只核实并报告运行证据，不能替 Supervisor 恢复成员、决定路线、修改计划、TOKEN 或 BI。INCOMPLETE 管理决定不能改写成 PASS/FAIL、普通返工或 Supervisor 代做 D1；同一 CELL 第二次正式 D1 FAIL 起，对照两轮 findings、candidate diff、实际步骤、复现/回归证据和环境假设做 `AGGRESSIVE` 调查，结果应进入版本化拆分或其他明确路线，不能只重复普通建议、接管 D1，或直接开始第三次普通返工。
 
 不要按标题、最近时间或自由文本猜 canonical Run；不要直接编辑 SQLite、伪造失效凭证、新建替代 Run、用终态结果补造启动、自动升级模型，或借身份对账改写 CELL、D0/D1/D2、角色、证据和 TOKEN。

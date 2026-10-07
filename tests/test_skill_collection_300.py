@@ -1537,3 +1537,20 @@ def test_436_checker_post_d1_suffix_is_discoverable_without_expanding_authority(
     assert "DESKTOP_BRIDGE_REQUIRED" in rework
     assert "密封 Checker 凭据" in rework
     assert "空闲 Supervisor 走正常直达" in rework
+
+
+def test_442_runtime_binding_migration_is_routed_and_fail_closed() -> None:
+    main = read_skill("small-loop-skill")
+    adjust = read_skill("slk-adjust-run")
+
+    assert "旧 Checker 端点迁移" in main
+    for marker in (
+        "prepare-runtime-binding-migration",
+        "migrate-runtime-binding",
+        "RUNTIME_BINDING_REBOUND_AWAITING_PLAN_REVISION",
+        "supervisor-admin revise-plan",
+        "slk-runtime-binding-migration.schema.json",
+        "不要派发下一 CELL",
+        "Owner 明确冻结有限预算",
+    ):
+        assert marker in adjust
