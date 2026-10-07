@@ -4,12 +4,14 @@ No scheduler or engineering writer. Requested model metadata is not execution at
 """
 from dataclasses import dataclass
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
 from .adapters.codex import CodexAdapter
 from .adapters.codex_desktop import deliver_desktop
+from .adapters.base import AdapterError
 from .contracts import Endpoint, canonical_json_sha256
 from .evidence import Attempt
 from .native_activity import inspect_native_activity, validate_native_start
@@ -52,8 +54,10 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
                    and r.get("role_instance_id") == notice["sender_role_instance_id"]]
         if len(senders) != 1:
             raise ValueError("OW notice sender is not registered")
-        if senders[0].get("agent_runtime") == "codex" and senders[0].get("session_id") != binding["caller_thread_id"]:
-            raise ValueError("notice caller is not the registered native OW Session")
+        if (senders[0].get("agent_runtime") == "codex"
+            and (not isinstance(senders[0].get("session_id"), str)
+                 or not senders[0]["session_id"].strip())):
+            raise ValueError("registered native OW Session is missing")
     elif notice["sender_role_instance_id"] != "temporal:" + notice["run_id"]:
         raise ValueError("independent Temporal source identity changed")
     root = Path(attempt_root).resolve() / notice["run_id"] / notice["event_id"]
@@ -70,14 +74,34 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
         return result
     if root.is_dir() and any(root.iterdir()):
         raise ValueError("previous operational send is uncertain; inspect it before another send")
+    caller = os.environ.get("CODEX_THREAD_ID")
+    if (not isinstance(caller, str) or not caller.strip() or caller != caller.strip()
+        or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
+        or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
+        raise AdapterError(
+            "CODEX_DESKTOP_HOST_UNAVAILABLE",
+            "the current trusted Desktop executor capability is unavailable",
+        )
+    delivery_raw = {
+        **dict(endpoint_raw),
+        "address": {
+            **dict(endpoint_raw["address"]),
+            "desktop": {**dict(binding), "caller_thread_id": caller},
+        },
+    }
+    delivery_endpoint = Endpoint.from_dict(delivery_raw)
+    CodexAdapter().validate_address(delivery_endpoint)
     root.mkdir(parents=True, exist_ok=True)
     attempt = Attempt(root)
     attempt.write_json_once("notification.json", notice)
     attempt.write_json_once("endpoint.json", endpoint_raw)
     prompt = notice["message"] + "\n" + json.dumps(dict(notice), ensure_ascii=False, sort_keys=True)
     # Only exact platform delivery proves wake. The Supervisor still decides what
-    # to do; this receipt never claims takeover, repair, or engineering acceptance.
-    native = deliver_desktop(endpoint, identity, attempt, prompt, wait_for_completion=False)
+    # to do; the current trusted Desktop caller is only the transport executor.
+    # It does not replace the registered semantic OW/Temporal sender or target.
+    native = deliver_desktop(
+        delivery_endpoint, identity, attempt, prompt, wait_for_completion=False
+    )
     attempt.write_json_once("delivery-result.json", native.to_dict())
     start = validate_native_start(root / "started.json", adapter=endpoint.adapter, run_id=notice["run_id"],
         cell_id="PREPARATION", message_id=notice["event_id"], request_sha256=identity.payload_sha256)

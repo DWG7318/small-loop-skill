@@ -43,7 +43,11 @@ for line in sys.stdin:
             items = []
             if effective_sent and effective_mode != "unconfirmed":
                 prompt = effective_sent["arguments"]["prompt"]
-                caller = "wrong-caller" if effective_mode == "wrong-caller" else "caller-exact"
+                caller = (
+                    "wrong-caller"
+                    if effective_mode == "wrong-caller"
+                    else effective_sent.get("_meta", {}).get("codex_thread_id")
+                )
                 if effective_mode == "wrong-payload":
                     prompt += "changed"
                 text = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"

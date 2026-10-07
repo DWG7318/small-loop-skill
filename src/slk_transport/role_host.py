@@ -850,7 +850,20 @@ class RoleHost:
             credential = ""
         if outgoing is not None:
             suffix = "rework" if operation == "rework" else "management-return"
-            return self._send_owned(root / suffix, outgoing, occurred_at, self.projection())
+            decision_path = source / "supervisor-result.json"
+            decision_timing = {
+                "decision_prepared_at": datetime.fromtimestamp(
+                    decision_path.stat().st_mtime, timezone.utc
+                ).isoformat(),
+                "decision_submitted_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return self._send_owned(
+                root / suffix,
+                outgoing,
+                occurred_at,
+                self.projection(),
+                decision_timing=decision_timing,
+            )
         if operation == "management":
             return {"status": "SUPERVISOR_MANAGEMENT_RECORDED", "action": decision["action"]}
         return {"status": "SUPERVISOR_D2_INCOMPLETE" if not events else "SUPERVISOR_D2_RECORDED", "verdict": decision["verdict"]}
@@ -864,10 +877,33 @@ class RoleHost:
         *,
         temporal_request_path: Path | None = None,
         temporal_request_sha256: str | None = None,
+        decision_timing: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         from dataclasses import asdict
+        if decision_timing is not None:
+            if set(decision_timing) != {"decision_prepared_at", "decision_submitted_at"}:
+                raise wc.CompletionError(
+                    "ROLE_HOST_TIMELINE_INVALID", "Supervisor decision timing is not closed"
+                )
+            try:
+                timestamps = [
+                    datetime.fromisoformat(decision_timing[name].replace("Z", "+00:00"))
+                    for name in ("decision_prepared_at", "decision_submitted_at")
+                ]
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise wc.CompletionError(
+                    "ROLE_HOST_TIMELINE_INVALID", "Supervisor decision timing is not RFC3339"
+                ) from exc
+            if any(value.tzinfo is None for value in timestamps) or timestamps[1] < timestamps[0]:
+                raise wc.CompletionError(
+                    "ROLE_HOST_TIMELINE_INVALID", "Supervisor decision timing is not ordered"
+                )
         target = self.endpoint(envelope.receiver_role)
         sender = self.endpoint(envelope.sender_role)
+        if decision_timing is not None and envelope.sender_role != "supervisor":
+            raise wc.CompletionError(
+                "ROLE_HOST_TIMELINE_INVALID", "only a Supervisor decision can use decision timing"
+            )
         if (envelope.run_id != self.binding["run_id"]
             or envelope.sender_role_instance_id != sender["role_instance_id"]
             or envelope.receiver_role_instance_id != target["role_instance_id"]
@@ -935,8 +971,15 @@ class RoleHost:
             wc._run_json_command(self.transport, ["send", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
                                                   "--attempt-root", str(attempts)], credential=None)
         started_path = native / "started.json"
-        validate_native_start(started_path, adapter=target["adapter"], run_id=envelope.run_id,
-                              cell_id=envelope.cell_id, message_id=envelope.message_id, request_sha256=envelope.payload_sha256)
+        native_start = validate_native_start(
+            started_path,
+            adapter=target["adapter"],
+            run_id=envelope.run_id,
+            cell_id=envelope.cell_id,
+            message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256,
+        )
+        receiver_started_at = native_start["observed_at"]
         if (wc._read_object(native / "endpoint.json", "target endpoint") != target
             or wc._read_object(native / "envelope.json", "target envelope") != asdict(envelope)):
             raise wc.CompletionError("ROLE_HOST_START_INVALID", "native delivery identity differs")
@@ -963,7 +1006,7 @@ class RoleHost:
                 "message_id": envelope.message_id, "token_sequence": envelope.token_sequence,
                 "from_role_instance_id": envelope.sender_role_instance_id, "to_role_instance_id": envelope.receiver_role_instance_id,
                 "endpoint_version": envelope.receiver_endpoint_version, "payload_type": envelope.payload_type,
-                "payload_sha256": envelope.payload_sha256, "occurred_at": occurred_at,
+                "payload_sha256": envelope.payload_sha256, "occurred_at": receiver_started_at,
                 "start_evidence": {"evidence_id": wc._stable_id(envelope.message_id, "host-native-start"),
                     "stored_path": str(started_path), "sha256": wc._sha256(started_path), "message_id": envelope.message_id,
                     "endpoint_sha256": wc._sha256(native / "endpoint.json"), "envelope_sha256": wc._sha256(native / "envelope.json"), "native_status": "STARTED"}}
@@ -992,7 +1035,20 @@ class RoleHost:
                 or value.get("token_sequence") != envelope.token_sequence
                 or value.get("token_owner_role_instance_id") != envelope.receiver_role_instance_id):
                 raise wc.CompletionError("ROLE_HOST_COMMIT_FAILED", "owned handoff commit did not match")
-            wc._write_or_reuse_stable_request(path.with_suffix(".result.json"), value)
+            result_path = wc._write_or_reuse_stable_request(path.with_suffix(".result.json"), value)
+            if decision_timing is not None:
+                timeline = {
+                    "schema_version": "slk.role-host-handoff-timeline/v1",
+                    "run_id": envelope.run_id,
+                    "message_id": envelope.message_id,
+                    **dict(decision_timing),
+                    "receiver_started_at": receiver_started_at,
+                    "central_transport_occurred_at": receiver_started_at,
+                    "committed_at": datetime.fromtimestamp(
+                        result_path.stat().st_mtime, timezone.utc
+                    ).isoformat(),
+                }
+                wc._write_or_reuse_stable_request(root / "handoff-timeline.json", timeline)
             return {"status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id, "commit_path": str(path)}
         finally:
             credential = ""

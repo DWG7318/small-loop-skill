@@ -170,15 +170,43 @@ def test_real_temporal_runtime_events_reach_native_start_validator_and_replay(tm
     assert sum(call["name"] == "send_message_to_thread" for call in calls) == 2
 
 
-@pytest.mark.parametrize("registered_session_matches", [True, False])
-def test_native_ow_notice_requires_its_registered_session_not_a_supervisor_host(tmp_path, monkeypatch, registered_session_matches):
+def test_native_ow_notice_keeps_semantic_sender_but_uses_current_trusted_desktop_executor(tmp_path, monkeypatch):
     endpoint, notice, projection = fixture(tmp_path, monkeypatch)
     notice.update(schema_version="slk.ow-notification/v1", sender_role_instance_id="OW-A")
     projection["roles"].append({"role": "overwatcher", "lifecycle": "active", "role_instance_id": "OW-A",
-        "agent_runtime": "codex", "session_id": endpoint["address"]["desktop"]["caller_thread_id"] if registered_session_matches else "another-native-ow"})
-    if registered_session_matches:
-        assert notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")["status"] == "NOTIFIED"
-    else:
-        with pytest.raises(ValueError, match="registered native OW Session"):
-            notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
-        assert not (tmp_path / "native-calls.jsonl").exists()
+        "agent_runtime": "codex", "session_id": "registered-native-ow"})
+    registered_caller = endpoint["address"]["desktop"]["caller_thread_id"]
+    monkeypatch.setenv("CODEX_THREAD_ID", "trusted-root-executor")
+
+    result = notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+
+    assert result["status"] == "NOTIFIED"
+    root = tmp_path / "notices" / notice["run_id"] / notice["event_id"]
+    assert notification.wc._read_object(root / "notification.json", "notice")["sender_role_instance_id"] == "OW-A"
+    assert notification.wc._read_object(root / "endpoint.json", "endpoint")["address"]["desktop"]["caller_thread_id"] == registered_caller
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert all(call["_meta"]["codex_thread_id"] == "trusted-root-executor" for call in calls)
+
+
+def test_native_ow_notice_still_rejects_unregistered_semantic_sender(tmp_path, monkeypatch):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    notice.update(schema_version="slk.ow-notification/v1", sender_role_instance_id="OW-A")
+    monkeypatch.setenv("CODEX_THREAD_ID", "trusted-root-executor")
+    with pytest.raises(ValueError, match="sender is not registered"):
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    assert not (tmp_path / "native-calls.jsonl").exists()
+
+
+def test_missing_trusted_notice_executor_does_not_poison_an_unsent_retry(tmp_path, monkeypatch):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    monkeypatch.delenv("CODEX_APP_TOOLS_PIPE_PATH")
+    root = tmp_path / "notices" / notice["run_id"] / notice["event_id"]
+
+    with pytest.raises(AdapterError, match="executor capability"):
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+
+    assert not root.exists()
+    monkeypatch.setenv("CODEX_APP_TOOLS_PIPE_PATH", "inherited-native-pipe")
+    assert notification.notify_registered_supervisor(
+        notice, endpoint, projection, tmp_path / "notices"
+    )["status"] == "NOTIFIED"

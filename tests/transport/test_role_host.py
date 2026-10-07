@@ -676,9 +676,11 @@ def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkey
         return {"status": "recorded", "run_id": incoming.run_id}
     monkeypatch.setattr(wc, "_run_json_command", run)
     sent = []
-    def send(root, envelope, occurred, snapshot):
+    def send(root, envelope, occurred, snapshot, **kwargs):
         sent.append(envelope)
         assert [e["event_type"] for e in seen] == ["REWORK_REQUESTED"]
+        assert kwargs["decision_timing"]["decision_prepared_at"]
+        assert kwargs["decision_timing"]["decision_submitted_at"]
         return {"status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id}
     monkeypatch.setattr(host, "_send_owned", send)
     receipt = host.complete(source)
@@ -969,7 +971,7 @@ def test_supervisor_can_submit_decision_from_exact_session_before_turn_terminal(
         return {"status": "recorded", "run_id": incoming.run_id}
 
     monkeypatch.setattr(wc, "_run_json_command", run)
-    monkeypatch.setattr(host, "_send_owned", lambda *args: {
+    monkeypatch.setattr(host, "_send_owned", lambda *args, **kwargs: {
         "status": "OWNED_HANDOFF_COMMITTED", "message_id": "rework-message"})
 
     receipt = host.submit_supervisor_decision(source)
@@ -1036,7 +1038,10 @@ def test_rework_delivery_commits_new_attempt_not_first_attempt(tmp_path, monkeyp
     projection["events"].append({"event_type": "REWORK_REQUESTED", "cell_id": incoming.cell_id, "go_id": incoming.go_id,
         "attempt": 2, "details_json": json.dumps({k: decision[k] for k in ("d1_failure_event_id", "failed_candidate_sha256", "rework_round", "investigation_mode")})})
     root = source / "role-host" / "rework"
-    native_delivery(root, host, outgoing)
+    native = native_delivery(root, host, outgoing)
+    start = wc._read_object(native / "started.json", "native start")
+    start["observed_at"] = "2026-10-05T00:45:00+00:00"
+    write_json(native / "started.json", start)
     monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda p: "sealed-test-secret")
     def run(command, args, **kwargs):
@@ -1046,11 +1051,25 @@ def test_rework_delivery_commits_new_attempt_not_first_attempt(tmp_path, monkeyp
         assert args[0] == "commit-delivery-start"
         request = wc._read_object(Path(args[-1]), "commit")
         assert request["attempt"] == 3
+        assert request["occurred_at"] == start["observed_at"]
         return {"status": "committed", "run_id": incoming.run_id, "message_id": outgoing.message_id,
             "runtime_revision": 8, "token_sequence": outgoing.token_sequence,
             "token_owner_role_instance_id": outgoing.receiver_role_instance_id}
     monkeypatch.setattr(wc, "_run_json_command", run)
-    assert host._send_owned(root, outgoing, "2026-10-05T00:00:00Z", projection)["status"] == "OWNED_HANDOFF_COMMITTED"
+    decision_timing = {
+        "decision_prepared_at": "2026-10-05T00:00:00+00:00",
+        "decision_submitted_at": "2026-10-05T00:44:59+00:00",
+    }
+    assert host._send_owned(
+        root, outgoing, "2026-10-05T00:00:00Z", projection,
+        decision_timing=decision_timing,
+    )["status"] == "OWNED_HANDOFF_COMMITTED"
+    timeline = wc._read_object(root / "handoff-timeline.json", "handoff timeline")
+    assert timeline["decision_prepared_at"] == decision_timing["decision_prepared_at"]
+    assert timeline["decision_submitted_at"] == decision_timing["decision_submitted_at"]
+    assert timeline["receiver_started_at"] == start["observed_at"]
+    assert timeline["central_transport_occurred_at"] == start["observed_at"]
+    assert timeline["committed_at"]
 
 
 def test_rework_commit_survives_missing_host_receipt_without_second_write_or_send(tmp_path, monkeypatch):

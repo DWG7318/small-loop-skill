@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "e09d2b5bf9885a34c88343244600ac34dbcab26293d6a1e68a92f6a65b9a337d"
+      "sha256": "6b90f3d8ded61fb5294cf0fa4bb7ad768ec518efaac1c05be83bcc8e06881c9a"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "c2f1052b5f3df580a9cdcb6089af3e44ddca5efd1fd2ff1114ee6af83e7e7dec"
+      "sha256": "2cf1f2870f5db4f3bb3961b71f946ab27871412ea767f786eef8f152375b42f5"
     },
     {
       "path": "VERSION",
@@ -1520,7 +1520,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "6ab51ede23ed8f56b47b404c2aa3a9cad5e26b19a6be272c08138fe202972c2f"
+      "sha256": "fef2edc03f296957aa1e788cad8914347c17ff588c2f4bc28457b5e9fefd6db3"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
@@ -1536,7 +1536,7 @@
     },
     {
       "path": "src/slk_transport/supervisor_notification.py",
-      "sha256": "b1171e9e7101d7f88cb48aba5e2d29fa9d993509572046b3a0e93b65b2de2a14"
+      "sha256": "5c3b687bfd40e7c61b9cb7b305434498f2c2cc5aa90df8f619d7f9a00e4b60e5"
     },
     {
       "path": "src/slk_transport/task_file.py",
@@ -1680,7 +1680,7 @@
     },
     {
       "path": "tests/transport/fake_desktop_mcp.py",
-      "sha256": "a04c179ee0983eb14780bc6c2811ecdf7621e296d5af0891e374f8a1c94270ed"
+      "sha256": "15e4f733945c151e8feba03769b2362d695b5d66c6d10f778fcfb3d028350578"
     },
     {
       "path": "tests/transport/fake_dsh.py",
@@ -1820,7 +1820,7 @@
     },
     {
       "path": "tests/transport/test_role_host.py",
-      "sha256": "72d3223b55537ab49121fa6ee7ac07bdd2ccf76fbd67d3828ac9c6333c40f7d9"
+      "sha256": "3b2cd1a92ec471923976f3e000fc87d9f8534f59c8887018285817d85f04a7ce"
     },
     {
       "path": "tests/transport/test_run_readiness.py",
@@ -1840,7 +1840,7 @@
     },
     {
       "path": "tests/transport/test_supervisor_notification.py",
-      "sha256": "3717c6b1e1600fffdccc86cf63c8fba0b548304c9589874ff1b03de57ca4cc61"
+      "sha256": "f1c2aceeb42b3d3428d17388a2e74c24198066b3c84f5eba2eafc6719abc53b0"
     },
     {
       "path": "tests/transport/test_task_file.py",
