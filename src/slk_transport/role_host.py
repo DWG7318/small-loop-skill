@@ -313,7 +313,7 @@ class RoleHost:
             result = wc._read_object(source / "checker-result.json", "Checker dispatch")
             outgoing = self._dispatch_envelope(envelope, result)
             result = self._send_owned(root, outgoing, occurred_at, projection)
-        elif envelope.payload_type == "CANDIDATE_READY":
+        elif envelope.payload_type in {"CANDIDATE_READY", "D1_MANAGEMENT_RETURN"}:
             result = self._checker_result(source, envelope, root, occurred_at, projection)
         else:
             raise wc.CompletionError("ROLE_HOST_OPERATION_INVALID", "no normal suffix for this operation")

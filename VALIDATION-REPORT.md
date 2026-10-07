@@ -6,6 +6,15 @@ Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
 Status: the authorized fresh-partial OCRV continuation completed once and the original Checker recorded immutable `D1_PASSED` event `4e078228-ca65-5ca0-8e3f-55b0ea8bb274`; the candidate is unchanged and OCRV must not run again. A sealed suffix-only entrance now derives that event from correction `c19cb0d1-8c29-52a8-8dff-729917512a28`, revalidates the exact committed request/result, native PASS, current TOKEN and Checker identity, and invokes only the missing deterministic post-D1 suffix. The branch is not merged, pushed, tagged or released.
 
+## 2026-10-07 public management-return completion correction
+
+- Independent Supervisor verification found one public-entry omission: `RoleHost._checker_result` already implemented `D1_MANAGEMENT_RETURN`, but `RoleHost.complete` dispatched only `CANDIDATE_READY`, so a valid returned Checker terminal could stop at `ROLE_HOST_OPERATION_INVALID` after paid D1 work.
+- The public route now sends both closed Checker review payload types to the same existing handler. No payload, authority, TOKEN, event, model, retry or suffix semantics changed. The OCRV adapter, envelope contract and management handler were checked and already admitted the exact management-return type; no parallel route was added.
+- The prior test that called the private handler directly now writes the real endpoint/envelope, enters through `RoleHost.complete`, consumes the existing completed terminal, records the correction against the original candidate, reaches the ordinary INCOMPLETE management suffix, and proves replay returns the saved receipt without another D1 record.
+- Focused RoleHost/OCRV adapter/envelope/management regression passes 127 tests in ordinary Python and 127 under `python -O`; the optimized warning only records disabled Python assertions.
+- Full ordinary Python passes 1002 with 30 skipped. A repeated full optimized run was stopped at 42% on Supervisor direction after the relevant optimized 127-test subset and independent Supervisor regression were already green; no full optimized result is claimed for this follow-up.
+- Headless artifacts were rebuilt into `C:\Users\DWG\.codex\.tmp\slk-4.4.2-public-management-return-artifacts-20261007-01`: `slk-transport.pyz` SHA-256 `2b20ab26cf9bdea13071cbada8353e6be8e2a47de23a69be9c2341f2cfc86a8e` and `slk-bi-desktop.exe` SHA-256 `72754fe5430b532d04b09aa564ec023a2a586f39809ce2b0ce47e7159313d579`. The combined 168-file package remains local-only and is not installed, pushed, tagged or released.
+
 ## 2026-10-07 field recheck and visible-shell completion
 
 - Field screenshot `codex-clipboard-471c7cdb-b767-45a0-9b34-91e8ff6ec7d1.png` was created at 12:56:29, before the corrected BI binary was built and installed at 14:56:24. The earlier evidence records two old GUI instances, one launched by a `--help` probe; both then lost their React content after the valid Supervisor-authored `CELL_SPLIT` hit the old Checker-only catalog, while native and document backgrounds were transparent.

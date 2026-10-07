@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "89dbd864baf62a686c323bbed17abc2c2745428e4c53f29247f787e3a3affdbd"
+      "sha256": "3a8c76580db174481060926dd3161f1b669c3a815e82036351d26ce8c9356e7b"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "441191acff3ee3a2ee0cf09fdd30f7f5d56ddbe68799f5a7c8080a97865184e3"
+      "sha256": "b3584b176ee7f78d8d3a58549cb4416f45ddd092c170a3675708d13f0a278898"
     },
     {
       "path": "VERSION",
@@ -1520,7 +1520,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "3bc72d8d89d0bfd47b158d119c391630651950adcb9053fd227672cdc422e644"
+      "sha256": "6ab51ede23ed8f56b47b404c2aa3a9cad5e26b19a6be272c08138fe202972c2f"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
@@ -1820,7 +1820,7 @@
     },
     {
       "path": "tests/transport/test_role_host.py",
-      "sha256": "5161240da14d200bddd7dd1896dfee025be549432892870311a6138e2a2045cc"
+      "sha256": "72d3223b55537ab49121fa6ee7ac07bdd2ccf76fbd67d3828ac9c6333c40f7d9"
     },
     {
       "path": "tests/transport/test_run_readiness.py",

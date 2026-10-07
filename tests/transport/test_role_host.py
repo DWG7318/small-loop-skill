@@ -811,8 +811,9 @@ def test_returned_management_review_corrects_original_incomplete_and_can_escalat
         "payload": return_payload,
         "payload_sha256": wc.canonical_json_sha256(return_payload),
     })
-    root = tmp_path / "returned-checker-host"
-    root.mkdir()
+    write_json(source / "endpoint.json", host.endpoint("checker"))
+    write_json(source / "envelope.json", asdict(returned))
+    root = source / "role-host"
     correction_id = wc._stable_id(returned.message_id, "management-review")
     corrected_event_id = wc._stable_id(
         original.message_id, f"d1-management-{correction_id}"
@@ -841,8 +842,10 @@ def test_returned_management_review_corrects_original_incomplete_and_can_escalat
         }),
     }]
     monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
+    record_calls = []
 
     def record(activation, continuation, **_kwargs):
+        record_calls.append(continuation["native_message_id"])
         assert activation["candidate_message_id"] == original.message_id
         assert continuation["native_message_id"] == returned.message_id
         assert continuation["d1_correction_event_id"] == source_event_id
@@ -852,6 +855,8 @@ def test_returned_management_review_corrects_original_incomplete_and_can_escalat
 
     monkeypatch.setattr(wc, "_record_checker_d1", record)
     monkeypatch.setattr(host, "projection", lambda: current)
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: host_boundary(host, returned))
+    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
     captured = {}
 
     def manage(request, **_kwargs):
@@ -860,13 +865,13 @@ def test_returned_management_review_corrects_original_incomplete_and_can_escalat
 
     monkeypatch.setattr(checker_management, "execute_checker_management", manage)
 
-    result = host._checker_result(
-        source, returned, root, "2026-10-07T05:00:00Z", host_boundary(host, returned)
-    )
+    result = host.complete(source)
 
     assert result["status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
     assert captured["d1_incomplete_event_id"] == corrected_event_id
     assert captured["native_attempt_path"] == str(source)
+    assert host.complete(source) == result
+    assert record_calls == [returned.message_id]
 
 
 @pytest.mark.parametrize("rework_round", [2, 3])
