@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "6b90f3d8ded61fb5294cf0fa4bb7ad768ec518efaac1c05be83bcc8e06881c9a"
+      "sha256": "1c6c14e2ebbcd28d5b697e18f808681df00af7179d17b212b81d6581e1d850ed"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "2cf1f2870f5db4f3bb3961b71f946ab27871412ea767f786eef8f152375b42f5"
+      "sha256": "ef51f9c1426131bb078c157a32d30fb4dec0a9a5ad90fa688cb70e26ee41a544"
     },
     {
       "path": "VERSION",
@@ -900,7 +900,7 @@
     },
     {
       "path": "docs/runtime/SLK-4.4.2-MIGRATION.md",
-      "sha256": "2f58e37e4fd778d5d0e50aa93bbf426812e213919e5b182baba49f33ee152a93"
+      "sha256": "bd0bf6a01805c88bb3fe1b83848f01fa81955b2e20cc1da9d8e789132924ce4f"
     },
     {
       "path": "docs/runtime/SLK-TEMPORAL.md",
@@ -1160,7 +1160,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "7e7d01898ba0d6d0518551314b9b588bbabef79a5dc1d2fe54c10a25c5432f86"
+      "sha256": "b97cb461778c1153165e866d92caeaabaae7c7bd53ec16bacd40775d01caab02"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1336,7 +1336,7 @@
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
-      "sha256": "56d725cddcd25a6e2f4d962165a8a56250bea3240c7eaaa86d66fb95d72bb04f"
+      "sha256": "8aeee8c1d1c7ae1ae055205cde4a1d28ef2c5d3dcf477cb59317a5437fc63b90"
     },
     {
       "path": "skills/slk-close-run/SKILL.md",
@@ -1400,7 +1400,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "139597f3ddd0e9f92c27ac24909d3065ef4434209ec571ada691bec04e777171"
+      "sha256": "118f000b171f21191751198f9a647879f47558de9b18c7398e4f7d893edaa449"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -1448,7 +1448,7 @@
     },
     {
       "path": "src/slk_transport/checker_escalation.py",
-      "sha256": "6bf59acee6bb2962918b33a142fb3f09942afddb3087000bedea2947d1151cd6"
+      "sha256": "9950fc54986deac59bdb4469123fab1a56d2b01e74a60b3d47a168daa33a937c"
     },
     {
       "path": "src/slk_transport/checker_management.py",
@@ -1668,7 +1668,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "c56f1910e2a1f9683dd4a483c3351d47189ef079ac860086552a1453e60e92c4"
+      "sha256": "c91ef4e126f5e159d80a88e51844daa257c5b11269ca5aace15370f64c57ef2a"
     },
     {
       "path": "tests/transport/fake_app_server.py",
@@ -1712,7 +1712,7 @@
     },
     {
       "path": "tests/transport/test_checker_escalation.py",
-      "sha256": "33fcb87c653a6580e803664ecca96fbc3ae071f683d895a54bfd771e20e6ab4b"
+      "sha256": "8334fb720cfee754de565417281abb5f4a9db819505b8d821a007af9530e7445"
     },
     {
       "path": "tests/transport/test_checker_management.py",

@@ -303,24 +303,35 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     except CompletionError as exc:
         raise CheckerEscalationError("CHECKER_ESCALATION_RUNTIME_MISMATCH",
                                     "runtime TOKEN boundary is not authoritative") from exc
-    d1_terminals = [
+    scope_d1_terminals = [
         event
         for event in events
         if isinstance(event, Mapping)
         and event.get("event_type") in {"D1_FAILED", "D1_PASSED", "D1_INCOMPLETE"}
         and event.get("go_id") == request["go_id"]
         and event.get("cell_id") == request["cell_id"]
-        and event.get("attempt") == request["attempt"]
+    ]
+    d1_terminals = [
+        event for event in scope_d1_terminals
+        if event.get("attempt") == request["attempt"]
     ]
     matches = [
-        event for event in d1_terminals if event.get("event_id") == request["d1_failure_event_id"]
+        event
+        for event in scope_d1_terminals
+        if event.get("event_id") == request["d1_failure_event_id"]
     ]
-    if len(matches) != 1 or not d1_terminals or d1_terminals[-1] is not matches[0]:
+    if (
+        len(matches) != 1
+        or not d1_terminals
+        or not scope_d1_terminals
+        or scope_d1_terminals[-1] is not matches[0]
+    ):
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_D1_MISMATCH",
             "bound D1 failure is not the unique current terminal for this scope",
         )
     event = matches[0]
+    event_index = events.index(event)
     details = _details(event)
     if (
         event.get("event_type") != "D1_FAILED"
@@ -408,13 +419,54 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
         and native_message_id == candidate_message_id
     )
     management_source = None
+    management_source_index = None
+    candidate_start = None
+    candidate_start_index = None
+    management_start = None
+    management_start_index = None
+    preceding_candidate_terminal = None
     if management_return:
         sources = [
-            item
-            for item in d1_terminals
-            if item.get("event_id") == event.get("corrects_event_id")
+            (index, item)
+            for index, item in enumerate(events)
+            if isinstance(item, Mapping)
+            and item.get("event_id") == event.get("corrects_event_id")
         ]
-        management_source = sources[0] if len(sources) == 1 else None
+        if len(sources) == 1:
+            management_source_index, management_source = sources[0]
+        candidate_starts = [
+            (index, item)
+            for index, item in enumerate(events)
+            if isinstance(item, Mapping)
+            and item.get("event_type") == "TRANSPORT_STARTED"
+            and item.get("go_id") == request["go_id"]
+            and item.get("cell_id") == request["cell_id"]
+            and _details(item).get("message_id") == candidate_message_id
+        ]
+        if len(candidate_starts) == 1:
+            candidate_start_index, candidate_start = candidate_starts[0]
+        management_starts = [
+            (index, item)
+            for index, item in enumerate(events)
+            if isinstance(item, Mapping)
+            and item.get("event_type") == "TRANSPORT_STARTED"
+            and item.get("go_id") == request["go_id"]
+            and item.get("cell_id") == request["cell_id"]
+            and _details(item).get("message_id") == native_message_id
+        ]
+        if len(management_starts) == 1:
+            management_start_index, management_start = management_starts[0]
+        preceding = [
+            item
+            for index, item in enumerate(events)
+            if isinstance(item, Mapping)
+            and index < event_index
+            and item.get("event_type") in {"D1_FAILED", "D1_PASSED", "D1_INCOMPLETE"}
+            and item.get("go_id") == request["go_id"]
+            and item.get("cell_id") == request["cell_id"]
+            and _details(item).get("candidate_message_id") == candidate_message_id
+        ]
+        preceding_candidate_terminal = preceding[-1] if preceding else None
     management_source_details = (
         _details(management_source) if isinstance(management_source, Mapping) else {}
     )
@@ -424,12 +476,26 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
         and envelope.payload.get("candidate_message_id") == candidate_message_id
         and envelope.payload.get("source_d1_incomplete_event_id")
         == event.get("corrects_event_id")
+        and envelope.payload.get("candidate_payload_sha256")
+        == canonical_json_sha256(candidate_payload)
         and isinstance(management_source, Mapping)
+        and isinstance(candidate_start, Mapping)
+        and isinstance(management_start, Mapping)
         and management_source.get("event_type") == "D1_INCOMPLETE"
         and management_source.get("author_role_instance_id")
         == request["checker_role_instance_id"]
         and management_source.get("go_id") == request["go_id"]
         and management_source.get("cell_id") == request["cell_id"]
+        and candidate_start.get("attempt") == management_source.get("attempt")
+        and management_start.get("attempt") == request["attempt"]
+        and management_start.get("author_role_instance_id")
+        == envelope.sender_role_instance_id
+        and candidate_start_index is not None
+        and management_source_index is not None
+        and management_start_index is not None
+        and candidate_start_index < management_source_index < management_start_index
+        and management_start_index < event_index
+        and preceding_candidate_terminal is management_source
         and management_source_details.get("candidate_message_id") == candidate_message_id
         and management_source_details.get("verdict") == "INCOMPLETE"
     )

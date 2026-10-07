@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from slk_transport.contracts import canonical_json_sha256
+from slk_transport.contracts import ContractError, canonical_json_sha256
 from slk_transport.native_activity import make_native_start
 
 from test_contracts import endpoint_value, envelope_value
@@ -406,11 +406,11 @@ def load_module():
     return importlib.import_module("slk_transport.checker_escalation")
 
 
-def test_management_return_failure_preserves_original_candidate_and_correction_lineage(
+def management_return_fixture(
     tmp_path: Path,
-) -> None:
+) -> tuple[object, dict[str, object], Path, str]:
     module = load_module()
-    request, _ = fixture(tmp_path)
+    request, request_path = fixture(tmp_path)
     native = Path(str(request["native_attempt_path"]))
     return_message_id = "77777777-7777-4777-8777-777777777777"
     source_incomplete_event_id = "d1-incomplete-before-management"
@@ -473,24 +473,185 @@ def test_management_return_failure_preserves_original_candidate_and_correction_l
     )
     current["details_json"] = json.dumps(details, sort_keys=True)
     projection["events"].insert(0, {
+        "event_id": "candidate-transport-started",
+        "event_type": "TRANSPORT_STARTED",
+        "author_role_instance_id": "ROLE-worker",
+        "go_id": GO_ID,
+        "cell_id": CELL_ID,
+        "attempt": 2,
+        "corrects_event_id": None,
+        "details_json": json.dumps({
+            "message_id": CANDIDATE_MESSAGE_ID,
+            "endpoint_sha256": "a" * 64,
+            "envelope_sha256": original["payload_sha256"],
+            "start_evidence_sha256": "b" * 64,
+        }, sort_keys=True),
+    })
+    projection["events"].insert(1, {
         "event_id": source_incomplete_event_id,
         "event_type": "D1_INCOMPLETE",
         "author_role_instance_id": CHECKER_ID,
         "go_id": GO_ID,
         "cell_id": CELL_ID,
-        "attempt": 1,
+        "attempt": 2,
+        "corrects_event_id": None,
         "details_json": json.dumps({
             "candidate_message_id": CANDIDATE_MESSAGE_ID,
             "verdict": "INCOMPLETE",
         }, sort_keys=True),
     })
+    projection["events"].insert(2, {
+        "event_id": "management-transport-started",
+        "event_type": "TRANSPORT_STARTED",
+        "author_role_instance_id": SUPERVISOR_ID,
+        "go_id": GO_ID,
+        "cell_id": CELL_ID,
+        "attempt": 1,
+        "corrects_event_id": None,
+        "details_json": json.dumps({
+            "message_id": return_message_id,
+            "endpoint_sha256": "c" * 64,
+            "envelope_sha256": returned["payload_sha256"],
+            "start_evidence_sha256": "d" * 64,
+        }, sort_keys=True),
+    })
     projection["runtime_snapshot"]["latest_message_id"] = return_message_id
     write_json(projection_path, projection)
+    return module, request, request_path, source_incomplete_event_id
+
+
+def test_management_return_failure_preserves_original_candidate_and_cross_attempt_lineage(
+    tmp_path: Path,
+) -> None:
+    module, request, _request_path, source_incomplete_event_id = management_return_fixture(
+        tmp_path
+    )
 
     validated = module._validate_failure(request)
 
     assert validated["candidate"]["commit"] == CANDIDATE_COMMIT
     assert validated["event"]["corrects_event_id"] == source_incomplete_event_id
+
+
+def test_management_return_cross_attempt_failure_completes_checker_escalation(
+    tmp_path: Path,
+) -> None:
+    module, request, request_path, _source_event_id = management_return_fixture(tmp_path)
+    operations: list[str] = []
+
+    def run(_command, args, *, credential):
+        operation = args[0]
+        operations.append(operation)
+        if operation == "authenticate-role":
+            return {
+                "status": "authenticated",
+                "run_id": RUN_ID,
+                "role": "checker",
+                "role_instance_id": CHECKER_ID,
+                "runtime_revision": request["runtime_revision"],
+            }
+        prepared = module.materialize_escalation(request)
+        message_id = prepared["envelope"]["message_id"]
+        if operation == "send":
+            delivery = Path(prepared["delivery_path"])
+            write_json(delivery / "endpoint.json", prepared["endpoint"])
+            write_json(delivery / "envelope.json", prepared["envelope"])
+            write_json(
+                delivery / "started.json",
+                make_native_start(
+                    adapter="codex-app-server",
+                    run_id=RUN_ID,
+                    cell_id=CELL_ID,
+                    message_id=message_id,
+                    request_sha256=prepared["envelope"]["payload_sha256"],
+                    native_request_sha256="f" * 64,
+                    native_task_kind="codex-turn",
+                    native_task_id="turn-management-fail",
+                    native_task_status="RUNNING",
+                    pid=os.getpid(),
+                ),
+            )
+            return {"status": "started", "run_id": RUN_ID, "message_id": message_id}
+        assert operation == "commit-delivery-start"
+        return {
+            "status": "committed",
+            "run_id": RUN_ID,
+            "runtime_revision": int(request["runtime_revision"]) + 1,
+            "token_sequence": int(request["token_sequence"]) + 1,
+            "token_owner_role_instance_id": SUPERVISOR_ID,
+            "message_id": message_id,
+        }
+
+    result = module.execute_checker_escalation(
+        request,
+        request_sha256=sha256(request_path),
+        request_path=request_path,
+        run_json_command=run,
+        unprotect_credential=lambda _: "synthetic",
+    )
+
+    assert result["status"] == "CHECKER_ESCALATION_COMMITTED"
+    assert operations == ["authenticate-role", "send", "commit-delivery-start"]
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "source-attempt",
+        "management-attempt",
+        "source-cell",
+        "source-role",
+        "source-candidate",
+        "candidate-payload-hash",
+        "later-cross-attempt-terminal",
+    ],
+)
+def test_management_return_cross_attempt_lineage_rejects_mismatched_identity(
+    tmp_path: Path, tamper: str,
+) -> None:
+    module, request, _request_path, source_event_id = management_return_fixture(tmp_path)
+    projection_path = Path(str(request["runtime_projection_path"]))
+    projection = json.loads(projection_path.read_text(encoding="utf-8"))
+    source = next(item for item in projection["events"] if item["event_id"] == source_event_id)
+    if tamper == "source-attempt":
+        source["attempt"] = 3
+    elif tamper == "management-attempt":
+        next(
+            item for item in projection["events"]
+            if item["event_id"] == "management-transport-started"
+        )["attempt"] = 2
+    elif tamper == "source-cell":
+        source["cell_id"] = "CELL-other"
+    elif tamper == "source-role":
+        source["author_role_instance_id"] = "ROLE-other-checker"
+    elif tamper == "source-candidate":
+        source_details = json.loads(source["details_json"])
+        source_details["candidate_message_id"] = "wrong-candidate-message"
+        source["details_json"] = json.dumps(source_details, sort_keys=True)
+    elif tamper == "candidate-payload-hash":
+        envelope_path = Path(str(request["native_attempt_path"])) / "envelope.json"
+        envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+        envelope["payload"]["candidate_payload_sha256"] = "0" * 64
+        envelope["payload_sha256"] = canonical_json_sha256(envelope["payload"])
+        write_json(envelope_path, envelope)
+    else:
+        projection["events"].append({
+            "event_id": "later-d1-terminal",
+            "event_type": "D1_PASSED",
+            "author_role_instance_id": CHECKER_ID,
+            "go_id": GO_ID,
+            "cell_id": CELL_ID,
+            "attempt": 3,
+            "corrects_event_id": None,
+            "details_json": json.dumps({
+                "candidate_message_id": "later-candidate-message",
+                "verdict": "PASS",
+            }, sort_keys=True),
+        })
+    write_json(projection_path, projection)
+
+    with pytest.raises((module.CheckerEscalationError, ContractError)):
+        module._validate_failure(request)
 
 
 @pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2"])

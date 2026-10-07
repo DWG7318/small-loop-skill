@@ -34,7 +34,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 - D1 PASS 后，Checker 更新进度；还有 CELL 时沿 `Checker → Worker` 使用 `$slk-dispatch-cell` 校准，并由标准 PASS 后缀派发精确下一 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，标准 PASS 后缀沿 `Checker → Supervisor` 交付 `D2_READY`、最终令牌和 D2 条件。
 - D1 FAIL 后，Checker 沿 `Checker → Supervisor` 发送 `D1_FAILURE_ESCALATION` 与 TOKEN，再由 `$slk-rework-cell` 进入受限返工路径。
-- D1 INCOMPLETE 不触发返工或失败升级；标准管理后缀把 TOKEN 交给 Supervisor。等待保留在 Supervisor；调整容量/环境或机械恢复使用 `D1_MANAGEMENT_RETURN` 把同一候选交回原 Checker，以正常不限 aggregate budget/timeout、模板默认 tool rounds 重判并更正原事件，不另写 `D1_STARTED`。旧有限预算记录仅在准确原因仍是 budget-only 且 Owner 明确授权时使用现有恢复 Tool；已消费标记和证据不删除、不重置、不再消费，仍 INCOMPLETE 再走管理出口而不能死停。
+- D1 INCOMPLETE 不触发返工或失败升级；标准管理后缀把 TOKEN 交给 Supervisor。等待保留在 Supervisor；调整容量/环境或机械恢复使用 `D1_MANAGEMENT_RETURN` 把同一候选交回原 Checker，以正常不限 aggregate budget/timeout、模板默认 tool rounds 重判并更正原事件，不另写 `D1_STARTED`。管理消息 attempt 与原候选 attempt 各自绑定，不能等同；原候选消息、源 INCOMPLETE、CELL、Checker 或当前终态不一致即拒绝。旧有限预算记录仅在准确原因仍是 budget-only 且 Owner 明确授权时使用现有恢复 Tool；已消费标记和证据不删除、不重置、不再消费，仍 INCOMPLETE 再走管理出口而不能死停。
 
 ## 负面提示词
 

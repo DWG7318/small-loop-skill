@@ -266,6 +266,13 @@ def test_checker_separates_product_failure_from_checking_failures() -> None:
     assert "一次性 DSH/Worker 进程" in check
 
 
+def test_management_return_keeps_transport_and_candidate_attempts_distinct() -> None:
+    for name in ("small-loop-skill", "slk-check-cell"):
+        text = read_skill(name)
+        for marker in ("管理消息 attempt", "原候选 attempt", "不能等同"):
+            assert marker in text, (name, marker)
+
+
 def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -> None:
     execute = read_skill("slk-execute-cell")
     recover = read_skill("slk-recover-communication")

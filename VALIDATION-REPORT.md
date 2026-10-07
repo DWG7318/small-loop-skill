@@ -6,6 +6,14 @@ Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
 Status: the authorized fresh-partial OCRV continuation completed once and the original Checker recorded immutable `D1_PASSED` event `4e078228-ca65-5ca0-8e3f-55b0ea8bb274`; the candidate is unchanged and OCRV must not run again. A sealed suffix-only entrance now derives that event from correction `c19cb0d1-8c29-52a8-8dff-729917512a28`, revalidates the exact committed request/result, native PASS, current TOKEN and Checker identity, and invokes only the missing deterministic post-D1 suffix. The branch is not merged, pushed, tagged or released.
 
+## 2026-10-07 management-return cross-attempt lineage correction
+
+- Owner withdrew the earlier defer-until-Run-end restriction and authorized this immediate, bounded 4.4.2 correction. No unrelated candidate, version, role topology or release scope is included.
+- The observed management review used transport attempt 1 while its original candidate and source `D1_INCOMPLETE` used engineering attempt 2. The old FAIL suffix filtered all D1 terminals by attempt 1 before resolving `corrects_event_id`, so valid event `1563a7ac-d064-5a23-989d-0f3b67ac87d6` could not find source `1937f363-a821-5944-bd98-17e425fe2432` and stopped before a Checker→Supervisor envelope existed.
+- Validation now keeps those identities separate: the management message start binds request attempt 1; the original candidate start binds source attempt 2; both retain the exact Run/GO/CELL, Checker, event order, candidate message/payload/hash and latest terminal. A wrong source/attempt/CELL/role/candidate/hash or a later cross-attempt terminal remains rejected.
+- RED reproduced 8 focused failures. GREEN is 40/40 Checker escalation, 128/128 related transport/RoleHost/CLI/zipapp, 109/109 related optimized Python, and 91/91 Skill collection. A read-only replay of the exact preserved request validates FAIL `1563a7ac…`, source `1937f363…`, management message `e4811883…`, candidate message `6a61edee…` and commit `dd6b41a…` without materializing or committing the suffix.
+- The headless standard five-artifact build passed at `C:\Users\DWG\.codex\.tmp\slk-4.4.2-management-lineage-artifacts-20261007-01`; `slk-transport.pyz` SHA-256 is `d388a6ed569a62287e202869e834078af30123b38048a9232e95d8145c8c21e7`. Product Run state, SQLite, old attempts/events, candidate, OCRV and Worker were not changed.
+
 ## 2026-10-07 RoleHost time semantics and trusted notice executor correction
 
 - Field verification found that a Supervisor decision prepared at 16:24:58 could be reused as the central handoff time even though the target native role started at 16:45:00. Future `commit-delivery-start` requests now take `occurred_at` only from the validated target `started.json.observed_at`; the original decision timestamp is no longer allowed to masquerade as receiver start.
