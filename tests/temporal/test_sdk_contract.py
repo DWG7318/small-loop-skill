@@ -32,6 +32,7 @@ def test_workflow_surface_has_only_communication_updates_and_queries() -> None:
         "request_delivery",
         "request_admission",
         "native_started",
+        "abandon_pre_start_rejection",
         "overwatcher_exited",
         "resolve_runtime_guard",
         "close_run",

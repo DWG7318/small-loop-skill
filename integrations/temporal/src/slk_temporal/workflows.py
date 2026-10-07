@@ -15,6 +15,7 @@ with workflow.unsafe.imports_passed_through():
     from .contracts import (
         DeliveryRequest,
         NativeStartAck,
+        PreStartRejection,
         OverwatcherExitNotice,
         RuntimeGuardResolution,
         StartSlkRequest,
@@ -220,7 +221,7 @@ class RunSlkWorkflow:
                         self._continuity.record_delivery_result(
                             operation_id, f"TOOL_ERROR:{type(error).__name__}"
                         )
-            if self._continuity.is_completed(operation_id):
+            if self._continuity.is_resolved(operation_id):
                 continue
             guarded_wait = workflow.patched("slk-4.4.1-runtime-checks-during-ack")
             try:
@@ -234,7 +235,7 @@ class RunSlkWorkflow:
                         timeout=self._startup.ack_timeout_seconds,
                     )
             except asyncio.TimeoutError:
-                if self._continuity.is_completed(operation_id):
+                if self._continuity.is_resolved(operation_id):
                     continue
                 self._continuity.mark_timeout(operation_id)
                 if operation_id not in self._recovery_started:
@@ -286,7 +287,7 @@ class RunSlkWorkflow:
     async def _wait_for_completion(self, operation_id: str, seconds: int | None = None) -> None:
         deadline = workflow.now() + timedelta(seconds=seconds) if seconds is not None else None
         while self._continuity is not None and not (
-            self._continuity.is_completed(operation_id) or self._continuity.is_terminal()
+            self._continuity.is_resolved(operation_id) or self._continuity.is_terminal()
         ):
             timeout = self._runtime_check_timeout()
             if deadline is not None:
@@ -297,7 +298,7 @@ class RunSlkWorkflow:
             try:
                 await workflow.wait_condition(
                     lambda: self._continuity is not None and (
-                        self._continuity.is_completed(operation_id) or self._continuity.is_terminal()
+                        self._continuity.is_resolved(operation_id) or self._continuity.is_terminal()
                     ), timeout=timeout,
                 )
             except asyncio.TimeoutError:
@@ -513,6 +514,23 @@ class RunSlkWorkflow:
         self._member_residency_since = workflow.now()
         self._member_residency_notice_sent = False
         return result
+
+    @workflow.update
+    def abandon_pre_start_rejection(self, value: dict[str, Any]) -> str:
+        if self._startup is None or self._continuity is None:
+            raise ApplicationError("SLK Run has not initialized", non_retryable=True)
+        rejection = self._update_value(PreStartRejection.from_dict, value)
+        supervisor = self._startup.supervisor.role_instance_id
+        if (
+            rejection.run_id != self._startup.run_id
+            or rejection.supervisor_role_instance_id != supervisor
+            or rejection.central_token_holder_role_instance_id != supervisor
+        ):
+            raise ApplicationError(
+                "pre-start rejection changed the frozen Supervisor authority",
+                non_retryable=True,
+            )
+        return self._update_value(self._continuity.abandon_pre_start, rejection)
 
     @workflow.update
     async def overwatcher_exited(self, value: dict[str, Any]) -> str:

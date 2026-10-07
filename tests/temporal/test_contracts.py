@@ -10,6 +10,7 @@ from slk_temporal.contracts import (
     ContractError,
     DeliveryRequest,
     NativeStartAck,
+    PreStartRejection,
     OverwatcherExitNotice,
     RuntimeGuardResolution,
     StartSlkRequest,
@@ -106,6 +107,37 @@ def ack_value() -> dict[str, object]:
         "payload_sha256": "a" * 64,
         "started_receipt_sha256": "b" * 64,
     }
+
+
+def pre_start_rejection_value() -> dict[str, object]:
+    return {
+        **delivery_value(),
+        "supervisor_role_instance_id": "supervisor-a",
+        "central_plan_revision": 5,
+        "central_token_sequence": 53,
+        "central_token_holder_role_instance_id": "supervisor-a",
+        "delivery_request_sha256": "b" * 64,
+        "endpoint_sha256": "c" * 64,
+        "envelope_sha256": "d" * 64,
+        "accepted_sha256": "e" * 64,
+        "failed_sha256": "f" * 64,
+        "failure_code": "OCRV_PAYLOAD_INVALID",
+    }
+
+
+def test_pre_start_rejection_is_closed_and_only_accepts_proven_parameter_rejection() -> None:
+    value = pre_start_rejection_value()
+    assert PreStartRejection.from_dict(value).failure_code == "OCRV_PAYLOAD_INVALID"
+    for damage in ("unknown", "activity", "extra"):
+        changed = dict(value)
+        if damage == "unknown":
+            changed["failure_code"] = "UNKNOWN"
+        if damage == "activity":
+            changed["failure_code"] = "NATIVE_ACTIVITY_UNKNOWN"
+        if damage == "extra":
+            changed["started_receipt_sha256"] = "1" * 64
+        with pytest.raises(ContractError):
+            PreStartRejection.from_dict(changed)
 
 
 def overwatcher_exit_value() -> dict[str, object]:

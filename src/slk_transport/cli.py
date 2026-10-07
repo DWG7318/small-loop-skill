@@ -46,6 +46,7 @@ from .runtime_binding_migration import (
     prepare_runtime_binding_migration,
 )
 from .overwatcher_admin import execute_sealed_overwatcher_admin
+from .pre_start_rejection import execute_pre_start_rejection
 from .supervisor_admin import execute_sealed_supervisor_admin
 from .temporal_reload import reload_temporal_worker
 from .terminal_budget import prepare_terminal_budget_request
@@ -737,6 +738,11 @@ def _migrate_runtime_binding(args: argparse.Namespace) -> int:
     return 0
 
 
+def _abandon_pre_start_rejection(args: argparse.Namespace) -> int:
+    _emit(execute_pre_start_rejection(args.request, request_sha256=args.sha256))
+    return 0
+
+
 def _prepare_role_credential(args: argparse.Namespace) -> int:
     from .worker_completion import prepare_sealed_role_credential
 
@@ -1033,6 +1039,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     binding_migration = subparsers.add_parser("migrate-runtime-binding")
     binding_migration.add_argument("--request", required=True, type=Path)
     binding_migration.add_argument("--sha256", required=True)
+    pre_start_rejection = subparsers.add_parser("abandon-pre-start-rejection")
+    pre_start_rejection.add_argument("--request", required=True, type=Path)
+    pre_start_rejection.add_argument("--sha256", required=True)
     credentials = subparsers.add_parser("prepare-role-credential")
     credentials.add_argument("--request", required=True, type=Path)
     incomplete = subparsers.add_parser("prepare-incomplete-handoff")
@@ -1155,6 +1164,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _prepare_runtime_binding_migration(args)
         if args.command == "migrate-runtime-binding":
             return _migrate_runtime_binding(args)
+        if args.command == "abandon-pre-start-rejection":
+            return _abandon_pre_start_rejection(args)
         if args.command == "prepare-role-credential":
             return _prepare_role_credential(args)
         if args.command == "prepare-incomplete-handoff":

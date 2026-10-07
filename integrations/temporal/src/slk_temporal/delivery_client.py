@@ -11,7 +11,7 @@ from typing import Any, Mapping
 
 from temporalio.client import Client
 
-from .contracts import DeliveryRequest, NativeStartAck
+from .contracts import DeliveryRequest, NativeStartAck, PreStartRejection
 from .inspector import inspect_pair
 from .workflows import RunSlkWorkflow
 
@@ -69,6 +69,16 @@ async def _submit_once(*, operation: str, identity: Mapping[str, str], request: 
         status = await handle.execute_update(RunSlkWorkflow.native_started, parsed_ack.to_dict())
         operation_name = "native_started"
         message_id, operation_id = parsed_ack.message_id, parsed_ack.operation_id
+    elif operation == "abandon-pre-start-rejection":
+        parsed_rejection = PreStartRejection.from_dict(request)
+        if parsed_rejection.run_id != identity["run_id"]:
+            raise ValueError("pre-start rejection changed the existing Run")
+        status = await handle.execute_update(
+            RunSlkWorkflow.abandon_pre_start_rejection, parsed_rejection.to_dict()
+        )
+        operation_name = "abandon_pre_start_rejection"
+        message_id = parsed_rejection.message_id
+        operation_id = parsed_rejection.operation_id
     else:
         raise ValueError("unsupported Temporal delivery operation")
     return {
@@ -109,6 +119,13 @@ def run_update(*, operation: str, identity_path: Path, identity_sha256: str,
         parsed_ack = NativeStartAck.from_dict(request)
         expected_operation, allowed = "native_started", {"DELIVERY_ACKNOWLEDGED"}
         run_id, operation_id, message_id = identity["run_id"], parsed_ack.operation_id, parsed_ack.message_id
+    elif operation == "abandon-pre-start-rejection":
+        parsed_rejection = PreStartRejection.from_dict(request)
+        expected_operation = "abandon_pre_start_rejection"
+        allowed = {"PRE_START_REJECTION_ABANDONED"}
+        run_id = parsed_rejection.run_id
+        operation_id = parsed_rejection.operation_id
+        message_id = parsed_rejection.message_id
     else:
         raise ValueError("unsupported Temporal delivery operation")
     if run_id != identity["run_id"]:
@@ -125,7 +142,10 @@ def run_update(*, operation: str, identity_path: Path, identity_sha256: str,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("request-delivery", "native-started"))
+    parser.add_argument(
+        "operation",
+        choices=("request-delivery", "native-started", "abandon-pre-start-rejection"),
+    )
     parser.add_argument("--identity", required=True, type=Path)
     parser.add_argument("--identity-sha256", required=True)
     parser.add_argument("--request", required=True, type=Path)

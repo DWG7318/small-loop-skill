@@ -23,6 +23,7 @@
 - Made Supervisor size the frozen solution for DSH before dispatch. Large work becomes independently D0/D1-checkable small or medium construction CELLs, while tests, review and acceptance remain D0/D1/D2 work rather than separate CELLs; a second consecutive formal D1 failure stops ordinary rework and version-replans the unaccepted remainder without erasing failures or weakening acceptance.
 - Preserved 4.4.0/4.4.1 evidence compatibility, BI/WebBI 1.1.0 and all four role boundaries. This candidate performs no install, product-Run adoption or remote action.
 - Added one fail-closed same-Checker runtime binding migration for a frozen plan boundary: preparation creates endpoint v2 and the next RoleHost/config without mutating the Run; execution guards Temporal dispatch, consumes only the existing `rebind-session`, waits for the Supervisor's separately executed `revise-plan`, and publishes only after exact result/revision verification. It preserves the Session/model/credential, workflow pair and all old evidence, and an interrupted phase cannot dispatch the next CELL.
+- Rejected malformed `CELL_DISPATCH` wrappers before physical delivery. One exact Supervisor-authorized `OCRV_PAYLOAD_INVALID` rejection with no native start may now be append-only abandoned in the existing Temporal history, without a synthetic ACK, attempt mutation, workflow reset or ID reuse; the same workflow can then accept a new correctly wrapped operation.
 
 ## 4.4.1 — bounded normal-handoff correction (local candidate)
 

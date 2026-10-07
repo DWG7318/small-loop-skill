@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 
 from slk_temporal.continuity import ContinuityError, RunContinuity
-from slk_temporal.contracts import DeliveryRequest, NativeStartAck
+from slk_temporal.contracts import DeliveryRequest, NativeStartAck, PreStartRejection
 
-from .test_contracts import ack_value, delivery_value
+from .test_contracts import ack_value, delivery_value, pre_start_rejection_value
 
 
 def request() -> DeliveryRequest:
@@ -62,6 +62,35 @@ def test_unrecoverable_delivery_remains_truthfully_blocked() -> None:
     assert snapshot["blocked_reason"] == "no verified continuation route"
     with pytest.raises(ContinuityError, match="unresolved delivery"):
         state.terminate("RUN_CLOSED")
+
+
+def test_exact_failed_pre_start_rejection_is_abandoned_without_forging_ack() -> None:
+    state = RunContinuity("RUN-A")
+    state.request_delivery(request())
+    state.record_delivery_result(request().operation_id, "FAILED")
+    rejection = PreStartRejection.from_dict(pre_start_rejection_value())
+
+    assert state.abandon_pre_start(rejection) == "PRE_START_REJECTION_ABANDONED"
+    snapshot = state.snapshot()
+    assert snapshot["phase"] == "IDLE"
+    assert snapshot["last_completed_operation_id"] is None
+    assert snapshot["last_abandoned_operation_id"] == request().operation_id
+    assert state.request_delivery(request()) == "PRE_START_REJECTION_ABANDONED"
+
+    replacement = delivery_value()
+    replacement["operation_id"] = "delivery-RUN-A-CELL-001-a2"
+    replacement["message_id"] = "message-b"
+    assert state.request_delivery(DeliveryRequest.from_dict(replacement)) == "DELIVERY_REQUESTED"
+
+
+@pytest.mark.parametrize("delivery_result", [None, "DELIVERED", "TOOL_ERROR:RuntimeError"])
+def test_pre_start_abandonment_rejects_unproved_or_ambiguous_native_state(delivery_result) -> None:
+    state = RunContinuity("RUN-A")
+    state.request_delivery(request())
+    if delivery_result is not None:
+        state.record_delivery_result(request().operation_id, delivery_result)
+    with pytest.raises(ContinuityError, match="proven pre-start"):
+        state.abandon_pre_start(PreStartRejection.from_dict(pre_start_rejection_value()))
 
 
 def test_scope_and_run_identity_cannot_change() -> None:

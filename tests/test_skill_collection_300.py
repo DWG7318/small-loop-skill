@@ -1053,6 +1053,13 @@ def test_linear_loop_uses_one_registered_native_relay_token_without_a_new_subsys
     assert not any(path.name.startswith("slk-token") for path in SKILLS.iterdir())
 
 
+def test_dispatch_documents_closed_supervisor_to_checker_wrapper() -> None:
+    dispatch = read_skill("slk-dispatch-cell")
+    assert "worker_endpoint" in dispatch
+    assert "worker_payload" in dispatch
+    assert "不要把 Worker payload 直接放在 CELL_DISPATCH 顶层" in dispatch
+
+
 def test_token_reports_responsibility_without_claiming_live_execution() -> None:
     main = read_skill("small-loop-skill")
     record = read_skill("slk-record-run")

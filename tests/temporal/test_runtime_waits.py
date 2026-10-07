@@ -10,7 +10,7 @@ from temporalio.exceptions import ApplicationError
 from slk_temporal import workflows
 from slk_temporal.workflows import RunSlkWorkflow
 
-from .test_contracts import start_value, delivery_value, ack_value
+from .test_contracts import start_value, delivery_value, ack_value, pre_start_rejection_value
 
 
 @pytest.mark.parametrize("damage", ["runtime-guard", "wrong-authority", "open-delivery"])
@@ -37,6 +37,43 @@ def test_invalid_update_is_a_business_rejection_not_workflow_task_failure(damage
     assert run._continuity.pending_delivery() is None
 
 
+def test_only_frozen_supervisor_can_abandon_exact_failed_pre_start_delivery() -> None:
+    run = RunSlkWorkflow()
+    run._startup = workflows.StartSlkRequest.from_dict(start_value())
+    run._continuity = workflows.RunContinuity(run._startup.run_id)
+    run._admitted = True
+    run.request_delivery(delivery_value())
+    run._continuity.record_delivery_result(delivery_value()["operation_id"], "FAILED")
+    rejection = pre_start_rejection_value()
+
+    wrong = dict(rejection)
+    wrong["supervisor_role_instance_id"] = "checker-a"
+    with pytest.raises(ApplicationError, match="Supervisor authority"):
+        run.abandon_pre_start_rejection(wrong)
+    assert run._continuity.pending_delivery() is not None
+
+    assert run.abandon_pre_start_rejection(rejection) == "PRE_START_REJECTION_ABANDONED"
+    assert run._continuity.pending_delivery() is None
+
+
+def test_legacy_completion_wait_wakes_after_pre_start_abandonment(monkeypatch) -> None:
+    """An already-blocked 4.4.2 history is inside this legacy helper on reload."""
+    run = RunSlkWorkflow()
+    run._startup = workflows.StartSlkRequest.from_dict(start_value())
+    run._continuity = workflows.RunContinuity(run._startup.run_id)
+    run._continuity.request_delivery(workflows.DeliveryRequest.from_dict(delivery_value()))
+    run._continuity.record_delivery_result(delivery_value()["operation_id"], "FAILED")
+    run._continuity.abandon_pre_start(
+        workflows.PreStartRejection.from_dict(pre_start_rejection_value())
+    )
+    monkeypatch.setattr(
+        workflows.workflow,
+        "now",
+        lambda: pytest.fail("resolved legacy wait must not schedule another timer"),
+    )
+    asyncio.run(run._wait_for_completion(delivery_value()["operation_id"]))
+
+
 def test_empty_audit_wake_keeps_workflow_alive(monkeypatch):
     run = RunSlkWorkflow()
     clock = datetime(2026, 10, 4, tzinfo=timezone.utc)
@@ -57,7 +94,11 @@ def test_empty_audit_wake_keeps_workflow_alive(monkeypatch):
     monkeypatch.setattr(workflows.workflow, "now", lambda: clock)
     monkeypatch.setattr(workflows.workflow, "wait_condition", wait)
     monkeypatch.setattr(run, "_inspect_overwatcher", inspect)
-    monkeypatch.setattr(workflows.workflow, "patched", lambda _: True)
+    monkeypatch.setattr(
+        workflows.workflow,
+        "patched",
+        lambda patch: patch != "slk-4.4.2-two-stage-admission",
+    )
     result = asyncio.run(run.run({"startup": start_value(), "startup_receipt": {}}))
     assert result["phase"] == "TERMINAL"
     assert len(audits) == 1
@@ -97,7 +138,11 @@ def test_audit_still_runs_while_waiting_for_recovery_ack(monkeypatch):
     monkeypatch.setattr(workflows.workflow, "now", lambda: clock)
     monkeypatch.setattr(workflows.workflow, "wait_condition", wait)
     monkeypatch.setattr(workflows.workflow, "execute_activity", activity)
-    monkeypatch.setattr(workflows.workflow, "patched", lambda _: True)
+    monkeypatch.setattr(
+        workflows.workflow,
+        "patched",
+        lambda patch: patch != "slk-4.4.2-two-stage-admission",
+    )
     monkeypatch.setattr(run, "_inspect_overwatcher", inspect)
     result = asyncio.run(run.run({"startup": start, "startup_receipt": {}}))
     assert result["phase"] == "TERMINAL"
@@ -118,6 +163,7 @@ def test_notification_string_is_not_native_supervisor_wake_proof(monkeypatch):
     run = RunSlkWorkflow()
     run._startup = workflows.StartSlkRequest.from_dict(start_value())
     run._continuity = workflows.RunContinuity(run._startup.run_id)
+    run._admitted = True
     async def activity(*a, **kw):
         return {"status": "NOTIFIED", "event_id": "notice-a", "receipt_sha256": "a" * 64}
     monkeypatch.setattr(workflows.workflow, "execute_activity", activity)

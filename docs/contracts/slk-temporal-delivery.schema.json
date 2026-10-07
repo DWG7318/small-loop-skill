@@ -6,6 +6,7 @@
     {"$ref": "#/$defs/readiness"},
     {"$ref": "#/$defs/delivery"},
     {"$ref": "#/$defs/ack"},
+    {"$ref": "#/$defs/pre_start_rejection"},
     {"$ref": "#/$defs/result"}
   ],
   "$defs": {
@@ -35,11 +36,27 @@
       "properties": {"operation_id": {"$ref": "#/$defs/id"}, "message_id": {"$ref": "#/$defs/id"},
         "receiver_role_instance_id": {"$ref": "#/$defs/id"}, "payload_sha256": {"$ref": "#/$defs/sha"},
         "started_receipt_sha256": {"$ref": "#/$defs/sha"}}},
+    "pre_start_rejection": {"type": "object", "additionalProperties": false,
+      "required": ["operation_id", "run_id", "cell_id", "attempt", "message_id", "sender_role_instance_id", "receiver_role_instance_id", "payload_sha256", "source_runtime_revision", "supervisor_role_instance_id", "central_plan_revision", "central_token_sequence", "central_token_holder_role_instance_id", "delivery_request_sha256", "endpoint_sha256", "envelope_sha256", "accepted_sha256", "failed_sha256", "failure_code"],
+      "properties": {
+        "operation_id": {"$ref": "#/$defs/id"}, "run_id": {"$ref": "#/$defs/id"},
+        "cell_id": {"$ref": "#/$defs/id"}, "attempt": {"type": "integer", "minimum": 1},
+        "message_id": {"$ref": "#/$defs/id"}, "sender_role_instance_id": {"$ref": "#/$defs/id"},
+        "receiver_role_instance_id": {"$ref": "#/$defs/id"}, "payload_sha256": {"$ref": "#/$defs/sha"},
+        "source_runtime_revision": {"type": "integer", "minimum": 1},
+        "supervisor_role_instance_id": {"$ref": "#/$defs/id"},
+        "central_plan_revision": {"type": "integer", "minimum": 1},
+        "central_token_sequence": {"type": "integer", "minimum": 1},
+        "central_token_holder_role_instance_id": {"$ref": "#/$defs/id"},
+        "delivery_request_sha256": {"$ref": "#/$defs/sha"}, "endpoint_sha256": {"$ref": "#/$defs/sha"},
+        "envelope_sha256": {"$ref": "#/$defs/sha"}, "accepted_sha256": {"$ref": "#/$defs/sha"},
+        "failed_sha256": {"$ref": "#/$defs/sha"}, "failure_code": {"const": "OCRV_PAYLOAD_INVALID"}
+      }},
     "result": {"type": "object", "additionalProperties": false,
       "required": ["schema_version", "status", "operation", "run_id", "operation_id", "message_id"],
       "properties": {"schema_version": {"const": "slk.temporal-delivery-update-result/v1"},
-        "status": {"enum": ["DELIVERY_REQUESTED", "DELIVERY_ACKNOWLEDGED", "RECOVERY_REQUIRED", "BLOCKED"]},
-        "operation": {"enum": ["request_delivery", "native_started"]}, "run_id": {"$ref": "#/$defs/id"},
+        "status": {"enum": ["DELIVERY_REQUESTED", "DELIVERY_ACKNOWLEDGED", "RECOVERY_REQUIRED", "BLOCKED", "PRE_START_REJECTION_ABANDONED"]},
+        "operation": {"enum": ["request_delivery", "native_started", "abandon_pre_start_rejection"]}, "run_id": {"$ref": "#/$defs/id"},
         "operation_id": {"$ref": "#/$defs/id"}, "message_id": {"$ref": "#/$defs/id"}}}
   }
 }

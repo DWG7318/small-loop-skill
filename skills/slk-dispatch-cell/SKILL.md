@@ -33,7 +33,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 ## 交付方式
 
-初始派工沿既有入口；D1 PASS 后续派工应使用 OCRV 标准 `--slk-complete-d1` 后缀，并只接受当前版本计划中的精确下一 CELL。Checker 按 Worker 精确端点一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发；同一封闭信封写入 `SLK TOKEN Tnnn`、令牌编号、Run、CELL、当前位置 `n/N`、接收者、下一动作和根记录路径，编号单调递增。Worker 只接收一份不可变、哈希绑定的 task file；原生进程建立后、任何终态结果之前写出匹配的 `started.json` v2。标准后缀随后用密封 Checker 凭证调用 `commit-delivery-start`，在同一事务中绑定启动证据、推进 TOKEN、追加事件并产生唯一 `runtime_revision`；数据库文字、后台消息、成功退出或终态结果都不能反推启动。Worker 直接开始 CELL，不增加令牌专用回执；Checker 仅在原子提交成功后结束本次激活，不使用 `wait_threads`，也不读取 Worker 施工状态，候选交付重新激活 Checker。
+初始派工沿既有入口；D1 PASS 后续派工应使用 OCRV 标准 `--slk-complete-d1` 后缀，并只接受当前版本计划中的精确下一 CELL。Supervisor→Checker 的 `CELL_DISPATCH` payload 固定且仅含 `{worker_endpoint, worker_payload}`；`worker_endpoint` 是当前已登记 Worker，`worker_payload` 才是冻结 CELL 内容。Checker 按 Worker 精确端点一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发；同一封闭信封写入 `SLK TOKEN Tnnn`、令牌编号、Run、CELL、当前位置 `n/N`、接收者、下一动作和根记录路径，编号单调递增。Worker 只接收一份不可变、哈希绑定的 task file；原生进程建立后、任何终态结果之前写出匹配的 `started.json` v2。标准后缀随后用密封 Checker 凭证调用 `commit-delivery-start`，在同一事务中绑定启动证据、推进 TOKEN、追加事件并产生唯一 `runtime_revision`；数据库文字、后台消息、成功退出或终态结果都不能反推启动。Worker 直接开始 CELL，不增加令牌专用回执；Checker 仅在原子提交成功后结束本次激活，不使用 `wait_threads`，也不读取 Worker 施工状态，候选交付重新激活 Checker。
 
 `slk-transport` 明确报告未启动、投递失败、Worker 端点不可用或 Git common-dir 位于 Worker 沙箱外时，Checker 保留当前令牌与责任并调用 `$slk-recover-communication`；后者只允许在派工前改用独立可写 clone/simple layout，不把原 linked worktree 静默搬家。Overwatcher 只旁路核实真实状态并向 Supervisor 报告，不代替 Checker 投递或恢复；OW 保障失效时由 runtime guard 阻断下一 CELL。
 
@@ -45,4 +45,4 @@ Worker 使用 `$slk-execute-cell` 开始并继续施工。Checker 保留当前 C
 
 ## 负面提示词
 
-- 不要为令牌增加接收回执或轮询，把一个 CELL 拆成逐条命令派发，或把接收令牌当成候选交付；不要绕过标准 PASS 后缀、跳过 Required CELL、让 OW/Supervisor 代发日常下一 CELL、接受可变/哈希漂移 task file、用终态输出补造启动、混用 runtime revision，或分步 handoff。接收令牌不是 CELL 完工；不要提前把 D1 判断给 Worker，也不要在派工后等待或读取 Worker 内部施工过程。
+- 不要为令牌增加接收回执或轮询，把一个 CELL 拆成逐条命令派发，或把接收令牌当成候选交付；不要把 Worker payload 直接放在 CELL_DISPATCH 顶层。不要绕过标准 PASS 后缀、跳过 Required CELL、让 OW/Supervisor 代发日常下一 CELL、接受可变/哈希漂移 task file、用终态输出补造启动、混用 runtime revision，或分步 handoff。接收令牌不是 CELL 完工；不要提前把 D1 判断给 Worker，也不要在派工后等待或读取 Worker 内部施工过程。

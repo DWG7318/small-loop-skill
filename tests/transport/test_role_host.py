@@ -1290,11 +1290,16 @@ def test_rework_commit_survives_missing_host_receipt_without_second_write_or_sen
 def test_initial_checker_cannot_change_dispatch_scope(tmp_path, field, value):
     host, source, outgoing = prepared_host(tmp_path)
     outgoing = Envelope.from_dict({**asdict(outgoing), "token_sequence": 2})
+    dispatch_payload = {
+        "worker_endpoint": host.endpoint("worker"),
+        "worker_payload": outgoing.payload,
+    }
     incoming = Envelope.from_dict({**asdict(outgoing), "message_id": "80f488e8-e35c-4587-85bc-0453a6ee30db",
         "token_sequence": outgoing.token_sequence - 1, "sender_role": "supervisor",
         "sender_role_instance_id": host.endpoint("supervisor")["role_instance_id"],
         "receiver_role": "checker", "receiver_role_instance_id": host.endpoint("checker")["role_instance_id"],
-        "receiver_endpoint_version": host.endpoint("checker")["endpoint_version"], "payload_type": "CELL_DISPATCH"})
+        "receiver_endpoint_version": host.endpoint("checker")["endpoint_version"], "payload_type": "CELL_DISPATCH",
+        "payload": dispatch_payload, "payload_sha256": wc.canonical_json_sha256(dispatch_payload)})
     result = {"schema_version": "slk.checker-result/v1", "operation": "dispatch", "source_message_id": incoming.message_id,
         "next_endpoint": host.endpoint("worker"), "next_envelope": {**asdict(outgoing), field: value}}
     with pytest.raises(wc.CompletionError):

@@ -45,6 +45,22 @@ def delivery() -> dict[str, object]:
     }
 
 
+def pre_start_rejection() -> dict[str, object]:
+    return {
+        **delivery(),
+        "supervisor_role_instance_id": "supervisor-a",
+        "central_plan_revision": 5,
+        "central_token_sequence": 53,
+        "central_token_holder_role_instance_id": "supervisor-a",
+        "delivery_request_sha256": "c" * 64,
+        "endpoint_sha256": "d" * 64,
+        "envelope_sha256": "e" * 64,
+        "accepted_sha256": "f" * 64,
+        "failed_sha256": "1" * 64,
+        "failure_code": "OCRV_PAYLOAD_INVALID",
+    }
+
+
 def test_cli_rejects_changed_identity_and_request_hashes_before_network(tmp_path: Path, monkeypatch) -> None:
     identity_path = write_json(tmp_path / "identity.json", identity())
     request_path = write_json(tmp_path / "request.json", delivery())
@@ -88,3 +104,23 @@ def test_sdk_update_has_one_bounded_rpc_deadline(monkeypatch) -> None:
     with pytest.raises(TimeoutError):
         asyncio.run(delivery_client._submit(
             operation="request-delivery", identity=identity(), request=delivery()))
+
+
+def test_client_accepts_only_bound_pre_start_abandonment_result(tmp_path: Path, monkeypatch) -> None:
+    identity_path = write_json(tmp_path / "identity.json", identity())
+    request_path = write_json(tmp_path / "request.json", pre_start_rejection())
+    monkeypatch.setattr(delivery_client, "submit", lambda **_kwargs: {
+        "schema_version": "slk.temporal-delivery-update-result/v1",
+        "status": "PRE_START_REJECTION_ABANDONED",
+        "operation": "abandon_pre_start_rejection",
+        "run_id": "RUN-A",
+        "operation_id": delivery()["operation_id"],
+        "message_id": delivery()["message_id"],
+    })
+    assert delivery_client.run_update(
+        operation="abandon-pre-start-rejection",
+        identity_path=identity_path,
+        identity_sha256=hashlib.sha256(identity_path.read_bytes()).hexdigest(),
+        request_path=request_path,
+        request_sha256=hashlib.sha256(request_path.read_bytes()).hexdigest(),
+    )["status"] == "PRE_START_REJECTION_ABANDONED"

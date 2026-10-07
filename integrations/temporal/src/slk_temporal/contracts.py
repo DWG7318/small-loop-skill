@@ -284,6 +284,78 @@ class NativeStartAck:
 
 
 @dataclass(frozen=True)
+class PreStartRejection:
+    operation_id: str
+    run_id: str
+    cell_id: str
+    attempt: int
+    message_id: str
+    sender_role_instance_id: str
+    receiver_role_instance_id: str
+    payload_sha256: str
+    source_runtime_revision: int
+    supervisor_role_instance_id: str
+    central_plan_revision: int
+    central_token_sequence: int
+    central_token_holder_role_instance_id: str
+    delivery_request_sha256: str
+    endpoint_sha256: str
+    envelope_sha256: str
+    accepted_sha256: str
+    failed_sha256: str
+    failure_code: str
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PreStartRejection":
+        fields = {
+            "operation_id", "run_id", "cell_id", "attempt", "message_id",
+            "sender_role_instance_id", "receiver_role_instance_id", "payload_sha256",
+            "source_runtime_revision", "supervisor_role_instance_id",
+            "central_plan_revision", "central_token_sequence",
+            "central_token_holder_role_instance_id", "delivery_request_sha256",
+            "endpoint_sha256", "envelope_sha256", "accepted_sha256", "failed_sha256",
+            "failure_code",
+        }
+        source = _closed(value, fields, "pre-start rejection")
+        if source["failure_code"] != "OCRV_PAYLOAD_INVALID":
+            raise ContractError("failure_code is not an allowed proven pre-start rejection")
+        delivery = DeliveryRequest.from_dict({key: source[key] for key in {
+            "operation_id", "run_id", "cell_id", "attempt", "message_id",
+            "sender_role_instance_id", "receiver_role_instance_id", "payload_sha256",
+            "source_runtime_revision",
+        }})
+        return cls(
+            **delivery.to_dict(),
+            supervisor_role_instance_id=_identifier(
+                source["supervisor_role_instance_id"], "supervisor_role_instance_id"
+            ),
+            central_plan_revision=_integer(source["central_plan_revision"], "central_plan_revision", minimum=1),
+            central_token_sequence=_integer(source["central_token_sequence"], "central_token_sequence", minimum=1),
+            central_token_holder_role_instance_id=_identifier(
+                source["central_token_holder_role_instance_id"],
+                "central_token_holder_role_instance_id",
+            ),
+            delivery_request_sha256=_hash(source["delivery_request_sha256"], "delivery_request_sha256"),
+            endpoint_sha256=_hash(source["endpoint_sha256"], "endpoint_sha256"),
+            envelope_sha256=_hash(source["envelope_sha256"], "envelope_sha256"),
+            accepted_sha256=_hash(source["accepted_sha256"], "accepted_sha256"),
+            failed_sha256=_hash(source["failed_sha256"], "failed_sha256"),
+            failure_code="OCRV_PAYLOAD_INVALID",
+        )
+
+    def require_match(self, delivery: DeliveryRequest) -> None:
+        if DeliveryRequest.from_dict({key: getattr(self, key) for key in {
+            "operation_id", "run_id", "cell_id", "attempt", "message_id",
+            "sender_role_instance_id", "receiver_role_instance_id", "payload_sha256",
+            "source_runtime_revision",
+        }}) != delivery:
+            raise ContractError("pre-start rejection does not match the pending delivery")
+
+    def to_dict(self) -> dict[str, object]:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
 class OverwatcherExitNotice:
     event_id: str
     run_id: str

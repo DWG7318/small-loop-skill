@@ -288,10 +288,11 @@ def test_441_temporal_handoff_schemas_are_closed_and_bind_the_standard_client() 
         assert command["prefixItems"][1:] == [
             {"const": "-m"}, {"const": "slk_temporal.delivery_client"}]
         assert schema["$defs"]["temporal"]["additionalProperties"] is False
-    assert len(delivery["oneOf"]) == 4
+    assert len(delivery["oneOf"]) == 5
     assert delivery["$defs"]["readiness"]["additionalProperties"] is False
     assert delivery["$defs"]["result"]["properties"]["status"]["enum"] == [
-        "DELIVERY_REQUESTED", "DELIVERY_ACKNOWLEDGED", "RECOVERY_REQUIRED", "BLOCKED"]
+        "DELIVERY_REQUESTED", "DELIVERY_ACKNOWLEDGED", "RECOVERY_REQUIRED", "BLOCKED",
+        "PRE_START_REJECTION_ABANDONED"]
 
 
 def test_overwatcher_resume_has_exactly_one_basis_and_cycle_enum_excludes_incident_code() -> None:

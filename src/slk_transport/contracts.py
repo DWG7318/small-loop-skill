@@ -497,6 +497,14 @@ class Envelope:
             raise ContractError(f"unsupported role edge: {sender_role}->{receiver_role}")
         payload_type = _identifier(value["payload_type"], "payload_type")
         payload = _json(_mapping(value["payload"], "payload"), "payload")
+        if payload_type == "CELL_DISPATCH":
+            if (sender_role, receiver_role) != ("supervisor", "checker"):
+                raise ContractError("CELL_DISPATCH requires supervisor->checker")
+            _closed(payload, {"worker_endpoint", "worker_payload"}, "CELL_DISPATCH payload")
+            worker = Endpoint.from_dict(_mapping(payload["worker_endpoint"], "worker_endpoint"))
+            if worker.run_id != value["run_id"] or worker.role != "worker" or worker.state != "active":
+                raise ContractError("CELL_DISPATCH worker_endpoint must be the active Worker in this Run")
+            _mapping(payload["worker_payload"], "worker_payload")
         if payload_type == "D1_FAILURE_ESCALATION":
             if (sender_role, receiver_role) != ("checker", "supervisor"):
                 raise ContractError("D1_FAILURE_ESCALATION requires checker->supervisor")

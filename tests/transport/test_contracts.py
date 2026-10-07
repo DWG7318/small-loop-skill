@@ -93,6 +93,29 @@ def test_envelope_requires_exact_role_edge_and_payload_hash() -> None:
         parse_delivery(endpoint, drifted)
 
 
+def test_cell_dispatch_requires_closed_worker_wrapper_before_delivery() -> None:
+    endpoint = endpoint_value(role="checker")
+    worker = endpoint_value(role="worker", version=1)
+    payload = {"worker_endpoint": worker, "worker_payload": {"task": "bounded work"}}
+    envelope = envelope_value(sender_role="supervisor", receiver_role="checker")
+    envelope["payload_type"] = "CELL_DISPATCH"
+    envelope["payload"] = payload
+    envelope["payload_sha256"] = payload_hash(payload)
+
+    assert parse_delivery(endpoint, envelope).envelope.payload == payload
+
+    for malformed in (
+        {"task": "the frozen Worker payload was placed here directly"},
+        {**payload, "undeclared": True},
+        {"worker_endpoint": worker},
+    ):
+        changed = copy.deepcopy(envelope)
+        changed["payload"] = malformed
+        changed["payload_sha256"] = payload_hash(malformed)
+        with pytest.raises(ContractError, match="CELL_DISPATCH"):
+            parse_delivery(endpoint, changed)
+
+
 @pytest.mark.parametrize(
     ("sender_role", "receiver_role"),
     [
