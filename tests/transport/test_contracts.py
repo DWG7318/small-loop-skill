@@ -256,6 +256,36 @@ def test_d1_failure_escalation_is_closed_and_checker_owned() -> None:
         parse_delivery(endpoint, missing)
 
 
+def test_d1_incomplete_escalation_is_closed_and_checker_owned() -> None:
+    endpoint = endpoint_value(role="supervisor")
+    payload = {
+        "d1_incomplete_event_id": "d1-incomplete-001",
+        "candidate_message_id": MESSAGE_ID,
+        "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
+        "evidence": [{"path": "D:/run/ocrv-result.json", "sha256": "a" * 64}],
+        "native_terminal_sha256": "b" * 64,
+        "native_result_sha256": "c" * 64,
+        "decision_required": "CAPACITY_OR_ENVIRONMENT_MANAGEMENT",
+    }
+    envelope = envelope_value(sender_role="checker", receiver_role="supervisor")
+    envelope["payload_type"] = "D1_INCOMPLETE_ESCALATION"
+    envelope["payload"] = payload
+    envelope["payload_sha256"] = payload_hash(payload)
+    assert parse_delivery(endpoint, envelope).envelope.payload_type == "D1_INCOMPLETE_ESCALATION"
+
+    wrong_owner = copy.deepcopy(envelope)
+    wrong_owner["sender_role"] = "supervisor"
+    wrong_owner["receiver_role"] = "worker"
+    with pytest.raises(ContractError, match="checker->supervisor"):
+        Envelope.from_dict(wrong_owner)
+
+    missing = copy.deepcopy(envelope)
+    del missing["payload"]["decision_required"]
+    missing["payload_sha256"] = payload_hash(missing["payload"])
+    with pytest.raises(ContractError, match="D1 incomplete escalation"):
+        parse_delivery(endpoint, missing)
+
+
 def test_d2_ready_payload_is_closed_and_role_bound() -> None:
     d2_ready = {
         "d1_event_id": "d1-pass-cell-002",

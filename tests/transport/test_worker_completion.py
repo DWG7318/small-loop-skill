@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import slk_transport.worker_completion as worker_completion
+import slk_transport.subprocess_watch as subprocess_watch
 
 from slk_transport.adapters.dsh import DshAdapter
 from slk_transport.adapters.ocrv import OcrvAdapter
@@ -1637,12 +1638,21 @@ def test_resume_worker_continuation_uses_exact_session_and_strips_parent_credent
     monkeypatch.setattr(DshAdapter, "command", capture_command)
     monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "slk_must_not_escape")
     monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "slk_must_not_escape")
+    finish_timeouts: list[float | None] = []
+    original_finish = subprocess_watch.finish
+
+    def capture_finish(process, timeout_seconds):
+        finish_timeouts.append(timeout_seconds)
+        return original_finish(process, timeout_seconds)
+
+    monkeypatch.setattr(subprocess_watch, "finish", capture_finish)
 
     result = resume_worker_continuation(request)
 
     assert result["status"] == "CHECKER_DELIVERY_READY"
     assert result["source_message_id"] == request["source_message_id"]
     assert len(instructions) == 1
+    assert finish_timeouts == [None]
     assert "\r" not in instructions[0] and "\n" not in instructions[0]
     started = json.loads((attempt / "worker-continuation" / "started.json").read_text(encoding="utf-8"))
     assert started["session_id"] == session_id

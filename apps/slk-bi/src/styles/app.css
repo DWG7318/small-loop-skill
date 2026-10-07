@@ -320,6 +320,16 @@
 .app-state h1 { margin: 0 0 6px; font-size: var(--text-17); }
 .app-state > p:not(.eyebrow) { margin: 0; color: var(--ink-2); }
 .app-state > code { display: block; margin-top: 8px; color: var(--red); font-size: var(--text-8); }
+.state-reload {
+  margin-top: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--frame);
+  border-radius: 2px;
+  background: var(--plastic-hi);
+  color: var(--ink);
+  cursor: pointer;
+}
+.state-reload:hover { background: var(--plastic); }
 .state-skeleton { display: flex; gap: 5px; margin-top: 12px; }
 .state-skeleton span { width: 38px; height: 4px; background: var(--line); }
 

@@ -10,7 +10,7 @@ description: Use when an active Small Loop Skill (SLK) Run has an exact delivery
 
 ## 当前目标
 
-用不可变投递证据区分 accepted、native start 与 TOKEN commit；已有启动只补剩余记录，已完成则返回原事实，未知时不盲目重启、不 handoff。在不改变工程语义的前提下最多原样重试一次。OW 不代发或执行恢复；运行保障失效时先由 Supervisor 修复，不派下一 CELL。
+用不可变投递证据区分 accepted、native start、实际处理与 TOKEN commit；已有启动只补剩余记录，已完成则返回原事实，未知时不盲目重启、不 handoff。单个不确定短调用最多原样重试一次以避免重复副作用，这不是工程仅能恢复一次；Supervisor 可在核实原因后再次选择适当恢复。OW 不代发或执行恢复；运行保障失效时先由 Supervisor 修复，不派下一 CELL。
 
 `PRE_D0_BLOCKED_RECOVERY` 同时封存状态配置中的原 data-root 拼写和既有 `PROTOC` 可执行文件；扩展路径保持原样。只有 `slk-cargo` 交给 Cargo 子进程的 target 出口可做等价普通拼写转换。
 

@@ -16,6 +16,7 @@ from slk_transport.contracts import Envelope
 from slk_transport.role_host import RoleHost, normalized_checker_findings
 from slk_transport.native_activity import make_native_start
 from slk_transport import worker_completion as wc
+from slk_transport import checker_management
 from test_worker_completion import completion_fixture, write_json
 
 
@@ -120,12 +121,35 @@ def test_checker_findings_strip_provider_thinking_before_supervisor_escalation()
     )]
 
 
-def test_checker_incomplete_freezes_the_exact_post_record_projection(tmp_path, monkeypatch):
+def test_checker_incomplete_hands_control_to_supervisor_without_a_fail_or_rework(
+    tmp_path, monkeypatch
+):
     host, source, envelope = prepared_host(tmp_path)
     root = tmp_path / "checker-host"
     root.mkdir()
     current = host_boundary(host, envelope)
-    current["runtime_snapshot"]["latest_event_id"] = "d1-incomplete-event"
+    event_id = wc._stable_id(envelope.message_id, "d1-result-v2")
+    current["events"] = [{
+        "event_id": event_id,
+        "event_type": "D1_INCOMPLETE",
+        "author_role_instance_id": envelope.receiver_role_instance_id,
+        "go_id": envelope.go_id,
+        "cell_id": envelope.cell_id,
+        "attempt": 1,
+        "corrects_event_id": None,
+        "details_json": json.dumps({
+            "candidate_message_id": envelope.message_id,
+            "verdict": "INCOMPLETE",
+            "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
+        }),
+    }]
+    current["runtime_snapshot"].update({
+        "latest_event_id": event_id,
+        "runtime_revision": 8,
+        "token_sequence": envelope.token_sequence,
+        "token_holder_role_instance_id": envelope.receiver_role_instance_id,
+        "latest_message_id": envelope.message_id,
+    })
     monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
     monkeypatch.setattr(
         wc,
@@ -137,12 +161,19 @@ def test_checker_incomplete_freezes_the_exact_post_record_projection(tmp_path, m
         },
     )
     monkeypatch.setattr(host, "projection", lambda: current)
+    def manage(request, **_kwargs):
+        assert request["d1_incomplete_event_id"] == event_id
+        assert request["reason_codes"] == ["OCR_STATUS_NOT_COMPLETE"]
+        return {"status": "CHECKER_INCOMPLETE_ESCALATION_COMMITTED",
+                "d1_incomplete_event_id": event_id}
+    monkeypatch.setattr(checker_management, "execute_checker_management", manage)
 
     result = host._checker_result(
         source, envelope, root, "2026-10-06T08:00:00Z", host_boundary(host, envelope)
     )
 
-    assert result["d1_verdict"] == "INCOMPLETE"
+    assert result["status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
+    assert result["d1_incomplete_event_id"] == event_id
     assert wc._read_object(root / "d1-projection.json", "D1 projection") == current
 
 
@@ -662,6 +693,57 @@ def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkey
         assert seen[0]["details"]["d1_failure_event_id"] == incoming.payload["d1_failure_event_id"]
     assert host.complete(source) == receipt
     assert len(seen) == (2 if d2 else 1)
+
+
+def test_native_supervisor_can_record_incomplete_management_without_fabricating_fail_or_rework(
+    tmp_path, monkeypatch,
+):
+    host, source, incoming, _result, projection = supervisor_result_fixture(tmp_path)
+    payload = {
+        "d1_incomplete_event_id": "D1-incomplete",
+        "candidate_message_id": incoming.message_id,
+        "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
+        "evidence": [{"path": str(source / "envelope.json"), "sha256": "a" * 64}],
+        "native_terminal_sha256": "b" * 64,
+        "native_result_sha256": "c" * 64,
+        "decision_required": "CAPACITY_OR_ENVIRONMENT_MANAGEMENT",
+    }
+    incoming = Envelope.from_dict({
+        **asdict(incoming),
+        "payload_type": "D1_INCOMPLETE_ESCALATION",
+        "payload": payload,
+        "payload_sha256": wc.canonical_json_sha256(payload),
+    })
+    write_json(source / "envelope.json", asdict(incoming))
+    decision = {
+        "action": "MECHANICAL_RECOVERY",
+        "summary": "Retry only after the capacity cause is corrected.",
+        "evidence_refs": [str(source / "envelope.json")],
+    }
+    write_json(source / "supervisor-result.json", {
+        "schema_version": "slk.supervisor-result/v1",
+        "source_message_id": incoming.message_id,
+        "operation": "management",
+        "decision": decision,
+    })
+    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _path: "sealed-supervisor")
+    monkeypatch.setattr(host, "_authenticate", lambda role, credential: {
+        "status": "authenticated", "run_id": incoming.run_id, "role": role,
+        "role_instance_id": incoming.receiver_role_instance_id, "runtime_revision": 7,
+    })
+    monkeypatch.setattr(wc, "_run_json_command", lambda *_args, **_kwargs: pytest.fail(
+        "management decision must not invent a D1 event or rework delivery"
+    ))
+    monkeypatch.setattr(host, "_send_owned", lambda *_args, **_kwargs: pytest.fail(
+        "management decision must not dispatch ordinary rework"
+    ))
+
+    receipt = host.complete(source)
+
+    assert receipt["status"] == "SUPERVISOR_MANAGEMENT_RECORDED"
+    assert receipt["action"] == "MECHANICAL_RECOVERY"
 
 
 @pytest.mark.parametrize("rework_round", [2, 3])

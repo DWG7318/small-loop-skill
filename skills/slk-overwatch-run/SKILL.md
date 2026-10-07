@@ -10,7 +10,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its registered 
 
 ## 当前目标
 
-Overwatcher 在持续 active 的 Agent Session 中核实 SLK 是否真的按当前节点运行。它的负责对象只有登记的 Supervisor：正常时继续观察，发现异常、矛盾、证据不足或长期不推进时，记录事实并报告 Supervisor。它不代发日常消息，不恢复成员，不写 BI/TOKEN，不做工程判断或 D0/D1/D2。
+Overwatcher 在持续 active 的 Agent Session 中核实 SLK 是否真的按当前节点运行。它的负责对象只有登记的 Supervisor：正常时继续观察，发现可验证矛盾、明确异常或证据不足时，记录事实并报告 Supervisor。它不诊断长任务是否合理，不代发日常消息，不恢复成员，不写 BI/TOKEN，不做工程判断或 D0/D1/D2。
 
 每个 Run 绑定一个 OW role instance；同一精确 OW Session 可以服务多个 Run，但每个 Run 的 scope、cycle、证据、异常和 Supervisor 端点分开。一个 Run 的状态不推断另一个 Run，也不把同名 CELL、消息或成员混在一起。
 
@@ -19,9 +19,9 @@ Overwatcher 在持续 active 的 Agent Session 中核实 SLK 是否真的按当�
 OW 自己在同一前台 turn 内按 600 秒 cadence 继续循环；不是 Temporal 唤醒、heartbeat、automation、cron、计划任务、daemon 或后台 Agent。每轮只做以下直接步骤：
 
 1. 从中央状态读取本 Run 当前 plan revision、CELL/attempt、TOKEN、最后权威事件、四角色登记和最近消息；BI 仅作为只读投影。
-2. 用登记的 status adapter 与 `slk-transport inspect-native-activity` 读取当前责任成员和自身 Session 的最新原生状态。Codex Desktop OW 的准备证据来自 `attest-desktop-overwatcher` 所生成的 `slk.desktop-overwatcher-attestation/v1`，以准确 `platform_input_item_id` 绑定既有 turn；后续检查带 `desktop-overwatcher-attestation` 路径/哈希重新 `read_thread`，不接受 OW 自报。Worker 持有 TOKEN 时，本轮还须恰好一次无凭据、只读地执行 `inspect-worker-completion`，并把匹配当前 Run/CELL/attempt/message 的收据加入 cycle 证据；缺失、过期或不可查询保持 `UNKNOWN`。
+2. 用登记的 status adapter 与 `slk-transport inspect-native-activity` 读取当前责任成员和自身 Session 的最新原生状态。Codex Desktop OW 的准备证据来自 `attest-desktop-overwatcher` 所生成的 `slk.desktop-overwatcher-attestation/v1`，以准确 `platform_input_item_id` 绑定既有 turn；后续只读取最后一个 turn 的紧凑控制回执（单项最多 4096 字符），长材料用路径/字节数/SHA-256 引用，不接受 OW 自报或把整段对话送入模型。Worker 持有 TOKEN 时，本轮还须恰好一次无凭据、只读地执行 `inspect-worker-completion`，并把匹配当前 Run/CELL/attempt/message 的收据加入 cycle 证据；缺失、过期、截断或不可查询保持 `UNKNOWN`。
 3. 交叉核对并逐一对准 Run/CELL/attempt/message：声称送达就查接收者 native start；声称工作就查该原生任务；有不可变终态就查应接手角色是否真实启动。中央 active、旧 TOKEN/PID 不能覆盖原生已结束的事实，BI 差异另报，不修改投影。
-4. 给出 `CLEAR`、`ANOMALY` 或 `UNKNOWN`：全员 inactive 无接手、终态无交接、FAIL 未交 Supervisor、D1 未完却申请 D2、超预期活动无阶段变化均上报；缺失/过期证据写 UNKNOWN，不把无法证明当正常或把工具失败算产品返工。
+4. 给出 `CLEAR`、`ANOMALY` 或 `UNKNOWN`：全员 inactive 无接手、终态无交接、FAIL 未交 Supervisor、D1 未完却申请 D2等可机械核实的矛盾上报；缺失/过期证据写 UNKNOWN，不根据耗时推断空转，不找根因，也不把工具失败算产品返工。
 5. 追加一条紧凑 cycle；只引用证据路径和 SHA-256，不复制日志、不增加工程进度。正常且无新事实时不产生可见消息，随后继续下一轮。
 6. `ANOMALY` 或 `UNKNOWN` 立即按登记端点报告 Supervisor。仅送达或新 turn 启动时仍继续观察；核对 Supervisor 针对此异常的明确处置决定后，才暂停这个 Run 的巡查，等待其修复后明确恢复。共享 OW 的其他 Run 继续，Session 不退出。
 

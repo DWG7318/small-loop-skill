@@ -814,12 +814,13 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
 
     incompatible: list[str] = []
     repair: list[str] = []
+    advisory: list[str] = []
     if actual_runtime != expected_runtime:
         incompatible.append("RUNTIME_MISMATCH")
     if actual_model != expected_model:
         incompatible.append("MODEL_MISMATCH")
     if estimate > capacity:
-        incompatible.append("TASK_EXCEEDS_CONTEXT_CAPACITY")
+        advisory.append("TASK_CONTEXT_ESTIMATE_EXCEEDS_DECLARED_CAPACITY")
     if not _tool_exists(command[0]):
         repair.append("ADAPTER_COMMAND_MISSING")
     if not endpoint.is_absolute() or not endpoint.is_file():
@@ -849,6 +850,7 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
         "role": role,
         "status": status,
         "reason_codes": reasons,
+        "advisory_codes": advisory,
         "repair": [f"Restore {role} readiness for {code}." for code in repair],
     }
 

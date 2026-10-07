@@ -24,10 +24,13 @@ def spawn(command: Sequence[str], *, cwd: str, env: Mapping[str, str], process_k
     )
 
 
-def finish(process: subprocess.Popen[str], timeout_seconds: float) -> ProcessResult:
+def finish(process: subprocess.Popen[str], timeout_seconds: float | None) -> ProcessResult:
     try:
-        stdout, stderr = process.communicate(timeout=max(timeout_seconds, 0.001))
+        stdout, stderr = process.communicate(
+            timeout=None if timeout_seconds is None else max(timeout_seconds, 0.001)
+        )
     except subprocess.TimeoutExpired:
+        assert timeout_seconds is not None
         if os.name == "nt":
             subprocess.run(
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],

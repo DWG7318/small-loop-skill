@@ -1,3 +1,5 @@
+import { Component, type ReactNode } from "react";
+
 export type AppStateValue =
   | { kind: "loading" }
   | { kind: "unconfigured" }
@@ -46,4 +48,45 @@ export function AppState({ state }: { state: AppStateValue }) {
       ) : null}
     </main>
   );
+}
+
+function reloadBi() {
+  window.location.reload();
+}
+
+export function InterfaceFailure({ detail }: { detail: string }) {
+  return (
+    <div className="app-shell">
+      <main className="app-state state-error" role="alert">
+        <div className="app-state-mark" aria-hidden="true" />
+        <p className="eyebrow">Visible failure boundary</p>
+        <h1>BI interface could not be rendered</h1>
+        <p>The read-only window stayed visible. Reload the interface or report this code.</p>
+        <code>{detail}</code>
+        <button className="state-reload" type="button" onClick={reloadBi}>Reload BI</button>
+      </main>
+    </div>
+  );
+}
+
+interface UiFailureBoundaryState {
+  failed: boolean;
+}
+
+export class UiFailureBoundary extends Component<{ children: ReactNode }, UiFailureBoundaryState> {
+  state: UiFailureBoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): UiFailureBoundaryState {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("SLK_BI_RENDER_FAILED", error);
+  }
+
+  render() {
+    return this.state.failed
+      ? <InterfaceFailure detail="SLK_BI_RENDER_FAILED" />
+      : this.props.children;
+  }
 }

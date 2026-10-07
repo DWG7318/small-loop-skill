@@ -151,6 +151,8 @@ def test_ocrv_v2_request_matches_installed_closed_contract(tmp_path: Path) -> No
         "capacity",
     }
     assert request["schema_version"] == "slk.ocrv-d1-request/v2"
+    assert request["capacity"]["max_tokens_budget"] == 0
+    assert request["capacity"]["timeout_minutes"] == 0
     started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
     assert started["schema_version"] == "slk.native-start/v2"
     assert started["request_sha256"] == envelope.payload_sha256
@@ -182,7 +184,7 @@ def test_registered_checker_freezes_only_executing_review_limits(tmp_path: Path)
     assert request["capacity"]["max_changed_lines"] == 800  # legacy advisory only
 
 
-@pytest.mark.parametrize("damage", ["missing", "extra", "zero"])
+@pytest.mark.parametrize("damage", ["missing", "extra", "zero-max-tokens"])
 def test_registered_checker_review_limits_fail_closed(tmp_path: Path, damage: str) -> None:
     endpoint = checker_endpoint(tmp_path)
     raw = {**endpoint.__dict__, "address": dict(endpoint.address)}
@@ -192,11 +194,23 @@ def test_registered_checker_review_limits_fail_closed(tmp_path: Path, damage: st
     elif damage == "extra":
         capacity["max_changed_lines"] = 1
     else:
-        capacity["timeout_minutes"] = 0
+        capacity["max_tokens"] = 0
     raw["address"]["review_capacity"] = capacity
 
     with pytest.raises(AdapterError, match="review_capacity"):
         OcrvAdapter().validate_address(Endpoint.from_dict(raw))
+
+
+def test_registered_checker_accepts_native_unlimited_budget_and_duration(tmp_path: Path) -> None:
+    endpoint = checker_endpoint(tmp_path)
+    raw = {**endpoint.__dict__, "address": dict(endpoint.address)}
+    raw["address"]["review_capacity"] = {
+        "max_tokens": 200_000,
+        "max_tokens_budget": 0,
+        "timeout_minutes": 0,
+    }
+
+    OcrvAdapter().validate_address(Endpoint.from_dict(raw))
 
 
 def test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery(
@@ -648,7 +662,7 @@ def test_ocrv_blocking_full_review_returns_fail_without_segmentation(tmp_path: P
     assert not (attempt.root / "review-segments").exists()
 
 
-def test_ocrv_registered_timeout_is_enforced_on_full_review(
+def test_ocrv_start_timeout_does_not_kill_an_already_started_full_review(
     tmp_path: Path,
 ) -> None:
     endpoint = checker_endpoint(tmp_path, "timeout-second")
@@ -661,8 +675,7 @@ def test_ocrv_registered_timeout_is_enforced_on_full_review(
     envelope = _large_candidate_envelope(tmp_path)
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
 
-    with pytest.raises(AdapterError) as error:
-        OcrvAdapter().deliver(endpoint, envelope, attempt)
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert error.value.error_code == "OCRV_TIMEOUT"
+    assert result.status == "completed"
     assert not (attempt.root / "review-segments").exists()

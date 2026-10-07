@@ -140,9 +140,14 @@ def _details(event: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _stable_id(request: Mapping[str, Any], suffix: str) -> str:
+    source_event_id = request.get("d1_failure_event_id", request.get("d1_incomplete_event_id"))
+    invocation_id = request.get("post_d1_invocation_id", request.get("management_invocation_id"))
     source = ":".join(
-        str(request[field])
-        for field in ("run_id", "cell_id", "attempt", "d1_failure_event_id", "post_d1_invocation_id")
+        str(value)
+        for value in (
+            request.get("run_id"), request.get("cell_id"), request.get("attempt"),
+            source_event_id, invocation_id,
+        )
     )
     return str(uuid.uuid5(_NAMESPACE, f"{source}:{suffix}"))
 
@@ -685,7 +690,7 @@ def _prepare(
         or desktop.get("cell_id") != request["cell_id"]
         or desktop.get("original_message_id") != prepared["envelope"]["message_id"]
         or desktop.get("target_thread_id") != prepared["endpoint"]["address"]["thread_id"]
-        or desktop.get("payload_type") != "D1_FAILURE_ESCALATION"
+        or desktop.get("payload_type") != prepared["envelope"]["payload_type"]
         or desktop.get("payload_sha256") != prepared["envelope"]["payload_sha256"]
         or not isinstance(desktop.get("recovery_message_id"), str)
         or not isinstance(desktop.get("prompt"), str)
@@ -695,6 +700,22 @@ def _prepare(
             "CHECKER_ESCALATION_DESKTOP_INVALID", "Desktop bridge request changed escalation identity"
         )
     desktop.pop("_slk_command", None)
+    if prepared["envelope"]["payload_type"] == "D1_INCOMPLETE_ESCALATION":
+        return {
+            "schema_version": "slk.checker-management-result/v1",
+            "status": "DESKTOP_BRIDGE_REQUIRED",
+            "run_id": request["run_id"],
+            "go_id": request["go_id"],
+            "cell_id": request["cell_id"],
+            "attempt": request["attempt"],
+            "checker_role_instance_id": request["checker_role_instance_id"],
+            "supervisor_role_instance_id": prepared["endpoint"]["role_instance_id"],
+            "d1_incomplete_event_id": request["d1_incomplete_event_id"],
+            "candidate_message_id": prepared["envelope"]["payload"]["candidate_message_id"],
+            "escalation_message_id": prepared["envelope"]["message_id"],
+            "desktop_request_path": prepared["desktop_request_path"],
+            "desktop_request": desktop,
+        }
     return {
         "schema_version": "slk.checker-post-d1-result/v1",
         "status": "DESKTOP_BRIDGE_REQUIRED",
@@ -787,7 +808,7 @@ def _commit_started(
         "from_role_instance_id": request["checker_role_instance_id"],
         "to_role_instance_id": prepared["endpoint"]["role_instance_id"],
         "endpoint_version": prepared["endpoint"]["endpoint_version"],
-        "payload_type": "D1_FAILURE_ESCALATION",
+        "payload_type": prepared["envelope"]["payload_type"],
         "payload_sha256": prepared["envelope"]["payload_sha256"],
         "start_evidence": {
             "evidence_id": _stable_id(request, "supervisor-native-start"),
@@ -820,6 +841,24 @@ def _commit_started(
             "CHECKER_ESCALATION_COMMIT_FAILED", "atomic TOKEN commit did not match the escalation"
         )
     _write_stable(commit_path.with_suffix(".result.json"), recorded)
+    if prepared["envelope"]["payload_type"] == "D1_INCOMPLETE_ESCALATION":
+        return {
+            "schema_version": "slk.checker-management-result/v1",
+            "status": "CHECKER_INCOMPLETE_ESCALATION_COMMITTED",
+            "run_id": request["run_id"],
+            "go_id": request["go_id"],
+            "cell_id": request["cell_id"],
+            "attempt": request["attempt"],
+            "d1_incomplete_event_id": request["d1_incomplete_event_id"],
+            "candidate_message_id": prepared["envelope"]["payload"]["candidate_message_id"],
+            "escalation_message_id": prepared["envelope"]["message_id"],
+            "recovery_message_id": message_id if recovered else None,
+            "runtime_revision": recorded["runtime_revision"],
+            "token_sequence": recorded["token_sequence"],
+            "token_owner_role_instance_id": recorded["token_owner_role_instance_id"],
+            "commit_request_path": str(commit_path),
+            ("desktop_started_path" if recovered else "started_path"): str(started_path),
+        }
     return {
         "schema_version": "slk.checker-post-d1-result/v1",
         "status": "CHECKER_ESCALATION_COMMITTED",

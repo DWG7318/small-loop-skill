@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dwg7318.github.io/small-loop-skill/contracts/slk-checker-management.schema.json",
+  "title": "SLK authenticated Checker D1 INCOMPLETE management handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "method_version", "management_invocation_id", "run_id", "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision", "token_sequence", "checker_role_instance_id", "d1_incomplete_event_id", "runtime_projection_path", "native_attempt_path", "supervisor_endpoint_path", "checker_credential_path", "state_command", "transport_command", "escalation_attempt_root", "reason_codes", "evidence_refs", "occurred_at"],
+  "properties": {
+    "schema_version": {"const": "slk.checker-management-request/v1"},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2"]},
+    "management_invocation_id": {"$ref": "#/$defs/identifier"},
+    "run_id": {"$ref": "#/$defs/identifier"},
+    "go_id": {"$ref": "#/$defs/identifier"},
+    "cell_id": {"$ref": "#/$defs/identifier"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "plan_revision": {"type": "integer", "minimum": 1},
+    "runtime_revision": {"type": "integer", "minimum": 1},
+    "token_sequence": {"type": "integer", "minimum": 1},
+    "checker_role_instance_id": {"$ref": "#/$defs/identifier"},
+    "d1_incomplete_event_id": {"$ref": "#/$defs/identifier"},
+    "runtime_projection_path": {"$ref": "#/$defs/path"},
+    "native_attempt_path": {"$ref": "#/$defs/path"},
+    "supervisor_endpoint_path": {"$ref": "#/$defs/path"},
+    "checker_credential_path": {"$ref": "#/$defs/path"},
+    "state_command": {"$ref": "#/$defs/command"},
+    "transport_command": {"$ref": "#/$defs/command"},
+    "escalation_attempt_root": {"$ref": "#/$defs/path"},
+    "reason_codes": {"$ref": "#/$defs/nonEmptyStrings"},
+    "evidence_refs": {"$ref": "#/$defs/nonEmptyStrings"},
+    "occurred_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "path": {"type": "string", "minLength": 1},
+    "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "nonEmptyStrings": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
+}

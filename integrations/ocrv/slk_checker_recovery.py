@@ -325,20 +325,25 @@ def _terminal_budget_post_d1_suffix(
     request: dict[str, object], validated: dict[str, object], result: dict[str, object],
     attempt: Path, root: Path, command: list[str],
 ) -> dict[str, object]:
-    """Route a corrected PASS/FAIL through the existing sealed Checker suffix."""
+    """Route PASS/FAIL or a still-INCOMPLETE management exit through the sealed Checker."""
 
     from slk_transport import checker_completion as passed
     from slk_transport import checker_escalation as failed
+    from slk_transport import checker_management as incomplete
     from slk_transport import worker_completion as wc
     from slk_transport.role_host import normalized_checker_findings
 
+    verdict = result["verdict"]
     correction = validated.get("d1_correction")
     correction_id = correction.get("correction_id") if isinstance(correction, dict) else None
-    if not isinstance(correction_id, str) or not correction_id:
-        raise ValueError("validated D1 correction identity is unavailable")
-    event_id = wc._stable_id(
-        str(request["candidate_message_id"]), "d1-budget-" + correction_id,
-    )
+    if verdict == "INCOMPLETE":
+        event_id = str(request["d1_incomplete_event_id"])
+    else:
+        if not isinstance(correction_id, str) or not correction_id:
+            raise ValueError("validated D1 correction identity is unavailable")
+        event_id = wc._stable_id(
+            str(request["candidate_message_id"]), "d1-budget-" + correction_id,
+        )
     projection = dict(
         wc._default_load_current_projection(str(request["run_id"]), list(request["state_command"]))
     )
@@ -354,8 +359,9 @@ def _terminal_budget_post_d1_suffix(
         or not isinstance(events, list)
         or len(matches) != 1
         or matches[0].get("event_type")
-        != {"PASS": "D1_PASSED", "FAIL": "D1_FAILED"}.get(result.get("verdict"))
-        or matches[0].get("corrects_event_id") != request["d1_incomplete_event_id"]
+        != {"PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE"}.get(verdict)
+        or matches[0].get("corrects_event_id")
+        != (None if verdict == "INCOMPLETE" else request["d1_incomplete_event_id"])
     ):
         raise ValueError("corrected D1 is not the exact current Checker terminal")
     details = matches[0].get("details")
@@ -364,7 +370,7 @@ def _terminal_budget_post_d1_suffix(
         details = json.loads(serialized) if isinstance(serialized, str) else None
     if (
         not isinstance(details, dict)
-        or details.get("verdict") != result.get("verdict")
+        or details.get("verdict") != verdict
         or details.get("candidate_message_id") != request["candidate_message_id"]
     ):
         raise ValueError("corrected D1 details do not bind the resumed candidate")
@@ -397,11 +403,34 @@ def _terminal_budget_post_d1_suffix(
         "checker_credential_path": request["checker_credential_path"],
         "state_command": request["state_command"],
         "transport_command": request["transport_command"],
-        "occurred_at": matches[0].get("occurred_at"),
+        "occurred_at": (
+            matches[0].get("occurred_at")
+            or json.loads((attempt / "started.json").read_text(encoding="utf-8"))["observed_at"]
+        ),
     }
     roles = binding["roles"]
-    verdict = result["verdict"]
-    if verdict == "FAIL":
+    if verdict == "INCOMPLETE":
+        source_attempt = Path(str(request["native_attempt_path"])).resolve()
+        supplemental = [attempt / "ocrv-result.json", attempt / "completed.json"]
+        supplemental.extend(
+            path for path in (attempt / "resume-lineage.json", attempt / "compatibility-lineage.json")
+            if path.is_file()
+        )
+        suffix_request = {
+            **common,
+            "schema_version": incomplete.REQUEST_SCHEMA,
+            "management_invocation_id": wc._stable_id(event_id, "terminal-budget-incomplete"),
+            "d1_incomplete_event_id": event_id,
+            "native_attempt_path": str(source_attempt),
+            "supervisor_endpoint_path": roles["supervisor"]["endpoint_path"],
+            "escalation_attempt_root": str(root),
+            "reason_codes": list(result["reason_codes"]),
+            "evidence_refs": [str(path.resolve()) for path in supplemental],
+        }
+        mode = "--slk-manage-incomplete"
+        output = root / ".checker-management" / suffix_request["management_invocation_id"] / "prepared-result.json"
+        accepted_statuses = {"CHECKER_INCOMPLETE_ESCALATION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED"}
+    elif verdict == "FAIL":
         current = next(
             cell for cell in bound_cells if cell.get("cell_id") == request["cell_id"]
         )
@@ -492,7 +521,7 @@ def _terminal_budget_post_d1_suffix(
     if not isinstance(suffix_result, dict) or suffix_result.get("status") not in accepted_statuses:
         raise ValueError("sealed Checker post-D1 suffix returned an invalid result")
     return {
-        "corrected_d1_event_id": event_id,
+        "corrected_d1_event_id": None if verdict == "INCOMPLETE" else event_id,
         "suffix_mode": mode,
         "suffix_request_path": str(suffix_path),
         "suffix_result_path": str(output),
@@ -763,6 +792,10 @@ def _run_terminal_budget_review(
         ) != result["verdict"]:
             raise ValueError("terminal-budget committed D1 response is not exact")
         status, event_type = "CHECKER_D1_RECORDED", recorded["d1_event_type"]
+        suffix = _terminal_budget_post_d1_suffix(
+            route_source, validated, result, attempt, root, command
+        )
+    else:
         suffix = _terminal_budget_post_d1_suffix(
             route_source, validated, result, attempt, root, command
         )

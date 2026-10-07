@@ -76,7 +76,7 @@ def test_attests_existing_ow_turn_without_send_or_model_call(tmp_path: Path, mon
     assert INPUT_TEXT not in (evidence / "desktop-overwatcher-attestation.json").read_text()
     assert {call["name"] for call in calls} == {"read_thread"}
     assert calls[0]["arguments"]["turnLimit"] == 1
-    assert calls[0]["arguments"]["maxOutputCharsPerItem"] == 20000
+    assert calls[0]["arguments"]["maxOutputCharsPerItem"] == 4096
 
 
 def test_identical_attestation_retry_reuses_the_same_immutable_start(tmp_path: Path, monkeypatch) -> None:

@@ -18,6 +18,9 @@ serde_json.workspace = true
 slk-state-core = { path = "../../../crates/slk-state-core" }
 tauri = { version = "2", features = [] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

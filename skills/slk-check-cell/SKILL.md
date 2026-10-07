@@ -18,7 +18,7 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 ## 建议检查
 
-1. 先做 Checker 本地轻量预检：确认候选对应当前 `CELL n/N`，读取候选元数据、changed paths、验收条件、模型与工具能力、已通过的 OCRV runtime/model/adapter/endpoint 与 D1 验收目标。OCRV 先物化最终 background，记录字符/字节/证据量，再执行 `review --preview` 核对完整候选清单；旧的 800 行、2 文件、8000/12000 背景量只作容量提示，不再切段或阻止模型启动。只有 readiness 冻结的单次 token、总 token budget 和 timeout 是执行门禁；preview 不完整或身份不符仍在模型启动前返回 `OCRV_REVIEW_INCOMPLETE`。
+1. 先做 Checker 本地轻量预检：确认候选对应当前 `CELL n/N`，读取候选元数据、changed paths、验收条件、模型与工具能力、已通过的 OCRV runtime/model/adapter/endpoint 与 D1 验收目标。OCRV 先物化最终 background，记录字符/字节/证据量，再执行 `review --preview` 核对完整候选清单；旧的 800 行、2 文件、8000/12000 背景量和上下文估计只作提示，不切段或阻止模型启动。正常请求的 aggregate budget 与 review timeout 固定为原生 `0`（不限），`max-tools=0` 只表示采用已验证的模板默认轮数而不是无限；单组输入仍服从真实模型上下文。preview 不完整或身份不符仍在模型启动前返回 `OCRV_REVIEW_INCOMPLETE`。
 2. 检查目标结果、相关回归、明显副作用和候选中客观可观察的风险。
 3. OCRV 标准入口用密封 Checker 凭证记录绑定当前 candidate 的 `D1_STARTED`；Supervisor、Overwatcher 和普通 shell 不读取凭证、不代写 D1。Checker 优先使用现有测试、构建入口或直接操作，验证目标和真实未覆盖风险；独占资源阻塞时按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md)，不把占用误判为 D1 FAIL。
    Owner 已为本次 Run 启用效率工具时，Checker 可用 Probe CLI 独立定位影响范围，用 RTK 压缩高噪声测试或构建输出；核心 diff、关键错误原文和决定 D1 的证据仍直接检查，出现失败、截断或疑义时回退原生命令，不能让压缩摘要替代独立判断。
@@ -26,15 +26,15 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 5. Checker 对完整候选给出唯一一个正式 D1 结果；只有 PASS 或 FAIL 闭合 D1。精确 PASS 复用应同时绑定 candidate、scope 和 criteria 哈希；过程把 `process exit`、`JSON parse` 与 `business status` 分开。合法 INCOMPLETE 可有空 findings/evidence，预算/超时、缺少关键证明或覆盖不完整保留证据并返回 `OCRV_REVIEW_INCOMPLETE`，检查工具或环境故障不写为 PASS，也不冒充产品 FAIL。发现绑定验收条件的实质产品缺陷才记 FAIL；若完整覆盖已经产生有效 MEDIUM/HIGH/BLOCKER/CRITICAL finding，辅助 Tool 的失败应作为附加 reason，不能覆盖已经成立的 FAIL；完整覆盖下只有低严重性观察时可以 PASS 并保留观察，不能机械判为 FAIL。INCOMPLETE 保留同一 candidate 与 D1 attempt，不增加返工 round；关键验收条件有直接证据才写 PASS。OCRV 长审查不由一次性 DSH/Worker 进程托管；旧版本已有封闭 D1-A/B/C partial 只按 `$slk-recover-communication` 消费，仍只形成一个正式 D1，不让新阈值切段。确需改变方案时交 Supervisor 协助：
    - `D1 PASS：CELL n/N`
    - `D1 FAIL：CELL n/N，进入返工`；`D1 INCOMPLETE：CELL n/N，说明未证明项`
-6. D1 FAIL 时形成结构化 `D1_FAILURE_ESCALATION`：绑定失败事件、候选哈希、返工轮次、CELL 目标、验收条件、具体差距、复现方式、期望结果和证据引用；把 TOKEN 交给 Supervisor 生成改进指引，不由 Checker 直接启动返工。
+6. D1 FAIL 时形成结构化 `D1_FAILURE_ESCALATION`；D1 INCOMPLETE 时形成结构化 `D1_INCOMPLETE_ESCALATION`，绑定当前未闭合事件、候选消息、reason codes、原生终态/result 与证据路径哈希，把 TOKEN 交给 Supervisor 做容量/环境管理。两者都不由 Checker直接启动下一次工作，但 INCOMPLETE 不含 findings/rework round、不增加 FAIL 次数，也不改变 D1 权威。
 7. 在执行 D1 的同时，顺手记录本 CELL 的容量事实，例如工作量是否合适、是否接近当前能力或是否因过大带来返工；这复用已有事实，不增加额外检查。
-8. 标准工具先把终态 run/message、当前原生 review 身份、实际 result SHA-256 及分段 aggregate/segment 哈希闭合绑定，再用 Checker 凭证把 D1 结果、错误、返工与容量事实写入 `slk-state`，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项，不写 `D1_PASSED` 或 `D1_FAILED`、不推进令牌。FAIL 应由 OCRV 标准 `--slk-post-d1` 后缀把原失败交给 Supervisor；PASS 应由 `--slk-complete-d1` 后缀投递精确下一 CELL，或在最终 CELL 把 `D2_READY` 交给 Supervisor。只有接收者匹配 v2 start 与发送者原子 TOKEN commit 均成立，Checker 本轮才完成；否则记 `TRANSPORT_FAILED` 且责任仍由 Checker 持有。
+8. 标准工具先把终态 run/message、当前原生 review 身份、实际 result SHA-256 及分段 aggregate/segment 哈希闭合绑定，再用 Checker 凭证把 D1 结果与容量事实写入 `slk-state`，建议调用 `$slk-record-run`；INCOMPLETE 只登记未证明项，不写 `D1_PASSED` 或 `D1_FAILED`。FAIL 用 `--slk-post-d1`，PASS 用 `--slk-complete-d1`，INCOMPLETE 用 `--slk-manage-incomplete` 把准确责任交给 Supervisor；只有接收者匹配 v2 start 与发送者原子 TOKEN commit 均成立，本轮才完成，否则记 `TRANSPORT_FAILED` 且责任仍由 Checker 持有。
 
 ## 后继
 
 - D1 PASS 后，Checker 更新进度；还有 CELL 时沿 `Checker → Worker` 使用 `$slk-dispatch-cell` 校准，并由标准 PASS 后缀派发精确下一 CELL。所有计划 CELL 都已经获得 D1 PASS 或单独记录的 Supervisor 豁免时，标准 PASS 后缀沿 `Checker → Supervisor` 交付 `D2_READY`、最终令牌和 D2 条件。
 - D1 FAIL 后，Checker 沿 `Checker → Supervisor` 发送 `D1_FAILURE_ESCALATION` 与 TOKEN，再由 `$slk-rework-cell` 进入受限返工路径。
-- D1 INCOMPLETE 时 Checker 保留 `SLK TOKEN`，不触发返工或失败升级；普通终态仅因 aggregate token budget 耗尽且零完成时，Owner 可精确授权一次 `resume-terminal-budget-checker`，由密封原 Checker以相同输入、精确绑定的 OCRV 版本/规则/运行配置 source→target 身份续接并核验 parent→child Session 谱系，轮次 token/timeout 不变、总预算采用高于已观测用量的有限显式值；仍 INCOMPLETE 就停止，PASS/FAIL 应在同一密封 Checker 内进入既有 completion/escalation 后缀而不能留下已记录的死端；其他情况优先补齐证据，确需改变 Run 方案时再请 Supervisor 使用 `$slk-adjust-run` 协助，Supervisor 提供新证据后仍由 Checker 重判 D1。
+- D1 INCOMPLETE 不触发返工或失败升级；标准管理后缀把 TOKEN 交给 Supervisor，Supervisor 选择等待真实原生工作、调整容量/环境或机械恢复，再把同一候选交回原 Checker 重判。旧有限预算记录仅在准确原因仍是 budget-only 且 Owner 明确授权时使用现有恢复 Tool；次数保护防重复副作用，不是工程永久额度，仍 INCOMPLETE 也应再次走管理出口而不能死停。
 
 ## 负面提示词
 

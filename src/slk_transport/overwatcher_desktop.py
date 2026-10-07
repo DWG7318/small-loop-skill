@@ -126,7 +126,7 @@ def _platform_snapshot(request: Mapping[str, Any], *, frozen_reader: bool) -> di
             raise OverwatcherDesktopError("installed Desktop plugin lacks read_thread")
         view = client.call(3, "read_thread", {
             "threadId": request["thread_id"], "hostId": request["host_id"],
-            "turnLimit": 1, "includeOutputs": True, "maxOutputCharsPerItem": 20000,
+            "turnLimit": 1, "includeOutputs": True, "maxOutputCharsPerItem": 4096,
         }, reader_thread_id, timeout)
     except TimeoutError as exc:
         raise OverwatcherDesktopError("Desktop OW read_thread timed out") from exc

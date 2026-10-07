@@ -473,8 +473,7 @@ class DshAdapter:
                     if process.poll() is not None:
                         break
                     self._sleep(0.01)
-                remaining = timeout - (self._monotonic() - started_at)
-                completed = finish(process, remaining)
+                completed = finish(process, None)
             except subprocess.TimeoutExpired as exc:
                 stdout = exc.stdout if isinstance(exc.stdout, str) else ""
                 stderr = exc.stderr if isinstance(exc.stderr, str) else ""

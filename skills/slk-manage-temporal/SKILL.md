@@ -22,8 +22,8 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 ## 运行边界
 
 - 每个交接由原角色调用 hash-bound `continue-staged-handoff`，把不可变 operation/message、sender/receiver、CELL/attempt、payload SHA-256 和 runtime revision 经 Role Host 提交给已绑定 `SLK.Run`；其单个 Activity 是唯一物理启动入口，Role Host 不再同时直发。匹配 `slk.native-start/v2` 后仍由同一 Host 使用原发送者 sealed credential 提交中央 TOKEN；外部既有 request 要绑定其路径/哈希并只补原 operation 的 ACK+commit，已有 Host ACK 的重试只补 commit，不再 request/启动。
-- ACK 超时只请求一次精确恢复，不换接收者、不改 payload、不重做工程副作用。恢复目标是原发送者，Supervisor 选择机械恢复或人工处理。
-- 接收者真实启动后开始本 Run 的责任停留计时；同一成员超过 1800 秒，Temporal 直接通知登记的 Supervisor 一次，不由 OW 中转，也不判断长工作是否合理。
+- ACK 超时只请求一次精确恢复，不换接收者、不改 payload、不重做工程副作用；这是短调用的防重复尝试数，不是工程恢复次数。恢复目标是原发送者，Supervisor 原则上优先机械恢复，也可按事实选择人工处理。
+- 接收者真实启动后开始本 Run 的责任停留计时；同一成员超过 1800 秒，Temporal 独立于 OW 的在线状态、巡查结论或自报，直接通知登记的 Supervisor 一次，只要求排查而不判断长工作是否合理。启动/RPC 的有限 timeout 只证明短调用结果；匹配 native start 之后不作为 Worker、Checker 或 Supervisor 工程 turn 的死亡线。
 - 每次 1200 秒审计重新调用 `inspect-native-activity --desktop-overwatcher-attestation <path> --desktop-overwatcher-attestation-sha256 <hash>`，由当次真实继承 Desktop thread/pipe/originator 的可信宿主实时 `read_thread` 核查同一 OW turn；初次 request 的 `reader_thread_id` 只证明 attestation 创建者，不锁死后续查询者，也不改变目标 Run/角色/endpoint/thread/turn/input/hash。不用 `native-activity.json` 的旧时间续命。异常、UNKNOWN、无效收据或 Activity 失败形成 runtime guard 并报告；guard 修复前不派下一 CELL。
 - OW 退出 Hook 由已有宿主独立观察，以闭合 notice 进入本 Run；不能依赖 OW 退出前自报。任何发起者都触发 Supervisor 二次确认；消息 accepted、原生 turn 启动、Supervisor 实际接管分别记录，不能互相替代。通知模型来自 Supervisor 的冻结绑定，不复制 OW 参数；恢复正确成员与 OW 后才解除 guard。
 - 一个 Run 的计时、恢复、关闭或重放不改变其他 Run；共享服务只在没有任何活动 Run 后由运维侧正常停止。

@@ -115,8 +115,8 @@ DEFAULT_REVIEW_CAPACITY = {
     "max_changed_lines": 800,
     "max_segment_paths": 2,
     "max_tokens": 200_000,
-    "max_tokens_budget": 500_000,
-    "timeout_minutes": 15,
+    "max_tokens_budget": 0,
+    "timeout_minutes": 0,
 }
 RECOVERY_NAMESPACE = uuid.UUID("9ae86847-8f6f-4b71-9288-18cf7f8f8540")
 
@@ -134,6 +134,12 @@ def _positive_seconds(value: Any) -> float:
 def _positive_integer(value: Any, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise AdapterError("OCRV_ADDRESS_INVALID", f"{label} must be a positive integer")
+    return value
+
+
+def _nonnegative_integer(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise AdapterError("OCRV_ADDRESS_INVALID", f"{label} must be a non-negative integer")
     return value
 
 
@@ -249,8 +255,9 @@ class OcrvAdapter:
                     "OCRV_ADDRESS_INVALID",
                     "review_capacity must use the exact executing-limit field set",
                 )
-            for field in REVIEW_CAPACITY_FIELDS:
-                _positive_integer(capacity[field], f"review_capacity.{field}")
+            _positive_integer(capacity["max_tokens"], "review_capacity.max_tokens")
+            for field in ("max_tokens_budget", "timeout_minutes"):
+                _nonnegative_integer(capacity[field], f"review_capacity.{field}")
 
     @staticmethod
     def _executing_capacity(address: Mapping[str, Any]) -> dict[str, int]:
@@ -820,7 +827,7 @@ class OcrvAdapter:
             child_start,
         )
         try:
-            completed = finish(process, _positive_seconds(endpoint.address["timeout_seconds"]))
+            completed = finish(process, None)
         except subprocess.TimeoutExpired as exc:
             raise AdapterError("OCRV_RECOVERY_TIMEOUT", "Checker recovery did not complete in time") from exc
         attempt.write_text_once("native.stdout.txt", completed.stdout)
@@ -960,7 +967,7 @@ class OcrvAdapter:
                     timeout,
                 )
                 attempt.write_json_once("started.json", child_start)
-                completed = finish(process, timeout)
+                completed = finish(process, None)
             except subprocess.TimeoutExpired as exc:
                 attempt.write_text_once(
                     "native.stdout.txt", exc.stdout if isinstance(exc.stdout, str) else ""
@@ -1104,7 +1111,7 @@ class OcrvAdapter:
             if first_segment:
                 attempt.write_json_once("started.json", child_start)
             try:
-                completed = finish(process, timeout)
+                completed = finish(process, None)
             except subprocess.TimeoutExpired as exc:
                 segment_attempt.write_text_once(
                     "native.stdout.txt", exc.stdout if isinstance(exc.stdout, str) else ""

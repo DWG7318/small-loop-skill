@@ -21,6 +21,27 @@ class TimedOutProcess:
         return ("", "")
 
 
+class CompletedProcess:
+    returncode = 0
+
+    def __init__(self) -> None:
+        self.timeouts: list[float | None] = []
+
+    def communicate(self, timeout=None):
+        self.timeouts.append(timeout)
+        return ("done", "")
+
+
+def test_unbounded_finish_waits_without_an_artificial_deadline() -> None:
+    process = CompletedProcess()
+
+    result = watch.finish(process, None)  # type: ignore[arg-type]
+
+    assert process.timeouts == [None]
+    assert result.returncode == 0
+    assert result.stdout == "done"
+
+
 def test_windows_timeout_terminates_the_entire_process_tree(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

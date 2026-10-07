@@ -414,11 +414,7 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
     if (os.environ.get("CODEX_THREAD_ID") != caller or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
         or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
         raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "the prepared Desktop executor capability was not inherited")
-    if len(prompt) > 16000:
-        raise AdapterError("CODEX_DESKTOP_PAYLOAD_TOO_LARGE", "delivery exceeds bounded native readback; use evidence references")
     expected = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
-    if len(expected) + 512 > 32768:
-        raise AdapterError("CODEX_DESKTOP_PAYLOAD_TOO_LARGE", "escaped delivery exceeds bounded native readback")
     timeout = float(address["startup_timeout_seconds"])
     client = DesktopClient(list(address["command"]), Path(str(address["cwd"])))
     try:

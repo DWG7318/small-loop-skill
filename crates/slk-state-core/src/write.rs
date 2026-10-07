@@ -4975,7 +4975,10 @@ fn valid_token_handoff_route(
     if from == Role::Checker {
         if let Some((state, go_id, cell_id)) = latest_run_d1_state(connection, &request.run_id)? {
             if state == "D1_INCOMPLETE" {
-                return Ok(false);
+                return Ok(to == Role::Supervisor
+                    && request.payload_type == "D1_INCOMPLETE_ESCALATION"
+                    && request.go_id == go_id
+                    && request.cell_id == cell_id);
             }
             if state == "D1_FAILED" {
                 return Ok(to == Role::Supervisor
@@ -5008,7 +5011,7 @@ fn valid_token_handoff_route(
         }
     }
     match request.payload_type.as_str() {
-        "D1_FAILURE_ESCALATION" => Ok(false),
+        "D1_FAILURE_ESCALATION" | "D1_INCOMPLETE_ESCALATION" => Ok(false),
         "D1_REWORK_DIRECTIVE" => valid_supervisor_rework_route(connection, request, from, to),
         _ => Ok(valid_token_route(from, to)),
     }

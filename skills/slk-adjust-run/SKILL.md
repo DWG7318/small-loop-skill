@@ -15,6 +15,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor de
 ## 常见触发
 
 - 同一 CELL 第二次连续 D1 FAIL，应停止普通返工并进一步拆分；
+- 当前 D1 为 INCOMPLETE 且 Checker 已用闭合管理交接提交容量、环境、工具或原生执行阻碍；这不是产品 FAIL，也不要求先凑两次失败；
 - D2 发现 CELL 之间的衔接问题；
 - 当前固定角色能力、电脑、环境、依赖或独占资源与原计划差异较大；资源占用先按需读取 [`slk-execute-cell/references/resource-contention.md`](../slk-execute-cell/references/resource-contention.md) 恢复同一节点；
 - CELL 变化已经影响后续 CELL、技术路线、验收目标或 Owner 需求。
@@ -26,7 +27,7 @@ Supervisor 在现有工程权限和资源范围内给出能继续施工的具体
 
 Supervisor 可以按实际原因组合以下办法：
 
-1. 在现有权限内补充信息、可用资源或验证方式；
+1. 在现有权限内补充信息、可用资源或验证方式；对 D1 INCOMPLETE 明确选择 `WAIT_FOR_NATIVE_WORK`、`ADJUST_CAPACITY`、`ADJUST_ENVIRONMENT` 或 `MECHANICAL_RECOVERY`，记录本地证据后让原 Checker继续同一 D1；
 2. D2 返工仍使用固定角色绑定；能力不足时调整 CELL 或路线，不由 Supervisor 临场升级、降级或替换模型；
 3. 调整当前或后续 CELL、施工顺序或技术路线，让已验证成果继续被继承；第二次连续 D1 FAIL 时把未接受范围拆成多个中小后继 CELL，各自独立 D0、独立 D1，并保留原目标、验收强度和失败历史；
 4. 解决方案需要 Owner 掌握的电脑、工具、账号、测试环境或业务权限时，提交推荐方案、预期影响、可行替代和最低必要授权；
@@ -40,6 +41,6 @@ Supervisor 可以按实际原因组合以下办法：
 
 首次正式 D1 FAIL 可沿 `$slk-rework-cell` 给同一 Worker 一次普通返工。第二次及以后由旧 RoleHost 返回 `ROLE_HOST_CELL_SPLIT_REQUIRED`；Supervisor 对两轮证据做 AGGRESSIVE 调查，用密封 `supervisor-admin revise-plan` 版本化拆分，冻结新 revision RoleHost，并更新标准 Temporal Run 配置的 Host 路径/哈希。计划调整沿 `Supervisor → Checker` 用 `SLK TOKEN` 和标准 `CELL_DISPATCH` 回到 `$slk-dispatch-cell`，再由 Checker 派首个后继 CELL；不能直接发给 Worker或开始第三次普通返工。原角色宿主核验 native start 并提交 TOKEN。结束处置前确认正确成员真实接手、OW 已恢复本 Run 巡查；否则保留明确未解决项和下一动作。
 
-不要在线等待或持续介入普通 CELL；Overwatcher 只核实并报告运行证据，不能替 Supervisor 恢复成员、决定路线、修改计划、TOKEN 或 BI。同一 CELL 第二次正式 D1 FAIL 起，对照两轮 findings、candidate diff、实际步骤、复现/回归证据和环境假设做 `AGGRESSIVE` 调查，结果应进入版本化拆分或其他明确路线，不能只重复普通建议、接管 D1，或直接开始第三次普通返工。
+不要在线等待或持续介入普通 CELL；Overwatcher 只核实并报告运行证据，不能替 Supervisor 恢复成员、决定路线、修改计划、TOKEN 或 BI。INCOMPLETE 管理决定不能改写成 PASS/FAIL、普通返工或 Supervisor 代做 D1；同一 CELL 第二次正式 D1 FAIL 起，对照两轮 findings、candidate diff、实际步骤、复现/回归证据和环境假设做 `AGGRESSIVE` 调查，结果应进入版本化拆分或其他明确路线，不能只重复普通建议、接管 D1，或直接开始第三次普通返工。
 
 不要按标题、最近时间或自由文本猜 canonical Run；不要直接编辑 SQLite、伪造失效凭证、新建替代 Run、用终态结果补造启动、自动升级模型，或借身份对账改写 CELL、D0/D1/D2、角色、证据和 TOKEN。

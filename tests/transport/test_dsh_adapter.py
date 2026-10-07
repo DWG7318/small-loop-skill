@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import pytest
+import slk_transport.adapters.dsh as dsh_adapter
 
 from slk_transport.adapters.base import AdapterError
 from slk_transport.adapters.dsh import DshAdapter
@@ -18,6 +19,27 @@ from test_contracts import endpoint_value, envelope_value
 
 
 FAKE_DSH = Path(__file__).with_name("fake_dsh.py")
+
+
+def test_dsh_start_timeout_does_not_become_an_execution_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    endpoint = worker_endpoint(tmp_path)
+    envelope = worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    observed: list[float | None] = []
+    original = dsh_adapter.finish
+
+    def capture(process, timeout_seconds):
+        observed.append(timeout_seconds)
+        return original(process, timeout_seconds)
+
+    monkeypatch.setattr(dsh_adapter, "finish", capture)
+
+    result = DshAdapter().deliver(endpoint, envelope, attempt)
+
+    assert result.status == "completed"
+    assert observed == [None]
 
 
 def worker_endpoint(
@@ -246,7 +268,6 @@ def test_dsh_preserves_each_closed_noncompleted_worker_outcome(
     ("mode", "timeout_seconds", "outcome", "error_code", "exit_code"),
     [
         ("exit-nonzero-after-start", 5, "execution_failure", "DSH_EXIT_NONZERO", 42),
-        ("hang-after-start", 0.2, "timed_out", "DSH_TIMEOUT", None),
     ],
 )
 def test_dsh_runtime_failure_has_closed_identity_bound_receipt_not_worker_fact(

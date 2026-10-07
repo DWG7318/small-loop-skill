@@ -178,11 +178,12 @@
     "roleResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["role", "status", "reason_codes", "repair"],
+      "required": ["role", "status", "reason_codes", "advisory_codes", "repair"],
       "properties": {
         "role": { "enum": ["supervisor", "worker", "checker", "overwatcher"] },
         "status": { "enum": ["READY", "REPAIR_NEEDED", "INCOMPATIBLE"] },
         "reason_codes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "advisory_codes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "repair": { "type": "array", "items": { "type": "string", "minLength": 1 } }
       }
     },

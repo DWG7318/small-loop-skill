@@ -12,7 +12,7 @@ from slk_transport.contracts import Endpoint
 from slk_transport.dispatcher import dispatch_once
 from slk_transport.evidence import AttemptStore
 from slk_transport.native_activity import inspect_native_activity, validate_native_task_activity
-from slk_transport.adapters.codex_desktop import DesktopClient, consume_desktop_readback
+from slk_transport.adapters.codex_desktop import DesktopClient, consume_desktop_readback, deliver_desktop
 from slk_transport.jsonrpc import JsonRpcProcess
 from test_codex_adapter import codex_endpoint, supervisor_envelope
 
@@ -48,6 +48,16 @@ def test_desktop_native_readback_starts_exact_same_thread_without_cli_takeover(t
     assert sent[0]["arguments"]["model"] == "gpt-6.1-sol"
     assert sent[0]["arguments"]["thinking"] == "xhigh"
     assert sent[0]["_meta"]["codex_thread_id"] == "caller-exact"
+
+
+def test_desktop_does_not_invent_a_16k_prompt_admission_limit(tmp_path, monkeypatch):
+    endpoint = prepared(tmp_path, monkeypatch)
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    result = deliver_desktop(endpoint, envelope, attempt, "x" * 20_000)
+
+    assert result.status == "completed"
 
 
 def test_desktop_activity_is_bounded_exact_platform_evidence_not_host_pid(tmp_path, monkeypatch):

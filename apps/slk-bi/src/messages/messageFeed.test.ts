@@ -120,6 +120,22 @@ describe("Agent-authored BI message projection", () => {
     ).toEqual(["SESSION_REBOUND", "ROLE_CLOSED"]);
   });
 
+  it("accepts a Supervisor-authored CELL split from the current serial-plan route", () => {
+    const run = {
+      ...runFixture,
+      events: [{
+        ...runFixture.events[0]!,
+        event_id: "cell-split",
+        event_type: "CELL_SPLIT",
+        author_role_instance_id: "supervisor-a",
+      }],
+    };
+
+    expect(
+      projectAuthoritativeMessages(run, MESSAGE_CATALOG).map(({ message_type }) => message_type),
+    ).toEqual(["CELL_SPLIT"]);
+  });
+
   it("omits an unsupported historical event without hiding valid Agent-authored messages", () => {
     const run = {
       ...runFixture,

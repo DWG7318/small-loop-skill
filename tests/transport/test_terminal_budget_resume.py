@@ -179,10 +179,16 @@ def budget_resume_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
                 "details_json": json.dumps(
                     {
                         "candidate_message_id": base["candidate_message_id"],
+                        "native_start_sha256": sha256(started_path),
+                        "native_terminal_path": str(terminal_path.resolve()),
                         "native_terminal_sha256": sha256(terminal_path),
+                        "native_result_path": str(result_path.resolve()),
                         "native_result_sha256": sha256(result_path),
                         "session_id": "ocrv-session-1",
                         "verdict": "INCOMPLETE",
+                        "reason_codes": [
+                            "OCR_EXIT_1", "OCR_STATUS_NOT_COMPLETE", "OCR_COVERAGE_INCOMPLETE"
+                        ],
                     },
                     sort_keys=True,
                 ),
@@ -1212,7 +1218,11 @@ def test_sealed_budget_host_records_truthful_child_session_and_one_d1_correction
 
     def record(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         if final_verdict == "INCOMPLETE":
-            pytest.fail("a still-incomplete continuation must not write another central D1 event")
+            assert "--slk-manage-incomplete" in command
+            output = Path(command[command.index("--output") + 1])
+            value = {"status": "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"}
+            write_json(output, value)
+            return subprocess.CompletedProcess(command, 0, json.dumps(value).encode(), b"")
         if "--slk-complete-d1" in command or "--slk-post-d1" in command:
             output = Path(command[command.index("--output") + 1])
             value = {
@@ -1259,6 +1269,6 @@ def test_sealed_budget_host_records_truthful_child_session_and_one_d1_correction
         assert result["suffix_mode"] == "--slk-post-d1"
         assert result["suffix_status"] == "CHECKER_ESCALATION_COMMITTED"
     else:
-        assert result["suffix_mode"] is None
-        assert result["suffix_status"] == "NOT_APPLICABLE"
+        assert result["suffix_mode"] == "--slk-manage-incomplete"
+        assert result["suffix_status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
     assert (Path(str(request["recovery_root"])) / "resume-consumed.json").is_file()

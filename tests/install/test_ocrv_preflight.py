@@ -114,6 +114,7 @@ def test_installed_adapter_preflight_uses_exact_exclude_scope_without_model(tmp_
     assert result["preview"]["selected_paths"] == ["a.py"]
     arguments = json.loads(log.read_text(encoding="utf-8"))
     assert "--preview" in arguments
+    assert arguments[arguments.index("--max-tools") + 1] == "0"
     assert arguments[arguments.index("--exclude") + 1] == "b.py"
     assert arguments[arguments.index("--concurrency") + 1] == "1"
     background = next(runtime.rglob("d1-background.md")).read_text(encoding="utf-8")

@@ -185,11 +185,17 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
     if scope["scope_sha256"] != _canonical_sha(scope_body):
         raise RequestError("review scope hash mismatch")
     capacity = value["capacity"]
-    if not isinstance(capacity, dict) or set(capacity) != CAPACITY_FIELDS or not all(
+    if not isinstance(capacity, dict) or set(capacity) != CAPACITY_FIELDS:
+        raise RequestError("capacity must use the exact field set")
+    positive = CAPACITY_FIELDS - {"max_tokens_budget", "timeout_minutes"}
+    if not all(
         isinstance(capacity[name], int) and not isinstance(capacity[name], bool) and capacity[name] > 0
-        for name in CAPACITY_FIELDS
+        for name in positive
+    ) or not all(
+        isinstance(capacity[name], int) and not isinstance(capacity[name], bool) and capacity[name] >= 0
+        for name in ("max_tokens_budget", "timeout_minutes")
     ):
-        raise RequestError("capacity must use the exact positive-integer field set")
+        raise RequestError("capacity values are invalid")
     criteria = _string_array(value["d1_criteria"], "d1_criteria")
     if len(criteria) != len(criterion_ids):
         raise RequestError("criterion_ids must bind every supplied D1 criterion")
@@ -312,7 +318,7 @@ def _review_args(request: dict[str, Any], background_path: Path, output_path: Pa
         "--concurrency", "1", "--effort", "medium", "--provider", EXPECTED_PROVIDER,
         "--model", EXPECTED_MODEL, "--max-tokens", str(capacity["max_tokens"]),
         "--max-tokens-budget", str(capacity["max_tokens_budget"]),
-        "--timeout", str(capacity["timeout_minutes"]),
+        "--timeout", str(capacity["timeout_minutes"]), "--max-tools", "0",
     ] + _candidate_args(request["candidate"])
     if request["review_scope"]["exclude_paths"]:
         command.extend(["--exclude", ",".join(request["review_scope"]["exclude_paths"])])

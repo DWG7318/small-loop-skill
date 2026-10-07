@@ -25,7 +25,7 @@ Agents use `slk-bi-query`. The desktop uses the same `slk-state-core` functions 
 
 ## Refresh and stale data
 
-Desktop BI refreshes on window focus and a three-second interval while visible. Its built-in WebBI uploader checks for a changed bounded projection every 30 seconds. WebBI independently refreshes its server view every 30 seconds; neither interval creates an engineering message or unread mark. Hidden browser/desktop views pause their read refresh. A transient desktop read failure keeps the last successful snapshot visible and labels it stale with the exact error.
+Desktop BI refreshes on window focus and a three-second interval while visible. Its built-in WebBI uploader checks for a changed bounded projection every 30 seconds. WebBI independently refreshes its server view every 30 seconds; neither interval creates an engineering message or unread mark. Hidden browser/desktop views pause their read refresh. A transient desktop read failure keeps the last successful snapshot visible and labels it stale with the exact error. A bootstrap or React render exception enters an opaque visible failure surface with a reload action instead of leaving a transparent native shell.
 
 The active surface contains one row per explicit SLK Run identity. Immutable project identity groups independent SLKs into stable quiet colors; `source_kind` and `source_project_name` group CLK/GLK-owned SLKs by parent while retaining explicit labels. Explicit predecessor lineage or a validated reconciliation receipt—not title/project/timestamp similarity—marks `CURRENT`, `HISTORY`, `DUPLICATE_ACTIVE_RUN`, or `ORPHANED_IDENTITY`; conflicts remain visible rather than being guessed away. The Run projection reads one stored runtime snapshot. Expanded details show Supervisor, Checker, Worker, and a registered Overwatcher as complete identities; the separate Overwatcher operational strip still reports binding/liveness/cycle and never turns them into a synthetic “working” claim. Closed, abandoned, and superseded Runs appear only in the archive and remain stored.
 
@@ -33,7 +33,7 @@ Refresh is observation only. It does not wake an Agent, acknowledge a token, ret
 
 ## Authoritative message and unread contract
 
-Unread state and ntfy use a closed catalog of existing state-core event and Overwatcher-observation types. The originating Agent authors the exact type under its existing role authority. BI and WebBI validate and project that type; they never classify free text, derive a type from a display status, or write a replacement fact. Unknown types and role/type mismatches fail closed.
+Unread state and ntfy use a closed catalog of existing state-core event and Overwatcher-observation types. The originating Agent authors the exact type under its existing role authority. BI and WebBI validate and project that type; they never classify free text, derive a type from a display status, or write a replacement fact. Unknown types and role/type mismatches fail closed and remain visibly diagnosable; the versioned split route binds `CELL_SPLIT` to Supervisor authority.
 
 Each message identity is the immutable source kind plus source ID. The first view/upload is a silent historical bootstrap. A later unseen source identity creates the green unread mark; opening that Run acknowledges only those displayed identities in local UI storage. Polling, duration changes, repeat uploads, and normal no-change Overwatcher cycles create no mark.
 
@@ -78,7 +78,7 @@ These labels describe durable facts. The Overwatcher strip reports central bindi
 
 ## Security boundary
 
-The Tauri application registers nine read/metadata commands, one bounded outbound WebBI upload command, and the minimal native window capabilities required for drag, pin, minimize, close, and dynamic size. It has no role credential input, SLK state write command, shell/HTTP/updater plugin, telemetry, network listener, or remote UI content. Upload credentials stay in the native process and are not exposed through metadata or projections.
+The Tauri application registers nine read/metadata commands, one bounded outbound WebBI upload command, and the minimal native window capabilities required for drag, pin, minimize, close, and dynamic size. Its Windows named-mutex guard exits an accidental second instance without a daemon or state write; the native and document backgrounds are opaque. It has no role credential input, SLK state write command, shell/HTTP/updater plugin, telemetry, network listener, or remote UI content. Upload credentials stay in the native process and are not exposed through metadata or projections.
 
 Supervisor, Checker, and Worker author engineering state through their Run-scoped credentials. A bound Overwatcher has a separate credential for append-only operational observations only. No role, including Overwatcher, receives a BI mutation command; Owner, BI, and other Agents remain read-only.
 
@@ -118,6 +118,7 @@ The release script invokes `tauri build --no-bundle`, requires a `custom-protoco
 - **Not configured:** configure the data root with `slk-state`; BI intentionally has no configure action.
 - **Unsupported schema:** use the hash-verified installed BI. Schema 8 and 9 cold-start without migration; an unreviewed version still requires the matching reader or a backed-up writer migration before opening. A responsive window alone is not a successful launch: verify the configured Run projections load.
 - **Transient database read:** keep the stale snapshot visible and retry through normal refresh.
+- **Visible interface failure:** use the displayed `SLK_BI_BOOTSTRAP_FAILED` or `SLK_BI_RENDER_FAILED` code; reloading is a UI retry only and never changes SLK state.
 - **Missing evidence file:** retain the evidence record and investigate through the owning SLK role; BI does not repair or remove it.
 - **A role appears active but may not be working:** treat lifecycle and old work facts as records, inspect native activity evidence, and record `ACTIVITY_UNPROVEN` when appropriate; never infer current work from a heartbeat or visible task alone.
 

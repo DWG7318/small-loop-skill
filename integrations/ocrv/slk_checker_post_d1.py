@@ -16,6 +16,7 @@ from typing import Any
 
 FAIL_REQUEST_SCHEMA = "slk.checker-post-d1-request/v1"
 PASS_REQUEST_SCHEMA = "slk.checker-completion-request/v1"
+MANAGEMENT_REQUEST_SCHEMA = "slk.checker-management-request/v1"
 
 
 def windows_no_window_kwargs() -> dict[str, object]:
@@ -43,9 +44,14 @@ def _read_request(path: Path, schema: str) -> tuple[dict[str, Any], bytes]:
     return value, data
 
 
-def _expected_output(request: dict[str, Any], *, pass_route: bool, completing: bool) -> Path:
+def _expected_output(
+    request: dict[str, Any], *, pass_route: bool, management_route: bool, completing: bool
+) -> Path:
     root_field = "handoff_attempt_root" if pass_route else "escalation_attempt_root"
-    invocation_field = "completion_invocation_id" if pass_route else "post_d1_invocation_id"
+    invocation_field = (
+        "completion_invocation_id" if pass_route else
+        "management_invocation_id" if management_route else "post_d1_invocation_id"
+    )
     root = Path(str(request.get(root_field, ""))).resolve()
     invocation = request.get(invocation_field)
     if not isinstance(invocation, str) or not invocation or invocation != invocation.strip():
@@ -57,7 +63,10 @@ def _expected_output(request: dict[str, Any], *, pass_route: bool, completing: b
         if pass_route
         else "prepared-result.json"
     )
-    directory = ".checker-completion" if pass_route else ".checker-post-d1"
+    directory = (
+        ".checker-completion" if pass_route else
+        ".checker-management" if management_route else ".checker-post-d1"
+    )
     return (root / directory / invocation / name).resolve()
 
 
@@ -85,17 +94,23 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--slk-post-d1", action="store_true")
     mode.add_argument("--slk-complete-d1", action="store_true")
+    mode.add_argument("--slk-manage-incomplete", action="store_true")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--host-receipt", type=Path)
     args = parser.parse_args()
     try:
         pass_route = bool(args.slk_complete_d1)
-        schema = PASS_REQUEST_SCHEMA if pass_route else FAIL_REQUEST_SCHEMA
+        management_route = bool(args.slk_manage_incomplete)
+        schema = (
+            PASS_REQUEST_SCHEMA if pass_route else
+            MANAGEMENT_REQUEST_SCHEMA if management_route else FAIL_REQUEST_SCHEMA
+        )
         request, data = _read_request(args.request.resolve(), schema)
         expected = _expected_output(
             request,
             pass_route=pass_route,
+            management_route=management_route,
             completing=args.host_receipt is not None,
         )
         if args.output.resolve() != expected:
@@ -106,7 +121,8 @@ def main() -> int:
 
     arguments = [
         *request["transport_command"],
-        "checker-complete-d1" if pass_route else "checker-escalate-d1",
+        "checker-complete-d1" if pass_route else
+        "checker-manage-incomplete" if management_route else "checker-escalate-d1",
         "--request",
         str(args.request.resolve()),
         "--sha256",
@@ -143,6 +159,8 @@ def main() -> int:
         accepted_statuses = (
             {"CHECKER_COMPLETION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED"}
             if pass_route
+            else {"CHECKER_INCOMPLETE_ESCALATION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED"}
+            if management_route
             else {"DESKTOP_BRIDGE_REQUIRED", "CHECKER_ESCALATION_COMMITTED"}
         )
         if not isinstance(result, dict) or result.get("status") not in accepted_statuses:

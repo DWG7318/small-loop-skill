@@ -35,10 +35,10 @@
     "d1_verdict": {"enum": ["PASS", "FAIL", "INCOMPLETE"]},
     "d1_event_type": {"enum": ["D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"]},
     "corrected_d1_event_id": {"oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]},
-    "suffix_mode": {"enum": ["--slk-complete-d1", "--slk-post-d1", null]},
+    "suffix_mode": {"enum": ["--slk-complete-d1", "--slk-post-d1", "--slk-manage-incomplete", null]},
     "suffix_request_path": {"type": ["string", "null"]},
     "suffix_result_path": {"type": ["string", "null"]},
-    "suffix_status": {"enum": ["CHECKER_COMPLETION_COMMITTED", "CHECKER_ESCALATION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED", "NOT_APPLICABLE"]},
+    "suffix_status": {"enum": ["CHECKER_COMPLETION_COMMITTED", "CHECKER_ESCALATION_COMMITTED", "CHECKER_INCOMPLETE_ESCALATION_COMMITTED", "DESKTOP_BRIDGE_REQUIRED", "NOT_APPLICABLE"]},
     "native_attempt_path": {"type": "string", "minLength": 1},
     "native_result_path": {"type": "string", "minLength": 1}
   },

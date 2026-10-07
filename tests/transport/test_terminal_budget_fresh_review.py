@@ -703,6 +703,11 @@ def test_fresh_host_runs_full_review_without_resume_and_preserves_d1_truth(
     monkeypatch.setattr(worker_completion, "_default_load_current_projection", current_projection)
 
     def record(command_line: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if "--slk-manage-incomplete" in command_line:
+            output = Path(command_line[command_line.index("--output") + 1])
+            value = {"status": "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"}
+            write_json(output, value)
+            return subprocess.CompletedProcess(command_line, 0, json.dumps(value).encode(), b"")
         if "--slk-complete-d1" in command_line or "--slk-post-d1" in command_line:
             output = Path(command_line[command_line.index("--output") + 1])
             value = {"status": "CHECKER_COMPLETION_COMMITTED" if verdict == "PASS" else "CHECKER_ESCALATION_COMMITTED"}
@@ -723,6 +728,9 @@ def test_fresh_host_runs_full_review_without_resume_and_preserves_d1_truth(
         "CHECKER_D1_STILL_INCOMPLETE" if verdict == "INCOMPLETE" else "CHECKER_D1_RECORDED"
     )
     assert result["parent_session_id"] == source["ocrv_session"]["session_id"]
+    if verdict == "INCOMPLETE":
+        assert result["suffix_mode"] == "--slk-manage-incomplete"
+        assert result["suffix_status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
     assert (Path(str(request["recovery_root"])) / "fresh-consumed.json").is_file()
     lineage = json.loads(
         (Path(str(request["recovery_root"])) / "native-attempt" / "compatibility-lineage.json").read_text(

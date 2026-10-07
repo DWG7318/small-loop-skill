@@ -162,6 +162,7 @@ def validate(root: Path) -> list[str]:
         "docs/contracts/slk-ocrv-worker-recovery-result.schema.json",
         "docs/contracts/slk-pre-d0-blocked-recovery.schema.json",
         "docs/contracts/slk-checker-post-d1.schema.json",
+        "docs/contracts/slk-checker-management.schema.json",
         "docs/contracts/slk-checker-completion.schema.json",
         "docs/contracts/slk-native-execution-outcome.schema.json",
         "docs/contracts/slk-overwatcher-cadence-inspection.schema.json",

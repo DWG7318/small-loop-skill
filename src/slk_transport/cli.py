@@ -18,6 +18,7 @@ from .adapters.dsh import DshAdapter
 from .adapters.ocrv import OcrvAdapter
 from .active_writer import recover_active_writer
 from .checker_escalation import CheckerEscalationError, execute_checker_escalation
+from .checker_management import execute_checker_management
 from .checker_completion import CheckerCompletionError, execute_checker_completion
 from .desktop_current_turn import (
     complete_desktop_current_turn,
@@ -770,6 +771,18 @@ def _checker_escalate_d1(args: argparse.Namespace) -> int:
     return 0
 
 
+def _checker_manage_incomplete(args: argparse.Namespace) -> int:
+    request = _read_object(args.request, "Checker management request")
+    result = execute_checker_management(
+        request,
+        request_sha256=args.sha256,
+        request_path=args.request,
+        host_receipt_path=args.host_receipt,
+    )
+    _emit(result)
+    return 0
+
+
 def _checker_complete_d1(args: argparse.Namespace) -> int:
     request = _read_object(args.request, "Checker completion request")
     result = execute_checker_completion(
@@ -932,6 +945,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
     checker_escalation.add_argument("--host-receipt", type=Path)
+    checker_management = subparsers.add_parser("checker-manage-incomplete")
+    checker_management.add_argument("--request", required=True, type=Path)
+    checker_management.add_argument("--sha256", required=True)
+    checker_management.add_argument("--host-receipt", type=Path)
     checker_completion = subparsers.add_parser("checker-complete-d1")
     checker_completion.add_argument("--request", required=True, type=Path)
     checker_completion.add_argument("--sha256", required=True)
@@ -1073,6 +1090,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _consume_existing_partial_checker(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
+        if args.command == "checker-manage-incomplete":
+            return _checker_manage_incomplete(args)
         if args.command == "checker-complete-d1":
             return _checker_complete_d1(args)
         if args.command == "inspect-overwatcher-cadence":

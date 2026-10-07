@@ -191,6 +191,14 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             "escalation_attempt_root", "rework_round", "cell_goal", "acceptance_criteria",
             "findings", "reproduction_steps", "expected_result", "evidence_refs", "occurred_at",
         },
+        "docs/contracts/slk-checker-management.schema.json": {
+            "schema_version", "method_version", "management_invocation_id", "run_id",
+            "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision",
+            "token_sequence", "checker_role_instance_id", "d1_incomplete_event_id",
+            "runtime_projection_path", "native_attempt_path", "supervisor_endpoint_path",
+            "checker_credential_path", "state_command", "transport_command",
+            "escalation_attempt_root", "reason_codes", "evidence_refs", "occurred_at",
+        },
         "docs/contracts/slk-checker-completion.schema.json": {
             "schema_version", "method_version", "completion_invocation_id", "run_id",
             "go_id", "cell_id", "target_cell_id", "attempt", "plan_revision",

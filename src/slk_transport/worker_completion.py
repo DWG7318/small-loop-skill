@@ -2296,8 +2296,7 @@ def resume_worker_continuation(request: Mapping[str, Any]) -> dict[str, Any]:
     if not started_path.exists():
         started_path.write_bytes(started_bytes)
     try:
-        remaining = timeout - (time.monotonic() - started_at)
-        completed = finish(process, remaining)
+        completed = finish(process, None)
     except subprocess.TimeoutExpired as exc:
         raise CompletionError("WORKER_CONTINUATION_TIMEOUT", "resumed Worker did not finish the handoff") from exc
     (continuation_root / "native.stdout.txt").write_text(completed.stdout, encoding="utf-8")

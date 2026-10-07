@@ -908,15 +908,16 @@ def test_missing_or_wrong_native_activity_capability_blocks_worker_and_checker(
     assert "NATIVE_ACTIVITY_CAPABILITY_INVALID" in checker["reason_codes"]
 
 
-def test_role_context_smaller_than_task_is_incompatible(tmp_path: Path) -> None:
+def test_role_context_estimate_is_advisory_not_an_admission_gate(tmp_path: Path) -> None:
     request = _request(tmp_path)
     request["roles"][1]["task_context_estimate"] = 100_001
 
     result = evaluate_run_readiness(request)
 
-    assert result["status"] == "INCOMPATIBLE"
+    assert result["status"] == "READY"
     worker = next(item for item in result["roles"] if item["role"] == "worker")
-    assert worker["reason_codes"] == ["TASK_EXCEEDS_CONTEXT_CAPACITY"]
+    assert worker["reason_codes"] == []
+    assert worker["advisory_codes"] == ["TASK_CONTEXT_ESTIMATE_EXCEEDS_DECLARED_CAPACITY"]
 
 
 def test_unconfirmed_or_missing_optional_feature_keeps_run_in_preparation(tmp_path: Path) -> None:

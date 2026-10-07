@@ -32,7 +32,7 @@ const EVENT_SEEDS: readonly CatalogSeed[] = [
   ["D1_PASSED", "D1 已通过", CHECKER],
   ["D1_FAILED", "D1 未通过", CHECKER],
   ["REWORK_REQUESTED", "返工已要求", SUPERVISOR],
-  ["CELL_SPLIT", "CELL 已拆分", CHECKER],
+  ["CELL_SPLIT", "CELL 已拆分", SUPERVISOR],
   ["CANDIDATE_FORWARDED", "候选已转交", CHECKER],
   ["WORK_STARTED", "Worker 开始工作", WORKER],
   ["WORK_PROGRESS", "Worker 记录进展", WORKER],

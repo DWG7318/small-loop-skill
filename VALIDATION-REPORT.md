@@ -1,10 +1,20 @@
 # Validation Report — SLK 4.4.2 local candidate
 
-Date: 2026-10-06 Asia/Shanghai
+Date: 2026-10-07 Asia/Shanghai
 Branch: feature/slk-4.4.2-runtime-recovery
 Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
 Status: the authorized fresh-partial OCRV continuation completed once and the original Checker recorded immutable `D1_PASSED` event `4e078228-ca65-5ca0-8e3f-55b0ea8bb274`; the candidate is unchanged and OCRV must not run again. A sealed suffix-only entrance now derives that event from correction `c19cb0d1-8c29-52a8-8dff-729917512a28`, revalidates the exact committed request/result, native PASS, current TOKEN and Checker identity, and invokes only the missing deterministic post-D1 suffix. The branch is not merged, pushed, tagged or released.
+
+## 2026-10-07 limit-release and transparent-shell correction
+
+- Normal OCRV uses native `max_tokens_budget=0` and `timeout_minutes=0` for no aggregate token budget and no review-duration death line. `max-tools=0` is recorded only as the verified template default, not mislabeled unlimited. Startup/RPC checks remain bounded; Worker, Checker and Supervisor native work continues without an invented outer engineering timeout after exact native start.
+- Context/file/line estimates are advisory evidence rather than admission rejection. An exact current `D1_INCOMPLETE` now has one closed `Checker → Supervisor` `D1_INCOMPLETE_ESCALATION`; Supervisor records only a bounded capacity/environment/mechanical-recovery decision and does not forge FAIL, rework or acceptance. Historical finite-budget attempts retain their immutable recovery lineage.
+- The transparent BI incident was reproduced from canonical state without changing it. Current Run `SLK-RUN-LCAS-RC08-MCP-STARTUP-BOUNDARY-R2` contains valid Supervisor-authored `CELL_SPLIT` events, while BI 1.1.0 incorrectly admitted that message type only for Checker. The three-second refresh therefore raised `SLK_BI_MESSAGE_ROLE_INVALID`; because the React root had no error boundary and both native/document backgrounds were transparent, both responsive instances could retain only their border/shadow.
+- The desktop catalog now binds `CELL_SPLIT` to Supervisor. Bootstrap and component exceptions render an opaque, read-only failure surface with `SLK_BI_BOOTSTRAP_FAILED` or `SLK_BI_RENDER_FAILED` and a UI-only reload action. Tauri and document roots are opaque. A Windows named mutex rejects an accidental second BI instance without a plugin, daemon, state write, or Tauri dependency upgrade.
+- RED evidence: the Supervisor `CELL_SPLIT` projection failed with `SLK_BI_MESSAGE_ROLE_INVALID`; the missing React boundary failed as an undefined component; the native shell gate observed `transparent=true`. GREEN evidence: focused frontend 12/12, full frontend 86/86, typecheck, production UI build, native BI tests 6/6 including real named-mutex contention, and the opaque/single-instance source gate all pass.
+- Installed binary `C:\Users\DWG\.codex\tools\slk\bin\slk-bi-desktop.exe` SHA-256 is `AD3F3B84A13C351EDDC86F55F129D143DBD6DFDD7840ABA8CDE7AFC1B1974B64`; the two preserved instances started at 2026-10-06 08:48 and 2026-10-07 08:13, the latter with `--help`. The installed binary is intentionally not replaced in this local-only phase. Therefore actual installed-candidate display and delayed native recheck remain explicitly unverified until authorized deployment; no product process, Run state, TOKEN, SQLite or history was changed.
+- Final candidate verification: Python 995 passed / 30 skipped in ordinary mode and 995 passed / 30 skipped under `python -O`; full Rust workspace passed, including the native mutex test; frontend 86/86, typecheck and production build passed; repository/Manifest, package/install mirrors, Rust formatting and `git diff --check` passed. The headless production BI artifact SHA-256 is `4f4493836bcd70733daf0d88808ea1ac2f0365b7054bf02a5c93acc7a4ae3eb3`; the five-artifact local package verifies 166 files and remains outside the repository at `C:\Users\DWG\.codex\.tmp\slk-4.4.2-limit-release-package-final-20261007-1341`.
 
 ## Bounded in-Run correction
 

@@ -1243,7 +1243,8 @@ def test_d1_incomplete_and_supervisor_rework_are_not_conflated() -> None:
     rework = read_skill("slk-rework-cell")
     execute = read_skill("slk-execute-cell")
     assert "D1 INCOMPLETE" in check
-    assert "Checker 保留 `SLK TOKEN`" in check
+    assert "D1_INCOMPLETE_ESCALATION" in check
+    assert "把 TOKEN 交给 Supervisor" in check
     assert "不触发返工" in check
     for marker in (
         "正式 D1 FAIL",

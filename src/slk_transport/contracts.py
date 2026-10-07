@@ -164,6 +164,42 @@ def _d1_failure_escalation(value: Mapping[str, Any]) -> None:
         _text_list(value[field], field)
 
 
+def _d1_incomplete_escalation(value: Mapping[str, Any]) -> None:
+    fields = frozenset(
+        {
+            "d1_incomplete_event_id",
+            "candidate_message_id",
+            "reason_codes",
+            "evidence",
+            "native_terminal_sha256",
+            "native_result_sha256",
+            "decision_required",
+        }
+    )
+    _closed(value, fields, "D1 incomplete escalation")
+    _identifier(value["d1_incomplete_event_id"], "d1_incomplete_event_id")
+    _text(value["candidate_message_id"], "candidate_message_id")
+    _text_list(value["reason_codes"], "reason_codes")
+    evidence = value["evidence"]
+    if not isinstance(evidence, list) or not evidence:
+        raise ContractError("D1 incomplete escalation evidence must be a non-empty array")
+    for item in evidence:
+        row = _mapping(item, "D1 incomplete escalation evidence item")
+        _closed(row, frozenset({"path", "sha256"}), "D1 incomplete escalation evidence item")
+        _text(row["path"], "evidence path")
+        digest = _text(row["sha256"], "evidence sha256")
+        if not SHA256.fullmatch(digest):
+            raise ContractError("evidence sha256 must be 64 lowercase hexadecimal characters")
+    terminal = _text(value["native_terminal_sha256"], "native_terminal_sha256")
+    if not SHA256.fullmatch(terminal):
+        raise ContractError("native_terminal_sha256 must be 64 lowercase hexadecimal characters")
+    result = value["native_result_sha256"]
+    if result is not None and (not isinstance(result, str) or not SHA256.fullmatch(result)):
+        raise ContractError("native_result_sha256 must be null or 64 lowercase hexadecimal characters")
+    if value["decision_required"] != "CAPACITY_OR_ENVIRONMENT_MANAGEMENT":
+        raise ContractError("D1 incomplete escalation requires capacity or environment management")
+
+
 def _d2_ready(value: Mapping[str, Any]) -> None:
     fields = frozenset(
         {
@@ -392,6 +428,10 @@ class Envelope:
             if (sender_role, receiver_role) != ("checker", "supervisor"):
                 raise ContractError("D1_FAILURE_ESCALATION requires checker->supervisor")
             _d1_failure_escalation(payload)
+        if payload_type == "D1_INCOMPLETE_ESCALATION":
+            if (sender_role, receiver_role) != ("checker", "supervisor"):
+                raise ContractError("D1_INCOMPLETE_ESCALATION requires checker->supervisor")
+            _d1_incomplete_escalation(payload)
         if payload_type == "D1_REWORK_DIRECTIVE":
             if (sender_role, receiver_role) != ("supervisor", "worker"):
                 raise ContractError("D1_REWORK_DIRECTIVE requires supervisor->worker")

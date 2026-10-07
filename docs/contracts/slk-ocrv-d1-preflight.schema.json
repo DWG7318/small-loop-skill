@@ -28,8 +28,8 @@
         "max_changed_lines": { "type": "integer", "minimum": 1 },
         "max_segment_paths": { "type": "integer", "minimum": 1 },
         "max_tokens": { "type": "integer", "minimum": 1 },
-        "max_tokens_budget": { "type": "integer", "minimum": 1 },
-        "timeout_minutes": { "type": "integer", "minimum": 1 }
+        "max_tokens_budget": { "type": "integer", "minimum": 0 },
+        "timeout_minutes": { "type": "integer", "minimum": 0 }
       }
     },
     "request": {

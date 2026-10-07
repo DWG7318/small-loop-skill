@@ -888,10 +888,12 @@ fn d1_incomplete_keeps_checker_token_and_cell_open() {
         fixture.store.d1_rework_count("run-a", "CELL-001").unwrap(),
         0
     );
-    let mut escaped = handoff(3, "checker-a", "supervisor-a");
-    escaped.payload_type = "D1_FAILURE_ESCALATION".into();
+    let mut wrong_escalation = handoff(3, "checker-a", "supervisor-a");
+    wrong_escalation.payload_type = "D1_FAILURE_ESCALATION".into();
     assert!(matches!(
-        fixture.store.handoff_token(&fixture.checker, escaped),
+        fixture
+            .store
+            .handoff_token(&fixture.checker, wrong_escalation),
         Err(StateError::InvalidTokenRoute { .. })
     ));
     assert!(matches!(
@@ -900,6 +902,18 @@ fn d1_incomplete_keeps_checker_token_and_cell_open() {
             .handoff_token(&fixture.checker, handoff(3, "checker-a", "worker-a")),
         Err(StateError::InvalidTokenRoute { .. })
     ));
+    let mut management = handoff(3, "checker-a", "supervisor-a");
+    management.payload_type = "D1_INCOMPLETE_ESCALATION".into();
+    let result = fixture
+        .store
+        .handoff_token(&fixture.checker, management)
+        .unwrap();
+    assert_eq!(result.sequence, 3);
+    assert_eq!(result.owner_role_instance_id, "supervisor-a");
+    assert_eq!(
+        fixture.store.d1_rework_count("run-a", "CELL-001").unwrap(),
+        0
+    );
 }
 
 #[test]

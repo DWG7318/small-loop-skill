@@ -729,7 +729,11 @@ class RoleHost:
         """Consume the native Supervisor's decision, never derive a verdict."""
         from dataclasses import asdict
         result = wc._read_object(source / "supervisor-result.json", "Supervisor decision")
-        operation = {"D1_FAILURE_ESCALATION": "rework", "D2_READY": "d2"}.get(envelope.payload_type)
+        operation = {
+            "D1_FAILURE_ESCALATION": "rework",
+            "D1_INCOMPLETE_ESCALATION": "management",
+            "D2_READY": "d2",
+        }.get(envelope.payload_type)
         if (set(result) != {"schema_version", "source_message_id", "operation", "decision"}
             or result.get("schema_version") != "slk.supervisor-result/v1"
             or result.get("source_message_id") != envelope.message_id or operation is None
@@ -755,6 +759,23 @@ class RoleHost:
                 "payload": decision, "payload_sha256": canonical_json_sha256(decision)}).envelope
             events = [("REWORK_REQUESTED", {key: decision[key] for key in (
                 "d1_failure_event_id", "failed_candidate_sha256", "rework_round", "investigation_mode")})]
+        elif operation == "management":
+            if (
+                set(decision) != {"action", "summary", "evidence_refs"}
+                or decision.get("action") not in {
+                    "WAIT_FOR_NATIVE_WORK",
+                    "ADJUST_CAPACITY",
+                    "ADJUST_ENVIRONMENT",
+                    "MECHANICAL_RECOVERY",
+                }
+                or not isinstance(decision.get("summary"), str)
+                or not decision["summary"].strip()
+            ):
+                raise wc.CompletionError(
+                    "SUPERVISOR_RESULT_INVALID",
+                    "INCOMPLETE management must record one bounded Supervisor action",
+                )
+            events = []
         else:
             if (set(decision) != {"verdict", "summary", "evidence_refs"}
                 or decision.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
@@ -799,6 +820,8 @@ class RoleHost:
             credential = ""
         if outgoing is not None:
             return self._send_owned(root / "rework", outgoing, occurred_at, self.projection())
+        if operation == "management":
+            return {"status": "SUPERVISOR_MANAGEMENT_RECORDED", "action": decision["action"]}
         return {"status": "SUPERVISOR_D2_INCOMPLETE" if not events else "SUPERVISOR_D2_RECORDED", "verdict": decision["verdict"]}
 
     def _send_owned(
@@ -1005,6 +1028,7 @@ class RoleHost:
     def _checker_result(self, source: Path, envelope: Envelope, root: Path, occurred_at: str,
                         projection: Mapping[str, Any]) -> dict[str, Any]:
         from . import checker_completion as passed, checker_escalation as failed
+        from . import checker_management as incomplete
 
         attempt = wc._source_attempt(projection, envelope)
         continuation = {"run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
@@ -1014,16 +1038,37 @@ class RoleHost:
                                         continuation, checker_credential_path=self.credential_path("checker"), timeout_seconds=1)
         projection = self.projection()
         projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", projection)
-        if recorded["d1_verdict"] == "INCOMPLETE":
-            return recorded
         snapshot = projection["runtime_snapshot"]
-        common = {"method_version": projection["runtime_snapshot"]["method_version"], "run_id": envelope.run_id, "go_id": envelope.go_id,
-                  "cell_id": envelope.cell_id, "attempt": attempt, "plan_revision": self.binding["plan_revision"],
-                  "runtime_revision": snapshot["runtime_revision"], "token_sequence": snapshot["token_sequence"],
-                  "checker_role_instance_id": envelope.receiver_role_instance_id, "runtime_projection_path": str(projection_path),
-                  "checker_credential_path": self.credential_path("checker"), "state_command": self.state,
-                  "transport_command": self.transport, "occurred_at": occurred_at}
+        common = {"method_version": snapshot["method_version"], "run_id": envelope.run_id,
+                  "go_id": envelope.go_id, "cell_id": envelope.cell_id, "attempt": attempt,
+                  "plan_revision": self.binding["plan_revision"],
+                  "runtime_revision": snapshot["runtime_revision"],
+                  "token_sequence": snapshot["token_sequence"],
+                  "checker_role_instance_id": envelope.receiver_role_instance_id,
+                  "runtime_projection_path": str(projection_path),
+                  "checker_credential_path": self.credential_path("checker"),
+                  "state_command": self.state, "transport_command": self.transport,
+                  "occurred_at": occurred_at}
         event_id = wc._stable_id(envelope.message_id, "d1-result-v2")
+        if recorded["d1_verdict"] == "INCOMPLETE":
+            matching = [event for event in projection["events"] if event.get("event_id") == event_id]
+            if len(matching) != 1:
+                raise wc.CompletionError("ROLE_HOST_D1_CHANGED", "current D1 INCOMPLETE is unavailable")
+            details = json.loads(matching[0]["details_json"])
+            terminal = source / ("completed.json" if (source / "completed.json").is_file() else "failed.json")
+            evidence_refs = [str(terminal)]
+            if (source / "ocrv-result.json").is_file():
+                evidence_refs.append(str(source / "ocrv-result.json"))
+            request = {**common, "schema_version": incomplete.REQUEST_SCHEMA,
+                "management_invocation_id": wc._stable_id(event_id, "normal-incomplete"),
+                "d1_incomplete_event_id": event_id, "native_attempt_path": str(source),
+                "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
+                "escalation_attempt_root": str(root), "reason_codes": list(details["reason_codes"]),
+                "evidence_refs": evidence_refs}
+            path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
+            return incomplete.execute_checker_management(
+                request, request_path=path, request_sha256=wc._sha256(path)
+            )
         if recorded["d1_verdict"] == "FAIL":
             native = wc._read_object(source / "ocrv-result.json", "D1 result")
             request = {**common, "schema_version": failed.REQUEST_SCHEMA,

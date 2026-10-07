@@ -23,7 +23,7 @@
         "minimizable": true,
         "closable": true,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "center": true
       }
     ],
