@@ -74,6 +74,47 @@ describe("LE BI shell", () => {
     expect(screen.getByText("Workstation A · device-a")).toBeVisible();
   });
 
+  it("renders a blocked CELL as a visible business state instead of an empty shell", async () => {
+    const api: SlkApi = {
+      ...fixtureApi,
+      run: async () => ({
+        ...runFixture,
+        events: [
+          ...runFixture.events,
+          {
+            ...runFixture.events[0]!,
+            event_id: "blocked-current-cell",
+            event_type: "BLOCKER_REPORTED",
+            occurred_at: "2026-09-20T00:00:05Z",
+          },
+        ],
+      }),
+    };
+    const { container } = render(<App api={api} />);
+
+    expect(await screen.findByText("需要处理")).toBeVisible();
+    expect(container.querySelector(".app-shell")).toBeInTheDocument();
+  });
+
+  it("keeps the shell visible and can retry an initial backend failure", async () => {
+    const user = userEvent.setup();
+    let unavailable = true;
+    const api: SlkApi = {
+      ...fixtureApi,
+      metadata: async () => {
+        if (unavailable) throw new Error("backend offline");
+        return fixtureApi.metadata();
+      },
+    };
+    render(<App api={api} />);
+
+    expect(await screen.findByText("State could not be read")).toBeVisible();
+    expect(screen.getByText("LE BI")).toBeVisible();
+    unavailable = false;
+    await user.click(screen.getByRole("button", { name: "Retry read" }));
+    expect(await screen.findByText("Project A")).toBeVisible();
+  });
+
   it("shows a registered Overwatcher as a complete fourth role", async () => {
     const api: SlkApi = {
       ...fixtureApi,

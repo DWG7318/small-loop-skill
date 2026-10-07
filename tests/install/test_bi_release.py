@@ -38,8 +38,10 @@ def test_bi_native_shell_is_opaque_and_single_instance() -> None:
     assert "single_instance::acquire" in source
     assert "CreateMutexW" in source
     assert "UiFailureBoundary" in main
+    assert "InterfaceLoading" in main
     assert "bootstrap().catch" in main
     assert "background: var(--lcd)" in tokens
+    assert "--help" in source and "should_launch_interface" in source
 
 
 def test_release_artifact_builder_uses_tauri_not_plain_cargo_for_bi() -> None:

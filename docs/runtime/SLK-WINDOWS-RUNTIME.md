@@ -169,7 +169,7 @@ python scripts\verify_local_install.py --root $env:USERPROFILE\.codex
 
 安装器只交换 manifest 声明的 16 个 Skill、`tools\slk\bin`、共享文档/Schema 和安装 manifest；旧集合保存到 `tools\slk\backups`。任一暂存、哈希或安装后核验失败都会恢复完整旧集合，并在 `.codex\.tmp` 写失败报告。安装器不会运行 `slk-state configure`，数据库迁移仍需对明确选择的数据根单独执行。
 
-LE BI 发布验收时先确认本机没有 1430 listener，再从已安装路径冷启动；进程应保持运行、无 localhost:1430 连接，WebView2 新证据不得出现 `ERR_CONNECTION_REFUSED`，并应能从现有全域只读数据根显示项目/Run。Node、pnpm 与 Vite 只参与构建，不属于新机器运行依赖。
+LE BI 发布验收时先确认本机没有 1430 listener，再从已安装路径冷启动；进程应保持运行、无 localhost:1430 连接，WebView2 新证据不得出现 `ERR_CONNECTION_REFUSED`，并应能从现有全域只读数据根显示项目/Run。正常 UI 使用单实例 mutex；`--help`、`-h`、`--version`、`-V` 仅作无窗口探测并在创建 Tauri 窗口前退出。Node、pnpm 与 Vite 只参与构建，不属于新机器运行依赖。
 
 检查版本和入口：
 

@@ -1,12 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { InterfaceFailure, UiFailureBoundary } from "./components/AppState";
+import { InterfaceFailure, InterfaceLoading, UiFailureBoundary } from "./components/AppState";
 import "./styles/tokens.css";
 import "./styles/app.css";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("SLK_BI_ROOT_MISSING");
 const root = createRoot(rootElement);
+root.render(<StrictMode><InterfaceLoading /></StrictMode>);
 
 async function bootstrap() {
   const desktop = "__TAURI_INTERNALS__" in window

@@ -38,7 +38,7 @@ export function App({ api = tauriApi }: AppProps) {
   const [archiveVisible, setArchiveVisible] = useState(false);
   const [pinned, setPinned] = useState(false);
   const shell = useRef<HTMLDivElement>(null);
-  const { snapshot, staleReason, loading } = useSlkData(api);
+  const { snapshot, staleReason, loading, refresh } = useSlkData(api);
   useWebBiSync(api, snapshot);
   const [readMarkers, setReadMarkers] = useState<Record<string, ReadMarker>>({});
 
@@ -188,7 +188,7 @@ export function App({ api = tauriApi }: AppProps) {
       </header>
 
       {appState ? (
-        <AppState state={appState} />
+        <AppState state={appState} onRetry={() => void refresh()} />
       ) : (
         <main className="runs-surface" aria-label="SLK Runs">
           {activeRows.length ? (

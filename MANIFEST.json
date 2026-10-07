@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "24814dc78a90e0b4fd2fc9a547923bfca19fb54c79527a2abc0f8a880b27cbec"
+      "sha256": "89dbd864baf62a686c323bbed17abc2c2745428e4c53f29247f787e3a3affdbd"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "ce8bd49bcf899ce78626f844a4f1e775f011f4a1bdc70ba89de9d8492f1da7ed"
+      "sha256": "441191acff3ee3a2ee0cf09fdd30f7f5d56ddbe68799f5a7c8080a97865184e3"
     },
     {
       "path": "VERSION",
@@ -320,7 +320,7 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/src/lib.rs",
-      "sha256": "ec0c3dc1c4fc96544e10d9d263c636dd281f061dd729810ecbc8fc40dd7567e2"
+      "sha256": "2960a380a3e793d27b4a0c7f66c58f66e29312b716a310e18be5678b81725cf0"
     },
     {
       "path": "apps/slk-bi/src-tauri/src/main.rs",
@@ -336,11 +336,11 @@
     },
     {
       "path": "apps/slk-bi/src/App.test.tsx",
-      "sha256": "c7cd8c1cc53409a4e1ead5d1c7e0ff109d2d7d36b6a36bef1267b5f34c63b810"
+      "sha256": "2b098a8838777ad41bfca493f5b8063bda090f18c69a7ed38a0de01392f40e54"
     },
     {
       "path": "apps/slk-bi/src/App.tsx",
-      "sha256": "d35399e45f173f2925b5e7f2a9eb6c3f1b558ff2bc41c885da89ac15465c6199"
+      "sha256": "2ff368fac4c4decc87aeaa63d5d0a268cf16023be9ab23600a506cc3a506f882"
     },
     {
       "path": "apps/slk-bi/src/a11y.test.tsx",
@@ -352,11 +352,11 @@
     },
     {
       "path": "apps/slk-bi/src/components/AppState.test.tsx",
-      "sha256": "dda0df6833e8664358a70bf6a96e1cd17c50fa236a489827e3847c6d0c669259"
+      "sha256": "433ecfd023ef6d730bb1bacc8690fe42f79cf52d0a2b5496edf876319e6eef22"
     },
     {
       "path": "apps/slk-bi/src/components/AppState.tsx",
-      "sha256": "df82789d446c0bf3a03ca69360af016d56302381bb5d7280d844e6ce090d240e"
+      "sha256": "58ac0a0bf69ae7bed1107fa84a3f06e15d85dc36e7711bbdb3cf39482662af80"
     },
     {
       "path": "apps/slk-bi/src/components/RunStrip.test.tsx",
@@ -376,7 +376,7 @@
     },
     {
       "path": "apps/slk-bi/src/main.tsx",
-      "sha256": "c23241f51ee052419ea57ad5f8e63d0a5afb7892c097548f3b886a86a1703c75"
+      "sha256": "2ed02a50119a3022a6d61982ed425b77d16f5c314d364f32663a4696a15983c1"
     },
     {
       "path": "apps/slk-bi/src/messages/catalog.ts",
@@ -908,7 +908,7 @@
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
-      "sha256": "f5f29a95218fa460f1576e226e2a4974a28a1ae02b37739cd310507bd92fc658"
+      "sha256": "945fa98e50b94b234e62b56bb7aeeedaae6f40bad9e1d524d1633b67edae5ec5"
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
@@ -916,7 +916,7 @@
     },
     {
       "path": "docs/state/SLK-BI.md",
-      "sha256": "0dfff474b70749d7585208bdfb989451b48104ecb8afd3d5bb570530855de4a2"
+      "sha256": "8491a5fa8b699cb1fe0914c3f44a6ef35606a371e7cfe73f50d6e9399e47bcbd"
     },
     {
       "path": "docs/state/SLK-STATE-ACCEPTANCE.md",
@@ -1572,7 +1572,7 @@
     },
     {
       "path": "tests/install/test_bi_release.py",
-      "sha256": "01e3b0b074eaf8b1ad0e89e30f78b8b80376b7d866a75a72f2b51f095ab0f561"
+      "sha256": "aaa0ec14fc0648bf8bb6284195c96ae6904b12d57cff36eee55928faec8079ac"
     },
     {
       "path": "tests/install/test_build_local_package.py",

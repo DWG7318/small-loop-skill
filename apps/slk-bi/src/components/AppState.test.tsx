@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppState, UiFailureBoundary, type AppStateValue } from "./AppState";
@@ -24,6 +24,18 @@ describe("AppState", () => {
 
     expect(screen.getByText("BI interface could not be rendered")).toBeVisible();
     expect(screen.getByRole("button", { name: "Reload BI" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Close BI" })).toBeVisible();
+    expect(screen.getByText("LE BI")).toBeVisible();
     consoleError.mockRestore();
+  });
+
+  it("offers an explicit retry for an initial read failure", () => {
+    const retry = vi.fn();
+    render(<AppState state={{ kind: "error", detail: "backend offline" }} onRetry={retry} />);
+
+    expect(screen.getByText("State could not be read")).toBeVisible();
+    expect(screen.getByText("backend offline")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry read" }));
+    expect(retry).toHaveBeenCalledOnce();
   });
 });

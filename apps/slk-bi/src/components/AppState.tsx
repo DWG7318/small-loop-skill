@@ -1,5 +1,7 @@
 import { Component, type ReactNode } from "react";
 
+import { BI_VERSION } from "../version";
+
 export type AppStateValue =
   | { kind: "loading" }
   | { kind: "unconfigured" }
@@ -30,8 +32,9 @@ const copy: Record<AppStateValue["kind"], { title: string; body: string }> = {
   },
 };
 
-export function AppState({ state }: { state: AppStateValue }) {
+export function AppState({ state, onRetry }: { state: AppStateValue; onRetry?: () => void }) {
   const message = copy[state.kind];
+  const retryable = state.kind === "unconfigured" || state.kind === "unsupported" || state.kind === "error";
   return (
     <main className={`app-state state-${state.kind}`} aria-live="polite">
       <div className="app-state-mark" aria-hidden="true" />
@@ -46,6 +49,9 @@ export function AppState({ state }: { state: AppStateValue }) {
           <span />
         </div>
       ) : null}
+      {retryable && onRetry ? (
+        <button className="state-reload" type="button" onClick={onRetry}>Retry read</button>
+      ) : null}
     </main>
   );
 }
@@ -54,9 +60,50 @@ function reloadBi() {
   window.location.reload();
 }
 
+async function closeBi() {
+  try {
+    if ("__TAURI_INTERNALS__" in window) {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
+      return;
+    }
+  } catch (error) {
+    console.error("SLK_BI_CLOSE_FAILED", error);
+  }
+  window.close();
+}
+
+function FallbackHeader() {
+  return (
+    <header className="control-bar">
+      <span className="product-name">LE BI</span>
+      <code className="product-version">{BI_VERSION}</code>
+      <div className="window-controls">
+        <button
+          type="button"
+          className="close-button"
+          aria-label="Close BI"
+          title="Close BI"
+          onClick={() => void closeBi()}
+        >×</button>
+      </div>
+    </header>
+  );
+}
+
+export function InterfaceLoading() {
+  return (
+    <div className="app-shell">
+      <FallbackHeader />
+      <AppState state={{ kind: "loading" }} />
+    </div>
+  );
+}
+
 export function InterfaceFailure({ detail }: { detail: string }) {
   return (
     <div className="app-shell">
+      <FallbackHeader />
       <main className="app-state state-error" role="alert">
         <div className="app-state-mark" aria-hidden="true" />
         <p className="eyebrow">Visible failure boundary</p>

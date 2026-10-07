@@ -111,14 +111,14 @@ pnpm --dir apps/slk-bi tauri dev
 pwsh -NoProfile -NonInteractive -File scripts/build_release_artifacts.ps1 -OutputDirectory <artifact-root> -CargoTargetDirectory <target-root>
 ```
 
-The release script invokes `tauri build --no-bundle`, requires a `custom-protocol` release fingerprint, and rejects Vite client/source entry markers before packaging. Plain `cargo build --release -p slk-bi-desktop` is not a release path. A deployed cold start must work with no Node, pnpm, Vite, network, or localhost:1430 listener. The accepted binary and evidence are recorded in [`SLK-BI-ACCEPTANCE.md`](SLK-BI-ACCEPTANCE.md).
+The release script invokes `tauri build --no-bundle`, requires a `custom-protocol` release fingerprint, and rejects Vite client/source entry markers before packaging. Plain `cargo build --release -p slk-bi-desktop` is not a release path. A deployed cold start must work with no Node, pnpm, Vite, network, or localhost:1430 listener. The desktop renders an opaque loading shell before dynamic imports, keeps retry and close actions on failure, exits `--help`/`--version` probes before creating a window, and uses one machine-session mutex for the normal UI. The accepted binary and evidence are recorded in [`SLK-BI-ACCEPTANCE.md`](SLK-BI-ACCEPTANCE.md).
 
 ## Troubleshooting
 
 - **Not configured:** configure the data root with `slk-state`; BI intentionally has no configure action.
 - **Unsupported schema:** use the hash-verified installed BI. Schema 8 and 9 cold-start without migration; an unreviewed version still requires the matching reader or a backed-up writer migration before opening. A responsive window alone is not a successful launch: verify the configured Run projections load.
-- **Transient database read:** keep the stale snapshot visible and retry through normal refresh.
-- **Visible interface failure:** use the displayed `SLK_BI_BOOTSTRAP_FAILED` or `SLK_BI_RENDER_FAILED` code; reloading is a UI retry only and never changes SLK state.
+- **Transient database read:** keep the stale snapshot visible; use `Retry read` or normal refresh without changing SLK state.
+- **Visible interface failure:** use the displayed `SLK_BI_BOOTSTRAP_FAILED` or `SLK_BI_RENDER_FAILED` code; reload and close remain UI-only actions.
 - **Missing evidence file:** retain the evidence record and investigate through the owning SLK role; BI does not repair or remove it.
 - **A role appears active but may not be working:** treat lifecycle and old work facts as records, inspect native activity evidence, and record `ACTIVITY_UNPROVEN` when appropriate; never infer current work from a heartbeat or visible task alone.
 
