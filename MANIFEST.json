@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "1c6c14e2ebbcd28d5b697e18f808681df00af7179d17b212b81d6581e1d850ed"
+      "sha256": "ec35d0509ed2eb9233dda8c55faac7f3fb73a2f0792bc68642441ee7342526c7"
     },
     {
       "path": "Cargo.lock",
@@ -835,6 +835,10 @@
       "sha256": "9e611184bedb9e609863e60a2bd24347cba4970b383f2ff5595fed40478767df"
     },
     {
+      "path": "docs/contracts/slk-runtime-binding-migration.schema.json",
+      "sha256": "553097994ebb370379258e62617b82a3eb9e594483a8782333df1a93e8f7e23f"
+    },
+    {
       "path": "docs/contracts/slk-runtime-snapshot.schema.json",
       "sha256": "8c678263b88a01d66d732b931a2183f504d4f233589a2f4c4d62174e6ba42e6a"
     },
@@ -1160,7 +1164,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "b97cb461778c1153165e866d92caeaabaae7c7bd53ec16bacd40775d01caab02"
+      "sha256": "ac5accf80f89676df563b6be69954e74b474b73bfe0c0fdf20c0f5776877be7c"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1456,7 +1460,7 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "b9cf83db06c0b4deaa6ffd8d5d2a04a7facbc6ca0cb1a8df047ebbdadcaf1623"
+      "sha256": "b09ec257a17319c40d7d13c7e280c26c8bacd6b4061ed18d193645387db97089"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1525,6 +1529,10 @@
     {
       "path": "src/slk_transport/run_readiness.py",
       "sha256": "c1d48dfff6c4d8060bb768875d256bc0ea82adc5238c816f7ba67a99e4bce6b8"
+    },
+    {
+      "path": "src/slk_transport/runtime_binding_migration.py",
+      "sha256": "9c5e00af25b9fdeb1ae6e3ef00b001e4886c9341abfe2542eeda80bbe58d00e3"
     },
     {
       "path": "src/slk_transport/subprocess_watch.py",
@@ -1825,6 +1833,10 @@
     {
       "path": "tests/transport/test_run_readiness.py",
       "sha256": "3972a904519e78e2cd91392e605e26ed187b0f0356d1f1f5ab497cc7fb1eec78"
+    },
+    {
+      "path": "tests/transport/test_runtime_binding_migration.py",
+      "sha256": "f0cdd19d0eb8815bcb90c4f64ac1ed1caa696f183cc7b6993a00840f91d81786"
     },
     {
       "path": "tests/transport/test_sealed_role_credentials.py",

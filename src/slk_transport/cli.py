@@ -41,6 +41,10 @@ from .run_readiness import (
     seal_normal_chain_source,
 )
 from .role_host import RoleHost, load_role_host
+from .runtime_binding_migration import (
+    execute_runtime_binding_migration,
+    prepare_runtime_binding_migration,
+)
 from .overwatcher_admin import execute_sealed_overwatcher_admin
 from .supervisor_admin import execute_sealed_supervisor_admin
 from .temporal_reload import reload_temporal_worker
@@ -722,6 +726,17 @@ def _reload_temporal_worker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prepare_runtime_binding_migration(args: argparse.Namespace) -> int:
+    _emit(prepare_runtime_binding_migration(args.request, request_sha256=args.sha256))
+    return 0
+
+
+def _migrate_runtime_binding(args: argparse.Namespace) -> int:
+    result = execute_runtime_binding_migration(args.request, request_sha256=args.sha256)
+    _emit(result)
+    return 0
+
+
 def _prepare_role_credential(args: argparse.Namespace) -> int:
     from .worker_completion import prepare_sealed_role_credential
 
@@ -1012,6 +1027,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     temporal_reload = subparsers.add_parser("reload-temporal-worker")
     temporal_reload.add_argument("--request", required=True, type=Path)
     temporal_reload.add_argument("--sha256", required=True)
+    binding_preparation = subparsers.add_parser("prepare-runtime-binding-migration")
+    binding_preparation.add_argument("--request", required=True, type=Path)
+    binding_preparation.add_argument("--sha256", required=True)
+    binding_migration = subparsers.add_parser("migrate-runtime-binding")
+    binding_migration.add_argument("--request", required=True, type=Path)
+    binding_migration.add_argument("--sha256", required=True)
     credentials = subparsers.add_parser("prepare-role-credential")
     credentials.add_argument("--request", required=True, type=Path)
     incomplete = subparsers.add_parser("prepare-incomplete-handoff")
@@ -1130,6 +1151,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _overwatcher_admin(args)
         if args.command == "reload-temporal-worker":
             return _reload_temporal_worker(args)
+        if args.command == "prepare-runtime-binding-migration":
+            return _prepare_runtime_binding_migration(args)
+        if args.command == "migrate-runtime-binding":
+            return _migrate_runtime_binding(args)
         if args.command == "prepare-role-credential":
             return _prepare_role_credential(args)
         if args.command == "prepare-incomplete-handoff":
