@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "3b775d277c0a9e2d087944714b76cd6107e0aad3c1b40fd9cfcc14a4342fb2e5"
+      "sha256": "a34ab2af48b2b5dbd95c8e23856507b0805b1e52c8ca1c13efec90b5e1757ac9"
     },
     {
       "path": "VERSION",
@@ -1376,7 +1376,7 @@
     },
     {
       "path": "skills/slk-overwatch-run/SKILL.md",
-      "sha256": "e8f61d84cc8d35df7dbda1d9f906fab98e35f2bcaca05c3e6caebf6fa5c79f23"
+      "sha256": "4d60c84bcd04c10188803b193e02385bbf92d6ba0fa64c3dcd082b580a426c2f"
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
