@@ -1,4 +1,4 @@
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 import json
 import sys
@@ -8,11 +8,11 @@ import pytest
 
 from slk_transport.adapters.base import AdapterError
 from slk_transport.adapters.codex import CodexAdapter
-from slk_transport.contracts import Endpoint
+from slk_transport.contracts import Endpoint, Envelope
 from slk_transport.dispatcher import dispatch_once
-from slk_transport.evidence import AttemptStore
+from slk_transport.evidence import Attempt, AttemptStore
 from slk_transport.native_activity import inspect_native_activity, validate_native_task_activity
-from slk_transport.adapters.codex_desktop import DesktopClient, consume_desktop_readback, deliver_desktop
+from slk_transport.adapters.codex_desktop import DesktopClient, consume_desktop_readback, deliver_desktop, validate_late_desktop_start
 from slk_transport.jsonrpc import JsonRpcProcess
 from test_codex_adapter import codex_endpoint, supervisor_envelope
 
@@ -133,6 +133,71 @@ def test_desktop_exact_retry_returns_immutable_result_without_second_message(tmp
     assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
 
 
+@pytest.mark.parametrize("payload_type", ["D1_FAILURE_ESCALATION", "D1_INCOMPLETE_ESCALATION", "D2_READY"])
+def test_checker_return_uses_inherited_executor_without_changing_registered_endpoint(tmp_path, monkeypatch, payload_type):
+    from test_checker_escalation import fixture, load_module
+    endpoint = prepared(tmp_path, monkeypatch)
+    if payload_type == "D1_INCOMPLETE_ESCALATION":
+        from test_checker_management import fixture as incomplete_fixture
+        from slk_transport import checker_management
+        request, _ = incomplete_fixture(tmp_path)
+        raw = checker_management.materialize_management_escalation(request)["envelope"]
+    elif payload_type == "D2_READY":
+        from test_checker_completion import fixture as pass_fixture
+        from slk_transport import checker_completion
+        request, _ = pass_fixture(tmp_path, final=True)
+        raw = checker_completion._materialize(request, checker_completion._validate_boundary(request))["envelope"]
+    else:
+        request, _ = fixture(tmp_path)
+        raw = load_module().materialize_escalation(request)["envelope"]
+    envelope = Envelope.from_dict(raw)
+    endpoint = replace(endpoint, run_id=envelope.run_id, role_instance_id=envelope.receiver_role_instance_id,
+                       endpoint_version=envelope.receiver_endpoint_version)
+    monkeypatch.setenv("CODEX_THREAD_ID", "temporal-native-executor")
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    result = CodexAdapter().deliver(endpoint, envelope, attempt)
+    assert result.status == "completed"
+    assert endpoint.address["desktop"]["caller_thread_id"] == "caller-exact"
+    proof = json.loads((attempt.root / "desktop-readback.json").read_text())
+    assert proof["caller_thread_id"] == "temporal-native-executor"
+
+
+@pytest.mark.parametrize("damage", ["run", "receiver", "version", "retired", "sender", "payload", "pipe", "origin"])
+def test_checker_executor_exception_rejects_identity_scope_and_capability_drift(tmp_path, monkeypatch, damage):
+    from test_checker_escalation import fixture, load_module
+    endpoint = prepared(tmp_path, monkeypatch)
+    request, _ = fixture(tmp_path)
+    envelope = Envelope.from_dict(load_module().materialize_escalation(request)["envelope"])
+    endpoint = replace(endpoint, run_id=envelope.run_id, role_instance_id=envelope.receiver_role_instance_id,
+                       endpoint_version=envelope.receiver_endpoint_version)
+    monkeypatch.setenv("CODEX_THREAD_ID", "temporal-native-executor")
+    if damage == "run": endpoint = replace(endpoint, run_id="OTHER-RUN")
+    elif damage == "receiver": endpoint = replace(endpoint, role_instance_id="OTHER-SUPERVISOR")
+    elif damage == "version": endpoint = replace(endpoint, endpoint_version=endpoint.endpoint_version + 1)
+    elif damage == "retired": endpoint = replace(endpoint, state="retired")
+    elif damage == "sender": envelope = replace(envelope, sender_role="worker")
+    elif damage == "payload": envelope = replace(envelope, payload_type="FREE_TEXT")
+    elif damage == "pipe": monkeypatch.delenv("CODEX_APP_TOOLS_PIPE_PATH")
+    elif damage == "origin": monkeypatch.setenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "cli")
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, envelope, AttemptStore(tmp_path / "attempts").create(envelope))
+    assert error.value.error_code == "CODEX_DESKTOP_HOST_UNAVAILABLE"
+    assert not (tmp_path / "native-calls.jsonl").exists()
+
+
+@pytest.mark.parametrize("mode,code", [("unknown-status", "CODEX_THREAD_STATE_UNKNOWN"),
+                                      ("terminal-status", "CODEX_THREAD_TERMINAL")])
+def test_desktop_preserves_native_status_and_does_not_call_unknown_terminal(tmp_path, monkeypatch, mode, code):
+    endpoint = prepared(tmp_path, monkeypatch, mode)
+    attempt = AttemptStore(tmp_path / "attempts").create(supervisor_envelope())
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, supervisor_envelope(), attempt)
+    assert error.value.error_code == code
+    evidence = json.loads((attempt.root / "desktop-target-observation.json").read_text())
+    assert evidence["thread_status"] == ("unknown" if mode == "unknown-status" else "failed")
+    assert not (attempt.root / "desktop-send.json").exists()
+
+
 def test_late_desktop_readback_consumes_original_send_without_resend(tmp_path, monkeypatch):
     endpoint = prepared(tmp_path, monkeypatch, "unconfirmed")
     envelope = supervisor_envelope()
@@ -151,6 +216,19 @@ def test_late_desktop_readback_consumes_original_send_without_resend(tmp_path, m
     assert result.native_identity["turn_id"] == "turn-new"
     calls = [json.loads(s) for s in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
     assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
+
+
+def test_saved_status_observation_remains_compatible_with_exact_late_start(tmp_path, monkeypatch):
+    endpoint = prepared(tmp_path, monkeypatch, "unconfirmed")
+    envelope = supervisor_envelope()
+    result = dispatch_once(asdict(endpoint), asdict(envelope), tmp_path / "attempts", adapters={endpoint.adapter: CodexAdapter()})
+    assert result.error_code == "CODEX_DESKTOP_READBACK_UNPROVED"
+    attempt = Attempt(tmp_path / "attempts" / envelope.run_id / envelope.message_id)
+    original = (attempt.root / "failed.json").read_bytes()
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "late-confirmed")
+    consume_desktop_readback(endpoint, envelope, attempt)
+    assert validate_late_desktop_start(endpoint, envelope, attempt).status == "completed"
+    assert (attempt.root / "failed.json").read_bytes() == original
 
 
 def test_late_desktop_readback_rejects_ambiguous_native_match_without_resend(tmp_path, monkeypatch):

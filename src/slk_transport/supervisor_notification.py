@@ -73,7 +73,12 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
             raise ValueError("saved notification proof changed")
         return result
     if root.is_dir() and any(root.iterdir()):
-        raise ValueError("previous operational send is uncertain; inspect it before another send")
+        names = {p.name for p in root.iterdir()}
+        if (not {"endpoint.json", "notification.json"}.issubset(names)
+            or names - {"endpoint.json", "notification.json", "desktop-target-observation.json", "desktop-target-observation-latest.json"}
+            or wc._read_object(root / "notification.json", "notice") != dict(notice)
+            or wc._read_object(root / "endpoint.json", "notification endpoint") != dict(endpoint_raw)):
+            raise ValueError("previous operational send is uncertain; inspect it before another send")
     caller = os.environ.get("CODEX_THREAD_ID")
     if (not isinstance(caller, str) or not caller.strip() or caller != caller.strip()
         or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
@@ -93,8 +98,8 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
     CodexAdapter().validate_address(delivery_endpoint)
     root.mkdir(parents=True, exist_ok=True)
     attempt = Attempt(root)
-    attempt.write_json_once("notification.json", notice)
-    attempt.write_json_once("endpoint.json", endpoint_raw)
+    wc._write_or_reuse_stable_request(root / "notification.json", notice)
+    wc._write_or_reuse_stable_request(root / "endpoint.json", endpoint_raw)
     prompt = notice["message"] + "\n" + json.dumps(dict(notice), ensure_ascii=False, sort_keys=True)
     # Only exact platform delivery proves wake. The Supervisor still decides what
     # to do; the current trusted Desktop caller is only the transport executor.

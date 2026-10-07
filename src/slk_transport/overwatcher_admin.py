@@ -92,9 +92,10 @@ def execute_sealed_overwatcher_admin(
         if (authenticated.get("status") != "authenticated"
             or authenticated.get("run_id") != run_id
             or authenticated.get("role") != "overwatcher"
-            or authenticated.get("role_instance_id") != role_instance_id
-            or authenticated.get("runtime_revision") != revision):
-            raise ValueError("saved credential does not authenticate the exact current Overwatcher revision")
+            or authenticated.get("role_instance_id") != role_instance_id):
+            raise ValueError("OVERWATCHER_AUTHENTICATION_FAILED: saved credential does not authenticate the current Overwatcher")
+        if authenticated.get("runtime_revision") != revision:
+            raise ValueError("OVERWATCHER_SNAPSHOT_STALE: refresh the snapshot and collect a new observation; do not replay the old cycle")
         state_result = wc._run_json_command(
             list(state_command), [operation, "--request", str(operation_request)],
             credential=secret, credential_scope="overwatcher",

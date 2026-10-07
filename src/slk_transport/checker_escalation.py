@@ -13,7 +13,7 @@ from typing import Any, Callable, Mapping
 
 from .adapters.base import AdapterError
 from .adapters.codex_desktop import validate_late_desktop_start
-from .contracts import ENVELOPE_SCHEMA, IDENTIFIER, Endpoint, Envelope, canonical_json_sha256
+from .contracts import ENVELOPE_SCHEMA, IDENTIFIER, DeliveryResult, Endpoint, Envelope, canonical_json_sha256
 from .evidence import Attempt
 from .native_activity import NativeActivityError, validate_native_start
 from .worker_completion import CompletionError, _run_json_command, resolve_authoritative_token_boundary, unprotect_dpapi_hex
@@ -742,11 +742,27 @@ def _prepare(
             _sha256(native / "endpoint.json"), _sha256(native / "envelope.json"),
             credential, run_json_command, recovered=False,
         )
-    sent = run_json_command(
-        list(request["transport_command"]),
-        ["send", *common],
-        credential=None,
-    )
+    sent = (_read_object(native / "failed.json", "preserved delivery failure")
+            if (native / "failed.json").is_file() else run_json_command(
+                list(request["transport_command"]), ["send", *common], credential=None))
+    if sent.get("status") == "failed" and sent.get("error_code") == "CODEX_DESKTOP_HOST_UNAVAILABLE":
+        failure = DeliveryResult.from_dict(_read_object(native / "failed.json", "preserved delivery failure"))
+        if ("desktop" not in prepared["endpoint"]["address"]
+            or failure.run_id != request["run_id"] or failure.message_id != prepared["envelope"]["message_id"]
+            or failure.adapter != prepared["endpoint"]["adapter"] or failure.native_identity
+            or failure.evidence != ("accepted.json", "endpoint.json", "envelope.json")
+            or {p.name for p in native.iterdir() if p.is_file()} != {"accepted.json", "endpoint.json", "envelope.json", "failed.json"}
+            or _read_object(native / "endpoint.json", "native endpoint") != prepared["endpoint"]
+            or _read_object(native / "envelope.json", "native envelope") != prepared["envelope"]):
+            raise CheckerEscalationError("CHECKER_ESCALATION_START_UNPROVEN", "host failure does not prove the exact unsent boundary")
+        retry_root = native / "recovery" / "exact-1"
+        native = retry_root / str(request["run_id"]) / str(prepared["envelope"]["message_id"])
+        if (native / "started.json").is_file():
+            sent = {"status": "started", "run_id": request["run_id"], "message_id": prepared["envelope"]["message_id"]}
+        else:
+            sent = run_json_command(list(request["transport_command"]),
+                ["send", "--endpoint", str(prepared["endpoint_path"]), "--envelope", str(prepared["envelope_path"]),
+                 "--attempt-root", str(retry_root)], credential=None)
     if sent.get("status") in {"started", "completed"}:
         started_path = native / "started.json"
         message_id = str(prepared["envelope"]["message_id"])
@@ -769,8 +785,8 @@ def _prepare(
         "CODEX_RPC_TIMEOUT",
     }:
         raise CheckerEscalationError(
-            "CHECKER_ESCALATION_DELIVERY_INVALID",
-            "current correction requires the preserved unresolved Desktop writer result",
+            str(failure_kind) if isinstance(failure_kind, str) and failure_kind.startswith("CODEX_") else "CHECKER_ESCALATION_DELIVERY_INVALID",
+            "Supervisor delivery failed: " + str(failure_kind),
         )
     retried = run_json_command(
         list(request["transport_command"]),

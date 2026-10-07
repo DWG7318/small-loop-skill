@@ -179,7 +179,7 @@ def test_checker_incomplete_hands_control_to_supervisor_without_a_fail_or_rework
     assert wc._read_object(root / "d1-projection.json", "D1 projection") == current
 
 
-def frozen_checker_failure_suffix(tmp_path):
+def frozen_checker_failure_suffix(tmp_path, failure_code="CHECKER_ESCALATION_D1_MISMATCH"):
     from test_checker_escalation import fixture as checker_failure_fixture
 
     request, _original_request_path = checker_failure_fixture(tmp_path)
@@ -259,14 +259,72 @@ def frozen_checker_failure_suffix(tmp_path):
     })
     request_path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
     failure_path = wc._write_or_reuse_stable_request(
-        root / "failure-CHECKER_ESCALATION_D1_MISMATCH.json",
+        root / ("failure-" + failure_code + ".json"),
         {"status": "HOST_HANDOFF_FAILED", "run_id": envelope.run_id,
          "source_message_id": envelope.message_id,
-         "error_code": "CHECKER_ESCALATION_D1_MISMATCH"},
+         "error_code": failure_code},
     )
     current = json.loads(json.dumps(frozen))
     current["overwatch_cycles"] = [{"cycle_id": "later-unrelated-observation"}]
     return host, source, envelope, current, projection_path, request_path, failure_path
+
+
+@pytest.mark.parametrize("drift", ["none", "ow-resume", "engineering", "wrong-ow", "wrong-author"])
+def test_materialized_checker_host_failure_resumes_without_rerecording_d1(tmp_path, monkeypatch, drift):
+    from slk_transport import checker_escalation
+    host, source, envelope, current, projection_path, request_path, failure_path = (
+        frozen_checker_failure_suffix(tmp_path, "CHECKER_ESCALATION_DELIVERY_INVALID")
+    )
+    frozen = wc._read_object(projection_path, "frozen")
+    frozen["roles"] = [
+        {"role": "supervisor", "lifecycle": "active", "role_instance_id": host.endpoint("supervisor")["role_instance_id"]},
+        {"role": "overwatcher", "lifecycle": "active", "role_instance_id": "OW-A", "session_id": "OW-session"},
+    ]
+    frozen["runtime_snapshot"].update(overwatcher_binding_revision=1, overwatcher_status="ACTIVE", committed_at="2026-10-04T00:00:00Z")
+    frozen["administrative_snapshot"] = {"event_count": len(frozen["events"]), "latest_event_id": frozen["events"][-1]["event_id"]}
+    frozen.update(overwatch_cycles=[{"cycle_id": "old-anomaly", "overwatcher_role_instance_id": "OW-A", "session_id": "OW-session",
+                                   "binding_revision": 1, "anomaly_codes_json": '["ACTIVITY_UNPROVEN"]'}],
+                  overwatcher_native_status_receipts=[], overwatcher_incident_transitions=[],
+                  overwatcher_binding_transitions=[], operational_observations=[])
+    write_json(projection_path, frozen)
+    current = json.loads(json.dumps(frozen))
+    if drift != "none":
+        resume = {"event_id": "ow-resumed", "event_type": "OVERWATCHER_TURN_RESUMED",
+                  "author_role_instance_id": host.endpoint("supervisor")["role_instance_id"],
+                  "go_id": None, "cell_id": None, "attempt": None, "occurred_at": "2026-10-04T00:01:00Z",
+                  "details_json": json.dumps({"role_instance_id": "OW-A", "session_id": "OW-session", "binding_revision": 1,
+                       "resume_basis": "ANOMALY_CYCLE", "last_anomaly_cycle_id": "old-anomaly", "last_native_status_id": None,
+                       "native_active_session_evidence": {"path": "D:/evidence/ow-active.json", "sha256": "a" * 64}})}
+        current["events"].append(resume)
+        current["administrative_snapshot"].update(event_count=len(current["events"]), latest_event_id="ow-resumed")
+        current["runtime_snapshot"].update(runtime_revision=frozen["runtime_snapshot"]["runtime_revision"] + 1,
+                                            latest_event_id="ow-resumed", committed_at=resume["occurred_at"])
+        if drift == "engineering": current["runtime_snapshot"]["token_sequence"] += 1
+        elif drift == "wrong-ow": current["roles"][-1]["session_id"] = "OTHER-OW"
+        elif drift == "wrong-author": resume["author_role_instance_id"] = "UNREGISTERED"
+    original = {p: p.read_bytes() for p in (projection_path, request_path, failure_path)}
+    checker_escalation.materialize_escalation(wc._read_object(request_path, "request"))
+    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
+    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail("must not record D1 twice"))
+    calls = []
+    def execute(request, **kwargs):
+        calls.append(request)
+        assert request["runtime_revision"] == current["runtime_snapshot"]["runtime_revision"]
+        assert request["checker_credential_path"] == host.credential_path("checker")
+        assert kwargs["request_sha256"] == wc._sha256(kwargs["request_path"])
+        before = checker_escalation.materialize_escalation(wc._read_object(request_path, "original"))
+        after = checker_escalation.materialize_escalation(request)
+        assert after["envelope"] == before["envelope"] and after["endpoint"] == before["endpoint"]
+        return {"status": "CHECKER_ESCALATION_COMMITTED"}
+    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", execute)
+    if drift in {"none", "ow-resume"}:
+        receipt = host.complete(source)
+        assert host.complete(source) == receipt and len(calls) == 1
+    else:
+        with pytest.raises(wc.CompletionError): host.complete(source)
+        assert not calls
+    assert {p: p.read_bytes() for p in original} == original
 
 
 def test_existing_checker_failure_artifacts_resume_only_the_frozen_suffix_and_are_idempotent(

@@ -210,3 +210,33 @@ def test_missing_trusted_notice_executor_does_not_poison_an_unsent_retry(tmp_pat
     assert notification.notify_registered_supervisor(
         notice, endpoint, projection, tmp_path / "notices"
     )["status"] == "NOTIFIED"
+
+
+def test_exact_notice_only_pre_send_rejection_resumes_once(tmp_path, monkeypatch):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    root = tmp_path / "notices" / notice["run_id"] / notice["event_id"]
+    root.mkdir(parents=True)
+    (root / "notification.json").write_text(json.dumps(notice), encoding="utf-8")
+    (root / "endpoint.json").write_text(json.dumps(endpoint), encoding="utf-8")
+    original = {p.name: p.read_bytes() for p in root.iterdir()}
+    result = notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    assert result["status"] == "NOTIFIED"
+    assert {n: (root / n).read_bytes() for n in original} == original
+    assert notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices") == result
+    calls = [json.loads(s) for s in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
+
+
+def test_notice_status_retry_retains_first_observation_without_second_send(tmp_path, monkeypatch):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "unknown-status")
+    with pytest.raises(AdapterError) as error:
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    assert error.value.error_code == "CODEX_THREAD_STATE_UNKNOWN"
+    root = tmp_path / "notices" / notice["run_id"] / notice["event_id"]
+    original = (root / "desktop-target-observation.json").read_bytes()
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "normal")
+    result = notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    assert result["status"] == "NOTIFIED"
+    assert (root / "desktop-target-observation.json").read_bytes() == original
+    assert notification.wc._read_object(root / "desktop-target-observation-latest.json", "latest")["thread_status"] == "idle"

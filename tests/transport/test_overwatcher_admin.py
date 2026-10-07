@@ -99,3 +99,18 @@ def test_ow_consumer_preserves_safe_state_rejection_code_and_message(tmp_path, m
     with pytest.raises(ValueError, match="SLK_STATE_COMMAND_FAILED: cycle runtime revision is stale"):
         admin.execute_sealed_overwatcher_admin(
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+
+def test_authenticated_ow_stale_snapshot_is_not_bad_credential_and_never_replayed(tmp_path, monkeypatch):
+    request = request_fixture(tmp_path)
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _: "synthetic")
+    calls = []
+    def run(_command, args, **_kwargs):
+        calls.append(args[0])
+        return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
+                "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 8}
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(ValueError, match="OVERWATCHER_SNAPSHOT_STALE") as error:
+        admin.execute_sealed_overwatcher_admin(request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+    assert "new observation" in str(error.value)
+    assert calls == ["authenticate-role"]

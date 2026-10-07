@@ -1,10 +1,19 @@
 # Validation Report — SLK 4.4.2 local candidate
 
-Date: 2026-10-07 Asia/Shanghai
+Date: 2026-10-08 Asia/Shanghai
 Branch: feature/slk-4.4.2-runtime-recovery
-Base for this bounded correction: 46ff9ed154e6b49f814bc49297bf702787e01627
+Base for this bounded correction: bc239daffdc58b5af5fcecc956b954a7c47f3db2
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
-Status: the authorized fresh-partial OCRV continuation completed once and the original Checker recorded immutable `D1_PASSED` event `4e078228-ca65-5ca0-8e3f-55b0ea8bb274`; the candidate is unchanged and OCRV must not run again. A sealed suffix-only entrance now derives that event from correction `c19cb0d1-8c29-52a8-8dff-729917512a28`, revalidates the exact committed request/result, native PASS, current TOKEN and Checker identity, and invokes only the missing deterministic post-D1 suffix. The branch is not merged, pushed, tagged or released.
+Status: bounded native Desktop Checker return and operational-notice recovery; original D1, candidate, semantic roles, models and failed attempts are preserved. Product recovery remains Supervisor-owned. The branch is not merged, pushed, tagged or released.
+
+## 2026-10-08 native Desktop return and operational-notice correction
+
+- The original complete CELL03-A FAIL at runtime 176 could not reach Supervisor because the adapter compared the actual inherited maintenance executor with the endpoint's frozen Supervisor caller. Only the three existing authenticated Checker→Supervisor payloads now permit this executor distinction, retaining exact Run/target/endpoint/model and native caller readback. No environment identity is impersonated; Worker/unknown/cross-Run routes remain rejected.
+- A preserved `CODEX_DESKTOP_HOST_UNAVAILABLE` failure with exactly accepted/endpoint/envelope and no send/start can use the existing `recovery/exact-1` location. Native start is required before the original sealed Checker commits; an existing retry start is commit-only. Original failed evidence is never overwritten.
+- Frozen RoleHost suffix recovery now recognizes this already-materialized delivery failure as well as the prior pre-materialization D1 error. Only the existing strict Overwatcher-only history validator can admit a later same-binding Supervisor turn resume; an independent runtime-rebind projection/request retains the same escalation identity, candidate and old hashes. No D1 is recorded twice; engineering or role drift remains blocked.
+- Overwatcher credential failure and stale snapshot have distinct errors. Stale observations must be recollected with a fresh snapshot, not replayed or credential-rotated. Native target status is saved without thread text; unknown is not called terminal. Exact notice/endpoint-only pre-send retries preserve first status evidence and never repeat an uncertain send.
+- Ordinary and optimized RED reproduced the missing D2 return, scope/endpoint drift and frozen materialized suffix failures. SDK-enabled related regression passes 248 tests without skips in both ordinary and optimized Python. Full ordinary regression passes 1073 with 30 environment skips; repository/Skill/package regressions pass 114. Repository/Manifest, diff and added-line credential scans pass. A read-only validation of the real frozen D1 confirms only authorized OW history changed runtime 176→177. No product construction or D1 was rerun by this repair.
+- The headless artifact is `C:\Users\DWG\.codex\.tmp\slk-4.4.2-checker-desktop-artifacts-20261008-01\slk-transport.pyz`, SHA-256 `ef98a148063ed0944f3ac20315b538d8bae9f07501777df97f9c41a358b6efb1`. Four Rust/BI executables and all Temporal integration code are unchanged; loaded venv adapter, workflow and delivery-client bytes match the source. Deployment must preserve the same workflow pair and use only the latest Supervisor-verified native OW proof; a successful cycle alone is not an active Session guarantee.
 
 ## 2026-10-07 pre-native OCRV parameter-rejection recovery
 

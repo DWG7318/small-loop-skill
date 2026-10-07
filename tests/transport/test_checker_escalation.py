@@ -785,6 +785,65 @@ def request_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize("damage", [None, "authentication", "missing-start", "changed-endpoint", "prior-send"])
+def test_pre_send_host_failure_uses_exact_retry_and_authenticated_checker_commit(tmp_path, damage):
+    module = load_module()
+    request, path = fixture(tmp_path)
+    endpoint_path = Path(request["supervisor_endpoint_path"])
+    endpoint = json.loads(endpoint_path.read_text())
+    desktop_endpoint(endpoint, tmp_path)
+    write_json(endpoint_path, endpoint)
+    prepared = module.materialize_escalation(request)
+    native = Path(prepared["delivery_path"])
+    write_json(native / "endpoint.json", prepared["endpoint"])
+    write_json(native / "envelope.json", prepared["envelope"])
+    write_json(native / "accepted.json", {"status": "accepted", "run_id": RUN_ID,
+                                         "message_id": prepared["envelope"]["message_id"]})
+    write_json(native / "failed.json", {
+        "schema_version": "slk.transport-result/v1", "status": "failed", "adapter": "codex-app-server",
+        "run_id": RUN_ID, "message_id": prepared["envelope"]["message_id"], "native_identity": {},
+        "error_code": "CODEX_DESKTOP_HOST_UNAVAILABLE", "evidence": ["accepted.json", "endpoint.json", "envelope.json"],
+    })
+    failed_bytes = (native / "failed.json").read_bytes()
+    if damage == "prior-send":
+        write_json(native / "desktop-send.json", {"result": {"threadId": "thread-supervisor"}})
+    calls = []
+    def run(_command, args, *, credential):
+        calls.append(args[0])
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": RUN_ID, "role": "worker" if damage == "authentication" else "checker",
+                    "role_instance_id": CHECKER_ID, "runtime_revision": request["runtime_revision"]}
+        if args[0] == "send":
+            retry_root = Path(args[args.index("--attempt-root") + 1])
+            assert retry_root == native / "recovery" / "exact-1"
+            retry = retry_root / RUN_ID / prepared["envelope"]["message_id"]
+            write_json(retry / "endpoint.json", {} if damage == "changed-endpoint" else prepared["endpoint"])
+            write_json(retry / "envelope.json", prepared["envelope"])
+            if damage != "missing-start":
+                write_json(retry / "started.json", make_native_start(
+                    adapter="codex-app-server", run_id=RUN_ID, cell_id=CELL_ID,
+                    message_id=prepared["envelope"]["message_id"], request_sha256=prepared["envelope"]["payload_sha256"],
+                    native_request_sha256="f" * 64, native_task_kind="codex-desktop-turn",
+                    native_task_id="thread-supervisor:turn-a:item-a", native_task_status="RUNNING", pid=os.getpid(),
+                ))
+            return {"status": "started", "run_id": RUN_ID, "message_id": prepared["envelope"]["message_id"]}
+        assert args[0] == "commit-delivery-start" and credential == "synthetic"
+        return {"status": "committed", "run_id": RUN_ID, "runtime_revision": request["runtime_revision"] + 1,
+                "token_sequence": request["token_sequence"] + 1, "token_owner_role_instance_id": SUPERVISOR_ID,
+                "message_id": prepared["envelope"]["message_id"]}
+    if damage is not None:
+        with pytest.raises(module.CheckerEscalationError):
+            module.execute_checker_escalation(request, request_sha256=sha256(path), request_path=path,
+                                             run_json_command=run, unprotect_credential=lambda _: "synthetic")
+        assert "commit-delivery-start" not in calls
+    else:
+        result = module.execute_checker_escalation(request, request_sha256=sha256(path), request_path=path,
+                                                  run_json_command=run, unprotect_credential=lambda _: "synthetic")
+        assert result["status"] == "CHECKER_ESCALATION_COMMITTED"
+        assert calls == ["authenticate-role", "send", "commit-delivery-start"]
+    assert (native / "failed.json").read_bytes() == failed_bytes
+
+
 def test_prepare_binds_failure_and_stops_at_desktop_bridge(tmp_path: Path) -> None:
     module = load_module()
     request, request_path = fixture(tmp_path)

@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "507a819a65b667e30c61b12f01de234959e4c01cf4b80a110a72c00fb59b5341"
+      "sha256": "48f8bdcf310762b8b7f6138c1a43703ef6c1b8f1a9d14fc5f782ab3f312c2918"
     },
     {
       "path": "VERSION",
@@ -1164,7 +1164,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "3b23c8fc597e43d2b10f18de5669a9c2b37bf328fac446d642a4e9954446fd14"
+      "sha256": "6b9ca616279001c1028a4f05127185cb1eb692f28ed99d80beb32a971f5c0df2"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1436,7 +1436,7 @@
     },
     {
       "path": "src/slk_transport/adapters/codex_desktop.py",
-      "sha256": "d0dd12c01731b42d456b320ce9dfc0812f3e583566938e6dcb461af9559cb131"
+      "sha256": "ca697f41787c250ddd77b4d9da3dae38a3a68b7dd61068113b715282759dbccd"
     },
     {
       "path": "src/slk_transport/adapters/dsh.py",
@@ -1452,7 +1452,7 @@
     },
     {
       "path": "src/slk_transport/checker_escalation.py",
-      "sha256": "9950fc54986deac59bdb4469123fab1a56d2b01e74a60b3d47a168daa33a937c"
+      "sha256": "9bc11394fc30766dc1c07eda2404fd4fd8f216237e1fe11a36dd9f66f774aaa3"
     },
     {
       "path": "src/slk_transport/checker_management.py",
@@ -1496,7 +1496,7 @@
     },
     {
       "path": "src/slk_transport/overwatcher_admin.py",
-      "sha256": "a94c6f88bdf5f5b30642f2957587e288b669ffa0b6ec56ef9b5ab537865437d4"
+      "sha256": "c9bf6d397413a3cce947f9319bf6ad1e7f8629a7bba6809a62956771d48915e9"
     },
     {
       "path": "src/slk_transport/overwatcher_continuity.py",
@@ -1528,7 +1528,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "eeb351e0501323b3ecfe0675e2f4707abd67679f1c0b193d0ebdabc27acafe73"
+      "sha256": "5a7851679d438f60c2414b6ef245f41755c8b108b652b43567a0d5b76deda8ea"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
@@ -1548,7 +1548,7 @@
     },
     {
       "path": "src/slk_transport/supervisor_notification.py",
-      "sha256": "5c3b687bfd40e7c61b9cb7b305434498f2c2cc5aa90df8f619d7f9a00e4b60e5"
+      "sha256": "5765ff04614f29f3c75c6c28da52a147c8b2cc6187e894134d516c3bdb413527"
     },
     {
       "path": "src/slk_transport/task_file.py",
@@ -1692,7 +1692,7 @@
     },
     {
       "path": "tests/transport/fake_desktop_mcp.py",
-      "sha256": "15e4f733945c151e8feba03769b2362d695b5d66c6d10f778fcfb3d028350578"
+      "sha256": "2f3832188897b7f1f686bf3f600a6eace7f4cf8b1be381f12ac6610dcc51b80e"
     },
     {
       "path": "tests/transport/fake_dsh.py",
@@ -1724,7 +1724,7 @@
     },
     {
       "path": "tests/transport/test_checker_escalation.py",
-      "sha256": "8334fb720cfee754de565417281abb5f4a9db819505b8d821a007af9530e7445"
+      "sha256": "eb22fb980bbe8a0bbe051b569f1bc12c0a8e52a1031584391558977a8922ca79"
     },
     {
       "path": "tests/transport/test_checker_management.py",
@@ -1740,7 +1740,7 @@
     },
     {
       "path": "tests/transport/test_codex_desktop.py",
-      "sha256": "0a46a1b5fe1d60456df8cd59faea1df3497e3113eca0da70a3b9ed05c46a3691"
+      "sha256": "8863c99f24cefe87108fb1c5b198366f38c598f706ca7d0eb01f7fd2ee234a21"
     },
     {
       "path": "tests/transport/test_committed_checker_terminal.py",
@@ -1804,7 +1804,7 @@
     },
     {
       "path": "tests/transport/test_overwatcher_admin.py",
-      "sha256": "81bb4ef8cf4d717f80d877d3c6c9fef7cfc97cfde856d39d829b3998633badab"
+      "sha256": "24463e2016eabfa63b3748e310cbdfeaeb13d9ba5a926b781d5fadf36c5dadc9"
     },
     {
       "path": "tests/transport/test_overwatcher_continuity.py",
@@ -1836,7 +1836,7 @@
     },
     {
       "path": "tests/transport/test_role_host.py",
-      "sha256": "778de73ef7eef28566f4861dc34565fa7655e8b14dc486dc9f50b51e10ef0088"
+      "sha256": "afe1820e41c36f89949670f55b055858744c67240e12df0819567a28ecc811bb"
     },
     {
       "path": "tests/transport/test_run_readiness.py",
@@ -1860,7 +1860,7 @@
     },
     {
       "path": "tests/transport/test_supervisor_notification.py",
-      "sha256": "f1c2aceeb42b3d3428d17388a2e74c24198066b3c84f5eba2eafc6719abc53b0"
+      "sha256": "49689ace2ce37cf067db46c2269d2ee84fed60ef66ec29a6874d839b6796889d"
     },
     {
       "path": "tests/transport/test_task_file.py",

@@ -28,6 +28,30 @@ READBACK_ANCHOR_FIELDS = {
 }
 
 
+def _checker_return(endpoint: Endpoint, envelope: Envelope) -> bool:
+    return (endpoint.role == "supervisor" and endpoint.state == "active"
+            and endpoint.run_id == getattr(envelope, "run_id", None)
+            and endpoint.role_instance_id == getattr(envelope, "receiver_role_instance_id", None)
+            and endpoint.endpoint_version == getattr(envelope, "receiver_endpoint_version", None)
+            and getattr(envelope, "sender_role", None) == "checker"
+            and getattr(envelope, "receiver_role", None) == "supervisor"
+            and getattr(envelope, "payload_type", None) in {
+                "D1_FAILURE_ESCALATION", "D1_INCOMPLETE_ESCALATION", "D2_READY"})
+
+
+def _valid_caller(endpoint: Endpoint, envelope: Envelope, caller: Any) -> bool:
+    return (isinstance(caller, str) and bool(caller) and caller == caller.strip()
+            and (caller == endpoint.address["desktop"]["caller_thread_id"] or _checker_return(endpoint, envelope)))
+
+
+def _executor(endpoint: Endpoint, envelope: Envelope) -> str:
+    caller = os.environ.get("CODEX_THREAD_ID")
+    if (not _valid_caller(endpoint, envelope, caller) or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
+        or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
+        raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "the prepared Desktop executor capability was not inherited")
+    return str(caller)
+
+
 def validate_desktop_address(address: Mapping[str, Any]) -> None:
     binding = address["desktop"]
     if (not isinstance(binding, Mapping)
@@ -132,6 +156,7 @@ def _readback_result(
     turn: Mapping[str, Any],
     item: Mapping[str, Any],
     prompt_sha256: str,
+    caller: str,
 ) -> DeliveryResult:
     if turn.get("status") not in {"completed", "inProgress", "active"}:
         raise AdapterError("CODEX_TURN_FAILED", "Desktop native turn did not complete successfully")
@@ -142,7 +167,7 @@ def _readback_result(
         "turn_id": turn["id"],
         "turn_status": turn["status"],
         "platform_item_id": item["id"],
-        "caller_thread_id": endpoint.address["desktop"]["caller_thread_id"],
+        "caller_thread_id": caller,
         "message_id": envelope.message_id,
         "platform_item": dict(item),
     }
@@ -205,10 +230,11 @@ def validate_late_desktop_start(
         raise AdapterError(
             "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop terminal identity is invalid"
         ) from exc
-    expected_failure_evidence = (
+    expected_failure_evidence = tuple(sorted((
         "accepted.json", "desktop-prompt.json", "desktop-readback-anchor.json",
         "desktop-send.json", "endpoint.json", "envelope.json",
-    )
+    ) + tuple(name for name in ("desktop-target-observation.json", "desktop-target-observation-latest.json")
+              if (attempt.root / name).is_file())))
     if (
         saved_endpoint != endpoint
         or saved_envelope != envelope
@@ -226,7 +252,7 @@ def validate_late_desktop_start(
 
     validate_desktop_address(endpoint.address)
     address, binding = endpoint.address, endpoint.address["desktop"]
-    caller, target = str(binding["caller_thread_id"]), str(address["thread_id"])
+    target = str(address["thread_id"])
     prompt = _read_object(attempt.root / "desktop-prompt.json", "Desktop prompt evidence")
     if (
         set(prompt) != {"message_id", "prompt"}
@@ -238,12 +264,13 @@ def validate_late_desktop_start(
         )
     prompt_sha256 = hashlib.sha256(prompt["prompt"].encode()).hexdigest()
     anchor = _read_object(attempt.root / "desktop-readback-anchor.json", "Desktop readback anchor")
+    caller = anchor.get("caller_thread_id")
     if (
         set(anchor) != READBACK_ANCHOR_FIELDS
         or anchor.get("schema_version") != "slk.desktop-readback-anchor/v1"
         or anchor.get("thread_id") != target
         or anchor.get("host_id") != endpoint.host_id
-        or anchor.get("caller_thread_id") != caller
+        or not _valid_caller(endpoint, envelope, caller)
         or anchor.get("message_id") != envelope.message_id
         or anchor.get("prompt_sha256") != prompt_sha256
         or any(
@@ -326,10 +353,7 @@ def consume_desktop_readback(
     """Read the original Desktop delivery once; never send or create a replacement turn."""
     validate_desktop_address(endpoint.address)
     address, binding = endpoint.address, endpoint.address["desktop"]
-    caller, target = binding["caller_thread_id"], address["thread_id"]
-    if (os.environ.get("CODEX_THREAD_ID") != caller or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
-        or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
-        raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "the prepared Desktop executor capability was not inherited")
+    reader, target = _executor(endpoint, envelope), address["thread_id"]
     if prompt is None:
         prompt_record = _read_object(attempt.root / "desktop-prompt.json", "Desktop prompt evidence")
         if (set(prompt_record) != {"message_id", "prompt"}
@@ -339,9 +363,10 @@ def consume_desktop_readback(
         prompt = prompt_record["prompt"]
     prompt_sha256 = hashlib.sha256(prompt.encode()).hexdigest()
     anchor = _read_object(attempt.root / "desktop-readback-anchor.json", "Desktop readback anchor")
+    caller = anchor.get("caller_thread_id")
     if (set(anchor) != READBACK_ANCHOR_FIELDS or anchor.get("schema_version") != "slk.desktop-readback-anchor/v1"
         or anchor.get("thread_id") != target or anchor.get("host_id") != endpoint.host_id
-        or anchor.get("caller_thread_id") != caller or anchor.get("message_id") != envelope.message_id
+        or not _valid_caller(endpoint, envelope, caller) or anchor.get("message_id") != envelope.message_id
         or anchor.get("prompt_sha256") != prompt_sha256
         or any(not isinstance(anchor.get(key), list) or not all(isinstance(v, str) for v in anchor[key])
                for key in ("previous_turn_ids", "previous_item_ids", "active_turn_ids"))):
@@ -391,7 +416,7 @@ def consume_desktop_readback(
             raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "installed Desktop plugin lacks read_thread")
         args = {"threadId": target, "hostId": endpoint.host_id, "turnLimit": 2,
                 "includeOutputs": True, "maxOutputCharsPerItem": len(expected) + 512}
-        view = client.call(3, "read_thread", args, caller, timeout)
+        view = client.call(3, "read_thread", args, reader, timeout)
         _, turns = _view(view, endpoint)
         matches = _matching_items(turns, previous=set(anchor["previous_turn_ids"]),
             previous_items=set(anchor["previous_item_ids"]), active=set(anchor["active_turn_ids"]),
@@ -400,7 +425,7 @@ def consume_desktop_readback(
             raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "multiple native items claim this exact delivery")
         if not matches:
             raise AdapterError("CODEX_DESKTOP_READBACK_UNPROVED", "original accepted send still lacks exact native proof; do not resend")
-        return _readback_result(endpoint, envelope, attempt, *matches[0], prompt_sha256)
+        return _readback_result(endpoint, envelope, attempt, *matches[0], prompt_sha256, str(caller))
     except TimeoutError as error:
         raise AdapterError("CODEX_RPC_TIMEOUT", "Desktop native readback timed out; do not resend") from error
     finally:
@@ -410,10 +435,7 @@ def consume_desktop_readback(
 def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, prompt: str,
                     *, wait_for_completion: bool = True) -> DeliveryResult:
     address, binding = endpoint.address, endpoint.address["desktop"]
-    caller, target = binding["caller_thread_id"], address["thread_id"]
-    if (os.environ.get("CODEX_THREAD_ID") != caller or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
-        or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
-        raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "the prepared Desktop executor capability was not inherited")
+    caller, target = _executor(endpoint, envelope), address["thread_id"]
     expected = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
     timeout = float(address["startup_timeout_seconds"])
     client = DesktopClient(list(address["command"]), Path(str(address["cwd"])))
@@ -430,8 +452,18 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
         thread, turns = _view(before, endpoint)
         status = thread.get("status", {}).get("type")
         active = [t["id"] for t in turns if t.get("status") in {"inProgress", "active"}]
+        observation = {
+            "thread_id": target, "host_id": endpoint.host_id, "caller_thread_id": caller,
+            "thread_status": status, "turns": [{"id": t["id"], "status": t.get("status")} for t in turns],
+            "observed_at": utc_now(),
+        }
+        if (attempt.root / "desktop-target-observation.json").exists():
+            _atomic_json(attempt.root / "desktop-target-observation-latest.json", observation)
+        else:
+            attempt.write_json_once("desktop-target-observation.json", observation)
         if status not in {"idle", "active"}:
-            raise AdapterError("CODEX_THREAD_TERMINAL", "Desktop did not positively confirm the target is available")
+            code = "CODEX_THREAD_TERMINAL" if status in {"completed", "failed", "cancelled", "interrupted", "archived"} else "CODEX_THREAD_STATE_UNKNOWN"
+            raise AdapterError(code, "Desktop returned target state " + str(status))
         if (status == "active" and len(active) != 1) or (status == "idle" and active):
             raise AdapterError("CODEX_ACTIVE_WRITER_UNRESOLVED", "Desktop active turn identity is ambiguous")
         previous = {t["id"] for t in turns}

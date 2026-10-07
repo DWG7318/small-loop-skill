@@ -1114,11 +1114,11 @@ class RoleHost:
 
     def _resume_checker_failure_suffix(
         self, source: Path, envelope: Envelope, root: Path, occurred_at: str,
-        current_projection: Mapping[str, Any], failed: Any,
+        current_projection: Mapping[str, Any], failed: Any, failure_path: Path,
     ) -> dict[str, Any]:
         projection_path = root / "d1-projection.json"
         request_path = root / "post-d1-request.json"
-        failure_path = root / "failure-CHECKER_ESCALATION_D1_MISMATCH.json"
+        failure_code = failure_path.stem.removeprefix("failure-")
         try:
             frozen = wc._read_object(projection_path, "frozen D1 projection")
             request = wc._read_object(request_path, "frozen post-D1 request")
@@ -1131,7 +1131,7 @@ class RoleHost:
             "status": "HOST_HANDOFF_FAILED",
             "run_id": envelope.run_id,
             "source_message_id": envelope.message_id,
-            "error_code": "CHECKER_ESCALATION_D1_MISMATCH",
+            "error_code": failure_code,
         }
         management_return = envelope.payload_type == "D1_MANAGEMENT_RETURN"
         candidate_payload = (
@@ -1207,7 +1207,8 @@ class RoleHost:
         if (
             failure != expected_failure
             or request != expected_request
-            or any(frozen_snapshot.get(key) != current_snapshot.get(key) for key in boundary_fields)
+            or any(frozen_snapshot.get(key) != current_snapshot.get(key)
+                   for key in boundary_fields - {"runtime_revision", "latest_event_id"})
             or len(frozen_event) != 1
             or current_event != frozen_event
         ):
@@ -1218,13 +1219,22 @@ class RoleHost:
         try:
             validated = failed._validate_request(request)
             failed._validate_failure(validated)
+            if frozen_snapshot.get("runtime_revision") != current_snapshot.get("runtime_revision"):
+                wc._rebind_overwatcher_only_committed_boundary(
+                    {**request, "candidate_message_id": envelope.message_id}, frozen,
+                    current_projection, current_snapshot.get("runtime_revision"),
+                )
+            elif frozen_snapshot.get("latest_event_id") != current_snapshot.get("latest_event_id"):
+                raise ValueError("current event changed without an authenticated revision")
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise wc.CompletionError(
                 "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix validation failed"
             ) from exc
         staged = root / ".checker-post-d1" / str(request["post_d1_invocation_id"])
         delivery = root / str(request["run_id"]) / failed.escalation_message_id(request)
-        if any((staged / name).exists() for name in ("endpoint.json", "envelope.json")) or delivery.exists():
+        if failure_code == "CHECKER_ESCALATION_D1_MISMATCH" and (
+            any((staged / name).exists() for name in ("endpoint.json", "envelope.json")) or delivery.exists()
+        ):
             raise wc.CompletionError(
                 "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "Checker escalation was already materialized"
             )
@@ -1243,6 +1253,17 @@ class RoleHost:
             raise wc.CompletionError(
                 "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix hash changed"
             ) from exc
+        if frozen_snapshot.get("runtime_revision") != current_snapshot.get("runtime_revision"):
+            refreshed = root / ".checker-post-d1" / str(request["post_d1_invocation_id"]) / (
+                "runtime-rebind-" + str(current_snapshot["runtime_revision"])
+            )
+            refreshed.mkdir(parents=True, exist_ok=True)
+            refreshed_projection = wc._write_or_reuse_stable_request(
+                refreshed / "projection.json", current_projection
+            )
+            request = {**request, "runtime_revision": current_snapshot["runtime_revision"],
+                       "runtime_projection_path": str(refreshed_projection)}
+            request_path = wc._write_or_reuse_stable_request(refreshed / "request.json", request)
         return failed.execute_checker_escalation(
             request, request_path=request_path, request_sha256=wc._sha256(request_path)
         )
@@ -1261,18 +1282,22 @@ class RoleHost:
             str(envelope.payload["candidate_message_id"])
             if management_return else envelope.message_id
         )
+        failures = [root / ("failure-" + code + ".json") for code in (
+            "CHECKER_ESCALATION_D1_MISMATCH", "CHECKER_ESCALATION_DELIVERY_INVALID",
+            "CODEX_DESKTOP_HOST_UNAVAILABLE",
+        ) if (root / ("failure-" + code + ".json")).exists()]
         frozen_suffix = (
             root / "d1-projection.json",
             root / "post-d1-request.json",
-            root / "failure-CHECKER_ESCALATION_D1_MISMATCH.json",
+            *failures,
         )
         if any(path.exists() for path in frozen_suffix):
-            if not all(path.is_file() for path in frozen_suffix):
+            if len(failures) != 1 or not all(path.is_file() for path in frozen_suffix):
                 raise wc.CompletionError(
                     "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix evidence is incomplete"
                 )
             return self._resume_checker_failure_suffix(
-                source, envelope, root, occurred_at, projection, failed
+                source, envelope, root, occurred_at, projection, failed, failures[0]
             )
         attempt = wc._source_attempt(projection, envelope)
         continuation = {"run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,

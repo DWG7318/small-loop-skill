@@ -66,6 +66,8 @@ for line in sys.stdin:
                     value["turns"].append({"id": "other-active", "status": "inProgress", "items": []})
             if mode == "malformed-status":
                 value["thread"]["status"] = None
+            if mode in {"unknown-status", "terminal-status"}:
+                value["thread"]["status"]["type"] = "unknown" if mode == "unknown-status" else "failed"
             if sent and mode == "malformed-item":
                 value["turns"][0]["items"] = [None]
             if sent and mode == "malformed-items":
