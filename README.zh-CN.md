@@ -23,7 +23,7 @@ Overwatcher 为必选，每 600 秒以交叉证据核验真实情况。它不转
 
 Temporal 是多个 Run 共用的一套 headless 本地服务。每个 Run 拥有独立 `SLK.Start` 与 `SLK.Run`，保存准确原生启动确认、原发送者恢复、成员停留 30 分钟的 Supervisor 通知、每 20 分钟 OW 审计和独立关闭。它不裁决工程状态，也不替代成员直连通讯。SLK 不安装 Docker；必需连续性不可用或失败时，由 Supervisor 修复后才可继续。
 
-Run 仍沿用 D0、D1、D2，不增加检查层。证据不足保持未证明，不写成 PASS。RTK、Probe CLI 与 Ponytail 仍是可选效率工具，必须保留原生命令回退和原始证据。
+Run 的测试、复核与验收仍归入 D0、D1、D2，不另建纯检验 CELL。证据不足保持未证明，不写成 PASS。RTK、Probe CLI 与 Ponytail 仍是可选效率工具，必须保留原生命令回退和原始证据。
 
 跨 Agent 投递使用 `slk-transport`，绑定不可变端点、envelope、候选/证据哈希、密封角色凭据与 `slk.native-start/v2`。DSH/OCRV 只发布紧凑、原子化的原生活动与终态执行回执，大日志保留本地路径和哈希；Worker 续接只能一次，孤立原生任务返回 `WORKER_INCOMPLETE`；Checker 完成只能派准确的下一 Required CELL 或最终 `D2_READY`。详见 [`docs/transport/SLK-TRANSPORT.md`](docs/transport/SLK-TRANSPORT.md)。
 

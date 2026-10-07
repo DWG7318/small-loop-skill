@@ -189,6 +189,18 @@ def test_plan_run_keeps_inspection_out_of_the_cell_construction_plan() -> None:
     assert step.index("D0") < step.index("D1") < step.index("D2") < step.index("检查本身")
 
 
+def test_cell_design_rejects_validation_only_cells_in_negative_prompts() -> None:
+    for name in ("small-loop-skill", "slk-plan-run"):
+        negative = read_skill(name).split("\n## 负面提示词\n\n", 1)[1]
+        for marker in (
+            "测试、复核、验收或独立检查本身",
+            "施工 CELL",
+            "D0/D1/D2",
+            "重复检验",
+        ):
+            assert marker in negative, (name, marker)
+
+
 def test_plan_run_reuses_existing_work_before_sizing_minimum_construction() -> None:
     text = read_skill("slk-plan-run")
     step = next(line for line in text.splitlines() if line.startswith("3. "))

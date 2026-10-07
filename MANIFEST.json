@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "bc7c533553669ddd50b456b323b12291b0001ba1098169358a3136097b3589c8"
+      "sha256": "24814dc78a90e0b4fd2fc9a547923bfca19fb54c79527a2abc0f8a880b27cbec"
     },
     {
       "path": "Cargo.lock",
@@ -48,11 +48,11 @@
     },
     {
       "path": "README.md",
-      "sha256": "7a0f4006466981e3262cf15d27e12309a7576487b74c5b34d4ee0574e11dc4d5"
+      "sha256": "b9fa76bcc4e410a70885ed45b75a33a453355fc7a2d753f6bffd7da56377457f"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "01a2e8fa0be7f39001396f9bc068673a4e782662c609e903a1833b9ef21c96df"
+      "sha256": "a6957cbbd99d137e4bd9b25aa812814083bab00a63a2e02c6095de6592c9e5a3"
     },
     {
       "path": "VALIDATION-REPORT.md",
@@ -1376,7 +1376,7 @@
     },
     {
       "path": "skills/slk-plan-run/SKILL.md",
-      "sha256": "785f8dbfd2c30b3beac83eaad93dad6a13edda2e2b782055b52c6853497d0179"
+      "sha256": "96ed3e4ad589068f0e87c5bcca09d069d8c06402ec43eca63e2cc776bd745fe9"
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
@@ -1400,7 +1400,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "dec57a8253d61e368a4fd21854b089ea233394510d8f5af73270fd6f0819163b"
+      "sha256": "139597f3ddd0e9f92c27ac24909d3065ef4434209ec571ada691bec04e777171"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -1668,7 +1668,7 @@
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "efe4ccdfa6299ca5cf757f29da03e112fdd1881bdf15daa59dc2c566fc900772"
+      "sha256": "c56f1910e2a1f9683dd4a483c3351d47189ef079ac860086552a1453e60e92c4"
     },
     {
       "path": "tests/transport/fake_app_server.py",
