@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from slk_transport.adapters.ocrv import OcrvAdapter
 from slk_transport.contracts import Envelope, canonical_json_sha256
 from slk_transport.evidence import AttemptStore
 from test_ocrv_adapter import candidate_envelope, checker_endpoint
+from context_native_fixture import native_input
 
 
 def write(path: Path, value: object) -> Path:
@@ -26,17 +29,29 @@ def ref(path: Path) -> dict[str, str]:
 def context_fixture(tmp_path: Path):
     original = candidate_envelope(tmp_path)
     paths = [f"file-{i:02d}.rs" for i in range(18)]
+    repository = Path(original.payload['repository'])
+    def git(*args):
+        return subprocess.run(['git', '-C', str(repository), *args], capture_output=True,
+                              check=True).stdout.decode().strip()
+    git('init', '-q'); git('config', 'user.email', 'fixture@example.invalid')
+    git('config', 'user.name', 'fixture'); git('config', 'core.autocrlf', 'false')
+    for path in paths:
+        (repository / path).write_text('fn before() {}\n', encoding='utf-8')
+    git('add', '.'); git('commit', '-qm', 'base')
+    for path in paths:
+        (repository / path).write_text('fn after() {}\n', encoding='utf-8')
+    git('add', '.'); git('commit', '-qm', 'candidate')
+    commit = git('rev-parse', 'HEAD')
+    input_value, identities = native_input(repository, commit, paths)
     evidence = write(tmp_path / "evidence.json", {"next_payload": {"changed_paths": paths}})
-    payload = {**original.payload, "candidate": {"kind": "commit", "commit": "b" * 40},
+    payload = {**original.payload, "candidate": {"kind": "commit", "commit": commit},
                "evidence_files": [str(evidence)]}
     original = Envelope.from_dict({**original.__dict__, "payload": payload,
                                    "payload_sha256": canonical_json_sha256(payload)})
     request = OcrvAdapter()._candidate_request(original)
-    identities = [{"item_id": hashlib.sha256(p.encode()).hexdigest(), "path": p,
-                   "fingerprint": hashlib.sha256(("commit:" + p).encode()).hexdigest()} for p in paths]
     manifest = {"schema_version": "ocr.run-manifest/v1", "operation": "review",
                 "run_id": "parent-session", "parent_run_id": None, "terminal_state": "partial",
-                "input": {"mode": "commit", "resolved_head": "b" * 40}, "repository": {},
+                "input": input_value, "repository": {},
                 "execution": {"ocr_version": "v1.12.12", "provider": "dashscope-tokenplan",
                               "model": "qwen3.8-max", "configured_concurrency": 1,
                               "rule_config_sha256": "c" * 64, "runtime_config_sha256": "d" * 64},
@@ -239,3 +254,61 @@ def test_context_partial_keeps_incomplete_even_with_preserved_blocking_finding(t
     result = OcrvAdapter().deliver(checker_endpoint(tmp_path, "context-partial"), returned, attempt)
     assert result.native_identity["verdict"] == "INCOMPLETE"
     assert json.loads((attempt.root / "ocrv-result.json").read_text())["findings"][0]["severity"] == "HIGH"
+
+
+def segment_fixture(tmp_path):
+    from slk_transport.context_review import validate
+    returned, _path, plan, selected = context_fixture(tmp_path)
+    basis = validate(plan, OcrvAdapter()._candidate_request(returned), returned.payload)
+    raw = copy.deepcopy(basis['raw'])
+    raw.update(status='complete', session_id='child-session', comments=[])
+    manifest = raw['manifest']
+    manifest.update(run_id='child-session', terminal_state='complete')
+    scope = plan['groups'][0]
+    manifest['input'], items = native_input(
+        returned.payload['candidate_payload']['repository'],
+        returned.payload['candidate_payload']['candidate']['commit'], scope)
+    manifest['coverage'].update(selected=items, completed=items, failed=[], reused=[])
+    path = write(tmp_path / 'child-raw.json', raw)
+    value = {'artifacts': {'raw_review': str(path)}, 'review': {'session_id': 'child-session'}, 'verdict': 'PASS'}
+    return basis, value, scope, path, raw
+
+
+def test_subset_artifact_is_recomputed_from_exact_native_diff_not_parent_hash(tmp_path):
+    from slk_transport.context_review import validate_segment
+    basis, value, scope, _path, raw = segment_fixture(tmp_path)
+    assert raw['manifest']['input']['source_artifact_sha256'] != basis['raw']['manifest']['input']['source_artifact_sha256']
+    validate_segment(basis, value, scope)
+
+
+@pytest.mark.parametrize('damage', ['artifact', 'parent-artifact', 'runtime', 'version', 'concurrency',
+                                    'candidate', 'range', 'path', 'fingerprint', 'repository', 'missing-hash'])
+def test_subset_rejects_forged_source_or_execution_identity(tmp_path, damage):
+    from slk_transport.context_review import validate_segment
+    basis, value, scope, path, raw = segment_fixture(tmp_path)
+    manifest = raw['manifest']
+    if damage == 'artifact': manifest['input']['source_artifact_sha256'] = 'f' * 64
+    elif damage == 'parent-artifact': manifest['input']['source_artifact_sha256'] = basis['raw']['manifest']['input']['source_artifact_sha256']
+    elif damage == 'runtime': manifest['execution']['runtime_config_sha256'] = 'f' * 64
+    elif damage == 'version': manifest['execution']['ocr_version'] = 'v0.1'
+    elif damage == 'concurrency': manifest['execution']['configured_concurrency'] = 2
+    elif damage == 'candidate': manifest['input']['resolved_head'] = 'f' * 40
+    elif damage == 'range': manifest['input']['exact_range'] = 'unrelated'
+    elif damage == 'path': manifest['coverage']['selected'][0]['path'] = 'unrelated.rs'
+    elif damage == 'fingerprint': manifest['coverage']['selected'][0]['fingerprint'] = 'f' * 64
+    elif damage == 'repository': manifest['repository'] = {'identity_sha256': 'f' * 64}
+    else: manifest['input'].pop('source_artifact_sha256')
+    write(path, raw)
+    with pytest.raises(ValueError):
+        validate_segment(basis, value, scope)
+
+
+def test_parent_forged_fingerprint_does_not_validate_even_when_child_and_artifact_agree(tmp_path):
+    from slk_transport.context_review import validate_segment
+    basis, value, scope, path, raw = segment_fixture(tmp_path)
+    identity = raw['manifest']['coverage']['selected'][0]
+    identity['fingerprint'] = 'f' * 64
+    basis['selected'][identity['path']]['fingerprint'] = 'f' * 64
+    write(path, raw)
+    with pytest.raises(ValueError):
+        validate_segment(basis, value, scope)

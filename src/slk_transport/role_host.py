@@ -322,6 +322,50 @@ class RoleHost:
         wc._write_or_reuse_stable_request(result_path, result)
         return result
 
+    def consume_context_terminal(self, source: Path, session_record: Path, session_sha256: str,
+                                 *, prepare_only: bool = False) -> dict[str, Any]:
+        """Original Checker consumes one proven blocker and keeps the old failed attempt immutable."""
+        from . import context_review as cr
+        source = source.resolve()
+        if wc._read_object(source / 'endpoint.json', 'context Checker endpoint') != self.endpoint('checker'):
+            raise ValueError('context consumption is outside the original registered Checker')
+        parse_delivery(self.endpoint('checker'), wc._read_object(source / 'envelope.json', 'context source envelope'))
+        basis = cr.validate_terminal(source, session_record, session_sha256)
+        envelope = basis['envelope']
+        root = source / 'role-host/context-terminal'
+        seal = {'schema_version': 'slk.ocrv-context-terminal-consumption/v1', 'binding_sha256': self.digest,
+                'source_message_id': envelope.message_id, 'source_sha256': basis['source_hashes']}
+        receipt = root / 'result.json'
+        if receipt.exists():
+            value = wc._read_object(receipt, 'context suffix receipt')
+            if any(value.get(k) != v for k, v in seal.items()): raise ValueError('context consumption receipt drift')
+            return value
+        projection = self._boundary(envelope)
+        if prepare_only:
+            return {**seal, 'status': 'READY_TO_CONSUME_CONTEXT_BLOCKER', 'verdict': 'FAIL',
+                    'selected_paths': len(basis['selected']), 'reused_paths': len(basis['reused']),
+                    'reviewed_paths': basis['scope'], 'not_reviewed_paths': [p for group in basis['groups'][1:] for p in group]}
+        credential = wc.unprotect_dpapi_hex(self.credential_path('checker'))
+        try:
+            self._authenticate('checker', credential)
+        finally:
+            credential = ''
+        root.mkdir(parents=True, exist_ok=True)
+        wc._write_or_reuse_stable_request(root / 'seal.json', seal)
+        native = root / 'native-attempt'
+        cr.materialize_terminal(source, native, basis)
+        # Validate both the immutable source and deterministic derivation again before a formal D1 write.
+        refreshed = cr.validate_terminal(source, session_record, session_sha256)
+        if refreshed['source_hashes'] != basis['source_hashes']: raise ValueError('context source changed during consumption')
+        cr.materialize_terminal(source, native, refreshed)
+        occurred_at = datetime.fromtimestamp((source / 'review-segments/segment-001/result.json').stat().st_mtime,
+                                             timezone.utc).isoformat()
+        suffix = root / 'suffix'; suffix.mkdir(exist_ok=True)
+        result = self._checker_result(native, envelope, suffix, occurred_at, projection)
+        value = {**result, **seal}
+        wc._write_or_reuse_stable_request(receipt, value)
+        return value
+
     def reclassify_completed_checker(self, source: Path) -> dict[str, Any]:
         """Correct one completed OCRV result whose proven blockers were masked by a tool error."""
 

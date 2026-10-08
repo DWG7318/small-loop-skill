@@ -7,9 +7,9 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 ## 方法身份
 
-SLK 4.4.2 是 Loop Engineering 的线性形态，面向中小型工程或大型工程中相对独立的中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
+SLK 4.4.2 是 Loop Engineering 的线性形态，适合中小型工程及大型工程的独立中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
 
-它以 CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，帮助成员判断怎样继续：D1 FAIL 回到同一 CELL 返工，D1 PASS 前进，全部 CELL 处理后由 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌本身不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态事实，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与未来 BI 只读查询。
+CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，明确怎样继续：D1 FAIL 同一 CELL 返工，PASS 前进，全部处理后 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与 BI 只读查询。
 
 ## 成员与运行时
 
@@ -19,17 +19,18 @@ SLK 4.4.2 是 Loop Engineering 的线性形态，面向中小型工程或大型�
 - Overwatcher 是每个 Run 都登记的运行观察角色：一个 Run 只绑定一个，由 Supervisor 选择并经准备门禁确认；同一精确 Agent Session 可以按 Run 分别登记并服务多个 Run。它保持前台 active turn，每 600 秒主动核实一次真实状态；不是 heartbeat、定时任务、通讯中继或工程角色，只记录自己的观察并把异常、矛盾和 UNKNOWN 交给对应 Supervisor，不改 BI、`SLK TOKEN` 或 D0/D1/D2。
 
 D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 判断全部成果合起来是否正确。
+工作时间仅建议（设备本地时间）：DSH 18:00–次日08:00、OCRV 22:00–次日08:00；Supervisor 按项目紧迫度与 Owner 商定 SLK 启动时间，不作开工/派发硬门槛或到点停工要求。
 
 ## Agent-first 轻方法原则
 
-Supervisor、Checker、Worker、Overwatcher 是 Agent，不是状态机。Worker 与 Checker 工作前做角色本地轻量预检，按范围、证据和工具能力顺序合理化；内部段不并行，不能把内部顺序段当成正式 CELL 或 D1，也不新增 TOKEN。Supervisor 不提前接管，只在成员或 Overwatcher 上报异常时处理并恢复原成员。角色问题先修子 Skill；普通交接与恢复先用直连，不因提示词问题新增协议、daemon 或大段运行时。
+Supervisor、Checker、Worker、Overwatcher 是 Agent，不是状态机。Worker 与 Checker 工作前按范围、证据和工具能力做角色本地轻量预检；内部段不并行，不能把内部顺序段当成正式 CELL 或 D1，不新增 TOKEN。Supervisor 不提前接管，仅在成员或 OW 报告异常时处理并恢复原成员。角色问题先修子 Skill；交接与恢复先用直连，不因提示词问题新增协议、daemon 或大段运行时。
 
 - 共享事实由标准 Tool 保证。准备时登记角色、BI、工具和端点。首份来源用 `slk-conformance/<SLK-CONFORMANCE-…>` 证据根绑定独立 clean/no-remote 单 CELL 样本 Git，经 `preflight-conformance-sample` 实跑且不承载产品；产品/续接分别用 `preflight-new-run`/`preflight-admission`，不伪造事实或猜身份。
 - Tool 输出事实，Agent 负责语义判断。项目超时、异常、唤醒、暂停和最小处理方式由对应角色结合真实证据决定，不靠规则穷举现场。
 - Temporal 管理子 Skill 负责共享本地服务；每个 Run 使用独立的 `SLK.Start`/`SLK.Run` 工作流记录通讯、成员停留和运行保障，不重写工程 Loop。只有匹配 `slk.native-start/v2` 才证明启动，后续活动用标准 `inspect-native-activity` 查询；缺失、过期、身份不符或权限不足都保持 `UNKNOWN`，不裁决 D0/D1/D2、`SLK TOKEN`、角色、模型或 BI。
 - Prompt-only 修正保持 prompt-only：用真实失败作反例并验证对应角色，不扩成数百行代码或庞大测试设施。
 
-原对话与 Owner 选择 SLK，并明确 Run 目标、边界和 Owner 关心的结果。Agent 在创建 Supervisor 前结合项目整理 Run、初始 CELL 与分层检查方案。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
+原对话与 Owner 选择 SLK，明确目标、边界与关注结果；创建 Supervisor 前整理 Run、初始 CELL 及分层检查。接管后原对话退出工程工作，保留 Owner 联系与 Supervisor 异常恢复入口。
 
 Supervisor 通过结构化角色 Eval 用 `slk-state init-run --credential-out` 初始化状态、根记录 `SLK-RUN-<RUN-ID>.md`，密封消费者。正常链：`Supervisor → Checker`、`Checker → Worker → Checker`；PASS 进下一 CELL，末项交 `D2_READY`。FAIL 才走 `Checker → Supervisor → 同一 Worker → Checker`；第二次起旧 Host 拒绝普通返工，Supervisor `revise-plan` 拆分并冻结新 Host。INCOMPLETE 不伪造 FAIL/返工；Checker 用 `D1_INCOMPLETE_ESCALATION` 将 TOKEN、候选、原因交 Supervisor；等待留在 Supervisor，其他动作以 `D1_MANAGEMENT_RETURN` 将候选交回原 Checker，按不限 budget/timeout、默认 tool rounds 更正 D1；管理消息 attempt 与原候选 attempt 各自绑定，不能等同；旧预算不变。RoleHost 通过已登记的目标原生 Agent 入口做真实激活操作，用原发送者密封凭据执行后缀；原生启动证据与 TOKEN 提交分别核实，exact retry 只原样一次，已有 start 只补提交。标准入口含 `commit-delivery-start`、FAIL `--slk-post-d1`、PASS `--slk-complete-d1` 和 INCOMPLETE `--slk-manage-incomplete`。三工程角色不用正时长 `wait_threads`；真实 native start 后不把启动/RPC timeout 当工程死亡线。OW 自行巡查，Temporal 每 1200 秒核查 OW、成员停留超过 1800 秒直报 Supervisor；保障失效先修复再派下一 CELL。边界见 [`docs/state/SLK-STATE.md`](../../docs/state/SLK-STATE.md) 和 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
 
@@ -53,7 +54,7 @@ Supervisor 通过结构化角色 Eval 用 `slk-state init-run --credential-out` 
 - Worker 向 Checker 交付后缺少当前 CELL 的接收证据：`$slk-recover-communication`
 - 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
 
-通常读取当前情境对应的指导即可；新的情况出现时，再补充相关 Skill。
+先读当前情境指导，遇到新情况再补充相关 Skill。
 
 ## 负面提示词
 
@@ -68,4 +69,4 @@ Supervisor 通过结构化角色 Eval 用 `slk-state init-run --credential-out` 
 - 不要让 Temporal 裁决工程、切换模型、写 BI/TOKEN 或重复副作用；服务或 OW 保障失效时不要继续派下一 CELL。
 - 不要反向把跨 Agent 通讯、身份校验、TOKEN 原子流转、中央记录或 BI 一致性退回自由文本约定；这些共享事实与传输边界应继续由小而明确的代码合同保证。
 - 不要在 Run readiness 不是 `READY`、四角色/BI/Temporal/必要通讯腿未验证、任一角色被提示词替代、任务超过该角色容量，或 Ponytail/RTK/Probe CLI 任一可选项未明确时开始施工；未登记功能不能靠任意 ON/OFF 字段进入能力清单；不要把可选工具缺失误写为工程角色不兼容。
-- 不要新增只有作者知道如何运行的一次性脚本或隐藏代码路径；需要长期复用的确定性能力应成为有文档调用规则的标准 Tool，做不到轻量稳定时就不要继续堆代码。
+- 不要新增仅作者会运行的一次性脚本或隐藏代码路径；长期复用的确定性能力应有文档化标准 Tool 入口，无法轻量稳定时停止堆代码。

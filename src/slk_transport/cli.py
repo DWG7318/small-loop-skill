@@ -676,6 +676,17 @@ def _reclassify_completed_checker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _consume_context_terminal(args: argparse.Namespace) -> int:
+    path = args.binding.resolve()
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != args.sha256:
+        raise ValueError('role host binding hash changed')
+    host = RoleHost(_read_object(path, 'role host binding'), digest)
+    _emit(host.consume_context_terminal(args.source_attempt.resolve(), args.session_record.resolve(),
+                                        args.session_sha256, prepare_only=args.prepare_only))
+    return 0
+
+
 def _continue_staged_handoff(args: argparse.Namespace) -> int:
     binding_path = args.binding.resolve()
     digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
@@ -921,6 +932,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     context_preparer.add_argument("--candidate-message-id", required=True)
     context_preparer.add_argument("--source-d1-incomplete-event-id", required=True)
     context_preparer.add_argument("--per-file", action="store_true")
+    context_terminal = subparsers.add_parser('consume-context-terminal')
+    for name in ('binding', 'source-attempt', 'session-record'):
+        context_terminal.add_argument('--' + name, required=True, type=Path)
+    for name in ('sha256', 'session-sha256'):
+        context_terminal.add_argument('--' + name, required=True)
+    context_terminal.add_argument('--prepare-only', action='store_true')
     terminal_budget = subparsers.add_parser("resume-terminal-budget-checker")
     terminal_budget.add_argument("--request", required=True, type=Path)
     terminal_budget.add_argument("--sha256", required=True)
@@ -1067,6 +1084,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if getattr(args, "startup_timeout_seconds", 1) <= 0:
         return _rejected("CLI_ARGUMENT_INVALID", "startup timeout must be positive")
     try:
+        if args.command == 'consume-context-terminal':
+            return _consume_context_terminal(args)
         if args.command == "validate":
             return _validate(args)
         if args.command == "job":

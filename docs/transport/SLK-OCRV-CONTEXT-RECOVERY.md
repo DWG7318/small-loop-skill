@@ -29,3 +29,15 @@ The original Checker receives the existing management return. Its adapter valida
 Final aggregate contains preserved completed coverage and findings plus native subreview evidence. PASS requires every remaining item and every original criterion to be covered. Another partial result remains INCOMPLETE with retained segment evidence; findings are not discarded. Existing sealed Checker RoleHost records the single full-scope D1 correction and owns its normal post-D1 suffix. Supervisor/OW/method maintainer do not run D1, borrow the Checker credential or turn the preserved partial into PASS.
 
 Initial start receipt remains immutable; the existing native-activity inspector follows the latest proven `review-segments/segment-*/started.json`, rather than treating the exited first subreview as the whole Checker having stopped. A genuine live product continuation is separate acceptance evidence; synthetic tests and a frozen prepared plan do not establish its outcome.
+
+## Consume an already-completed native blocker, without rerunning it
+
+Full-candidate and scoped-review artifact hashes are not interchangeable. For OCRV 1.12.12 commit reviews, validation reconstructs the pinned single-parent Git diff, item IDs and fingerprints, then independently verifies the full and exact-subset artifact hashes. Candidate/base/range, selected identities, provider/model and runtime configuration remain fixed; a scope-dependent rule hash is not mistaken for runtime drift. Unsupported or damaged evidence fails closed.
+
+Only the original registered Checker Host may consume a first completed segment rejected by `OCRV_CONTEXT_RECOVERY_INVALID`, with its existing native start, exact request, terminal manifest, checkpoints and original compression-only plan. The closed entry first supports a read-only readiness check:
+
+```text
+slk-transport consume-context-terminal --binding <current-role-host-binding.json> --sha256 <binding-SHA256> --source-attempt <exact-failed-management-return-attempt> --session-record <original-child-native-session.jsonl> --session-sha256 <native-session-SHA256> --prepare-only
+```
+
+After readiness, the Supervisor invokes that same sealed entry without `--prepare-only`. It authenticates the registered Checker internally, derives append-only evidence under `role-host/context-terminal`, and uses the normal Checker-owned D1 FAIL correction and Supervisor escalation suffix. It never starts OCRV, resends the management return, alters the original failed receipt, borrows another role's credential or judges a new finding. Native MEDIUM-or-higher blocking findings remain FAIL; the aggregate explicitly retains preserved findings, reused coverage, reviewed paths and **not-reviewed** paths. An early FAIL is not full review completion and cannot become PASS. Repeating the same completed consumption returns its existing receipt; source or identity drift is rejected.

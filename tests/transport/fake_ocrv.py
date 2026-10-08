@@ -249,14 +249,16 @@ result = {
 args.output.parent.mkdir(parents=True, exist_ok=True)
 if args.mode.startswith("context-"):
     paths = request["review_scope"]["include_paths"]
-    coverage = [{"item_id": hashlib.sha256(p.encode()).hexdigest(), "path": p,
-                 "fingerprint": hashlib.sha256(("commit:" + p).encode()).hexdigest()} for p in paths]
+    from context_native_fixture import native_input
+    input_value, coverage = native_input(request['repository'], request['candidate']['commit'], paths)
     raw = {
         "status": "complete", "session_id": session_id, "comments": findings,
         "manifest": {"schema_version": "ocr.run-manifest/v1", "operation": "review",
                      "run_id": session_id, "parent_run_id": None, "terminal_state": "complete",
-                     "input": {"mode": "commit", "resolved_head": request["candidate"]["commit"]},
-                     "repository": {}, "execution": {"provider": "dashscope-tokenplan", "model": "qwen3.8-max"},
+                     "input": input_value,
+                     "repository": {}, "execution": {"provider": "dashscope-tokenplan", "model": "qwen3.8-max",
+                         "ocr_version": "v1.12.12", "configured_concurrency": 1,
+                         "rule_config_sha256": "e" * 64, "runtime_config_sha256": "d" * 64},
                      "coverage": {"selected": coverage, "completed": coverage, "reused": [], "failed": [], "waived": []}}
     }
     if args.mode == "context-partial":

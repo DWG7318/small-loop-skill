@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "e1613770c858a7d40249c5ee62e7b7f28b01e55fa68e22793054c3ddb06ee909"
+      "sha256": "6c1e5626fa7f80be87f3a44205d86a20621ca58499fe92db295ad6e8887ae63b"
     },
     {
       "path": "VERSION",
@@ -1164,7 +1164,7 @@
     },
     {
       "path": "docs/transport/SLK-OCRV-CONTEXT-RECOVERY.md",
-      "sha256": "f37d77d5e827c60a631bf0ee9a66c798d96165382cd4a3f1d1a48db57d9aca9a"
+      "sha256": "f80b4bf4d249914c6ec8b082bb3b826bf1176137714e14b13c89f7b5c0add75e"
     },
     {
       "path": "docs/transport/SLK-TRANSPORT-LIVE-ACCEPTANCE.md",
@@ -1412,7 +1412,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "5415ad0c029ef9eb10cadbb453d467af80161648ebf4f02522ae181f3d5f6000"
+      "sha256": "3e1fa73b61c14ee25b2922b4d2435be592296b2fa464addc612a857f77627f64"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",
@@ -1468,11 +1468,11 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "3d910ffd3bafea4c7db8e56e8140951b2e11ac804979e9b0b754ed32ec98fbf4"
+      "sha256": "288fde6136b7f7a57107c33ebe5255f35340ce563b1762d9c668f91898bb2dba"
     },
     {
       "path": "src/slk_transport/context_review.py",
-      "sha256": "e0932179e5516a393944964e4ca4f5092dcddb85a9adbcc2122e81f988f7d14b"
+      "sha256": "d4cdf15a77bda2b6a39e89e9bee2e38c38d685f688ffc994d74824f5439a5ea2"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1540,7 +1540,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "5a7851679d438f60c2414b6ef245f41755c8b108b652b43567a0d5b76deda8ea"
+      "sha256": "75bca878ffc3edcbebacb8e4b35d5cd9f59f42e430d8379550df51dc7e51cf51"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
@@ -1695,6 +1695,10 @@
       "sha256": "303032392338acd22744e8d04ab6bd18b6b47a597b7ff370a33473a99d8af684"
     },
     {
+      "path": "tests/transport/context_native_fixture.py",
+      "sha256": "48d8b001bc7fa0973d18d000e55f0d08ffd6fc8ea814fa52d29b1053984400c6"
+    },
+    {
       "path": "tests/transport/fake_app_server.py",
       "sha256": "8288608ac9c9ad104c4b1ce5f4f4c89b7f7be0c0aa5e75cad10e88d14a69c7ca"
     },
@@ -1712,7 +1716,7 @@
     },
     {
       "path": "tests/transport/fake_ocrv.py",
-      "sha256": "3520c5f5ea7894c5d6a9cc1795c8afc84ab42edf802bb09241383066f878742f"
+      "sha256": "b0a2c074043276e98fbc9ccb8f574c59dd266219a1699e882f5dd5db6fb8ec9e"
     },
     {
       "path": "tests/transport/fake_overwatcher_desktop_mcp.py",
@@ -1760,7 +1764,11 @@
     },
     {
       "path": "tests/transport/test_context_review.py",
-      "sha256": "f988801d1dbe4ee63939a52f3e03c5ff9841fca575fe3e6057d7ad1db511db1d"
+      "sha256": "9d72a747a259a89a1b672bc6a19a76ae46fa987addff8c7ee6a34d6c36b66b09"
+    },
+    {
+      "path": "tests/transport/test_context_terminal.py",
+      "sha256": "308990f6220573c047ee2671a95c3aec3952768c4ae9cc29298f33babbd51d68"
     },
     {
       "path": "tests/transport/test_contracts.py",
