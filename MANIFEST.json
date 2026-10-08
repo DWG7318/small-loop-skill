@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "1d4b5db7add3be6d3c11362698d3069cabda1d7a05c3a2e8b97c1bf4a5cd758f"
+      "sha256": "5ce432039eda32d1434fdb02d6f50342a9b6f14b71bea99e38c2ad760160fa35"
     },
     {
       "path": "VERSION",
@@ -1308,7 +1308,7 @@
     },
     {
       "path": "scripts/build_transport_zipapp.py",
-      "sha256": "c43ed3d8d73f31661ade7a16e7a96386c1c86482a1f14c5209c80a9ef67121a3"
+      "sha256": "d85dbb74da4a775dee10fecde3a1acf7bd5615fb2ee365475063c2f1d1347091"
     },
     {
       "path": "scripts/install_local.ps1",
@@ -1936,7 +1936,7 @@
     },
     {
       "path": "tests/transport/test_zipapp.py",
-      "sha256": "ee805ded6a9edec15c2eaa68590ebf50c3aa996307dcae2b7dc3b6f3faa74212"
+      "sha256": "7cc2fdeb21772b273f480d30c9dbafc7a79b27fec76be1ffcdbf9036004a83c7"
     }
   ]
 }

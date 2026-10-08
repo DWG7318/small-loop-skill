@@ -11,6 +11,10 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_ROOT = REPOSITORY_ROOT / "src" / "slk_transport"
 MAIN = (
+    "import os\n"
+    "import sys\n"
+    "os.environ['PYTHONDONTWRITEBYTECODE'] = '1'\n"
+    "sys.dont_write_bytecode = True\n"
     "from slk_transport.cli import main\n"
     "raise SystemExit(main())\n"
 ).encode("utf-8")
