@@ -1,4 +1,4 @@
-"""Frozen OCRV compression recovery through the existing management-return route."""
+"""Frozen, evidence-specific OCRV recovery through the existing management-return route."""
 from __future__ import annotations
 
 import hashlib
@@ -12,10 +12,14 @@ from .evidence import Attempt
 
 
 SCHEMA = "slk.ocrv-context-recovery-plan/v1"
+THRESHOLD_SCHEMA = "slk.ocrv-context-recovery-plan/v2"
+SCHEMAS = (SCHEMA, THRESHOLD_SCHEMA)
+THRESHOLD_KIND = "PER_CALL_INPUT_THRESHOLD"
 FIELDS = {"schema_version", "run_id", "cell_id", "candidate_message_id",
           "source_d1_incomplete_event_id", "sources", "groups"}
 SOURCE_FIELDS = {"request", "result", "raw_review", "session_record"}
 COMPRESSION_REASON = "stopped because context compression exceeded its threshold"
+THRESHOLD_REASON = "prompt exceeded the configured token budget"
 INPUT_FIELDS = {'mode', 'requested_head', 'resolved_base', 'resolved_head', 'exact_range', 'source_artifact_sha256'}
 
 
@@ -29,7 +33,7 @@ def artifact_digest(selected: Mapping[str, Mapping[str, str]]) -> str:
     return result.hexdigest()
 
 
-def git_identities(request: Mapping[str, Any], input_value: Mapping[str, Any], paths: list[str]) -> dict[str, dict[str, str]]:
+def git_identities(request: Mapping[str, Any], input_value: Mapping[str, Any], paths: list[str] | None) -> dict[str, dict[str, str]]:
     """Reproduce the native immutable commit diff locally; never read model bodies."""
     from .process import windows_no_window_kwargs
     head = request['candidate']['commit']
@@ -54,7 +58,7 @@ def git_identities(request: Mapping[str, Any], input_value: Mapping[str, Any], p
     found: dict[str, dict[str, str]] = {}
     old, new, lines, in_hunk = None, None, [], False
     def flush() -> None:
-        if new in paths:
+        if old is not None and (paths is None or new in paths):
             patch = '\n'.join(lines).rstrip('\r\n')
             item = {'path': new,
                 'item_id': hashlib.sha256(('review\0commit\0' + old + '\0' + new).encode()).hexdigest(),
@@ -84,7 +88,7 @@ def git_identities(request: Mapping[str, Any], input_value: Mapping[str, Any], p
             new = '/dev/null'
         lines.append(line)
     flush()
-    if set(found) != set(paths):
+    if paths is not None and set(found) != set(paths):
         raise ValueError('context native diff does not cover the exact selection')
     return found
 
@@ -122,7 +126,10 @@ def identities(value: object) -> dict[str, dict[str, str]]:
 
 
 def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
-    if (set(plan) != FIELDS or plan.get("schema_version") != SCHEMA
+    threshold = plan.get("schema_version") == THRESHOLD_SCHEMA
+    if (set(plan) != (FIELDS | {"failure_kind"} if threshold else FIELDS)
+        or plan.get("schema_version") not in SCHEMAS
+        or (threshold and plan.get("failure_kind") != THRESHOLD_KIND)
         or any(plan.get(k) != request.get(k) for k in ("run_id", "cell_id"))
         or any(plan.get(k) != payload.get(k) for k in
                ("candidate_message_id", "source_d1_incomplete_event_id"))
@@ -148,11 +155,12 @@ def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mappi
         or Path(str(result.get("artifacts", {}).get("raw_review", ""))).resolve() != paths["raw_review"]):
         raise ValueError("context candidate, criteria, scope or original INCOMPLETE result changed")
     manifest = raw.get("manifest")
+    terminal_state = "failed" if threshold else "partial"
     if (not isinstance(manifest, dict) or manifest.get("schema_version") != "ocr.run-manifest/v1"
-        or manifest.get("operation") != "review" or manifest.get("terminal_state") != "partial"
+        or manifest.get("operation") != "review" or manifest.get("terminal_state") != terminal_state
         or manifest.get("run_id") != raw.get("session_id")
         or result.get("review", {}).get("session_id") != raw.get("session_id")
-        or raw.get("status") != "partial"
+        or raw.get("status") != terminal_state
         or manifest.get("input", {}).get("mode") != "commit"
         or manifest.get("input", {}).get("resolved_head") != request["candidate"]["commit"]
         or any(manifest.get("execution", {}).get(k) != v for k, v in
@@ -160,18 +168,35 @@ def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mappi
         or not isinstance(raw.get("comments"), list)
         or any(not isinstance(x, dict) or str(x.get("severity", "")).upper()
                not in {"INFO", "LOW", "MEDIUM", "HIGH", "BLOCKER", "CRITICAL"} for x in raw["comments"])):
-        raise ValueError("context source is not the frozen native partial review")
+        raise ValueError("context source is not the frozen native review")
     coverage = manifest.get("coverage", {})
     selected = identities(coverage.get("selected"))
     done = identities(coverage.get("completed"))
     reused = identities(coverage.get("reused", []))
     failed = identities(coverage.get("failed"))
-    if (not selected or not failed or not done or coverage.get("waived")
+    if (not selected or not failed or (not threshold and not done) or coverage.get("waived")
         or set(done) & set(reused) or (set(done) | set(reused)) & set(failed)
         or {**done, **reused, **failed} != selected
-        or any(x.get("reason") != COMPRESSION_REASON for x in coverage["failed"])):
-        raise ValueError("context source coverage is not a compression-only full-scope partition")
-    checkpoints, terminal = {}, []
+        or any(x.get("reason") != (THRESHOLD_REASON if threshold else COMPRESSION_REASON)
+               or (threshold and x.get("classification") != "budget") for x in coverage["failed"])):
+        raise ValueError("context source coverage is not the exact admitted full-scope partition")
+    if threshold:
+        capacity = old.get("capacity", {})
+        if (done or reused or raw["comments"] or result.get("findings") != []
+            or manifest.get("parent_run_id") is not None
+            or old.get("review_scope", {}).get("include_paths") != []
+            or old.get("review_scope", {}).get("exclude_paths") != []
+            or request.get("capacity") != capacity
+            or type(capacity.get("max_tokens")) is not int or capacity["max_tokens"] <= 0
+            or any(type(capacity.get(k)) is not int or capacity[k] != 0 for k in ("max_tokens_budget", "timeout_minutes"))
+            or result.get("review", {}).get("status") != "failed"
+            or result["review"].get("exit_code") != 1
+            or any(result["review"].get(k) != manifest["execution"].get(k) for k in ("provider", "model"))
+            or result.get("reason_codes") != ["OCR_EXIT_1", "OCR_STATUS_NOT_COMPLETE", "OCR_COVERAGE_INCOMPLETE"]
+            or git_identities(old, manifest["input"], None) != selected
+            or manifest["input"].get("source_artifact_sha256") != artifact_digest(selected)):
+            raise ValueError("context threshold source must be the original zero-complete full review at unchanged normal capacity")
+    checkpoints, terminal, starts, failures = {}, [], [], {}
     # Stream the native log locally; LLM request/response bodies never enter the plan or model context.
     with paths["session_record"].open(encoding="utf-8-sig") as stream:
         for line in stream:
@@ -181,13 +206,39 @@ def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mappi
             if not isinstance(row, dict):
                 raise ValueError("context native checkpoint record is invalid")
             if row.get("type") in {"review_item_done", "review_item_reused"}:
+                if threshold:
+                    raise ValueError("context zero-complete source contains a completed checkpoint")
                 checkpoints[row.get("fingerprint")] = row
             elif row.get("type") == "review_item_failed":
                 checkpoints.pop(row.get("fingerprint"), None)
+                if threshold:
+                    path = row.get("filePath")
+                    if not isinstance(path, str) or path in failures:
+                        raise ValueError("context threshold failed checkpoint is duplicated or invalid")
+                    failures[path] = row
             elif row.get("type") == "session_end":
                 terminal.append(row)
+            elif row.get("type") == "session_start":
+                starts.append(row)
     if len(terminal) != 1 or terminal[0].get("run_manifest") != manifest:
         raise ValueError("context native terminal manifest changed")
+    if threshold:
+        if (len(starts) != 1 or starts[0].get("sessionId") != raw["session_id"]
+            or starts[0].get("parentUuid") is not None
+            or starts[0].get("diffCommit") != old["candidate"]["commit"]
+            or starts[0].get("reviewMode") != "commit" or starts[0].get("model") != "qwen3.8-max"
+            or starts[0].get("llmSource") != "provider:dashscope-tokenplan"
+            or Path(str(starts[0].get("cwd", ""))).resolve() != Path(old["repository"]).resolve()
+            or paths["session_record"].stem != raw["session_id"]
+            or terminal[0].get("sessionId") != raw["session_id"] or set(failures) != set(selected)):
+            raise ValueError("context threshold native Session or failed partition is unproven")
+        for path, row in failures.items():
+            match = re.fullmatch(r"prompt tokens \(([1-9][0-9]*)\) exceed 80% of max_tokens\(([1-9][0-9]*)\) \[round ([1-9][0-9]*)\]",
+                                 str(row.get("error", "")))
+            if (match is None or row.get("sessionId") != raw["session_id"]
+                or row.get("fingerprint") != selected[path]["fingerprint"] or row.get("model") != "qwen3.8-max"
+                or int(match[2]) != old["capacity"]["max_tokens"] or int(match[1]) * 5 <= int(match[2]) * 4):
+                raise ValueError("context per-call input threshold has no exact native error evidence")
     for item in [*done.values(), *reused.values()]:
         checkpoint = checkpoints.get(item["fingerprint"], {})
         if (checkpoint.get("sessionId") != raw["session_id"] or checkpoint.get("filePath") != item["path"]
@@ -208,7 +259,8 @@ def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mappi
             middle = (len(pending) + 1) // 2
             groups.extend(p for p in (pending[:middle], pending[middle:]) if p)
     if (len(grouped) != len(set(grouped)) or set(grouped) != set(selected)
-        or plan.get("groups") not in (groups, per_file)):
+        or (threshold and (plan.get("groups") != per_file or any(len(x["files"]) < 2 for x in raw["groups"])))
+        or (not threshold and plan.get("groups") not in (groups, per_file))):
         raise ValueError("context groups must refine only the original failed native groups")
     return {"raw": raw, "selected": selected, "reused": [*done.values(), *reused.values()],
             "groups": plan["groups"], "paths": paths, "request": old}
@@ -216,20 +268,22 @@ def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mappi
 
 def prepare(*, source_request: Path, source_result: Path, raw_review: Path, session_record: Path,
             candidate_message_id: str, source_d1_incomplete_event_id: str, output: Path,
-            per_file: bool = False) -> dict[str, Any]:
+            per_file: bool = False, per_call_input_threshold: bool = False) -> dict[str, Any]:
     request, raw = read(source_request), read(raw_review)
     failed = identities(raw.get("manifest", {}).get("coverage", {}).get("failed"))
     groups = []
     for group in raw.get("groups", []):
         pending = [p for p in group["files"] if p in failed]
         middle = (len(pending) + 1) // 2
-        groups.extend(([p] for p in pending) if per_file else
+        groups.extend(([p] for p in pending) if per_file or per_call_input_threshold else
                       (p for p in (pending[:middle], pending[middle:]) if p))
     plan = {"schema_version": SCHEMA, "run_id": request["run_id"], "cell_id": request["cell_id"],
             "candidate_message_id": candidate_message_id, "source_d1_incomplete_event_id": source_d1_incomplete_event_id,
             "sources": {k: {"path": str(p.resolve()), "sha256": digest(p)} for k, p in
                         {"request": source_request, "result": source_result, "raw_review": raw_review,
                          "session_record": session_record}.items()}, "groups": groups}
+    if per_call_input_threshold:
+        plan.update(schema_version=THRESHOLD_SCHEMA, failure_kind=THRESHOLD_KIND)
     basis = validate(plan, request, plan)
     output.parent.mkdir(parents=True, exist_ok=True)
     Attempt(output.parent).write_json_once(output.name, plan)

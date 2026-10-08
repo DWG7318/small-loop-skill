@@ -1,4 +1,4 @@
-# OCRV compression-only INCOMPLETE continuation
+# Evidence-specific OCRV INCOMPLETE continuation
 
 This is a compatible Tool correction for the existing 4.4.2 `D1_MANAGEMENT_RETURN` route, not a new role, D1, scheduler or universal size gate. Aggregate budget and timeout remain native unlimited. Do not use budget-only recovery for a compression failure.
 
@@ -14,7 +14,11 @@ slk-transport prepare-context-review --source-request <original-ocrv-request.jso
 
 The closed [plan contract](../contracts/slk-ocrv-context-recovery.schema.json) pins every source hash, candidate, full scope, original criteria, result, manifest and reusable native checkpoint. The preparer never accesses credentials, runs a model, modifies the original evidence or replaces an existing plan. Native zero-finding checkpoints legitimately omit `comments`; an explicit invalid value is rejected.
 
+For the separately demonstrated **normal full-review zero-complete per-call input threshold**, add `--per-call-input-threshold` to the same prepare-only command. This emits closed v2 `PER_CALL_INPUT_THRESHOLD`, not a relabeled compression/partial plan. It requires the original native failed Session, zero completed/reused/findings, the complete immutable single-parent Git selection and matching request/result/source hashes. Every selected item must have one native failed checkpoint with the exact `prompt tokens (N) exceed 80% of max_tokens(M) [round R]` error, `N > 0.8*M`, positive round and `M` equal to the frozen original ceiling. Quota/aggregate-budget/timeout errors, mixed reasons, incomplete or duplicated partitions, scoped child/old partial lineage, superseded source D1 and unknown versions fail closed. Aggregate budget and timeout must remain native unlimited `0`; the existing management adapter retains the **original per-call ceiling**, never raises it to its default. Fresh single-file groups are deterministic; no recursive admission or criterion splitting is allowed when a single file remains too large.
+
 Default refinement halves each observed failed group. `--per-file` instead selects fresh single-file subreviews **only as a response to this demonstrated compression failure**, not as a limit for normal D1. Both retain all original D1 criteria and permit necessary cross-file context; no completed item is removed from the final denominator. A single-file subreview can still fail; no capacity claim or completion is inferred from preparation.
+
+The explicit v2 threshold mode always uses single-file subreviews with all original criteria and necessary cross-file context. Each runs once; a single-file preflight/native failure returns real INCOMPLETE through the original management/same-D1 suffix, not Worker rework, product FAIL or an endless automatic retry. The original plan/sources remain immutable; a later D1 event cannot reuse the old admission. The aggregate exposes reviewed/not-reviewed paths. Its full coverage means **this frozen candidate selection**, not an older CELL's unreviewed scope: e.g. CELL05's current delta8 cannot imply acceptance of original full18 or discard nine old failed paths outside the delta. Keep the original criteria/unresolved manifest and expose the coverage decision to Supervisor; this compatibility entry does not fabricate or expand it.
 
 ## Formal Supervisor return to the original Checker
 

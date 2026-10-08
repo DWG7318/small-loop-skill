@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "fd415f08b2206cb965aec548fbb7128676039bb270a8839f7cee3de1310e90dd"
+      "sha256": "585a4b9f299c5cded7227957cdb06521ba66579058e8cd384ebdcc3e136e7ee9"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "5ca605754ec75f5557ae5e3e1f9bdd88a48498b05133ad926702897460244f22"
+      "sha256": "037f9e6fbc5f19d0d6892d21c848ce83b45b4a19886f91e69fe33ee270361356"
     },
     {
       "path": "VERSION",
@@ -768,7 +768,7 @@
     },
     {
       "path": "docs/contracts/slk-ocrv-context-recovery.schema.json",
-      "sha256": "281193820e068fb51cc507e28a301000f083f5df7cc6c84935a343285744b155"
+      "sha256": "8044327e9c6bced86319545ffd17c4977356d8e0cacc7fc750865ce9b984c0a5"
     },
     {
       "path": "docs/contracts/slk-ocrv-d1-preflight.schema.json",
@@ -1164,7 +1164,7 @@
     },
     {
       "path": "docs/transport/SLK-OCRV-CONTEXT-RECOVERY.md",
-      "sha256": "f80b4bf4d249914c6ec8b082bb3b826bf1176137714e14b13c89f7b5c0add75e"
+      "sha256": "3f18e94062469008e1f4359177fa68c4a5fd4e9eb68a3f4b73ec09e83251336a"
     },
     {
       "path": "docs/transport/SLK-TRANSPORT-LIVE-ACCEPTANCE.md",
@@ -1172,7 +1172,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "d0e82d31992d9b621a676edd5302d81dbc3a22260b46543c3855678da27e8adb"
+      "sha256": "ecc17e460d4c7d085c5e8e27abe6663deeacc79c17f90a0da679341d9f7e3a1f"
     },
     {
       "path": "integrations/dsh/dsh-slk.ps1",
@@ -1452,7 +1452,7 @@
     },
     {
       "path": "src/slk_transport/adapters/ocrv.py",
-      "sha256": "9d6cd76b223c43c5a24e793008878bed244989ab2caf5e47ab55115db742afbf"
+      "sha256": "2940951679834e3cad5335661687d466081b88e68140e86eb4b1444bc3e2c6ef"
     },
     {
       "path": "src/slk_transport/checker_completion.py",
@@ -1468,11 +1468,11 @@
     },
     {
       "path": "src/slk_transport/cli.py",
-      "sha256": "288fde6136b7f7a57107c33ebe5255f35340ce563b1762d9c668f91898bb2dba"
+      "sha256": "f8e79ae0a27fb9f4d5f562d43d6ae68f75c1006653659dde9b400833bcd9acaa"
     },
     {
       "path": "src/slk_transport/context_review.py",
-      "sha256": "d4cdf15a77bda2b6a39e89e9bee2e38c38d685f688ffc994d74824f5439a5ea2"
+      "sha256": "378901a005e5bc1ad3a59f34a0cee0b2b276685f239a83bf36bf522d547630d5"
     },
     {
       "path": "src/slk_transport/contracts.py",
@@ -1764,7 +1764,7 @@
     },
     {
       "path": "tests/transport/test_context_review.py",
-      "sha256": "9d72a747a259a89a1b672bc6a19a76ae46fa987addff8c7ee6a34d6c36b66b09"
+      "sha256": "0b88bed8f02cc24c11c2c1649560ec24cd6a603285bcaeb9bc502d3b7530a486"
     },
     {
       "path": "tests/transport/test_context_terminal.py",

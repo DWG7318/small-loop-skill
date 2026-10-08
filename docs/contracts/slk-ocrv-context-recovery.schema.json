@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://small-loop-skill.local/contracts/slk-ocrv-context-recovery.schema.json",
-  "title": "Frozen OCRV compression recovery plan",
+  "title": "Frozen evidence-specific OCRV recovery plan",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "cell_id", "candidate_message_id", "source_d1_incomplete_event_id", "sources", "groups"],
   "properties": {
-    "schema_version": {"const": "slk.ocrv-context-recovery-plan/v1"},
+    "schema_version": {"enum": ["slk.ocrv-context-recovery-plan/v1", "slk.ocrv-context-recovery-plan/v2"]},
+    "failure_kind": {"const": "PER_CALL_INPUT_THRESHOLD"},
     "run_id": {"type": "string", "minLength": 1},
     "cell_id": {"type": "string", "minLength": 1},
     "candidate_message_id": {"type": "string", "minLength": 1},
@@ -27,6 +28,11 @@
                 "items": {"type": "string", "minLength": 1}}
     }
   },
+  "allOf": [{
+    "if": {"properties": {"schema_version": {"const": "slk.ocrv-context-recovery-plan/v2"}}},
+    "then": {"required": ["failure_kind"], "properties": {"groups": {"items": {"maxItems": 1}}}},
+    "else": {"not": {"required": ["failure_kind"]}}
+  }],
   "$defs": {
     "reference": {
       "type": "object", "additionalProperties": false, "required": ["path", "sha256"],

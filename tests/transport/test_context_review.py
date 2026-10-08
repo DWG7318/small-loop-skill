@@ -312,3 +312,165 @@ def test_parent_forged_fingerprint_does_not_validate_even_when_child_and_artifac
     write(path, raw)
     with pytest.raises(ValueError):
         validate_segment(basis, value, scope)
+
+
+def threshold_fixture(tmp_path):
+    """Native zero-complete full review; no compression/partial lineage."""
+    returned, plan_path, plan, items = context_fixture(tmp_path)
+    candidate = {**returned.payload['candidate_payload'], 'd1_criteria': ['criterion one', 'criterion two', 'criterion three']}
+    payload = {**returned.payload, 'candidate_payload': candidate, 'candidate_payload_sha256': canonical_json_sha256(candidate)}
+    returned = Envelope.from_dict({**returned.__dict__, 'payload': payload, 'payload_sha256': canonical_json_sha256(payload)})
+    request_path = Path(plan['sources']['request']['path'])
+    request = json.loads(request_path.read_text())
+    request['d1_criteria'] = candidate['d1_criteria']
+    request['review_scope']['criterion_ids'] = ['D1-001', 'D1-002', 'D1-003']
+    request['review_scope']['scope_sha256'] = canonical_json_sha256({k: v for k, v in request['review_scope'].items() if k != 'scope_sha256'})
+    request['capacity']['max_tokens'] = 32000
+    write(request_path, request)
+    raw_path = Path(plan['sources']['raw_review']['path'])
+    raw = json.loads(raw_path.read_text())
+    raw.update(status='failed', comments=[], groups=[{'files': [x['path'] for x in items]}])
+    manifest = raw['manifest']
+    manifest['terminal_state'] = 'failed'
+    manifest['coverage'].update(completed=[], reused=[], failed=[{**x,
+        'classification': 'budget', 'reason': 'prompt exceeded the configured token budget'} for x in items])
+    write(raw_path, raw)
+    result_path = Path(plan['sources']['result']['path'])
+    result = json.loads(result_path.read_text())
+    result.update(request_sha256=ref(request_path)['sha256'], findings=[],
+        reason_codes=['OCR_EXIT_1', 'OCR_STATUS_NOT_COMPLETE', 'OCR_COVERAGE_INCOMPLETE'])
+    result['review'].update(status='failed', exit_code=1)
+    write(result_path, result)
+    rows = [{'type': 'session_start', 'sessionId': 'parent-session', 'parentUuid': None,
+        'diffCommit': request['candidate']['commit'], 'cwd': request['repository'],
+        'reviewMode': 'commit', 'model': 'qwen3.8-max', 'llmSource': 'provider:dashscope-tokenplan'}]
+    rows += [{'type': 'review_item_failed', 'sessionId': 'parent-session', 'filePath': x['path'],
+        'fingerprint': x['fingerprint'], 'model': 'qwen3.8-max',
+        'error': 'prompt tokens (26017) exceed 80% of max_tokens(32000) [round 1]'} for x in items]
+    rows.append({'type': 'session_end', 'sessionId': 'parent-session', 'run_manifest': manifest})
+    session = Path(plan['sources']['session_record']['path'])
+    session.write_text(''.join(json.dumps(x) + '\n' for x in rows), encoding='utf-8')
+    plan.update(schema_version='slk.ocrv-context-recovery-plan/v2',
+        failure_kind='PER_CALL_INPUT_THRESHOLD', groups=[[x['path']] for x in items])
+    for key, source in plan['sources'].items():
+        plan['sources'][key] = ref(Path(source['path']))
+    write(plan_path, plan)
+    return returned, plan_path, plan, items, request, raw, rows
+
+
+@pytest.mark.parametrize('mode', ['context-recovery', 'context-partial'])
+def test_zero_complete_threshold_uses_existing_serial_route_once_without_capacity_upgrade(tmp_path, mode):
+    returned, plan_path, plan, items, request, _raw, _rows = threshold_fixture(tmp_path)
+    before = {k: ref(Path(v['path'])) for k, v in plan['sources'].items()}
+    attempt = AttemptStore(tmp_path / 'attempts').create(returned)
+    result = OcrvAdapter().deliver(checker_endpoint(tmp_path, mode), returned, attempt)
+    aggregate = json.loads((attempt.root / 'ocrv-aggregate.json').read_text())
+    assert result.native_identity['verdict'] == ('INCOMPLETE' if mode == 'context-partial' else 'PASS')
+    assert aggregate['planned_segment_count'] == len(items)
+    assert aggregate['completed_segment_count'] == (1 if mode == 'context-partial' else len(items))
+    assert aggregate['context_recovery']['selected'] == items
+    assert aggregate['context_recovery']['reused'] == []
+    assert aggregate['context_recovery']['plan_sha256'] == ref(plan_path)['sha256']
+    reviewed = [json.loads(x.read_text()) for x in sorted((attempt.root / 'review-segments').glob('*/request.json'))]
+    assert [x['review_scope']['include_paths'] for x in reviewed] == plan['groups'][:len(reviewed)]
+    assert all(x['capacity'] == request['capacity'] and x['d1_criteria'] == request['d1_criteria'] for x in reviewed)
+    assert {k: ref(Path(v['path'])) for k, v in plan['sources'].items()} == before
+
+
+def test_threshold_preparer_is_explicit_prepare_only_closed_schema_and_no_overwrite(tmp_path):
+    import jsonschema
+    from slk_transport.cli import main
+    returned, _path, plan, _items, _request, _raw, _rows = threshold_fixture(tmp_path)
+    output = tmp_path / 'prepared/threshold.json'
+    args = ['prepare-context-review', '--per-call-input-threshold',
+        '--candidate-message-id', plan['candidate_message_id'],
+        '--source-d1-incomplete-event-id', plan['source_d1_incomplete_event_id'], '--output', str(output)]
+    for key, option in {'request': 'source-request', 'result': 'source-result',
+                       'raw_review': 'raw-review', 'session_record': 'session-record'}.items():
+        args.extend(['--' + option, plan['sources'][key]['path']])
+    assert main(args) == 0
+    assert json.loads(output.read_text()) == plan
+    schema = json.loads((Path(__file__).resolve().parents[2] / 'docs/contracts/slk-ocrv-context-recovery.schema.json').read_text())
+    jsonschema.validate(plan, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**plan, 'failure_kind': 'budget'}, schema)
+    with pytest.raises(RuntimeError, match='evidence already exists'):
+        main(args)
+    assert not (Path(returned.payload['candidate_payload']['repository']) / '.fake-ocrv-invocations.jsonl').exists()
+
+
+def test_threshold_single_file_preflight_failure_cannot_split_or_drop_original_criteria(tmp_path, monkeypatch):
+    returned, _path, _plan, _items, _request, _raw, _rows = threshold_fixture(tmp_path)
+    original = OcrvAdapter._preflight_fits
+    monkeypatch.setattr(OcrvAdapter, '_preflight_fits', lambda self, request, preflight:
+        False if request['review_scope']['include_paths'] else original(request, preflight))
+    attempt = AttemptStore(tmp_path / 'attempts').create(returned)
+    result = OcrvAdapter().deliver(checker_endpoint(tmp_path, 'context-recovery'), returned, attempt)
+    assert result.status == 'failed' and result.error_code == 'OCRV_REVIEW_INCOMPLETE'
+    invocations = Path(returned.payload['candidate_payload']['repository']) / '.fake-ocrv-invocations.jsonl'
+    calls = [json.loads(x) for x in invocations.read_text().splitlines()]
+    assert len(calls) == 2 and all(x['preflight'] for x in calls)
+    assert not (attempt.root / 'ocrv-result.json').exists()
+
+
+@pytest.mark.parametrize('damage', ['error-missing', 'quota', 'below-threshold', 'wrong-max', 'wrong-round',
+    'mixed-reason', 'duplicate-checkpoint', 'missing-checkpoint', 'wrong-session', 'wrong-start', 'checkpoint-done',
+    'completed', 'missing-selected', 'fingerprint', 'native-parent', 'scoped-child', 'aggregate-budget',
+    'timeout', 'boolean-budget', 'boolean-timeout', 'single-file-source', 'result-hash', 'source-hash',
+    'groups', 'kind', 'superseded-event', 'old-label'])
+def test_threshold_admission_rejects_unproven_or_repeated_scope_before_any_native_call(tmp_path, damage):
+    from slk_transport.context_review import validate
+    returned, _path, plan, items, request, raw, rows = threshold_fixture(tmp_path)
+    current = copy.deepcopy(request)
+    payload = dict(returned.payload)
+    if damage == 'error-missing': rows[1].pop('error')
+    elif damage == 'quota': rows[1]['error'] = 'account quota exhausted'
+    elif damage == 'below-threshold': rows[1]['error'] = 'prompt tokens (25000) exceed 80% of max_tokens(32000) [round 1]'
+    elif damage == 'wrong-max': rows[1]['error'] = 'prompt tokens (26017) exceed 80% of max_tokens(16000) [round 1]'
+    elif damage == 'wrong-round': rows[1]['error'] = 'prompt tokens (26017) exceed 80% of max_tokens(32000) [round 0]'
+    elif damage == 'mixed-reason': raw['manifest']['coverage']['failed'][0]['reason'] = 'quota exhausted'
+    elif damage == 'duplicate-checkpoint': rows.insert(1, copy.deepcopy(rows[1]))
+    elif damage == 'missing-checkpoint': rows.pop(1)
+    elif damage == 'wrong-session': rows[1]['sessionId'] = 'other-session'
+    elif damage == 'wrong-start': rows[0]['diffCommit'] = 'a' * 40
+    elif damage == 'checkpoint-done': rows[1]['type'] = 'review_item_done'
+    elif damage == 'completed': raw['manifest']['coverage']['completed'] = [items[0]]
+    elif damage == 'missing-selected':
+        raw['manifest']['coverage']['selected'].pop(); raw['manifest']['coverage']['failed'].pop()
+        raw['groups'][0]['files'].pop(); plan['groups'].pop(); rows.pop(-2)
+        from slk_transport.context_review import artifact_digest, identities
+        raw['manifest']['input']['source_artifact_sha256'] = artifact_digest(identities(raw['manifest']['coverage']['selected']))
+    elif damage == 'fingerprint':
+        raw['manifest']['coverage']['selected'][0]['fingerprint'] = 'f' * 64
+        raw['manifest']['coverage']['failed'][0]['fingerprint'] = 'f' * 64
+        rows[1]['fingerprint'] = 'f' * 64
+    elif damage == 'native-parent': raw['manifest']['parent_run_id'] = 'previous-partial'
+    elif damage == 'scoped-child': request['review_scope']['include_paths'] = [items[0]['path']]
+    elif damage == 'aggregate-budget': request['capacity']['max_tokens_budget'] = 80000
+    elif damage == 'timeout': request['capacity']['timeout_minutes'] = 90
+    elif damage == 'boolean-budget': request['capacity']['max_tokens_budget'] = False
+    elif damage == 'boolean-timeout': request['capacity']['timeout_minutes'] = False
+    elif damage == 'single-file-source': raw['groups'] = [{'files': [x['path']]} for x in items]
+    elif damage == 'groups': plan['groups'] = [sum(plan['groups'], [])]
+    elif damage == 'kind': plan['failure_kind'] = 'budget'
+    elif damage == 'superseded-event': payload['source_d1_incomplete_event_id'] = 'second-incomplete'
+    elif damage == 'old-label': plan['schema_version'] = 'slk.ocrv-context-recovery-plan/v1'
+    write(Path(plan['sources']['request']['path']), request)
+    write(Path(plan['sources']['raw_review']['path']), raw)
+    rows[-1]['run_manifest'] = raw['manifest']
+    session = Path(plan['sources']['session_record']['path'])
+    session.write_text(''.join(json.dumps(x) + '\n' for x in rows), encoding='utf-8')
+    for key, source in plan['sources'].items():
+        plan['sources'][key] = ref(Path(source['path']))
+    if damage == 'source-hash': plan['sources']['raw_review']['sha256'] = 'a' * 64
+    if damage == 'result-hash':
+        result_path = Path(plan['sources']['result']['path'])
+        value = json.loads(result_path.read_text()); value['request_sha256'] = 'f' * 64
+        write(result_path, value); plan['sources']['result'] = ref(result_path)
+    # Rebind the request hash for capacity/scope cases so the narrow checks, not stale hashes, reject them.
+    if damage != 'result-hash':
+        result_path = Path(plan['sources']['result']['path'])
+        value = json.loads(result_path.read_text()); value['request_sha256'] = plan['sources']['request']['sha256']
+        write(result_path, value); plan['sources']['result'] = ref(result_path)
+    with pytest.raises(ValueError):
+        validate(plan, current, payload)

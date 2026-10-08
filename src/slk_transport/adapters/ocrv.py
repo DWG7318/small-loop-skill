@@ -903,13 +903,17 @@ class OcrvAdapter:
                     if path.suffix.lower() == ".json":
                         raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", "context management JSON source is invalid") from exc
                     continue  # Other management evidence may be Markdown, not a recovery plan.
-                if plan.get("schema_version") != context_review.SCHEMA:
+                if plan.get("schema_version") not in context_review.SCHEMAS:
                     if str(plan.get("schema_version", "")).startswith("slk.ocrv-context-recovery-plan/"):
                         raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", "context plan schema version is unsupported")
                     continue
                 try:
                     if context is not None:
                         raise ValueError("duplicate context recovery plans")
+                    if plan["schema_version"] == context_review.THRESHOLD_SCHEMA:
+                        # Keep the original per-call ceiling; management defaults must not upgrade it.
+                        frozen = context_review.read(Path(plan["sources"]["request"]["path"]))
+                        request = {**request, "capacity": frozen["capacity"]}
                     context = context_review.validate(plan, request, envelope.payload)
                     context.update(plan=plan, plan_path=path, plan_sha256=context_review.digest(path))
                 except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -1090,6 +1094,8 @@ class OcrvAdapter:
             if scope_matches and self._preflight_fits(segment_request, proposal_preflight):
                 fitted_segments.append((segment_request, proposal_preflight, proposal_process))
                 continue
+            if context is not None and context["plan"]["schema_version"] == context_review.THRESHOLD_SCHEMA:
+                return incomplete(len(segments), 0, ("ocrv-preflight.json",))
             refinements = (
                 self._split_review_segment(request, selected_paths, segment_request)
                 if scope_matches and proposal_preflight["preview"]["exit_code"] == 0
@@ -1275,6 +1281,11 @@ class OcrvAdapter:
                 "parent_session_id": context["raw"]["session_id"], "reused": context["reused"],
                 "selected": list(context["selected"].values()),
             }
+            if context["plan"]["schema_version"] == context_review.THRESHOLD_SCHEMA:
+                settled = len(segment_results) - int(verdict == "INCOMPLETE")
+                aggregate["context_recovery"].update(failure_kind=context_review.THRESHOLD_KIND,
+                    reviewed_paths=[p for group in context["groups"][:settled] for p in group],
+                    not_reviewed_paths=[p for group in context["groups"][settled:] for p in group])
         aggregate_path = attempt.write_json_once("ocrv-aggregate.json", aggregate)
         final_scope = {
             "include_paths": list(preview["selected_paths"]),
