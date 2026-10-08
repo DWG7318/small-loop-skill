@@ -147,6 +147,91 @@ def desktop_environment() -> dict[str, str]:
     }
 
 
+def native_platform_record(tmp_path, monkeypatch, request, receipt):
+    """Real native record shape, not a second high-level receipt claiming success."""
+    home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    path = home / "sessions/2026/10/09" / f"rollout-{request['target_thread_id']}.jsonl"
+    path.parent.mkdir(parents=True)
+    import html
+    rows = [
+        {"type": "session_meta", "payload": {"id": request["target_thread_id"], "originator": "Codex Desktop"}},
+        {"type": "response_item", "payload": {
+            "type": "function_call_output", "id": receipt["after"]["platform_item_id"],
+            "name": "send_message_to_thread", "namespace": "codex_app",
+            "output": "<codex_delegation><source_thread_id>thread-bridge-host</source_thread_id><input>"
+                + html.escape(request["prompt"]) + "</input></codex_delegation>",
+            "internal_chat_message_metadata_passthrough": {"turn_id": receipt["after"]["turn_id"]},
+        }},
+    ]
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return path
+
+
+def test_current_turn_recovery_closes_original_temporal_ack_without_canonical_backfill(tmp_path, monkeypatch):
+    from slk_transport import worker_completion as wc
+    from test_temporal_handoff_bridge import temporal_binding
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+    receipt = host_receipt(request)
+    native_platform_record(tmp_path, monkeypatch, request, receipt)
+    complete_desktop_current_turn(attempts, endpoint, envelope, receipt, environment=desktop_environment())
+    failed_before = (original / "failed.json").read_bytes()
+    temporal_request = {
+        "operation_id": "original-operation", "run_id": envelope["run_id"], "cell_id": envelope["cell_id"],
+        "attempt": 2, "message_id": envelope["message_id"],
+        "sender_role_instance_id": envelope["sender_role_instance_id"],
+        "receiver_role_instance_id": envelope["receiver_role_instance_id"],
+        "payload_sha256": envelope["payload_sha256"], "source_runtime_revision": 31,
+    }
+    path = tmp_path / "temporal-request.json"
+    path.write_text(json.dumps(temporal_request), encoding="utf-8")
+    calls = []
+    def client(_command, arguments, **_kwargs):
+        calls.append(arguments[0])
+        ack = json.loads(Path(arguments[arguments.index("--request") + 1]).read_text())
+        assert ack["message_id"] == envelope["message_id"]
+        assert ack["payload_sha256"] == envelope["payload_sha256"]
+        assert ack["started_receipt_sha256"] == hashlib.sha256(
+            (original / "recovery/desktop-current-turn/start-evidence.json").read_bytes()).hexdigest()
+        return {"schema_version": "slk.temporal-delivery-update-result/v1", "operation": "native_started",
+                "status": "DELIVERY_ACKNOWLEDGED", "run_id": envelope["run_id"],
+                "operation_id": "original-operation", "message_id": envelope["message_id"]}
+    monkeypatch.setattr(wc, "_run_json_command", client)
+    binding = temporal_binding(tmp_path, attempts)
+    for _ in range(2):
+        assert wc.acknowledge_temporal_delivery(binding, tmp_path / "ack", endpoint, envelope,
+            request_path=path, request_sha256=wc._sha256(path), attempt=2) == original
+    assert calls == ["native-started"]
+    assert not (original / "started.json").exists()
+    assert (original / "failed.json").read_bytes() == failed_before
+
+
+@pytest.mark.parametrize("mutation", ["wrong-native-message", "wrong-native-turn", "wrong-recovery-parent"])
+def test_recovery_start_resolver_rejects_forged_or_mismatched_platform_lineage(tmp_path, monkeypatch, mutation):
+    from slk_transport.desktop_current_turn import resolve_delivery_start
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+    receipt = host_receipt(request)
+    native_path = native_platform_record(tmp_path, monkeypatch, request, receipt)
+    complete_desktop_current_turn(attempts, endpoint, envelope, receipt, environment=desktop_environment())
+    if mutation == "wrong-recovery-parent":
+        path = original / "recovery/desktop-current-turn/recovery.json"
+        value = json.loads(path.read_text())
+        value["recovery_of_message_id"] = "another-original-message"
+        path.write_text(json.dumps(value), encoding="utf-8")
+    else:
+        rows = [json.loads(line) for line in native_path.read_text().splitlines()]
+        if mutation == "wrong-native-turn":
+            rows[1]["payload"]["internal_chat_message_metadata_passthrough"]["turn_id"] = "another-turn"
+        else:
+            rows[1]["payload"]["output"] = "<input>unrelated message</input>"
+        native_path.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+    with pytest.raises((ContractError, ValueError)):
+        resolve_delivery_start(original, endpoint, envelope)
+    assert not (original / "started.json").exists()
+
+
 def test_desktop_owned_writer_recovers_original_unresolved_handoff_without_forging_start(
     tmp_path: Path,
 ) -> None:

@@ -463,12 +463,8 @@ def acknowledge_temporal_delivery(
         or request["source_runtime_revision"] < 1):
         raise CompletionError("TEMPORAL_DELIVERY_REQUEST_INVALID", "original Temporal request changed handoff identity")
     native = attempt_root / envelope.run_id / envelope.message_id
-    started_path = native / "started.json"
-    validate_native_start(
-        started_path, adapter=endpoint.adapter, run_id=envelope.run_id,
-        cell_id=envelope.cell_id, message_id=envelope.message_id,
-        request_sha256=envelope.payload_sha256,
-    )
+    from .desktop_current_turn import resolve_delivery_start
+    started_path, _ = resolve_delivery_start(native, endpoint_raw, envelope_raw)
     if (_read_object(native / "endpoint.json", "target endpoint") != dict(endpoint_raw)
         or _read_object(native / "envelope.json", "target envelope") != dict(envelope_raw)):
         raise CompletionError("TEMPORAL_NATIVE_START_UNPROVED", "native start changed the exact delivery")
@@ -4051,6 +4047,10 @@ def _record_checker_d1(
 ) -> Mapping[str, Any]:
     """Bind the actual OCRV terminal result to Checker-owned D1 events."""
 
+    if 'independent_fail' in continuation:
+        from .independent_checker_fail import record
+        return record(continuation, checker_credential_path)
+
     native_attempt = Path(str(activation.get("native_attempt_path", ""))).resolve()
     started_path = native_attempt / "started.json"
     checker = Endpoint.from_dict(continuation["checker_endpoint"])
@@ -4542,7 +4542,15 @@ def _committed_event_details(event: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_only: bool = False,
                                          partial_review: Mapping[str, Any] | None = None,
-                                         d1_correction: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                                         d1_correction: Mapping[str, Any] | None = None,
+                                         audit_lineage: frozenset[str] | None = None,
+                                         audit_management_return: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    if 'independent_fail' in request:
+        from .independent_checker_fail import validate
+        try:
+            return validate(request)
+        except (OSError, ValueError, KeyError, TypeError, AdapterError, ContractError) as exc:
+            raise CompletionError('CHECKER_INDEPENDENT_FAIL_EVIDENCE_INVALID', str(exc)) from exc
     if 'partial_terminal' in request and not source_only:
         from .partial_review import validate_partial_terminal
         try:
@@ -4722,6 +4730,12 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             "runtime projection is missing or changed",
         )
     projection = _read_object(projection_path, "committed-terminal runtime projection")
+    if audit_management_return is not None and not (source_only and correction is not None and audit_lineage):
+        raise CompletionError('CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID', 'management lineage is internal to a proven correction')
+    candidate_token_sequence = (audit_management_return['candidate_token_sequence']
+        if audit_management_return else request['token_sequence'])
+    current_message_id = (audit_management_return['message_id']
+        if audit_management_return else request['candidate_message_id'])
     summary = projection.get("summary")
     administrative = projection.get("administrative_snapshot")
     runtime = projection.get("runtime_snapshot")
@@ -4752,7 +4766,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             "token_sequence": request["token_sequence"],
             "token_holder_role_instance_id": request["checker_role_instance_id"],
         })
-        or token_boundary["message_id"] != request["candidate_message_id"]
+        or token_boundary["message_id"] != current_message_id
         or not all(isinstance(value, list) for value in (events, roles, token_history))
         or not token_history
     ):
@@ -4813,6 +4827,13 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
             and event.get("attempt") == request["attempt"]
             and event.get("event_type") in {"D1_STARTED", "D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"}
         ):
+            if source_only and correction is not None and audit_lineage is not None and (
+                event.get('event_id') in audit_lineage
+                and event.get('event_type') in {'D1_STARTED', 'D1_INCOMPLETE'}
+                and event.get('author_role_instance_id') == request['checker_role_instance_id']
+                and _committed_event_details(event).get('candidate_message_id') == request['candidate_message_id']
+            ):
+                continue  # independently checked complete correction chain, never a general D1 bypass
             if correction is not None and event.get('event_id') == correction.get(
                 {'D1_STARTED': 'd1_started_event_id', 'D1_INCOMPLETE': 'd1_incomplete_event_id'}.get(event.get('event_type'), '')
             ) and event.get('author_role_instance_id') == request['checker_role_instance_id'] and (
@@ -4882,11 +4903,12 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
     if (
         not isinstance(last_token, Mapping)
         or last_token.get("event_type") != "TOKEN_HANDED_OFF"
-        or last_token.get("from_role_instance_id") != request["worker_role_instance_id"]
+        or last_token.get("from_role_instance_id") != (audit_management_return['supervisor_role_instance_id']
+            if audit_management_return else request["worker_role_instance_id"])
         or last_token.get("to_role_instance_id") != request["checker_role_instance_id"]
         or last_token.get("go_id") != request["go_id"]
         or last_token.get("cell_id") != request["cell_id"]
-        or last_token.get("message_id") != request["candidate_message_id"]
+        or last_token.get("message_id") != current_message_id
         or last_token.get("token_sequence") != request["token_sequence"]
     ):
         raise CompletionError(
@@ -4935,7 +4957,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
         or not isinstance(commit.get("expected_runtime_revision"), int)
         or commit.get("expected_runtime_revision") >= request["runtime_revision"]
         or commit.get("message_id") != request["candidate_message_id"]
-        or commit.get("token_sequence") != request["token_sequence"]
+        or commit.get("token_sequence") != candidate_token_sequence
         or commit.get("from_role_instance_id") != request["worker_role_instance_id"]
         or commit.get("to_role_instance_id") != request["checker_role_instance_id"]
         or commit.get("endpoint_version") != checker.endpoint_version
@@ -5038,7 +5060,7 @@ def _validate_committed_terminal_request(request: Mapping[str, Any], *, source_o
         or envelope.receiver_role != "checker"
         or envelope.receiver_role_instance_id != request["checker_role_instance_id"]
         or envelope.receiver_endpoint_version != checker.endpoint_version
-        or envelope.token_sequence != request["token_sequence"]
+        or envelope.token_sequence != candidate_token_sequence
         or envelope.payload_type != "CANDIDATE_READY"
         or envelope.payload_sha256 != request["payload_sha256"]
         or not isinstance(payload, Mapping)
@@ -5703,16 +5725,18 @@ def execute_committed_checker_terminal(
             "sealed credential does not prove the current Checker",
         )
     activation = dict(validated["activation"])
+    replay_d1 = None
     if authenticated_revision != request["runtime_revision"]:
         current_projection = load_current_projection(
             str(request["run_id"]), list(request["state_command"])
         )
-        activation["runtime_revision"] = _rebind_overwatcher_only_committed_boundary(
-            request,
-            validated["frozen_projection"],
-            current_projection,
-            authenticated_revision,
-        )
+        if 'independent_fail' in request:
+            from .independent_checker_fail import recorded, result as independent_result
+            if recorded(validated['continuation'], current_projection):
+                replay_d1 = independent_result(validated['continuation'])
+        if replay_d1 is None:
+            activation["runtime_revision"] = _rebind_overwatcher_only_committed_boundary(
+                request, validated["frozen_projection"], current_projection, authenticated_revision)
     timeout_seconds = checker.address.get("timeout_seconds")
     if (
         isinstance(timeout_seconds, bool)
@@ -5722,7 +5746,7 @@ def execute_committed_checker_terminal(
         raise CompletionError(
             "CHECKER_COMMITTED_TERMINAL_REQUEST_INVALID", "Checker timeout is invalid"
         )
-    d1 = record_checker_d1(
+    d1 = replay_d1 if replay_d1 is not None else record_checker_d1(
         activation,
         validated["continuation"],
         Path(str(request["checker_credential_path"])),

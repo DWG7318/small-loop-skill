@@ -31,6 +31,8 @@ use crate::model::{
 use crate::schema::{open_database, SchemaError};
 
 const TRANSACTION_ATTEMPTS: usize = 3;
+#[path = "recovery_start.rs"]
+mod recovery_start;
 type OverwatchCycleBindingRow = (String, String, i64, String, String, u64, String, String);
 type ActiveOverwatcherGateRow = (Option<i64>, Option<String>, String, u64, String, String);
 
@@ -1172,7 +1174,19 @@ impl StateStore {
                 method_version.as_str(),
                 "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2"
             ) {
-                Some(validate_native_start_v2(&evidence_bytes, &request)?)
+                Some(
+                    if method_version == "4.4.2"
+                        && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
+                            .ok()
+                            .is_some_and(|v| {
+                                v["schema_version"] == "slk.desktop-current-turn-start-evidence/v1"
+                            })
+                    {
+                        recovery_start::validate(&evidence_bytes, &request)?
+                    } else {
+                        validate_native_start_v2(&evidence_bytes, &request)?
+                    },
+                )
             } else {
                 None
             };
@@ -1265,7 +1279,35 @@ impl StateStore {
                 payload_location: Some(request.start_evidence.stored_path.clone()),
                 occurred_at: request.occurred_at.clone(),
             };
-            if !valid_token_handoff_route(transaction, &route, actor.role, target_role)? {
+            let recovered_history = method_version == "4.4.2"
+                && actor.role == Role::Checker
+                && target_role == Role::Supervisor
+                && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
+                    .ok()
+                    .is_some_and(|v| {
+                        v["schema_version"] == "slk.desktop-current-turn-start-evidence/v1"
+                    })
+                && native_start
+                    .as_ref()
+                    .is_some_and(|receipt| receipt.native_task.kind == "codex-desktop-turn")
+                && recovery_start::historical_route(
+                    transaction,
+                    &request,
+                    native_start.as_ref().unwrap(),
+                )?;
+            if method_version == "4.4.2"
+                && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
+                    .ok()
+                    .is_some_and(|v| {
+                        v["schema_version"] == "slk.desktop-current-turn-start-evidence/v1"
+                    })
+                && !recovery_start::target_matches(transaction, &request)?
+            {
+                return Err(StateError::EndpointNotCurrent);
+            }
+            if !recovered_history
+                && !valid_token_handoff_route(transaction, &route, actor.role, target_role)?
+            {
                 return Err(StateError::InvalidTokenRoute {
                     from: actor.role,
                     to: target_role,

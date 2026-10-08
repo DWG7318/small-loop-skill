@@ -1014,15 +1014,8 @@ class RoleHost:
         elif not native.exists():
             wc._run_json_command(self.transport, ["send", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
                                                   "--attempt-root", str(attempts)], credential=None)
-        started_path = native / "started.json"
-        native_start = validate_native_start(
-            started_path,
-            adapter=target["adapter"],
-            run_id=envelope.run_id,
-            cell_id=envelope.cell_id,
-            message_id=envelope.message_id,
-            request_sha256=envelope.payload_sha256,
-        )
+        from .desktop_current_turn import resolve_delivery_start
+        started_path, native_start = resolve_delivery_start(native, target, asdict(envelope))
         receiver_started_at = native_start["observed_at"]
         if (wc._read_object(native / "endpoint.json", "target endpoint") != target
             or wc._read_object(native / "envelope.json", "target envelope") != asdict(envelope)):
@@ -1142,13 +1135,13 @@ class RoleHost:
             or event.get("corrects_event_id") is not None):
             raise wc.CompletionError("ROLE_HOST_CONFLICT", "central handoff changed scope or role")
         try:
-            validate_native_start(native / "started.json", adapter=self.endpoint(envelope.receiver_role)["adapter"],
-                run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
-                request_sha256=envelope.payload_sha256)
+            from .desktop_current_turn import resolve_delivery_start
+            start_path, _ = resolve_delivery_start(native, self.endpoint(envelope.receiver_role), asdict(envelope))
             exact = (wc._read_object(native / "endpoint.json", "committed endpoint") == self.endpoint(envelope.receiver_role)
                 and wc._read_object(native / "envelope.json", "committed envelope") == asdict(envelope)
+                and details.get("start_evidence_sha256") == wc._sha256(start_path)
                 and all(details.get(key) == wc._sha256(native / name) for key, name in (
-                    ("start_evidence_sha256", "started.json"), ("endpoint_sha256", "endpoint.json"),
+                    ("endpoint_sha256", "endpoint.json"),
                     ("envelope_sha256", "envelope.json"))))
         except (OSError, ValueError) as exc:
             raise wc.CompletionError("ROLE_HOST_CONFLICT", "committed native evidence is unavailable") from exc

@@ -27,13 +27,12 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
+def fixture(tmp_path: Path, *, candidate_commit: str = "b" * 40,
+            candidate_parent: str = "a" * 40) -> tuple[dict[str, object], Path]:
     run_id = "RUN-A"
     go_id = "GO-001"
     cell_id = "CELL-001"
     attempt = 10
-    candidate_commit = "b" * 40
-    candidate_parent = "a" * 40
     message_id = "11111111-1111-4111-8111-111111111111"
     candidate_event_id = "22222222-2222-4222-8222-222222222222"
     transport_event_id = "33333333-3333-4333-8333-333333333333"
@@ -42,7 +41,7 @@ def fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     checker_id = "RUN-A-checker-001"
     overwatcher_id = "RUN-A-overwatcher-001"
     repository = tmp_path / "repository"
-    repository.mkdir()
+    repository.mkdir(exist_ok=True)
     runtime_root = tmp_path / "ocrv-runtime"
     runtime_root.mkdir()
     checker = endpoint_value(role="checker", version=2)

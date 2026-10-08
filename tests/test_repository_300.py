@@ -249,7 +249,7 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
         schema = json.loads(read(relative))
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         assert schema["additionalProperties"] is False
-        optional_partial = ({'partial_terminal'} if relative.endswith('slk-ocrv-committed-terminal.schema.json')
+        optional_partial = ({'partial_terminal', 'independent_fail'} if relative.endswith('slk-ocrv-committed-terminal.schema.json')
                             else {'partial_review'} if relative.endswith('slk-ocrv-incomplete-checker-resume.schema.json')
                             else {
                                 'temporal', 'source_blocked_result_sha256', 'source_project_id',
@@ -269,6 +269,13 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
             assert partial['additionalProperties'] is False
             assert set(partial['required']) == set(partial['properties']) == {
                 'resume_request_path','resume_request_sha256','evidence_sha256'}
+            independent = schema['properties']['independent_fail']
+            assert independent['additionalProperties'] is False
+            assert set(independent['required']) == set(independent['properties']) == {
+                'schema_version','request','result','raw_review','session_record','role_host','scope_plan',
+                'd1_started_event_id','d1_incomplete_event_id','owner_continuation','supervisor_confirmation'}
+            assert independent['properties']['schema_version']['const'] == 'slk.ocrv-independent-fail/v1'
+            assert schema['allOf'][0]['then']['properties']['method_version']['const'] == '4.4.2'
         else:
             assert set(schema["required"]) == required
 

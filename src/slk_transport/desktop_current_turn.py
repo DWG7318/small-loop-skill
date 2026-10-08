@@ -369,7 +369,7 @@ def prepare_desktop_current_turn(
 def _validate_host_receipt(
     receipt: Mapping[str, Any],
     request: Mapping[str, Any],
-    environment: Mapping[str, str],
+    environment: Mapping[str, str] | None,
 ) -> None:
     _closed(receipt, HOST_RECEIPT_FIELDS, "host receipt")
     if receipt.get("schema_version") != HOST_RECEIPT_SCHEMA:
@@ -379,7 +379,7 @@ def _validate_host_receipt(
     host_thread_id = _text(receipt.get("host_thread_id"), "host_thread_id")
     host_session_id = _text(receipt.get("host_session_id"), "host_session_id")
     _text(receipt.get("host_turn_id"), "host_turn_id")
-    if (
+    if environment is not None and (
         environment.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"
         or environment.get("CODEX_THREAD_ID") != host_thread_id
         or environment.get("CODEX_SESSION_ID") != host_session_id
@@ -488,3 +488,51 @@ def complete_desktop_current_turn(
     _write_or_match(attempt, "recovery.json", recovery)
     _write_or_match(attempt, "started.json", started)
     return recovery
+
+
+def resolve_delivery_start(
+    original: Path, endpoint: Mapping[str, Any], envelope: Mapping[str, Any],
+) -> tuple[Path, dict[str, Any]]:
+    """Resolve ordinary v2 or explicit recovery lineage, without canonical backfill."""
+    ordinary = original / "started.json"
+    if (ordinary.is_file() or endpoint.get('role') != 'supervisor'
+        or endpoint.get('adapter') != 'codex-app-server'):
+        return ordinary, validate_native_start(ordinary, adapter=str(endpoint["adapter"]),
+            run_id=str(envelope["run_id"]), cell_id=str(envelope["cell_id"]),
+            message_id=str(envelope["message_id"]), request_sha256=str(envelope["payload_sha256"]))
+    original, endpoint, envelope, ep_path, env_path = _original(original.parent.parent, endpoint, envelope)
+    root = original / "recovery/desktop-current-turn"
+    request = _object(root / "request.json", "request")
+    receipt = _object(root / "host-receipt.json", "host receipt")
+    recovery = _object(root / "recovery.json", "recovery")
+    _validate_request(request, endpoint, envelope, ep_path, env_path)
+    _validate_host_receipt(receipt, request, None)
+    after = receipt["after"]
+    expected = {"schema_version": RECOVERY_SCHEMA, "recovery_of_message_id": envelope["message_id"],
+        "recovery_message_id": request["recovery_message_id"], "run_id": envelope["run_id"],
+        "thread_id": request["target_thread_id"], "turn_id": after["turn_id"],
+        "platform_item_id": after["platform_item_id"], "payload_sha256": envelope["payload_sha256"],
+        "endpoint_sha256": request["endpoint_sha256"], "envelope_sha256": request["envelope_sha256"],
+        "status": "started"}
+    if recovery != expected or request["recovery_message_id"] == envelope["message_id"]:
+        raise ContractError("desktop-current-turn recovery lineage changed")
+    from .platform_records import find_codex_item, read_codex_item
+    platform_path = find_codex_item(request["target_thread_id"], after["platform_item_id"])
+    platform = read_codex_item(platform_path, request["target_thread_id"], after["platform_item_id"])
+    if (platform["kind"] != "delegation" or platform["source_thread_id"] != receipt["host_thread_id"]
+        or platform["turn_id"] != after["turn_id"] or platform["text"] != request["prompt"]):
+        raise ContractError("desktop-current-turn actual platform readback differs")
+    started = validate_native_start(root / "started.json", adapter=str(endpoint["adapter"]),
+        run_id=str(envelope["run_id"]), cell_id=str(envelope["cell_id"]),
+        message_id=str(request["recovery_message_id"]), request_sha256=str(envelope["payload_sha256"]),
+        native_request_sha256=str(request["prompt_sha256"]))
+    if started["native_task"] != {"kind": "codex-desktop-turn", "id":
+        f"{request['target_thread_id']}:{after['turn_id']}:{after['platform_item_id']}", "status": "RUNNING"}:
+        raise ContractError("desktop-current-turn native task changed")
+    packet = {"schema_version": "slk.desktop-current-turn-start-evidence/v1",
+        **{f"{label}_sha256": _sha256((root / name).read_bytes()) for label, name in (
+            ("request", "request.json"), ("host_receipt", "host-receipt.json"),
+            ("recovery", "recovery.json"), ("started", "started.json"))},
+        "platform_record_path": str(platform_path)}
+    _write_or_match(Attempt(root), "start-evidence.json", packet)
+    return root / "start-evidence.json", started

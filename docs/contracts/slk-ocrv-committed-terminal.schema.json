@@ -92,6 +92,21 @@
         }
       }
     },
+    "independent_fail": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "request", "result", "raw_review", "session_record", "role_host", "scope_plan", "d1_started_event_id", "d1_incomplete_event_id", "owner_continuation", "supervisor_confirmation"],
+      "properties": {
+        "schema_version": {"const": "slk.ocrv-independent-fail/v1"},
+        "request": {"$ref": "#/$defs/evidence"}, "result": {"$ref": "#/$defs/evidence"},
+        "raw_review": {"$ref": "#/$defs/evidence"}, "session_record": {"$ref": "#/$defs/evidence"},
+        "role_host": {"$ref": "#/$defs/evidence"},
+        "scope_plan": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/evidence"}]},
+        "d1_started_event_id": {"$ref": "#/$defs/identifier"},
+        "d1_incomplete_event_id": {"$ref": "#/$defs/identifier"},
+        "owner_continuation": {"$ref": "#/$defs/platformProof"},
+        "supervisor_confirmation": {"$ref": "#/$defs/platformProof"}
+      }
+    },
     "partial_terminal": {
       "type": "object", "additionalProperties": false,
       "required": ["resume_request_path", "resume_request_sha256", "evidence_sha256"],
@@ -106,8 +121,16 @@
     "transport_command": {"$ref": "#/$defs/command"},
     "result_path": {"$ref": "#/$defs/path"}
   },
-  "not": {"required": ["partial_terminal", "recovery_terminal"]},
+  "not": {"anyOf": [{"required": ["partial_terminal", "recovery_terminal"]}, {"required": ["independent_fail", "partial_terminal"]}, {"required": ["independent_fail", "recovery_terminal"]}]},
+  "allOf": [{"if": {"required": ["independent_fail"]}, "then": {"properties": {"method_version": {"const": "4.4.2"}}}}],
   "$defs": {
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "platformProof": {"type": "object", "additionalProperties": false,
+      "required": ["path", "thread_id", "turn_id", "item_id", "text_sha256"],
+      "properties": {"path": {"$ref": "#/$defs/path"}, "thread_id": {"$ref": "#/$defs/identifier"},
+        "turn_id": {"$ref": "#/$defs/identifier"}, "item_id": {"$ref": "#/$defs/identifier"},
+        "text_sha256": {"$ref": "#/$defs/sha256"}}},
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
     "path": {"type": "string", "minLength": 1},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
