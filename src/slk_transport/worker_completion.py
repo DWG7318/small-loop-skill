@@ -2569,15 +2569,14 @@ def inspect_worker_completion(
                 "grace_started_at": None,
             }
         try:
-            native_status = str(
-                native_inspector(
-                    attempt / "started.json",
-                    terminal_paths=(completed_path, failed_path),
-                    observed_at=observed_at,
-                ).get("status")
+            native = native_inspector(
+                attempt / "started.json", terminal_paths=(completed_path, failed_path),
+                observed_at=observed_at,
             )
-        except (NativeActivityError, OSError, TypeError, ValueError):
-            native_status = "UNKNOWN"
+            native_status = str(native.get("status"))
+            native_error = native.get("error")
+        except (NativeActivityError, OSError, TypeError, ValueError) as exc:
+            native_status, native_error = "UNKNOWN", str(exc) or type(exc).__name__
         if native_status in {"ACTIVE", "PENDING", "IDLE"}:
             return {**base, "status": "IN_PROGRESS", "grace_started_at": None}
         cause = {
@@ -2588,6 +2587,14 @@ def inspect_worker_completion(
         evidence = ["started.json"]
         if (attempt / "native-activity.json").is_file():
             evidence.append("native-activity.json")
+        if cause == "NATIVE_ACTIVITY_UNPROVED":
+            return {
+                **base, "status": "UNKNOWN", "worker_outcome": None,
+                "blocker": {"phase": "native_observation", "cause": str(native_error or cause)[:512],
+                            "summary": f"native observation status={native_status[:64]}; Worker execution outcome is unproved",
+                            "evidence": evidence},
+                "grace_started_at": None,
+            }
         return {
             **base,
             "status": "WORKER_INCOMPLETE",

@@ -486,7 +486,6 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
         if sent.get("threadId") != target:
             raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Desktop acknowledged a different target")
         deadline, request_id, proven = time.monotonic() + timeout, 5, None
-        finish_deadline = time.monotonic() + float(address["turn_timeout_seconds"])
         while True:
             view = client.call(request_id, "read_thread", args, caller, timeout)
             request_id += 1
@@ -536,9 +535,9 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
             now = time.monotonic()
             if proven is None and now >= deadline:
                 raise AdapterError("CODEX_DESKTOP_READBACK_UNPROVED", "accepted send lacks exact native delivery/turn proof; do not resend blindly")
-            if now >= finish_deadline:
-                raise AdapterError("CODEX_TURN_TIMEOUT", "proven Desktop turn did not finish within the bound")
-            time.sleep(min(.5, max(.001, (finish_deadline if proven else deadline) - now)))
+            # The transport bounds startup/RPCs, not an already proven engineering turn.
+            # Residency alarms and recovery decisions remain with Temporal/Supervisor.
+            time.sleep(.5 if proven else min(.5, max(.001, deadline - now)))
     except TimeoutError as error:
         raise AdapterError("CODEX_RPC_TIMEOUT", "Desktop native tool timed out; accepted/start evidence remains separate") from error
     finally:

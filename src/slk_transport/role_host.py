@@ -1360,6 +1360,7 @@ class RoleHost:
         projection = self.projection()
         projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", projection)
         snapshot = projection["runtime_snapshot"]
+        delivery_root = str(Path(self.binding["temporal"]["attempt_root"])) if "temporal" in self.binding else str(root)
         common = {"method_version": snapshot["method_version"], "run_id": envelope.run_id,
                   "go_id": envelope.go_id, "cell_id": envelope.cell_id, "attempt": attempt,
                   "plan_revision": self.binding["plan_revision"],
@@ -1387,18 +1388,18 @@ class RoleHost:
                 "management_invocation_id": wc._stable_id(event_id, "normal-incomplete"),
                 "d1_incomplete_event_id": event_id, "native_attempt_path": str(source),
                 "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
-                "escalation_attempt_root": str(root), "reason_codes": list(details["reason_codes"]),
+                "escalation_attempt_root": delivery_root, "reason_codes": list(details["reason_codes"]),
                 "evidence_refs": evidence_refs}
             path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
             return incomplete.execute_checker_management(
-                request, request_path=path, request_sha256=wc._sha256(path)
+                request, request_path=path, request_sha256=wc._sha256(path), temporal=self.binding.get("temporal")
             )
         if recorded["d1_verdict"] == "FAIL":
             native = wc._read_object(source / "ocrv-result.json", "D1 result")
             request = {**common, "schema_version": failed.REQUEST_SCHEMA,
                 "post_d1_invocation_id": wc._stable_id(event_id, "normal-fail"), "d1_failure_event_id": event_id,
                 "native_attempt_path": str(source), "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
-                "escalation_attempt_root": str(root),
+                "escalation_attempt_root": delivery_root,
                 "rework_round": 1 + sum(e.get("event_type") == "REWORK_REQUESTED" and e.get("cell_id") == envelope.cell_id for e in projection["events"]),
                 "cell_goal": candidate_payload["cell_goal"], "acceptance_criteria": candidate_payload["d1_criteria"],
                 "findings": normalized_checker_findings(native["findings"]),
@@ -1419,7 +1420,8 @@ class RoleHost:
             request = {**common, "schema_version": passed.REQUEST_SCHEMA,
                 "completion_invocation_id": wc._stable_id(event_id, "normal-pass"), "d1_event_id": event_id,
                 "target_cell_id": envelope.cell_id if final else ids[index + 1], "route": "D2_READY" if final else "NEXT_CELL",
-                "target_endpoint_path": self.binding["roles"][target_role]["endpoint_path"], "handoff_attempt_root": str(root), "payload": payload}
+                "target_endpoint_path": self.binding["roles"][target_role]["endpoint_path"],
+                "handoff_attempt_root": delivery_root, "payload": payload}
             execute = passed.execute_checker_completion
         path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
-        return execute(request, request_path=path, request_sha256=wc._sha256(path))
+        return execute(request, request_path=path, request_sha256=wc._sha256(path), temporal=self.binding.get("temporal"))

@@ -289,6 +289,7 @@ def materialize_management_escalation(request: Mapping[str, Any]) -> dict[str, A
 def execute_checker_management(
     request: Mapping[str, Any], *, request_sha256: str, request_path: Path | str,
     host_receipt_path: Path | str | None = None,
+    temporal: Mapping[str, Any] | None = None,
     run_json_command: Callable[..., Mapping[str, Any]] = _run_json_command,
     unprotect_credential: Callable[[Path | str], str] = unprotect_dpapi_hex,
 ) -> dict[str, Any]:
@@ -304,7 +305,9 @@ def execute_checker_management(
     try:
         _authenticate(validated, credential, run_json_command)
         if host_receipt_path is None:
-            return _prepare(validated, prepared, run_json_command, credential)
+            return _prepare(validated, prepared, run_json_command, credential, temporal)
+        if temporal is not None:
+            raise CheckerEscalationError("CHECKER_ESCALATION_TEMPORAL_REQUIRED", "Temporal-bound management cannot bypass its native ACK")
         receipt = _path(str(host_receipt_path), "host_receipt_path")
         return _complete(validated, prepared, receipt, credential, run_json_command)
     finally:

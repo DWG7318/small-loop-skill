@@ -50,6 +50,30 @@ def test_desktop_native_readback_starts_exact_same_thread_without_cli_takeover(t
     assert sent[0]["_meta"]["codex_thread_id"] == "caller-exact"
 
 
+def test_proven_desktop_work_is_not_failed_by_transport_finish_clock(tmp_path, monkeypatch):
+    from slk_transport.adapters import codex_desktop as desktop
+    endpoint = prepared(tmp_path, monkeypatch, "active-running")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    clock = [0.0]
+    original_call = desktop.DesktopClient.call
+    after_start_reads = [0]
+    def call(self, *args, **kwargs):
+        result = original_call(self, *args, **kwargs)
+        if (attempt.root / "started.json").is_file():
+            clock[0] = 10_000.0
+            after_start_reads[0] += 1
+            if after_start_reads[0] >= 2:
+                result["turns"][0]["status"] = "completed"
+        return result
+    monkeypatch.setattr(desktop.DesktopClient, "call", call)
+    monkeypatch.setattr(desktop.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(desktop.time, "sleep", lambda _: None)
+    result = desktop.deliver_desktop(endpoint, envelope, attempt, "exact bounded message")
+    assert result.status == "completed" and after_start_reads[0] == 2
+    assert not (attempt.root / "failed.json").exists()
+
+
 def test_desktop_does_not_invent_a_16k_prompt_admission_limit(tmp_path, monkeypatch):
     endpoint = prepared(tmp_path, monkeypatch)
     envelope = supervisor_envelope()

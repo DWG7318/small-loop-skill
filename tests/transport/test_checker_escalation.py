@@ -785,6 +785,117 @@ def request_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize("management", [False, True])
+@pytest.mark.parametrize("ack_valid", [False, True])
+def test_all_checker_escalations_use_existing_temporal_native_ack_before_commit(tmp_path, monkeypatch, management, ack_valid):
+    from slk_transport import worker_completion as wc, checker_escalation as failure, checker_management as incomplete
+    from test_checker_management import fixture as incomplete_fixture
+    from test_temporal_handoff_bridge import temporal_binding
+    module = incomplete if management else failure
+    request, path = incomplete_fixture(tmp_path) if management else fixture(tmp_path)
+    binding = temporal_binding(tmp_path, Path(request["escalation_attempt_root"]))
+    prepared = (module.materialize_management_escalation(request) if management else module.materialize_escalation(request))
+    message_id = prepared["envelope"]["message_id"]
+    calls = []
+    native_launches = []
+    def client(_command, arguments, **_kwargs):
+        operation = arguments[0]
+        calls.append(operation)
+        if operation == "request-delivery":
+            native = Path(prepared["delivery_path"])
+            write_json(native / "started.json", make_native_start(
+                adapter=prepared["endpoint"]["adapter"], run_id=RUN_ID, cell_id=CELL_ID,
+                message_id=message_id, request_sha256=prepared["envelope"]["payload_sha256"],
+                native_request_sha256="c" * 64, native_task_kind="codex-turn",
+                native_task_id="supervisor:new-turn", native_task_status="RUNNING", pid=os.getpid()))
+            native_launches.append(message_id)
+        return {"schema_version": "slk.temporal-delivery-update-result/v1",
+                "status": "DELIVERY_REQUESTED" if operation == "request-delivery" else "DELIVERY_ACKNOWLEDGED",
+                "operation": "request_delivery" if operation == "request-delivery" else "native_started",
+                "run_id": RUN_ID, "operation_id": wc._stable_id(message_id, "temporal-delivery"),
+                "message_id": message_id if ack_valid or operation == "request-delivery" else "wrong-message"}
+    monkeypatch.setattr(wc, "_run_json_command", client)
+    def state(_command, args, *, credential):
+        calls.append(args[0])
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": RUN_ID, "role": "checker",
+                    "role_instance_id": CHECKER_ID, "runtime_revision": 25}
+        assert args[0] == "commit-delivery-start" and credential == "synthetic"
+        commit = json.loads(Path(args[-1]).read_text())
+        assert commit["occurred_at"] == json.loads((Path(prepared["delivery_path"]) / "started.json").read_text())["observed_at"]
+        return {"status": "committed", "run_id": RUN_ID, "runtime_revision": 26,
+                "token_sequence": 5, "token_owner_role_instance_id": SUPERVISOR_ID, "message_id": message_id}
+    execute = module.execute_checker_management if management else module.execute_checker_escalation
+    if ack_valid:
+        result = execute(request, request_path=path, request_sha256=sha256(path), temporal=binding,
+                         run_json_command=state, unprotect_credential=lambda _: "synthetic")
+        assert result["status"] in {"CHECKER_ESCALATION_COMMITTED", "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"}
+        assert calls == ["authenticate-role", "request-delivery", "native-started", "commit-delivery-start"]
+    else:
+        with pytest.raises(ValueError):
+            execute(request, request_path=path, request_sha256=sha256(path), temporal=binding,
+                    run_json_command=state, unprotect_credential=lambda _: "synthetic")
+        assert "commit-delivery-start" not in calls
+    assert native_launches == [message_id]
+
+
+@pytest.mark.parametrize("recovered", [False, True])
+def test_escalation_commit_uses_verified_receiver_start_not_old_review_time(tmp_path, recovered):
+    module = load_module()
+    request, _ = fixture(tmp_path)
+    request["occurred_at"] = "2026-10-08T15:04:56Z"
+    prepared = module.materialize_escalation(request)
+    message_id = RECOVERY_MESSAGE_ID if recovered else prepared["envelope"]["message_id"]
+    started = make_native_start(
+        adapter=prepared["endpoint"]["adapter"], run_id=RUN_ID, cell_id=CELL_ID,
+        message_id=message_id, request_sha256=prepared["envelope"]["payload_sha256"],
+        native_request_sha256="c" * 64, native_task_kind="codex-turn",
+        native_task_id="supervisor:turn-new", native_task_status="RUNNING", pid=os.getpid(),
+    )
+    started["observed_at"] = "2026-10-08T16:03:19Z"
+    started_path = write_json(tmp_path / "supervisor-started.json", started)
+    original = started_path.read_bytes()
+    commits = []
+
+    def run(_command, arguments, *, credential):
+        assert arguments[0] == "commit-delivery-start" and credential == "synthetic"
+        commit = json.loads(Path(arguments[-1]).read_text(encoding="utf-8"))
+        commits.append(commit)
+        return {"status": "committed", "run_id": RUN_ID, "runtime_revision": 26,
+                "token_sequence": 5, "token_owner_role_instance_id": SUPERVISOR_ID,
+                "message_id": message_id}
+
+    for _ in range(2):
+        result = module._commit_started(request, prepared, started_path, message_id,
+                                        "d" * 64, "e" * 64, "synthetic", run, recovered=recovered)
+        assert result["status"] == "CHECKER_ESCALATION_COMMITTED"
+    assert commits[0]["occurred_at"] == started["observed_at"]
+    assert commits[0] == commits[1]
+    assert request["occurred_at"] == "2026-10-08T15:04:56Z"
+    assert started_path.read_bytes() == original
+
+
+@pytest.mark.parametrize("damage", ["message_id", "request_sha256"])
+def test_escalation_commit_rejects_unbound_start_before_state_write(tmp_path, damage):
+    module = load_module()
+    request, _ = fixture(tmp_path)
+    prepared = module.materialize_escalation(request)
+    message_id = prepared["envelope"]["message_id"]
+    started = make_native_start(
+        adapter=prepared["endpoint"]["adapter"], run_id=RUN_ID, cell_id=CELL_ID,
+        message_id=message_id, request_sha256=prepared["envelope"]["payload_sha256"],
+        native_request_sha256="c" * 64, native_task_kind="codex-turn",
+        native_task_id="supervisor:turn-new", native_task_status="RUNNING", pid=os.getpid(),
+    )
+    started[damage] = "wrong-message" if damage == "message_id" else "0" * 64
+    started_path = write_json(tmp_path / "supervisor-started.json", started)
+    with pytest.raises(module.CheckerEscalationError, match="start"):
+        module._commit_started(request, prepared, started_path, message_id, "d" * 64,
+                               "e" * 64, "synthetic",
+                               lambda *_a, **_k: pytest.fail("unbound start reached state write"),
+                               recovered=False)
+
+
 @pytest.mark.parametrize("damage", [None, "authentication", "missing-start", "changed-endpoint", "prior-send"])
 def test_pre_send_host_failure_uses_exact_retry_and_authenticated_checker_commit(tmp_path, damage):
     module = load_module()

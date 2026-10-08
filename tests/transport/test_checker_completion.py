@@ -320,6 +320,93 @@ def test_checker_pass_completes_only_after_target_start_and_atomic_commit(
     assert receipt["status"] == "committed" and receipt["message_id"] == result["message_id"]
 
 
+@pytest.mark.parametrize("final", [False, True])
+def test_checker_commit_time_is_actual_receiver_start_not_older_d1_time(tmp_path: Path, final: bool):
+    from slk_transport.checker_completion import execute_checker_completion
+    request, request_path = fixture(tmp_path, final=final)
+    result = execute_checker_completion(
+        request, request_sha256=digest(request_path), request_path=request_path,
+        run_json_command=successful_runner(request, []), unprotect_credential=lambda _: "slk_" + "d" * 64,
+    )
+    commit = json.loads(Path(result["commit_request_path"]).read_text())
+    started = json.loads(Path(result["started_path"]).read_text())
+    assert commit["occurred_at"] == started["observed_at"]
+
+
+@pytest.mark.parametrize("final", [False, True])
+def test_temporal_bound_checker_pass_uses_normal_delivery_ack_and_never_direct_send(tmp_path, monkeypatch, final):
+    from slk_transport import checker_completion as completion
+    from slk_transport import worker_completion as wc
+    request, request_path = fixture(tmp_path, final=final)
+    commands = []
+    runner = successful_runner(request, commands)
+    calls = []
+    def start(temporal, evidence_root, endpoint, envelope, **kwargs):
+        assert temporal == {"frozen": "binding"}
+        assert envelope["sender_role_instance_id"] == CHECKER_ID
+        assert kwargs["source_runtime_revision"] == 25
+        assert kwargs["required_attempt_root"] == Path(request["handoff_attempt_root"])
+        prepared = completion._materialize(request, completion._validate_boundary(request))
+        # The external activity owns the native start; only this boundary is synthesized.
+        runner([], ["send", "--endpoint", str(prepared["endpoint_path"]), "--envelope", str(prepared["envelope_path"]),
+                    "--attempt-root", request["handoff_attempt_root"]], credential=None)
+        commands.remove("send")
+        calls.append("request/start/ack")
+        return Path(request["handoff_attempt_root"]) / RUN_ID / envelope["message_id"]
+    monkeypatch.setattr(wc, "start_temporal_delivery", start)
+    result = completion.execute_checker_completion(
+        request, request_sha256=digest(request_path), request_path=request_path, temporal={"frozen": "binding"},
+        run_json_command=runner, unprotect_credential=lambda _: "slk_" + "d" * 64,
+    )
+    assert result["status"] == "CHECKER_COMPLETION_COMMITTED" and calls == ["request/start/ack"]
+    assert commands == ["authenticate-role", "commit-delivery-start"]
+
+
+@pytest.mark.parametrize("final", [False, True])
+@pytest.mark.parametrize("ack_valid", [False, True])
+def test_checker_temporal_ack_is_required_before_commit_and_retry_does_not_restart(tmp_path, monkeypatch, final, ack_valid):
+    from slk_transport import checker_completion as completion, worker_completion as wc
+    from test_temporal_handoff_bridge import temporal_binding
+    request, path = fixture(tmp_path, final=final)
+    binding = temporal_binding(tmp_path, Path(request["handoff_attempt_root"]))
+    commands, client_calls = [], []
+    runner = successful_runner(request, commands)
+    prepared = completion._materialize(request, completion._validate_boundary(request))
+    envelope = prepared["envelope"]
+    started_once = False
+    def client(_command, arguments, **_kwargs):
+        nonlocal started_once
+        operation = arguments[0]
+        client_calls.append(operation)
+        if operation == "request-delivery" and not started_once:
+            runner([], ["send", "--endpoint", str(prepared["endpoint_path"]), "--envelope", str(prepared["envelope_path"]),
+                        "--attempt-root", request["handoff_attempt_root"]], credential=None)
+            commands.remove("send")
+            started_once = True
+            status = "DELIVERY_REQUESTED"
+        else:
+            status = "DELIVERY_ACKNOWLEDGED"
+        return {"schema_version": "slk.temporal-delivery-update-result/v1", "status": status,
+                "operation": "request_delivery" if operation == "request-delivery" else "native_started",
+                "run_id": RUN_ID, "operation_id": wc._stable_id(envelope["message_id"], "temporal-delivery"),
+                "message_id": envelope["message_id"] if ack_valid or operation == "request-delivery" else "wrong-message"}
+    monkeypatch.setattr(wc, "_run_json_command", client)
+    def execute():
+        return completion.execute_checker_completion(request, request_sha256=digest(path), request_path=path,
+            temporal=binding, run_json_command=runner, unprotect_credential=lambda _: "slk_" + "d" * 64)
+    if not ack_valid:
+        with pytest.raises(wc.CompletionError):
+            execute()
+        assert commands == ["authenticate-role"]
+    else:
+        first = execute()
+        start_bytes = Path(first["started_path"]).read_bytes()
+        second = execute()
+        assert second == first and Path(first["started_path"]).read_bytes() == start_bytes
+        assert client_calls == ["request-delivery", "native-started", "request-delivery"]
+        assert commands.count("commit-delivery-start") == 2
+
+
 def test_final_completion_commits_verified_late_desktop_start_without_resending(
     tmp_path: Path,
 ) -> None:

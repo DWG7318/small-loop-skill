@@ -715,7 +715,18 @@ def _prepare(
     prepared: Mapping[str, Any],
     run_json_command: Callable[..., Mapping[str, Any]],
     credential: str,
+    temporal: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if temporal is not None:
+        from . import worker_completion as wc
+        native = wc.start_temporal_delivery(
+            temporal, Path(str(prepared["endpoint_path"])).parent, prepared["endpoint"], prepared["envelope"],
+            attempt=int(request["attempt"]), source_runtime_revision=int(request["runtime_revision"]),
+            required_attempt_root=Path(str(prepared["attempt_root"])),
+        )
+        return _commit_started(request, prepared, native / "started.json", str(prepared["envelope"]["message_id"]),
+                               _sha256(native / "endpoint.json"), _sha256(native / "envelope.json"),
+                               credential, run_json_command, recovered=False)
     common = [
         "--endpoint",
         str(prepared["endpoint_path"]),
@@ -922,6 +933,16 @@ def _commit_started(
     endpoint_sha256: str, envelope_sha256: str, credential: str,
     run_json_command: Callable[..., Mapping[str, Any]], *, recovered: bool,
 ) -> dict[str, Any]:
+    try:
+        native_start = validate_native_start(
+            started_path, adapter=str(prepared["endpoint"]["adapter"]),
+            run_id=str(request["run_id"]), cell_id=str(request["cell_id"]),
+            message_id=message_id, request_sha256=str(prepared["envelope"]["payload_sha256"]),
+        )
+    except NativeActivityError as exc:
+        raise CheckerEscalationError(
+            "CHECKER_ESCALATION_START_UNPROVEN", "Supervisor start is missing or unbound"
+        ) from exc
     commit = {
         "event_id": _stable_id(request, "supervisor-transport-started"),
         "transport_receipt_id": _stable_id(request, "supervisor-transport-receipt"),
@@ -947,7 +968,7 @@ def _commit_started(
             "envelope_sha256": envelope_sha256,
             "native_status": "STARTED",
         },
-        "occurred_at": request["occurred_at"],
+        "occurred_at": native_start["observed_at"],
     }
     commit_path = _write_stable(
         Path(str(prepared["endpoint_path"])).parent / "commit-delivery-start.json", commit
@@ -1012,6 +1033,7 @@ def execute_checker_escalation(
     request_sha256: str,
     request_path: Path | str,
     host_receipt_path: Path | str | None = None,
+    temporal: Mapping[str, Any] | None = None,
     run_json_command: Callable[..., Mapping[str, Any]] = _run_json_command,
     unprotect_credential: UnprotectCredential = unprotect_dpapi_hex,
 ) -> dict[str, Any]:
@@ -1029,7 +1051,9 @@ def execute_checker_escalation(
     try:
         _authenticate(validated, credential, run_json_command)
         if host_receipt_path is None:
-            return _prepare(validated, prepared, run_json_command, credential)
+            return _prepare(validated, prepared, run_json_command, credential, temporal)
+        if temporal is not None:
+            raise CheckerEscalationError("CHECKER_ESCALATION_TEMPORAL_REQUIRED", "Temporal-bound escalation cannot bypass its native ACK")
         receipt = _path(str(host_receipt_path), "host_receipt_path")
         return _complete(validated, prepared, receipt, credential, run_json_command)
     finally:

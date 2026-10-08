@@ -574,6 +574,39 @@ def prepared_host(tmp_path):
     return host, attempt, envelope
 
 
+@pytest.mark.parametrize("verdict", ["PASS", "FAIL", "INCOMPLETE"])
+def test_checker_suffix_forwards_frozen_temporal_and_canonical_attempt_root(tmp_path, monkeypatch, verdict):
+    from slk_transport import checker_completion, checker_escalation
+    host, source, incoming = prepared_host(tmp_path)
+    checker = host.endpoint("checker")
+    candidate = {**asdict(incoming), "sender_role": "worker", "receiver_role": "checker",
+                 "sender_role_instance_id": host.endpoint("worker")["role_instance_id"],
+                 "receiver_role_instance_id": checker["role_instance_id"],
+                 "receiver_endpoint_version": checker["endpoint_version"], "payload_type": "CANDIDATE_READY"}
+    envelope = Envelope.from_dict(candidate)
+    canonical = tmp_path / "canonical-attempts"
+    host.binding["temporal"] = {"attempt_root": str(canonical)}
+    current = host_boundary(host, envelope)
+    current["go_nodes"] = [{"go_id": envelope.go_id, "ordinal": 1, "cell_nodes": [
+        {"cell_id": envelope.cell_id, "ordinal": 1, "state": "d1_passed"}]}]
+    current["events"] = [{"event_id": wc._stable_id(envelope.message_id, "d1-result-v2"),
+                          "details_json": json.dumps({"reason_codes": ["OCR_STATUS_NOT_COMPLETE"]})}]
+    write_json(source / "ocrv-result.json", {"findings": [{"summary": "proven blocker"}]})
+    monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
+    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: {"d1_verdict": verdict})
+    monkeypatch.setattr(host, "projection", lambda: current)
+    def complete(request, **options):
+        assert options["temporal"] == host.binding["temporal"]
+        assert Path(request.get("handoff_attempt_root", request.get("escalation_attempt_root"))) == canonical
+        return {"status": "CHECKER_COMPLETION_COMMITTED"}
+    monkeypatch.setattr(checker_completion, "execute_checker_completion", complete)
+    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", complete)
+    monkeypatch.setattr(checker_management, "execute_checker_management", complete)
+    root = source / "role-host"
+    root.mkdir()
+    assert host._checker_result(source, envelope, root, "2026-10-08T00:00:00Z", current)["status"] == "CHECKER_COMPLETION_COMMITTED"
+
+
 @pytest.mark.parametrize("damage", ["open-payload", "wrong-ordinal", "missing-record"])
 def test_preparation_rejects_unusable_next_cell_before_dispatch(tmp_path, damage):
     host, source, incoming = prepared_host(tmp_path)

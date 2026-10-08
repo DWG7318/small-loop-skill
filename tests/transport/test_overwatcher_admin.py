@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,9 +16,29 @@ def write_json(path: Path, value: dict) -> Path:
 
 
 def request_fixture(tmp_path: Path, operation: str = "record-overwatch-cycle") -> Path:
+    from test_worker_completion import completion_fixture, runtime_projection
+    source, endpoint, _ = completion_fixture(tmp_path)
+    projection = runtime_projection(token_owner=endpoint["role_instance_id"])
+    projection["runtime_snapshot"]["method_version"] = "4.4.2"
+    projection["roles"] = [{"role": "worker", "role_instance_id": endpoint["role_instance_id"]}]
+    details = json.loads(projection["events"][0]["details_json"])
+    details.update(start_evidence_sha256=hashlib.sha256((source / "started.json").read_bytes()).hexdigest(),
+                   endpoint_sha256=hashlib.sha256((source / "endpoint.json").read_bytes()).hexdigest(),
+                   envelope_sha256=hashlib.sha256((source / "envelope.json").read_bytes()).hexdigest())
+    projection["events"][0]["details_json"] = json.dumps(details)
+    write_json(tmp_path / "runtime.json", projection)
+    now = datetime.now(timezone.utc)
+    inspection = admin.wc.inspect_worker_completion(source, projection, observed_at=now.isoformat(), cadence_seconds=600)
+    inspection_path = write_json(tmp_path / "inspection.json", inspection)
     operation_request = write_json(tmp_path / "operation.json", {
-        "cycle_id": "cycle-1", "run_id": "RUN-A",
-        "role_instance_id": "RUN-A-overwatcher-001",
+        "cycle_id": "cycle-1", "run_id": "RUN-A", "role_instance_id": "RUN-A-overwatcher-001",
+        "go_id": "GO-001", "cell_id": "CELL-001", "attempt": 1,
+        "runtime_revision": 7, "token_sequence": 14, "token_holder_role_instance_id": endpoint["role_instance_id"],
+        "latest_message_id": inspection["source_message_id"], "cadence_seconds": 600,
+        "started_at": (now - timedelta(seconds=1)).isoformat(),
+        "completed_at": (now + timedelta(milliseconds=1)).isoformat(),
+        "evidence_refs": [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+                          for p in (source / "started.json", inspection_path)],
     })
     sealed = tmp_path / "overwatcher.dpapi"
     sealed.write_text("sealed", encoding="ascii")
@@ -33,6 +54,56 @@ def request_fixture(tmp_path: Path, operation: str = "record-overwatch-cycle") -
         "operation_request_sha256": hashlib.sha256(operation_request.read_bytes()).hexdigest(),
         "result_path": str(tmp_path / "admin-result.json"),
     })
+
+
+@pytest.fixture(autouse=True)
+def isolated_current_projection(tmp_path, monkeypatch):
+    monkeypatch.setattr(admin.wc, "_default_load_current_projection",
+                        lambda *_a, **_k: json.loads((tmp_path / "runtime.json").read_text()))
+
+
+@pytest.mark.parametrize("damage", ["forged-status", "missing-start", "duplicate-inspection", "wrong-source",
+                                    "old-clock", "instant-cycle", "future-cycle"])
+def test_cycle_requires_real_recollected_worker_facts_before_state_write(tmp_path, monkeypatch, damage):
+    request = request_fixture(tmp_path)
+    raw = json.loads(request.read_text())
+    path = Path(raw["operation_request_path"])
+    cycle = json.loads(path.read_text())
+    inspection_path = tmp_path / "inspection.json"
+    inspection = json.loads(inspection_path.read_text())
+    if damage == "forged-status":
+        inspection["status"] = "IN_PROGRESS"
+    elif damage == "wrong-source":
+        inspection["source_message_id"] = "wrong-message"
+    elif damage == "missing-start":
+        cycle["evidence_refs"] = cycle["evidence_refs"][1:]
+    elif damage == "duplicate-inspection":
+        copy = write_json(tmp_path / "second-inspection.json", inspection)
+        cycle["evidence_refs"].append({"path": str(copy), "sha256": hashlib.sha256(copy.read_bytes()).hexdigest()})
+    elif damage == "old-clock":
+        inspection["observed_at"] = "2026-09-23T00:00:00Z"
+    elif damage == "instant-cycle":
+        cycle["completed_at"] = cycle["started_at"]
+    else:
+        cycle["completed_at"] = "2099-01-01T00:00:00Z"
+    write_json(inspection_path, inspection)
+    for ref in cycle["evidence_refs"]:
+        ref["sha256"] = hashlib.sha256(Path(ref["path"]).read_bytes()).hexdigest()
+    write_json(path, cycle)
+    raw["operation_request_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    write_json(request, raw)
+    calls = []
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _: "synthetic")
+    def run(_command, args, **_kwargs):
+        calls.append(args[0])
+        if args[0] != "authenticate-role": pytest.fail("unproved cycle reached OW write")
+        return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
+                "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 7}
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(ValueError, match="OVERWATCHER_CYCLE"):
+        admin.execute_sealed_overwatcher_admin(request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+    assert calls == ["authenticate-role"]
+    assert not Path(raw["result_path"]).exists()
 
 
 def test_ow_consumer_authenticates_and_records_own_cycle_without_exposing_secret(tmp_path, monkeypatch):

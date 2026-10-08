@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import SUPPORTED_METHOD_VERSIONS
+from . import worker_completion as wc
 
 import hashlib
 import json
@@ -473,6 +474,11 @@ def _commit(
         envelope_sha256 = _sha256(envelope_evidence)
     endpoint: Endpoint = prepared["endpoint"]
     envelope = prepared["envelope"]
+    start = validate_native_start(
+        started_path, adapter=endpoint.adapter, run_id=str(request["run_id"]),
+        cell_id=str(request["target_cell_id"]), message_id=message_id,
+        request_sha256=str(envelope["payload_sha256"]),
+    )
     commit = {
         "event_id": _stable_id(request, "target-transport-started"),
         "transport_receipt_id": _stable_id(request, "target-transport-receipt"),
@@ -498,7 +504,7 @@ def _commit(
             "envelope_sha256": envelope_sha256,
             "native_status": "STARTED",
         },
-        "occurred_at": request["occurred_at"],
+        "occurred_at": start["observed_at"],
     }
     commit_path = _write_stable(Path(str(prepared["request_root"])) / "commit-delivery-start.json", commit)
     recorded = run_json_command(
@@ -596,6 +602,7 @@ def _complete_desktop(
 def execute_checker_completion(
     request: Mapping[str, Any], *, request_sha256: str, request_path: Path | str,
     host_receipt_path: Path | str | None = None,
+    temporal: Mapping[str, Any] | None = None,
     run_json_command: RunJsonCommand = _run_json_command,
     unprotect_credential: UnprotectCredential = unprotect_dpapi_hex,
 ) -> dict[str, Any]:
@@ -611,10 +618,22 @@ def execute_checker_completion(
     try:
         _authenticate(validated, credential, run_json_command)
         if host_receipt_path is not None:
+            if temporal is not None:
+                raise CheckerCompletionError("CHECKER_COMPLETION_TEMPORAL_REQUIRED", "Temporal-bound completion cannot bypass its native ACK")
             receipt = _existing_path(str(host_receipt_path), "host_receipt_path")
             return _complete_desktop(
                 validated, prepared, receipt, credential, run_json_command
             )
+        if temporal is not None:
+            envelope = prepared["envelope"]
+            native = wc.start_temporal_delivery(
+                temporal, Path(prepared["request_root"]),
+                _read_object(Path(prepared["endpoint_path"]), "target endpoint"), envelope,
+                attempt=int(validated["attempt"]) if validated["route"] == "D2_READY" else 1,
+                source_runtime_revision=int(validated["runtime_revision"]),
+                required_attempt_root=Path(str(validated["handoff_attempt_root"])),
+            )
+            return _commit(validated, prepared, str(envelope["message_id"]), native / "started.json", credential, run_json_command)
         direct = _direct_start(validated, prepared, run_json_command)
         if isinstance(direct, dict):
             return direct

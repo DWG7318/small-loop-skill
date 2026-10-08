@@ -262,6 +262,8 @@ def test_standard_adapter_inspects_ow_and_notifies_with_fresh_projection(tmp_pat
         calls.append((command, arguments))
         if "inspect-native-activity" in arguments:
             return {"status": "ACTIVE", "run_id": RUN_ID}
+        if "inspect-overwatcher-cadence" in arguments:
+            return current_cadence()
         if arguments and arguments[0] == "run":
             return {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"runtime_revision": 9}}
         return {"status": "NOTIFIED", "event_id": "event-a",
@@ -291,6 +293,50 @@ def test_standard_adapter_rejects_changed_role_host_hash(tmp_path):
     standard_adapter.configure(root)
     with pytest.raises(ValueError, match="role host"):
         standard_adapter._load_config(RUN_ID)
+
+
+@pytest.mark.parametrize("cadence_status", ["LATE", "CONTINUITY_UNPROVEN", "CURRENT"])
+def test_ow_native_active_is_not_a_substitute_for_real_cycle_cadence(tmp_path, monkeypatch, cadence_status):
+    root, _config = config_root(tmp_path)
+    standard_adapter.configure(root)
+    calls = []
+    def run(_command, arguments, **_kwargs):
+        calls.append(arguments)
+        if arguments[0] == "inspect-native-activity":
+            return {"status": "ACTIVE", "run_id": RUN_ID}
+        if arguments[0] == "inspect-overwatcher-cadence":
+            return {**current_cadence(), "status": cadence_status}
+        return {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"runtime_revision": 9}}
+    monkeypatch.setattr(standard_adapter, "_run_json", run)
+    result = asyncio.run(standard_adapter.inspect_overwatcher({
+        "run_id": RUN_ID, "overwatcher_role_instance_id": "ow-a", "endpoint_ref": "ow-endpoint-a", "audit_cycle": 2,
+    }))
+    assert result["status"] == ("CLEAR" if cadence_status == "CURRENT" else "ANOMALY")
+    assert any(args[0] == "inspect-overwatcher-cadence" for args in calls)
+
+
+def current_cadence():
+    return {"schema_version": "slk.overwatcher-cadence-inspection/v1", "status": "CURRENT",
+            "run_id": RUN_ID, "overwatcher_role_instance_id": "ow-a", "latest_cycle_id": "cycle-real",
+            "cadence_seconds": 600, "elapsed_seconds": 60}
+
+
+@pytest.mark.parametrize("damage", ["no-cycle", "no-schema", "negative-age", "overdue", "old-cadence"])
+def test_current_ow_label_without_real_fresh_cycle_cannot_clear_audit(tmp_path, monkeypatch, damage):
+    root, _ = config_root(tmp_path)
+    standard_adapter.configure(root)
+    cadence = current_cadence()
+    if damage == "no-cycle": cadence["latest_cycle_id"] = None
+    if damage == "no-schema": cadence.pop("schema_version")
+    if damage == "negative-age": cadence["elapsed_seconds"] = -1
+    if damage == "overdue": cadence["elapsed_seconds"] = 601
+    if damage == "old-cadence": cadence["cadence_seconds"] = 240
+    def run(_command, args, **_kwargs):
+        return cadence if args[0] == "inspect-overwatcher-cadence" else {"status": "ACTIVE"}
+    monkeypatch.setattr(standard_adapter, "_run_json", run)
+    result = asyncio.run(standard_adapter.inspect_overwatcher({"run_id": RUN_ID,
+        "overwatcher_role_instance_id": "ow-a", "endpoint_ref": "ow-endpoint-a", "audit_cycle": 1}))
+    assert result["status"] == "ANOMALY"
 
 
 def test_standard_adapter_v2_binds_live_ow_attestation_and_passes_it_to_each_audit(
@@ -335,6 +381,8 @@ def test_standard_adapter_v2_binds_live_ow_attestation_and_passes_it_to_each_aud
 
     def run(command, arguments, **_kwargs):
         calls.append(arguments)
+        if "inspect-overwatcher-cadence" in arguments:
+            return current_cadence()
         return {"status": "ACTIVE"}
 
     monkeypatch.setattr(standard_adapter, "_run_json", run)
@@ -346,12 +394,13 @@ def test_standard_adapter_v2_binds_live_ow_attestation_and_passes_it_to_each_aud
     }))
 
     assert result["status"] == "CLEAR"
-    assert calls == [[
+    assert calls[0] == [
         "inspect-native-activity",
         "--started", str(started.resolve()),
         "--desktop-overwatcher-attestation", str(attestation.resolve()),
         "--desktop-overwatcher-attestation-sha256", hashlib.sha256(attestation.read_bytes()).hexdigest(),
-    ]]
+    ]
+    assert any(args[0] == "inspect-overwatcher-cadence" for args in calls)
 
 
 def test_standard_adapter_v2_rejects_ow_attestation_for_another_binding(tmp_path):

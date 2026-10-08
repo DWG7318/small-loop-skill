@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import worker_completion as wc
+from .native_activity import inspect_native_activity, utc_now
 
 
 FIELDS = {
@@ -38,6 +39,65 @@ def _object(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be an object")
     return value
+
+
+def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) -> None:
+    """Recheck original native evidence; an OW-written inspection is not execution proof."""
+    try:
+        now = utc_now()
+        start, end = wc._timestamp(cycle["started_at"]), wc._timestamp(cycle["completed_at"])
+        age = (wc._timestamp(now) - end).total_seconds()
+        if end <= start or not -1 <= age <= cycle["cadence_seconds"]:
+            raise ValueError("cycle must have real, current start and completion times")
+        projection = wc._default_load_current_projection(run_id, state_command)
+        snapshot = projection["runtime_snapshot"]
+        for field in ("runtime_revision", "token_sequence", "token_holder_role_instance_id", "latest_message_id"):
+            if cycle.get(field) != snapshot.get(field):
+                raise ValueError("cycle differs from the current authoritative scope")
+        references = cycle["evidence_refs"]
+        objects = []
+        for ref in references:
+            path = Path(ref["path"])
+            if not path.is_absolute() or _sha256(path) != ref["sha256"]:
+                raise ValueError("cycle evidence is missing or changed")
+            if path.stat().st_size <= 131072:
+                try:
+                    value = _object(path, "cycle evidence")
+                except ValueError:
+                    continue
+                objects.append((path, value))
+        inspections = [(p, v) for p, v in objects if v.get("schema_version") == wc.INSPECTION_SCHEMA]
+        worker = any(r.get("role") == "worker" and r.get("role_instance_id") == snapshot.get("token_holder_role_instance_id")
+                     for r in projection.get("roles", []))
+        if not worker:
+            return
+        if len(inspections) != 1:
+            raise ValueError("Worker-held TOKEN needs exactly one original completion inspection")
+        reported = inspections[0][1]
+        if not start <= wc._timestamp(reported["observed_at"]) <= end:
+            raise ValueError("inspection time is outside the real cycle")
+        events = [e for e in projection["events"] if e.get("event_type") == "TRANSPORT_STARTED"
+                  and wc._event_details(e).get("message_id") == snapshot["latest_message_id"]]
+        if len(events) != 1:
+            raise ValueError("original Worker native start is not uniquely bound")
+        proof = wc._event_details(events[0])
+        starts = [p for p, v in objects if v.get("schema_version") == "slk.native-start/v2"
+                  and _sha256(p) == proof.get("start_evidence_sha256")]
+        if len(starts) != 1:
+            raise ValueError("cycle must reference the exact authoritative Worker started.json")
+        source = starts[0].parent
+        for name in ("endpoint", "envelope"):
+            if _sha256(source / (name + ".json")) != proof.get(name + "_sha256"):
+                raise ValueError("Worker source identity changed")
+        def current_native(path, **kwargs):
+            kwargs.pop("observed_at", None)
+            return inspect_native_activity(path, **kwargs)
+        actual = wc.inspect_worker_completion(source, projection, observed_at=utc_now(),
+                                              cadence_seconds=cycle["cadence_seconds"], native_inspector=current_native)
+        if {k: v for k, v in actual.items() if k != "observed_at"} != {k: v for k, v in reported.items() if k != "observed_at"}:
+            raise ValueError("reported Worker inspection differs from recollected native facts")
+    except (KeyError, TypeError, OSError, ValueError) as exc:
+        raise ValueError("OVERWATCHER_CYCLE_EVIDENCE_INVALID: recollect current scope, time and original native evidence") from exc
 
 
 def execute_sealed_overwatcher_admin(
@@ -96,6 +156,8 @@ def execute_sealed_overwatcher_admin(
             raise ValueError("OVERWATCHER_AUTHENTICATION_FAILED: saved credential does not authenticate the current Overwatcher")
         if authenticated.get("runtime_revision") != revision:
             raise ValueError("OVERWATCHER_SNAPSHOT_STALE: refresh the snapshot and collect a new observation; do not replay the old cycle")
+        if operation == "record-overwatch-cycle":
+            _verify_cycle(operation_value, run_id, list(state_command))
         state_result = wc._run_json_command(
             list(state_command), [operation, "--request", str(operation_request)],
             credential=secret, credential_scope="overwatcher",

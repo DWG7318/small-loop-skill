@@ -34,7 +34,7 @@
     "handoff_message_id": {"type": "string", "format": "uuid"},
     "observed_at": {"type": "string", "format": "date-time"},
     "cadence_seconds": {"type": "integer", "minimum": 1},
-    "status": {"enum": ["IN_PROGRESS", "COMPLETION_GRACE", "WORKER_COMPLETION_HANDOFF_MISSING", "HANDED_OFF_OR_D1", "WORKER_INCOMPLETE", "WORKER_BLOCKED", "WORKER_EXECUTION_FAILURE", "WORKER_TIMED_OUT"]},
+    "status": {"enum": ["UNKNOWN", "IN_PROGRESS", "COMPLETION_GRACE", "WORKER_COMPLETION_HANDOFF_MISSING", "HANDED_OFF_OR_D1", "WORKER_INCOMPLETE", "WORKER_BLOCKED", "WORKER_EXECUTION_FAILURE", "WORKER_TIMED_OUT"]},
     "grace_started_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
     "anomaly_codes": {"type": "array", "uniqueItems": true, "items": {"enum": ["WORKER_COMPLETION_HANDOFF_MISSING", "COMMUNICATION_RECOVERY_REQUIRED"]}},
     "notification_already_sent": {"type": "boolean"},

@@ -13,6 +13,8 @@ import json
 import os
 import re
 import subprocess
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 from uuid import UUID
@@ -251,6 +253,7 @@ def _run_json(
             if completed.returncode != 0 and value.get("status") not in {
                 "REPAIR_NEEDED", "INCOMPATIBLE", "UNKNOWN", "DEAD_WITHOUT_TERMINAL",
                 "COMPLETED_WITHOUT_TERMINAL", "FAILED_WITHOUT_TERMINAL",
+                "LATE", "CONTINUITY_UNPROVEN",
             }:
                 raise RuntimeError("standard adapter command failed")
             return value
@@ -395,8 +398,24 @@ async def inspect_overwatcher(value: dict[str, Any]) -> dict[str, Any]:
             if ow[field] is not None:
                 arguments.extend((option, ow[field]))
         observation = _run_json(list(config["transport_command"]), arguments)
-        evidence_sha256 = _receipt(observation)
-        core = {"status": "CLEAR" if observation.get("status") in {"ACTIVE", "IDLE", "PENDING"} else "ANOMALY",
+        # Being online does not prove that the bound Run received its due observation cycle.
+        with tempfile.TemporaryDirectory(prefix="slk-ow-audit-", dir=config["notification_attempt_root"]) as temporary:
+            projection_path = Path(temporary) / "projection.json"
+            _write_once(projection_path, _query(config))
+            cadence = _run_json(list(config["transport_command"]), [
+                "inspect-overwatcher-cadence", "--runtime-projection", str(projection_path),
+                "--observed-at", datetime.now(timezone.utc).isoformat(),
+            ])
+        age = cadence.get("elapsed_seconds")
+        current_cycle = (
+            cadence.get("schema_version") == "slk.overwatcher-cadence-inspection/v1"
+            and cadence.get("status") == "CURRENT" and cadence.get("run_id") == value["run_id"]
+            and cadence.get("overwatcher_role_instance_id") == value["overwatcher_role_instance_id"]
+            and isinstance(cadence.get("latest_cycle_id"), str) and bool(cadence["latest_cycle_id"])
+            and cadence.get("cadence_seconds") == 600 and type(age) is int and 0 <= age <= 600
+        )
+        evidence_sha256 = _receipt({"native": observation, "cadence": cadence})
+        core = {"status": "CLEAR" if current_cycle and observation.get("status") in {"ACTIVE", "IDLE", "PENDING"} else "ANOMALY",
                 "run_id": value["run_id"], "overwatcher_role_instance_id": value["overwatcher_role_instance_id"],
                 "audit_cycle": value["audit_cycle"], "evidence_sha256": evidence_sha256}
         return {**core, "receipt_sha256": _receipt(core)}

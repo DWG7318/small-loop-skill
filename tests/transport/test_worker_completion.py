@@ -1298,6 +1298,38 @@ def test_dead_worker_native_turn_is_not_reported_as_in_progress(tmp_path: Path) 
     assert result["candidate"] is None
 
 
+@pytest.mark.parametrize("error", ["NATIVE_ACTIVITY_STALE", "NATIVE_ACTIVITY_MISSING", "NATIVE_ACTIVITY_FROM_FUTURE", "PROCESS_PROBE_FAILED"])
+def test_unprovable_native_observation_is_unknown_not_worker_incomplete(tmp_path: Path, error: str) -> None:
+    import jsonschema
+    attempt, endpoint, _checker = completion_fixture(tmp_path)
+    (attempt / "completed.json").unlink()
+    (attempt / "worker-result.json").unlink()
+    result = inspect_worker_completion(
+        attempt, runtime_projection(token_owner=str(endpoint["role_instance_id"])),
+        observed_at="2026-09-23T00:10:00Z", cadence_seconds=600,
+        native_inspector=lambda *_args, **_kwargs: {"status": "UNKNOWN", "error": error},
+    )
+    assert result["status"] == "UNKNOWN" and result["worker_outcome"] is None
+    assert result["blocker"]["cause"] == error
+    schema = json.loads((Path(__file__).resolve().parents[2] / "docs/contracts/slk-worker-completion-inspection.schema.json").read_text())
+    jsonschema.validate(result, schema)
+
+
+@pytest.mark.parametrize("exception", [PermissionError("native evidence access denied"), ValueError("malformed native evidence")])
+def test_native_observation_exception_does_not_create_engineering_result(tmp_path: Path, exception: Exception) -> None:
+    attempt, endpoint, _checker = completion_fixture(tmp_path)
+    (attempt / "completed.json").unlink()
+    (attempt / "worker-result.json").unlink()
+    def unavailable(*_args, **_kwargs):
+        raise exception
+    result = inspect_worker_completion(
+        attempt, runtime_projection(token_owner=str(endpoint["role_instance_id"])),
+        observed_at="2026-09-23T00:10:00Z", cadence_seconds=600, native_inspector=unavailable,
+    )
+    assert result["status"] == "UNKNOWN" and result["worker_outcome"] is None
+    assert str(exception) in result["blocker"]["cause"]
+
+
 def test_d1_from_an_older_attempt_does_not_hide_current_worker_handoff_stall(tmp_path: Path) -> None:
     attempt, endpoint, _checker = completion_fixture(tmp_path)
     projection = runtime_projection(token_owner=str(endpoint["role_instance_id"]), attempt=2)
