@@ -910,11 +910,13 @@ class OcrvAdapter:
                 try:
                     if context is not None:
                         raise ValueError("duplicate context recovery plans")
-                    if plan["schema_version"] == context_review.THRESHOLD_SCHEMA:
+                    if plan["schema_version"] in (context_review.THRESHOLD_SCHEMA, context_review.ORIGINAL_SCOPE_SCHEMA):
                         # Keep the original per-call ceiling; management defaults must not upgrade it.
                         frozen = context_review.read(Path(plan["sources"]["request"]["path"]))
                         request = {**request, "capacity": frozen["capacity"]}
                     context = context_review.validate(plan, request, envelope.payload)
+                    if plan['schema_version'] == context_review.ORIGINAL_SCOPE_SCHEMA:
+                        request = context['request']
                     context.update(plan=plan, plan_path=path, plan_sha256=context_review.digest(path))
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", str(exc)) from exc
@@ -1094,7 +1096,7 @@ class OcrvAdapter:
             if scope_matches and self._preflight_fits(segment_request, proposal_preflight):
                 fitted_segments.append((segment_request, proposal_preflight, proposal_process))
                 continue
-            if context is not None and context["plan"]["schema_version"] == context_review.THRESHOLD_SCHEMA:
+            if context is not None and context["plan"]["schema_version"] in (context_review.THRESHOLD_SCHEMA, context_review.ORIGINAL_SCOPE_SCHEMA):
                 return incomplete(len(segments), 0, ("ocrv-preflight.json",))
             refinements = (
                 self._split_review_segment(request, selected_paths, segment_request)
@@ -1255,7 +1257,7 @@ class OcrvAdapter:
             try:
                 if context_review.digest(context["plan_path"]) != context["plan_sha256"]:
                     raise ValueError("context recovery plan changed during review")
-                context_review.validate(context["plan"], request, envelope.payload)
+                context_review.validate(context["plan"], context.get('source_request', request), envelope.payload)
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", str(exc)) from exc
             compact_findings[:0] = [{k: v for k, v in x.items() if k not in {"thinking", "reasoning", "analysis"}}
@@ -1281,11 +1283,14 @@ class OcrvAdapter:
                 "parent_session_id": context["raw"]["session_id"], "reused": context["reused"],
                 "selected": list(context["selected"].values()),
             }
-            if context["plan"]["schema_version"] == context_review.THRESHOLD_SCHEMA:
+            if context["plan"]["schema_version"] in (context_review.THRESHOLD_SCHEMA, context_review.ORIGINAL_SCOPE_SCHEMA):
                 settled = len(segment_results) - int(verdict == "INCOMPLETE")
-                aggregate["context_recovery"].update(failure_kind=context_review.THRESHOLD_KIND,
+                aggregate["context_recovery"].update(failure_kind=context['plan']['failure_kind'],
                     reviewed_paths=[p for group in context["groups"][:settled] for p in group],
                     not_reviewed_paths=[p for group in context["groups"][settled:] for p in group])
+                if context['plan']['schema_version'] == context_review.ORIGINAL_SCOPE_SCHEMA:
+                    aggregate['context_recovery'].update(original_plan=context['original_plan'],
+                        review_input=context['review_input'], background_evidence=context['plan']['background_evidence'])
         aggregate_path = attempt.write_json_once("ocrv-aggregate.json", aggregate)
         final_scope = {
             "include_paths": list(preview["selected_paths"]),

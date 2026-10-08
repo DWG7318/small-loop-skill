@@ -933,6 +933,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     context_preparer.add_argument("--source-d1-incomplete-event-id", required=True)
     context_preparer.add_argument("--per-file", action="store_true")
     context_preparer.add_argument("--per-call-input-threshold", action="store_true")
+    context_preparer.add_argument("--original-scope-plan", type=Path)
     context_terminal = subparsers.add_parser('consume-context-terminal')
     for name in ('binding', 'source-attempt', 'session-record'):
         context_terminal.add_argument('--' + name, required=True, type=Path)
@@ -1132,6 +1133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 candidate_message_id=args.candidate_message_id,
                 source_d1_incomplete_event_id=args.source_d1_incomplete_event_id, output=args.output, per_file=args.per_file,
                 per_call_input_threshold=args.per_call_input_threshold,
+                original_plan=args.original_scope_plan,
             ))
             return 0
         if args.command == "resume-terminal-budget-checker":

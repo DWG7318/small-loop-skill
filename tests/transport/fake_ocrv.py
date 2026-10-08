@@ -211,7 +211,7 @@ segment_sentinel = (
 )
 verdict = (
     "FAIL"
-    if args.mode == "blocking-first" and (is_first_segment or "segment " not in request["cell_goal"])
+    if args.mode in ("blocking-first", "context-blocking") and (is_first_segment or "segment " not in request["cell_goal"])
     else "INCOMPLETE"
     if args.mode == "incomplete"
     else "PASS"
@@ -250,7 +250,9 @@ args.output.parent.mkdir(parents=True, exist_ok=True)
 if args.mode.startswith("context-"):
     paths = request["review_scope"]["include_paths"]
     from context_native_fixture import native_input
-    input_value, coverage = native_input(request['repository'], request['candidate']['commit'], paths)
+    candidate = request['candidate']
+    input_value, coverage = native_input(request['repository'], candidate.get('commit', candidate.get('to')), paths,
+        candidate.get('from') if args.mode != 'context-commit-instead' else None)
     raw = {
         "status": "complete", "session_id": session_id, "comments": findings,
         "manifest": {"schema_version": "ocr.run-manifest/v1", "operation": "review",

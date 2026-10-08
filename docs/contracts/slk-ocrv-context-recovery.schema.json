@@ -6,8 +6,23 @@
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "cell_id", "candidate_message_id", "source_d1_incomplete_event_id", "sources", "groups"],
   "properties": {
-    "schema_version": {"enum": ["slk.ocrv-context-recovery-plan/v1", "slk.ocrv-context-recovery-plan/v2"]},
-    "failure_kind": {"const": "PER_CALL_INPUT_THRESHOLD"},
+    "schema_version": {"enum": ["slk.ocrv-context-recovery-plan/v1", "slk.ocrv-context-recovery-plan/v2", "slk.ocrv-context-recovery-plan/v3"]},
+    "failure_kind": {"enum": ["PER_CALL_INPUT_THRESHOLD", "ORIGINAL_SCOPE_AT_CURRENT_CANDIDATE"]},
+    "original_plan": {"$ref": "#/$defs/reference"},
+    "background_evidence": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/reference"}},
+    "review_input": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "requested_from", "requested_head", "resolved_base", "resolved_head", "exact_range", "source_artifact_sha256"],
+      "properties": {
+        "mode": {"const": "range"},
+        "requested_from": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "requested_head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "resolved_base": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "resolved_head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "exact_range": {"type": "string", "pattern": "^[0-9a-f]{40}\\.\\.[0-9a-f]{40}$"},
+        "source_artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
     "run_id": {"type": "string", "minLength": 1},
     "cell_id": {"type": "string", "minLength": 1},
     "candidate_message_id": {"type": "string", "minLength": 1},
@@ -30,8 +45,14 @@
   },
   "allOf": [{
     "if": {"properties": {"schema_version": {"const": "slk.ocrv-context-recovery-plan/v2"}}},
-    "then": {"required": ["failure_kind"], "properties": {"groups": {"items": {"maxItems": 1}}}},
-    "else": {"not": {"required": ["failure_kind"]}}
+    "then": {"required": ["failure_kind"], "properties": {"failure_kind": {"const": "PER_CALL_INPUT_THRESHOLD"}, "groups": {"items": {"maxItems": 1}}}}
+  }, {
+    "if": {"properties": {"schema_version": {"const": "slk.ocrv-context-recovery-plan/v3"}}},
+    "then": {"required": ["failure_kind", "original_plan", "review_input", "background_evidence"], "properties": {"failure_kind": {"const": "ORIGINAL_SCOPE_AT_CURRENT_CANDIDATE"}, "groups": {"items": {"maxItems": 1}}}},
+    "else": {"not": {"anyOf": [{"required": ["original_plan"]}, {"required": ["review_input"]}, {"required": ["background_evidence"]}]}}
+  }, {
+    "if": {"properties": {"schema_version": {"const": "slk.ocrv-context-recovery-plan/v1"}}},
+    "then": {"not": {"required": ["failure_kind"]}}
   }],
   "$defs": {
     "reference": {

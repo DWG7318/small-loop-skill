@@ -474,3 +474,240 @@ def test_threshold_admission_rejects_unproven_or_repeated_scope_before_any_nativ
         write(result_path, value); plan['sources']['result'] = ref(result_path)
     with pytest.raises(ValueError):
         validate(plan, current, payload)
+
+
+def original_scope_fixture(tmp_path):
+    """Original partial18 followed by a real rework commit touching only8."""
+    original, original_path, old_plan, old_items = context_fixture(tmp_path)
+    repository = Path(original.payload['candidate_payload']['repository'])
+    old_request = json.loads(Path(old_plan['sources']['request']['path']).read_text())
+    old_raw = json.loads(Path(old_plan['sources']['raw_review']['path']).read_text())
+    paths = [x['path'] for x in old_items[:8]]
+    for path in paths:
+        (repository / path).write_text('fn corrected() {}\n', encoding='utf-8')
+    subprocess.run(['git', '-C', str(repository), 'add', '.'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(repository), 'commit', '-qm', 'rework'], check=True, capture_output=True)
+    head = subprocess.run(['git', '-C', str(repository), 'rev-parse', 'HEAD'], check=True, capture_output=True).stdout.decode().strip()
+    payload = {**original.payload['candidate_payload'], 'candidate': {'kind': 'commit', 'commit': head},
+        'evidence_files': [str(write(tmp_path / 'current-evidence.json', {'next_payload': {'changed_paths': paths}}))]}
+    returned_payload = {**original.payload, 'candidate_payload': payload,
+        'candidate_payload_sha256': canonical_json_sha256(payload), 'candidate_message_id': 'current-candidate',
+        'source_d1_incomplete_event_id': 'current-incomplete'}
+    returned = Envelope.from_dict({**original.__dict__, 'payload': returned_payload,
+        'payload_sha256': canonical_json_sha256(returned_payload)})
+    request = OcrvAdapter()._candidate_request(returned)
+    request['capacity']['max_tokens'] = 32000
+    input_value, items = native_input(repository, head, paths)
+    raw = copy.deepcopy(old_raw)
+    raw.update(status='failed', session_id='current-session', comments=[], groups=[{'files': paths}])
+    raw['manifest'].update(run_id='current-session', terminal_state='failed', input=input_value)
+    raw['manifest']['coverage'].update(selected=items, completed=[], reused=[], failed=[{**x,
+        'classification': 'budget', 'reason': 'prompt exceeded the configured token budget'} for x in items])
+    root = tmp_path / 'current-source'
+    source_request = write(root / 'ocrv-request.json', request)
+    source_raw = write(root / 'ocrv-review.json', raw)
+    result = json.loads(Path(old_plan['sources']['result']['path']).read_text())
+    result.update(request_sha256=ref(source_request)['sha256'], findings=[],
+        reason_codes=['OCR_EXIT_1', 'OCR_STATUS_NOT_COMPLETE', 'OCR_COVERAGE_INCOMPLETE'],
+        artifacts={'raw_review': str(source_raw)})
+    result['review'].update(status='failed', session_id='current-session', exit_code=1)
+    source_result = write(root / 'ocrv-result.json', result)
+    rows = [{'type': 'session_start', 'sessionId': 'current-session', 'parentUuid': None, 'diffCommit': head,
+        'cwd': str(repository), 'reviewMode': 'commit', 'model': 'qwen3.8-max', 'llmSource': 'provider:dashscope-tokenplan'}]
+    rows += [{'type': 'review_item_failed', 'sessionId': 'current-session', 'filePath': x['path'],
+        'fingerprint': x['fingerprint'], 'model': 'qwen3.8-max',
+        'error': 'prompt tokens (26017) exceed 80% of max_tokens(32000) [round 1]'} for x in items]
+    rows.append({'type': 'session_end', 'sessionId': 'current-session', 'run_manifest': raw['manifest']})
+    session = root / 'current-session.jsonl'
+    session.write_text(''.join(json.dumps(x) + '\n' for x in rows), encoding='utf-8')
+    full_input, full_items = native_input(repository, head, [x['path'] for x in old_items],
+        old_raw['manifest']['input']['resolved_base'])
+    plan = {'schema_version': 'slk.ocrv-context-recovery-plan/v3', 'failure_kind': 'ORIGINAL_SCOPE_AT_CURRENT_CANDIDATE',
+        'run_id': returned.run_id, 'cell_id': returned.cell_id,
+        'candidate_message_id': returned_payload['candidate_message_id'],
+        'source_d1_incomplete_event_id': returned_payload['source_d1_incomplete_event_id'],
+        'sources': {k: ref(p) for k, p in {'request': source_request, 'result': source_result,
+            'raw_review': source_raw, 'session_record': session}.items()},
+        'original_plan': ref(original_path), 'review_input': full_input,
+        'background_evidence': [ref(Path(p)) for p in dict.fromkeys(old_request['evidence_files'] + request['evidence_files'])],
+        'groups': [[x['path']] for x in full_items]}
+    plan_path = write(tmp_path / 'current-plan.json', plan)
+    returned_payload['management_evidence_refs'] = [str(plan_path)]
+    returned = Envelope.from_dict({**returned.__dict__, 'payload': returned_payload,
+        'payload_sha256': canonical_json_sha256(returned_payload)})
+    return returned, plan_path, plan, request, full_items, old_plan
+
+
+def test_original_scope_native_range_identity_keeps_current_head(tmp_path):
+    from slk_transport.context_review import git_identities
+    _env, _path, plan, request, items, _old = original_scope_fixture(tmp_path)
+    review_request = {**request, 'candidate': {'kind': 'range', 'from': plan['review_input']['requested_from'],
+        'to': request['candidate']['commit']}}
+    assert git_identities(review_request, plan['review_input'], None) == {x['path']: x for x in items}
+
+
+def test_original_scope_is_actually_fresh_reviewed_not_just_in_management_text(tmp_path):
+    returned, plan_path, plan, request, items, _old = original_scope_fixture(tmp_path)
+    original_candidate = copy.deepcopy(returned.payload['candidate_payload'])
+    attempt = AttemptStore(tmp_path / 'attempts').create(returned)
+    result = OcrvAdapter().deliver(checker_endpoint(tmp_path, 'context-recovery'), returned, attempt)
+    assert result.native_identity['verdict'] == 'PASS'
+    children = [json.loads(p.read_text()) for p in sorted((attempt.root / 'review-segments').glob('*/request.json'))]
+    assert [x['review_scope']['include_paths'] for x in children] == plan['groups']
+    assert len(children) == 18 and len(items) == 18
+    assert all(x['candidate'] == {'kind': 'range', 'from': plan['review_input']['requested_from'],
+        'to': request['candidate']['commit']} and x['capacity'] == request['capacity']
+        and x['d1_criteria'] == request['d1_criteria'] for x in children)
+    assert all(plan['original_plan']['sha256'] in x['cell_goal'] and 'file-10.rs' in x['cell_goal'] for x in children)
+    aggregate = json.loads((attempt.root / 'ocrv-aggregate.json').read_text())['context_recovery']
+    assert aggregate['reused'] == [] and aggregate['not_reviewed_paths'] == []
+    assert set(aggregate['reviewed_paths']) == {x['path'] for x in items}
+    assert returned.payload['candidate_payload'] == original_candidate
+    assert ref(plan_path)['sha256'] == aggregate['plan_sha256']
+    from integrations.ocrv.slk_checker_adapter import _validate_request, _background, _review_args
+    for child in children:
+        native_request = _validate_request(child)
+        background = _background(native_request, {'invocations': []})
+        assert plan['original_plan']['sha256'] in background and 'file-10.rs' in background
+        assert request['cell_goal'] in background and all(x in background for x in request['d1_criteria'])
+        args = _review_args(native_request, tmp_path / 'background.md', tmp_path / 'native.json')
+        assert args[args.index('--from') + 1] == plan['review_input']['requested_from']
+        assert args[args.index('--to') + 1] == request['candidate']['commit']
+        assert args[args.index('--max-tokens') + 1] == '32000'
+
+
+@pytest.mark.parametrize('damage', ['omit-old-path', 'old-head', 'base', 'artifact', 'capacity-source',
+    'origin-hash', 'origin-goal', 'origin-manifest', 'background-hash', 'unknown-field'])
+def test_original_scope_rejects_drift_before_any_native_call(tmp_path, damage):
+    returned, plan_path, plan, _request, _items, old = original_scope_fixture(tmp_path)
+    if damage == 'omit-old-path': plan['groups'].pop()
+    elif damage == 'old-head': plan['review_input']['resolved_head'] = 'a' * 40
+    elif damage == 'base': plan['review_input']['requested_from'] = plan['review_input']['resolved_head']
+    elif damage == 'artifact': plan['review_input']['source_artifact_sha256'] = 'a' * 64
+    elif damage == 'capacity-source': plan['sources']['request']['sha256'] = 'a' * 64
+    elif damage == 'origin-hash': plan['original_plan']['sha256'] = 'a' * 64
+    elif damage == 'origin-goal':
+        p = Path(old['sources']['request']['path']); value = json.loads(p.read_text()); value['cell_goal'] = 'other CELL'
+        write(p, value)
+        old['sources']['request'] = ref(p)
+        r = Path(old['sources']['result']['path']); result = json.loads(r.read_text())
+        result['request_sha256'] = ref(p)['sha256']; write(r, result); old['sources']['result'] = ref(r)
+        write(Path(plan['original_plan']['path']), old)
+        plan['original_plan'] = ref(Path(plan['original_plan']['path']))
+    elif damage == 'origin-manifest':
+        p = Path(old['sources']['raw_review']['path']); value = json.loads(p.read_text()); value['manifest']['coverage']['selected'].pop()
+        write(p, value)
+    elif damage == 'background-hash': plan['background_evidence'][0]['sha256'] = 'a' * 64
+    elif damage == 'unknown-field': plan['reuse_old_pass'] = True
+    write(plan_path, plan)
+    attempt = AttemptStore(tmp_path / 'attempts').create(returned)
+    with pytest.raises(AdapterError):
+        OcrvAdapter().deliver(checker_endpoint(tmp_path, 'context-recovery'), returned, attempt)
+    assert not (Path(returned.payload['candidate_payload']['repository']) / '.fake-ocrv-invocations.jsonl').exists()
+
+
+@pytest.mark.parametrize('mode', ['context-partial', 'context-scope-leak', 'context-commit-instead'])
+def test_original_scope_cannot_pass_missing_or_old_commit_native_coverage(tmp_path, mode):
+    returned, _path, _plan, _request, _items, _old = original_scope_fixture(tmp_path)
+    attempt = AttemptStore(tmp_path / 'attempts').create(returned)
+    if mode == 'context-partial':
+        result = OcrvAdapter().deliver(checker_endpoint(tmp_path, mode), returned, attempt)
+        assert result.native_identity['verdict'] == 'INCOMPLETE'
+        assert len(json.loads((attempt.root / 'ocrv-aggregate.json').read_text())['context_recovery']['not_reviewed_paths']) == 18
+    else:
+        with pytest.raises(AdapterError):
+            OcrvAdapter().deliver(checker_endpoint(tmp_path, mode), returned, attempt)
+
+
+def test_original_scope_preparer_is_frozen_schema_valid_and_prepare_only(tmp_path, capsys):
+    import jsonschema
+    from slk_transport.cli import main
+    returned, _path, plan, _request, _items, _old = original_scope_fixture(tmp_path)
+    output = tmp_path / 'prepared/range.json'
+    args = ['prepare-context-review', '--per-call-input-threshold', '--original-scope-plan', plan['original_plan']['path'],
+        '--candidate-message-id', plan['candidate_message_id'], '--source-d1-incomplete-event-id',
+        plan['source_d1_incomplete_event_id'], '--output', str(output)]
+    for key, option in {'request': 'source-request', 'result': 'source-result', 'raw_review': 'raw-review',
+        'session_record': 'session-record'}.items():
+        args.extend(['--' + option, plan['sources'][key]['path']])
+    assert main(args) == 0 and json.loads(output.read_text()) == plan
+    assert json.loads(capsys.readouterr().out)['groups'] == plan['groups']
+    schema = json.loads((Path(__file__).resolve().parents[2] / 'docs/contracts/slk-ocrv-context-recovery.schema.json').read_text())
+    jsonschema.validate(plan, schema)
+    for damage in ({**plan, 'failure_kind': 'PER_CALL_INPUT_THRESHOLD'}, {k: v for k, v in plan.items() if k != 'original_plan'}):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(damage, schema)
+    with pytest.raises(RuntimeError, match='evidence already exists'):
+        main(args)
+    assert main([x for x in args if x != '--per-call-input-threshold']) == 2
+    assert not (Path(returned.payload['candidate_payload']['repository']) / '.fake-ocrv-invocations.jsonl').exists()
+
+
+@pytest.mark.parametrize('mode,verdict', [('context-recovery', 'PASS'), ('context-blocking', 'FAIL'), ('context-partial', 'INCOMPLETE')])
+def test_original_scope_real_role_host_consumes_range_as_same_candidate_d1(tmp_path, monkeypatch, mode, verdict):
+    from dataclasses import asdict
+    from slk_transport import worker_completion as wc, checker_completion, checker_escalation, checker_management
+    from slk_transport.role_host import RoleHost
+    from slk_transport.dispatcher import dispatch_once
+    from test_role_host import prepared_host, host_boundary
+    returned, _plan_path, _plan, request, _items, _old = original_scope_fixture(tmp_path)
+    endpoint = checker_endpoint(tmp_path, mode)
+    (tmp_path / 'host').mkdir()
+    host, _source, _incoming = prepared_host(tmp_path / 'host')
+    role = host.binding['roles']['checker']
+    write(Path(role['endpoint_path']), asdict(endpoint)); role['endpoint_sha256'] = ref(Path(role['endpoint_path']))['sha256']
+    host.binding['cells'] = [{'go_id': returned.go_id, 'cell_id': returned.cell_id,
+        'payload': {'cell_goal': request['cell_goal'], 'd1_criteria': request['d1_criteria']}}]
+    host = RoleHost(host.binding, 'a' * 64)
+    terminal = dispatch_once(asdict(endpoint), asdict(returned), tmp_path / 'attempts', adapters={'ocrv-checker': OcrvAdapter()})
+    assert terminal.native_identity['verdict'] == verdict
+    source = tmp_path / 'attempts' / returned.run_id / returned.message_id
+    projection = host_boundary(host, returned)
+    projection['runtime_snapshot'].update(runtime_revision=10, token_sequence=returned.token_sequence,
+        token_holder_role_instance_id=returned.receiver_role_instance_id, latest_message_id=returned.message_id)
+    projection['go_nodes'] = [{'go_id': returned.go_id, 'ordinal': 1, 'cell_nodes': [
+        {'cell_id': returned.cell_id, 'ordinal': 1, 'state': 'd1_started', 'attempt': 1}]}]
+    event_scope = {'go_id': returned.go_id, 'cell_id': returned.cell_id, 'attempt': 1, 'plan_revision': 1}
+    projection['events'] = [
+        {**event_scope, 'event_id': 'candidate-start', 'event_type': 'TRANSPORT_STARTED',
+            'author_role_instance_id': host.endpoint('worker')['role_instance_id'],
+            'details_json': json.dumps({'message_id': returned.payload['candidate_message_id']})},
+        {**event_scope, 'event_id': returned.payload['source_d1_incomplete_event_id'], 'event_type': 'D1_INCOMPLETE',
+            'author_role_instance_id': returned.receiver_role_instance_id, 'corrects_event_id': None,
+            'details_json': json.dumps({'candidate_message_id': returned.payload['candidate_message_id'], 'verdict': 'INCOMPLETE'})},
+        {**event_scope, 'event_id': 'management-start', 'event_type': 'TRANSPORT_STARTED',
+            'author_role_instance_id': returned.sender_role_instance_id,
+            'details_json': json.dumps({'message_id': returned.message_id})}]
+    writes, suffixes = [], []
+    def state_write(_command, args, *, credential):
+        assert credential == 'slk_' + 'c' * 64 and args[0] == 'write'
+        event = json.loads(Path(args[args.index('--request') + 1]).read_text()); writes.append(event)
+        projection['events'].append({**event, 'author_role_instance_id': event['role_instance_id'],
+            'details_json': json.dumps(event['details'])})
+        projection['runtime_snapshot'].update(runtime_revision=11, latest_event_id=event['event_id'])
+        projection['go_nodes'][0]['cell_nodes'][0]['state'] = 'd1_passed' if verdict == 'PASS' else 'd1_failed'
+        return {'status': 'recorded', 'run_id': returned.run_id}
+    monkeypatch.setattr(wc, '_run_json_command', state_write)
+    monkeypatch.setattr(wc, 'unprotect_dpapi_hex', lambda _path: 'slk_' + 'c' * 64)
+    monkeypatch.setattr(host, 'projection', lambda: projection)
+    def suffix(payload, **_kwargs):
+        suffixes.append(payload)
+        if verdict == 'PASS':
+            checker_completion._validate_boundary(payload)
+            assert payload['payload']['final_candidate_message_id'] == returned.payload['candidate_message_id']
+        elif verdict == 'FAIL':
+            checker_escalation._validate_failure(payload)
+        else:
+            checker_management._validate_incomplete(payload)
+        return {'status': 'CHECKER_TEST_SUFFIX_VALIDATED'}
+    monkeypatch.setattr(checker_completion, 'execute_checker_completion', suffix)
+    monkeypatch.setattr(checker_escalation, 'execute_checker_escalation', suffix)
+    monkeypatch.setattr(checker_management, 'execute_checker_management', suffix)
+    result = host.complete(source)
+    assert result['status'] == 'CHECKER_TEST_SUFFIX_VALIDATED' and host.complete(source) == result
+    assert len(writes) == len(suffixes) == 1
+    assert writes[0]['event_type'] == {'PASS': 'D1_PASSED', 'FAIL': 'D1_FAILED', 'INCOMPLETE': 'D1_INCOMPLETE'}[verdict]
+    assert writes[0]['corrects_event_id'] == returned.payload['source_d1_incomplete_event_id']
+    assert writes[0]['details']['candidate_message_id'] == returned.payload['candidate_message_id']
+    assert writes[0]['details']['native_message_id'] == returned.message_id
+    assert returned.payload['candidate_payload']['candidate'] == request['candidate']

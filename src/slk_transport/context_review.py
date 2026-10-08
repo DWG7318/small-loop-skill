@@ -13,8 +13,10 @@ from .evidence import Attempt
 
 SCHEMA = "slk.ocrv-context-recovery-plan/v1"
 THRESHOLD_SCHEMA = "slk.ocrv-context-recovery-plan/v2"
-SCHEMAS = (SCHEMA, THRESHOLD_SCHEMA)
+ORIGINAL_SCOPE_SCHEMA = "slk.ocrv-context-recovery-plan/v3"
+SCHEMAS = (SCHEMA, THRESHOLD_SCHEMA, ORIGINAL_SCOPE_SCHEMA)
 THRESHOLD_KIND = "PER_CALL_INPUT_THRESHOLD"
+ORIGINAL_SCOPE_KIND = "ORIGINAL_SCOPE_AT_CURRENT_CANDIDATE"
 FIELDS = {"schema_version", "run_id", "cell_id", "candidate_message_id",
           "source_d1_incomplete_event_id", "sources", "groups"}
 SOURCE_FIELDS = {"request", "result", "raw_review", "session_record"}
@@ -34,13 +36,19 @@ def artifact_digest(selected: Mapping[str, Mapping[str, str]]) -> str:
 
 
 def git_identities(request: Mapping[str, Any], input_value: Mapping[str, Any], paths: list[str] | None) -> dict[str, dict[str, str]]:
-    """Reproduce the native immutable commit diff locally; never read model bodies."""
+    """Reproduce the native immutable commit/range diff; never read model bodies."""
     from .process import windows_no_window_kwargs
-    head = request['candidate']['commit']
+    candidate = request['candidate']
+    mode = candidate.get('kind')
+    head = candidate.get('commit') if mode == 'commit' else candidate.get('to')
     base = input_value.get('resolved_base')
-    if (set(input_value) != INPUT_FIELDS or input_value.get('mode') != 'commit'
+    if (mode not in ('commit', 'range')
+        or set(input_value) != (INPUT_FIELDS | {'requested_from'} if mode == 'range' else INPUT_FIELDS)
+        or input_value.get('mode') != mode
         or any(input_value.get(k) != head for k in ('requested_head', 'resolved_head'))
         or not isinstance(base, str) or re.fullmatch('[0-9a-f]{40}', base) is None
+        or not isinstance(head, str) or re.fullmatch('[0-9a-f]{40}', head) is None
+        or (mode == 'range' and (candidate.get('from') != base or input_value.get('requested_from') != base))
         or input_value.get('exact_range') != base + '..' + head):
         raise ValueError('context native immutable input is invalid')
     def git(*args: str) -> str:
@@ -50,8 +58,10 @@ def git_identities(request: Mapping[str, Any], input_value: Mapping[str, Any], p
         if process.returncode:
             raise ValueError('context immutable Git source is unavailable')
         return process.stdout.decode('utf-8')
-    if git('rev-list', '--parents', '-n', '1', '--end-of-options', head).split() != [head, base]:
+    if mode == 'commit' and git('rev-list', '--parents', '-n', '1', '--end-of-options', head).split() != [head, base]:
         raise ValueError('context native candidate parent changed')
+    if mode == 'range' and git('merge-base', '--end-of-options', base, head).strip() != base:
+        raise ValueError('context native range is not an immutable ancestor range')
     text = git('-c', 'core.quotepath=false', 'diff', '--no-ext-diff', '--no-textconv',
                '--find-renames', '--src-prefix=a/', '--dst-prefix=b/', '--no-color',
                '-U3', '--end-of-options', base, head, '--')
@@ -61,8 +71,8 @@ def git_identities(request: Mapping[str, Any], input_value: Mapping[str, Any], p
         if old is not None and (paths is None or new in paths):
             patch = '\n'.join(lines).rstrip('\r\n')
             item = {'path': new,
-                'item_id': hashlib.sha256(('review\0commit\0' + old + '\0' + new).encode()).hexdigest(),
-                'fingerprint': hashlib.sha256(('commit\0' + old + '\0' + new + '\0' + patch).encode()).hexdigest()}
+                'item_id': hashlib.sha256(('review\0' + mode + '\0' + old + '\0' + new).encode()).hexdigest(),
+                'fingerprint': hashlib.sha256((mode + '\0' + old + '\0' + new + '\0' + patch).encode()).hexdigest()}
             if new in found:
                 raise ValueError('context native diff has duplicate paths')
             found[new] = item
@@ -126,6 +136,8 @@ def identities(value: object) -> dict[str, dict[str, str]]:
 
 
 def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
+    if plan.get('schema_version') == ORIGINAL_SCOPE_SCHEMA:
+        return _validate_original_scope(plan, request, payload)
     threshold = plan.get("schema_version") == THRESHOLD_SCHEMA
     if (set(plan) != (FIELDS | {"failure_kind"} if threshold else FIELDS)
         or plan.get("schema_version") not in SCHEMAS
@@ -266,9 +278,78 @@ def validate(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mappi
             "groups": plan["groups"], "paths": paths, "request": old}
 
 
+def _checked_reference(ref: object) -> Path:
+    if (not isinstance(ref, dict) or set(ref) != {'path', 'sha256'}
+        or not isinstance(ref['path'], str) or not Path(ref['path']).is_absolute()
+        or not isinstance(ref['sha256'], str) or re.fullmatch('[0-9a-f]{64}', ref['sha256']) is None):
+        raise ValueError('context original scope reference is invalid')
+    path = Path(ref['path']).resolve()
+    if not path.is_file() or digest(path) != ref['sha256']:
+        raise ValueError('context original scope source is missing or changed')
+    return path
+
+
+def _range_input(request: Mapping[str, Any], base: str) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
+    head = request['candidate']['commit']
+    native = {'mode': 'range', 'requested_from': base, 'requested_head': head,
+        'resolved_base': base, 'resolved_head': head, 'exact_range': base + '..' + head,
+        'source_artifact_sha256': '0' * 64}
+    selected = git_identities({**request, 'candidate': {'kind': 'range', 'from': base, 'to': head}}, native, None)
+    native['source_artifact_sha256'] = artifact_digest(selected)
+    return native, selected
+
+
+def _validate_original_scope(plan: Mapping[str, Any], request: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
+    if (set(plan) != FIELDS | {'failure_kind', 'original_plan', 'review_input', 'background_evidence'}
+        or plan.get('failure_kind') != ORIGINAL_SCOPE_KIND):
+        raise ValueError('context original scope plan is not closed')
+    current_raw = read(_checked_reference(plan['sources']['raw_review']))
+    threshold_plan = {k: plan[k] for k in FIELDS}
+    threshold_plan.update(schema_version=THRESHOLD_SCHEMA, failure_kind=THRESHOLD_KIND,
+        groups=[[p] for group in current_raw['groups'] for p in group['files']])
+    current = validate(threshold_plan, request, payload)
+    original_path = _checked_reference(plan['original_plan'])
+    original_plan = read(original_path)
+    if original_plan.get('schema_version') != SCHEMA:
+        raise ValueError('context original scope requires the original compression-partial plan')
+    original_request = read(_checked_reference(original_plan['sources']['request']))
+    original = validate(original_plan, original_request, original_plan)
+    original_input = original['raw']['manifest']['input']
+    if (any(original_request.get(k) != request.get(k) for k in ('run_id', 'cell_id', 'repository', 'cell_goal', 'd1_criteria'))
+        or original_request['review_scope']['include_paths'] or original_request['review_scope']['exclude_paths']
+        or current['raw']['manifest']['input']['resolved_base'] != original_request['candidate']['commit']
+        or git_identities(original_request, original_input, None) != original['selected']
+        or original_input['source_artifact_sha256'] != artifact_digest(original['selected'])):
+        raise ValueError('context original scope goal, manifest or rework lineage changed')
+    native, selected = _range_input(request, original_input['resolved_base'])
+    groups = [[p] for p in selected]
+    evidence_paths = list(dict.fromkeys(original_request['evidence_files'] + request['evidence_files']))
+    references = plan['background_evidence']
+    if (set(selected) != set(original['selected']) | set(current['selected'])
+        or plan['review_input'] != native or plan['groups'] != groups
+        or not isinstance(references, list) or len(references) != len(evidence_paths)
+        or [str(_checked_reference(ref)) for ref in references] != [str(Path(p).resolve()) for p in evidence_paths]):
+        raise ValueError('context original scope, current range or frozen background is incomplete')
+    unresolved = [x['path'] for x in original['raw']['manifest']['coverage']['failed']]
+    review_request = {**request, 'candidate': {'kind': 'range', 'from': native['requested_from'], 'to': native['resolved_head']},
+        'evidence_files': evidence_paths,
+        'cell_goal': request['cell_goal'] + '\n\nSLK original scope at current candidate; no old verdict is reused. '
+            + 'Original plan SHA256: ' + plan['original_plan']['sha256']
+            + '; original manifest SHA256: ' + original_plan['sources']['raw_review']['sha256']
+            + '; original range: ' + original_input['exact_range']
+            + '; current native range: ' + native['exact_range']
+            + '; original unreviewed paths: ' + json.dumps(unresolved, ensure_ascii=False)}
+    return {**current, 'selected': selected, 'reused': [], 'groups': groups, 'request': review_request,
+        'source_request': request, 'review_input': native, 'original_plan': plan['original_plan'],
+        'paths': {**current['paths'], 'original_plan': original_path,
+            **{'original_' + k: p for k, p in original['paths'].items()},
+            **{f'background_{i}': _checked_reference(ref) for i, ref in enumerate(references)}}}
+
+
 def prepare(*, source_request: Path, source_result: Path, raw_review: Path, session_record: Path,
             candidate_message_id: str, source_d1_incomplete_event_id: str, output: Path,
-            per_file: bool = False, per_call_input_threshold: bool = False) -> dict[str, Any]:
+            per_file: bool = False, per_call_input_threshold: bool = False,
+            original_plan: Path | None = None) -> dict[str, Any]:
     request, raw = read(source_request), read(raw_review)
     failed = identities(raw.get("manifest", {}).get("coverage", {}).get("failed"))
     groups = []
@@ -284,11 +365,23 @@ def prepare(*, source_request: Path, source_result: Path, raw_review: Path, sess
                          "session_record": session_record}.items()}, "groups": groups}
     if per_call_input_threshold:
         plan.update(schema_version=THRESHOLD_SCHEMA, failure_kind=THRESHOLD_KIND)
+    if original_plan is not None:
+        if not per_call_input_threshold:
+            raise ValueError('context original scope requires explicit per-call threshold admission')
+        origin = read(original_plan)
+        origin_request = read(Path(origin['sources']['request']['path']))
+        origin_raw = read(Path(origin['sources']['raw_review']['path']))
+        native, selected = _range_input(request, origin_raw['manifest']['input']['resolved_base'])
+        plan.update(schema_version=ORIGINAL_SCOPE_SCHEMA, failure_kind=ORIGINAL_SCOPE_KIND,
+            original_plan={'path': str(original_plan.resolve()), 'sha256': digest(original_plan)}, review_input=native,
+            background_evidence=[{'path': str(Path(p).resolve()), 'sha256': digest(Path(p))}
+                for p in dict.fromkeys(origin_request['evidence_files'] + request['evidence_files'])],
+            groups=[[p] for p in selected])
     basis = validate(plan, request, plan)
     output.parent.mkdir(parents=True, exist_ok=True)
     Attempt(output.parent).write_json_once(output.name, plan)
     return {"status": "CONTEXT_REVIEW_PREPARED", "path": str(output.resolve()), "sha256": digest(output),
-            "selected": len(basis["selected"]), "reused": len(basis["reused"]), "groups": groups}
+            "selected": len(basis["selected"]), "reused": len(basis["reused"]), "groups": basis['groups']}
 
 
 def validate_segment(basis: Mapping[str, Any], value: Mapping[str, Any], scoped_paths: list[str]) -> None:
@@ -300,11 +393,13 @@ def validate_segment(basis: Mapping[str, Any], value: Mapping[str, Any], scoped_
     reused = identities(coverage.get("reused", []))
     failed = identities(coverage.get("failed", []))
     parent = basis["raw"]["manifest"]
-    expected = git_identities(basis['request'], parent['input'], list(basis['selected']))
+    parent_input = basis.get('review_input', parent['input'])
+    input_fields = set(parent_input)
+    expected = git_identities(basis['request'], parent_input, list(basis['selected']))
     child_input = manifest.get('input', {})
-    if (expected != basis['selected'] or parent['input'].get('source_artifact_sha256') != artifact_digest(expected)
-        or set(child_input) != INPUT_FIELDS
-        or any(child_input.get(k) != parent['input'][k] for k in INPUT_FIELDS - {'source_artifact_sha256'})
+    if (expected != basis['selected'] or parent_input.get('source_artifact_sha256') != artifact_digest(expected)
+        or set(child_input) != input_fields
+        or any(child_input.get(k) != parent_input[k] for k in input_fields - {'source_artifact_sha256'})
         or child_input.get('source_artifact_sha256') != artifact_digest({p: expected[p] for p in scoped_paths})):
         raise ValueError('context segment source artifact does not match the exact immutable diff')
     if (manifest.get("schema_version") != "ocr.run-manifest/v1" or manifest.get("operation") != "review"
