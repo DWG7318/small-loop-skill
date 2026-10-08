@@ -1,0 +1,31 @@
+# OCRV compression-only INCOMPLETE continuation
+
+This is a compatible Tool correction for the existing 4.4.2 `D1_MANAGEMENT_RETURN` route, not a new role, D1, scheduler or universal size gate. Aggregate budget and timeout remain native unlimited. Do not use budget-only recovery for a compression failure.
+
+Native OCRV 1.12.12 `--resume` reuses settled fingerprints and starts fresh conversations for remaining items, but regroups them semantically; neither `--resume` nor `--max-tokens` guarantees smaller groups. SLK therefore reuses the frozen completed checkpoints as evidence and performs fresh serial scoped reviews of only the failed native groups. It does **not** claim a native resume lineage for these fresh subreviews.
+
+## Prepare, without executing a review
+
+Call the installed `slk-transport` entry:
+
+```text
+slk-transport prepare-context-review --source-request <original-ocrv-request.json> --source-result <original-ocrv-result.json> --raw-review <original-ocrv-review.json> --session-record <original-native-session.jsonl> --candidate-message-id <original-candidate-message> --source-d1-incomplete-event-id <current-D1-INCOMPLETE> --output <new-plan.json> [--per-file]
+```
+
+The closed [plan contract](../contracts/slk-ocrv-context-recovery.schema.json) pins every source hash, candidate, full scope, original criteria, result, manifest and reusable native checkpoint. The preparer never accesses credentials, runs a model, modifies the original evidence or replaces an existing plan. Native zero-finding checkpoints legitimately omit `comments`; an explicit invalid value is rejected.
+
+Default refinement halves each observed failed group. `--per-file` instead selects fresh single-file subreviews **only as a response to this demonstrated compression failure**, not as a limit for normal D1. Both retain all original D1 criteria and permit necessary cross-file context; no completed item is removed from the final denominator. A single-file subreview can still fail; no capacity claim or completion is inferred from preparation.
+
+## Formal Supervisor return to the original Checker
+
+The current Supervisor retains the standard three-field management decision (`action`, `summary`, `evidence_refs`). Include the **prepared plan path** in `decision.evidence_refs`, keep the current incoming Supervisor source message, and choose `MECHANICAL_RECOVERY` or a justified existing management action. A sentence saying “resume” is not an execution parameter. Place the formal `slk.supervisor-result/v1` at the exact incoming native attempt's `supervisor-result.json`, then submit with the registered Host binding and its SHA-256 (not the decision-file hash):
+
+```text
+slk-transport submit-supervisor-decision --binding <current-role-host-binding.json> --source-attempt <exact-incoming-Supervisor-native-attempt> --sha256 <role-host-binding-SHA256>
+```
+
+The original Checker receives the existing management return. Its adapter validates the plan **before** model startup, previews the unchanged full candidate, invokes existing serial segment Tools, and checks each actual native manifest against the expected path/item/fingerprint subset. Missing, damaged, duplicated, unknown-version or drifted recovery material is rejected; it is not permission to rerun the entire review.
+
+Final aggregate contains preserved completed coverage and findings plus native subreview evidence. PASS requires every remaining item and every original criterion to be covered. Another partial result remains INCOMPLETE with retained segment evidence; findings are not discarded. Existing sealed Checker RoleHost records the single full-scope D1 correction and owns its normal post-D1 suffix. Supervisor/OW/method maintainer do not run D1, borrow the Checker credential or turn the preserved partial into PASS.
+
+Initial start receipt remains immutable; the existing native-activity inspector follows the latest proven `review-segments/segment-*/started.json`, rather than treating the exited first subreview as the whole Checker having stopped. A genuine live product continuation is separate acceptance evidence; synthetic tests and a frozen prepared plan do not establish its outcome.

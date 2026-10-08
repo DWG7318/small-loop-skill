@@ -247,5 +247,30 @@ result = {
     "artifacts": {},
 }
 args.output.parent.mkdir(parents=True, exist_ok=True)
+if args.mode.startswith("context-"):
+    paths = request["review_scope"]["include_paths"]
+    coverage = [{"item_id": hashlib.sha256(p.encode()).hexdigest(), "path": p,
+                 "fingerprint": hashlib.sha256(("commit:" + p).encode()).hexdigest()} for p in paths]
+    raw = {
+        "status": "complete", "session_id": session_id, "comments": findings,
+        "manifest": {"schema_version": "ocr.run-manifest/v1", "operation": "review",
+                     "run_id": session_id, "parent_run_id": None, "terminal_state": "complete",
+                     "input": {"mode": "commit", "resolved_head": request["candidate"]["commit"]},
+                     "repository": {}, "execution": {"provider": "dashscope-tokenplan", "model": "qwen3.8-max"},
+                     "coverage": {"selected": coverage, "completed": coverage, "reused": [], "failed": [], "waived": []}}
+    }
+    if args.mode == "context-partial":
+        result.update(verdict="INCOMPLETE", reason_codes=["OCR_COVERAGE_INCOMPLETE"])
+        result["review"]["status"] = "partial"
+        raw.update(status="partial")
+        raw["manifest"]["terminal_state"] = "partial"
+        raw["manifest"]["coverage"].update(completed=[], failed=coverage)
+    elif args.mode == "context-scope-leak":
+        raw["manifest"]["coverage"]["selected"] = coverage[:-1]
+    elif args.mode == "context-verdict-leak":
+        raw["comments"] = [{"severity": "HIGH", "message": "must not be hidden by PASS"}]
+    raw_path = args.output.parent / "ocrv-review.json"
+    raw_path.write_text(json.dumps(raw), encoding="utf-8")
+    result["artifacts"]["raw_review"] = str(raw_path)
 args.output.write_text(json.dumps(result), encoding="utf-8")
-sys.exit(3 if verdict == "INCOMPLETE" else 2 if verdict == "FAIL" else 0)
+sys.exit(3 if result["verdict"] == "INCOMPLETE" else 2 if result["verdict"] == "FAIL" else 0)

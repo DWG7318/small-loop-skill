@@ -19,6 +19,7 @@ from .adapters.ocrv import OcrvAdapter
 from .active_writer import recover_active_writer
 from .checker_escalation import CheckerEscalationError, execute_checker_escalation
 from .checker_management import execute_checker_management
+from .context_review import prepare as prepare_context_review
 from .checker_completion import CheckerCompletionError, execute_checker_completion
 from .desktop_current_turn import (
     complete_desktop_current_turn,
@@ -914,6 +915,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     terminal_budget_preparer.add_argument("--source-thread-id", required=True)
     terminal_budget_preparer.add_argument("--occurred-at", required=True)
     terminal_budget_preparer.add_argument("--output", required=True, type=Path)
+    context_preparer = subparsers.add_parser("prepare-context-review")
+    for name in ("source-request", "source-result", "raw-review", "session-record", "output"):
+        context_preparer.add_argument("--" + name, required=True, type=Path)
+    context_preparer.add_argument("--candidate-message-id", required=True)
+    context_preparer.add_argument("--source-d1-incomplete-event-id", required=True)
+    context_preparer.add_argument("--per-file", action="store_true")
     terminal_budget = subparsers.add_parser("resume-terminal-budget-checker")
     terminal_budget.add_argument("--request", required=True, type=Path)
     terminal_budget.add_argument("--sha256", required=True)
@@ -1098,6 +1105,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _resume_incomplete_checker(args)
         if args.command == "prepare-terminal-budget-checker":
             return _prepare_terminal_budget_checker(args)
+        if args.command == "prepare-context-review":
+            _emit(prepare_context_review(
+                source_request=args.source_request, source_result=args.source_result,
+                raw_review=args.raw_review, session_record=args.session_record,
+                candidate_message_id=args.candidate_message_id,
+                source_d1_incomplete_event_id=args.source_d1_incomplete_event_id, output=args.output, per_file=args.per_file,
+            ))
+            return 0
         if args.command == "resume-terminal-budget-checker":
             return _resume_terminal_budget_checker(args)
         if args.command == "prepare-terminal-budget-fresh-review":

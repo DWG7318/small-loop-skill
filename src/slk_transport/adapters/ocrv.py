@@ -24,6 +24,7 @@ from ..contracts import (
     canonical_json_sha256,
 )
 from ..evidence import Attempt
+from .. import context_review
 from ..native_activity import (
     NativeActivityError,
     make_native_start,
@@ -890,6 +891,31 @@ class OcrvAdapter:
             if envelope.payload_type == "D1_MANAGEMENT_RETURN"
             else self._executing_capacity(endpoint.address),
         )
+        context = None
+        if envelope.payload_type == "D1_MANAGEMENT_RETURN":
+            for source in envelope.payload["management_evidence_refs"]:
+                path = Path(source)
+                if not path.is_absolute() or not path.is_file():
+                    raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", "context management source is unavailable")
+                try:
+                    plan = context_review.read(path)
+                except (OSError, ValueError) as exc:
+                    if path.suffix.lower() == ".json":
+                        raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", "context management JSON source is invalid") from exc
+                    continue  # Other management evidence may be Markdown, not a recovery plan.
+                if plan.get("schema_version") != context_review.SCHEMA:
+                    if str(plan.get("schema_version", "")).startswith("slk.ocrv-context-recovery-plan/"):
+                        raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", "context plan schema version is unsupported")
+                    continue
+                try:
+                    if context is not None:
+                        raise ValueError("duplicate context recovery plans")
+                    context = context_review.validate(plan, request, envelope.payload)
+                    context.update(plan=plan, plan_path=path, plan_sha256=context_review.digest(path))
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", str(exc)) from exc
+            if context is not None:
+                attempt.write_json_once("ocrv-context-recovery-plan.json", context["plan"])
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
@@ -939,6 +965,13 @@ class OcrvAdapter:
         preview = preflight["preview"]
         selected_paths = list(preview["selected_paths"])
         segments = []
+        if context is not None:
+            if set(selected_paths) != set(context["selected"]):
+                raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", "context source scope changed in current preview")
+            segments = [self._make_review_segment(
+                request, selected_paths, group, list(request["d1_criteria"]),
+                list(request["review_scope"]["criterion_ids"]), f"{i}/{len(context['groups'])}",
+            ) for i, group in enumerate(context["groups"], 1)]
         if not self._preflight_fits(request, preflight):
             return incomplete(
                 evidence=("ocrv-preflight-request.json", "ocrv-preflight.json")
@@ -1147,6 +1180,11 @@ class OcrvAdapter:
             segment_result = self._read_ocrv_result(
                 segment_result_path, segment_request_path, envelope, completed.returncode
             )
+            if context is not None:
+                try:
+                    context_review.validate_segment(context, segment_result, segment_request["review_scope"]["include_paths"])
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", str(exc)) from exc
             segment_results.append((segment_result_path, segment_result, completed.returncode))
             segment_review = segment_result["review"]
             attempt.write_json_once(
@@ -1167,6 +1205,8 @@ class OcrvAdapter:
                 },
             )
             if segment_result["verdict"] == "INCOMPLETE":
+                if context is not None:
+                    break  # Preserve this native terminal and publish a truthful full-scope INCOMPLETE.
                 return incomplete(
                     len(segments), len(segment_results), ("started.json",)
                 )
@@ -1174,7 +1214,10 @@ class OcrvAdapter:
                 stopped_on_blocker = True
                 break
 
-        verdict = "FAIL" if any(item[1]["verdict"] == "FAIL" for item in segment_results) else "PASS"
+        verdict = (
+            "INCOMPLETE" if any(item[1]["verdict"] == "INCOMPLETE" for item in segment_results)
+            else "FAIL" if any(item[1]["verdict"] == "FAIL" for item in segment_results) else "PASS"
+        )
         reason_codes: list[str] = []
         compact_segments: list[dict[str, Any]] = []
         compact_findings: list[dict[str, Any]] = []
@@ -1184,7 +1227,7 @@ class OcrvAdapter:
                     reason_codes.append(code)
             for finding in value["findings"]:
                 encoded = json.dumps(finding, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-                compact_findings.append(
+                compact_findings.append(dict(finding) if context is not None else
                     {
                         "severity": str(finding.get("severity", "UNKNOWN")) if isinstance(finding, Mapping) else "UNKNOWN",
                         "finding_sha256": hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
@@ -1201,6 +1244,19 @@ class OcrvAdapter:
                     "session_id": value["review"]["session_id"],
                 }
             )
+        if context is not None:
+            # Recheck all frozen source bytes before a formal result, not merely before dispatch.
+            try:
+                if context_review.digest(context["plan_path"]) != context["plan_sha256"]:
+                    raise ValueError("context recovery plan changed during review")
+                context_review.validate(context["plan"], request, envelope.payload)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise AdapterError("OCRV_CONTEXT_RECOVERY_INVALID", str(exc)) from exc
+            compact_findings[:0] = [{k: v for k, v in x.items() if k not in {"thinking", "reasoning", "analysis"}}
+                                   for x in context["raw"]["comments"]]
+            if verdict != "INCOMPLETE" and any(str(x.get("severity", "")).upper()
+                    in {"MEDIUM", "HIGH", "BLOCKER", "CRITICAL"} for x in compact_findings):
+                verdict = "FAIL"
         aggregate = {
             "schema_version": "slk.ocrv-d1-aggregate/v1",
             "run_id": envelope.run_id,
@@ -1213,6 +1269,12 @@ class OcrvAdapter:
             "segments": compact_segments,
             "findings": compact_findings,
         }
+        if context is not None:
+            aggregate["context_recovery"] = {
+                "plan_sha256": context["plan_sha256"], "sources": context["plan"]["sources"],
+                "parent_session_id": context["raw"]["session_id"], "reused": context["reused"],
+                "selected": list(context["selected"].values()),
+            }
         aggregate_path = attempt.write_json_once("ocrv-aggregate.json", aggregate)
         final_scope = {
             "include_paths": list(preview["selected_paths"]),
@@ -1232,7 +1294,7 @@ class OcrvAdapter:
             "reason_codes": reason_codes,
             "findings": compact_findings,
             "review": {
-                "status": "complete",
+                "status": "partial" if verdict == "INCOMPLETE" else "complete",
                 "provider": EXPECTED_PROVIDER,
                 "model": EXPECTED_MODEL,
                 "session_id": f"ocrv-aggregate-{uuid.uuid4()}",
@@ -1249,7 +1311,7 @@ class OcrvAdapter:
                 "schema_version": "slk.ocrv-review-progress/v1",
                 "run_id": envelope.run_id,
                 "cell_id": envelope.cell_id,
-                "status": "BLOCKED" if stopped_on_blocker else "COMPLETE",
+                "status": "INCOMPLETE" if verdict == "INCOMPLETE" else "BLOCKED" if stopped_on_blocker else "COMPLETE",
                 "completed_segments": len(segment_results),
                 "total_segments": len(segments),
                 "current_segment": len(segment_results),

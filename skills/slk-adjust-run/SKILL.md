@@ -27,7 +27,7 @@ Supervisor 在现有工程权限和资源范围内给出能继续施工的具体
 
 Supervisor 可以按实际原因组合以下办法：
 
-1. 在现有权限内补充信息、可用资源或验证方式；对 D1 INCOMPLETE 明确选择 `WAIT_FOR_NATIVE_WORK`、`ADJUST_CAPACITY`、`ADJUST_ENVIRONMENT` 或 `MECHANICAL_RECOVERY`，记录本地证据后让原 Checker继续同一 D1；
+1. 在现有权限内补充信息、可用资源或验证方式；对 D1 INCOMPLETE 明确选择 `WAIT_FOR_NATIVE_WORK`、`ADJUST_CAPACITY`、`ADJUST_ENVIRONMENT` 或 `MECHANICAL_RECOVERY`；真实 compression-only partial 按 [续审 Tool](../../docs/transport/SLK-OCRV-CONTEXT-RECOVERY.md) 生成冻结 plan，并把路径加入正式决定 `evidence_refs` 后交回原 Checker，复用完成项、细分失败组并汇总完整 scope；不要把“不限预算/timeout”或一句 resume 提示当作实际恢复；
 2. D2 返工仍使用固定角色绑定；能力不足时调整 CELL 或路线，不由 Supervisor 临场升级、降级或替换模型；
 3. 调整当前或后续 CELL、施工顺序或技术路线，让已验证成果继续被继承；第二次连续 D1 FAIL 时把未接受范围拆成多个中小后继 CELL，各自独立 D0、独立 D1，并保留原目标、验收强度和失败历史；
 4. 解决方案需要 Owner 掌握的电脑、工具、账号、测试环境或业务权限时，提交推荐方案、预期影响、可行替代和最低必要授权；

@@ -4,7 +4,15 @@ Date: 2026-10-08 Asia/Shanghai
 Branch: feature/slk-4.4.2-runtime-recovery
 Base for this bounded correction: 88a12c5b0afc2a0fb2bfbc2b13829ce554f4cabc
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
-Status: bounded BI effective-CELL display and existing OW guidance correction; original D1, candidate, semantic roles, models and failed attempts are preserved. Product recovery remains Supervisor-owned. The branch is not merged, pushed, tagged or released.
+Status: compatible OCRV compression-only continuation plus prior bounded corrections; original D1, candidate, semantic roles, models and failed attempts are preserved. Product recovery remains Supervisor-owned. The branch is not merged, pushed, tagged or released.
+
+## 2026-10-08 compression-only management continuation
+
+- Real native OCRV 1.12.12 evidence freezes CELL05 candidate `f5d2eb7c362b7a1ff91efb0048a6ac9709fd8904`, session `f7c56487-163e-4c3a-a3cc-0182dd33eb61`, 18 selected / 7 completed / 11 compression-failed items and the original LOW finding. The native JSONL confirms all seven settled checkpoints. No product review, credential read, decision submit or state write was performed by the maintainer.
+- The existing `D1_MANAGEMENT_RETURN` now accepts one closed hash-bound recovery plan through the existing Supervisor decision `evidence_refs`. Native `--resume` starts fresh remaining conversations but regroups semantically; this route explicitly reuses frozen evidence, not an invented native lineage, and serially reviews only failed groups refined into halves or single-file requests. All original criteria/full scope remain the final denominator; no universal size gate or finite normal budget is added.
+- Normal and optimized RED preceded the correction. Focused GREEN passes 18/18 in both modes, including damaged/missing/duplicate/version/candidate/scope/checkpoint rejection before native execution, native coverage drift, hidden blocking findings, preserved LOW findings, truthful second INCOMPLETE and per-file preparation without execution. Optimized Python emits only the expected pytest assertion warning.
+- A prepared real-source plan establishes resumable evidence, not product D1 acceptance. Fresh live continuation and the sealed Checker suffix remain Supervisor/Checker-owned. The four separate OW observation/UNKNOWN/Temporal handoff corrections remain open and are not claimed fixed by this patch.
+- Fresh transport/install regression passes 911 with 5 existing environment skips; repository/Skill regression passes 109/109, package/install regression passes 7/7, both edited Skills pass quick validation, and the real-source plan passes its closed JSON Schema. Manifest/repository and diff hygiene gates pass. Package and deployment receipts are recorded separately after their gates; no push, merge, tag or release is authorized by this local patch.
 
 ## 2026-10-08 effective-CELL BI display and OW practical guidance
 
