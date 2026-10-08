@@ -242,6 +242,24 @@ def test_late_desktop_readback_consumes_original_send_without_resend(tmp_path, m
     assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
 
 
+def test_rebound_desktop_node_keeps_immutable_failed_send_and_exact_late_readback(tmp_path, monkeypatch):
+    from test_supervisor_notification import desktop_node_fixture
+    raw, _notice, _projection, _node = desktop_node_fixture(tmp_path, monkeypatch)
+    endpoint = Endpoint.from_dict(raw); envelope = supervisor_envelope()
+    monkeypatch.setenv('FAKE_DESKTOP_MODE', 'unconfirmed')
+    failed = dispatch_once(raw, asdict(envelope), tmp_path / 'attempts', adapters={endpoint.adapter: CodexAdapter()})
+    assert failed.error_code == 'CODEX_DESKTOP_READBACK_UNPROVED' and 'command-rebind.json' in failed.evidence
+    attempt = Attempt(tmp_path / 'attempts' / envelope.run_id / envelope.message_id)
+    hashes = {name: hashlib.sha256((attempt.root / name).read_bytes()).hexdigest()
+              for name in ('endpoint.json', 'envelope.json', 'failed.json', 'command-rebind.json', 'desktop-send.json')}
+    monkeypatch.setenv('FAKE_DESKTOP_MODE', 'late-confirmed')
+    assert consume_desktop_readback(endpoint, envelope, attempt).status == 'completed'
+    assert validate_late_desktop_start(endpoint, envelope, attempt).status == 'completed'
+    assert all(hashlib.sha256((attempt.root / name).read_bytes()).hexdigest() == digest for name, digest in hashes.items())
+    calls = [json.loads(line) for line in (tmp_path / 'native-calls.jsonl').read_text().splitlines()]
+    assert sum(call['name'] == 'send_message_to_thread' for call in calls) == 1
+
+
 def test_saved_status_observation_remains_compatible_with_exact_late_start(tmp_path, monkeypatch):
     endpoint = prepared(tmp_path, monkeypatch, "unconfirmed")
     envelope = supervisor_envelope()

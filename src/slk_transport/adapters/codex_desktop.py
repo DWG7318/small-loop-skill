@@ -4,13 +4,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Mapping
 from xml.sax.saxutils import escape
 
 from .base import AdapterError
-from ..contracts import ContractError, DeliveryResult, Endpoint, Envelope, RESULT_SCHEMA, SHA256
+from ..contracts import ContractError, DeliveryResult, Endpoint, Envelope, RESULT_SCHEMA, SHA256, canonical_json_sha256
 from ..evidence import Attempt
 from ..jsonrpc import JsonRpcProcess
 from ..native_activity import (
@@ -52,7 +53,7 @@ def _executor(endpoint: Endpoint, envelope: Envelope) -> str:
     return str(caller)
 
 
-def validate_desktop_address(address: Mapping[str, Any]) -> None:
+def validate_desktop_address(address: Mapping[str, Any], *, attempt: Attempt | None = None) -> list[str]:
     binding = address["desktop"]
     if (not isinstance(binding, Mapping)
         or set(binding) != {"caller_thread_id", "model", "reasoning_effort", "plugin_sha256"}
@@ -61,10 +62,27 @@ def validate_desktop_address(address: Mapping[str, Any]) -> None:
         or not SHA256.fullmatch(binding["plugin_sha256"])):
         raise AdapterError("CODEX_ADDRESS_INVALID", "Desktop binding must be exact and versioned by plugin hash")
     command = address["command"]
-    if len(command) != 2 or not all(Path(p).is_absolute() and Path(p).is_file() for p in command):
+    if len(command) != 2 or not all(Path(p).is_absolute() for p in command) or not Path(command[1]).is_file():
         raise AdapterError("CODEX_ADDRESS_INVALID", "Desktop command must name installed runtime and plugin files")
     if hashlib.sha256(Path(command[1]).read_bytes()).hexdigest() != binding["plugin_sha256"]:
         raise AdapterError("CODEX_DESKTOP_PLUGIN_CHANGED", "prepared Desktop plugin changed; repeat readiness")
+    if Path(command[0]).is_file():
+        return list(command)
+    if Path(command[0]).exists() or Path(command[0]).name.lower() not in {'node', 'node.exe'}:
+        raise AdapterError('CODEX_DESKTOP_EXECUTABLE_MISSING', 'configured Desktop runtime is missing')
+    resolved = shutil.which('node.exe') or shutil.which('node')
+    if not resolved or not Path(resolved).is_file():
+        raise AdapterError('CODEX_DESKTOP_EXECUTABLE_MISSING', 'current Desktop Node runtime is unavailable')
+    rebound = [str(Path(resolved).resolve()), command[1]]
+    if attempt is not None:
+        _write_or_match(attempt, 'command-rebind.json', {
+            'schema_version': 'slk.codex-desktop-command-rebind/v1',
+            'reason': 'configured_desktop_node_missing', 'thread_id': address['thread_id'],
+            'address_sha256': canonical_json_sha256(address), 'plugin_sha256': binding['plugin_sha256'],
+            'requested_command': list(command), 'resolved_command': rebound,
+            'resolved_executable_sha256': hashlib.sha256(Path(rebound[0]).read_bytes()).hexdigest(),
+        })
+    return rebound
 
 
 class DesktopClient(JsonRpcProcess):
@@ -233,7 +251,7 @@ def validate_late_desktop_start(
     expected_failure_evidence = tuple(sorted((
         "accepted.json", "desktop-prompt.json", "desktop-readback-anchor.json",
         "desktop-send.json", "endpoint.json", "envelope.json",
-    ) + tuple(name for name in ("desktop-target-observation.json", "desktop-target-observation-latest.json")
+    ) + tuple(name for name in ("command-rebind.json", "desktop-target-observation.json", "desktop-target-observation-latest.json")
               if (attempt.root / name).is_file())))
     if (
         saved_endpoint != endpoint
@@ -406,7 +424,7 @@ def consume_desktop_readback(
         )
     expected = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
     timeout = float(address["startup_timeout_seconds"])
-    client = DesktopClient(list(address["command"]), Path(str(address["cwd"])))
+    client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
             "clientInfo": {"name": "slk_transport_desktop_readback", "version": "4.4.2"}}, timeout)
@@ -438,7 +456,7 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
     caller, target = _executor(endpoint, envelope), address["thread_id"]
     expected = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
     timeout = float(address["startup_timeout_seconds"])
-    client = DesktopClient(list(address["command"]), Path(str(address["cwd"])))
+    client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
             "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.2"}}, timeout)

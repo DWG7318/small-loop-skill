@@ -3,6 +3,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 
 import pytest
@@ -27,6 +28,80 @@ def fixture(tmp_path, monkeypatch):
         "role_instance_id": endpoint["role_instance_id"], "session_id": endpoint["address"]["thread_id"],
         "model": "gpt-6.1-sol", "reasoning": "xhigh"}]}
     return endpoint, notice, projection
+
+
+def desktop_node_fixture(tmp_path, monkeypatch):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    node = shutil.which('node.exe') or shutil.which('node')
+    if node is None:
+        pytest.skip('native Desktop Node runtime is unavailable')
+    plugin = tmp_path / 'desktop-plugin.cjs'
+    server = Path(__file__).with_name('fake_desktop_mcp.py')
+    plugin.write_text("const p=require('node:child_process').spawn(" + json.dumps(sys.executable)
+        + ',' + json.dumps([str(server)]) + ",{stdio:'inherit',windowsHide:true});"
+        + "p.on('exit',code=>process.exit(code===null?1:code));", encoding='utf-8')
+    endpoint['address']['command'] = [str(tmp_path / 'removed-app' / 'node.exe'), str(plugin)]
+    endpoint['address']['desktop']['plugin_sha256'] = notification.wc._sha256(plugin)
+    endpoint['address']['startup_timeout_seconds'] = 3
+    return endpoint, notice, projection, str(Path(node).resolve())
+
+
+def test_missing_desktop_node_rebinds_only_execution_and_requires_real_notice_proof(tmp_path, monkeypatch):
+    endpoint, notice, projection, node = desktop_node_fixture(tmp_path, monkeypatch)
+    original = json.loads(json.dumps(endpoint)); original_notice = dict(notice)
+    result = notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / 'notices')
+    root = tmp_path / 'notices' / notice['run_id'] / notice['event_id']
+    rebound = json.loads((root / 'command-rebind.json').read_text())
+    assert result['status'] == 'NOTIFIED' and (root / 'desktop-readback.json').is_file()
+    assert rebound['schema_version'] == 'slk.codex-desktop-command-rebind/v1'
+    assert rebound['requested_command'] == original['address']['command']
+    assert rebound['resolved_command'] == [node, original['address']['command'][1]]
+    assert rebound['resolved_executable_sha256'] == notification.wc._sha256(Path(node))
+    assert rebound['plugin_sha256'] == original['address']['desktop']['plugin_sha256']
+    assert rebound['thread_id'] == original['address']['thread_id']
+    assert endpoint == original and notice == original_notice
+    assert notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / 'notices') == result
+    calls = [json.loads(line) for line in (tmp_path / 'native-calls.jsonl').read_text().splitlines()]
+    assert sum(call['name'] == 'send_message_to_thread' for call in calls) == 1
+
+
+def test_existing_desktop_node_is_unchanged_and_never_looks_for_fallback(tmp_path, monkeypatch):
+    endpoint, notice, projection, node = desktop_node_fixture(tmp_path, monkeypatch)
+    endpoint['address']['command'][0] = node
+    monkeypatch.setattr(shutil, 'which', lambda _name: pytest.fail('valid runtime must not rebind'))
+    assert notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / 'notices')['status'] == 'NOTIFIED'
+    assert not (tmp_path / 'notices' / notice['run_id'] / notice['event_id'] / 'command-rebind.json').exists()
+
+
+@pytest.mark.parametrize('damage,code', [
+    ('plugin', 'CODEX_DESKTOP_PLUGIN_CHANGED'), ('no-node', 'CODEX_DESKTOP_EXECUTABLE_MISSING'),
+    ('missing-fallback', 'CODEX_DESKTOP_EXECUTABLE_MISSING'),
+    ('unconfirmed', 'CODEX_DESKTOP_READBACK_UNPROVED'), ('wrong-target', 'CODEX_THREAD_ID_MISMATCH'),
+])
+def test_rebound_desktop_node_never_bypasses_plugin_or_native_receiving_proof(tmp_path, monkeypatch, damage, code):
+    endpoint, notice, projection, _node = desktop_node_fixture(tmp_path, monkeypatch)
+    if damage == 'plugin': Path(endpoint['address']['command'][1]).write_text('changed plugin')
+    if damage == 'no-node': monkeypatch.setattr(shutil, 'which', lambda _name: None)
+    if damage == 'missing-fallback': monkeypatch.setattr(shutil, 'which', lambda _name: str(tmp_path / 'absent-node.exe'))
+    if damage in ('unconfirmed', 'wrong-target'):
+        monkeypatch.setenv('FAKE_DESKTOP_MODE', 'unconfirmed' if damage == 'unconfirmed' else 'wrong-thread')
+    with pytest.raises(AdapterError) as error:
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / 'notices')
+    assert error.value.error_code == code
+    root = tmp_path / 'notices' / notice['run_id'] / notice['event_id']
+    assert not (root / 'notification-result.json').exists() and not (root / 'started.json').exists()
+    if damage in ('plugin', 'no-node', 'missing-fallback'): assert not (tmp_path / 'native-calls.jsonl').exists()
+
+
+@pytest.mark.parametrize('kind', ['other-runtime', 'existing-directory'])
+def test_desktop_node_rebind_is_only_for_a_missing_node_path(tmp_path, monkeypatch, kind):
+    endpoint, notice, projection, _node = desktop_node_fixture(tmp_path, monkeypatch)
+    runtime = Path(endpoint['address']['command'][0])
+    if kind == 'other-runtime': endpoint['address']['command'][0] = str(runtime.with_name('unrelated.exe'))
+    else: runtime.mkdir(parents=True)
+    with pytest.raises(AdapterError):
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / 'notices')
+    assert not (tmp_path / 'native-calls.jsonl').exists()
 
 
 def test_native_notification_is_idempotent_and_never_commits_token(tmp_path, monkeypatch):
