@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "6c1e5626fa7f80be87f3a44205d86a20621ca58499fe92db295ad6e8887ae63b"
+      "sha256": "79dfe85b90f777351ed74d1fa3cee1788340d9cc280584ddeaef209ff7ced361"
     },
     {
       "path": "VERSION",
@@ -1412,7 +1412,7 @@
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
-      "sha256": "3e1fa73b61c14ee25b2922b4d2435be592296b2fa464addc612a857f77627f64"
+      "sha256": "84b87ca6d07eaecf65c87c74acc5572ae435d5de8f18e1e08a1007b43d64a09f"
     },
     {
       "path": "skills/small-loop-skill/agents/openai.yaml",

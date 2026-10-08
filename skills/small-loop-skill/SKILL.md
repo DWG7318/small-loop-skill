@@ -19,7 +19,7 @@ CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，明确怎样�
 - Overwatcher 是每个 Run 都登记的运行观察角色：一个 Run 只绑定一个，由 Supervisor 选择并经准备门禁确认；同一精确 Agent Session 可以按 Run 分别登记并服务多个 Run。它保持前台 active turn，每 600 秒主动核实一次真实状态；不是 heartbeat、定时任务、通讯中继或工程角色，只记录自己的观察并把异常、矛盾和 UNKNOWN 交给对应 Supervisor，不改 BI、`SLK TOKEN` 或 D0/D1/D2。
 
 D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 判断全部成果合起来是否正确。
-工作时间仅建议（设备本地时间）：DSH 18:00–次日08:00、OCRV 22:00–次日08:00；Supervisor 按项目紧迫度与 Owner 商定 SLK 启动时间，不作开工/派发硬门槛或到点停工要求。
+时段仅建议（北京时间UTC+8，不随时区变）：DSH 18:00–次日08:00、OCRV 22:00–次日08:00；Supervisor 与 Owner 按项目紧迫度商定启动时间；非开工/派发门槛，不要求到点停工。
 
 ## Agent-first 轻方法原则
 
