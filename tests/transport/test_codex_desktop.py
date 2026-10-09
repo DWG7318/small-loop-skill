@@ -283,6 +283,7 @@ def test_late_desktop_readback_rejects_ambiguous_native_match_without_resend(tmp
         adapter.deliver(endpoint, envelope, attempt)
 
     monkeypatch.setenv("FAKE_DESKTOP_MODE", "late-duplicate")
+    prompt = json.loads((attempt.root / "desktop-prompt.json").read_text())["prompt"]
     with pytest.raises(AdapterError) as error:
         consume_desktop_readback(endpoint, envelope, attempt, prompt)
 
@@ -299,6 +300,7 @@ def test_late_desktop_readback_rejects_changed_anchor_before_native_query(tmp_pa
     prompt = adapter._prompt(envelope, attempt)
     with pytest.raises(AdapterError):
         adapter.deliver(endpoint, envelope, attempt)
+    prompt = json.loads((attempt.root / "desktop-prompt.json").read_text())["prompt"]
     anchor = json.loads((attempt.root / "desktop-readback-anchor.json").read_text())
     anchor["message_id"] = "another-message"
     (attempt.root / "desktop-readback-anchor.json").write_text(json.dumps(anchor), encoding="utf-8")

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import sys
+import json
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from scripts.build_transport_zipapp import build_zipapp
 from scripts.run_transport_drill import run_drill
+from slk_transport.adapters.base import AdapterError
+from slk_transport.adapters.codex import CodexAdapter
+from slk_transport.adapters.codex_desktop import MATERIAL_PREFIX, _material_prompt, _prepare_prompt
+from slk_transport.evidence import AttemptStore
+from slk_transport.jsonrpc import JsonRpcProcess
+from test_codex_adapter import codex_endpoint, supervisor_envelope
 
 
 TESTS = Path(__file__).parent
@@ -79,3 +89,64 @@ def test_live_drill_first_leg_is_started_by_exact_supervisor_agent(tmp_path: Pat
     assert summary["RUN-A"]["legs"] == ["S-C", "C-W", "W-C", "C-S"]
     assert summary["RUN-B"]["legs"] == ["S-C", "C-W", "W-C", "C-S"]
     assert summary["crossovers"] == []
+
+
+def test_fake_native_receiver_reads_material_before_executing_the_preserved_task(tmp_path, monkeypatch):
+    endpoint = codex_endpoint(tmp_path, "execute-command")
+    # Fixture startup safety only; this is not an engineering-turn wait or production policy.
+    endpoint = replace(endpoint, address={**endpoint.address, "startup_timeout_seconds": 5})
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    marker = tmp_path / "receiver-read-original.txt"
+    command = [sys.executable, "-c",
+        f"from pathlib import Path; Path({str(marker)!r}).write_text('original task executed', encoding='utf-8')"]
+    adapter = CodexAdapter()
+    task = adapter._prompt(envelope, attempt) + (
+        f"\n<slk-supervisor-command>{json.dumps(command)}</slk-supervisor-command>")
+    monkeypatch.setattr(adapter, "_prompt", lambda *_: task)
+
+    assert adapter.deliver(endpoint, envelope, attempt).status == "completed"
+
+    assert marker.is_file()
+    assert marker.read_text(encoding="utf-8") == "original task executed"
+    assert json.loads((attempt.root / "desktop-material.json").read_bytes())["prompt"] == task
+
+
+@pytest.mark.parametrize("damage", ["missing", "changed-bytes", "wrong-run", "wrong-role", "wrong-message"])
+def test_fake_native_receiver_rejects_invalid_material_before_native_start(tmp_path, damage):
+    endpoint = codex_endpoint(tmp_path, "execute-command")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    reference_prompt = _prepare_prompt(CodexAdapter()._prompt(envelope, attempt), envelope, attempt)
+    material = attempt.root / "desktop-material.json"
+    message_id = envelope.message_id
+    if damage == "missing":
+        material.unlink()
+    elif damage == "changed-bytes":
+        material.write_bytes(material.read_bytes() + b"\n")
+    elif damage == "wrong-run":
+        reference = json.loads(reference_prompt[len(MATERIAL_PREFIX):])
+        reference["run_id"] = "OTHER-RUN"
+        reference_prompt = MATERIAL_PREFIX + json.dumps(reference, ensure_ascii=False, sort_keys=True)
+    elif damage == "wrong-role":
+        value = json.loads(material.read_bytes())
+        value["envelope"]["receiver_role"] = "worker"
+        material.write_text(json.dumps(value), encoding="utf-8")
+        reference_prompt = _material_prompt(material, material.read_bytes(), envelope)
+    else:
+        message_id = "different-message"
+    client = JsonRpcProcess(endpoint.address["command"], tmp_path)
+    try:
+        client.request(1, "initialize", {"clientInfo": {"name": "material-reader-test"}}, 5)
+        client.notify("initialized", {})
+
+        with pytest.raises(AdapterError, match="material") as rejected:
+            client.request(2, "turn/start", {"threadId": "thr_exact",
+                "input": [{"type": "text", "text": reference_prompt}],
+                "clientUserMessageId": message_id, "cwd": str(tmp_path)}, 5)
+
+        assert rejected.value.error_code == "CODEX_RPC_ERROR"
+        assert str(material.resolve()) in str(rejected.value).replace("\\\\", "\\")
+        assert not any(item.get("method") == "turn/started" for item in client.messages)
+    finally:
+        client.close()

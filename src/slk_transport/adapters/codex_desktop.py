@@ -29,11 +29,20 @@ READBACK_ANCHOR_FIELDS = {
     "prompt_sha256", "previous_turn_ids", "previous_item_ids", "active_turn_ids",
 }
 DESKTOP_READ_LIMIT = 20000
-MATERIAL_PREFIX = (
+LEGACY_MATERIAL_PREFIX = (
     "SLK cross-Agent delivery. Read the complete UTF-8 JSON material at the absolute path below; "
     "verify its byte count and SHA-256 before work. Its envelope is the unchanged assigned work; "
     "follow its full prompt, including any Supervisor decision/result/submit instructions. "
     "Do not truncate evidence, treat this as status-only, or locate another task by title.\n"
+)
+MATERIAL_PREFIX = (
+    "SLK cross-Agent delivery. Read the complete UTF-8 JSON material at the absolute path below; "
+    "before work, verify its byte count and SHA-256, then match its envelope's run_id, cell_id, "
+    "message_id and payload_sha256 to this reference and your assigned role/Session. "
+    "On missing material or any mismatch, stop and report the exact original location and cause; "
+    "do not guess content or use a fallback endpoint. Follow the full original prompt, including "
+    "Supervisor decision/result/submit instructions. Do not truncate evidence, treat this as "
+    "status-only, or locate another task by title.\n"
 )
 
 
@@ -50,7 +59,9 @@ def _material_prompt(path: Path, data: bytes, envelope: Envelope) -> str:
 
 
 def _validate_material(prompt: str, envelope: Envelope, attempt: Attempt) -> None:
-    if not prompt.startswith(MATERIAL_PREFIX):
+    prefix = next((value for value in (MATERIAL_PREFIX, LEGACY_MATERIAL_PREFIX)
+        if prompt.startswith(value)), None)
+    if prefix is None:
         return  # Existing inline prompts keep their exact native proof.
     path = attempt.root / "desktop-material.json"
     try:
@@ -58,16 +69,21 @@ def _validate_material(prompt: str, envelope: Envelope, attempt: Attempt) -> Non
         value = json.loads(data)
         if (not isinstance(value, dict) or set(value) != {"schema_version", "envelope", "prompt"}
             or value["schema_version"] != "slk.desktop-material/v1"
-            or value["envelope"] != asdict(envelope) or not isinstance(value["prompt"], str)
-            or prompt != _material_prompt(path, data, envelope)):
-            raise ValueError("material identity or content changed")
+            or not isinstance(value["prompt"], str)):
+            raise ValueError("material schema or full prompt changed")
+        if value["envelope"] != asdict(envelope):
+            raise ValueError("material envelope differs from the assigned Run/CELL/message/role identity")
+        if prompt[len(prefix):] != _material_prompt(path, data, envelope)[len(MATERIAL_PREFIX):]:
+            raise ValueError("material reference path, bytes, SHA-256 or message identity changed")
     except (OSError, ValueError, TypeError) as error:
-        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "Desktop full material is missing or changed") from error
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT",
+            f"Codex full material is missing or changed at {path.resolve()}: {error}. "
+            "Restore the exact original material; do not resend or choose another endpoint.") from error
 
 
-def _prepare_prompt(prompt: str, envelope: Envelope, attempt: Attempt, caller: str) -> str:
-    # Representation selection, not an engineering-message admission limit.
-    if len(_delegation(prompt, caller)) + 512 <= DESKTOP_READ_LIMIT:
+def _prepare_prompt(prompt: str, envelope: Envelope, attempt: Attempt, caller: str = "") -> str:
+    # Both native entries use the existing immutable shape, regardless of task length.
+    if prompt.startswith((MATERIAL_PREFIX, LEGACY_MATERIAL_PREFIX)):
         _validate_material(prompt, envelope, attempt)
         return prompt
     value = {"schema_version": "slk.desktop-material/v1", "envelope": asdict(envelope), "prompt": prompt}

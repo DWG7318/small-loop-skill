@@ -292,6 +292,8 @@ class CodexAdapter:
         if "desktop" in address:
             from .codex_desktop import deliver_desktop
             return deliver_desktop(endpoint, envelope, attempt, self._prompt(envelope, attempt))
+        from .codex_desktop import _prepare_prompt
+        prompt = _prepare_prompt(self._prompt(envelope, attempt), envelope, attempt)
         command = resolve_codex_command(
             list(address["command"]), attempt=attempt, thread_id=str(address["thread_id"])
         )
@@ -374,7 +376,7 @@ class CodexAdapter:
                 "turn/start",
                 {
                     "threadId": thread_id,
-                    "input": [{"type": "text", "text": self._prompt(envelope, attempt)}],
+                    "input": [{"type": "text", "text": prompt}],
                     "cwd": str(cwd),
                     "approvalPolicy": "never",
                     "clientUserMessageId": envelope.message_id,
@@ -405,7 +407,7 @@ class CodexAdapter:
                     cell_id=envelope.cell_id,
                     message_id=envelope.message_id,
                     request_sha256=envelope.payload_sha256,
-                    native_request_sha256=envelope.payload_sha256,
+                    native_request_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
                     native_task_kind="codex-turn",
                     native_task_id=f"{started['threadId']}:{turn_id}",
                     native_task_status="RUNNING",

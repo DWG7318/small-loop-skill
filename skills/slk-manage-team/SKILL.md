@@ -20,7 +20,7 @@ Owner 已授权本 Run 启动准备且准备未完时，Supervisor 先查询当�
 
 1. 打开可见 BI 1.1.0，绑定设备与当前 SLK Run 身份；核对实际安装路径/版本、原生模型权限下的工作区、Skill、OCRV、DSH 和工具。角色凭据由准备宿主通过 `prepare-role-credential` 认证、DPAPI 密封并重新用保存后的消费者认证，不能把 `credential-out` 的明文误当密封文件；确定性失败先纠正，不自动轮换全部凭据。
 2. 登记 Owner 已确认的 Supervisor，并登记 OCRV Checker、DSH Worker 与 Supervisor 指定的 Overwatcher；四个 role instance 彼此唯一，模型和 reasoning 来自本 Run 冻结策略。
-3. 用标准 headless 入口演练七条必要腿：`slk-conformance/<SLK-CONFORMANCE-run_id>` 证据根绑定独立 clean/no-remote 样本 Git 和单 CELL，经 `preflight-conformance-sample` 实走 `Supervisor → Checker → Worker → Checker`、FAIL 的 `Checker → Supervisor → 同一 Worker`、PASS 的 `Checker → Supervisor` 及 `Overwatcher → Supervisor`，再以 `seal-normal-chain-source` 密封。产品改走 `preflight-new-run`，核验初始 TOKEN、四角色/端点/消费者、BI、Temporal 和不同来源；预设 JSON/echo、假 D1/D2 或代发不合格。
+3. 用标准 headless 入口演练七条必要腿：`slk-conformance/<SLK-CONFORMANCE-run_id>` 证据根绑定独立 clean/no-remote 样本 Git 和单 CELL，经 `preflight-conformance-sample` 实走 `Supervisor → Checker → Worker → Checker`、FAIL 的 `Checker → Supervisor → 同一 Worker`、PASS 的 `Checker → Supervisor` 及 `Overwatcher → Supervisor`，再以 `seal-normal-chain-source` 密封。接收 Agent 必须实际读取并核验 Git 外原件，再完成原生接收/启动和合法 TOKEN 交接；路径已发或发送方读得到不算通过。产品改走 `preflight-new-run`，核验初始 TOKEN、四角色/端点/消费者、BI、Temporal 和不同来源；预设 JSON/echo、假 D1/D2、OW/异常补救代发均不合格。
 4. 做角色理解确认：Checker 解释日常派发、隔离 D1、FAIL 上报与 PASS 后缀；Worker 解释施工、D0 与候选交付；OW 解释真实性核查、UNKNOWN 和只向对应 Supervisor 报告。回答模糊时先纠正再复测受影响项；Worker 不重复完整方法问答。
 5. 使用 `$slk-manage-temporal` 得到共享服务和本 Run 两工作流的 readiness 收据；四角色、BI、Temporal 或必要通讯任一未闭合时保持 `NOT_READY`。
 
