@@ -1179,8 +1179,12 @@
       "sha256": "921b170eff7e9fbd02201d41f5aa21747feef62423d643188731edc227061850"
     },
     {
+      "path": "docs/superpowers/specs/2026-10-10-slk-4.4.3-field-feedback.md",
+      "sha256": "43393a25af9b1cb937e8fe1c644f4480434b77d093bd7bda2bc4c54a516a895a"
+    },
+    {
       "path": "docs/superpowers/specs/2026-10-10-slk-4.4.3-material-reference-design.md",
-      "sha256": "71888e590feb6fe00d97afbdc07430005c043b71ed383da375bf937f90f39842"
+      "sha256": "9cef9c1552cb3c0603b44fa81610652a2bffd4e07f91b1a8fb82c0abe0a370ce"
     },
     {
       "path": "docs/transport/SLK-OCRV-CONTEXT-RECOVERY.md",
