@@ -125,6 +125,19 @@ class RoleHost:
     def endpoint(self, role: str) -> dict[str, Any]:
         return dict(self.endpoints[role])
 
+    def inspect_recovery_authority(self, supervisor_role_instance_id: str) -> dict[str, Any]:
+        """Reuse sealed management authority; not a new per-incident Owner approval."""
+        if self.endpoint("supervisor")["role_instance_id"] != supervisor_role_instance_id:
+            raise ValueError("recovery authority is not the registered Supervisor")
+        credential = wc.unprotect_dpapi_hex(self.credential_path("supervisor"))
+        try:
+            authenticated = self._authenticate("supervisor", credential)
+        finally:
+            credential = ""
+        return {"status": "SUPERVISOR_RECOVERY_AUTHENTICATED", "run_id": self.binding["run_id"],
+                "supervisor_role_instance_id": supervisor_role_instance_id,
+                "runtime_revision": authenticated["runtime_revision"], "plan_revision": self.binding["plan_revision"]}
+
     def credential_path(self, role: str) -> str:
         return str(self.binding["roles"][role]["credential_path"])
 

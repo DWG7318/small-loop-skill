@@ -850,6 +850,7 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
 def test_real_overwatcher_admin_uses_the_ow_environment_for_cycle_write(tmp_path, monkeypatch):
     environment = configured_environment(tmp_path)
     monkeypatch.setenv("SLK_CONFIG_PATH", environment["SLK_CONFIG_PATH"])
+    monkeypatch.setattr(overwatcher_admin, "utc_now", lambda: "2026-09-20T00:04:01Z")
     data_root = tmp_path / "state"
     invoke(["configure", "--data-root", data_root], environment)
     initialized = json.loads(invoke(

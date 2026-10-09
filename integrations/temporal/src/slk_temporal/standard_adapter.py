@@ -48,6 +48,20 @@ IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _CONFIG_ROOT: Path | None = None
 
 
+class CommandFailure(RuntimeError):
+    """Keep real process evidence; a failed tool is never a health receipt."""
+
+    def __init__(self, reason: str, completed: Any) -> None:
+        super().__init__(reason)
+        self.stdout, self.stderr = completed.stdout or b"", completed.stderr or b""
+        self.evidence = {"reason": reason, "responsibility": "STANDARD_ADAPTER_COMMAND",
+                         "exit_code": completed.returncode}
+        for name, raw in (("stdout", self.stdout), ("stderr", self.stderr)):
+            self.evidence.update({name: raw[:16384].decode("utf-8", errors="replace"),
+                name + "_bytes": len(raw), name + "_sha256": hashlib.sha256(raw).hexdigest(),
+                name + "_truncated": len(raw) > 16384})
+
+
 def configure(root: Path | str) -> None:
     global _CONFIG_ROOT
     selected = Path(root).resolve()
@@ -255,9 +269,9 @@ def _run_json(
                 "COMPLETED_WITHOUT_TERMINAL", "FAILED_WITHOUT_TERMINAL",
                 "LATE", "CONTINUITY_UNPROVEN",
             }:
-                raise RuntimeError("standard adapter command failed")
+                raise CommandFailure("standard adapter command failed", completed)
             return value
-    raise RuntimeError("standard adapter command returned no closed JSON")
+    raise CommandFailure("standard adapter command returned no closed JSON", completed)
 
 
 def _receipt(value: Mapping[str, Any]) -> str:
@@ -273,6 +287,9 @@ def _query(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 async def prepare_run(value: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(value, Mapping) and set(value) == {"recovery"}:
+        from .recovery_client import validate_source
+        return await validate_source(value["recovery"], config_root=_CONFIG_ROOT)
     if not isinstance(value, Mapping) or set(value) != {"request", "startup_fingerprint"}:
         raise ValueError("prepare_run input is not closed")
     request = StartSlkRequest.from_dict(value["request"])
@@ -360,12 +377,22 @@ async def request_recovery(value: dict[str, Any]) -> dict[str, Any]:
 
     def perform() -> dict[str, Any]:
         attempt, endpoint_path, envelope_path = _delivery_files(config, delivery)
-        result = _run_json(
-            list(config["transport_command"]),
-            ["inspect", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
-             "--attempt-root", str(config["attempt_root"])],
-            environment={"SLK_CONFIG_PATH": str(config["state_config_path"])},
-        )
+        try:
+            result = _run_json(
+                list(config["transport_command"]),
+                ["inspect", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
+                 "--attempt-root", str(config["attempt_root"])],
+                environment={"SLK_CONFIG_PATH": str(config["state_config_path"])},
+            )
+        except CommandFailure as error:
+            for name, raw in (("stdout", error.stdout), ("stderr", error.stderr)):
+                path = attempt / f"recovery-inspection.{name}.log"
+                if path.exists() and path.read_bytes() != raw:
+                    raise ValueError("recovery inspection evidence changed") from error
+                path.write_bytes(raw)
+                error.evidence[name + "_path"] = str(path)
+            _write_once(attempt / "recovery-inspection-failure.json", error.evidence)
+            raise
         # An already proven start lets the original sender finish its normal ACK.
         # Otherwise the adapter stops; Supervisor chooses any exact mechanical retry.
         status = "RECOVERY_REQUESTED" if result.get("status") == "ALREADY_STARTED" else "BLOCKED"

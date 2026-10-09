@@ -14,4 +14,6 @@ Historical OCRV attempts with a positive, explicitly frozen aggregate budget kee
 
 Terminal migration keeps credentials sealed: use `supervisor-admin close-overwatcher` with the exact saved OW credential and final cycle, then `supervisor-admin close-run` for the sole `RUN_CLOSED` event, then `supervisor-admin close-role` for Worker and Checker. Do not decrypt a role credential or substitute an ordinary shell command.
 
+An already-admitted 4.4.2 Run whose native pair FAILED uses the existing Supervisor's same-scope reversible repair authority and the standard [closed-execution recovery](SLK-TEMPORAL.md#closed-execution-recovery), not a new adoption or product admission. Preserve full source history/checkpoint, all operations and original pending ACK, including actual member-residency time. First load corrected code in explicit NOT_READY maintenance mode, restore a versioned same-Run pair, then normal-reload its new Host/config root and consume only the original ACK/central commit. Genuine D1 FAIL/INCOMPLETE and prior PASS evidence remain unchanged; neither a live query nor installation proves recovery. New dispatch stays blocked until runtime safeguards and authoritative facts are verified.
+
 BI/WebBI remain 1.1.0. No Docker installation, extra role, scheduler, daemon, wmux substrate, push, tag or Release is part of this migration.

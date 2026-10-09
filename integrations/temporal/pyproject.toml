@@ -14,6 +14,7 @@ slk-temporal-worker = "slk_temporal.worker:main"
 slk-temporal-start = "slk_temporal.starter:main"
 slk-temporal-admit = "slk_temporal.admitter:main"
 slk-temporal-delivery = "slk_temporal.delivery_client:main"
+slk-temporal-recover = "slk_temporal.recovery_client:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

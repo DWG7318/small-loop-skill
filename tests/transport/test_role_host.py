@@ -679,6 +679,32 @@ def host_boundary(host, envelope):
                 "latest_message_id": "source-message"}}
 
 
+def test_recovery_authority_uses_registered_supervisor_not_new_owner_gate(tmp_path, monkeypatch):
+    host, _attempt, _envelope = prepared_host(tmp_path)
+    supervisor = host.endpoint("supervisor")["role_instance_id"]
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda p: "sealed-test-secret")
+    monkeypatch.setattr(host, "_authenticate", lambda role, credential: {
+        "status": "authenticated", "run_id": host.binding["run_id"], "role": role,
+        "role_instance_id": supervisor, "runtime_revision": 339})
+    result = host.inspect_recovery_authority(supervisor)
+    assert result["status"] == "SUPERVISOR_RECOVERY_AUTHENTICATED"
+    assert result["supervisor_role_instance_id"] == supervisor
+    with pytest.raises(ValueError):
+        host.inspect_recovery_authority("wrong-supervisor")
+
+
+def test_recovery_preflight_checks_all_engineering_endpoints_not_only_supervisor(tmp_path, monkeypatch):
+    from slk_transport import cli, run_readiness
+    host, _, _ = prepared_host(tmp_path)
+    calls = []
+    class Adapter:
+        def validate_address(self, endpoint): calls.append(endpoint.role)
+    monkeypatch.setattr(cli, "ADAPTERS", {name: Adapter() for name in cli.ADAPTERS})
+    monkeypatch.setattr(run_readiness, "_tool_exists", lambda _: True)
+    cli._preflight_recovery_endpoints(host)
+    assert set(calls) == {"supervisor", "checker", "worker"}
+
+
 def run06_historical_null_boundary(envelope):
     message_id = "c13ee3db-524e-4011-a7f3-ba02386e5599"
     projection = {

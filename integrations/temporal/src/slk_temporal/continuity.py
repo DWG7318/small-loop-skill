@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from .contracts import ContractError, DeliveryRequest, NativeStartAck, PreStartRejection
 
@@ -131,6 +132,83 @@ class RunContinuity:
             "blocked_reason": pending.blocked_reason if pending else None,
             "terminal_reason": self._terminal_reason,
         }
+
+    def checkpoint(self) -> dict[str, object]:
+        """Lossless communication state; never an engineering-state snapshot."""
+        pending = self._pending
+        return {
+            "schema_version": "slk.temporal-continuity-checkpoint/v1",
+            "run_id": self.run_id,
+            "seen": [item.to_dict() for item in self._seen.values()],
+            "completed": [item.to_dict() for item in self._completed.values()],
+            "abandoned": [item.to_dict() for item in self._abandoned.values()],
+            "pending": ({"delivery": pending.delivery.to_dict(), "phase": pending.phase,
+                         "delivery_result": pending.delivery_result,
+                         "recovery_requested": pending.recovery_requested,
+                         "blocked_reason": pending.blocked_reason} if pending else None),
+            "last_completed_operation_id": self._last_completed_operation_id,
+            "last_abandoned_operation_id": self._last_abandoned_operation_id,
+            "recovery_request_count": self._recovery_request_count,
+            "terminal_reason": self._terminal_reason,
+        }
+
+    @classmethod
+    def from_checkpoint(cls, value: object) -> "RunContinuity":
+        fields = {"schema_version", "run_id", "seen", "completed", "abandoned", "pending",
+                  "last_completed_operation_id", "last_abandoned_operation_id",
+                  "recovery_request_count", "terminal_reason"}
+        if (not isinstance(value, Mapping) or set(value) != fields
+            or value["schema_version"] != "slk.temporal-continuity-checkpoint/v1"
+            or not isinstance(value["run_id"], str) or not value["run_id"]):
+            raise ContinuityError("continuity checkpoint is not closed")
+        result = cls(value["run_id"])
+        for field, parser, target in (("seen", DeliveryRequest.from_dict, result._seen),
+                                     ("completed", NativeStartAck.from_dict, result._completed),
+                                     ("abandoned", PreStartRejection.from_dict, result._abandoned)):
+            if not isinstance(value[field], list):
+                raise ContinuityError("checkpoint operations must be arrays")
+            for raw in value[field]:
+                item = parser(raw)
+                if getattr(item, "run_id", result.run_id) != result.run_id or item.operation_id in target:
+                    raise ContinuityError("checkpoint operation scope or duplicate changed")
+                target[item.operation_id] = item
+        pending = value["pending"]
+        if pending is not None:
+            if (not isinstance(pending, Mapping) or set(pending) != {
+                    "delivery", "phase", "delivery_result", "recovery_requested", "blocked_reason"}
+                or pending["phase"] not in {"DELIVERY_REQUESTED", "RECOVERY_REQUIRED", "BLOCKED"}
+                or type(pending["recovery_requested"]) is not bool
+                or pending["delivery_result"] is not None and not isinstance(pending["delivery_result"], str)
+                or pending["blocked_reason"] is not None and (
+                    not isinstance(pending["blocked_reason"], str) or not pending["blocked_reason"].strip())):
+                raise ContinuityError("checkpoint pending state is not closed")
+            delivery = DeliveryRequest.from_dict(pending["delivery"])
+            if result._seen.get(delivery.operation_id) != delivery:
+                raise ContinuityError("checkpoint pending delivery is not an exact seen operation")
+            if ((pending["phase"] == "RECOVERY_REQUIRED" and not pending["recovery_requested"])
+                or (pending["phase"] == "BLOCKED") != (pending["blocked_reason"] is not None)):
+                raise ContinuityError("checkpoint pending phase contradicts evidence")
+            result._pending = _Pending(delivery, pending["phase"], pending["delivery_result"],
+                                       pending["recovery_requested"], pending["blocked_reason"])
+        resolved = set(result._completed) | set(result._abandoned)
+        pending_ids = {result._pending.delivery.operation_id} if result._pending else set()
+        if (set(result._completed) & set(result._abandoned) or resolved & pending_ids
+            or set(result._seen) != resolved | pending_ids):
+            raise ContinuityError("checkpoint loses or duplicates operation state")
+        for item in (*result._completed.values(), *result._abandoned.values()):
+            item.require_match(result._seen[item.operation_id])
+        for field, items in (("last_completed_operation_id", result._completed),
+                             ("last_abandoned_operation_id", result._abandoned)):
+            if value[field] != next(reversed(items), None):
+                raise ContinuityError("checkpoint last operation changed")
+            setattr(result, "_" + field, value[field])
+        count, terminal = value["recovery_request_count"], value["terminal_reason"]
+        if (type(count) is not int or count < 0
+            or result._pending and result._pending.recovery_requested and count < 1
+            or terminal is not None and (not isinstance(terminal, str) or not terminal.strip() or pending_ids)):
+            raise ContinuityError("checkpoint counter or terminal evidence changed")
+        result._recovery_request_count, result._terminal_reason = count, terminal
+        return result
 
     def pending_delivery(self) -> DeliveryRequest | None:
         return self._pending.delivery if self._pending else None

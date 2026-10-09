@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Mapping
 
 from temporalio import workflow
@@ -12,6 +12,7 @@ from temporalio.exceptions import ActivityError, ApplicationError
 
 with workflow.unsafe.imports_passed_through():
     from .continuity import RunContinuity
+    from .checkpoint import validate_checkpoint
     from .contracts import (
         DeliveryRequest,
         NativeStartAck,
@@ -60,6 +61,31 @@ class StartSlkWorkflow:
 
     @workflow.run
     async def run(self, value: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(value, Mapping) and set(value) == {"recovery"}:
+            # One validation Activity reads native source history and sealed
+            # Supervisor authority. No admission, delivery or recovery replay.
+            receipt = await workflow.execute_activity(
+                "slk.prepare_run", value, result_type=dict,
+                start_to_close_timeout=timedelta(seconds=60), retry_policy=ONE_ATTEMPT)
+            if not isinstance(receipt, Mapping) or set(receipt) != {
+                "status", "checkpoint", "recovery_request_sha256", "source_run_id"} or receipt["status"] != "RECOVERY_READY":
+                raise ValueError("closed execution recovery validation failed")
+            checkpoint = validate_checkpoint(receipt["checkpoint"])
+            request = StartSlkRequest.from_dict(checkpoint["startup"])
+            # Native lineage is verified by the Activity, never file IO during replay.
+            child_id = f"slk-run-{request.run_id}-recovery-{receipt['source_run_id']}"
+            self._identity = {"phase": "PREPARING", "run_id": request.run_id,
+                              "startup_fingerprint": request.startup_fingerprint,
+                              "child_workflow_id": child_id,
+                              "recovery_request_sha256": receipt["recovery_request_sha256"]}
+            child = await workflow.start_child_workflow(RunSlkWorkflow.run,
+                {"startup": request.to_dict(), "recovery_checkpoint": checkpoint}, id=child_id,
+                task_queue=request.task_queue, id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+                retry_policy=ONE_ATTEMPT)
+            self._identity["phase"] = "PAIR_CREATED"
+            result = await child
+            self._identity["phase"] = "TERMINAL"
+            return {**result, "startup_fingerprint": request.startup_fingerprint, "child_workflow_id": child_id}
         request = StartSlkRequest.from_dict(value)
         fingerprint = request.startup_fingerprint
         child_id = f"slk-run-{request.run_id}"
@@ -132,18 +158,34 @@ class RunSlkWorkflow:
         self._admission_request_sha256: str | None = None
         self._admission_attempt = 0
         self._admission_failure: str | None = None
+        self._recovery_failure: dict[str, Any] | None = None
+        self._restored_pending_operation: str | None = None
 
     @workflow.run
     async def run(self, value: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, Mapping):
             raise ValueError("SLK Run input must be an object")
-        two_stage = workflow.patched("slk-4.4.2-two-stage-admission")
-        expected_fields = {"startup", "admission_required"} if two_stage else {"startup", "startup_receipt"}
+        restoring = "recovery_checkpoint" in value
+        two_stage = not restoring and workflow.patched("slk-4.4.2-two-stage-admission")
+        expected_fields = ({"startup", "recovery_checkpoint"} if restoring else
+                           {"startup", "admission_required"} if two_stage else {"startup", "startup_receipt"})
         if set(value) != expected_fields or (two_stage and value.get("admission_required") is not True):
             raise ValueError("SLK Run input must use the exact field set")
         self._startup = StartSlkRequest.from_dict(value["startup"])
         self._continuity = RunContinuity(self._startup.run_id)
         self._admitted = not two_stage
+        if restoring:
+            info = workflow.info()
+            prefix = f"slk-run-{self._startup.run_id}-recovery-"
+            if (info.parent is None or not info.workflow_id.startswith(prefix)
+                or info.workflow_id == prefix
+                or info.parent.workflow_id != info.workflow_id.replace("slk-run-", "slk-start-", 1)
+                or info.task_queue != self._startup.task_queue):
+                raise ApplicationError("checkpoint requires the exact recovery parent", non_retryable=True)
+            self._restore_checkpoint(value["recovery_checkpoint"])
+            # Closed executions did not monitor the gap. Do not replay missed
+            # audit cycles as new external actions; source times remain in lineage.
+            self._next_overwatcher_audit_at = workflow.now() + OVERWATCHER_AUDIT_INTERVAL
         if two_stage:
             while not self._admitted and not self._continuity.is_terminal():
                 await workflow.wait_condition(
@@ -184,7 +226,8 @@ class RunSlkWorkflow:
                     self._admission_requested = False
         if self._continuity.is_terminal():
             return self._continuity.snapshot()
-        self._next_overwatcher_audit_at = workflow.now() + OVERWATCHER_AUDIT_INTERVAL
+        if self._next_overwatcher_audit_at is None:
+            self._next_overwatcher_audit_at = workflow.now() + OVERWATCHER_AUDIT_INTERVAL
         while not self._continuity.is_terminal():
             if self._continuity.pending_delivery() is None:
                 await self._wait_for_delivery_or_runtime_check()
@@ -195,6 +238,12 @@ class RunSlkWorkflow:
                 # An audit/residency timer can wake an otherwise idle Run.
                 continue
             operation_id = delivery.operation_id
+            if operation_id == self._restored_pending_operation:
+                # The source history already attempted delivery/recovery. Only its
+                # original, independently proven native-start ACK may release it.
+                await self._wait_for_completion(operation_id)
+                self._restored_pending_operation = None
+                continue
             if operation_id not in self._delivery_started:
                 self._delivery_started.add(operation_id)
                 try:
@@ -244,24 +293,44 @@ class RunSlkWorkflow:
                         "delivery": delivery.to_dict(),
                         "recovery_target_role_instance_id": delivery.sender_role_instance_id,
                     }
-                    recovery = await workflow.execute_activity(
-                        "slk.request_recovery",
-                        recovery_input,
-                        result_type=dict,
-                        start_to_close_timeout=timedelta(minutes=5),
-                        retry_policy=ONE_ATTEMPT,
-                        activity_id=f"recover-{operation_id}",
-                    )
-                    recovery = _closed_receipt(
-                        recovery,
-                        {"status", "operation_id", "receipt_sha256"},
-                        status={"RECOVERY_REQUESTED", "BLOCKED"},
-                        operation_id=operation_id,
-                    )
-                    if recovery["status"] == "BLOCKED":
-                        self._continuity.mark_blocked(
-                            operation_id, "adapter reported no verified continuation route"
+                    try:
+                        recovery = await workflow.execute_activity(
+                            "slk.request_recovery",
+                            recovery_input,
+                            result_type=dict,
+                            start_to_close_timeout=timedelta(minutes=5),
+                            retry_policy=ONE_ATTEMPT,
+                            activity_id=f"recover-{operation_id}",
                         )
+                        recovery = _closed_receipt(
+                            recovery,
+                            {"status", "operation_id", "receipt_sha256"},
+                            status={"RECOVERY_REQUESTED", "BLOCKED"},
+                            operation_id=operation_id,
+                        )
+                        if recovery["status"] == "BLOCKED":
+                            self._continuity.mark_blocked(
+                                operation_id, "adapter reported no verified continuation route"
+                            )
+                    except Exception as error:
+                        if not workflow.patched("slk-4.4.2-recovery-failure-is-guard"):
+                            raise  # preserve the recorded outcome of pre-fix histories
+                        cause = error
+                        while cause.__cause__ is not None:
+                            cause = cause.__cause__
+                        details = getattr(cause, "details", ())
+                        self._recovery_failure = {"reason": str(cause), "type": type(cause).__name__,
+                            "operation_id": operation_id,
+                            "evidence": details[0] if details and isinstance(details[0], dict) else None}
+                        self._continuity.mark_blocked(
+                            operation_id, "recovery activity failed; Supervisor repair required"
+                        )
+                        blocker = self._set_runtime_guard(
+                            event_id=f"{self._startup.run_id}-recovery-failed-{operation_id}",
+                            kind="RECOVERY_ACTIVITY_FAILED",
+                            role_instance_id=delivery.sender_role_instance_id,
+                        )
+                        await self._notify_supervisor(blocker)
             if guarded_wait:
                 await self._wait_for_completion(operation_id)
             else:
@@ -574,6 +643,36 @@ class RunSlkWorkflow:
         return self._update_value(self._continuity.terminate, reason)
 
     @workflow.query
+    def recovery_checkpoint(self) -> dict[str, Any]:
+        if self._startup is None or self._continuity is None:
+            raise ValueError("SLK Run has not initialized")
+        return {"schema_version": "slk.temporal-execution-checkpoint/v1",
+                "startup": self._startup.to_dict(), "continuity": self._continuity.checkpoint(),
+                "delivery_started": sorted(self._delivery_started),
+                "recovery_started": sorted(self._recovery_started), "status": self.status(),
+                "admission_requested": self._admission_requested,
+                "admission_request_sha256": self._admission_request_sha256}
+
+    def _restore_checkpoint(self, value: object) -> None:
+        packet = validate_checkpoint(value)
+        if packet["startup"] != self._startup.to_dict():
+            raise ValueError("restoration changed immutable startup")
+        self._continuity = RunContinuity.from_checkpoint(packet["continuity"])
+        self._delivery_started, self._recovery_started = (
+            set(packet["delivery_started"]), set(packet["recovery_started"]))
+        state = packet["status"]
+        for field in ("admitted", "admission_attempt", "admission_failure",
+                      "responsible_role_instance_id", "responsibility_operation_id",
+                      "member_residency_notice_sent", "overwatcher_audit_cycle",
+                      "runtime_guard_blocker", "notification_failure", "recovery_failure"):
+            setattr(self, "_" + field, state[field])
+        for field in ("member_residency_since", "next_overwatcher_audit_at"):
+            setattr(self, "_" + field, datetime.fromisoformat(state[field]) if state[field] else None)
+        self._admission_requested = packet["admission_requested"]
+        self._admission_request_sha256 = packet["admission_request_sha256"]
+        self._restored_pending_operation = self._continuity.pending_delivery().operation_id
+
+    @workflow.query
     def status(self) -> dict[str, Any]:
         if self._continuity is None:
             return {"phase": "NOT_STARTED"}
@@ -602,4 +701,5 @@ class RunSlkWorkflow:
                 if self._runtime_guard_blocker is not None else None
             ),
             "notification_failure": dict(self._notification_failure) if self._notification_failure else None,
+            "recovery_failure": dict(self._recovery_failure) if self._recovery_failure else None,
         }

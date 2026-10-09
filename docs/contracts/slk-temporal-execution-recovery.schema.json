@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SLK same-business-Run closed execution recovery lineage",
+  "oneOf": [{"$ref": "#/$defs/request"}, {"$ref": "#/$defs/result"}],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "^\\S(?:[\\s\\S]*\\S)?$"},
+    "proof": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/text"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "pair_proof": {
+      "type": "object", "additionalProperties": false, "required": ["start", "run"],
+      "properties": {"start": {"$ref": "#/$defs/proof"}, "run": {"$ref": "#/$defs/proof"}}
+    },
+    "failed": {
+      "type": "object", "additionalProperties": false, "required": ["status", "close_time"],
+      "properties": {"status": {"const": "FAILED"}, "close_time": {"type": "string", "format": "date-time"}}
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "run_id", "address", "task_queue", "start_workflow_id", "start_run_id", "run_workflow_id", "run_run_id", "startup_fingerprint"],
+      "properties": {"schema_version": {"const": "slk.temporal-workflow-identity/v1"}, "run_id": {"$ref": "#/$defs/text"},
+        "address": {"$ref": "#/$defs/text"}, "task_queue": {"$ref": "#/$defs/text"},
+        "start_workflow_id": {"$ref": "#/$defs/text"}, "start_run_id": {"$ref": "#/$defs/text"},
+        "run_workflow_id": {"$ref": "#/$defs/text"}, "run_run_id": {"$ref": "#/$defs/text"}, "startup_fingerprint": {"$ref": "#/$defs/sha256"}}
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "run_id", "source_identity", "source_executions", "checkpoint", "histories", "source_host", "source_config", "central_projection", "decision", "evidence_root"],
+      "properties": {"schema_version": {"const": "slk.temporal-execution-recovery/v1"}, "run_id": {"$ref": "#/$defs/text"},
+        "source_identity": {"$ref": "#/$defs/proof"}, "checkpoint": {"$ref": "#/$defs/proof"}, "histories": {"$ref": "#/$defs/pair_proof"},
+        "source_host": {"$ref": "#/$defs/proof"}, "source_config": {"$ref": "#/$defs/proof"}, "central_projection": {"$ref": "#/$defs/proof"},
+        "source_executions": {"type": "object", "additionalProperties": false, "required": ["start", "run"],
+          "properties": {"start": {"$ref": "#/$defs/failed"}, "run": {"$ref": "#/$defs/failed"}}},
+        "decision": {"type": "object", "additionalProperties": false, "required": ["supervisor_role_instance_id", "reason", "evidence_ref"],
+          "properties": {"supervisor_role_instance_id": {"$ref": "#/$defs/text"}, "reason": {"$ref": "#/$defs/text"}, "evidence_ref": {"$ref": "#/$defs/text"}}},
+        "evidence_root": {"$ref": "#/$defs/text"}}
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "status", "run_id", "source_identity", "target_identity", "request_sha256", "identity", "role_host", "adapter_config"],
+      "properties": {"schema_version": {"const": "slk.temporal-execution-recovery-result/v1"}, "status": {"const": "ACK_ONLY_PAIR_RUNNING"},
+        "run_id": {"$ref": "#/$defs/text"}, "source_identity": {"$ref": "#/$defs/identity"}, "target_identity": {"$ref": "#/$defs/identity"},
+        "request_sha256": {"$ref": "#/$defs/sha256"}, "identity": {"$ref": "#/$defs/proof"}, "role_host": {"$ref": "#/$defs/proof"}, "adapter_config": {"$ref": "#/$defs/proof"}}
+    }
+  }
+}

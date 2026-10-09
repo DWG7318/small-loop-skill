@@ -7,7 +7,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 ## 方法身份
 
-SLK 4.4.2 是 Loop Engineering 的线性形态，适合中小型工程及大型工程的独立中小范围；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径。
+SLK 4.4.2 是 Loop Engineering 的线性形态；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径，适合中小工程或大型工程独立范围。
 
 CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，明确怎样继续：D1 FAIL 同一 CELL 返工，PASS 前进，全部处理后 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与 BI 只读查询。
 
@@ -23,12 +23,12 @@ D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 �
 
 ## Agent-first 轻方法原则
 
-Supervisor、Checker、Worker、Overwatcher 是 Agent，不是状态机。Worker 与 Checker 工作前按范围、证据和工具能力做角色本地轻量预检；内部段不并行，不能把内部顺序段当成正式 CELL 或 D1，不新增 TOKEN。Supervisor 不提前接管，仅在成员或 OW 报告异常时处理并恢复原成员。角色问题先修子 Skill；交接与恢复先用直连，不因提示词问题新增协议、daemon 或大段运行时。
+四角色是 Agent，不是状态机。Worker/Checker 做角色本地轻量预检；内部段不并行，不能把内部顺序段当成正式 CELL 或 D1、不新增 TOKEN。Supervisor 不接管施工/D1；异常时自主修复既有范围内可逆工具/环境/交接故障，记录原因、动作、实测，不逐次索要 Owner 许可；新增范围/费用/账号或破坏性改变才交 Owner。角色先修子 Skill，交接先直连，不因提示词新增协议、daemon。
 
 - 共享事实由标准 Tool 保证。准备时登记角色、BI、工具和端点。首份来源用 `slk-conformance/<SLK-CONFORMANCE-…>` 证据根绑定独立 clean/no-remote 单 CELL 样本 Git，经 `preflight-conformance-sample` 实跑且不承载产品；产品/续接分别用 `preflight-new-run`/`preflight-admission`，不伪造事实或猜身份。
 - Tool 输出事实，Agent 负责语义判断。项目超时、异常、唤醒、暂停和最小处理方式由对应角色结合真实证据决定，不靠规则穷举现场。
-- Temporal 管理子 Skill 负责共享本地服务；每个 Run 使用独立的 `SLK.Start`/`SLK.Run` 工作流记录通讯、成员停留和运行保障，不重写工程 Loop。只有匹配 `slk.native-start/v2` 才证明启动，后续活动用标准 `inspect-native-activity` 查询；缺失、过期、身份不符或权限不足都保持 `UNKNOWN`，不裁决 D0/D1/D2、`SLK TOKEN`、角色、模型或 BI。
-- Prompt-only 修正保持 prompt-only：用真实失败作反例并验证对应角色，不扩成数百行代码或庞大测试设施。
+- Temporal 子 Skill 管共享本地服务；独立 `SLK.Start`/`SLK.Run` 记录各 Run 通讯、停留与保障。describe `RUNNING` 且无 close time 才是运行，query/旧回执不算；闭合故障保留历史、按标准同 Run 版本化恢复原 operation。匹配 `slk.native-start/v2` 才算 Agent 启动，后续 `inspect-native-activity`；缺失/过期/身份或权限错误保持 `UNKNOWN`，不裁决工程、TOKEN、角色、模型或 BI。
+- Prompt-only 用真实失败反例验证角色，不扩成庞大代码或测试设施。
 
 原对话与 Owner 选择 SLK，明确目标、边界与关注结果；创建 Supervisor 前整理 Run、初始 CELL 及分层检查。接管后原对话退出工程工作，保留 Owner 联系与 Supervisor 异常恢复入口。
 
@@ -54,7 +54,7 @@ Supervisor 通过结构化角色 Eval 用 `slk-state init-run --credential-out` 
 - Worker 向 Checker 交付后缺少当前 CELL 的接收证据：`$slk-recover-communication`
 - 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
 
-先读当前情境指导，遇到新情况再补充相关 Skill。
+先读当前指导，按新情境补读。
 
 ## 负面提示词
 

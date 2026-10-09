@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import time
+import shlex
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -88,6 +89,9 @@ def _child_first(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     roots = [row for row in rows if row["parent_pid"] not in by_pid]
     if len(roots) != 1:
         raise ValueError("old Temporal worker processes must form one exact chain")
+    parents = [row["parent_pid"] for row in rows if row["parent_pid"] in by_pid]
+    if len(parents) != len(set(parents)):
+        raise ValueError("Temporal worker chain cannot contain multiple worker leaves")
     depth: dict[int, int] = {}
     for row in rows:
         seen: set[int] = set()
@@ -130,7 +134,7 @@ def _spawn_worker(request: Mapping[str, Any], environment: dict[str, str], root:
     stderr = (root / "worker.stderr.log").open("ab")
     try:
         process = subprocess.Popen(
-            list(request["worker_command"]), stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+            list(request["worker_command"]) + ["--ready-file", str(root / "worker-binding.json")], stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             close_fds=True, env=environment, **windows_no_window_kwargs(detached=True),
         )
     finally:
@@ -139,12 +143,59 @@ def _spawn_worker(request: Mapping[str, Any], environment: dict[str, str], root:
     return process.pid
 
 
+def _queue_processes(request: Mapping[str, Any]) -> list[dict]:
+    rows = _powershell_json("@(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\" | "
+        "Select-Object ProcessId,ParentProcessId,CreationDate,CommandLine) | ConvertTo-Json -Compress")
+    if isinstance(rows, dict):
+        rows = [rows]
+    result = []
+    for row in rows or []:
+        command = row.get("CommandLine") or ""
+        tokens = [part.strip('"') for part in shlex.split(command, posix=False)]
+        def option(name):
+            return tokens[tokens.index(name) + 1] if name in tokens and tokens.index(name) + 1 < len(tokens) else None
+        if ("slk_temporal.worker" in tokens and option("--address") == request["address"]
+            and option("--task-queue") == request["task_queue"]):
+            result.append({"pid": int(row["ProcessId"]), "parent_pid": int(row["ParentProcessId"]),
+                "creation_time": row["CreationDate"], "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest()})
+    return result
+
+
+def _verify_sources(request: Mapping[str, Any], environment: dict[str, str]) -> None:
+    completed = subprocess.run(list(request["worker_command"]) + ["--inspect-binding"],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", check=False,
+        env=environment, timeout=30, **windows_no_window_kwargs())
+    if completed.returncode != 0:
+        raise ValueError("worker import preflight failed: " + completed.stderr[-2000:])
+    value = json.loads(completed.stdout)
+    if any(value.get(key) != request[key] for key in ("adapter_source", "workflow_source")):
+        raise ValueError("worker imported sources differ from frozen source proofs")
+
+
+def _verify_new_worker(request: Mapping[str, Any], pid: int, root: Path) -> dict:
+    value = _object(root / "worker-binding.json", "actual worker binding")
+    rows = _queue_processes(request)
+    chain = _child_first(rows)
+    if (not chain or chain[-1]["pid"] != pid or chain[0]["pid"] != value.get("pid")
+        or set(value) != {"schema_version", "pid", "address", "task_queue", "adapter_source", "workflow_source", "standard_config_root"}
+        or value.get("schema_version") != "slk.temporal-worker-binding/v1"
+        or any(value.get(key) != request[key] for key in ("address", "task_queue", "adapter_source", "workflow_source"))):
+        raise ValueError("new queue worker chain or actual loaded sources differ")
+    command = request["worker_command"]
+    expected_root = str(Path(command[command.index("--standard-config-root") + 1]).resolve()) if "--standard-config-root" in command else None
+    if value.get("standard_config_root") != expected_root:
+        raise ValueError("actual worker config root differs from versioned binding")
+    return {**value, "processes": rows}
+
+
 def _inspect_workflows(request: Mapping[str, Any], environment: dict[str, str]) -> dict[str, Any]:
     identity = _object(Path(request["workflow_identity"]["path"]), "workflow identity")
     arguments = ["--address", request["address"], "--run-id", request["run_id"],
         "--task-queue", request["task_queue"], "--start-workflow-id", identity["start_workflow_id"],
         "--start-run-id", identity["start_run_id"], "--run-workflow-id", identity["run_workflow_id"],
         "--run-run-id", identity["run_run_id"], "--startup-fingerprint", identity["startup_fingerprint"]]
+    if request.get("purpose") == "CLOSED_EXECUTION_MAINTENANCE":
+        arguments.append("--diagnostic")
     completed = subprocess.run(list(request["inspection_command"]) + arguments, stdin=subprocess.DEVNULL,
         capture_output=True, text=True, encoding="utf-8", check=False, env=environment,
         **windows_no_window_kwargs())
@@ -161,7 +212,10 @@ def reload_temporal_worker(request_path: Path | str, *, request_sha256: str) -> 
     if _sha256(request_path) != request_sha256:
         raise ValueError("Temporal reload request hash changed")
     request = _object(request_path, "Temporal reload request")
-    if set(request) != FIELDS or request.get("schema_version") != "slk.temporal-worker-reload/v1":
+    maintenance = (request.get("schema_version") == "slk.temporal-worker-reload/v2"
+                   and request.get("purpose") == "CLOSED_EXECUTION_MAINTENANCE")
+    if (set(request) != (FIELDS | {"purpose"} if maintenance else FIELDS)
+        or not maintenance and request.get("schema_version") != "slk.temporal-worker-reload/v1"):
         raise ValueError("Temporal reload request is not closed")
     run_id, address, queue = request.get("run_id"), request.get("address"), request.get("task_queue")
     commands = (request.get("worker_command"), request.get("inspection_command"))
@@ -200,19 +254,46 @@ def reload_temporal_worker(request_path: Path | str, *, request_sha256: str) -> 
     result_path, evidence_root = Path(request["result_path"]), Path(request["evidence_root"])
     if not result_path.is_absolute() or not evidence_root.is_absolute():
         raise ValueError("Temporal reload output paths must be absolute")
-    if result_path.exists():
-        saved = _object(result_path, "Temporal reload result")
-        if saved.get("request_sha256") != request_sha256:
-            raise ValueError("Temporal reload result conflicts with this request")
-        return saved
-    for row in rows:
-        if _process_snapshot(row["pid"]) != row:
-            raise ValueError("old Temporal worker identity changed")
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(request["pythonpath"])
     environment["PYTHONIOENCODING"] = "utf-8"
     environment["PYTHONUTF8"] = "1"
-    if _inspect_workflows(request, environment) != identity:
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    def exact_inspection(observed: dict[str, Any]) -> bool:
+        if not maintenance:
+            return observed == identity
+        if (set(observed) != {"schema_version", "status", "identity", "executions"}
+            or observed.get("schema_version") != "slk.temporal-execution-inspection/v1"
+            or observed.get("status") != "NOT_RUNNING" or observed.get("identity") != identity):
+            return False
+        executions = observed.get("executions")
+        return (isinstance(executions, dict) and set(executions) == {"start", "run"}
+                and all(isinstance(row, dict) and set(row) == {"status", "close_time"}
+                        and row["status"] == "FAILED" and isinstance(row["close_time"], str)
+                        and row["close_time"] for row in executions.values()))
+    if result_path.exists():
+        saved = _object(result_path, "Temporal reload result")
+        if (saved.get("request_sha256") != request_sha256
+            or saved.get("workflow_identity") != identity or saved.get("run_id") != run_id
+            or saved.get("task_queue") != queue or type(saved.get("new_worker_pid")) is not int
+            or saved["new_worker_pid"] <= 0
+            or any(saved.get(key + "_sha256") != request[key]["sha256"]
+                   for key in ("adapter_source", "workflow_source"))):
+            raise ValueError("Temporal reload result conflicts with this request")
+        _verify_new_worker(request, saved["new_worker_pid"], evidence_root)
+        observed = _inspect_workflows(request, environment)
+        if not exact_inspection(observed) or maintenance and observed["executions"] != saved.get("executions"):
+            raise ValueError("Temporal pair changed after the saved worker reload")
+        return saved
+    for row in rows:
+        if _process_snapshot(row["pid"]) != row:
+            raise ValueError("old Temporal worker identity changed")
+    _verify_sources(request, environment)
+    observed = _queue_processes(request)
+    if sorted(observed, key=lambda x: x["pid"]) != sorted(rows, key=lambda x: x["pid"]):
+        raise ValueError("another queue worker exists or exact process chain changed")
+    before = _inspect_workflows(request, environment)
+    if not exact_inspection(before):
         raise ValueError("live Temporal workflow identity differs from the frozen reload target")
     _stop_exact_processes([dict(row) for row in rows])
     new_pid = _spawn_worker(request, environment, evidence_root)
@@ -221,8 +302,9 @@ def reload_temporal_worker(request_path: Path | str, *, request_sha256: str) -> 
     while time.monotonic() < deadline:
         try:
             observed = _inspect_workflows(request, environment)
-            if observed != identity:
+            if not exact_inspection(observed) or maintenance and observed != before:
                 raise ValueError("Temporal workflow identity changed across worker reload")
+            worker_binding = _verify_new_worker(request, new_pid, evidence_root)
             break
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             last_error = exc
@@ -230,11 +312,17 @@ def reload_temporal_worker(request_path: Path | str, *, request_sha256: str) -> 
     else:
         raise ValueError("reloaded worker did not recover the exact workflow pair") from last_error
     result = {"schema_version": "slk.temporal-worker-reload-result/v1",
-        "status": "TEMPORAL_WORKER_RELOADED", "run_id": run_id, "task_queue": queue,
+        "status": "CLOSED_EXECUTION_WORKER_LOADED_NOT_READY" if maintenance else "TEMPORAL_WORKER_RELOADED",
+        "run_id": run_id, "task_queue": queue,
         "new_worker_pid": new_pid, "request_sha256": request_sha256,
         "adapter_source_sha256": request["adapter_source"]["sha256"],
         "workflow_source_sha256": request["workflow_source"]["sha256"],
         "workflow_identity": identity}
+    if maintenance:
+        result["schema_version"] = "slk.temporal-worker-reload-result/v2"
+        result["executions"] = before["executions"]
+    if worker_binding:
+        result["worker_binding"] = worker_binding
     result_path.parent.mkdir(parents=True, exist_ok=True)
     _write_or_reuse_stable_request(result_path, result)
     return result

@@ -6,6 +6,10 @@ import argparse
 import asyncio
 import importlib
 import inspect
+import hashlib
+import json
+import os
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -21,7 +25,14 @@ Adapter = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 def _bind_activity(target: Adapter, attribute: str, activity_name: str) -> Adapter:
     async def invoke(value: dict[str, Any]) -> dict[str, Any]:
-        return await target(value)
+        try:
+            return await target(value)
+        except RuntimeError as error:
+            if not isinstance(getattr(error, "evidence", None), dict):
+                raise
+            from temporalio.exceptions import ApplicationError
+            raise ApplicationError(str(error), error.evidence,
+                                   type="SLK_STANDARD_COMMAND_FAILED", non_retryable=True) from error
 
     invoke.__name__ = attribute
     return activity.defn(name=activity_name)(invoke)
@@ -55,7 +66,19 @@ def _selected_adapter(*, adapter_module: str | None, standard_config_root: Any |
     return str(adapter_module)
 
 
-async def run(address: str, task_queue: str, adapter_module: str) -> None:
+def binding_metadata(address: str, task_queue: str, adapter_module: str) -> dict:
+    from . import workflows, standard_adapter
+    def source(module):
+        path = Path(inspect.getfile(module)).resolve()
+        return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    return {"schema_version": "slk.temporal-worker-binding/v1", "pid": os.getpid(),
+            "address": address, "task_queue": task_queue,
+            "adapter_source": source(importlib.import_module(adapter_module)),
+            "workflow_source": source(workflows),
+            "standard_config_root": str(standard_adapter._CONFIG_ROOT) if adapter_module == "slk_temporal.standard_adapter" else None}
+
+
+async def run(address: str, task_queue: str, adapter_module: str, ready_file: Path | None = None) -> None:
     client = await Client.connect(address)
     async with Worker(
         client,
@@ -63,6 +86,9 @@ async def run(address: str, task_queue: str, adapter_module: str) -> None:
         workflows=[StartSlkWorkflow, RunSlkWorkflow],
         activities=_activities(adapter_module),
     ):
+        if ready_file is not None:
+            from .starter import _write_identity
+            _write_identity(ready_file, binding_metadata(address, task_queue, adapter_module))
         await asyncio.Future()
 
 
@@ -73,12 +99,17 @@ def main() -> int:
     adapter = parser.add_mutually_exclusive_group(required=True)
     adapter.add_argument("--adapter-module")
     adapter.add_argument("--standard-config-root")
+    parser.add_argument("--inspect-binding", action="store_true")
+    parser.add_argument("--ready-file", type=Path)
     args = parser.parse_args()
     module = _selected_adapter(
         adapter_module=args.adapter_module,
         standard_config_root=args.standard_config_root,
     )
-    asyncio.run(run(args.address, args.task_queue, module))
+    if args.inspect_binding:
+        print(json.dumps(binding_metadata(args.address, args.task_queue, module), sort_keys=True))
+    else:
+        asyncio.run(run(args.address, args.task_queue, module, args.ready_file))
     return 0
 
 

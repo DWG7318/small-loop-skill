@@ -666,6 +666,30 @@ def _resume_role_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _preflight_recovery_endpoints(host: RoleHost) -> None:
+    from .run_readiness import _tool_exists
+    for role in ("supervisor", "checker", "worker"):
+        endpoint = Endpoint.from_dict(host.endpoint(role))
+        ADAPTERS[endpoint.adapter].validate_address(endpoint)
+        command = endpoint.address.get("command", [])
+        if "desktop" in endpoint.address:
+            from .adapters.codex_desktop import validate_desktop_address
+            command = validate_desktop_address(endpoint.address)
+        if command and not _tool_exists(command[0]):
+            raise ValueError(f"registered {role} executable is unavailable")
+
+
+def _inspect_recovery_authority(args: argparse.Namespace) -> int:
+    path = args.binding.resolve()
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != args.sha256:
+        raise ValueError("role host binding hash changed")
+    host = RoleHost(_read_object(path, "role host binding"), digest)
+    _preflight_recovery_endpoints(host)
+    _emit(host.inspect_recovery_authority(args.supervisor_role_instance_id))
+    return 0
+
+
 def _reclassify_completed_checker(args: argparse.Namespace) -> int:
     binding_path = args.binding.resolve()
     digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
@@ -1034,6 +1058,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     role_host_resume.add_argument("--binding", required=True, type=Path)
     role_host_resume.add_argument("--sha256", required=True)
     role_host_resume.add_argument("--source-attempt", required=True, type=Path)
+    recovery_authority = subparsers.add_parser("inspect-recovery-authority")
+    recovery_authority.add_argument("--binding", required=True, type=Path)
+    recovery_authority.add_argument("--sha256", required=True)
+    recovery_authority.add_argument("--supervisor-role-instance-id", required=True)
     reclassify_checker = subparsers.add_parser("reclassify-completed-checker")
     reclassify_checker.add_argument("--binding", required=True, type=Path)
     reclassify_checker.add_argument("--sha256", required=True)
@@ -1184,6 +1212,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _preflight_conformance_sample(args)
         if args.command == "resume-role-host":
             return _resume_role_host(args)
+        if args.command == "inspect-recovery-authority":
+            return _inspect_recovery_authority(args)
         if args.command == "reclassify-completed-checker":
             return _reclassify_completed_checker(args)
         if args.command == "continue-staged-handoff":

@@ -30,7 +30,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 
 ## 收尾与故障
 
-Run 的工程终结顺序完成后，Supervisor 关闭本 Run 的 `SLK.Run` 与 `SLK.Start`，只取消该 Run 的计时和待处理操作。Temporal 或 adapter 中途不可用时保留中央状态与候选，下一 CELL 保持阻断；代码漂移只用 hash-bound `reload-temporal-worker` 替换准确 worker 进程链，并复核同一 Start/Run workflow ID、native run ID 与 startup fingerprint，不重建历史或用临时脚本伪造 ACK。
+Run 的工程终结顺序完成后，Supervisor 关闭本 Run 的 `SLK.Run` 与 `SLK.Start`，只取消该 Run 的计时和待处理操作。Temporal 或 adapter 故障由 Supervisor 自主诊断、修复并验证既有范围内可逆操作，保留中央状态与候选，不逐次等待 Owner 许可；新增范围、费用、账号或破坏性改变仍交 Owner。下一 CELL 保持阻断；先真实 describe status/close time，不以 query 可读判断健康。运行中代码漂移只用 hash-bound `reload-temporal-worker` 保留原 pair；两执行确为 FAILED 时先用其 v2 `CLOSED_EXECUTION_MAINTENANCE` 加载唯一 worker（不是 READY），再用 `slk-temporal-recover prepare/restore` 保存原历史与 checkpoint、创建版本化同 Run 恢复 pair，最后正常重载到新 Host/config 根。标准步骤见 [`SLK-TEMPORAL.md`](../../docs/runtime/SLK-TEMPORAL.md#closed-execution-recovery)；原 pending 只补 ACK/commit，仍有未来运行保障，不重发、不重审、不重置历史。
 
 ## 负面提示词
 
