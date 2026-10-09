@@ -256,7 +256,9 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
                                 'environment_adjustment_path', 'environment_adjustment_sha256',
                             } if relative.endswith('slk-worker-continuation.schema.json')
                             else {'environment_adjustment_path', 'environment_adjustment_sha256'}
-                            if relative.endswith('slk-ocrv-worker-recovery.schema.json') else set())
+                            if relative.endswith('slk-ocrv-worker-recovery.schema.json')
+                            else {'native_status', 'native_identity', 'output_delivery'}
+                            if relative.endswith('slk-worker-completion-inspection.schema.json') else set())
         assert set(schema["properties"]) == required | optional_partial
         if relative.endswith("slk-overwatcher-turn-resume.schema.json"):
             assert set(schema["required"]) == required - {

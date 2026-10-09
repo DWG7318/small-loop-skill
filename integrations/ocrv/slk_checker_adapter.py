@@ -141,8 +141,6 @@ def _compact_evidence(path: Path) -> dict[str, Any]:
         return item
     summary: dict[str, Any] = {"format": "json"}
     if isinstance(raw, dict):
-        if isinstance(raw.get("status"), str):
-            summary["status"] = raw["status"]
         if isinstance(raw.get("candidate"), dict):
             summary["candidate"] = {
                 key: value for key, value in raw["candidate"].items()
@@ -160,7 +158,7 @@ def _compact_evidence(path: Path) -> dict[str, Any]:
                 "omitted": len(all_paths) - len(shown),
                 "source": str(path.resolve()),
             }
-        for key in ("base_commit", "head_commit", "candidate_commit", "test_status"):
+        for key in ("base_commit", "head_commit", "candidate_commit"):
             if isinstance(raw.get(key), str):
                 summary[key] = raw[key]
     item["summary"] = summary
@@ -264,11 +262,13 @@ def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
         request["cell_goal"], "", "## D1 Criteria", "",
     ]
     lines.extend(f"{index}. {criterion}" for index, criterion in enumerate(request["d1_criteria"], 1))
-    lines.extend(["", "## Evidence Index", ""])
+    lines.extend(["", "## Evidence Index — locators, not Worker acceptance conclusions", ""])
     scoped_paths = set(request["review_scope"]["include_paths"])
     if request["evidence"]:
         for item in request["evidence"]:
-            summary = dict(item["summary"])
+            summary = {key: value for key, value in item["summary"].items() if key in {
+                "format", "candidate", "changed_paths", "changed_paths_summary",
+                "base_commit", "head_commit", "candidate_commit"}}
             changed_paths = summary.get("changed_paths")
             if scoped_paths and isinstance(changed_paths, list):
                 summary["changed_paths"] = [path for path in changed_paths if path in scoped_paths]
@@ -278,7 +278,20 @@ def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
         lines.append("- None supplied; do not invent runtime evidence.")
     for invocation in capabilities["invocations"]:
         lines.append(f"- Optional {invocation['tool']} digest: `{invocation['stdout_sha256']}`")
-    lines.extend(["", "Review independently against every D1 criterion; Worker D0 conclusions are excluded."])
+    lines.extend(["", "Inspect the candidate against every D1 criterion and form your independent preliminary judgment",
+        "before reading Worker D0 originals; then read the indexed originals and reconcile any contradictions",
+        "before your final D1 decision. The initial index contains locators only, not Worker self-evaluation.",
+        "Your D1 decision concerns the entire frozen candidate and every CELL criterion,",
+        "not the current file or native group. Native grouping and concurrency=1 do not prove",
+        "whole-candidate review. Use existing file_find/file_read_diff and indexed originals",
+        "to inspect related changes across groups before deciding. Do not submit one decision per group",
+        "or repeat a previously submitted whole-CELL decision. If you cannot establish all CELL goals,",
+        "do not claim whole-CELL PASS; disclose the unverified scope and retain all existing output.",
+        "Only you, the original OCRV Checker, own D1. State your actual decision and limitations.",
+        "Counts, severity, coverage and exit codes do not decide for you; host text never authorizes D1.",
+        "Use slk_checker_decide(verdict) for your explicit final D1 action when that bound MCP",
+        "tool is available. If unavailable or failed, disclose that fact; never claim a state",
+        "write succeeded. The report remains deliverable independently of this action."])
     return "\n".join(lines) + "\n"
 
 
@@ -488,67 +501,7 @@ def preflight(request_path: Path, output_path: Path) -> int:
     return 0 if status == "READY" else 3
 
 
-def _coverage_complete(review: dict[str, Any]) -> bool:
-    manifest = review.get("manifest")
-    coverage = manifest.get("coverage") if isinstance(manifest, dict) else None
-    if not isinstance(manifest, dict) or manifest.get("terminal_state") != "complete" or not isinstance(coverage, dict):
-        return False
-    selected, completed, reused = (
-        coverage.get("selected"), coverage.get("completed"), coverage.get("reused", [])
-    )
-    if (
-        not isinstance(selected, list)
-        or not selected
-        or not isinstance(completed, list)
-        or not isinstance(reused, list)
-    ):
-        return False
-    selected_ids = {item.get("item_id") for item in selected if isinstance(item, dict)}
-    completed_ids = {item.get("item_id") for item in completed if isinstance(item, dict)}
-    reused_ids = {item.get("item_id") for item in reused if isinstance(item, dict)}
-    return (
-        None not in selected_ids
-        and not completed_ids & reused_ids
-        and selected_ids == completed_ids | reused_ids
-        and not coverage.get("failed")
-        and not coverage.get("waived")
-    )
 
-
-def _classify(review: dict[str, Any] | None, exit_code: int) -> tuple[str, list[str]]:
-    reasons: list[str] = []
-    if exit_code != 0:
-        reasons.append(f"OCR_EXIT_{exit_code}")
-    if not isinstance(review, dict):
-        return "INCOMPLETE", reasons + ["OCR_RESULT_MISSING_OR_INVALID"]
-    llm = review.get("llm") if isinstance(review.get("llm"), dict) else {}
-    if review.get("status") != "complete":
-        reasons.append("OCR_STATUS_NOT_COMPLETE")
-    if llm.get("provider") != EXPECTED_PROVIDER or llm.get("model") != EXPECTED_MODEL:
-        reasons.append("OCR_MODEL_IDENTITY_MISMATCH")
-    if not _coverage_complete(review):
-        reasons.append("OCR_COVERAGE_INCOMPLETE")
-    tools = review.get("tool_calls") if isinstance(review.get("tool_calls"), dict) else {}
-    if tools.get("failure", 0) != 0:
-        reasons.append("OCR_TOOL_FAILURE")
-    comments = review.get("comments")
-    if not isinstance(comments, list):
-        return "INCOMPLETE", reasons + ["OCR_COMMENTS_INVALID"]
-    severities: list[str] = []
-    for comment in comments:
-        if not isinstance(comment, dict) or not isinstance(comment.get("severity"), str):
-            return "INCOMPLETE", reasons + ["OCR_FINDING_SEVERITY_UNKNOWN"]
-        severity = comment["severity"].strip().upper()
-        if severity not in {"INFO", "LOW", "MEDIUM", "HIGH", "BLOCKER", "CRITICAL"}:
-            return "INCOMPLETE", reasons + ["OCR_FINDING_SEVERITY_UNKNOWN"]
-        severities.append(severity)
-    if any(value in {"MEDIUM", "HIGH", "BLOCKER", "CRITICAL"} for value in severities):
-        return "FAIL", ["OCR_BLOCKING_FINDINGS_PRESENT", *reasons]
-    if reasons:
-        return "INCOMPLETE", reasons
-    if not comments:
-        return "PASS", ["OCR_COMPLETE_ZERO_FINDINGS"]
-    return "PASS", ["OCR_COMPLETE_LOW_SEVERITY_OBSERVATIONS"]
 
 
 def _normalized_findings(review: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -675,13 +628,16 @@ def run(
         try:
             parsed = json.loads(raw_path.read_text(encoding="utf-8-sig"))
             review = parsed if isinstance(parsed, dict) else None
-        except json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             pass
-    verdict, reasons = _classify(review, returncode)
+    # Only an explicit native Checker verdict may be copied; findings and exit are facts.
+    verdict = review.get("verdict") if isinstance(review, dict) else None
+    reasons = review.get("reason_codes", []) if isinstance(review, dict) else []
     llm = review.get("llm", {}) if isinstance(review, dict) else {}
     result = {
         "schema_version": RESULT_SCHEMA, "run_id": request["run_id"], "cell_id": request["cell_id"],
         "review_invocation_id": invocation, "verdict": verdict, "reason_codes": reasons,
+        "verdict_source": "CHECKER_EXPLICIT" if verdict is not None else None,
         "findings": _normalized_findings(review),
         "review": {
             "status": review.get("status") if isinstance(review, dict) else None,
@@ -697,7 +653,7 @@ def run(
         },
     }
     _write_json_atomic(output_path.resolve(), result)
-    return {"PASS": 0, "FAIL": 2, "INCOMPLETE": 3}[verdict]
+    return returncode
 
 
 def main() -> int:

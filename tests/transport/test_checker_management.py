@@ -155,5 +155,8 @@ def test_incomplete_management_fails_closed_on_drift(tmp_path: Path, damage: str
         value["verdict"] = "PASS"
         write_json(result_path, value)
 
-    with pytest.raises(management.CheckerEscalationError):
-        management.materialize_management_escalation(request)
+    if damage == "changed-reason":
+        assert management.materialize_management_escalation(request)["envelope"]["payload"]["reason_codes"] == request["reason_codes"]
+    else:
+        with pytest.raises(management.CheckerEscalationError):
+            management.materialize_management_escalation(request)

@@ -1282,114 +1282,116 @@ fn slk_440_rework_request_requires_round_bound_investigation_mode() {
 }
 
 #[test]
-fn slk_442_second_d1_failure_requires_plan_split_not_another_rework_request() {
-    let (fixture, first_candidate_sha256) = legacy_d1_candidate_chain(
-        "candidate-message-a",
-        Some("candidate-message-a"),
-        "candidate-message-a",
-    );
-    let mut first_rework = event(
-        "first-rework-442",
-        EventType::ReworkRequested,
-        json!({
-            "d1_failure_event_id":"legacy-d1-failed",
-            "failed_candidate_sha256":first_candidate_sha256,
-            "rework_round":1
-        }),
-    );
-    first_rework.role_instance_id = "supervisor-a".into();
-    fixture
-        .store
-        .write_event(&fixture.supervisor, first_rework)
-        .unwrap();
-
-    let mut to_worker = handoff(6, "supervisor-a", "worker-a");
-    to_worker.payload_type = "D1_REWORK_DIRECTIVE".into();
-    fixture
-        .store
-        .handoff_token(&fixture.supervisor, to_worker)
-        .unwrap();
-
-    let second_candidate =
-        json!({"kind":"commit","commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"});
-    let second_candidate_sha256 = format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(&second_candidate).unwrap())
-    );
-    let mut candidate_event = event(
-        "second-candidate-submitted-442",
-        EventType::CandidateSubmitted,
-        json!({
-            "candidate":second_candidate,
-            "source_message_id":"second-source-message-442",
-            "handoff_message_id":"second-candidate-message-442"
-        }),
-    );
-    candidate_event.attempt = Some(2);
-    fixture
-        .store
-        .write_event(&fixture.worker, candidate_event)
-        .unwrap();
-    let mut started = event(
-        "second-transport-started-442",
-        EventType::TransportStarted,
-        json!({"message_id":"second-candidate-message-442"}),
-    );
-    started.attempt = Some(2);
-    fixture.store.write_event(&fixture.worker, started).unwrap();
-    let mut to_checker = handoff(7, "worker-a", "checker-a");
-    to_checker.payload_type = "CANDIDATE_READY".into();
-    fixture
-        .store
-        .handoff_token(&fixture.worker, to_checker)
-        .unwrap();
-    let mut second_failed = event(
-        "second-d1-failed-442",
-        EventType::D1Failed,
-        json!({"verdict":"FAIL","candidate_message_id":"second-candidate-message-442"}),
-    );
-    second_failed.role_instance_id = "checker-a".into();
-    second_failed.attempt = Some(2);
-    fixture
-        .store
-        .write_event(&fixture.checker, second_failed)
-        .unwrap();
-    let mut escalation = handoff(8, "checker-a", "supervisor-a");
-    escalation.payload_type = "D1_FAILURE_ESCALATION".into();
-    fixture
-        .store
-        .handoff_token(&fixture.checker, escalation)
-        .unwrap();
-
-    let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
-    connection
-        .execute(
-            "UPDATE runs SET slk_version='4.4.2' WHERE run_id='run-a'",
-            [],
-        )
-        .unwrap();
-
-    let mut forbidden_second_rework = event(
-        "forbidden-second-rework-442",
-        EventType::ReworkRequested,
-        json!({
-            "d1_failure_event_id":"second-d1-failed-442",
-            "failed_candidate_sha256":second_candidate_sha256,
-            "rework_round":2,
-            "investigation_mode":"AGGRESSIVE"
-        }),
-    );
-    forbidden_second_rework.role_instance_id = "supervisor-a".into();
-    forbidden_second_rework.attempt = Some(2);
-    assert!(matches!(
+fn slk_442_second_d1_failure_records_supervisor_action_without_host_plan_judgment() {
+    // Exercise both explicit Supervisor choices from independent, identical histories.
+    for record_second_rework in [true, false] {
+        let (fixture, first_candidate_sha256) = legacy_d1_candidate_chain(
+            "candidate-message-a",
+            Some("candidate-message-a"),
+            "candidate-message-a",
+        );
+        let mut first_rework = event(
+            "first-rework-442",
+            EventType::ReworkRequested,
+            json!({
+                "d1_failure_event_id":"legacy-d1-failed",
+                "failed_candidate_sha256":first_candidate_sha256,
+                "rework_round":1
+            }),
+        );
+        first_rework.role_instance_id = "supervisor-a".into();
         fixture
             .store
-            .write_event(&fixture.supervisor, forbidden_second_rework),
-        Err(StateError::WorkEventInvalid(message))
-            if message.contains("split") && message.contains("second consecutive D1 failure")
-    ));
+            .write_event(&fixture.supervisor, first_rework)
+            .unwrap();
 
-    connection
+        let mut to_worker = handoff(6, "supervisor-a", "worker-a");
+        to_worker.payload_type = "D1_REWORK_DIRECTIVE".into();
+        fixture
+            .store
+            .handoff_token(&fixture.supervisor, to_worker)
+            .unwrap();
+
+        let second_candidate =
+            json!({"kind":"commit","commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"});
+        let second_candidate_sha256 = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&second_candidate).unwrap())
+        );
+        let mut candidate_event = event(
+            "second-candidate-submitted-442",
+            EventType::CandidateSubmitted,
+            json!({
+                "candidate":second_candidate,
+                "source_message_id":"second-source-message-442",
+                "handoff_message_id":"second-candidate-message-442"
+            }),
+        );
+        candidate_event.attempt = Some(2);
+        fixture
+            .store
+            .write_event(&fixture.worker, candidate_event)
+            .unwrap();
+        let mut started = event(
+            "second-transport-started-442",
+            EventType::TransportStarted,
+            json!({"message_id":"second-candidate-message-442"}),
+        );
+        started.attempt = Some(2);
+        fixture.store.write_event(&fixture.worker, started).unwrap();
+        let mut to_checker = handoff(7, "worker-a", "checker-a");
+        to_checker.payload_type = "CANDIDATE_READY".into();
+        fixture
+            .store
+            .handoff_token(&fixture.worker, to_checker)
+            .unwrap();
+        let mut second_failed = event(
+            "second-d1-failed-442",
+            EventType::D1Failed,
+            json!({"verdict":"FAIL","candidate_message_id":"second-candidate-message-442"}),
+        );
+        second_failed.role_instance_id = "checker-a".into();
+        second_failed.attempt = Some(2);
+        fixture
+            .store
+            .write_event(&fixture.checker, second_failed)
+            .unwrap();
+        let mut escalation = handoff(8, "checker-a", "supervisor-a");
+        escalation.payload_type = "D1_FAILURE_ESCALATION".into();
+        fixture
+            .store
+            .handoff_token(&fixture.checker, escalation)
+            .unwrap();
+
+        let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        connection
+            .execute(
+                "UPDATE runs SET slk_version='4.4.2' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+
+        let mut second_rework = event(
+            "second-rework-442",
+            EventType::ReworkRequested,
+            json!({
+                "d1_failure_event_id":"second-d1-failed-442",
+                "failed_candidate_sha256":second_candidate_sha256,
+                "rework_round":2,
+                "investigation_mode":"BOUNDED_OWNER_APPROVED_INVESTIGATION"
+            }),
+        );
+        second_rework.role_instance_id = "supervisor-a".into();
+        second_rework.attempt = Some(2);
+        if record_second_rework {
+            fixture
+        .store
+        .write_event(&fixture.supervisor, second_rework)
+        .expect("Supervisor owns the investigation and plan decision; host preserves the exact failure and round");
+            continue;
+        }
+
+        connection
         .execute(
             "INSERT INTO cell_nodes
              (run_id,go_id,cell_id,ordinal,title,objective,state)
@@ -1397,8 +1399,8 @@ fn slk_442_second_d1_failure_requires_plan_split_not_another_rework_request() {
             [],
         )
         .unwrap();
-    let token_before = fixture.store.current_token("run-a").unwrap();
-    assert!(matches!(
+        let token_before = fixture.store.current_token("run-a").unwrap();
+        assert!(matches!(
         fixture.store.revise_plan(
             &fixture.supervisor,
             RevisePlanRequest {
@@ -1421,7 +1423,7 @@ fn slk_442_second_d1_failure_requires_plan_split_not_another_rework_request() {
         ),
         Err(StateError::InvalidPlan(_))
     ));
-    let revision = fixture
+        let revision = fixture
         .store
         .revise_plan(
             &fixture.supervisor,
@@ -1446,91 +1448,92 @@ fn slk_442_second_d1_failure_requires_plan_split_not_another_rework_request() {
         )
         .unwrap();
 
-    assert_eq!(revision, 2);
-    assert_eq!(fixture.store.current_token("run-a").unwrap(), token_before);
-    let projection = fixture.store.query_run("run-a").unwrap();
-    let cells = &projection.go_nodes[0].cell_nodes;
-    assert_eq!(
-        cells
+        assert_eq!(revision, 2);
+        assert_eq!(fixture.store.current_token("run-a").unwrap(), token_before);
+        let projection = fixture.store.query_run("run-a").unwrap();
+        let cells = &projection.go_nodes[0].cell_nodes;
+        assert_eq!(
+            cells
+                .iter()
+                .map(|cell| (cell.cell_id.as_str(), cell.ordinal, cell.state.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("CELL-001", 1, "split"),
+                ("CELL-001-A", 2, "planned"),
+                ("CELL-001-B", 3, "planned"),
+                ("CELL-002", 4, "planned"),
+            ]
+        );
+        assert!(projection
+            .events
             .iter()
-            .map(|cell| (cell.cell_id.as_str(), cell.ordinal, cell.state.as_str()))
-            .collect::<Vec<_>>(),
-        vec![
-            ("CELL-001", 1, "split"),
-            ("CELL-001-A", 2, "planned"),
-            ("CELL-001-B", 3, "planned"),
-            ("CELL-002", 4, "planned"),
-        ]
-    );
-    assert!(projection
-        .events
-        .iter()
-        .any(|event| event.event_type == "CELL_SPLIT"));
+            .any(|event| event.event_type == "CELL_SPLIT"));
 
-    assert!(matches!(
-        fixture.store.revise_plan(
-            &fixture.supervisor,
-            RevisePlanRequest {
-                event_id: "stale-split-442".into(),
-                run_id: "run-a".into(),
-                snapshot: json!({
-                    "expected_plan_revision": 1,
-                    "cell_split": {
-                        "source_go_id": "GO-001",
-                        "source_cell_id": "CELL-001",
-                        "failure_event_ids": ["legacy-d1-failed", "second-d1-failed-442"],
-                        "successor_cells": [
-                            {"cell_id":"CELL-001-C","title":"C","objective":"C"},
-                            {"cell_id":"CELL-001-D","title":"D","objective":"D"}
-                        ]
-                    }
-                }),
-                reason: "stale replay".into(),
-                occurred_at: "2026-09-20T00:00:05Z".into(),
-            },
-        ),
-        Err(StateError::PlanRevisionMismatch {
-            requested: 1,
-            current: 2
-        })
-    ));
+        assert!(matches!(
+            fixture.store.revise_plan(
+                &fixture.supervisor,
+                RevisePlanRequest {
+                    event_id: "stale-split-442".into(),
+                    run_id: "run-a".into(),
+                    snapshot: json!({
+                        "expected_plan_revision": 1,
+                        "cell_split": {
+                            "source_go_id": "GO-001",
+                            "source_cell_id": "CELL-001",
+                            "failure_event_ids": ["legacy-d1-failed", "second-d1-failed-442"],
+                            "successor_cells": [
+                                {"cell_id":"CELL-001-C","title":"C","objective":"C"},
+                                {"cell_id":"CELL-001-D","title":"D","objective":"D"}
+                            ]
+                        }
+                    }),
+                    reason: "stale replay".into(),
+                    occurred_at: "2026-09-20T00:00:05Z".into(),
+                },
+            ),
+            Err(StateError::PlanRevisionMismatch {
+                requested: 1,
+                current: 2
+            })
+        ));
 
-    fixture
-        .store
-        .commit_delivery_start(
-            &fixture.supervisor,
-            fixture.revisioned_start_request(
-                9,
-                "supervisor-a",
-                "checker-a",
-                "CELL-001",
-                "PLAN_REVISED",
-                "ocrv-checker",
-            ),
-        )
-        .unwrap();
-    fixture
-        .store
-        .commit_delivery_start(
-            &fixture.checker,
-            fixture.revisioned_start_request(
-                10,
-                "checker-a",
-                "worker-a",
-                "CELL-001-A",
-                "WORKER_TASK",
-                "dsh-worker",
-            ),
-        )
-        .unwrap();
-    assert_eq!(
         fixture
             .store
-            .current_token("run-a")
-            .unwrap()
-            .owner_role_instance_id,
-        "worker-a"
-    );
+            .commit_delivery_start(
+                &fixture.supervisor,
+                fixture.revisioned_start_request(
+                    9,
+                    "supervisor-a",
+                    "checker-a",
+                    "CELL-001",
+                    "PLAN_REVISED",
+                    "ocrv-checker",
+                ),
+            )
+            .unwrap();
+        fixture
+            .store
+            .commit_delivery_start(
+                &fixture.checker,
+                fixture.revisioned_start_request(
+                    10,
+                    "checker-a",
+                    "worker-a",
+                    "CELL-001-A",
+                    "WORKER_TASK",
+                    "dsh-worker",
+                ),
+            )
+            .unwrap();
+        assert_eq!(
+            fixture
+                .store
+                .current_token("run-a")
+                .unwrap()
+                .owner_role_instance_id,
+            "worker-a"
+        );
+    }
 }
 
 #[test]

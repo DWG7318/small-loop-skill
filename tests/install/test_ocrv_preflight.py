@@ -24,7 +24,9 @@ def _request(tmp_path: Path) -> tuple[Path, Path, Path]:
     (repository / "b.py").write_text("B = 2\n", encoding="utf-8")
     evidence = tmp_path / "worker-result.json"
     evidence.write_text(
-        json.dumps({"status": "completed", "next_payload": {"changed_paths": ["a.py", "b.py"]}}),
+        json.dumps({"status": "WORKER_SELF_REPORTED_COMPLETE", "test_status": "WORKER_SELF_REPORTED_PASS",
+                    "next_payload": {"changed_paths": ["a.py", "b.py"],
+                                     "d0": {"conclusion": "WORKER_SELF_REPORTED_D0"}}}),
         encoding="utf-8",
     )
     scope = {
@@ -101,8 +103,22 @@ def _run(request: Path, output: Path, runtime: Path, fake: Path, log: Path) -> s
     )
 
 
+def test_checker_background_decision_is_whole_candidate_not_native_file_group(tmp_path: Path) -> None:
+    request, output, _repository = _request(tmp_path)
+    fake, log = _fake_ocr(tmp_path)
+    assert _run(request, output, tmp_path / "runtime", fake, log).returncode == 0
+    arguments = json.loads(log.read_text(encoding="utf-8"))
+    background = Path(arguments[arguments.index("--background-file") + 1]).read_text(encoding="utf-8")
+    for marker in ("entire frozen candidate", "not the current file or native group",
+                   "file_find", "file_read_diff", "Do not submit one decision per group",
+                   "cannot establish all CELL goals", "do not claim whole-CELL PASS"):
+        assert marker in background
+
+
 def test_installed_adapter_preflight_uses_exact_exclude_scope_without_model(tmp_path: Path) -> None:
     request, output, _repository = _request(tmp_path)
+    evidence = tmp_path / "worker-result.json"
+    original_evidence = evidence.read_bytes()
     fake, log = _fake_ocr(tmp_path)
     runtime = tmp_path / "runtime"
 
@@ -120,6 +136,11 @@ def test_installed_adapter_preflight_uses_exact_exclude_scope_without_model(tmp_
     background = next(runtime.rglob("d1-background.md")).read_text(encoding="utf-8")
     assert '"changed_paths": ["a.py"]' in background
     assert '"b.py"' not in background
+    assert "WORKER_SELF_REPORTED" not in background
+    assert '"test_status"' not in background
+    assert "before reading Worker D0 originals" in background
+    assert "then read the indexed originals" in background
+    assert evidence.read_bytes() == original_evidence
 
 
 def test_installed_adapter_records_oversized_background_as_advisory(tmp_path: Path) -> None:

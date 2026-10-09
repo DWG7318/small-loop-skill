@@ -21,6 +21,7 @@ from .checker_escalation import (
     _stable_id,
     _strings,
     _text,
+    _validate_explicit_decision,
     _write_stable,
 )
 from .contracts import ENVELOPE_SCHEMA, IDENTIFIER, Endpoint, Envelope, canonical_json_sha256
@@ -162,6 +163,9 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
         native_message_id = ""
         continuation_valid = False
     started = native / "started.json"
+    explicit = details.get("decision_source") == "CHECKER_EXPLICIT"
+    if explicit:
+        _validate_explicit_decision(native, endpoint, envelope, event, details)
     terminal_path = Path(str(details.get("native_terminal_path", ""))).resolve()
     result_path_value = details.get("native_result_path")
     result_path = Path(result_path_value).resolve() if isinstance(result_path_value, str) else None
@@ -175,28 +179,27 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
         or envelope.receiver_role_instance_id != request["checker_role_instance_id"]
         or not continuation_valid
         or boundary["message_id"] != native_message_id
-        or not started.is_file()
+        or (not explicit and (not started.is_file()
         or details.get("native_start_sha256") != _sha256(started)
         or terminal_path.parent != native
         or terminal_path.name not in {"completed.json", "failed.json"}
         or not terminal_path.is_file()
-        or details.get("native_terminal_sha256") != _sha256(terminal_path)
+        or details.get("native_terminal_sha256") != _sha256(terminal_path)))
     ):
         raise CheckerEscalationError(
             "CHECKER_MANAGEMENT_EVIDENCE_INVALID", "native Checker evidence changed"
         )
-    terminal = _read_object(terminal_path, "OCRV terminal")
-    if terminal.get("message_id") != native_message_id or terminal.get("run_id") != request["run_id"]:
+    terminal = {} if explicit else _read_object(terminal_path, "OCRV terminal")
+    if not explicit and (terminal.get("message_id") != native_message_id or terminal.get("run_id") != request["run_id"]):
         raise CheckerEscalationError(
             "CHECKER_MANAGEMENT_EVIDENCE_INVALID", "native terminal identity changed"
         )
-    if result_path is not None:
+    if not explicit and result_path is not None:
         if (
             result_path.parent != native
             or result_path.name != "ocrv-result.json"
             or not result_path.is_file()
             or details.get("native_result_sha256") != _sha256(result_path)
-            or _read_object(result_path, "OCRV result").get("verdict") != "INCOMPLETE"
         ):
             raise CheckerEscalationError(
                 "CHECKER_MANAGEMENT_EVIDENCE_INVALID", "native INCOMPLETE result changed"
@@ -208,34 +211,14 @@ def _validate_incomplete(request: Mapping[str, Any]) -> dict[str, Any]:
         raise CheckerEscalationError(
             "CHECKER_MANAGEMENT_SUPERVISOR_INVALID", "Supervisor endpoint does not match the Run"
         )
-    evidence = []
-    reason_bound = False
-    for value in request["evidence_refs"]:
-        path = Path(str(value)).resolve()
-        if not path.is_file():
-            raise CheckerEscalationError(
-                "CHECKER_MANAGEMENT_EVIDENCE_INVALID", "supplemental evidence is unavailable"
-            )
-        evidence.append({"path": str(path), "sha256": _sha256(path)})
-        try:
-            observed = _read_object(path, "supplemental evidence")
-        except CheckerEscalationError:
-            observed = {}
-        if (
-            observed.get("verdict") == "INCOMPLETE"
-            and observed.get("reason_codes") == request["reason_codes"]
-        ):
-            reason_bound = True
-    if not reason_bound and details.get("reason_codes") != request["reason_codes"]:
-        raise CheckerEscalationError(
-            "CHECKER_MANAGEMENT_EVIDENCE_INVALID", "management reason codes are unbound"
-        )
+    # References are Agent output, not a host completeness or reason-code gate.
+    evidence = [{"path": str(value)} for value in request["evidence_refs"]]
     return {
         "candidate_message_id": str(candidate_message_id),
         "candidate_payload": candidate_payload,
         "candidate_payload_sha256": canonical_json_sha256(candidate_payload),
-        "native_terminal_sha256": _sha256(terminal_path),
-        "native_result_sha256": _sha256(result_path) if result_path is not None else None,
+        "native_terminal_sha256": None if explicit else _sha256(terminal_path),
+        "native_result_sha256": _sha256(result_path) if not explicit and result_path is not None else None,
         "evidence": evidence,
         "supervisor": supervisor,
     }

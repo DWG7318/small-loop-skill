@@ -139,6 +139,36 @@ def _details(event: Mapping[str, Any]) -> Mapping[str, Any]:
     return {}
 
 
+def _validate_explicit_decision(
+    native: Path, endpoint: Endpoint, envelope: Envelope,
+    event: Mapping[str, Any], details: Mapping[str, Any],
+) -> None:
+    """Check the existing role action receipt, never later report/exit files."""
+    receipt = native / "native-start.received.json"
+    try:
+        start = validate_native_start(receipt, adapter=endpoint.adapter,
+            run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256)
+        decision = _read_object(native / "role-host" / "checker-decision.json", "Checker action")
+        decided_at = datetime.fromisoformat(str(decision.get("decided_at", "")).replace("Z", "+00:00"))
+        occurred_at = datetime.fromisoformat(str(event.get("occurred_at", "")).replace("Z", "+00:00"))
+        valid = (dict(details) == decision
+            and decision.get("decision_source") == "CHECKER_EXPLICIT"
+            and decision.get("source_message_id") == envelope.message_id
+            and decision.get("native_message_id") == envelope.message_id
+            and decision.get("role_instance_id") == endpoint.role_instance_id
+            and event.get("author_role_instance_id") == endpoint.role_instance_id
+            and decision.get("native_start_path") == str(receipt.resolve())
+            and decision.get("native_start_sha256") == _sha256(receipt)
+            and start["native_task"]["kind"] == "ocrv-review"
+            and decision.get("native_task_id") == start["native_task"]["id"]
+            and decided_at.tzinfo is not None and occurred_at == decided_at)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise CheckerEscalationError("CHECKER_EXPLICIT_ACTION_INVALID", "original Checker action is unproved") from exc
+    if not valid:
+        raise CheckerEscalationError("CHECKER_EXPLICIT_ACTION_INVALID", "original Checker action evidence changed")
+
+
 def _stable_id(request: Mapping[str, Any], suffix: str) -> str:
     source_event_id = request.get("d1_failure_event_id", request.get("d1_incomplete_event_id"))
     invocation_id = request.get("post_d1_invocation_id", request.get("management_invocation_id"))
@@ -184,7 +214,6 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         "checker_role_instance_id",
         "d1_failure_event_id",
         "cell_goal",
-        "expected_result",
     ):
         _text(request.get(field), field)
     if not IDENTIFIER.fullmatch(str(request["post_d1_invocation_id"])):
@@ -200,8 +229,14 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         "rework_round",
     ):
         _positive(request.get(field), field)
-    for field in ("acceptance_criteria", "findings", "reproduction_steps", "evidence_refs"):
+    for field in ("acceptance_criteria", "evidence_refs"):
         _strings(request.get(field), field)
+    for field in ("findings", "reproduction_steps"):
+        value = request.get(field)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise CheckerEscalationError("CHECKER_ESCALATION_REQUEST_INVALID", f"{field} must be supplied text or empty")
+    if request.get("expected_result") is not None and not isinstance(request["expected_result"], str):
+        raise CheckerEscalationError("CHECKER_ESCALATION_REQUEST_INVALID", "expected_result must be supplied text or null")
     for field in (
         "runtime_projection_path",
         "native_attempt_path",
@@ -223,56 +258,6 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
             "CHECKER_ESCALATION_REQUEST_INVALID", "occurred_at must include a timezone"
         )
     return dict(request)
-
-
-def _fresh_terminal_source(
-    committed_path: Path, committed: Mapping[str, Any], native: Path,
-    request: Mapping[str, Any],
-) -> Path:
-    from . import worker_completion as wc
-
-    recovery = committed.get("recovery_terminal")
-    if not isinstance(recovery, Mapping):
-        raise ValueError("committed terminal has no sealed recovery evidence")
-    wc._validate_committed_terminal_request(committed)
-    receipt = _read_object(native.parent / "committed-terminal-result.json", "committed D1 result")
-    runtime_revision = receipt.get("runtime_revision")
-    committed_revision = committed.get("runtime_revision")
-    source = Path(str(committed.get("native_attempt_path", ""))).resolve()
-    if (
-        Path(str(recovery.get("native_attempt_path", ""))).resolve() != native
-        or receipt.get("schema_version") != "slk.ocrv-committed-terminal-result/v1"
-        or receipt.get("status") != "CHECKER_D1_RECORDED"
-        or receipt.get("method_version") != request["method_version"]
-        or receipt.get("run_id") != request["run_id"]
-        or receipt.get("cell_id") != request["cell_id"]
-        or receipt.get("attempt") != request["attempt"]
-        or receipt.get("candidate_message_id") != committed.get("candidate_message_id")
-        or receipt.get("checker_role_instance_id") != request["checker_role_instance_id"]
-        or receipt.get("checker_endpoint_version") != committed.get("checker_endpoint_version")
-        or receipt.get("recovery_invocation_id") != committed.get("recovery_invocation_id")
-        or receipt.get("request_sha256") != _sha256(committed_path)
-        or isinstance(runtime_revision, bool)
-        or not isinstance(runtime_revision, int)
-        or isinstance(committed_revision, bool)
-        or not isinstance(committed_revision, int)
-        or runtime_revision < committed_revision
-        or committed_revision >= request["runtime_revision"]
-        or runtime_revision > request["runtime_revision"]
-        or receipt.get("token_sequence") != request["token_sequence"]
-        or receipt.get("token_sequence") != committed.get("token_sequence")
-        or receipt.get("d1_verdict") != "FAIL"
-        or receipt.get("d1_event_type") != "D1_FAILED"
-        or receipt.get("authorized_existing_terminal") is not True
-        or receipt.get("checker_authenticated") is not True
-        or Path(str(receipt.get("native_attempt_path", ""))).resolve() != native
-        or Path(str(receipt.get("native_result_path", ""))).resolve()
-        != native / "ocrv-result.json"
-        or not (source / "endpoint.json").is_file()
-        or not (source / "envelope.json").is_file()
-    ):
-        raise ValueError("fresh committed-terminal receipt or identity changed")
-    return source
 
 
 def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
@@ -361,45 +346,20 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
     native = Path(str(request["native_attempt_path"])).resolve()
     endpoint_path = native / "endpoint.json"
     envelope_path = native / "envelope.json"
-    recovery_terminal_validated = False
-    if not endpoint_path.exists() and not envelope_path.exists():
-        # A recovery terminal preserves identity in its original delivery.
-        committed_path = native.parent / "committed-terminal.json"
-        committed = _read_object(committed_path, "recovery terminal")
-        try:
-            if "recovery_terminal" in committed:
-                source = _fresh_terminal_source(committed_path, committed, native, request)
-                recovery_terminal_validated = True
-            else:
-                from .partial_review import validate_partial_terminal
-
-                recorded_d1 = {
-                    **{key: event.get(key) for key in (
-                        "event_id", "event_type", "go_id", "cell_id", "attempt",
-                        "corrects_event_id", "occurred_at"
-                    )},
-                    "run_id": request["run_id"],
-                    "plan_revision": request["plan_revision"],
-                    "role_instance_id": request["checker_role_instance_id"],
-                    "details": dict(details),
-                }
-                proof = validate_partial_terminal(committed, recorded_d1=recorded_d1)
-                if Path(proof["activation"]["native_attempt_path"]).resolve() != native:
-                    raise ValueError("partial terminal does not bind this aggregate")
-                source = Path(committed["native_attempt_path"]).resolve()
-        except (CompletionError, ValueError, KeyError, TypeError, OSError) as exc:
-            raise CheckerEscalationError(
-                "CHECKER_ESCALATION_D1_MISMATCH", "recovery terminal lineage is invalid"
-            ) from exc
-        endpoint_path = source / "endpoint.json"
-        envelope_path = source / "envelope.json"
+    if not endpoint_path.is_file() or not envelope_path.is_file():
+        raise CheckerEscalationError(
+            "CHECKER_LEGACY_ACTION_RETIRED",
+            "historical synthesized terminals cannot invoke a new Checker action; original reports remain deliverable",
+        )
     started_path = native / "started.json"
     result_path = native / "ocrv-result.json"
     terminal_path = native / "completed.json"
     endpoint = Endpoint.from_dict(_read_object(endpoint_path, "OCRV endpoint"))
     envelope = Envelope.from_dict(_read_object(envelope_path, "OCRV envelope"))
-    result = _read_object(result_path, "OCRV D1 result")
-    terminal = _read_object(terminal_path, "OCRV terminal")
+    explicit = details.get("decision_source") == "CHECKER_EXPLICIT"
+    if explicit:
+        _validate_explicit_decision(native, endpoint, envelope, event, details)
+    terminal = {} if explicit else _read_object(terminal_path, "OCRV terminal")
     candidate_message_id = details.get("candidate_message_id")
     native_message_id = details.get("native_message_id", candidate_message_id)
     management_return = envelope.payload_type == "D1_MANAGEMENT_RETURN"
@@ -510,78 +470,24 @@ def _validate_failure(request: Mapping[str, Any]) -> dict[str, Any]:
         or envelope.receiver_role_instance_id != request["checker_role_instance_id"]
         or not (ordinary_candidate or management_lineage_valid)
         or not isinstance(candidate, Mapping)
-        or result.get("run_id") != request["run_id"]
-        or result.get("cell_id") != request["cell_id"]
-        or result.get("verdict") != "FAIL"
-        or terminal.get("message_id") != native_message_id
+        or (not explicit and (terminal.get("message_id") != native_message_id
         or terminal.get("run_id") != request["run_id"]
-        or terminal.get("status") != "completed"
+        or terminal.get("status") not in {"completed", "failed"}
         or not isinstance(terminal.get("native_identity"), Mapping)
-        or terminal["native_identity"].get("verdict") != "FAIL"
-        or terminal["native_identity"].get("exit_code") != 2
         or details.get("native_start_sha256") != _sha256(started_path)
         or details.get("native_result_path") != str(result_path)
         or details.get("native_result_sha256") != _sha256(result_path)
         or details.get("native_terminal_path") != str(terminal_path)
-        or details.get("native_terminal_sha256") != _sha256(terminal_path)
-        or details.get("review_invocation_id") != result.get("review_invocation_id")
-        or details.get("session_id") != result.get("review", {}).get("session_id")
+        or details.get("native_terminal_sha256") != _sha256(terminal_path)))
     ):
         raise CheckerEscalationError(
             "CHECKER_ESCALATION_D1_MISMATCH",
             "D1 failure does not bind the immutable OCRV candidate and terminal evidence",
         )
-    if (
-        event.get("corrects_event_id") is not None
-        and not recovery_terminal_validated
-        and not management_lineage_valid
-    ):
-        receipt_path = native / "normalization-correction.json"
-        receipt = _read_object(receipt_path, "D1 normalization correction")
-        receipt_fields = {
-            "schema_version", "cause", "correction_id", "source_attempt_path",
-            "source_incomplete_event_id", "source_started_sha256",
-            "source_terminal_sha256", "source_result_sha256", "raw_review_path",
-            "raw_review_sha256", "corrected_terminal_sha256",
-            "corrected_result_sha256", "reason_codes",
-        }
-        source = Path(str(receipt.get("source_attempt_path", ""))).resolve()
-        raw = Path(str(receipt.get("raw_review_path", ""))).resolve()
-        source_events = [
-            item for item in d1_terminals
-            if item.get("event_id") == event.get("corrects_event_id")
-        ]
-        original = source_events[0] if len(source_events) == 1 else None
-        original_details = _details(original) if isinstance(original, Mapping) else {}
-        if (
-            set(receipt) != receipt_fields
-            or receipt.get("schema_version") != "slk.ocrv-classification-correction/v1"
-            or receipt.get("cause") != "BLOCKING_FINDINGS_PRECEDE_AUXILIARY_TOOL_FAILURE"
-            or receipt.get("source_incomplete_event_id") != event.get("corrects_event_id")
-            or not isinstance(original, Mapping)
-            or original.get("event_type") != "D1_INCOMPLETE"
-            or original.get("author_role_instance_id") != request["checker_role_instance_id"]
-            or original_details.get("candidate_message_id") != candidate_message_id
-            or original_details.get("verdict") != "INCOMPLETE"
-            or not source.is_dir()
-            or not raw.is_file()
-            or receipt.get("source_started_sha256") != _sha256(source / "started.json")
-            or receipt.get("source_terminal_sha256") != _sha256(source / "completed.json")
-            or receipt.get("source_result_sha256") != _sha256(source / "ocrv-result.json")
-            or receipt.get("raw_review_sha256") != _sha256(raw)
-            or receipt.get("corrected_terminal_sha256") != _sha256(terminal_path)
-            or receipt.get("corrected_result_sha256") != _sha256(result_path)
-            or receipt.get("reason_codes") != result.get("reason_codes")
-            or original_details.get("native_terminal_sha256")
-            != receipt.get("source_terminal_sha256")
-            or original_details.get("native_result_sha256")
-            != receipt.get("source_result_sha256")
-            or "normalization-correction.json" not in terminal.get("evidence", [])
-        ):
-            raise CheckerEscalationError(
-                "CHECKER_ESCALATION_D1_MISMATCH",
-                "corrected D1 failure does not bind its immutable source INCOMPLETE",
-            )
+    if event.get("corrects_event_id") is not None and not management_lineage_valid:
+        raise CheckerEscalationError(
+            "CHECKER_LEGACY_ACTION_RETIRED", "automatic classification corrections are historical facts, not new role actions"
+        )
     supervisor = Endpoint.from_dict(
         _read_object(Path(str(request["supervisor_endpoint_path"])), "Supervisor endpoint")
     )

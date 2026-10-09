@@ -247,6 +247,9 @@ result = {
     "artifacts": {},
 }
 args.output.parent.mkdir(parents=True, exist_ok=True)
+if args.mode in {'raw-report', 'raw-report-exit42'}:
+    args.output.write_bytes(b'partial checker report\r\nnot JSON \xff\r\n')
+    sys.exit(42 if args.mode.endswith('exit42') else 0)
 if args.mode.startswith("context-"):
     paths = request["review_scope"]["include_paths"]
     from context_native_fixture import native_input

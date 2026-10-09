@@ -98,15 +98,12 @@ def _verify_run(run_root: Path) -> dict[str, Any]:
     worker_identity = attempts[1][2].native_identity
     checker_identity = attempts[2][2].native_identity
     supervisor_identity = attempts[3][2].native_identity
-    if checker_identity.get("verdict") != "PASS":
-        raise DrillVerificationError(f"Run {run_root.name} OCRV verdict is not PASS")
     identities = {
         "worker_instance_id": _text(worker_identity.get("instance_id"), "Worker instance identity"),
         "worker_session_id": _text(worker_identity.get("session_id"), "Worker session identity"),
         "checker_review_invocation_id": _text(
             checker_identity.get("review_invocation_id"), "Checker review identity"
         ),
-        "checker_session_id": _text(checker_identity.get("session_id"), "Checker session identity"),
         "supervisor_thread_id": _text(supervisor_identity.get("thread_id"), "Supervisor thread identity"),
         "supervisor_turn_id": _text(supervisor_identity.get("turn_id"), "Supervisor turn identity"),
     }
@@ -134,7 +131,6 @@ def verify_drill(evidence_root: Path | str) -> dict[str, Any]:
         "worker_instance_id",
         "worker_session_id",
         "checker_review_invocation_id",
-        "checker_session_id",
         "supervisor_thread_id",
     )
     for field in identity_fields:

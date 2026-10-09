@@ -1,31 +1,35 @@
 {
   "schema_version": "slk.ocrv-capabilities/v1",
   "method_version": "4.4.2",
-  "required": ["ocrv-preview", "checker-post-d1-failure-suffix", "checker-post-d1-pass-suffix", "committed-terminal-consumption", "terminal-budget-continuation"],
-  "terminal_budget_resume_identity": {
-    "ocrv_version": "v1.12.12",
-    "provider": "dashscope-tokenplan",
-    "model": "qwen3.8-max",
-    "protocol": "openai",
-    "endpoint_host": "token-plan.cn-beijing.maas.aliyuncs.com",
-    "language": "中文",
-    "timeout": "0s",
-    "concurrency": 1,
-    "rule_config_sha256": "03406157658b5549e2088b45059ea9cc7528c38eeb30f268b3decb6538737640",
-    "managed_rule_files": {
-      "slk/slk-d1-rule.json": "fb7ab06a64579a185a683a120c39e13ee82625aa29354b0df837462fcd4e166b",
-      "slk/SLK-D1-REVIEW.md": "0ffdba9cf7c5934f4966f35e08a6000b7c630ce33a5d7d1e2626d4f13ed65693"
-    }
+  "required": [
+    "ocrv-preview",
+    "raw-output-preservation",
+    "slk_checker_decide",
+    "original-native-invocation-binding"
+  ],
+  "explicit_d1": {
+    "transport": "stdio-mcp",
+    "tool": "slk_checker_decide",
+    "tool_allowlist": [
+      "slk_checker_decide"
+    ],
+    "report_body_is_action": false
   },
   "optional": {
     "probe-cli": {
-      "purpose": "bounded symbol discovery for multi-file D1 segments",
-      "fallback": "OCRV native review without Probe output"
+      "purpose": "bounded symbol discovery",
+      "fallback": "native file discovery"
     },
     "rtk": {
-      "purpose": "compress supported high-noise Checker shell output",
+      "purpose": "compress supported high-noise shell output",
       "fallback": "native command with original log retained"
     }
   },
-  "prohibited": ["model-switching", "reasoning-level-change", "background-daemon"]
+  "prohibited": [
+    "host-verdict-classification",
+    "implicit-review-retry",
+    "model-switching",
+    "reasoning-level-change",
+    "background-daemon"
+  ]
 }

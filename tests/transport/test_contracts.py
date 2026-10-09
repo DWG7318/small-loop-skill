@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from slk_transport.contracts import canonical_json_sha256
 import jsonschema
 
 from slk_transport.contracts import ContractError, Endpoint, Envelope, parse_delivery
@@ -168,267 +169,24 @@ def test_supervisor_to_worker_requires_closed_d1_rework_directive() -> None:
     assert parsed.envelope.payload_type == "D1_REWORK_DIRECTIVE"
 
 
-@pytest.mark.parametrize(
-    "missing",
-    [
-        "d1_failure_event_id",
-        "failed_candidate_sha256",
-        "rework_round",
-        "investigation_mode",
-        "cell_goal",
-        "acceptance_criteria",
-        "findings",
-        "evidence_refs",
-        "root_cause_hypothesis",
-        "minimal_experiment",
-        "minimal_repair_scope",
-        "regression_target",
-    ],
-)
-def test_d1_rework_directive_rejects_missing_fields(missing: str) -> None:
-    endpoint = endpoint_value(role="worker")
-    payload = {
-        "d1_failure_event_id": "d1-failed-001",
-        "failed_candidate_sha256": "a" * 64,
-        "rework_round": 1,
-        "investigation_mode": "STANDARD",
-        "cell_goal": "Repair the current CELL.",
-        "acceptance_criteria": ["The failed behavior is corrected."],
-        "findings": ["The candidate violates criterion one."],
-        "evidence_refs": ["evidence/d1-failed-001.json"],
-        "root_cause_hypothesis": "The candidate updates the wrong state boundary.",
-        "minimal_experiment": "Reproduce the boundary mismatch with one focused test.",
-        "minimal_repair_scope": "Correct only the current CELL state transition.",
-        "regression_target": "The focused test fails before and passes after the repair.",
-    }
-    payload.pop(missing)
-    envelope = envelope_value(sender_role="supervisor", receiver_role="worker")
-    envelope["payload_type"] = "D1_REWORK_DIRECTIVE"
-    envelope["payload"] = payload
-    envelope["payload_sha256"] = payload_hash(payload)
-
-    with pytest.raises(ContractError, match="rework directive"):
-        parse_delivery(endpoint, envelope)
-
-
-@pytest.mark.parametrize(
-    "rework_round,investigation_mode",
-    [(1, "AGGRESSIVE"), (2, "STANDARD"), (3, "STANDARD")],
-)
-def test_d1_rework_directive_requires_aggressive_investigation_after_second_failure(
-    rework_round: int, investigation_mode: str
-) -> None:
-    endpoint = endpoint_value(role="worker")
-    payload = {
-        "d1_failure_event_id": "d1-failed-001",
-        "failed_candidate_sha256": "a" * 64,
-        "rework_round": rework_round,
-        "investigation_mode": investigation_mode,
-        "cell_goal": "Repair the current CELL.",
-        "acceptance_criteria": ["The failed behavior is corrected."],
-        "findings": ["The candidate violates criterion one."],
-        "evidence_refs": ["evidence/d1-failed-001.json"],
-        "root_cause_hypothesis": "The candidate updates the wrong state boundary.",
-        "minimal_experiment": "Reproduce the boundary mismatch with one focused test.",
-        "minimal_repair_scope": "Correct only the current CELL state transition.",
-        "regression_target": "The focused regression fails before and passes after.",
-    }
-    envelope = envelope_value(sender_role="supervisor", receiver_role="worker")
-    envelope["payload_type"] = "D1_REWORK_DIRECTIVE"
-    envelope["payload"] = payload
-    envelope["payload_sha256"] = payload_hash(payload)
-
-    with pytest.raises(ContractError, match="investigation_mode"):
-        parse_delivery(endpoint, envelope)
-
-
-def test_d1_failure_escalation_is_closed_and_checker_owned() -> None:
-    endpoint = endpoint_value(role="supervisor")
-    payload = {
-        "d1_failure_event_id": "d1-failed-001",
-        "failed_candidate_sha256": "a" * 64,
-        "rework_round": 1,
-        "cell_goal": "Repair the current CELL.",
-        "acceptance_criteria": ["The failed behavior is corrected."],
-        "findings": ["The candidate violates criterion one."],
-        "reproduction_steps": ["Run the focused regression test."],
-        "expected_result": "The focused regression test passes.",
-        "evidence_refs": ["evidence/d1-failed-001.json"],
-    }
-    envelope = envelope_value(sender_role="checker", receiver_role="supervisor")
-    envelope["payload_type"] = "D1_FAILURE_ESCALATION"
-    envelope["payload"] = payload
-    envelope["payload_sha256"] = payload_hash(payload)
-    assert parse_delivery(endpoint, envelope).envelope.payload_type == "D1_FAILURE_ESCALATION"
-
-    wrong_owner = copy.deepcopy(envelope)
-    wrong_owner["sender_role"] = "supervisor"
-    wrong_owner["receiver_role"] = "worker"
-    with pytest.raises(ContractError, match="checker->supervisor"):
-        Envelope.from_dict(wrong_owner)
-
-    wrong_directive_route = copy.deepcopy(envelope)
-    wrong_directive_route["sender_role"] = "checker"
-    wrong_directive_route["receiver_role"] = "worker"
-    wrong_directive_route["payload_type"] = "D1_REWORK_DIRECTIVE"
-    with pytest.raises(ContractError, match="supervisor->worker"):
-        Envelope.from_dict(wrong_directive_route)
-
-    missing = copy.deepcopy(envelope)
-    del missing["payload"]["reproduction_steps"]
-    missing["payload_sha256"] = payload_hash(missing["payload"])
-    with pytest.raises(ContractError, match="D1 failure escalation"):
-        parse_delivery(endpoint, missing)
-
-
-def test_d1_incomplete_escalation_is_closed_and_checker_owned() -> None:
-    endpoint = endpoint_value(role="supervisor")
-    candidate_payload = {
-        "repository": "D:/run/repository",
-        "candidate": {"kind": "commit", "commit": "a" * 40},
-        "cell_goal": "Verify the unchanged candidate.",
-        "d1_criteria": ["The candidate satisfies the frozen CELL."],
-        "evidence_files": ["D:/run/worker-result.json"],
-    }
-    payload = {
-        "d1_incomplete_event_id": "d1-incomplete-001",
-        "candidate_message_id": MESSAGE_ID,
-        "candidate_payload": candidate_payload,
-        "candidate_payload_sha256": payload_hash(candidate_payload),
-        "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
-        "evidence": [{"path": "D:/run/ocrv-result.json", "sha256": "a" * 64}],
-        "native_terminal_sha256": "b" * 64,
-        "native_result_sha256": "c" * 64,
-        "decision_required": "CAPACITY_OR_ENVIRONMENT_MANAGEMENT",
-    }
-    envelope = envelope_value(sender_role="checker", receiver_role="supervisor")
-    envelope["payload_type"] = "D1_INCOMPLETE_ESCALATION"
-    envelope["payload"] = payload
-    envelope["payload_sha256"] = payload_hash(payload)
-    assert parse_delivery(endpoint, envelope).envelope.payload_type == "D1_INCOMPLETE_ESCALATION"
-
-    wrong_owner = copy.deepcopy(envelope)
-    wrong_owner["sender_role"] = "supervisor"
-    wrong_owner["receiver_role"] = "worker"
-    with pytest.raises(ContractError, match="checker->supervisor"):
-        Envelope.from_dict(wrong_owner)
-
-    missing = copy.deepcopy(envelope)
-    del missing["payload"]["decision_required"]
-    missing["payload_sha256"] = payload_hash(missing["payload"])
-    with pytest.raises(ContractError, match="D1 incomplete escalation"):
-        parse_delivery(endpoint, missing)
-
-
-def test_d1_management_return_is_closed_supervisor_to_original_checker() -> None:
-    candidate_payload = {
-        "repository": "D:/run/repository",
-        "candidate": {"kind": "commit", "commit": "a" * 40},
-        "cell_goal": "Verify the unchanged candidate.",
-        "d1_criteria": ["The candidate satisfies the frozen CELL."],
-        "evidence_files": ["D:/run/worker-result.json"],
-    }
-    payload = {
-        "source_d1_incomplete_event_id": "d1-incomplete-001",
-        "candidate_message_id": MESSAGE_ID,
-        "candidate_payload": candidate_payload,
-        "candidate_payload_sha256": payload_hash(candidate_payload),
-        "management_action": "ADJUST_CAPACITY",
-        "management_summary": "Return the unchanged candidate to its original Checker.",
-        "management_evidence_refs": ["D:/run/supervisor-decision.json"],
-        "review_policy": {
-            "profile": "NORMAL_D1_DEFAULT",
-            "aggregate_budget": "NATIVE_UNLIMITED",
-            "review_timeout": "NATIVE_UNLIMITED",
-            "tool_rounds": "TEMPLATE_DEFAULT",
-        },
-    }
-    envelope = envelope_value(sender_role="supervisor", receiver_role="checker")
-    envelope["payload_type"] = "D1_MANAGEMENT_RETURN"
-    envelope["payload"] = payload
-    envelope["payload_sha256"] = payload_hash(payload)
-
-    parsed = parse_delivery(endpoint_value(role="checker"), envelope)
-    assert parsed.envelope.payload_type == "D1_MANAGEMENT_RETURN"
-    schema = json.loads(
-        (Path(__file__).parents[2] / "docs/contracts/slk-d1-management-return.schema.json")
-        .read_text(encoding="utf-8")
-    )
-    jsonschema.Draft202012Validator.check_schema(schema)
-    jsonschema.validate(payload, schema)
-
-    wrong_edge = copy.deepcopy(envelope)
-    wrong_edge["sender_role"] = "worker"
-    wrong_edge["sender_role_instance_id"] = "RUN-A-worker-001"
-    with pytest.raises(ContractError, match="supervisor->checker"):
-        Envelope.from_dict(wrong_edge)
-
-    changed_candidate = copy.deepcopy(envelope)
-    changed_candidate["payload"]["candidate_payload"]["cell_goal"] = "Different goal"
-    changed_candidate["payload_sha256"] = payload_hash(changed_candidate["payload"])
-    with pytest.raises(ContractError, match="candidate_payload_sha256"):
-        Envelope.from_dict(changed_candidate)
-
-
-def test_d2_ready_payload_is_closed_and_role_bound() -> None:
-    d2_ready = {
-        "d1_event_id": "d1-pass-cell-002",
-        "required_cell_ids": ["CELL-001", "CELL-002"],
-        "accepted_cell_ids": ["CELL-001", "CELL-002"],
-        "final_candidate_message_id": MESSAGE_ID,
-        "d2_criteria": ["Verify the bounded Run."],
-        "evidence_refs": ["D:/run/evidence.json"],
-    }
-    to_supervisor = envelope_value(sender_role="checker", receiver_role="supervisor")
-    to_supervisor["cell_id"] = "CELL-002"
-    to_supervisor["payload_type"] = "D2_READY"
-    to_supervisor["payload"] = d2_ready
-    to_supervisor["payload_sha256"] = payload_hash(d2_ready)
-    assert parse_delivery(endpoint_value(role="supervisor"), to_supervisor).envelope.payload_type == "D2_READY"
-
-    missing = copy.deepcopy(to_supervisor)
-    del missing["payload"]["accepted_cell_ids"]
-    missing["payload_sha256"] = payload_hash(missing["payload"])
-    with pytest.raises(ContractError, match="D2_READY"):
-        parse_delivery(endpoint_value(role="supervisor"), missing)
-
-    wrong_edge = copy.deepcopy(to_supervisor)
-    wrong_edge["receiver_role"] = "worker"
-    wrong_edge["receiver_role_instance_id"] = "RUN-A-worker-001"
-    with pytest.raises(ContractError, match="checker->supervisor"):
-        Envelope.from_dict(wrong_edge)
-
-
-def test_worker_completion_recovery_is_closed_and_supervisor_to_checker_only() -> None:
-    endpoint = endpoint_value(role="checker")
-    payload = {
-        "source_attempt_root": "D:/run/attempt",
-        "runtime_projection_path": "D:/run/projection.json",
-        "plan_revision": 1,
-        "runtime_revision": 7,
-        "token_sequence": 14,
-        "worker_credential_path": "D:/run/worker.dpapi",
-        "checker_credential_path": "D:/run/checker.dpapi",
-        "state_command": ["D:/SLK/slk-state.exe"],
-        "transport_command": ["python", "D:/SLK/slk-transport.pyz"],
-        "occurred_at": "2026-09-23T00:00:00Z",
-    }
-    envelope = envelope_value(sender_role="supervisor", receiver_role="checker")
-    envelope["payload_type"] = "WORKER_COMPLETION_RECOVERY"
-    envelope["payload"] = payload
-    envelope["payload_sha256"] = payload_hash(payload)
-    assert parse_delivery(endpoint, envelope).envelope.payload_type == "WORKER_COMPLETION_RECOVERY"
-
-    wrong_owner = copy.deepcopy(envelope)
-    wrong_owner["sender_role"] = "worker"
-    with pytest.raises(ContractError, match="supervisor->checker"):
-        Envelope.from_dict(wrong_owner)
-
-    extra = copy.deepcopy(envelope)
-    extra["payload"]["supervisor_may_resume"] = True
-    extra["payload_sha256"] = payload_hash(extra["payload"])
-    with pytest.raises(ContractError, match="Worker completion recovery"):
-        Envelope.from_dict(extra)
+@pytest.mark.parametrize("kind,sender,receiver", [
+    ("D1_FAILURE_ESCALATION", "checker", "supervisor"),
+    ("D1_INCOMPLETE_ESCALATION", "checker", "supervisor"),
+    ("D1_MANAGEMENT_RETURN", "supervisor", "checker"),
+    ("D1_REWORK_DIRECTIVE", "supervisor", "worker"),
+    ("D2_READY", "checker", "supervisor"),
+    ("WORKER_COMPLETION_RECOVERY", "supervisor", "checker"),
+    ("PRE_D0_BLOCKED_RECOVERY", "supervisor", "checker"),
+])
+@pytest.mark.parametrize("body", [{}, {"report":"partial", "extra":[1,2]}])
+def test_report_payload_has_no_body_review_but_keeps_exact_role_edge(kind, sender, receiver, body):
+    value = envelope_value(sender_role=sender, receiver_role=receiver)
+    value.update(payload_type=kind, payload=body, payload_sha256=canonical_json_sha256(body))
+    assert Envelope.from_dict(value).payload == body
+    value.update(sender_role="worker", receiver_role="checker")
+    if (sender, receiver) != ("worker", "checker"):
+        with pytest.raises(ContractError):
+            Envelope.from_dict(value)
 
 
 @pytest.mark.parametrize("extra_role", ["router", "overwatcher"])

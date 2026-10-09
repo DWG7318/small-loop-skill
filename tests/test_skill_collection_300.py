@@ -256,8 +256,8 @@ def test_checker_separates_product_failure_from_checking_failures() -> None:
     assert "未证明" in check
     assert "不写为 PASS" in check
     assert "Supervisor" in check
-    assert "D1 FAIL：CELL n/N" in check
-    assert "D1 INCOMPLETE：CELL n/N" in check
+    assert "实质产品缺陷为D1 FAIL" in check
+    assert "导致未完成为D1 INCOMPLETE" in check
     assert "零 finding" in check
     assert "只有 PASS 或 FAIL 闭合 D1" in check
     assert "不写 `D1_PASSED` 或 `D1_FAILED`" in check
@@ -278,34 +278,32 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     recover = read_skill("slk-recover-communication")
     overwatch = read_skill("slk-overwatch-run")
     main = read_skill("small-loop-skill")
-    assert "代码、提交与测试完成不等于 Worker 角色完成" in execute
+    assert "代码完成与保存报告不等于交付" in execute
     assert "恰好一次当前 CELL/attempt/candidate" in execute
     assert "同一 candidate/message/attempt" in recover
-    assert "不要先 resume" in recover
-    assert "外部 OCRV 宿主" in recover
+    assert "不要在 active writer 前 resume" in recover
+    assert "一次性Worker进程不托管OCRV长审查" in recover
     assert "任意 OW Session 退出" in overwatch
     assert "Supervisor 修复并提交匹配证据" in overwatch
     assert "4.4.2" in main
 
 
-def test_invalid_result_contract_recovery_routes_through_original_roles() -> None:
+def test_retired_result_format_recovery_does_not_restart_or_replace_original_roles() -> None:
     recover = read_skill("slk-recover-communication")
     for marker in (
-        "INVALID_RESULT_CONTRACT",
-        "prepare-invalid-result-recovery",
-        "旧结果描述器",
-        "`slk.native-start/v2`",
-        "原 Worker Session",
-        "真实 OCRV D1",
-        "Root",
-        "不代写 Worker",
-        "recover-staged-checker-commit",
-        "consume-staged-checker-terminal",
-        "不重新启动 Worker 或 OCRV",
+        "恢复已有通讯",
+        "不重新施工或审查",
+        "结果格式补交",
+        "partial/context/terminal",
+        "历史证据只读",
+        "不能为模板重跑Agent",
+        "不补造D0/D1/D2",
+        "报告正文隐式触发副作用",
+        "由Supervisor/OW代写Worker/Checker事实",
     ):
         assert marker in recover
-    assert recover.index("prepare-invalid-result-recovery") < recover.index("原 Worker Session")
-    assert "4.3.4 平铺 start" in recover
+    for retired in ("prepare-invalid-result-recovery", "consume-staged-checker-terminal"):
+        assert retired not in recover
 
 
 def test_d0_and_rework_use_relevant_checks_not_repeated_full_suites() -> None:
@@ -634,8 +632,8 @@ def test_execute_cell_delivers_d0_progress_record_and_checker_handoff() -> None:
         "风险",
         "CELL n/N",
         "倒数第二项",
-        "最后一项",
-        "真实激活",
+        "保存完整原件并独立发给Checker",
+        "真实接收",
         "不增加接收回执轮次",
         "$slk-record-run",
         "$slk-check-cell",
@@ -653,8 +651,9 @@ def test_check_cell_keeps_checker_isolation_and_d1_progress() -> None:
         "Worker",
         "验收目标",
         "独立",
-        "D1 PASS：CELL n/N",
-        "D1 FAIL：CELL n/N",
+        "D1 PASS",
+        "D1 FAIL",
+        "slk_checker_decide(verdict, message?)",
         "Supervisor",
         "$slk-record-run",
         "$slk-rework-cell",
@@ -689,8 +688,9 @@ def test_record_run_preserves_role_history_failures_and_handoff_order() -> None:
         "豁免",
         "追加",
         "证据",
-        "倒数第二项",
-        "最后一项",
+        "已有输出先保存并独立投递",
+        "记录/ACK/Temporal维护失败不扣报告",
+        "工程交接另核实真实接收启动与原子TOKEN提交",
     ):
         assert marker in text
     template = SKILLS / "slk-record-run" / "assets" / "SLK-RUN.template.md"
@@ -843,7 +843,7 @@ def test_432_desktop_recovery_documents_windows_invocation_and_attempt_root() ->
     assert "不要用 `& <slk-transport.pyz>`" in text
     assert "`--attempt-root` 是 attempts 根目录" in text
     assert "不是 `<run_id>/<message_id>`" in text
-    assert "平台回读" in text and "可见消息" in text
+    assert "平台回读" in text and "可见文字" in text
 
 
 def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
@@ -916,9 +916,9 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "不增加令牌专用回执" in dispatch and "原子提交成功后结束本次激活" in dispatch
     assert "不读取 Worker 施工状态" in dispatch
     assert "候选交付重新激活 Checker" in dispatch
-    assert "交付完成后 Worker 结束活动" in execute
-    assert "不读取 Checker 状态" in execute
-    assert "外部 headless OCRV 宿主" in execute
+    assert "原生启动证据完成原子提交后结束当前活动" in execute
+    assert "不继续停留或读取 Checker 状态" in execute
+    assert "可信Host保存完整原件并独立发给Checker" in execute
     assert "每次操作结束当前 turn" in recover
     assert "真实激活返回端点不可用" in recover
     assert "不重复激活" in recover
@@ -931,7 +931,7 @@ def test_roles_end_their_turn_instead_of_waiting_on_or_watching_peers() -> None:
     assert "接收令牌不结束当前 CELL 施工" in execute
     assert "一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发" in dispatch
     assert "命令、工具结果或中间进展不构成 CELL 交付边界" in execute
-    assert "完成整个 CELL 候选" in execute
+    assert "完整 CELL 候选交付" in execute
     for stale in ("每完成一条命令就结束", "一条命令一次激活", "把下一条命令交给 Worker"):
         assert stale not in active
     assert "完成当前节点和必要交接后结束活动" in manage
@@ -1150,7 +1150,7 @@ def test_token_is_compact_monotonic_and_duplicate_safe() -> None:
     assert "单调递增" in dispatch
     assert "相同或更旧的令牌编号" in execute and "不重开 CELL" in execute
     assert "真实激活操作" in main
-    assert "exact retry 只原样一次" in main
+    assert "exact retry 只沿原消息一次" in main
     assert "同号或旧号不改指针" in record
     assert "完整工程历史" in record and "不复制整段令牌历史" in record
 
@@ -1297,7 +1297,7 @@ def test_worker_and_checker_preflight_can_rationalize_locally_without_new_formal
     assert "实现范围、依赖、工具能力、证据负荷" in execute
     assert "不能自行拆成多个正式 CELL" in execute
     assert "候选元数据、changed paths、验收条件、模型与工具能力" in check
-    assert "D1-A/B/C" in check
+    assert "不自动切段" in check
     assert "仍只形成一个正式 D1" in check
 
 
@@ -1399,8 +1399,8 @@ def test_4210_forbids_post_turn_self_wake_and_fixed_time_promises() -> None:
         "Owner/Main 真实激活",
     ):
         assert marker in combined
-    for forbidden in ("15 秒后自动", "后台自唤醒"):
-        assert forbidden in combined
+    assert "不用post-turn延迟脚本或固定秒数承诺自动恢复" in recovery
+    assert "后台自唤醒" in combined
 
 
 def test_4210_worker_checker_and_resource_corrections_are_explicit() -> None:
@@ -1535,12 +1535,14 @@ def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:
         assert marker in main
 
 
-def test_436_checker_post_d1_suffix_is_discoverable_without_expanding_authority() -> None:
+def test_checker_explicit_action_replaces_post_d1_suffix_without_expanding_authority() -> None:
     main = read_skill("small-loop-skill")
     rework = read_skill("slk-rework-cell")
 
-    assert "--slk-post-d1" in main
-    assert "标准 `--slk-post-d1` 后缀" in rework
+    assert "slk_checker_decide" in main
+    assert "slk_checker_decide(FAIL, message?)" in rework
+    assert "不再使用 `--slk-post-d1`" in rework
+    assert "同一次标准工具调用内部" in rework
     assert "DESKTOP_BRIDGE_REQUIRED" in rework
     assert "密封 Checker 凭据" in rework
     assert "空闲 Supervisor 走正常直达" in rework

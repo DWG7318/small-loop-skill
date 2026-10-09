@@ -25,10 +25,8 @@ from test_codex_desktop import prepared as prepared_desktop
 from test_contracts import endpoint_value, envelope_value, payload_hash
 from test_worker_completion import (
     completion_fixture,
-    invalid_result_contract_fixture,
     runtime_projection,
 )
-from test_pre_d0_blocked_recovery import fixture as pre_d0_fixture
 
 
 TESTS = Path(__file__).parent
@@ -77,21 +75,6 @@ def run_cli(artifact: Path, *arguments: str) -> subprocess.CompletedProcess[str]
         capture_output=True,
         check=False,
     )
-
-
-def test_cli_exposes_one_commit_only_checker_recovery_entry(tmp_path: Path) -> None:
-    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
-
-    result = run_cli(artifact, "--help")
-
-    assert result.returncode == 0
-    assert "recover-staged-checker-commit" in result.stdout
-    assert "consume-staged-checker-terminal" in result.stdout
-    assert "consume-committed-checker-terminal" in result.stdout
-    assert "prepare-terminal-budget-checker" in result.stdout
-    assert "resume-terminal-budget-checker" in result.stdout
-    assert "prepare-terminal-budget-fresh-review" in result.stdout
-    assert "resume-terminal-budget-fresh-review" in result.stdout
 
 
 def test_cli_exposes_standard_new_run_preparation_entries(tmp_path: Path) -> None:
@@ -353,118 +336,6 @@ def test_checker_post_d1_cli_is_exposed_and_fails_closed_on_an_open_request(tmp_
     assert result["error_code"] == "CHECKER_ESCALATION_REQUEST_INVALID"
 
 
-def test_terminal_budget_resume_cli_is_exposed_and_fails_closed_on_an_open_request(
-    tmp_path: Path,
-) -> None:
-    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
-    request = write_json(tmp_path / "terminal-budget.json", {})
-
-    rejected = run_cli(
-        artifact,
-        "resume-terminal-budget-checker",
-        "--request",
-        str(request),
-        "--sha256",
-        hashlib.sha256(request.read_bytes()).hexdigest(),
-        "--prepare-only",
-    )
-
-    assert rejected.returncode == 2
-    result = json.loads(rejected.stdout)
-    assert result["status"] == "rejected"
-    assert result["error_code"] == "CHECKER_TERMINAL_BUDGET_REQUEST_INVALID"
-
-
-def test_prepare_invalid_result_recovery_is_read_only_and_emits_closed_checker_envelope(
-    tmp_path: Path,
-) -> None:
-    attempt, _worker, checker, candidate, _baseline = invalid_result_contract_fixture(tmp_path)
-    checker_path = write_json(tmp_path / "checker-endpoint.json", checker)
-    projection_path = write_json(tmp_path / "runtime-projection.json", runtime_projection())
-    worker_credential = tmp_path / "worker.dpapi"
-    checker_credential = tmp_path / "checker.dpapi"
-    worker_credential.write_text("sealed-worker", encoding="utf-8")
-    checker_credential.write_text("sealed-checker", encoding="utf-8")
-    output = tmp_path / "invalid-result-recovery-envelope.json"
-    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
-
-    prepared = run_cli(
-        artifact,
-        "prepare-invalid-result-recovery",
-        "--source-attempt",
-        str(attempt),
-        "--checker-endpoint",
-        str(checker_path),
-        "--runtime-projection",
-        str(projection_path),
-        "--supervisor-role-instance-id",
-        "RUN-A-supervisor-001",
-        "--plan-revision",
-        "1",
-        "--runtime-revision",
-        "7",
-        "--token-sequence",
-        "14",
-        "--worker-credential",
-        str(worker_credential),
-        "--checker-credential",
-        str(checker_credential),
-        "--state-command",
-        "slk-state",
-        "--transport-command",
-        "python",
-        "slk-transport.pyz",
-        "--occurred-at",
-        "2026-09-23T00:00:00Z",
-        "--output",
-        str(output),
-    )
-
-    assert prepared.returncode == 0, prepared.stderr
-    readiness = json.loads(prepared.stdout)
-    envelope = json.loads(output.read_text(encoding="utf-8"))
-    assert readiness["status"] == "INVALID_RESULT_RECOVERY_READY"
-    assert readiness["candidate"] == {"kind": "commit", "commit": candidate}
-    assert envelope["payload_type"] == "WORKER_COMPLETION_RECOVERY"
-    assert envelope["sender_role"] == "supervisor"
-    assert envelope["receiver_role"] == "checker"
-    assert not (attempt / "invalid-result-supplement").exists()
-
-
-def test_prepare_pre_d0_blocked_recovery_cli_is_read_only_and_closed(tmp_path: Path) -> None:
-    case = pre_d0_fixture(tmp_path)
-    checker_path = write_json(tmp_path / "checker-endpoint.json", case["checker"])
-    output = tmp_path / "pre-d0-recovery-envelope-cli.json"
-    artifact = build_zipapp(tmp_path / "slk-transport.pyz")
-
-    prepared = run_cli(
-        artifact,
-        "prepare-pre-d0-blocked-recovery",
-        "--source-attempt", str(case["attempt"]),
-        "--checker-endpoint", str(checker_path),
-        "--runtime-projection", str(case["projection_path"]),
-        "--supervisor-role-instance-id", "RUN-A-supervisor-001",
-        "--plan-revision", "1",
-        "--runtime-revision", "7",
-        "--token-sequence", "14",
-        "--worker-credential", str(case["worker_credential"]),
-        "--checker-credential", str(case["checker_credential"]),
-        "--state-command", "slk-state",
-        "--transport-command", "python", "slk-transport.pyz",
-        "--environment-adjustment", str(case["environment_path"]),
-        "--environment-adjustment-sha256", str(case["environment_sha256"]),
-        "--occurred-at", "2026-10-06T05:30:00Z",
-        "--output", str(output),
-    )
-
-    assert prepared.returncode == 0, prepared.stderr
-    readiness = json.loads(prepared.stdout)
-    envelope = json.loads(output.read_text(encoding="utf-8"))
-    assert readiness["status"] == "PRE_D0_BLOCKED_RECOVERY_READY"
-    assert envelope["payload_type"] == "PRE_D0_BLOCKED_RECOVERY"
-    assert not (Path(str(case["attempt"])) / "pre-d0-blocked-recovery").exists()
-
-
 def test_retry_exact_uses_persisted_identity_and_stops_after_one_attempt(
     tmp_path: Path,
 ) -> None:
@@ -555,3 +426,19 @@ def test_drill_verify_cli_independently_accepts_two_complete_runs(tmp_path: Path
 
     assert result.returncode == 0
     assert json.loads(result.stdout)["status"] == "TRANSPORT_DRILL_PASS"
+@pytest.mark.parametrize("command", [
+    "checker-recover-worker", "checker-record-committed-terminal", "prepare-invalid-result-recovery",
+    "prepare-pre-d0-blocked-recovery", "recover-staged-checker-commit", "consume-staged-checker-terminal",
+    "consume-committed-checker-terminal", "resume-incomplete-checker", "prepare-terminal-budget-checker",
+    "prepare-context-review", "resume-terminal-budget-checker", "prepare-terminal-budget-fresh-review",
+    "resume-terminal-budget-fresh-review", "prepare-terminal-budget-fresh-partial",
+    "resume-terminal-budget-fresh-partial", "continue-consumed-partial", "resume-consumed-partial",
+    "refine-consumed-partial", "consume-existing-partial", "continue-worker",
+    "reclassify-completed-checker", "prepare-incomplete-handoff",
+])
+def test_retired_implicit_output_recovery_commands_reject_before_any_side_effect(command, monkeypatch):
+    from slk_transport import cli
+    monkeypatch.setattr(cli, "dispatch_once", lambda *a, **k: pytest.fail("retired command dispatched"))
+    with pytest.raises(SystemExit) as error:
+        cli.main([command])
+    assert error.value.code == 2

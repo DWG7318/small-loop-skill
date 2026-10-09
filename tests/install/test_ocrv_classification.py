@@ -1,111 +1,39 @@
-from __future__ import annotations
-
+"""Severity, coverage and process exit are preserved, never converted to D1."""
 import importlib.util
+import json
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
-ADAPTER = ROOT / "integrations" / "ocrv" / "slk_checker_adapter.py"
 
+@pytest.mark.parametrize("severity", ["LOW", "MEDIUM", "HIGH", "BLOCKER", "CRITICAL", "MYSTERY"])
+@pytest.mark.parametrize("exit_code", [0, 2, 3, 42])
+def test_raw_review_never_synthesizes_a_checker_decision(tmp_path, severity, exit_code):
+    from slk_transport.adapters.ocrv import OcrvAdapter
+    from slk_transport.contracts import ENVELOPE_SCHEMA, Envelope, canonical_json_sha256
+    envelope = Envelope.from_dict({
+        "schema_version": ENVELOPE_SCHEMA,
+        "message_id": "11111111-1111-4111-8111-111111111111", "token_sequence": 1,
+        "run_id": "RUN-CLASSIFICATION", "go_id": "GO-A", "cell_id": "CELL-001",
+        "sender_role": "worker", "sender_role_instance_id": "WORKER-A",
+        "receiver_role": "checker", "receiver_role_instance_id": "CHECKER-A",
+        "receiver_endpoint_version": 1, "payload_type": "CANDIDATE_READY",
+        "payload": {}, "payload_sha256": canonical_json_sha256({}),
+    })
+    path = tmp_path / "native-report.json"
+    raw = {"comments": [{"severity": severity, "message": "original finding"}],
+           "manifest": {"coverage": {"completed": [], "failed": ["criterion"]}}}
+    original = json.dumps(raw).encode()
+    path.write_bytes(original)
+    result = OcrvAdapter().validate_existing_result(path, tmp_path/"request.json",
+                                                   envelope, exit_code)
+    assert result == raw and path.read_bytes() == original
+    assert "verdict" not in result
 
-def _module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("slk_checker_adapter_under_test", ADAPTER)
-    assert spec and spec.loader
+def test_native_wrapper_has_no_engineering_classifier():
+    spec = importlib.util.spec_from_file_location("slk_no_classifier",
+        ROOT / "integrations/ocrv/slk_checker_adapter.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module
-
-
-def _complete_review(comments: list[dict[str, object]]) -> dict[str, object]:
-    selected = [{"item_id": "criterion-1"}]
-    return {
-        "status": "complete",
-        "llm": {"provider": "dashscope-tokenplan", "model": "qwen3.8-max"},
-        "manifest": {
-            "terminal_state": "complete",
-            "coverage": {
-                "selected": selected,
-                "completed": selected,
-                "failed": [],
-                "waived": [],
-            },
-        },
-        "tool_calls": {"failure": 0},
-        "comments": comments,
-    }
-
-
-def test_complete_low_severity_observation_is_pass_with_observation() -> None:
-    verdict, reasons = _module()._classify(
-        _complete_review([{"severity": "LOW", "message": "non-blocking naming observation"}]),
-        0,
-    )
-
-    assert verdict == "PASS"
-    assert reasons == ["OCR_COMPLETE_LOW_SEVERITY_OBSERVATIONS"]
-
-
-@pytest.mark.parametrize("severity", ["MEDIUM", "HIGH", "BLOCKER", "CRITICAL"])
-def test_material_finding_is_fail(severity: str) -> None:
-    verdict, reasons = _module()._classify(
-        _complete_review([{"severity": severity, "message": "acceptance criterion is violated"}]),
-        0,
-    )
-
-    assert verdict == "FAIL"
-    assert reasons == ["OCR_BLOCKING_FINDINGS_PRESENT"]
-
-
-def test_material_finding_remains_fail_when_an_auxiliary_tool_call_failed() -> None:
-    review = _complete_review(
-        [{"severity": "MEDIUM", "message": "acceptance criterion is violated"}]
-    )
-    review["tool_calls"] = {"failure": 1}
-
-    verdict, reasons = _module()._classify(review, 0)
-
-    assert verdict == "FAIL"
-    assert reasons == ["OCR_BLOCKING_FINDINGS_PRESENT", "OCR_TOOL_FAILURE"]
-
-
-def test_unknown_finding_classification_is_incomplete_not_pass() -> None:
-    verdict, reasons = _module()._classify(
-        _complete_review([{"severity": "MYSTERY", "message": "cannot classify"}]),
-        0,
-    )
-
-    assert verdict == "INCOMPLETE"
-    assert reasons == ["OCR_FINDING_SEVERITY_UNKNOWN"]
-
-
-def test_incomplete_coverage_never_passes_even_with_low_observation() -> None:
-    review = _complete_review([{"severity": "LOW", "message": "minor"}])
-    review["manifest"]["coverage"]["completed"] = []  # type: ignore[index]
-
-    verdict, reasons = _module()._classify(review, 0)
-
-    assert verdict == "INCOMPLETE"
-    assert "OCR_COVERAGE_INCOMPLETE" in reasons
-
-
-def test_complete_coverage_counts_native_reused_items() -> None:
-    review = _complete_review([{"severity": "MEDIUM", "message": "material finding"}])
-    selected = [
-        {"item_id": "criterion-1", "path": "src/lib.rs", "fingerprint": "a" * 64},
-        {"item_id": "criterion-2", "path": "src/paths.rs", "fingerprint": "b" * 64},
-    ]
-    review["manifest"]["coverage"] = {  # type: ignore[index]
-        "selected": selected,
-        "completed": [selected[0]],
-        "reused": [selected[1]],
-        "failed": [],
-        "waived": [],
-    }
-
-    verdict, reasons = _module()._classify(review, 0)
-
-    assert verdict == "FAIL"
-    assert reasons == ["OCR_BLOCKING_FINDINGS_PRESENT"]
+    assert not hasattr(module, "_classify")

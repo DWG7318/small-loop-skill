@@ -32,7 +32,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 ## 工作顺序
 
-每次角色行动的倒数第二项建议用 `slk-state` 写入自己的事实；最后一项完成真实传输，并在原生启动后原子提交 `SLK TOKEN` 与 runtime snapshot。完成传输后结束本轮工作，不跟踪下一对话；Markdown 自动导出失败只形成 warning，可稍后重新生成。
+各角色通过自己的显式标准Tool记录事实，不能从报告正文自动合成D0/D1/D2。已有输出先保存并独立投递，记录/ACK/Temporal维护失败不扣报告；工程交接另核实真实接收启动与原子TOKEN提交，完成后结束活动，不跟踪下一对话。保存不等于送达，送达不等于PASS；原始报告、实际错误及历史记录保留。Markdown导出失败只形成warning。
 
 ## 负面提示词
 

@@ -4,43 +4,182 @@
   "title": "SLK Worker completion inspection",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "go_id", "cell_id", "attempt", "source_message_id", "worker_role_instance_id", "candidate", "worker_outcome", "blocker", "handoff_message_id", "observed_at", "cadence_seconds", "status", "grace_started_at", "anomaly_codes", "notification_already_sent", "missing_worker_events"],
+  "required": [
+    "schema_version",
+    "run_id",
+    "go_id",
+    "cell_id",
+    "attempt",
+    "source_message_id",
+    "worker_role_instance_id",
+    "candidate",
+    "worker_outcome",
+    "blocker",
+    "handoff_message_id",
+    "observed_at",
+    "cadence_seconds",
+    "status",
+    "grace_started_at",
+    "anomaly_codes",
+    "notification_already_sent",
+    "missing_worker_events"
+  ],
   "properties": {
-    "schema_version": {"const": "slk.worker-completion-inspection/v1"},
-    "run_id": {"$ref": "#/$defs/identifier"},
-    "go_id": {"$ref": "#/$defs/identifier"},
-    "cell_id": {"$ref": "#/$defs/identifier"},
-    "attempt": {"type": "integer", "minimum": 1},
-    "source_message_id": {"type": "string", "format": "uuid"},
-    "worker_role_instance_id": {"$ref": "#/$defs/identifier"},
-    "candidate": {"oneOf": [{"type": "object", "minProperties": 1}, {"type": "null"}]},
-    "worker_outcome": {"enum": ["completed", "incomplete", "blocked", "execution_failure", "timed_out", null]},
+    "schema_version": {
+      "const": "slk.worker-completion-inspection/v1"
+    },
+    "run_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "go_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "cell_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "worker_role_instance_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "candidate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "minProperties": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "worker_outcome": {
+      "type": "null",
+      "description": "Transport never derives a Worker engineering outcome."
+    },
     "blocker": {
       "oneOf": [
-        {"type": "null"},
+        {
+          "type": "null"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["phase", "cause", "summary", "evidence"],
+          "required": [
+            "phase",
+            "cause",
+            "summary",
+            "evidence"
+          ],
           "properties": {
-            "phase": {"type": "string", "minLength": 1},
-            "cause": {"type": "string", "minLength": 1},
-            "summary": {"type": "string", "minLength": 1},
-            "evidence": {"type": "array", "items": {"type": "string", "minLength": 1}}
+            "phase": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cause": {
+              "type": "string",
+              "minLength": 1
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
         }
       ]
     },
-    "handoff_message_id": {"type": "string", "format": "uuid"},
-    "observed_at": {"type": "string", "format": "date-time"},
-    "cadence_seconds": {"type": "integer", "minimum": 1},
-    "status": {"enum": ["UNKNOWN", "IN_PROGRESS", "COMPLETION_GRACE", "WORKER_COMPLETION_HANDOFF_MISSING", "HANDED_OFF_OR_D1", "WORKER_INCOMPLETE", "WORKER_BLOCKED", "WORKER_EXECUTION_FAILURE", "WORKER_TIMED_OUT"]},
-    "grace_started_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
-    "anomaly_codes": {"type": "array", "uniqueItems": true, "items": {"enum": ["WORKER_COMPLETION_HANDOFF_MISSING", "COMMUNICATION_RECOVERY_REQUIRED"]}},
-    "notification_already_sent": {"type": "boolean"},
-    "missing_worker_events": {"type": "array", "uniqueItems": true, "items": {"enum": ["WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED", "TRANSPORT_STARTED"]}}
+    "handoff_message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cadence_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "UNKNOWN",
+        "IN_PROGRESS",
+        "COMPLETION_GRACE",
+        "WORKER_COMPLETION_HANDOFF_MISSING",
+        "HANDED_OFF_OR_D1",
+        "WORKER_EXECUTION_FAILURE",
+        "WORKER_TIMED_OUT",
+        "NATIVE_TURN_ORPHANED",
+        "NATIVE_TASK_COMPLETED_WITHOUT_TERMINAL",
+        "NATIVE_TASK_FAILED_WITHOUT_TERMINAL",
+        "OUTPUT_DELIVERED_AWAITING_ROLE_ACTION"
+      ]
+    },
+    "grace_started_at": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "anomaly_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "WORKER_COMPLETION_HANDOFF_MISSING",
+          "COMMUNICATION_RECOVERY_REQUIRED"
+        ]
+      }
+    },
+    "notification_already_sent": {
+      "type": "boolean"
+    },
+    "missing_worker_events": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "WORK_STARTED",
+          "D0_COMPLETED",
+          "CANDIDATE_SUBMITTED",
+          "TRANSPORT_STARTED"
+        ]
+      }
+    },
+    "native_status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "native_identity": {"type": "object", "description": "Objective native execution facts, never Worker D0."},
+    "output_delivery": {
+      "type": "object",
+      "description": "Observed report delivery facts; never engineering acceptance."
+    }
   },
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    }
   }
 }

@@ -14,7 +14,7 @@ from slk_transport import cli
 from slk_transport import role_host as role_host_module
 from slk_transport.contracts import DeliveryResult
 from slk_transport.contracts import Envelope
-from slk_transport.role_host import RoleHost, normalized_checker_findings
+from slk_transport.role_host import RoleHost
 from slk_transport.native_activity import make_native_start
 from slk_transport import worker_completion as wc
 from slk_transport import checker_management
@@ -87,468 +87,6 @@ def test_continue_staged_handoff_cli_uses_hash_bound_original_sender_host(
     assert json.loads(capsys.readouterr().out)["status"] == "OWNED_HANDOFF_COMMITTED"
 
 
-def test_reclassify_checker_cli_uses_hash_bound_role_host(tmp_path, monkeypatch, capsys):
-    binding = write_json(tmp_path / "role-host.json", {"binding": "test"})
-    digest = hashlib.sha256(binding.read_bytes()).hexdigest()
-    source = tmp_path / "attempt"
-    source.mkdir()
-    seen = []
-
-    class Bound:
-        def reclassify_completed_checker(self, attempt):
-            seen.append(attempt)
-            return {"status": "CHECKER_ESCALATION_COMMITTED"}
-
-    monkeypatch.setattr(
-        cli, "RoleHost",
-        lambda value, actual: Bound() if value == {"binding": "test"} and actual == digest
-        else pytest.fail("binding identity changed"),
-    )
-    args = argparse.Namespace(binding=binding, sha256=digest, source_attempt=source)
-
-    assert cli._reclassify_completed_checker(args) == 0
-    assert seen == [source.resolve()]
-    assert json.loads(capsys.readouterr().out)["status"] == "CHECKER_ESCALATION_COMMITTED"
-
-
-def test_checker_findings_strip_provider_thinking_before_supervisor_escalation():
-    findings = normalized_checker_findings([
-        {"severity": "HIGH", "message": "real defect", "thinking": "private chain",
-         "evidence": {"path": "proof.txt", "analysis": "provider scratchpad"}}
-    ])
-
-    assert findings == [json.dumps(
-        {"evidence": {"path": "proof.txt"}, "message": "real defect", "severity": "HIGH"},
-        ensure_ascii=False, sort_keys=True,
-    )]
-
-
-def test_checker_incomplete_hands_control_to_supervisor_without_a_fail_or_rework(
-    tmp_path, monkeypatch
-):
-    host, source, envelope = prepared_host(tmp_path)
-    root = tmp_path / "checker-host"
-    root.mkdir()
-    current = host_boundary(host, envelope)
-    event_id = wc._stable_id(envelope.message_id, "d1-result-v2")
-    current["events"] = [{
-        "event_id": event_id,
-        "event_type": "D1_INCOMPLETE",
-        "author_role_instance_id": envelope.receiver_role_instance_id,
-        "go_id": envelope.go_id,
-        "cell_id": envelope.cell_id,
-        "attempt": 1,
-        "corrects_event_id": None,
-        "details_json": json.dumps({
-            "candidate_message_id": envelope.message_id,
-            "verdict": "INCOMPLETE",
-            "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
-        }),
-    }]
-    current["runtime_snapshot"].update({
-        "latest_event_id": event_id,
-        "runtime_revision": 8,
-        "token_sequence": envelope.token_sequence,
-        "token_holder_role_instance_id": envelope.receiver_role_instance_id,
-        "latest_message_id": envelope.message_id,
-    })
-    monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
-    monkeypatch.setattr(
-        wc,
-        "_record_checker_d1",
-        lambda *_args, **_kwargs: {
-            "status": "CHECKER_D1_RECORDED",
-            "d1_verdict": "INCOMPLETE",
-            "d1_event_type": "D1_INCOMPLETE",
-        },
-    )
-    monkeypatch.setattr(host, "projection", lambda: current)
-    def manage(request, **_kwargs):
-        assert request["d1_incomplete_event_id"] == event_id
-        assert request["reason_codes"] == ["OCR_STATUS_NOT_COMPLETE"]
-        return {"status": "CHECKER_INCOMPLETE_ESCALATION_COMMITTED",
-                "d1_incomplete_event_id": event_id}
-    monkeypatch.setattr(checker_management, "execute_checker_management", manage)
-
-    result = host._checker_result(
-        source, envelope, root, "2026-10-06T08:00:00Z", host_boundary(host, envelope)
-    )
-
-    assert result["status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
-    assert result["d1_incomplete_event_id"] == event_id
-    assert wc._read_object(root / "d1-projection.json", "D1 projection") == current
-
-
-def frozen_checker_failure_suffix(tmp_path, failure_code="CHECKER_ESCALATION_D1_MISMATCH"):
-    from test_checker_escalation import fixture as checker_failure_fixture
-
-    request, _original_request_path = checker_failure_fixture(tmp_path)
-    source = Path(str(request["native_attempt_path"]))
-    envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
-    checker = wc._read_object(source / "endpoint.json", "Checker endpoint")
-    supervisor_path = Path(str(request["supervisor_endpoint_path"]))
-    supervisor = wc._read_object(supervisor_path, "Supervisor endpoint")
-    worker = endpoint_value(role="worker", version=1)
-    worker.update({"run_id": envelope.run_id, "role_instance_id": envelope.sender_role_instance_id})
-    roles = {}
-    for role, endpoint, endpoint_path in (
-        ("supervisor", supervisor, supervisor_path),
-        ("checker", checker, source / "endpoint.json"),
-        ("worker", worker, write_json(tmp_path / "worker-endpoint.json", worker)),
-    ):
-        credential = tmp_path / f"{role}.dpapi"
-        credential.write_text("00", encoding="ascii")
-        roles[role] = {
-            "endpoint_path": str(endpoint_path.resolve()),
-            "endpoint_sha256": wc._sha256(endpoint_path),
-            "credential_path": str(credential.resolve()),
-        }
-    binding = {
-        "schema_version": "slk.role-host/v1",
-        "run_id": envelope.run_id,
-        "plan_revision": 1,
-        "state_command": ["slk-state"],
-        "transport_command": ["slk-transport"],
-        "roles": roles,
-        "cells": [{"go_id": envelope.go_id, "cell_id": envelope.cell_id,
-                   "payload": {"cell_goal": envelope.payload["cell_goal"],
-                               "d1_criteria": list(envelope.payload["d1_criteria"])}}],
-        "d2_criteria": ["The accepted Run remains coherent."],
-    }
-    host = RoleHost(binding, "a" * 64)
-    root = source / "role-host"
-    root.mkdir()
-    frozen = wc._read_object(Path(str(request["runtime_projection_path"])), "runtime projection")
-    event_id = wc._stable_id(envelope.message_id, "d1-result-v2")
-    frozen["events"].insert(0, {
-        "event_id": "transport-started-candidate",
-        "event_type": "TRANSPORT_STARTED",
-        "author_role_instance_id": envelope.sender_role_instance_id,
-        "go_id": envelope.go_id,
-        "cell_id": envelope.cell_id,
-        "attempt": 1,
-        "corrects_event_id": None,
-        "details_json": json.dumps({"message_id": envelope.message_id}),
-    })
-    frozen["events"][1]["event_id"] = event_id
-    frozen["runtime_snapshot"]["latest_event_id"] = event_id
-    projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", frozen)
-    result = wc._read_object(source / "ocrv-result.json", "D1 result")
-    occurred_at = datetime.fromtimestamp(
-        (source / "completed.json").stat().st_mtime, timezone.utc
-    ).isoformat()
-    request.update({
-        "post_d1_invocation_id": wc._stable_id(event_id, "normal-fail"),
-        "d1_failure_event_id": event_id,
-        "runtime_projection_path": str(projection_path.resolve()),
-        "native_attempt_path": str(source.resolve()),
-        "supervisor_endpoint_path": str(supervisor_path.resolve()),
-        "checker_credential_path": host.credential_path("checker"),
-        "state_command": host.state,
-        "transport_command": host.transport,
-        "escalation_attempt_root": str(root.resolve()),
-        "cell_goal": envelope.payload["cell_goal"],
-        "acceptance_criteria": list(envelope.payload["d1_criteria"]),
-        "findings": normalized_checker_findings(result["findings"]),
-        "reproduction_steps": [
-            "Read the original Checker findings and cited evidence; do not infer a reproduction."
-        ],
-        "expected_result": "Satisfy the unchanged CELL acceptance criteria.",
-        "evidence_refs": [str((source / "ocrv-result.json").resolve())],
-        "occurred_at": occurred_at,
-    })
-    request_path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
-    failure_path = wc._write_or_reuse_stable_request(
-        root / ("failure-" + failure_code + ".json"),
-        {"status": "HOST_HANDOFF_FAILED", "run_id": envelope.run_id,
-         "source_message_id": envelope.message_id,
-         "error_code": failure_code},
-    )
-    current = json.loads(json.dumps(frozen))
-    current["overwatch_cycles"] = [{"cycle_id": "later-unrelated-observation"}]
-    return host, source, envelope, current, projection_path, request_path, failure_path
-
-
-@pytest.mark.parametrize("drift", ["none", "ow-resume", "engineering", "wrong-ow", "wrong-author"])
-def test_materialized_checker_host_failure_resumes_without_rerecording_d1(tmp_path, monkeypatch, drift):
-    from slk_transport import checker_escalation
-    host, source, envelope, current, projection_path, request_path, failure_path = (
-        frozen_checker_failure_suffix(tmp_path, "CHECKER_ESCALATION_DELIVERY_INVALID")
-    )
-    frozen = wc._read_object(projection_path, "frozen")
-    frozen["roles"] = [
-        {"role": "supervisor", "lifecycle": "active", "role_instance_id": host.endpoint("supervisor")["role_instance_id"]},
-        {"role": "overwatcher", "lifecycle": "active", "role_instance_id": "OW-A", "session_id": "OW-session"},
-    ]
-    frozen["runtime_snapshot"].update(overwatcher_binding_revision=1, overwatcher_status="ACTIVE", committed_at="2026-10-04T00:00:00Z")
-    frozen["administrative_snapshot"] = {"event_count": len(frozen["events"]), "latest_event_id": frozen["events"][-1]["event_id"]}
-    frozen.update(overwatch_cycles=[{"cycle_id": "old-anomaly", "overwatcher_role_instance_id": "OW-A", "session_id": "OW-session",
-                                   "binding_revision": 1, "anomaly_codes_json": '["ACTIVITY_UNPROVEN"]'}],
-                  overwatcher_native_status_receipts=[], overwatcher_incident_transitions=[],
-                  overwatcher_binding_transitions=[], operational_observations=[])
-    write_json(projection_path, frozen)
-    current = json.loads(json.dumps(frozen))
-    if drift != "none":
-        resume = {"event_id": "ow-resumed", "event_type": "OVERWATCHER_TURN_RESUMED",
-                  "author_role_instance_id": host.endpoint("supervisor")["role_instance_id"],
-                  "go_id": None, "cell_id": None, "attempt": None, "occurred_at": "2026-10-04T00:01:00Z",
-                  "details_json": json.dumps({"role_instance_id": "OW-A", "session_id": "OW-session", "binding_revision": 1,
-                       "resume_basis": "ANOMALY_CYCLE", "last_anomaly_cycle_id": "old-anomaly", "last_native_status_id": None,
-                       "native_active_session_evidence": {"path": "D:/evidence/ow-active.json", "sha256": "a" * 64}})}
-        current["events"].append(resume)
-        current["administrative_snapshot"].update(event_count=len(current["events"]), latest_event_id="ow-resumed")
-        current["runtime_snapshot"].update(runtime_revision=frozen["runtime_snapshot"]["runtime_revision"] + 1,
-                                            latest_event_id="ow-resumed", committed_at=resume["occurred_at"])
-        if drift == "engineering": current["runtime_snapshot"]["token_sequence"] += 1
-        elif drift == "wrong-ow": current["roles"][-1]["session_id"] = "OTHER-OW"
-        elif drift == "wrong-author": resume["author_role_instance_id"] = "UNREGISTERED"
-    original = {p: p.read_bytes() for p in (projection_path, request_path, failure_path)}
-    checker_escalation.materialize_escalation(wc._read_object(request_path, "request"))
-    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
-    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
-    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail("must not record D1 twice"))
-    calls = []
-    def execute(request, **kwargs):
-        calls.append(request)
-        assert request["runtime_revision"] == current["runtime_snapshot"]["runtime_revision"]
-        assert request["checker_credential_path"] == host.credential_path("checker")
-        assert kwargs["request_sha256"] == wc._sha256(kwargs["request_path"])
-        before = checker_escalation.materialize_escalation(wc._read_object(request_path, "original"))
-        after = checker_escalation.materialize_escalation(request)
-        assert after["envelope"] == before["envelope"] and after["endpoint"] == before["endpoint"]
-        return {"status": "CHECKER_ESCALATION_COMMITTED"}
-    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", execute)
-    if drift in {"none", "ow-resume"}:
-        receipt = host.complete(source)
-        assert host.complete(source) == receipt and len(calls) == 1
-    else:
-        with pytest.raises(wc.CompletionError): host.complete(source)
-        assert not calls
-    assert {p: p.read_bytes() for p in original} == original
-
-
-def test_existing_checker_failure_artifacts_resume_only_the_frozen_suffix_and_are_idempotent(
-    tmp_path, monkeypatch,
-):
-    from slk_transport import checker_escalation
-
-    host, source, envelope, current, projection_path, request_path, failure_path = (
-        frozen_checker_failure_suffix(tmp_path)
-    )
-    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
-    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
-    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail(
-        "a frozen D1 failure must not be recorded again"
-    ))
-    calls = []
-
-    def resume(request, **kwargs):
-        calls.append((dict(request), kwargs))
-        assert kwargs["request_path"] == request_path
-        assert kwargs["request_sha256"] == wc._sha256(request_path)
-        return {"status": "CHECKER_ESCALATION_COMMITTED", "d1_failure_event_id": request["d1_failure_event_id"]}
-
-    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", resume)
-
-    receipt = host.complete(source)
-
-    assert receipt["status"] == "CHECKER_ESCALATION_COMMITTED"
-    assert host.complete(source) == receipt
-    assert len(calls) == 1
-    seal = wc._read_object(source / "role-host" / "post-d1-suffix-seal.json", "suffix seal")
-    assert seal["runtime_projection_sha256"] == wc._sha256(projection_path)
-    assert seal["post_d1_request_sha256"] == wc._sha256(request_path)
-    assert seal["failure_sha256"] == wc._sha256(failure_path)
-    assert seal["source_message_id"] == envelope.message_id
-
-
-@pytest.mark.parametrize("artifact", ["projection", "request", "failure"])
-def test_frozen_checker_suffix_rejects_any_sealed_artifact_byte_drift(
-    tmp_path, monkeypatch, artifact,
-):
-    from slk_transport import checker_escalation
-
-    host, source, _envelope, current, projection_path, request_path, failure_path = (
-        frozen_checker_failure_suffix(tmp_path)
-    )
-    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
-    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
-    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail(
-        "a frozen D1 failure must not be recorded again"
-    ))
-    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", lambda *_args, **_kwargs: (
-        (_ for _ in ()).throw(checker_escalation.CheckerEscalationError(
-            "EXPECTED_TEST_STOP", "seal was established before the suffix"
-        ))
-    ))
-    with pytest.raises(checker_escalation.CheckerEscalationError):
-        host.complete(source)
-    target = {"projection": projection_path, "request": request_path, "failure": failure_path}[artifact]
-    target.write_bytes(target.read_bytes() + b" \n")
-
-    with pytest.raises(wc.CompletionError) as error:
-        host.complete(source)
-
-    assert error.value.error_code == "ROLE_HOST_SUFFIX_RECOVERY_INVALID"
-
-
-@pytest.mark.parametrize("damage", ["runtime", "candidate", "source"])
-def test_frozen_checker_suffix_rejects_wrong_runtime_candidate_or_source(
-    tmp_path, monkeypatch, damage,
-):
-    from slk_transport import checker_escalation
-
-    host, source, _envelope, current, _projection_path, request_path, _failure_path = (
-        frozen_checker_failure_suffix(tmp_path)
-    )
-    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
-    monkeypatch.setattr(host, "_boundary", lambda _envelope: current)
-    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: pytest.fail(
-        "an invalid frozen suffix must not record D1 again"
-    ))
-    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", lambda *_args, **_kwargs: pytest.fail(
-        "an invalid frozen suffix must not be consumed"
-    ))
-    if damage == "runtime":
-        current["runtime_snapshot"]["runtime_revision"] += 1
-    else:
-        request = wc._read_object(request_path, "post-D1 request")
-        if damage == "candidate":
-            request["cell_goal"] = "A different candidate goal."
-        else:
-            other = tmp_path / "other-source"
-            other.mkdir()
-            request["native_attempt_path"] = str(other.resolve())
-        request_path.write_text(
-            json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
-
-    with pytest.raises((wc.CompletionError, checker_escalation.CheckerEscalationError)):
-        host.complete(source)
-
-
-def test_completed_tool_failure_with_blocker_is_corrected_without_rerunning_ocrv(
-    tmp_path, monkeypatch,
-):
-    from slk_transport import checker_escalation
-
-    host, source, old = prepared_host(tmp_path)
-    checker = host.endpoint("checker")
-    worker = host.endpoint("worker")
-    payload = {
-        "repository": str((tmp_path / "repository").resolve()),
-        "candidate": {"kind": "commit", "commit": "b" * 40},
-        "cell_goal": "preserve first-use credential freshness",
-        "d1_criteria": ["freshness is fail-closed"],
-        "evidence_files": [str((source / "completed.json").resolve())],
-    }
-    incoming = Envelope.from_dict({
-        **asdict(old),
-        "sender_role": "worker",
-        "sender_role_instance_id": worker["role_instance_id"],
-        "receiver_role": "checker",
-        "receiver_role_instance_id": checker["role_instance_id"],
-        "receiver_endpoint_version": checker["endpoint_version"],
-        "payload_type": "CANDIDATE_READY",
-        "payload": payload,
-        "payload_sha256": wc.canonical_json_sha256(payload),
-    })
-    write_json(source / "endpoint.json", checker)
-    write_json(source / "envelope.json", asdict(incoming))
-    write_json(source / "started.json", make_native_start(
-        adapter="ocrv-checker", run_id=incoming.run_id, cell_id=incoming.cell_id,
-        message_id=incoming.message_id, request_sha256=incoming.payload_sha256,
-        native_request_sha256="d" * 64, native_task_kind="ocrv-review",
-        native_task_id="review-1", native_task_status="RUNNING", pid=os.getpid(),
-    ))
-    raw_path = write_json(tmp_path / "ocrv" / "review-1" / "ocrv-review.json", {
-        "status": "complete", "provider": "dashscope-tokenplan", "model": "qwen3.8-max",
-        "session_id": "session-review-1", "tool_calls": {"failure": 1},
-        "comments": [{"severity": "medium", "message": "real blocker"}],
-        "manifest": {"terminal_state": "complete", "coverage": {
-            "selected": [{"item_id": "criterion-1"}],
-            "completed": [{"item_id": "criterion-1"}], "reused": [],
-            "failed": [], "waived": [],
-        }},
-    })
-    result = {
-        "schema_version": "slk.ocrv-d1-result/v1", "run_id": incoming.run_id,
-        "cell_id": incoming.cell_id, "review_invocation_id": "review-1",
-        "verdict": "INCOMPLETE", "reason_codes": ["OCR_TOOL_FAILURE"],
-        "findings": [{"severity": "medium", "message": "real blocker"}],
-        "review": {"status": "complete", "provider": "dashscope-tokenplan",
-                   "model": "qwen3.8-max", "session_id": "session-review-1", "exit_code": 0},
-        "evidence": [], "request_sha256": "d" * 64,
-        "artifacts": {"raw_review": str(raw_path)},
-    }
-    write_json(source / "ocrv-result.json", result)
-    terminal = {
-        "schema_version": "slk.transport-result/v1", "message_id": incoming.message_id,
-        "run_id": incoming.run_id, "adapter": "ocrv-checker", "status": "completed",
-        "native_identity": {"run_id": incoming.run_id, "cell_id": incoming.cell_id,
-            "review_invocation_id": "review-1", "session_id": "session-review-1",
-            "provider": "dashscope-tokenplan", "model": "qwen3.8-max",
-            "verdict": "INCOMPLETE", "exit_code": 3, "review_segment_count": 0},
-        "error_code": None, "evidence": ["started.json", "ocrv-result.json"],
-    }
-    write_json(source / "completed.json", terminal)
-    source_event_id = "d1-incomplete"
-    event = {"event_id": source_event_id, "event_type": "D1_INCOMPLETE",
-        "author_role_instance_id": checker["role_instance_id"], "go_id": incoming.go_id,
-        "cell_id": incoming.cell_id, "attempt": 1, "corrects_event_id": None,
-        "details_json": json.dumps({"candidate_message_id": incoming.message_id,
-            "verdict": "INCOMPLETE", "native_terminal_sha256": wc._sha256(source / "completed.json"),
-            "native_result_sha256": wc._sha256(source / "ocrv-result.json")})}
-    projection = {"summary": {"run_id": incoming.run_id, "slk_version": "4.4.2",
-        "current_plan_revision": 1}, "events": [event], "token_history": [],
-        "runtime_snapshot": {"method_version": "4.4.2", "plan_revision": 1,
-            "runtime_revision": 8, "token_sequence": incoming.token_sequence,
-            "token_holder_role_instance_id": checker["role_instance_id"],
-            "latest_message_id": incoming.message_id, "latest_event_id": source_event_id}}
-    root = source / "role-host"
-    root.mkdir(exist_ok=True)
-    write_json(root / "result.json", {"binding_sha256": host.digest,
-        "source_message_id": incoming.message_id,
-        "source_sha256": host._source_sha256(source, "checker"),
-        "status": "CHECKER_D1_RECORDED", "d1_verdict": "INCOMPLETE",
-        "d1_event_type": "D1_INCOMPLETE"})
-
-    def record(activation, continuation, **_kwargs):
-        correction = Path(activation["native_attempt_path"])
-        assert wc._read_object(correction / "ocrv-result.json", "corrected")["verdict"] == "FAIL"
-        assert continuation["d1_correction_kind"] == "classification"
-        corrected_id = wc._stable_id(
-            incoming.message_id, "d1-classification-" + continuation["d1_correction_id"]
-        )
-        projection["events"].append({"event_id": corrected_id, "event_type": "D1_FAILED",
-            "author_role_instance_id": checker["role_instance_id"], "go_id": incoming.go_id,
-            "cell_id": incoming.cell_id, "attempt": 1,
-            "corrects_event_id": source_event_id,
-            "details_json": json.dumps({"candidate_message_id": incoming.message_id,
-                                         "verdict": "FAIL"})})
-        projection["runtime_snapshot"]["latest_event_id"] = corrected_id
-        projection["runtime_snapshot"]["runtime_revision"] = 9
-        return {"d1_verdict": "FAIL", "d1_event_type": "D1_FAILED"}
-
-    monkeypatch.setattr(host, "projection", lambda: projection)
-    monkeypatch.setattr(wc, "_record_checker_d1", record)
-    def escalate(request, *_args, **_kwargs):
-        assert Path(request["escalation_attempt_root"]).is_dir()
-        return {"status": "CHECKER_ESCALATION_COMMITTED"}
-
-    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", escalate)
-
-    value = host.reclassify_completed_checker(source)
-
-    assert value["status"] == "CHECKER_ESCALATION_COMMITTED"
-    receipt = wc._read_object(
-        root / "classification-correction" / "normalization-correction.json", "receipt"
-    )
-    assert receipt["source_incomplete_event_id"] == source_event_id
-    assert receipt["reason_codes"] == ["OCR_BLOCKING_FINDINGS_PRESENT", "OCR_TOOL_FAILURE"]
-
-
 def prepared_host(tmp_path):
     attempt, worker, checker = completion_fixture(tmp_path)
     supervisor = {**checker, "role": "supervisor", "agent_runtime": "codex",
@@ -572,39 +110,6 @@ def prepared_host(tmp_path):
                "d2_criteria": ["both accepted"]}
     host = RoleHost(binding, "a" * 64)
     return host, attempt, envelope
-
-
-@pytest.mark.parametrize("verdict", ["PASS", "FAIL", "INCOMPLETE"])
-def test_checker_suffix_forwards_frozen_temporal_and_canonical_attempt_root(tmp_path, monkeypatch, verdict):
-    from slk_transport import checker_completion, checker_escalation
-    host, source, incoming = prepared_host(tmp_path)
-    checker = host.endpoint("checker")
-    candidate = {**asdict(incoming), "sender_role": "worker", "receiver_role": "checker",
-                 "sender_role_instance_id": host.endpoint("worker")["role_instance_id"],
-                 "receiver_role_instance_id": checker["role_instance_id"],
-                 "receiver_endpoint_version": checker["endpoint_version"], "payload_type": "CANDIDATE_READY"}
-    envelope = Envelope.from_dict(candidate)
-    canonical = tmp_path / "canonical-attempts"
-    host.binding["temporal"] = {"attempt_root": str(canonical)}
-    current = host_boundary(host, envelope)
-    current["go_nodes"] = [{"go_id": envelope.go_id, "ordinal": 1, "cell_nodes": [
-        {"cell_id": envelope.cell_id, "ordinal": 1, "state": "d1_passed"}]}]
-    current["events"] = [{"event_id": wc._stable_id(envelope.message_id, "d1-result-v2"),
-                          "details_json": json.dumps({"reason_codes": ["OCR_STATUS_NOT_COMPLETE"]})}]
-    write_json(source / "ocrv-result.json", {"findings": [{"summary": "proven blocker"}]})
-    monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
-    monkeypatch.setattr(wc, "_record_checker_d1", lambda *_args, **_kwargs: {"d1_verdict": verdict})
-    monkeypatch.setattr(host, "projection", lambda: current)
-    def complete(request, **options):
-        assert options["temporal"] == host.binding["temporal"]
-        assert Path(request.get("handoff_attempt_root", request.get("escalation_attempt_root"))) == canonical
-        return {"status": "CHECKER_COMPLETION_COMMITTED"}
-    monkeypatch.setattr(checker_completion, "execute_checker_completion", complete)
-    monkeypatch.setattr(checker_escalation, "execute_checker_escalation", complete)
-    monkeypatch.setattr(checker_management, "execute_checker_management", complete)
-    root = source / "role-host"
-    root.mkdir()
-    assert host._checker_result(source, envelope, root, "2026-10-08T00:00:00Z", current)["status"] == "CHECKER_COMPLETION_COMMITTED"
 
 
 @pytest.mark.parametrize("damage", ["open-payload", "wrong-ordinal", "missing-record"])
@@ -794,7 +299,7 @@ def native_delivery(root, host, envelope):
     return native
 
 
-def committed_projection(host, envelope, native):
+def committed_projection(host, envelope, native, *, prior_events=()):
     projection = host_boundary(host, envelope)
     projection["runtime_snapshot"].update(token_sequence=envelope.token_sequence + 2,
         token_holder_role_instance_id="later-owner", latest_message_id="later-message")
@@ -803,7 +308,10 @@ def committed_projection(host, envelope, native):
         "go_id": envelope.go_id, "cell_id": envelope.cell_id,
         "from_role_instance_id": envelope.sender_role_instance_id,
         "to_role_instance_id": envelope.receiver_role_instance_id}]
-    projection["events"] = [{"event_type": "TRANSPORT_STARTED", "corrects_event_id": None,
+    previous_events = [*projection.get("events", []), *prior_events]
+    projection["events"] = previous_events
+    projection["events"] = [*previous_events, {"event_type": "TRANSPORT_STARTED", "corrects_event_id": None,
+        "attempt": host._outgoing_attempt(envelope, projection),
         "go_id": envelope.go_id, "cell_id": envelope.cell_id,
         "author_role_instance_id": envelope.sender_role_instance_id,
         "details_json": json.dumps({"message_id": envelope.message_id,
@@ -813,11 +321,18 @@ def committed_projection(host, envelope, native):
     return projection
 
 
-def test_confirmed_old_handoff_is_read_only_even_after_token_advanced(tmp_path, monkeypatch):
+@pytest.mark.parametrize("exact_retry", [False, True])
+def test_confirmed_old_handoff_is_read_only_even_after_token_advanced(tmp_path, monkeypatch, exact_retry):
     host, attempt, envelope = prepared_host(tmp_path)
     root = attempt / "owned"
     native = native_delivery(root, host, envelope)
     projection = committed_projection(host, envelope, native)
+    if exact_retry:
+        retry = native / "recovery" / "exact-1" / envelope.run_id / envelope.message_id
+        retry.mkdir(parents=True)
+        for name in ("endpoint.json", "envelope.json", "started.json"):
+            (retry / name).write_bytes((native / name).read_bytes())
+        (native / "started.json").unlink()  # isolated fixture, never product history
     monkeypatch.setattr(host, "projection", lambda: projection)
     calls = []
     authenticated_commands(monkeypatch, host, envelope, calls)
@@ -919,7 +434,7 @@ def test_saved_handoff_cannot_hide_changed_original_engineering_result(tmp_path)
     saved = {"status": "OWNED_HANDOFF_COMMITTED", "binding_sha256": host.digest,
              "source_message_id": envelope.message_id, "source_sha256": wc.canonical_json_sha256(hashes)}
     write_json(attempt / "role-host" / "result.json", saved)
-    assert host.complete(attempt) == saved
+    assert host.complete(attempt)["status"] == "OUTPUT_DELIVERY_UNCONFIRMED"
     result_path = attempt / "worker-result.json"
     changed = wc._read_object(result_path, "Worker result")
     changed["candidate"] = {"kind": "commit", "commit": "f" * 40}
@@ -970,6 +485,7 @@ def supervisor_result_fixture(tmp_path, *, d2=False):
 @pytest.mark.parametrize("d2", [False, True])
 def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkeypatch, d2):
     host, source, incoming, result, projection = supervisor_result_fixture(tmp_path, d2=d2)
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
     monkeypatch.setattr(host, "_boundary", lambda envelope: projection)
     monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: "sealed-supervisor")
@@ -993,7 +509,7 @@ def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkey
         assert kwargs["decision_timing"]["decision_submitted_at"]
         return {"status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id}
     monkeypatch.setattr(host, "_send_owned", send)
-    receipt = host.complete(source)
+    receipt = host.submit_supervisor_decision(source)
     if d2:
         assert [e["event_type"] for e in seen] == ["D2_STARTED", "D2_PASSED"]
         assert not sent and receipt["status"] == "SUPERVISOR_D2_RECORDED"
@@ -1003,7 +519,7 @@ def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkey
         assert sent[0].sender_role == "supervisor" and sent[0].receiver_role == "worker"
         assert seen[0]["attempt"] == 2
         assert seen[0]["details"]["d1_failure_event_id"] == incoming.payload["d1_failure_event_id"]
-    assert host.complete(source) == receipt
+    assert host.submit_supervisor_decision(source) == receipt
     assert len(seen) == (2 if d2 else 1)
 
 
@@ -1011,6 +527,7 @@ def test_native_supervisor_can_record_incomplete_management_without_fabricating_
     tmp_path, monkeypatch,
 ):
     host, source, incoming, _result, projection = supervisor_result_fixture(tmp_path)
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
     candidate_payload = {
         "repository": str((tmp_path / "repository").resolve()),
         "candidate": {"kind": "commit", "commit": "b" * 40},
@@ -1041,13 +558,15 @@ def test_native_supervisor_can_record_incomplete_management_without_fabricating_
         "summary": "Retry only after the capacity cause is corrected.",
         "evidence_refs": [str(source / "envelope.json")],
     }
+    start = wc._read_object(source / "started.json", "native start")
+    start["request_sha256"] = incoming.payload_sha256
+    write_json(source / "started.json", start)
     write_json(source / "supervisor-result.json", {
         "schema_version": "slk.supervisor-result/v1",
         "source_message_id": incoming.message_id,
         "operation": "management",
         "decision": decision,
     })
-    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
     monkeypatch.setattr(host, "_boundary", lambda _envelope: projection)
     monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _path: "sealed-supervisor")
@@ -1065,7 +584,7 @@ def test_native_supervisor_can_record_incomplete_management_without_fabricating_
         }
     ))
 
-    receipt = host.complete(source)
+    receipt = host.submit_supervisor_decision(source)
 
     assert receipt["status"] == "OWNED_HANDOFF_COMMITTED"
     assert len(sent) == 1
@@ -1081,132 +600,6 @@ def test_native_supervisor_can_record_incomplete_management_without_fabricating_
         "review_timeout": "NATIVE_UNLIMITED",
         "tool_rounds": "TEMPLATE_DEFAULT",
     }
-
-
-def test_returned_management_review_corrects_original_incomplete_and_can_escalate_again(
-    tmp_path, monkeypatch,
-):
-    host, source, original = prepared_host(tmp_path)
-    source_event_id = "d1-incomplete-original"
-    candidate_payload = {
-        "repository": str((tmp_path / "repository").resolve()),
-        "candidate": {"kind": "commit", "commit": "b" * 40},
-        "cell_goal": original.payload["cell_goal"],
-        "d1_criteria": original.payload["d1_criteria"],
-        "evidence_files": [str((source / "completed.json").resolve())],
-    }
-    return_payload = {
-        "source_d1_incomplete_event_id": source_event_id,
-        "candidate_message_id": original.message_id,
-        "candidate_payload": candidate_payload,
-        "candidate_payload_sha256": wc.canonical_json_sha256(candidate_payload),
-        "management_action": "ADJUST_CAPACITY",
-        "management_summary": "Use the normal unlimited D1 profile.",
-        "management_evidence_refs": [str(source / "envelope.json")],
-        "review_policy": {
-            "profile": "NORMAL_D1_DEFAULT",
-            "aggregate_budget": "NATIVE_UNLIMITED",
-            "review_timeout": "NATIVE_UNLIMITED",
-            "tool_rounds": "TEMPLATE_DEFAULT",
-        },
-    }
-    returned = Envelope.from_dict({
-        **asdict(original),
-        "message_id": "77777777-7777-4777-8777-777777777777",
-        "token_sequence": original.token_sequence + 2,
-        "sender_role": "supervisor",
-        "sender_role_instance_id": host.endpoint("supervisor")["role_instance_id"],
-        "receiver_role": "checker",
-        "receiver_role_instance_id": host.endpoint("checker")["role_instance_id"],
-        "receiver_endpoint_version": host.endpoint("checker")["endpoint_version"],
-        "payload_type": "D1_MANAGEMENT_RETURN",
-        "payload": return_payload,
-        "payload_sha256": wc.canonical_json_sha256(return_payload),
-    })
-    write_json(source / "endpoint.json", host.endpoint("checker"))
-    write_json(source / "envelope.json", asdict(returned))
-    root = source / "role-host"
-    correction_id = wc._stable_id(returned.message_id, "management-review")
-    corrected_event_id = wc._stable_id(
-        original.message_id, f"d1-management-{correction_id}"
-    )
-    current = host_boundary(host, returned)
-    current["runtime_snapshot"].update({
-        "runtime_revision": 12,
-        "token_sequence": returned.token_sequence,
-        "token_holder_role_instance_id": returned.receiver_role_instance_id,
-        "latest_message_id": returned.message_id,
-        "latest_event_id": corrected_event_id,
-    })
-    current["events"] = [{
-        "event_id": corrected_event_id,
-        "event_type": "D1_INCOMPLETE",
-        "author_role_instance_id": returned.receiver_role_instance_id,
-        "go_id": returned.go_id,
-        "cell_id": returned.cell_id,
-        "attempt": 1,
-        "corrects_event_id": source_event_id,
-        "details_json": json.dumps({
-            "candidate_message_id": original.message_id,
-            "native_message_id": returned.message_id,
-            "verdict": "INCOMPLETE",
-            "reason_codes": ["OCR_STATUS_NOT_COMPLETE"],
-        }),
-    }]
-    monkeypatch.setattr(wc, "_source_attempt", lambda *_args: 1)
-    record_calls = []
-
-    def record(activation, continuation, **_kwargs):
-        record_calls.append(continuation["native_message_id"])
-        assert activation["candidate_message_id"] == original.message_id
-        assert continuation["native_message_id"] == returned.message_id
-        assert continuation["d1_correction_event_id"] == source_event_id
-        assert continuation["d1_correction_kind"] == "management"
-        return {"status": "CHECKER_D1_RECORDED", "d1_verdict": "INCOMPLETE",
-                "d1_event_type": "D1_INCOMPLETE"}
-
-    monkeypatch.setattr(wc, "_record_checker_d1", record)
-    monkeypatch.setattr(host, "projection", lambda: current)
-    monkeypatch.setattr(host, "_boundary", lambda _envelope: host_boundary(host, returned))
-    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
-    captured = {}
-
-    def manage(request, **_kwargs):
-        captured.update(request)
-        return {"status": "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"}
-
-    monkeypatch.setattr(checker_management, "execute_checker_management", manage)
-
-    result = host.complete(source)
-
-    assert result["status"] == "CHECKER_INCOMPLETE_ESCALATION_COMMITTED"
-    assert captured["d1_incomplete_event_id"] == corrected_event_id
-    assert captured["native_attempt_path"] == str(source)
-    assert host.complete(source) == result
-    assert record_calls == [returned.message_id]
-
-
-@pytest.mark.parametrize("rework_round", [2, 3])
-def test_second_or_later_d1_failure_cannot_use_old_host_as_ordinary_rework(
-    tmp_path, monkeypatch, rework_round,
-):
-    host, source, incoming, result, projection = supervisor_result_fixture(tmp_path)
-    payload = {**incoming.payload, "rework_round": rework_round}
-    incoming = Envelope.from_dict({**asdict(incoming), "payload": payload,
-        "payload_sha256": wc.canonical_json_sha256(payload)})
-    write_json(source / "envelope.json", asdict(incoming))
-    result["decision"]["rework_round"] = rework_round
-    result["decision"]["investigation_mode"] = "AGGRESSIVE"
-    write_json(source / "supervisor-result.json", result)
-    monkeypatch.setattr(host, "_completion_proof", lambda *_args: None)
-    monkeypatch.setattr(host, "_boundary", lambda envelope: projection)
-    monkeypatch.setattr(host, "_send_owned", lambda *_args, **_kwargs: pytest.fail(
-        "second D1 failure must not be sent as ordinary rework"))
-
-    with pytest.raises(wc.CompletionError) as error:
-        host.complete(source)
-
-    assert error.value.error_code == "ROLE_HOST_CELL_SPLIT_REQUIRED"
 
 
 def test_revised_host_dispatches_first_split_successor_and_old_host_rejects_revision(tmp_path, monkeypatch):
@@ -1288,7 +681,8 @@ def test_supervisor_can_submit_decision_from_exact_session_before_turn_terminal(
 
     assert receipt["status"] == "OWNED_HANDOFF_COMMITTED"
     assert [event["event_type"] for event in events] == ["REWORK_REQUESTED"]
-    assert host.complete(source) == receipt
+    assert host.complete(source)["status"] == "OUTPUT_SAVED"
+    assert host.submit_supervisor_decision(source) == receipt
 
 
 def test_supervisor_active_submit_rejects_wrong_session_before_credentials(tmp_path, monkeypatch):
@@ -1303,38 +697,34 @@ def test_supervisor_active_submit_rejects_wrong_session_before_credentials(tmp_p
     assert error.value.error_code == "ROLE_HOST_SESSION_MISMATCH"
 
 
-@pytest.mark.parametrize("damage", ["wrong-source", "wrong-failure", "changed-criteria", "d1-takeover", "missing"])
+@pytest.mark.parametrize("damage", ["wrong-source", "wrong-failure", "d1-takeover", "missing"])
 def test_supervisor_result_cannot_replace_d1_or_other_identity(tmp_path, monkeypatch, damage):
     host, source, incoming, result, projection = supervisor_result_fixture(tmp_path)
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
     if damage == "wrong-source": result["source_message_id"] = "another-message"
     if damage == "wrong-failure": result["decision"]["d1_failure_event_id"] = "older-failure"
-    if damage == "changed-criteria": result["decision"]["acceptance_criteria"] = ["weaker"]
     if damage == "d1-takeover": result["operation"] = "d1"
     write_json(source / "supervisor-result.json", result)
     if damage == "missing": (source / "supervisor-result.json").unlink()
     monkeypatch.setattr(host, "_boundary", lambda envelope: projection)
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: pytest.fail("invalid decision consumed credential"))
     with pytest.raises(wc.CompletionError):
-        host.complete(source)
+        host.submit_supervisor_decision(source)
 
 
-@pytest.mark.parametrize("damage", ["wrong-terminal", "wrong-start", "wrong-turn", "failed-and-completed"])
-def test_supervisor_suffix_requires_matching_native_completion(tmp_path, monkeypatch, damage):
+@pytest.mark.parametrize("damage", ["wrong-run", "wrong-start", "wrong-turn", "wrong-kind"])
+def test_supervisor_action_requires_exact_native_start(tmp_path, monkeypatch, damage):
     host, source, incoming, result, projection = supervisor_result_fixture(tmp_path)
-    if damage == "wrong-start":
-        path = source / "started.json"
-        value = wc._read_object(path, "start")
-        value["request_sha256"] = "c" * 64
-    else:
-        path = source / "completed.json"
-        value = wc._read_object(path, "terminal")
-        if damage == "wrong-terminal": value["run_id"] = "OTHER-RUN"
-        if damage == "wrong-turn": value["native_identity"]["turn_id"] = "other-turn"
-        if damage == "failed-and-completed": write_json(source / "failed.json", {**value, "status": "failed"})
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
+    path = source / "started.json"
+    value = wc._read_object(path, "start")
+    if damage == "wrong-start": value["request_sha256"] = "c" * 64
+    if damage == "wrong-run": value["run_id"] = "OTHER-RUN"
+    if damage == "wrong-turn": value["native_task"]["id"] = "other-session:turn"
+    if damage == "wrong-kind": value["native_task"]["kind"] = "other-agent"
     write_json(path, value)
-    monkeypatch.setattr(host, "_boundary", lambda envelope: projection)
-    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: pytest.fail("unproved native completion consumed credentials"))
-    with pytest.raises(wc.CompletionError): host.complete(source)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: pytest.fail("unproved action consumed credentials"))
+    with pytest.raises(wc.CompletionError): host.submit_supervisor_decision(source)
 
 
 def test_rework_delivery_commits_new_attempt_not_first_attempt(tmp_path, monkeypatch):
@@ -1384,6 +774,7 @@ def test_rework_delivery_commits_new_attempt_not_first_attempt(tmp_path, monkeyp
 
 def test_rework_commit_survives_missing_host_receipt_without_second_write_or_send(tmp_path, monkeypatch):
     host, source, incoming, result, projection = supervisor_result_fixture(tmp_path)
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
     decision = result["decision"]
     outgoing = Envelope.from_dict({**asdict(incoming), "message_id": wc._stable_id(incoming.message_id, "supervisor-rework"),
         "token_sequence": incoming.token_sequence + 1, "sender_role": "supervisor",
@@ -1393,13 +784,15 @@ def test_rework_commit_survives_missing_host_receipt_without_second_write_or_sen
     root = source / "role-host"
     write_json(root / "supervisor-decision.json", result)
     native = native_delivery(root / "rework", host, outgoing)
-    projection = committed_projection(host, outgoing, native)
+    rework = {"event_type": "REWORK_REQUESTED", "go_id": outgoing.go_id,
+        "cell_id": outgoing.cell_id, "attempt": 2, "details": decision}
+    projection = committed_projection(host, outgoing, native, prior_events=[rework])
     monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(host, "_boundary", lambda _: pytest.fail("already committed handoff cannot wait for old TOKEN"))
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: "sealed-test-secret")
     monkeypatch.setattr(host, "_authenticate", lambda *a: {})
     monkeypatch.setattr(wc, "_run_json_command", lambda *a, **k: pytest.fail("committed replay must not write or resend"))
-    assert host.complete(source)["status"] == "OWNED_HANDOFF_ALREADY_COMMITTED"
+    assert host.submit_supervisor_decision(source)["status"] == "OWNED_HANDOFF_ALREADY_COMMITTED"
 
 
 @pytest.mark.parametrize("field,value", [("go_id", "OTHER-GO"), ("cell_id", "OTHER-CELL"),

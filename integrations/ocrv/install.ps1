@@ -12,6 +12,7 @@ if (-not (Test-Path -LiteralPath $root -PathType Container)) {
 }
 $names = @(
     'slk_checker_adapter.py',
+    'slk_checker_decision.py',
     'slk-checker.cmd',
     'slk_checker_post_d1.py',
     'slk_checker_recovery.py',

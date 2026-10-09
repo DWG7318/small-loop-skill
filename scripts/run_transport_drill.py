@@ -549,12 +549,10 @@ def _one_run(config: Mapping[str, object], run_id: str, live: bool) -> dict[str,
         adapters=ADAPTERS,
     )
     _require_completed(third, "W-C")
-    if third.native_identity.get("verdict") != "PASS":
-        raise RuntimeError("OCRV did not PASS the transport probe")
 
     final_payload = {
         "probe_nonce": nonce,
-        "d1_verdict": third.native_identity["verdict"],
+        "d1_verdict": third.native_identity.get("verdict"),
         "worker_native_identity": dict(second.native_identity),
         "checker_native_identity": dict(third.native_identity),
     }

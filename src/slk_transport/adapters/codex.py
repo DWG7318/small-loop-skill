@@ -253,16 +253,13 @@ class CodexAdapter:
             and envelope.payload_type in {"D1_FAILURE_ESCALATION", "D2_READY"}):
             operation = "rework" if envelope.payload_type == "D1_FAILURE_ESCALATION" else "d2"
             prompt += "\nThe original Supervisor makes the engineering decision; do not repeat or replace Checker D1. "
-            prompt += "Write one flat JSON result before ending the turn; do not send again or consume sealed credentials. "
-            prompt += "The prepared owning host records your decision and performs only its legal handoff. "
-            contract = ({**{k: envelope.payload[k] for k in ("d1_failure_event_id", "failed_candidate_sha256",
-                "rework_round", "cell_goal", "acceptance_criteria", "findings", "evidence_refs")},
-                "investigation_mode": "STANDARD" if envelope.payload["rework_round"] == 1 else "AGGRESSIVE",
-                "root_cause_hypothesis": "your evidence-based cause, not a D1 replacement",
-                "minimal_experiment": "your bounded discriminating test", "minimal_repair_scope": "your precise repair boundary",
-                "regression_target": "your unchanged acceptance/regression target"}
-                if operation == "rework" else {"verdict": "PASS|FAIL|INCOMPLETE", "summary": "your verified conclusion",
-                    "evidence_refs": ["absolute existing evidence paths"]})
+            prompt += "Existing output is always saved; it is not itself a command. For an explicit state/handoff action, use the bound submit_command in this same Session. Never consume sealed credentials or pretend to be Checker. "
+            contract = ({"d1_failure_event_id": envelope.payload.get("d1_failure_event_id"),
+                "failed_candidate_sha256": envelope.payload.get("failed_candidate_sha256"),
+                "rework_round": envelope.payload.get("rework_round"),
+                "investigation_mode": "your chosen bounded investigation",
+                "guidance": "your engineering guidance; report fields are not host-reviewed"}
+                if operation == "rework" else {"verdict": "your explicit PASS, FAIL or INCOMPLETE"})
             descriptor: dict[str, Any] = {"result_path": str(attempt.root / "supervisor-result.json"),
                 "schema_version": "slk.supervisor-result/v1", "source_message_id": envelope.message_id,
                 "operation": operation, "decision_contract": contract}
@@ -285,7 +282,7 @@ class CodexAdapter:
                 prompt += "After atomically writing the result, immediately run submit_command in this same Session; do not wait for the whole turn to end. "
             except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
                 pass
-            prompt += "The JSON result has only schema_version/source_message_id/operation/decision; put the filled decision_contract under decision. result_path and submit_command are instructions, not result fields. "
+            prompt += "Action API uses operation and decision, with source_message_id binding the incoming work. Other report fields are not reviewed. result_path and submit_command are instructions, not result fields. "
             prompt += json.dumps(descriptor, ensure_ascii=False)
         return prompt
 

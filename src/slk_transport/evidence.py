@@ -34,9 +34,15 @@ class Attempt:
     root: Path
 
     def write_text_once(self, name: str, text: str) -> Path:
-        safe_name = _evidence_name(name)
         if not isinstance(text, str):
             raise EvidenceError("evidence text must be a string")
+        return self.write_bytes_once(name, text.encode("utf-8"))
+
+    def write_bytes_once(self, name: str, data: bytes) -> Path:
+        """Preserve original file bytes with the same immutable publication mechanism."""
+        safe_name = _evidence_name(name)
+        if not isinstance(data, bytes):
+            raise EvidenceError("evidence data must be bytes")
         destination = self.root / safe_name
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{safe_name}.",
@@ -45,8 +51,8 @@ class Attempt:
         )
         temporary = Path(temporary_name)
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-                stream.write(text)
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
             try:

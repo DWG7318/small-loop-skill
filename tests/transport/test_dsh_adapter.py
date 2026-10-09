@@ -204,7 +204,6 @@ def test_dsh_resume_old_session_cache_without_current_native_event_never_acks(
 @pytest.mark.parametrize(
     ("mode", "error_code"),
     [
-        ("missing-result", "DSH_RESULT_MISSING"),
         ("multiple-sessions", "DSH_SESSION_AMBIGUOUS"),
     ],
 )
@@ -232,9 +231,9 @@ def test_dsh_preserves_truthful_incomplete_worker_result_without_fake_candidate(
 
     result = DshAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "failed"
-    assert result.error_code == "DSH_WORKER_INCOMPLETE"
-    assert result.native_identity["worker_outcome"] == "incomplete"
+    assert result.status == "completed"
+    assert result.error_code is None
+    assert "worker_outcome" not in result.native_identity
     worker_result = json.loads(
         (attempt.root / "worker-result.json").read_text(encoding="utf-8")
     )
@@ -259,9 +258,10 @@ def test_dsh_preserves_each_closed_noncompleted_worker_outcome(
 
     result = DshAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "failed"
-    assert result.error_code == error_code
-    assert result.native_identity["worker_outcome"] == outcome
+    assert result.status == "completed"
+    assert result.error_code is None
+    assert "worker_outcome" not in result.native_identity
+    assert json.loads((attempt.root / "worker-result.json").read_text())["status"] == outcome
 
 
 @pytest.mark.parametrize(
@@ -327,10 +327,10 @@ def test_dsh_rejects_noncompleted_result_that_claims_a_candidate(tmp_path: Path)
     envelope = worker_envelope()
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
 
-    with pytest.raises(AdapterError) as error:
-        DshAdapter().deliver(endpoint, envelope, attempt)
-
-    assert error.value.error_code == "DSH_RESULT_INVALID"
+    result = DshAdapter().deliver(endpoint, envelope, attempt)
+    assert result.status == "completed"
+    assert "worker_outcome" not in result.native_identity
+    assert (attempt.root / "worker-result.json").is_file()
 
 
 def test_dsh_rejects_instance_reuse_across_runs(tmp_path: Path) -> None:
@@ -368,3 +368,11 @@ def test_dsh_adapter_rejects_non_worker_roles(
         DshAdapter().validate_address(invalid)
 
     assert error.value.error_code == "DSH_ADDRESS_INVALID"
+
+def test_missing_worker_report_is_not_a_native_failure_or_invented_d0(tmp_path):
+    endpoint, envelope = worker_endpoint(tmp_path, mode="missing-result"), worker_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    result = DshAdapter().deliver(endpoint, envelope, attempt)
+    assert result.status == "completed" and result.native_identity["exit_code"] == 0
+    assert "worker_outcome" not in result.native_identity
+    assert not (attempt.root / "worker-result.json").exists()

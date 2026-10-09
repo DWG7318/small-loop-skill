@@ -495,6 +495,15 @@ def resolve_delivery_start(
 ) -> tuple[Path, dict[str, Any]]:
     """Resolve ordinary v2 or explicit recovery lineage, without canonical backfill."""
     ordinary = original / "started.json"
+    retry = original / "recovery" / "exact-1" / str(envelope["run_id"]) / str(envelope["message_id"])
+    if not ordinary.is_file() and (retry / "started.json").is_file():
+        if (_object(retry / "endpoint.json", "exact retry endpoint") != dict(endpoint)
+            or _object(retry / "envelope.json", "exact retry envelope") != dict(envelope)):
+            raise ContractError("exact retry changed the original receiver or message")
+        return retry / "started.json", validate_native_start(retry / "started.json",
+            adapter=str(endpoint["adapter"]), run_id=str(envelope["run_id"]),
+            cell_id=str(envelope["cell_id"]), message_id=str(envelope["message_id"]),
+            request_sha256=str(envelope["payload_sha256"]))
     if (ordinary.is_file() or endpoint.get('role') != 'supervisor'
         or endpoint.get('adapter') != 'codex-app-server'):
         return ordinary, validate_native_start(ordinary, adapter=str(endpoint["adapter"]),

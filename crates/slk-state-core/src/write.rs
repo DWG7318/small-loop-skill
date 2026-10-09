@@ -4847,13 +4847,17 @@ fn validate_rework_requested(
         .as_u64()
         .filter(|value| *value > 0)
         .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
-    if method_version == "4.4.2" && rework_round > 1 {
+    if method_version == "4.4.2"
+        && details["investigation_mode"]
+            .as_str()
+            .filter(|value| !value.trim().is_empty())
+            .is_none()
+    {
         return Err(StateError::WorkEventInvalid(
-            "SLK 4.4.2 second consecutive D1 failure requires a versioned CELL split, not another rework request"
-                .into(),
+            "Supervisor investigation mode must be explicit".into(),
         ));
     }
-    if matches!(method_version.as_str(), "4.4.0" | "4.4.1" | "4.4.2") {
+    if matches!(method_version.as_str(), "4.4.0" | "4.4.1") {
         let expected_mode = if rework_round == 1 {
             "STANDARD"
         } else {

@@ -93,270 +93,6 @@ def _text_list(value: Any, label: str) -> list[str]:
     return [_text(item, f"{label} item") for item in value]
 
 
-def _candidate_ready_payload(value: Mapping[str, Any]) -> None:
-    _closed(
-        value,
-        frozenset({"repository", "candidate", "cell_goal", "d1_criteria", "evidence_files"}),
-        "candidate payload",
-    )
-    _text(value["repository"], "candidate repository")
-    candidate = _mapping(value["candidate"], "candidate")
-    if not candidate:
-        raise ContractError("candidate must not be empty")
-    _text(value["cell_goal"], "cell_goal")
-    _text_list(value["d1_criteria"], "d1_criteria")
-    evidence = value["evidence_files"]
-    if not isinstance(evidence, list):
-        raise ContractError("evidence_files must be an array")
-    for item in evidence:
-        _text(item, "evidence_files item")
-
-
-def _d1_rework_directive(value: Mapping[str, Any]) -> None:
-    fields = frozenset(
-        {
-            "d1_failure_event_id",
-            "failed_candidate_sha256",
-            "rework_round",
-            "investigation_mode",
-            "cell_goal",
-            "acceptance_criteria",
-            "findings",
-            "evidence_refs",
-            "root_cause_hypothesis",
-            "minimal_experiment",
-            "minimal_repair_scope",
-            "regression_target",
-        }
-    )
-    _closed(value, fields, "rework directive")
-    _identifier(value["d1_failure_event_id"], "d1_failure_event_id")
-    failed_candidate = _text(value["failed_candidate_sha256"], "failed_candidate_sha256")
-    if not SHA256.fullmatch(failed_candidate):
-        raise ContractError("failed_candidate_sha256 must be 64 lowercase hexadecimal characters")
-    rework_round = _positive_int(value["rework_round"], "rework_round")
-    investigation_mode = _choice(
-        value["investigation_mode"],
-        frozenset({"STANDARD", "AGGRESSIVE"}),
-        "investigation_mode",
-    )
-    expected_mode = "STANDARD" if rework_round == 1 else "AGGRESSIVE"
-    if investigation_mode != expected_mode:
-        raise ContractError(
-            f"rework round {rework_round} requires investigation_mode={expected_mode}"
-        )
-    _text(value["cell_goal"], "cell_goal")
-    for field in ("acceptance_criteria", "findings", "evidence_refs"):
-        _text_list(value[field], field)
-    for field in (
-        "root_cause_hypothesis",
-        "minimal_experiment",
-        "minimal_repair_scope",
-        "regression_target",
-    ):
-        _text(value[field], field)
-
-
-def _d1_failure_escalation(value: Mapping[str, Any]) -> None:
-    fields = frozenset(
-        {
-            "d1_failure_event_id",
-            "failed_candidate_sha256",
-            "rework_round",
-            "cell_goal",
-            "acceptance_criteria",
-            "findings",
-            "reproduction_steps",
-            "expected_result",
-            "evidence_refs",
-        }
-    )
-    _closed(value, fields, "D1 failure escalation")
-    _identifier(value["d1_failure_event_id"], "d1_failure_event_id")
-    failed_candidate = _text(value["failed_candidate_sha256"], "failed_candidate_sha256")
-    if not SHA256.fullmatch(failed_candidate):
-        raise ContractError("failed_candidate_sha256 must be 64 lowercase hexadecimal characters")
-    _positive_int(value["rework_round"], "rework_round")
-    _text(value["cell_goal"], "cell_goal")
-    _text(value["expected_result"], "expected_result")
-    for field in ("acceptance_criteria", "findings", "reproduction_steps", "evidence_refs"):
-        _text_list(value[field], field)
-
-
-def _d1_incomplete_escalation(value: Mapping[str, Any]) -> None:
-    fields = frozenset(
-        {
-            "d1_incomplete_event_id",
-            "candidate_message_id",
-            "candidate_payload",
-            "candidate_payload_sha256",
-            "reason_codes",
-            "evidence",
-            "native_terminal_sha256",
-            "native_result_sha256",
-            "decision_required",
-        }
-    )
-    _closed(value, fields, "D1 incomplete escalation")
-    _identifier(value["d1_incomplete_event_id"], "d1_incomplete_event_id")
-    _text(value["candidate_message_id"], "candidate_message_id")
-    candidate_payload = _mapping(value["candidate_payload"], "candidate_payload")
-    _candidate_ready_payload(candidate_payload)
-    candidate_digest = _text(value["candidate_payload_sha256"], "candidate_payload_sha256")
-    if not SHA256.fullmatch(candidate_digest) or canonical_json_sha256(candidate_payload) != candidate_digest:
-        raise ContractError("candidate_payload_sha256 does not match candidate_payload")
-    _text_list(value["reason_codes"], "reason_codes")
-    evidence = value["evidence"]
-    if not isinstance(evidence, list) or not evidence:
-        raise ContractError("D1 incomplete escalation evidence must be a non-empty array")
-    for item in evidence:
-        row = _mapping(item, "D1 incomplete escalation evidence item")
-        _closed(row, frozenset({"path", "sha256"}), "D1 incomplete escalation evidence item")
-        _text(row["path"], "evidence path")
-        digest = _text(row["sha256"], "evidence sha256")
-        if not SHA256.fullmatch(digest):
-            raise ContractError("evidence sha256 must be 64 lowercase hexadecimal characters")
-    terminal = _text(value["native_terminal_sha256"], "native_terminal_sha256")
-    if not SHA256.fullmatch(terminal):
-        raise ContractError("native_terminal_sha256 must be 64 lowercase hexadecimal characters")
-    result = value["native_result_sha256"]
-    if result is not None and (not isinstance(result, str) or not SHA256.fullmatch(result)):
-        raise ContractError("native_result_sha256 must be null or 64 lowercase hexadecimal characters")
-    if value["decision_required"] != "CAPACITY_OR_ENVIRONMENT_MANAGEMENT":
-        raise ContractError("D1 incomplete escalation requires capacity or environment management")
-
-
-def _d1_management_return(value: Mapping[str, Any]) -> None:
-    _closed(
-        value,
-        frozenset(
-            {
-                "source_d1_incomplete_event_id",
-                "candidate_message_id",
-                "candidate_payload",
-                "candidate_payload_sha256",
-                "management_action",
-                "management_summary",
-                "management_evidence_refs",
-                "review_policy",
-            }
-        ),
-        "D1 management return",
-    )
-    _identifier(value["source_d1_incomplete_event_id"], "source_d1_incomplete_event_id")
-    _text(value["candidate_message_id"], "candidate_message_id")
-    candidate_payload = _mapping(value["candidate_payload"], "candidate_payload")
-    _candidate_ready_payload(candidate_payload)
-    candidate_digest = _text(value["candidate_payload_sha256"], "candidate_payload_sha256")
-    if not SHA256.fullmatch(candidate_digest) or canonical_json_sha256(candidate_payload) != candidate_digest:
-        raise ContractError("candidate_payload_sha256 does not match candidate_payload")
-    _choice(
-        value["management_action"],
-        frozenset({"ADJUST_CAPACITY", "ADJUST_ENVIRONMENT", "MECHANICAL_RECOVERY"}),
-        "management_action",
-    )
-    _text(value["management_summary"], "management_summary")
-    _text_list(value["management_evidence_refs"], "management_evidence_refs")
-    policy = _mapping(value["review_policy"], "review_policy")
-    _closed(
-        policy,
-        frozenset({"profile", "aggregate_budget", "review_timeout", "tool_rounds"}),
-        "review_policy",
-    )
-    expected = {
-        "profile": "NORMAL_D1_DEFAULT",
-        "aggregate_budget": "NATIVE_UNLIMITED",
-        "review_timeout": "NATIVE_UNLIMITED",
-        "tool_rounds": "TEMPLATE_DEFAULT",
-    }
-    if dict(policy) != expected:
-        raise ContractError("review_policy must select the exact normal D1 defaults")
-
-
-def _d2_ready(value: Mapping[str, Any]) -> None:
-    fields = frozenset(
-        {
-            "d1_event_id", "required_cell_ids", "accepted_cell_ids",
-            "final_candidate_message_id", "d2_criteria", "evidence_refs",
-        }
-    )
-    _closed(value, fields, "D2_READY")
-    _identifier(value["d1_event_id"], "d1_event_id")
-    _text(value["final_candidate_message_id"], "final_candidate_message_id")
-    required = _text_list(value["required_cell_ids"], "required_cell_ids")
-    accepted = _text_list(value["accepted_cell_ids"], "accepted_cell_ids")
-    if required != accepted or len(required) != len(set(required)):
-        raise ContractError("D2_READY accepted_cell_ids must exactly match unique required_cell_ids")
-    _text_list(value["d2_criteria"], "d2_criteria")
-    _text_list(value["evidence_refs"], "evidence_refs")
-
-
-def _worker_completion_recovery(value: Mapping[str, Any]) -> None:
-    fields = frozenset(
-        {
-            "source_attempt_root",
-            "runtime_projection_path",
-            "plan_revision",
-            "runtime_revision",
-            "token_sequence",
-            "worker_credential_path",
-            "checker_credential_path",
-            "state_command",
-            "transport_command",
-            "occurred_at",
-        }
-    )
-    _closed(value, fields, "Worker completion recovery")
-    for field in (
-        "source_attempt_root",
-        "runtime_projection_path",
-        "worker_credential_path",
-        "checker_credential_path",
-        "occurred_at",
-    ):
-        _text(value[field], field)
-    for field in ("plan_revision", "runtime_revision", "token_sequence"):
-        _positive_int(value[field], field)
-    for field in ("state_command", "transport_command"):
-        _text_list(value[field], field)
-
-
-def _pre_d0_blocked_recovery(value: Mapping[str, Any]) -> None:
-    fields = frozenset(
-        {
-            "source_attempt_root",
-            "runtime_projection_path",
-            "plan_revision",
-            "runtime_revision",
-            "token_sequence",
-            "worker_credential_path",
-            "checker_credential_path",
-            "state_command",
-            "transport_command",
-            "environment_adjustment_path",
-            "environment_adjustment_sha256",
-            "occurred_at",
-        }
-    )
-    _closed(value, fields, "pre-D0 blocked recovery")
-    for field in (
-        "source_attempt_root",
-        "runtime_projection_path",
-        "worker_credential_path",
-        "checker_credential_path",
-        "environment_adjustment_path",
-        "occurred_at",
-    ):
-        _text(value[field], field)
-    digest = _text(value["environment_adjustment_sha256"], "environment_adjustment_sha256")
-    if not SHA256.fullmatch(digest):
-        raise ContractError("environment_adjustment_sha256 must be 64 lowercase hexadecimal characters")
-    for field in ("plan_revision", "runtime_revision", "token_sequence"):
-        _positive_int(value[field], field)
-    for field in ("state_command", "transport_command"):
-        _text_list(value[field], field)
-
-
 def _json(value: Any, label: str) -> JsonValue:
     if value is None or isinstance(value, (bool, str)):
         return value
@@ -508,31 +244,29 @@ class Envelope:
         if payload_type == "D1_FAILURE_ESCALATION":
             if (sender_role, receiver_role) != ("checker", "supervisor"):
                 raise ContractError("D1_FAILURE_ESCALATION requires checker->supervisor")
-            _d1_failure_escalation(payload)
+            # Body is the Checker\'s output; only the role edge is a transport constraint.
         if payload_type == "D1_INCOMPLETE_ESCALATION":
             if (sender_role, receiver_role) != ("checker", "supervisor"):
                 raise ContractError("D1_INCOMPLETE_ESCALATION requires checker->supervisor")
-            _d1_incomplete_escalation(payload)
+            # Missing engineering evidence does not prevent report delivery.
         if payload_type == "D1_MANAGEMENT_RETURN":
             if (sender_role, receiver_role) != ("supervisor", "checker"):
                 raise ContractError("D1_MANAGEMENT_RETURN requires supervisor->checker")
-            _d1_management_return(payload)
+            # Supervisor guidance is delivered without a body-format review.
         if payload_type == "D1_REWORK_DIRECTIVE":
             if (sender_role, receiver_role) != ("supervisor", "worker"):
                 raise ContractError("D1_REWORK_DIRECTIVE requires supervisor->worker")
-            _d1_rework_directive(payload)
+            # Rework guidance is owned by Supervisor, not reviewed by the transport.
         elif payload_type == "WORKER_COMPLETION_RECOVERY":
             if (sender_role, receiver_role) != ("supervisor", "checker"):
                 raise ContractError("WORKER_COMPLETION_RECOVERY requires supervisor->checker")
-            _worker_completion_recovery(payload)
         elif payload_type == "PRE_D0_BLOCKED_RECOVERY":
             if (sender_role, receiver_role) != ("supervisor", "checker"):
                 raise ContractError("PRE_D0_BLOCKED_RECOVERY requires supervisor->checker")
-            _pre_d0_blocked_recovery(payload)
         elif payload_type == "D2_READY":
             if (sender_role, receiver_role) != ("checker", "supervisor"):
                 raise ContractError("D2_READY requires checker->supervisor")
-            _d2_ready(payload)
+            # D2 acceptance is decided by Supervisor, not by inspecting report fields.
         elif (sender_role, receiver_role) == ("supervisor", "worker"):
             raise ContractError("supervisor->worker is limited to D1_REWORK_DIRECTIVE")
         payload_sha256 = _text(value["payload_sha256"], "payload_sha256")

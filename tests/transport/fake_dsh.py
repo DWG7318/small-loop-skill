@@ -104,6 +104,10 @@ if hashlib.sha256(task_bytes).hexdigest() != task_sha256:
     sys.exit(7)
 task = json.loads(task_bytes)
 result_path = Path(task["result_path"])
+if MODE in {"raw-report", "raw-report-exit42"}:
+    result_path.write_bytes(b'partial report\r\nnot JSON \xff\r\n')
+    print(json.dumps({"session_id": session_id, "result_path": str(result_path)}))
+    sys.exit(42 if MODE.endswith("exit42") else 0)
 if MODE != "missing-result":
     if MODE == "delayed-terminal":
         time.sleep(0.35)

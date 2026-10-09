@@ -180,11 +180,10 @@ class DshAdapter:
     @staticmethod
     def task_instruction(task_path: Path, task_sha256: str) -> str:
         return (
-            "Execute only the immutable SLK task file at the absolute path below. Verify its "
-            "SHA-256 before reading it; reject any mismatch or unknown field. The result_contract "
-            "is a descriptor, not an output wrapper: write exactly one flat slk.worker-result/v1 "
-            "instance matching result_contract.completed (7 fields) or result_contract.non_completed "
-            "(8 fields) to result_path. "
+            "Execute only this hash-verified task descriptor. Save original output to result_path; "
+            "result_contract is guidance, never a delivery requirement. Bound SLK_WORKER_ACTION_COMMAND: "
+            "submit-worker-action --event WORK_STARTED|D0_COMPLETED|CANDIDATE_SUBMITTED "
+            "[--details own.json]. Reports are not actions. "
             f"<slk-transport-task path={json.dumps(str(task_path.resolve()))} "
             f"sha256={json.dumps(task_sha256)} />"
         )
@@ -251,55 +250,9 @@ class DshAdapter:
             )
         return created[0]
 
-    def _read_result(self, path: Path, endpoint: Endpoint, envelope: Envelope) -> Mapping[str, Any]:
-        if not path.is_file():
-            raise AdapterError("DSH_RESULT_MISSING", "DSH exited without the required Worker result")
-        try:
-            value = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise AdapterError("DSH_RESULT_INVALID", "Worker result is not valid JSON") from exc
-        if not isinstance(value, dict):
-            raise AdapterError("DSH_RESULT_INVALID", "Worker result must be an object")
-        status = value.get("status")
-        expected_fields = (
-            COMPLETED_RESULT_FIELDS if status == "completed" else NONCOMPLETED_RESULT_FIELDS
-        )
-        if set(value) != expected_fields:
-            raise AdapterError("DSH_RESULT_INVALID", "Worker result does not use the closed field set")
-        expected = {
-            "schema_version": "slk.worker-result/v1",
-            "message_id": envelope.message_id,
-            "run_id": envelope.run_id,
-            "role_instance_id": endpoint.role_instance_id,
-        }
-        for field, expected_value in expected.items():
-            if value.get(field) != expected_value:
-                raise AdapterError("DSH_RESULT_INVALID", f"Worker result {field} mismatch")
-        if status == "completed":
-            if not isinstance(value["candidate"], dict) or not isinstance(
-                value["candidate"].get("kind"), str
-            ):
-                raise AdapterError("DSH_RESULT_INVALID", "Worker result candidate is invalid")
-            if not isinstance(value["next_payload"], dict):
-                raise AdapterError("DSH_RESULT_INVALID", "Worker result next_payload is invalid")
-        elif status in NONCOMPLETED_STATUSES:
-            blocker = value.get("blocker")
-            if value.get("candidate") is not None or value.get("next_payload") is not None:
-                raise AdapterError(
-                    "DSH_RESULT_INVALID", "non-completed Worker result cannot claim a candidate"
-                )
-            if not isinstance(blocker, dict) or set(blocker) != BLOCKER_FIELDS:
-                raise AdapterError("DSH_RESULT_INVALID", "Worker blocker does not use the closed field set")
-            if not all(
-                isinstance(blocker[field], str) and blocker[field].strip()
-                for field in ("phase", "cause", "summary")
-            ) or not isinstance(blocker["evidence"], list) or not all(
-                isinstance(item, str) and item.strip() for item in blocker["evidence"]
-            ):
-                raise AdapterError("DSH_RESULT_INVALID", "Worker blocker is invalid")
-        else:
-            raise AdapterError("DSH_RESULT_INVALID", "Worker result status is unsupported")
-        return value
+    def _read_result(self, path: Path, endpoint: Endpoint, envelope: Envelope) -> str:
+        """The task/envelope owns identity; Agent output has no required body schema."""
+        return path.read_text(encoding="utf-8-sig", errors="replace") if path.is_file() else ""
 
     def _runtime_failure(
         self,
@@ -383,8 +336,12 @@ class DshAdapter:
         environment = os.environ.copy()
         environment.pop("SLK_ROLE_CREDENTIAL", None)
         environment.pop("SLK_OVERWATCHER_CREDENTIAL", None)
-        environment.pop("SLK_TRANSPORT_ROLE_HOST", None)
-        environment.pop("SLK_TRANSPORT_ROLE_HOST_SHA256", None)
+        environment.pop("SLK_WORKER_ACTION_COMMAND", None)
+        if environment.get("SLK_TRANSPORT_ROLE_HOST"):
+            from ..role_host import load_role_host
+            from dataclasses import asdict
+            host = load_role_host(asdict(endpoint))
+            environment["SLK_WORKER_ACTION_COMMAND"] = json.dumps(host.transport)
         environment.pop("SLK_DSH_SESSION_ID", None)
         if endpoint.address["session_id"] is not None:
             environment["SLK_DSH_SESSION_ID"] = str(endpoint.address["session_id"])
@@ -496,64 +453,32 @@ class DshAdapter:
                 raise AdapterError("DSH_TIMEOUT", "DSH Worker did not complete in time") from exc
             attempt.write_text_once("native.stdout.txt", completed.stdout)
             attempt.write_text_once("native.stderr.txt", completed.stderr)
-            if completed.returncode != 0:
-                if session_id is not None and (attempt.root / "started.json").is_file():
-                    return self._runtime_failure(
-                        endpoint=endpoint,
-                        envelope=envelope,
-                        attempt=attempt,
-                        session_id=session_id,
-                        outcome="execution_failure",
-                        error_code="DSH_EXIT_NONZERO",
-                        exit_code=completed.returncode,
-                        started_at=started_at_utc,
-                        duration_ms=int((self._monotonic() - started_at) * 1000),
-                        stdout=completed.stdout,
-                        stderr=completed.stderr,
-                    )
-                raise AdapterError("DSH_EXIT_NONZERO", f"DSH Worker exited with {completed.returncode}")
             session_id = self._resolve_session(endpoint, before, self._sessions(session_root))
             if not (attempt.root / "started.json").is_file():
-                raise AdapterError("DSH_START_UNPROVED", "DSH exited before native start was proven")
-            try:
-                worker_result = self._read_result(result_path, endpoint, envelope)
-            except AdapterError:
-                if result_path.is_file():
-                    attempt.write_text_once(
-                        "worker-result.invalid.txt",
-                        result_path.read_text(encoding="utf-8-sig", errors="replace"),
-                    )
-                raise
-            attempt.write_json_once("worker-result.json", worker_result)
-            worker_outcome = str(worker_result["status"])
-            error_code = NONCOMPLETED_ERROR_CODES.get(worker_outcome)
+                raise AdapterError("DSH_START_UNPROVED", "no current native start was observed; saved output remains deliverable")
+            if completed.returncode != 0:
+                return self._runtime_failure(
+                    endpoint=endpoint, envelope=envelope, attempt=attempt, session_id=session_id,
+                    outcome="execution_failure", error_code="DSH_EXIT_NONZERO",
+                    exit_code=completed.returncode, started_at=started_at_utc,
+                    duration_ms=int((self._monotonic() - started_at) * 1000),
+                    stdout=completed.stdout, stderr=completed.stderr,
+                )
             return DeliveryResult(
-                schema_version=RESULT_SCHEMA,
-                message_id=envelope.message_id,
-                run_id=envelope.run_id,
-                adapter=endpoint.adapter,
-                status="completed" if worker_outcome == "completed" else "failed",
-                native_identity={
-                    "instance_id": str(endpoint.address["instance_id"]),
-                    "session_id": session_id,
-                    "exit_code": completed.returncode,
-                    "worker_outcome": worker_outcome,
-                    "blocker_cause": (
-                        worker_result["blocker"]["cause"]
-                        if worker_outcome != "completed"
-                        else None
-                    ),
-                },
-                error_code=error_code,
-                evidence=(
-                    "started.json",
-                    "worker-result.json",
-                    "native.stdout.txt",
-                    "native.stderr.txt",
-                ),
+                RESULT_SCHEMA, envelope.message_id, envelope.run_id, endpoint.adapter,
+                "completed" if completed.returncode == 0 else "failed",
+                {"instance_id": str(endpoint.address["instance_id"]),
+                    "session_id": session_id, "exit_code": completed.returncode},
+                None if completed.returncode == 0 else "DSH_EXIT_NONZERO",
+                tuple(name for name in ("started.json", "worker-result.json",
+                    "native.stdout.txt", "native.stderr.txt")
+                    if (result_path if name == "worker-result.json" else attempt.root / name).is_file()),
             )
         finally:
-            result_path.unlink(missing_ok=True)
+            # Even a failed invocation must not destroy its already-produced report.
+            if result_path.is_file():
+                attempt.write_bytes_once("worker-result.json", result_path.read_bytes())
+                result_path.unlink()
             task_path.unlink(missing_ok=True)
             try:
                 drop_root.rmdir()

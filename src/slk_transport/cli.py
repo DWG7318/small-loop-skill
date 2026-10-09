@@ -19,7 +19,6 @@ from .adapters.ocrv import OcrvAdapter
 from .active_writer import recover_active_writer
 from .checker_escalation import CheckerEscalationError, execute_checker_escalation
 from .checker_management import execute_checker_management
-from .context_review import prepare as prepare_context_review
 from .checker_completion import CheckerCompletionError, execute_checker_completion
 from .desktop_current_turn import (
     complete_desktop_current_turn,
@@ -50,33 +49,8 @@ from .overwatcher_admin import execute_sealed_overwatcher_admin
 from .pre_start_rejection import execute_pre_start_rejection
 from .supervisor_admin import execute_sealed_supervisor_admin
 from .temporal_reload import reload_temporal_worker
-from .terminal_budget import prepare_terminal_budget_request
-from .terminal_budget_fresh import prepare_fresh_review_request
-from .terminal_budget_fresh_partial import prepare_fresh_partial_request
 from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatcher_cadence
-from .worker_completion import (
-    CompletionError,
-    consume_committed_checker_terminal,
-    consume_staged_checker_terminal,
-    continuation_request_bytes,
-    execute_committed_checker_terminal,
-    execute_checker_recovery,
-    execute_worker_continuation,
-    inspect_worker_completion,
-    prepare_invalid_result_recovery_envelope,
-    prepare_pre_d0_blocked_recovery_envelope,
-    prepare_incomplete_worker_handoff,
-    recover_staged_checker_commit,
-    continue_consumed_partial_checker,
-    consume_existing_partial_checker,
-    refine_consumed_partial_checker,
-    resume_consumed_partial_checker,
-    resume_incomplete_checker,
-    resume_terminal_budget_checker,
-    resume_terminal_budget_fresh_partial,
-    resume_terminal_budget_fresh_partial_suffix,
-    resume_terminal_budget_fresh_review,
-)
+from .worker_completion import CompletionError, inspect_worker_completion
 
 
 VERSION = "4.4.2"
@@ -144,10 +118,11 @@ def _job(args: argparse.Namespace) -> int:
         args.attempt_root,
         adapters=ADAPTERS,
     )
+    output_delivery = None
     if host is not None:
         source = args.attempt_root / result.run_id / result.message_id
         try:
-            host.complete(source)
+            output_delivery = host.complete(source)
         except (ValueError, OSError) as exc:
             # Engineering completion is immutable and is not handoff success.
             from .worker_completion import _write_or_reuse_stable_request
@@ -157,9 +132,18 @@ def _job(args: argparse.Namespace) -> int:
                        "source_message_id": result.message_id,
                        "error_code": getattr(exc, "error_code", type(exc).__name__)}
             _write_or_reuse_stable_request(root / f"failure-{failure['error_code']}.json", failure)
-            raise
-    _emit(result.to_dict())
-    return 0 if result.status == "completed" else 3
+            output_delivery = {**failure, "message": str(exc)}
+    native_result = result.to_dict()
+    if host is None:
+        _emit(native_result)
+        return 0 if result.status == "completed" else 3
+    delivery_failed = output_delivery.get("status") in {
+        "OUTPUT_DELIVERY_UNCONFIRMED", "HOST_HANDOFF_FAILED",
+    } or output_delivery.get("handoff", {}).get("status") == "failed"
+    _emit({"status": "failed" if delivery_failed else result.status,
+           "run_id": result.run_id, "message_id": result.message_id,
+           "native_result": native_result, "output_delivery": output_delivery})
+    return 5 if delivery_failed else 0 if result.status == "completed" else 3
 
 
 def _self_command() -> list[str]:
@@ -226,11 +210,11 @@ def _send(args: argparse.Namespace) -> int:
         started = attempt_path / "started.json"
         if failed.is_file():
             value = _read_object(failed, "failed result")
-            _emit({**value, "job_pid": process.pid})
+            _emit({**value, "job_pid": process.pid, "ack_scope": "NATIVE_RECEIVE_START_ONLY"})
             return 3
         if completed.is_file():
             value = _read_object(completed, "completed result")
-            _emit({**value, "job_pid": process.pid})
+            _emit({**value, "job_pid": process.pid, "ack_scope": "NATIVE_RECEIVE_START_ONLY"})
             return 0
         if started.is_file():
             try:
@@ -249,6 +233,7 @@ def _send(args: argparse.Namespace) -> int:
             _emit(
                 {
                     "status": "started",
+                    "ack_scope": "NATIVE_RECEIVE_START_ONLY",
                     "run_id": envelope.run_id,
                     "message_id": envelope.message_id,
                     "adapter": endpoint.adapter,
@@ -263,6 +248,7 @@ def _send(args: argparse.Namespace) -> int:
     _emit(
         {
             "status": "not-started",
+            "ack_scope": "NATIVE_RECEIVE_START_ONLY",
             "run_id": envelope.run_id,
             "message_id": envelope.message_id,
             "adapter": endpoint.adapter,
@@ -335,7 +321,7 @@ def _inspect_worker_completion(args: argparse.Namespace) -> int:
         previous_inspection=previous,
     )
     if args.output:
-        encoded = continuation_request_bytes(result)
+        encoded = (json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         try:
             with args.output.open("xb") as stream:
@@ -348,232 +334,6 @@ def _inspect_worker_completion(args: argparse.Namespace) -> int:
                 ) from exc
     _emit(result)
     return 3 if result["status"] == "WORKER_COMPLETION_HANDOFF_MISSING" else 0
-
-
-def _continue_worker(args: argparse.Namespace) -> int:
-    data = args.request.read_bytes()
-    if __import__("hashlib").sha256(data).hexdigest() != args.sha256:
-        raise CompletionError("WORKER_CONTINUATION_REQUEST_MISMATCH", "continuation request hash mismatch")
-    request = _read_object(args.request, "continuation request")
-    result = execute_worker_continuation(request)
-    destination = Path(str(request["continuation_result_path"]))
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    encoded = continuation_request_bytes(result)
-    if destination.exists() and destination.read_bytes() != encoded:
-        raise CompletionError("WORKER_CONTINUATION_CONFLICT", "continuation result conflicts")
-    if not destination.exists():
-        temporary = destination.with_suffix(destination.suffix + ".tmp")
-        temporary.write_bytes(encoded)
-        temporary.replace(destination)
-    _emit(result)
-    return 0
-
-
-def _checker_recover_worker(args: argparse.Namespace) -> int:
-    data = args.request.read_bytes()
-    digest = __import__("hashlib").sha256(data).hexdigest()
-    if digest != args.sha256:
-        raise CompletionError("CHECKER_RECOVERY_REQUEST_MISMATCH", "Checker recovery request hash mismatch")
-    request = _read_object(args.request, "Checker recovery request")
-    result = execute_checker_recovery(request, request_sha256=digest)
-    destination = Path(str(request["result_path"]))
-    encoded = continuation_request_bytes(result)
-    if destination.exists() and destination.read_bytes() != encoded:
-        raise CompletionError("CHECKER_RECOVERY_CONFLICT", "Checker recovery result conflicts")
-    if not destination.exists():
-        temporary = destination.with_suffix(destination.suffix + ".tmp")
-        temporary.write_bytes(encoded)
-        temporary.replace(destination)
-    _emit(result)
-    return 0
-
-
-def _checker_record_committed_terminal(args: argparse.Namespace) -> int:
-    data = args.request.read_bytes()
-    digest = __import__("hashlib").sha256(data).hexdigest()
-    if digest != args.sha256:
-        raise CompletionError(
-            "CHECKER_COMMITTED_TERMINAL_REQUEST_MISMATCH",
-            "committed-terminal request hash mismatch",
-        )
-    request = _read_object(args.request, "committed-terminal request")
-    result = execute_committed_checker_terminal(request, request_sha256=digest)
-    destination = Path(str(request["result_path"]))
-    encoded = continuation_request_bytes(result)
-    if destination.exists() and destination.read_bytes() != encoded:
-        raise CompletionError(
-            "CHECKER_COMMITTED_TERMINAL_CONFLICT",
-            "committed-terminal result conflicts",
-        )
-    if not destination.exists():
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_suffix(destination.suffix + ".tmp")
-        temporary.write_bytes(encoded)
-        temporary.replace(destination)
-    _emit(result)
-    return 0
-
-
-def _prepare_invalid_result_recovery(args: argparse.Namespace) -> int:
-    result = prepare_invalid_result_recovery_envelope(
-        args.source_attempt,
-        _read_object(args.checker_endpoint, "Checker endpoint"),
-        args.runtime_projection,
-        supervisor_role_instance_id=args.supervisor_role_instance_id,
-        plan_revision=args.plan_revision,
-        runtime_revision=args.runtime_revision,
-        token_sequence=args.token_sequence,
-        worker_credential_path=args.worker_credential,
-        checker_credential_path=args.checker_credential,
-        state_command=list(args.state_command),
-        transport_command=list(args.transport_command),
-        occurred_at=args.occurred_at,
-        output_path=args.output,
-    )
-    _emit(result)
-    return 0
-
-
-def _prepare_pre_d0_blocked_recovery(args: argparse.Namespace) -> int:
-    result = prepare_pre_d0_blocked_recovery_envelope(
-        args.source_attempt,
-        _read_object(args.checker_endpoint, "Checker endpoint"),
-        args.runtime_projection,
-        supervisor_role_instance_id=args.supervisor_role_instance_id,
-        plan_revision=args.plan_revision,
-        runtime_revision=args.runtime_revision,
-        token_sequence=args.token_sequence,
-        worker_credential_path=args.worker_credential,
-        checker_credential_path=args.checker_credential,
-        state_command=list(args.state_command),
-        transport_command=list(args.transport_command),
-        environment_adjustment_path=args.environment_adjustment,
-        environment_adjustment_sha256=args.environment_adjustment_sha256,
-        occurred_at=args.occurred_at,
-        output_path=args.output,
-    )
-    _emit(result)
-    return 0
-
-
-def _recover_staged_checker_commit(args: argparse.Namespace) -> int:
-    result = recover_staged_checker_commit(
-        _read_object(args.continuation, "Worker continuation request"),
-        _read_object(args.outcome, "staged Checker delivery result"),
-        failed_request_path=args.failed_request,
-    )
-    _emit(result)
-    return 0
-
-
-def _consume_staged_checker_terminal(args: argparse.Namespace) -> int:
-    _emit(
-        consume_staged_checker_terminal(
-            args.request,
-            request_sha256=args.sha256,
-        )
-    )
-    return 0
-
-
-def _consume_committed_checker_terminal(args: argparse.Namespace) -> int:
-    _emit(
-        consume_committed_checker_terminal(
-            args.request,
-            request_sha256=args.sha256,
-        )
-    )
-    return 0
-
-
-def _resume_incomplete_checker(args: argparse.Namespace) -> int:
-    _emit(resume_incomplete_checker(args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _resume_terminal_budget_checker(args: argparse.Namespace) -> int:
-    _emit(resume_terminal_budget_checker(
-        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _prepare_terminal_budget_checker(args: argparse.Namespace) -> int:
-    _emit(prepare_terminal_budget_request(
-        args.native_attempt,
-        args.role_host_binding,
-        max_tokens_budget=args.max_tokens_budget,
-        authorization_id=args.authorization_id,
-        source_thread_id=args.source_thread_id,
-        occurred_at=args.occurred_at,
-        output_path=args.output,
-    ))
-    return 0
-
-
-def _prepare_terminal_budget_fresh_review(args: argparse.Namespace) -> int:
-    _emit(prepare_fresh_review_request(
-        args.source_request,
-        authorization_id=args.authorization_id,
-        source_thread_id=args.source_thread_id,
-        occurred_at=args.occurred_at,
-        output_path=args.output,
-    ))
-    return 0
-
-
-def _resume_terminal_budget_fresh_review(args: argparse.Namespace) -> int:
-    _emit(resume_terminal_budget_fresh_review(
-        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _prepare_terminal_budget_fresh_partial(args: argparse.Namespace) -> int:
-    _emit(prepare_fresh_partial_request(
-        args.fresh_request,
-        max_tokens_budget=args.max_tokens_budget,
-        authorization_id=args.authorization_id,
-        source_thread_id=args.source_thread_id,
-        occurred_at=args.occurred_at,
-        output_path=args.output,
-    ))
-    return 0
-
-
-def _resume_terminal_budget_fresh_partial(args: argparse.Namespace) -> int:
-    _emit(resume_terminal_budget_fresh_partial(
-        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _resume_terminal_budget_fresh_partial_suffix(args: argparse.Namespace) -> int:
-    _emit(resume_terminal_budget_fresh_partial_suffix(
-        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _continue_consumed_partial_checker(args: argparse.Namespace) -> int:
-    _emit(continue_consumed_partial_checker(
-        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _resume_consumed_partial_checker(args: argparse.Namespace) -> int:
-    _emit(resume_consumed_partial_checker(
-        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _refine_consumed_partial_checker(args: argparse.Namespace) -> int:
-    _emit(refine_consumed_partial_checker(
-        args.request, request_sha256=args.sha256, prepare_only=args.prepare_only))
-    return 0
-
-
-def _consume_existing_partial_checker(args: argparse.Namespace) -> int:
-    _emit(consume_existing_partial_checker(
-        args.request, request_sha256=args.sha256, evidence_root=args.evidence_root,
-        prepare_only=args.prepare_only))
-    return 0
 
 
 def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
@@ -690,27 +450,6 @@ def _inspect_recovery_authority(args: argparse.Namespace) -> int:
     return 0
 
 
-def _reclassify_completed_checker(args: argparse.Namespace) -> int:
-    binding_path = args.binding.resolve()
-    digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
-    if digest != args.sha256:
-        raise ValueError("role host binding hash changed")
-    host = RoleHost(_read_object(binding_path, "role host binding"), digest)
-    _emit(host.reclassify_completed_checker(args.source_attempt.resolve()))
-    return 0
-
-
-def _consume_context_terminal(args: argparse.Namespace) -> int:
-    path = args.binding.resolve()
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest != args.sha256:
-        raise ValueError('role host binding hash changed')
-    host = RoleHost(_read_object(path, 'role host binding'), digest)
-    _emit(host.consume_context_terminal(args.source_attempt.resolve(), args.session_record.resolve(),
-                                        args.session_sha256, prepare_only=args.prepare_only))
-    return 0
-
-
 def _continue_staged_handoff(args: argparse.Namespace) -> int:
     binding_path = args.binding.resolve()
     digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
@@ -732,6 +471,20 @@ def _submit_supervisor_decision(args: argparse.Namespace) -> int:
         raise ValueError("role host binding hash changed")
     host = RoleHost(_read_object(binding_path, "role host binding"), digest)
     _emit(host.submit_supervisor_decision(args.source_attempt.resolve()))
+    return 0
+
+
+def _submit_worker_action(args: argparse.Namespace) -> int:
+    import os
+    native = Path(os.environ.get("SLK_NATIVE_ACTIVITY_PATH", ""))
+    if not native.is_absolute() or native.name != "native-activity.json":
+        raise CompletionError("WORKER_ACTION_CALLER_UNPROVEN", "no bound Worker invocation")
+    source = native.parent
+    host = load_role_host(_read_object(source / "endpoint.json", "Worker endpoint"))
+    if host is None:
+        raise CompletionError("ROLE_HOST_BINDING_INVALID", "prepared Worker binding is missing")
+    details = _read_object(args.details, "Worker action details") if args.details else {}
+    _emit(host.record_worker_action(source, args.event, details))
     return 0
 
 
@@ -892,126 +645,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     completion.add_argument("--cadence-seconds", required=True, type=int)
     completion.add_argument("--previous-inspection", type=Path)
     completion.add_argument("--output", type=Path)
-    checker_recovery = subparsers.add_parser("checker-recover-worker")
-    checker_recovery.add_argument("--request", required=True, type=Path)
-    checker_recovery.add_argument("--sha256", required=True)
-    committed_checker = subparsers.add_parser("checker-record-committed-terminal")
-    committed_checker.add_argument("--request", required=True, type=Path)
-    committed_checker.add_argument("--sha256", required=True)
-    invalid_result_recovery = subparsers.add_parser("prepare-invalid-result-recovery")
-    invalid_result_recovery.add_argument("--source-attempt", required=True, type=Path)
-    invalid_result_recovery.add_argument("--checker-endpoint", required=True, type=Path)
-    invalid_result_recovery.add_argument("--runtime-projection", required=True, type=Path)
-    invalid_result_recovery.add_argument("--supervisor-role-instance-id", required=True)
-    invalid_result_recovery.add_argument("--plan-revision", required=True, type=int)
-    invalid_result_recovery.add_argument("--runtime-revision", required=True, type=int)
-    invalid_result_recovery.add_argument("--token-sequence", required=True, type=int)
-    invalid_result_recovery.add_argument("--worker-credential", required=True, type=Path)
-    invalid_result_recovery.add_argument("--checker-credential", required=True, type=Path)
-    invalid_result_recovery.add_argument("--state-command", required=True, nargs="+")
-    invalid_result_recovery.add_argument("--transport-command", required=True, nargs="+")
-    invalid_result_recovery.add_argument("--occurred-at", required=True)
-    invalid_result_recovery.add_argument("--output", required=True, type=Path)
-    pre_d0_recovery = subparsers.add_parser("prepare-pre-d0-blocked-recovery")
-    pre_d0_recovery.add_argument("--source-attempt", required=True, type=Path)
-    pre_d0_recovery.add_argument("--checker-endpoint", required=True, type=Path)
-    pre_d0_recovery.add_argument("--runtime-projection", required=True, type=Path)
-    pre_d0_recovery.add_argument("--supervisor-role-instance-id", required=True)
-    pre_d0_recovery.add_argument("--plan-revision", required=True, type=int)
-    pre_d0_recovery.add_argument("--runtime-revision", required=True, type=int)
-    pre_d0_recovery.add_argument("--token-sequence", required=True, type=int)
-    pre_d0_recovery.add_argument("--worker-credential", required=True, type=Path)
-    pre_d0_recovery.add_argument("--checker-credential", required=True, type=Path)
-    pre_d0_recovery.add_argument("--state-command", required=True, nargs="+")
-    pre_d0_recovery.add_argument("--transport-command", required=True, nargs="+")
-    pre_d0_recovery.add_argument("--environment-adjustment", required=True, type=Path)
-    pre_d0_recovery.add_argument("--environment-adjustment-sha256", required=True)
-    pre_d0_recovery.add_argument("--occurred-at", required=True)
-    pre_d0_recovery.add_argument("--output", required=True, type=Path)
-    commit_recovery = subparsers.add_parser("recover-staged-checker-commit")
-    commit_recovery.add_argument("--continuation", required=True, type=Path)
-    commit_recovery.add_argument("--outcome", required=True, type=Path)
-    commit_recovery.add_argument("--failed-request", required=True, type=Path)
-    terminal_consumer = subparsers.add_parser("consume-staged-checker-terminal")
-    terminal_consumer.add_argument("--request", required=True, type=Path)
-    terminal_consumer.add_argument("--sha256", required=True)
-    committed_consumer = subparsers.add_parser("consume-committed-checker-terminal")
-    committed_consumer.add_argument("--request", required=True, type=Path)
-    committed_consumer.add_argument("--sha256", required=True)
-    incomplete_consumer = subparsers.add_parser("resume-incomplete-checker")
-    incomplete_consumer.add_argument("--request", required=True, type=Path)
-    incomplete_consumer.add_argument("--sha256", required=True)
-    incomplete_consumer.add_argument("--prepare-only", action="store_true")
-    terminal_budget_preparer = subparsers.add_parser("prepare-terminal-budget-checker")
-    terminal_budget_preparer.add_argument("--native-attempt", required=True, type=Path)
-    terminal_budget_preparer.add_argument("--role-host-binding", required=True, type=Path)
-    terminal_budget_preparer.add_argument("--max-tokens-budget", required=True, type=int)
-    terminal_budget_preparer.add_argument("--authorization-id", required=True)
-    terminal_budget_preparer.add_argument("--source-thread-id", required=True)
-    terminal_budget_preparer.add_argument("--occurred-at", required=True)
-    terminal_budget_preparer.add_argument("--output", required=True, type=Path)
-    context_preparer = subparsers.add_parser("prepare-context-review")
-    for name in ("source-request", "source-result", "raw-review", "session-record", "output"):
-        context_preparer.add_argument("--" + name, required=True, type=Path)
-    context_preparer.add_argument("--candidate-message-id", required=True)
-    context_preparer.add_argument("--source-d1-incomplete-event-id", required=True)
-    context_preparer.add_argument("--per-file", action="store_true")
-    context_preparer.add_argument("--per-call-input-threshold", action="store_true")
-    context_preparer.add_argument("--original-scope-plan", type=Path)
-    context_terminal = subparsers.add_parser('consume-context-terminal')
-    for name in ('binding', 'source-attempt', 'session-record'):
-        context_terminal.add_argument('--' + name, required=True, type=Path)
-    for name in ('sha256', 'session-sha256'):
-        context_terminal.add_argument('--' + name, required=True)
-    context_terminal.add_argument('--prepare-only', action='store_true')
-    terminal_budget = subparsers.add_parser("resume-terminal-budget-checker")
-    terminal_budget.add_argument("--request", required=True, type=Path)
-    terminal_budget.add_argument("--sha256", required=True)
-    terminal_budget.add_argument("--prepare-only", action="store_true")
-    fresh_budget_preparer = subparsers.add_parser("prepare-terminal-budget-fresh-review")
-    fresh_budget_preparer.add_argument("--source-request", required=True, type=Path)
-    fresh_budget_preparer.add_argument("--authorization-id", required=True)
-    fresh_budget_preparer.add_argument("--source-thread-id", required=True)
-    fresh_budget_preparer.add_argument("--occurred-at", required=True)
-    fresh_budget_preparer.add_argument("--output", required=True, type=Path)
-    fresh_budget = subparsers.add_parser("resume-terminal-budget-fresh-review")
-    fresh_budget.add_argument("--request", required=True, type=Path)
-    fresh_budget.add_argument("--sha256", required=True)
-    fresh_budget.add_argument("--prepare-only", action="store_true")
-    fresh_partial_preparer = subparsers.add_parser("prepare-terminal-budget-fresh-partial")
-    fresh_partial_preparer.add_argument("--fresh-request", required=True, type=Path)
-    fresh_partial_preparer.add_argument("--max-tokens-budget", required=True, type=int)
-    fresh_partial_preparer.add_argument("--authorization-id", required=True)
-    fresh_partial_preparer.add_argument("--source-thread-id", required=True)
-    fresh_partial_preparer.add_argument("--occurred-at", required=True)
-    fresh_partial_preparer.add_argument("--output", required=True, type=Path)
-    fresh_partial = subparsers.add_parser("resume-terminal-budget-fresh-partial")
-    fresh_partial.add_argument("--request", required=True, type=Path)
-    fresh_partial.add_argument("--sha256", required=True)
-    fresh_partial.add_argument("--prepare-only", action="store_true")
-    fresh_partial_suffix = subparsers.add_parser(
-        "resume-terminal-budget-fresh-partial-suffix"
-    )
-    fresh_partial_suffix.add_argument("--request", required=True, type=Path)
-    fresh_partial_suffix.add_argument("--sha256", required=True)
-    fresh_partial_suffix.add_argument("--prepare-only", action="store_true")
-    consumed_partial = subparsers.add_parser("continue-consumed-partial")
-    consumed_partial.add_argument("--request", required=True, type=Path)
-    consumed_partial.add_argument("--sha256", required=True)
-    consumed_partial.add_argument("--prepare-only", action="store_true")
-    resumed_partial = subparsers.add_parser("resume-consumed-partial")
-    resumed_partial.add_argument("--request", required=True, type=Path)
-    resumed_partial.add_argument("--sha256", required=True)
-    resumed_partial.add_argument("--prepare-only", action="store_true")
-    refined_partial = subparsers.add_parser("refine-consumed-partial")
-    refined_partial.add_argument("--request", required=True, type=Path)
-    refined_partial.add_argument("--sha256", required=True)
-    refined_partial.add_argument("--prepare-only", action="store_true")
-    existing_partial = subparsers.add_parser("consume-existing-partial")
-    existing_partial.add_argument("--request", required=True, type=Path)
-    existing_partial.add_argument("--sha256", required=True)
-    existing_partial.add_argument("--evidence-root", required=True, type=Path)
-    existing_partial.add_argument("--prepare-only", action="store_true")
     checker_escalation = subparsers.add_parser("checker-escalate-d1")
     checker_escalation.add_argument("--request", required=True, type=Path)
     checker_escalation.add_argument("--sha256", required=True)
@@ -1039,9 +672,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     ow_desktop.add_argument("--evidence-root", required=True, type=Path)
     notice = subparsers.add_parser("notify-supervisor")
     notice.add_argument("--request", required=True, type=Path)
-    continuation = subparsers.add_parser("continue-worker")
-    continuation.add_argument("--request", required=True, type=Path)
-    continuation.add_argument("--sha256", required=True)
     readiness = subparsers.add_parser("preflight-run")
     readiness.add_argument("--request", required=True, type=Path)
     admission = subparsers.add_parser("preflight-admission")
@@ -1062,10 +692,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     recovery_authority.add_argument("--binding", required=True, type=Path)
     recovery_authority.add_argument("--sha256", required=True)
     recovery_authority.add_argument("--supervisor-role-instance-id", required=True)
-    reclassify_checker = subparsers.add_parser("reclassify-completed-checker")
-    reclassify_checker.add_argument("--binding", required=True, type=Path)
-    reclassify_checker.add_argument("--sha256", required=True)
-    reclassify_checker.add_argument("--source-attempt", required=True, type=Path)
     staged_handoff = subparsers.add_parser("continue-staged-handoff")
     staged_handoff.add_argument("--binding", required=True, type=Path)
     staged_handoff.add_argument("--sha256", required=True)
@@ -1076,6 +702,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     supervisor_submit.add_argument("--binding", required=True, type=Path)
     supervisor_submit.add_argument("--sha256", required=True)
     supervisor_submit.add_argument("--source-attempt", required=True, type=Path)
+    worker_submit = subparsers.add_parser("submit-worker-action")
+    worker_submit.add_argument("--event", required=True, choices=["WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"])
+    worker_submit.add_argument("--details", type=Path)
     desktop_readback = subparsers.add_parser("consume-desktop-readback")
     desktop_readback.add_argument("--source-attempt", required=True, type=Path)
     supervisor_admin = subparsers.add_parser("supervisor-admin")
@@ -1098,10 +727,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     pre_start_rejection.add_argument("--sha256", required=True)
     credentials = subparsers.add_parser("prepare-role-credential")
     credentials.add_argument("--request", required=True, type=Path)
-    incomplete = subparsers.add_parser("prepare-incomplete-handoff")
-    incomplete.add_argument("--source-attempt", required=True, type=Path)
-    incomplete.add_argument("--staged-envelope", required=True, type=Path)
-    incomplete.add_argument("--d0-request", required=True, type=Path)
     role_eval = subparsers.add_parser("validate-role-eval")
     role_eval.add_argument("--pack", required=True, type=Path)
     role_eval.add_argument("--response", type=Path)
@@ -1114,8 +739,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if getattr(args, "startup_timeout_seconds", 1) <= 0:
         return _rejected("CLI_ARGUMENT_INVALID", "startup timeout must be positive")
     try:
-        if args.command == 'consume-context-terminal':
-            return _consume_context_terminal(args)
         if args.command == "validate":
             return _validate(args)
         if args.command == "job":
@@ -1136,54 +759,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _complete_desktop_current_turn(args)
         if args.command == "inspect-worker-completion":
             return _inspect_worker_completion(args)
-        if args.command == "checker-recover-worker":
-            return _checker_recover_worker(args)
-        if args.command == "checker-record-committed-terminal":
-            return _checker_record_committed_terminal(args)
-        if args.command == "prepare-invalid-result-recovery":
-            return _prepare_invalid_result_recovery(args)
-        if args.command == "prepare-pre-d0-blocked-recovery":
-            return _prepare_pre_d0_blocked_recovery(args)
-        if args.command == "recover-staged-checker-commit":
-            return _recover_staged_checker_commit(args)
-        if args.command == "consume-staged-checker-terminal":
-            return _consume_staged_checker_terminal(args)
-        if args.command == "consume-committed-checker-terminal":
-            return _consume_committed_checker_terminal(args)
-        if args.command == "resume-incomplete-checker":
-            return _resume_incomplete_checker(args)
-        if args.command == "prepare-terminal-budget-checker":
-            return _prepare_terminal_budget_checker(args)
-        if args.command == "prepare-context-review":
-            _emit(prepare_context_review(
-                source_request=args.source_request, source_result=args.source_result,
-                raw_review=args.raw_review, session_record=args.session_record,
-                candidate_message_id=args.candidate_message_id,
-                source_d1_incomplete_event_id=args.source_d1_incomplete_event_id, output=args.output, per_file=args.per_file,
-                per_call_input_threshold=args.per_call_input_threshold,
-                original_plan=args.original_scope_plan,
-            ))
-            return 0
-        if args.command == "resume-terminal-budget-checker":
-            return _resume_terminal_budget_checker(args)
-        if args.command == "prepare-terminal-budget-fresh-review":
-            return _prepare_terminal_budget_fresh_review(args)
-        if args.command == "resume-terminal-budget-fresh-review":
-            return _resume_terminal_budget_fresh_review(args)
-        if args.command == "prepare-terminal-budget-fresh-partial":
-            return _prepare_terminal_budget_fresh_partial(args)
-        if args.command == "resume-terminal-budget-fresh-partial":
-            return _resume_terminal_budget_fresh_partial(args)
-        if args.command == "resume-terminal-budget-fresh-partial-suffix":
-            return _resume_terminal_budget_fresh_partial_suffix(args)
-        if args.command == "continue-consumed-partial":
-            return _continue_consumed_partial_checker(args)
-        if args.command == "resume-consumed-partial":
-            return _resume_consumed_partial_checker(args)
-        if args.command == "refine-consumed-partial":
-            return _refine_consumed_partial_checker(args)
-        if args.command == "consume-existing-partial":
-            return _consume_existing_partial_checker(args)
         if args.command == "checker-escalate-d1":
             return _checker_escalate_d1(args)
         if args.command == "checker-manage-incomplete":
@@ -1198,8 +773,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _attest_desktop_overwatcher(args)
         if args.command == "notify-supervisor":
             return _notify_supervisor(args)
-        if args.command == "continue-worker":
-            return _continue_worker(args)
         if args.command == "preflight-run":
             return _preflight_run(args)
         if args.command == "preflight-admission":
@@ -1214,12 +787,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _resume_role_host(args)
         if args.command == "inspect-recovery-authority":
             return _inspect_recovery_authority(args)
-        if args.command == "reclassify-completed-checker":
-            return _reclassify_completed_checker(args)
         if args.command == "continue-staged-handoff":
             return _continue_staged_handoff(args)
         if args.command == "submit-supervisor-decision":
             return _submit_supervisor_decision(args)
+        if args.command == "submit-worker-action":
+            return _submit_worker_action(args)
         if args.command == "consume-desktop-readback":
             return _consume_desktop_readback(args)
         if args.command == "supervisor-admin":
@@ -1236,10 +809,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _abandon_pre_start_rejection(args)
         if args.command == "prepare-role-credential":
             return _prepare_role_credential(args)
-        if args.command == "prepare-incomplete-handoff":
-            _emit(prepare_incomplete_worker_handoff(args.source_attempt,
-                staged_envelope_path=args.staged_envelope, d0_request_path=args.d0_request))
-            return 0
         if args.command == "validate-role-eval":
             return _validate_role_eval(args)
         return _rejected("CLI_COMMAND_INVALID", "unsupported command")

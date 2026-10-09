@@ -81,9 +81,26 @@ def inspect_delivery(
     attempt, _endpoint, envelope = _exact_original(
         attempt_root, endpoint_raw, envelope_raw
     )
-    terminal, _result = _terminal(attempt)
+    terminal, native_result = _terminal(attempt)
+    facts: dict[str, Any] = {"ack_scope": "NATIVE_RECEIVE_START_ONLY",
+                             "native_result": dict(native_result) if native_result else None,
+                             "output_delivery": {"status": "UNOBSERVED"}}
+    job_log = Path(attempt_root).resolve() / ".jobs" / f"{envelope['message_id']}.stdout.txt"
+    if job_log.is_file():
+        try:
+            job = _read_object(job_log, "job result")
+            if (job.get("run_id") != envelope["run_id"]
+                or job.get("message_id") != envelope["message_id"]):
+                raise ContractError("job result changed delivery identity")
+            delivery = job.get("output_delivery")
+            if isinstance(delivery, Mapping):
+                facts["output_delivery"] = dict(delivery)
+            facts["job_status"] = job.get("status")
+        except (ContractError, UnicodeDecodeError) as exc:
+            facts["job_result_error"] = str(exc)
     if (attempt / "started.json").is_file():
         return {
+            **facts,
             "status": "ALREADY_STARTED",
             "should_retry": False,
             "run_id": envelope["run_id"],
@@ -91,6 +108,7 @@ def inspect_delivery(
         }
     if terminal == "completed":
         return {
+            **facts,
             "status": "SUPERVISOR_DECISION_REQUIRED",
             "reason": "COMPLETION_WITHOUT_START_PROOF",
             "should_retry": False,
@@ -98,6 +116,7 @@ def inspect_delivery(
             "message_id": envelope["message_id"],
         }
     return {
+        **facts,
         "status": "DELIVERY_UNCONFIRMED",
         "reason": "FAILED_OR_NO_NATIVE_START_PROOF" if terminal == "failed" else "NO_NATIVE_START_PROOF",
         "should_retry": True,

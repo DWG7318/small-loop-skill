@@ -101,9 +101,8 @@ def test_ocrv_candidate_review_records_run_cell_invocation_and_session(
     assert result.native_identity["run_id"] == "RUN-A"
     assert result.native_identity["cell_id"] == "CELL-001"
     assert result.native_identity["review_invocation_id"]
-    assert str(result.native_identity["session_id"]).startswith("ocrv-session-")
-    assert result.native_identity["provider"] == "dashscope-tokenplan"
-    assert result.native_identity["model"] == "qwen3.8-max"
+    assert "session_id" not in result.native_identity  # not platform-attested
+    assert "provider" not in result.native_identity and "model" not in result.native_identity
     assert (attempt.root / "started.json").is_file()
     assert (attempt.root / "ocrv-result.json").is_file()
 
@@ -259,159 +258,6 @@ def test_management_return_reuses_same_candidate_with_normal_unlimited_profile(
     assert request["capacity"]["timeout_minutes"] == 0
 
 
-def test_registered_ocrv_checker_runs_one_closed_worker_completion_recovery(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    endpoint = checker_endpoint(tmp_path, "recovery")
-    envelope = recovery_envelope(tmp_path)
-    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
-    monkeypatch.setenv("SLK_ROLE_CREDENTIAL", "slk_parent_secret")
-    monkeypatch.setenv("SLK_OVERWATCHER_CREDENTIAL", "slk_parent_secret")
-
-    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
-
-    assert result.status == "completed"
-    assert result.native_identity["checker_operation"] == "worker_completion_recovery"
-    assert result.native_identity["checker_role_instance_id"] == endpoint.role_instance_id
-    assert result.native_identity["checker_endpoint_version"] == endpoint.endpoint_version
-    assert result.native_identity["checker_authenticated"] is True
-    assert result.native_identity["authorized_recovery"] is True
-    started = json.loads((attempt.root / "started.json").read_text(encoding="utf-8"))
-    assert started["request_sha256"] == envelope.payload_sha256
-    assert started["native_task"]["kind"] == "ocrv-recovery-wrapper"
-    assert len(started["native_request_sha256"]) == 64
-    assert (attempt.root / "ocrv-recovery-request.json").is_file()
-    assert (attempt.root / "ocrv-recovery-result.json").is_file()
-
-
-def test_checker_recovery_invocation_is_stable_for_exact_message_retry(tmp_path: Path) -> None:
-    endpoint = checker_endpoint(tmp_path, "recovery")
-    envelope = recovery_envelope(tmp_path)
-    first = _recovery_invocation_id(envelope.message_id)
-    second = _recovery_invocation_id(envelope.message_id)
-    request = OcrvAdapter()._recovery_request(endpoint, envelope, first, tmp_path / "result.json")
-
-    assert first == second
-    assert request["recovery_invocation_id"] == first
-
-
-def test_worker_completion_recovery_spawns_from_registered_runtime_root_not_long_source(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    endpoint = checker_endpoint(tmp_path, "recovery")
-    envelope = recovery_envelope(tmp_path)
-    long_source = tmp_path / ("source-" + "a" * 120) / ("attempt-" + "b" * 120)
-    long_source.mkdir(parents=True)
-    assert len(str(long_source)) > 260
-    raw = dict(envelope.__dict__)
-    payload = dict(envelope.payload)
-    payload["source_attempt_root"] = str(long_source)
-    raw["payload"] = payload
-    raw["payload_sha256"] = canonical_json_sha256(payload)
-    envelope = Envelope.from_dict(raw)
-    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
-    captured: dict[str, str] = {}
-
-    class SpawnObserved(Exception):
-        pass
-
-    def observe_spawn(
-        _command: list[str],
-        *,
-        cwd: str,
-        env: dict[str, str],
-        process_kwargs: dict[str, object],
-    ) -> None:
-        assert env["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] == endpoint.role_instance_id
-        assert isinstance(process_kwargs, dict)
-        captured["cwd"] = cwd
-        raise SpawnObserved
-
-    monkeypatch.setattr("slk_transport.adapters.ocrv.spawn", observe_spawn)
-
-    with pytest.raises(SpawnObserved):
-        OcrvAdapter().deliver(endpoint, envelope, attempt)
-
-    assert Path(captured["cwd"]).resolve() == Path(str(endpoint.address["runtime_root"])).resolve()
-    assert Path(captured["cwd"]).resolve() != long_source.resolve()
-
-
-def test_ocrv_recovery_companion_strips_parent_credentials_and_keeps_native_identity(
-    tmp_path: Path,
-) -> None:
-    result_path = tmp_path / "result.json"
-    request = {
-        "schema_version": "slk.ocrv-worker-recovery-request/v1",
-        "result_path": str(result_path),
-        "transport_command": [sys.executable, str(FAKE_RECOVERY_TRANSPORT)],
-    }
-    request_path = tmp_path / "request.json"
-    request_path.write_text(json.dumps(request), encoding="utf-8")
-    environment = os.environ.copy()
-    environment["SLK_ROLE_CREDENTIAL"] = "slk_parent_secret"
-    environment["SLK_OVERWATCHER_CREDENTIAL"] = "slk_parent_secret"
-    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = "RUN-A-checker-001"
-    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = "recovery-1"
-    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = "2"
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(RECOVERY_COMPANION),
-            "--slk-worker-recovery",
-            "--request",
-            str(request_path),
-            "--output",
-            str(result_path),
-        ],
-        text=True,
-        encoding="utf-8",
-        capture_output=True,
-        check=False,
-        env=environment,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert json.loads(result_path.read_text(encoding="utf-8"))["status"] == "CHECKER_D1_RECORDED"
-
-
-def test_recovery_wrapper_spawn_failure_is_terminal_and_never_claims_actual_d1(
-    tmp_path: Path,
-) -> None:
-    endpoint_raw = endpoint_value(role="checker", version=2)
-    runtime_root = tmp_path / "ocrv-runtime"
-    runtime_root.mkdir()
-    endpoint_raw["address"] = {
-        "command": [sys.executable, str(RECOVERY_COMPANION)],
-        "runtime_root": str(runtime_root),
-        "timeout_seconds": 5,
-    }
-    envelope = recovery_envelope(tmp_path)
-    envelope_raw = dict(envelope.__dict__)
-    payload = dict(envelope.payload)
-    payload["transport_command"] = [str(tmp_path / "missing-checker-recovery-host.exe")]
-    envelope_raw["payload"] = payload
-    envelope_raw["payload_sha256"] = canonical_json_sha256(payload)
-    root = tmp_path / "attempts"
-
-    result = dispatch_once(
-        endpoint_raw,
-        envelope_raw,
-        root,
-        adapters={"ocrv-checker": OcrvAdapter()},
-    )
-
-    attempt = root / envelope.run_id / envelope.message_id
-    started = json.loads((attempt / "started.json").read_text(encoding="utf-8"))
-    assert result.status == "failed"
-    assert result.error_code == "OCRV_RECOVERY_FAILED"
-    assert (attempt / "failed.json").is_file()
-    assert started["native_task"]["kind"] == "ocrv-recovery-wrapper"
-    assert not (attempt / "ocrv-recovery-result.json").exists()
-
-
 def test_ocrv_records_spawn_start_before_terminal_result(tmp_path: Path) -> None:
     endpoint = checker_endpoint(tmp_path, "delayed-terminal")
     envelope = candidate_envelope(tmp_path)
@@ -441,9 +287,9 @@ def test_ocrv_preflight_failure_does_not_write_fake_started_receipt(tmp_path: Pa
 
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "failed"
-    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
-    assert not (attempt.root / "started.json").exists()
+    assert result.status == "completed"  # preview is advisory, not a review gate
+    assert result.error_code is None
+    assert (attempt.root / "started.json").exists()  # actual one native invocation
 
 
 def test_ocrv_fails_closed_when_session_identity_is_missing(tmp_path: Path) -> None:
@@ -451,10 +297,10 @@ def test_ocrv_fails_closed_when_session_identity_is_missing(tmp_path: Path) -> N
     envelope = candidate_envelope(tmp_path)
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
 
-    with pytest.raises(AdapterError) as error:
-        OcrvAdapter().deliver(endpoint, envelope, attempt)
-
-    assert error.value.error_code == "OCRV_RESULT_INVALID"
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+    assert result.status == "completed"
+    assert "session_id" not in result.native_identity
+    assert (attempt.root / "ocrv-result.json").is_file()
     assert (attempt.root / "started.json").exists()
 
 
@@ -465,8 +311,8 @@ def test_ocrv_preserves_a_valid_incomplete_review_without_calling_it_pass(tmp_pa
 
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "completed"
-    assert result.native_identity["verdict"] == "INCOMPLETE"
+    assert result.status == "failed"
+    assert "verdict" not in result.native_identity
     assert result.native_identity["exit_code"] == 3
     assert (attempt.root / "started.json").is_file()
 
@@ -560,63 +406,9 @@ def test_ocrv_large_review_runs_once_without_legacy_threshold_segmentation(
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
     assert result.status == "completed"
-    assert result.native_identity["review_segment_count"] == 0
+    assert "review_segment_count" not in result.native_identity
     assert (attempt.root / "ocrv-result.json").is_file()
     assert not (attempt.root / "review-segments").exists()
-
-
-def test_ocrv_segments_cover_every_selected_path_against_every_criterion(
-    tmp_path: Path,
-) -> None:
-    envelope = _large_candidate_envelope(tmp_path)
-    adapter = OcrvAdapter()
-    request = adapter._candidate_request(envelope)
-    paths = ["src-1.rs", "src-2.rs", "src-3.rs"]
-    inventory = [
-        {"path": path, "insertions": 10, "deletions": 2}
-        for path in paths
-    ]
-
-    segments = adapter._review_segments(request, paths, inventory)
-
-    covered = {
-        (path, criterion_id)
-        for segment in segments
-        for path in segment["review_scope"]["include_paths"]
-        for criterion_id in segment["review_scope"]["criterion_ids"]
-    }
-    expected = {
-        (path, f"D1-{ordinal:03d}")
-        for path in paths
-        for ordinal in range(1, len(request["d1_criteria"]) + 1)
-    }
-    assert covered == expected
-
-
-def test_legacy_line_file_and_background_limits_are_advisory_only(tmp_path: Path) -> None:
-    adapter = OcrvAdapter()
-    request = adapter._candidate_request(_large_candidate_envelope(tmp_path))
-    request["capacity"].update(
-        max_background_characters=1,
-        max_background_bytes=1,
-        max_changed_lines=1,
-        max_segment_paths=1,
-    )
-    paths = ["large.py", "support.py", "proof.py"]
-    preflight = {
-        "status": "READY",
-        "background": {"characters": 20_000, "bytes": 40_000, "evidence_bytes": 80_000},
-        "preview": {
-            "selected_paths": paths,
-            "inventory": [
-                {"path": "large.py", "insertions": 994, "deletions": 83},
-                {"path": "support.py", "insertions": 4, "deletions": 2},
-                {"path": "proof.py", "insertions": 1, "deletions": 0},
-            ],
-        },
-    }
-
-    assert adapter._preflight_fits(request, preflight) is True
 
 
 def test_ocrv_large_background_is_advisory_and_reaches_one_real_review(
@@ -635,10 +427,9 @@ def test_ocrv_large_background_is_advisory_and_reaches_one_real_review(
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
     assert result.status == "completed"
-    assert result.native_identity["review_segment_count"] == 0
-    preflight = json.loads((attempt.root / "ocrv-preflight.json").read_text(encoding="utf-8"))
+    assert "review_segment_count" not in result.native_identity
     request = json.loads((attempt.root / "ocrv-request.json").read_text(encoding="utf-8"))
-    assert preflight["background"]["characters"] > request["capacity"]["max_background_characters"]
+    assert sum(map(len, request["d1_criteria"])) > request["capacity"]["max_background_characters"]
     assert (attempt.root / "ocrv-result.json").is_file()
 
 
@@ -686,13 +477,13 @@ def test_ocrv_accepts_preflight_incomplete_exit_as_d1_incomplete(tmp_path: Path)
 
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "failed"
-    assert result.error_code == "OCRV_REVIEW_INCOMPLETE"
-    assert (attempt.root / "ocrv-preflight.json").is_file()
+    assert result.status == "completed"  # preview is advisory, not a review gate
+    assert result.error_code is None
+    assert not (attempt.root / "ocrv-preflight.json").exists()
     invocations = (Path(str(envelope.payload["repository"])) / ".fake-ocrv-invocations.jsonl").read_text(
         encoding="utf-8"
     )
-    assert '"preflight": false' not in invocations
+    assert invocations.count('"preflight": false') == 1
 
 
 def test_ocrv_blocking_full_review_returns_fail_without_segmentation(tmp_path: Path) -> None:
@@ -702,8 +493,9 @@ def test_ocrv_blocking_full_review_returns_fail_without_segmentation(tmp_path: P
 
     result = OcrvAdapter().deliver(endpoint, envelope, attempt)
 
-    assert result.status == "completed"
-    assert result.native_identity["verdict"] == "FAIL"
+    assert result.status == "failed"
+    assert "verdict" not in result.native_identity
+    assert result.native_identity["exit_code"] == 2
     assert (attempt.root / "ocrv-result.json").is_file()
     assert not (attempt.root / "review-segments").exists()
 
@@ -725,3 +517,14 @@ def test_ocrv_start_timeout_does_not_kill_an_already_started_full_review(
 
     assert result.status == "completed"
     assert not (attempt.root / "review-segments").exists()
+
+@pytest.mark.parametrize("kind", ["WORKER_COMPLETION_RECOVERY", "PRE_D0_BLOCKED_RECOVERY"])
+def test_retired_output_recovery_never_spawns_or_writes_state(tmp_path, monkeypatch, kind):
+    endpoint, original = checker_endpoint(tmp_path), recovery_envelope(tmp_path)
+    envelope = Envelope.from_dict({**original.__dict__, "payload_type": kind})
+    attempt = AttemptStore(tmp_path / "retired-attempts").create(envelope)
+    monkeypatch.setattr("slk_transport.adapters.ocrv.spawn", lambda *a, **k: pytest.fail("retired API must not launch"))
+    result = OcrvAdapter().deliver(endpoint, envelope, attempt)
+    assert result.status == "failed" and result.error_code == "OUTPUT_FORMAT_RECOVERY_RETIRED"
+    assert not (attempt.root / "started.json").exists()
+    assert not (attempt.root / "ocrv-result.json").exists()

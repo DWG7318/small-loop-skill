@@ -38,13 +38,6 @@ def _without_provider_thinking(value: Any) -> Any:
     return value
 
 
-def normalized_checker_findings(findings: list[Any]) -> list[str]:
-    return [
-        json.dumps(_without_provider_thinking(finding), ensure_ascii=False, sort_keys=True)
-        for finding in findings
-    ]
-
-
 def load_role_host(endpoint_raw: Mapping[str, Any]) -> "RoleHost | None":
     path_value = os.environ.get("SLK_TRANSPORT_ROLE_HOST")
     digest = os.environ.get("SLK_TRANSPORT_ROLE_HOST_SHA256")
@@ -283,406 +276,362 @@ class RoleHost:
         return receipt
 
     def complete(self, source: Path) -> dict[str, Any]:
+        """Deliver saved output; never approve its format or infer an engineering action."""
         envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
         role = envelope.receiver_role
         if wc._read_object(source / "endpoint.json", "source endpoint") != self.endpoint(role):
             raise wc.CompletionError("ROLE_HOST_BINDING_INVALID", "source receiver is not the prepared role")
+        parse_delivery(self.endpoint(role), wc._read_object(source / "envelope.json", "source envelope"))
         root = source / "role-host"
         root.mkdir(parents=True, exist_ok=True)
-        result_path = root / "result.json"
-        source_sha256 = self._source_sha256(source, role)
-        handoff_evidence = source / "incomplete-handoff" / "evidence.json"
-        if result_path.exists():
-            saved = wc._read_object(result_path, "owned handoff receipt")
-            if (saved.get("binding_sha256") != self.digest or saved.get("source_message_id") != envelope.message_id
-                or saved.get("source_sha256") != source_sha256):
-                raise wc.CompletionError("ROLE_HOST_CONFLICT", "owned handoff receipt changed identity")
-            return saved
-        incomplete_worker = (role == "worker" and not (source / "completed.json").is_file()
-                             and (source / "failed.json").is_file() and handoff_evidence.is_file())
-        if not (source / "completed.json").is_file() and not incomplete_worker:
-            return {"status": "ENGINEERING_RESULT_INCOMPLETE", "source_message_id": envelope.message_id}
-        if not incomplete_worker:
-            self._completion_proof(source, envelope)
-        projection = None if role == "supervisor" else self._boundary(envelope)
-        terminal = source / ("failed.json" if incomplete_worker else "completed.json")
-        occurred_at = datetime.fromtimestamp(terminal.stat().st_mtime, timezone.utc).isoformat()
-        if role == "supervisor":
-            result = self._supervisor_result(source, envelope, root, occurred_at)
-        elif role == "worker":
-            request_path = root / "continuation.json"
-            if request_path.exists():
-                request = wc._read_object(request_path, "owned Worker continuation")
-            else:
-                snapshot = projection["runtime_snapshot"]
-                request = wc.build_continuation_request(source, self.endpoint("checker"), projection,
-                    plan_revision=self.binding["plan_revision"], runtime_revision=snapshot["runtime_revision"],
-                    token_sequence=snapshot["token_sequence"], credential_path=self.credential_path(role),
-                    state_command=self.state, transport_command=self.transport, occurred_at=occurred_at,
-                    temporal=self.binding.get("temporal"))
-                wc._write_or_reuse_stable_request(request_path, request)
-            result = wc.execute_worker_host_continuation(request)
-        elif envelope.payload_type == "CELL_DISPATCH":
+        if role == "checker" and envelope.payload_type == "CELL_DISPATCH":
             result = wc._read_object(source / "checker-result.json", "Checker dispatch")
             outgoing = self._dispatch_envelope(envelope, result)
-            result = self._send_owned(root, outgoing, occurred_at, projection)
-        elif envelope.payload_type in {"CANDIDATE_READY", "D1_MANAGEMENT_RETURN"}:
-            result = self._checker_result(source, envelope, root, occurred_at, projection)
-        else:
-            raise wc.CompletionError("ROLE_HOST_OPERATION_INVALID", "no normal suffix for this operation")
-        result = {**result, "binding_sha256": self.digest, "source_message_id": envelope.message_id,
-                  "source_sha256": source_sha256}
-        wc._write_or_reuse_stable_request(result_path, result)
-        return result
-
-    def consume_context_terminal(self, source: Path, session_record: Path, session_sha256: str,
-                                 *, prepare_only: bool = False) -> dict[str, Any]:
-        """Original Checker consumes one proven blocker and keeps the old failed attempt immutable."""
-        from . import context_review as cr
-        source = source.resolve()
-        if wc._read_object(source / 'endpoint.json', 'context Checker endpoint') != self.endpoint('checker'):
-            raise ValueError('context consumption is outside the original registered Checker')
-        parse_delivery(self.endpoint('checker'), wc._read_object(source / 'envelope.json', 'context source envelope'))
-        basis = cr.validate_terminal(source, session_record, session_sha256)
-        envelope = basis['envelope']
-        root = source / 'role-host/context-terminal'
-        seal = {'schema_version': 'slk.ocrv-context-terminal-consumption/v1', 'binding_sha256': self.digest,
-                'source_message_id': envelope.message_id, 'source_sha256': basis['source_hashes']}
-        receipt = root / 'result.json'
-        if receipt.exists():
-            value = wc._read_object(receipt, 'context suffix receipt')
-            if any(value.get(k) != v for k, v in seal.items()): raise ValueError('context consumption receipt drift')
-            return value
-        projection = self._boundary(envelope)
-        if prepare_only:
-            return {**seal, 'status': 'READY_TO_CONSUME_CONTEXT_BLOCKER', 'verdict': 'FAIL',
-                    'selected_paths': len(basis['selected']), 'reused_paths': len(basis['reused']),
-                    'reviewed_paths': basis['scope'], 'not_reviewed_paths': [p for group in basis['groups'][1:] for p in group]}
-        credential = wc.unprotect_dpapi_hex(self.credential_path('checker'))
-        try:
-            self._authenticate('checker', credential)
-        finally:
-            credential = ''
-        root.mkdir(parents=True, exist_ok=True)
-        wc._write_or_reuse_stable_request(root / 'seal.json', seal)
-        native = root / 'native-attempt'
-        cr.materialize_terminal(source, native, basis)
-        # Validate both the immutable source and deterministic derivation again before a formal D1 write.
-        refreshed = cr.validate_terminal(source, session_record, session_sha256)
-        if refreshed['source_hashes'] != basis['source_hashes']: raise ValueError('context source changed during consumption')
-        cr.materialize_terminal(source, native, refreshed)
-        occurred_at = datetime.fromtimestamp((source / 'review-segments/segment-001/result.json').stat().st_mtime,
-                                             timezone.utc).isoformat()
-        suffix = root / 'suffix'; suffix.mkdir(exist_ok=True)
-        result = self._checker_result(native, envelope, suffix, occurred_at, projection)
-        value = {**result, **seal}
-        wc._write_or_reuse_stable_request(receipt, value)
-        return value
-
-    def reclassify_completed_checker(self, source: Path) -> dict[str, Any]:
-        """Correct one completed OCRV result whose proven blockers were masked by a tool error."""
-
-        from . import checker_escalation as failed
-
-        source = source.resolve()
-        endpoint = self.endpoint("checker")
-        if wc._read_object(source / "endpoint.json", "source endpoint") != endpoint:
-            raise wc.CompletionError(
-                "ROLE_HOST_BINDING_INVALID", "classification correction is outside the prepared Checker"
-            )
-        envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
-        if envelope.receiver_role != "checker" or envelope.payload_type != "CANDIDATE_READY":
-            raise wc.CompletionError(
-                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
-                "classification correction requires one completed candidate review",
-            )
-        prior_receipt = wc._read_object(source / "role-host" / "result.json", "original D1 receipt")
-        source_sha256 = self._source_sha256(source, "checker")
-        if (
-            prior_receipt.get("binding_sha256") != self.digest
-            or prior_receipt.get("source_message_id") != envelope.message_id
-            or prior_receipt.get("source_sha256") != source_sha256
-            or prior_receipt.get("status") != "CHECKER_D1_RECORDED"
-            or prior_receipt.get("d1_verdict") != "INCOMPLETE"
-            or prior_receipt.get("d1_event_type") != "D1_INCOMPLETE"
-        ):
-            raise wc.CompletionError(
-                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
-                "original RoleHost receipt is not the exact completed INCOMPLETE result",
-            )
-
-        original_result_path = source / "ocrv-result.json"
-        original_terminal_path = source / "completed.json"
-        started_path = source / "started.json"
-        original_result = wc._read_object(original_result_path, "original OCRV result")
-        original_terminal = wc._read_object(original_terminal_path, "original OCRV terminal")
-        raw_path = Path(str(original_result.get("artifacts", {}).get("raw_review", ""))).resolve()
-        raw = wc._read_object(raw_path, "original OCRV raw review")
-        manifest = raw.get("manifest")
-        coverage = manifest.get("coverage") if isinstance(manifest, Mapping) else None
-        selected = coverage.get("selected") if isinstance(coverage, Mapping) else None
-        completed = coverage.get("completed") if isinstance(coverage, Mapping) else None
-        reused = coverage.get("reused", []) if isinstance(coverage, Mapping) else None
-        comments = raw.get("comments")
-        tools = raw.get("tool_calls")
-        severities = [
-            str(item.get("severity", "")).strip().upper()
-            for item in comments or []
-            if isinstance(item, Mapping)
-        ]
-        blocking = {"MEDIUM", "HIGH", "BLOCKER", "CRITICAL"}
-        identity = original_terminal.get("native_identity")
-        try:
-            validate_native_start(
-                started_path,
-                adapter=endpoint["adapter"],
-                run_id=envelope.run_id,
-                cell_id=envelope.cell_id,
-                message_id=envelope.message_id,
-                request_sha256=envelope.payload_sha256,
-            )
-        except (OSError, ValueError) as exc:
-            raise wc.CompletionError(
-                "CHECKER_CLASSIFICATION_CORRECTION_INVALID", "original native start is invalid"
-            ) from exc
-        if (
-            original_result.get("verdict") != "INCOMPLETE"
-            or original_result.get("reason_codes") != ["OCR_TOOL_FAILURE"]
-            or original_result.get("run_id") != envelope.run_id
-            or original_result.get("cell_id") != envelope.cell_id
-            or not isinstance(identity, Mapping)
-            or original_terminal.get("status") != "completed"
-            or identity.get("verdict") != "INCOMPLETE"
-            or identity.get("exit_code") != 3
-            or raw.get("status") != "complete"
-            or raw.get("session_id") != original_result.get("review", {}).get("session_id")
-            or not isinstance(manifest, Mapping)
-            or manifest.get("terminal_state") != "complete"
-            or not isinstance(coverage, Mapping)
-            or not isinstance(selected, list)
-            or not selected
-            or not isinstance(completed, list)
-            or not isinstance(reused, list)
-            or coverage.get("failed") != []
-            or coverage.get("waived") != []
-            or {json.dumps(item, sort_keys=True) for item in selected}
-            != {json.dumps(item, sort_keys=True) for item in [*completed, *reused]}
-            or not isinstance(tools, Mapping)
-            or not isinstance(tools.get("failure"), int)
-            or tools.get("failure", 0) < 1
-            or not isinstance(comments, list)
-            or len(severities) != len(comments)
-            or any(value not in {"INFO", "LOW", *blocking} for value in severities)
-            or not any(value in blocking for value in severities)
-            or _without_provider_thinking(comments) != original_result.get("findings")
-        ):
-            raise wc.CompletionError(
-                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
-                "immutable OCRV evidence does not prove a blocker masked only by a tool failure",
-            )
-
-        projection = self.projection()
-        snapshot = projection.get("runtime_snapshot", {})
-        events = projection.get("events", [])
-        incomplete = [
-            event for event in events
-            if isinstance(event, Mapping)
-            and event.get("event_type") == "D1_INCOMPLETE"
-            and event.get("cell_id") == envelope.cell_id
-            and wc._event_details(event).get("candidate_message_id") == envelope.message_id
-        ]
-        if len(incomplete) != 1:
-            raise wc.CompletionError(
-                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
-                "current Run does not contain one exact source D1 INCOMPLETE",
-            )
-        source_event = incomplete[0]
-        source_details = wc._event_details(source_event)
-        if (
-            source_event.get("author_role_instance_id") != endpoint["role_instance_id"]
-            or source_details.get("verdict") != "INCOMPLETE"
-            or source_details.get("native_terminal_sha256") != wc._sha256(original_terminal_path)
-            or source_details.get("native_result_sha256") != wc._sha256(original_result_path)
-            or snapshot.get("plan_revision") != self.binding["plan_revision"]
-            or snapshot.get("token_holder_role_instance_id") != endpoint["role_instance_id"]
-            or snapshot.get("latest_message_id") != envelope.message_id
-        ):
-            raise wc.CompletionError(
-                "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
-                "current Checker boundary differs from the immutable incomplete result",
-            )
-
-        correction_id = wc._stable_id(str(source_event["event_id"]), "ocr-tool-failure-reclassification")
-        correction = source / "role-host" / "classification-correction"
-        final_path = source / "role-host" / "classification-correction-result.json"
-        if final_path.is_file():
-            saved = wc._read_object(final_path, "classification correction result")
-            if (
-                saved.get("binding_sha256") != self.digest
+            return self._send_owned(root, outgoing, datetime.now(timezone.utc).isoformat(),
+                                    self._boundary(envelope))
+        legacy_roots = [source / name for name in ("worker-continuation", "invalid-result-supplement",
+                        "pre-d0-blocked-recovery", "incomplete-handoff")]
+        legacy = next((path for path in legacy_roots if path.exists()), None) if role == "worker" else None
+        prior_receipt = root / "result.json"
+        if role != "supervisor" and (prior_receipt.is_file() or legacy is not None or (root / "continuation.json").is_file()):
+            # A method migration must not replace a previously sent message ID.
+            saved = wc._read_object(prior_receipt, "previous handoff receipt") if prior_receipt.is_file() else {}
+            if saved and (saved.get("binding_sha256") != self.digest
                 or saved.get("source_message_id") != envelope.message_id
-                or saved.get("source_sha256") != source_sha256
-                or saved.get("correction_id") != correction_id
-            ):
-                raise wc.CompletionError(
-                    "ROLE_HOST_CONFLICT", "classification correction receipt changed identity"
-                )
-            return saved
-        correction.mkdir(parents=True, exist_ok=True)
-        for name in ("endpoint.json", "envelope.json", "started.json"):
-            destination = correction / name
-            if destination.is_file():
-                if destination.read_bytes() != (source / name).read_bytes():
-                    raise wc.CompletionError(
-                        "ROLE_HOST_CONFLICT", "classification correction source changed"
-                    )
+                or saved.get("source_sha256") != self._source_sha256(source, role)):
+                raise wc.CompletionError("ROLE_HOST_CONFLICT", "previous handoff source identity changed")
+            target_role = "checker" if role == "worker" else "supervisor"
+            target = self.endpoint(target_role)
+            try:
+                path = saved.get("native_attempt_path")
+                if path is None and role == "worker":
+                    attempts = (Path(str(self.binding["temporal"]["attempt_root"])) if "temporal" in self.binding
+                                else (legacy or source / "worker-continuation") / "checker-attempts")
+                    path = str(attempts / envelope.run_id / wc._stable_id(envelope.message_id, "candidate-ready"))
+                if not isinstance(path, str) or not Path(path).is_absolute():
+                    raise ValueError("previous receipt has no actual native delivery location")
+                native = Path(path)
+                old = parse_delivery(wc._read_object(native / "endpoint.json", "previous endpoint"),
+                    wc._read_object(native / "envelope.json", "previous envelope")).envelope
+                if (wc._read_object(native / "endpoint.json", "previous endpoint") != target
+                    or (old.run_id, old.go_id, old.cell_id) != (envelope.run_id, envelope.go_id, envelope.cell_id)
+                    or old.sender_role != role or old.sender_role_instance_id != envelope.receiver_role_instance_id):
+                    raise ValueError("previous delivery changed scope or prepared receiver")
+                from .desktop_current_turn import resolve_delivery_start
+                from dataclasses import asdict
+                started_path, _ = resolve_delivery_start(native, target, asdict(old))
+                delivery = {"status": "started", "message_id": old.message_id,
+                            "evidence": str(started_path)}
+            except (ValueError, OSError) as exc:
+                delivery = {"status": "failed", "error_code": "PREVIOUS_DELIVERY_UNPROVED", "message": str(exc)}
+            return {"status": "OUTPUT_DELIVERED" if delivery["status"] == "started"
+                    else "OUTPUT_DELIVERY_UNCONFIRMED", "previous_receipt": str(prior_receipt if prior_receipt.exists() else legacy or root / "continuation.json"),
+                    "delivery": delivery}
+        return self._deliver_output(source, envelope, root)
+
+    def record_worker_action(self, source: Path, event_type: str, details: Mapping[str, Any]) -> dict[str, Any]:
+        """Only the live original Worker submits its own existing standard work events."""
+        if event_type not in {"WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"} or not isinstance(details, Mapping):
+            raise ValueError("an explicit Worker event and details object are required")
+        endpoint = self.endpoint("worker")
+        envelope = parse_delivery(endpoint, wc._read_object(source / "envelope.json", "Worker source")).envelope
+        if wc._read_object(source / "endpoint.json", "Worker endpoint") != endpoint:
+            raise wc.CompletionError("ROLE_HOST_BINDING_INVALID", "Worker endpoint changed")
+        context = {"adapter": endpoint["adapter"], "run_id": envelope.run_id,
+                   "cell_id": envelope.cell_id, "message_id": envelope.message_id}
+        try:
+            path = Path(os.environ.get("SLK_NATIVE_ACTIVITY_PATH", ""))
+            if (not path.is_absolute() or path.resolve() != (source / "native-activity.json").resolve()
+                or json.loads(os.environ.get("SLK_NATIVE_ACTIVITY_CONTEXT", "null")) != context):
+                raise ValueError("Worker native invocation differs")
+            projection = self._boundary(envelope)  # reuse parent start/atomic-commit synchronization
+            native = validate_native_start(source / "started.json", adapter=endpoint["adapter"],
+                run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
+                request_sha256=envelope.payload_sha256)
+            session = endpoint["address"]["session_id"]
+            if (native["native_task"]["kind"] != "dsh-session"
+                or (session is not None and native["native_task"]["id"] != session)):
+                raise ValueError("Worker Session differs")
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise wc.CompletionError("WORKER_ACTION_CALLER_UNPROVEN", "not the original DSH invocation") from exc
+        facts = {"decision_source": "WORKER_EXPLICIT", "source_message_id": envelope.message_id,
+                 "native_start_sha256": wc._sha256(source / "started.json"),
+                 "native_task_id": native["native_task"]["id"]}
+        if event_type == "CANDIDATE_SUBMITTED":
+            if not isinstance(details.get("candidate"), Mapping):
+                raise ValueError("Worker must explicitly identify its candidate")
+            facts["handoff_message_id"] = wc._stable_id(envelope.message_id, "output-delivery")
+        if any(key in details and details[key] != value for key, value in facts.items()):
+            raise wc.CompletionError("WORKER_ACTION_IDENTITY_MISMATCH", "Worker action changed native source identity")
+        root = source / "role-host"
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / f"worker-{event_type.lower()}.json"
+        request = {"event_id": wc._stable_id(envelope.message_id, event_type.lower()),
+            "run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
+            "attempt": wc._source_attempt(projection, envelope), "plan_revision": self.binding["plan_revision"],
+            "role_instance_id": endpoint["role_instance_id"], "event_type": event_type,
+            "details": {**dict(details), **facts}, "corrects_event_id": None,
+            "occurred_at": datetime.now(timezone.utc).isoformat()}
+        if path.is_file():
+            request["occurred_at"] = wc._read_object(path, "Worker action")["occurred_at"]
+        credential = wc.unprotect_dpapi_hex(self.credential_path("worker"))
+        try:
+            self._authenticate("worker", credential)
+            wc._write_or_reuse_stable_request(path, request)
+            written = self._state_json(["write", "--request", str(path)], credential=credential)
+            if written.get("status") != "recorded":
+                raise wc.CompletionError("WORKER_ACTION_WRITE_FAILED", "explicit Worker event was not recorded")
+        finally:
+            credential = ""
+        return {"status": "WORKER_ACTION_RECORDED", "event_type": event_type, "request_path": str(path)}
+
+    def record_checker_decision(self, source: Path, verdict: str, message: str | None = None) -> dict[str, Any]:
+        """An explicit original-Checker action; report text never invokes this method."""
+        if verdict not in {"PASS", "FAIL", "INCOMPLETE"}:
+            raise ValueError("Checker decision must be explicit")
+        if message is not None and not isinstance(message, str):
+            raise ValueError("Checker message must be original text or absent")
+        envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
+        endpoint = self.endpoint("checker")
+        if (envelope.receiver_role != "checker"
+            or wc._read_object(source / "endpoint.json", "source endpoint") != endpoint):
+            raise wc.CompletionError("ROLE_HOST_BINDING_INVALID", "not the original Checker source")
+        parse_delivery(endpoint, wc._read_object(source / "envelope.json", "source envelope"))
+        receipt = os.environ.get("SLK_NATIVE_START_RECEIPT", "")
+        if not receipt or Path(receipt).resolve() != (source / "native-start.received.json").resolve():
+            raise wc.CompletionError("CHECKER_DECISION_CALLER_UNPROVEN", "action is not inside the original OCRV invocation")
+        native = validate_native_start(Path(receipt), adapter=endpoint["adapter"],
+            run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
+            request_sha256=envelope.payload_sha256)
+        if native["native_task"]["kind"] != "ocrv-review":
+            raise wc.CompletionError("CHECKER_DECISION_CALLER_UNPROVEN", "not an OCRV review")
+        root = source / "role-host"
+        root.mkdir(parents=True, exist_ok=True)
+        decision = {"source_message_id": envelope.message_id, "verdict": verdict,
+            "decision_source": "CHECKER_EXPLICIT", "role_instance_id": endpoint["role_instance_id"],
+            "native_task_id": native["native_task"]["id"],
+            "native_start_path": str(Path(receipt).resolve()), "native_start_sha256": wc._sha256(Path(receipt)),
+            "candidate_message_id": (envelope.payload["candidate_message_id"]
+                                     if envelope.payload_type == "D1_MANAGEMENT_RETURN" else envelope.message_id),
+            "native_message_id": envelope.message_id, "message": message}
+        credential = wc.unprotect_dpapi_hex(self.credential_path("checker"))
+        try:
+            self._authenticate("checker", credential)
+            path = root / "checker-decision.json"
+            projection = self.projection() if path.is_file() else self._boundary(envelope)
+            if path.is_file():
+                saved = wc._read_object(path, "explicit Checker decision")
+                if set(saved) != set(decision) | {"decided_at"} or any(
+                    saved.get(key) != value for key, value in decision.items()
+                ):
+                    raise wc.CompletionError("ROLE_HOST_CONFLICT", "explicit Checker decision changed")
+                decision = saved
             else:
-                temporary = destination.with_suffix(destination.suffix + ".tmp")
-                shutil.copyfile(source / name, temporary)
-                temporary.replace(destination)
-        corrected_result = {
-            **original_result,
-            "verdict": "FAIL",
-            "reason_codes": ["OCR_BLOCKING_FINDINGS_PRESENT", "OCR_TOOL_FAILURE"],
-            "findings": _without_provider_thinking(comments),
-        }
-        corrected_terminal = {
-            **original_terminal,
-            "native_identity": {**identity, "verdict": "FAIL", "exit_code": 2},
-            "evidence": [
-                *[item for item in original_terminal.get("evidence", []) if item != "normalization-correction.json"],
-                "normalization-correction.json",
-            ],
-        }
-        corrected_result_path = wc._write_or_reuse_stable_request(
-            correction / "ocrv-result.json", corrected_result
-        )
-        corrected_terminal_path = wc._write_or_reuse_stable_request(
-            correction / "completed.json", corrected_terminal
-        )
-        correction_receipt = {
-            "schema_version": "slk.ocrv-classification-correction/v1",
-            "cause": "BLOCKING_FINDINGS_PRECEDE_AUXILIARY_TOOL_FAILURE",
-            "correction_id": correction_id,
-            "source_attempt_path": str(source),
-            "source_incomplete_event_id": source_event["event_id"],
-            "source_started_sha256": wc._sha256(started_path),
-            "source_terminal_sha256": wc._sha256(original_terminal_path),
-            "source_result_sha256": wc._sha256(original_result_path),
-            "raw_review_path": str(raw_path),
-            "raw_review_sha256": wc._sha256(raw_path),
-            "corrected_terminal_sha256": wc._sha256(corrected_terminal_path),
-            "corrected_result_sha256": wc._sha256(corrected_result_path),
-            "reason_codes": corrected_result["reason_codes"],
-        }
-        wc._write_or_reuse_stable_request(
-            correction / "normalization-correction.json", correction_receipt
-        )
+                decision["decided_at"] = datetime.now(timezone.utc).isoformat()
+            wc._write_or_reuse_stable_request(path, decision)
+            for event_type in ("D1_STARTED", {"PASS":"D1_PASSED", "FAIL":"D1_FAILED", "INCOMPLETE":"D1_INCOMPLETE"}[verdict]):
+                request = {"event_id": wc._stable_id(envelope.message_id, event_type.lower()),
+                    "run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
+                    "attempt": wc._source_attempt(projection, envelope),
+                    "plan_revision": self.binding["plan_revision"], "role_instance_id": endpoint["role_instance_id"],
+                    "event_type": event_type, "details": decision,
+                    "corrects_event_id": (envelope.payload["source_d1_incomplete_event_id"]
+                                          if envelope.payload_type == "D1_MANAGEMENT_RETURN" and event_type != "D1_STARTED" else None),
+                    "occurred_at": str(native["observed_at"] if event_type == "D1_STARTED" else decision["decided_at"])}
+                event_path = wc._write_or_reuse_stable_request(root / f"{event_type.lower()}.json", request)
+                written = self._state_json(["write", "--request", str(event_path)], credential=credential)
+                if written.get("status") != "recorded":
+                    raise wc.CompletionError("CHECKER_STATE_WRITE_FAILED", "explicit decision state was not recorded")
+        finally:
+            credential = ""
+        return {"status":"CHECKER_D1_RECORDED", "verdict":verdict, "decision_path":str(path)}
 
-        corrected_event_id = wc._stable_id(envelope.message_id, "d1-classification-" + correction_id)
-        latest_event = snapshot.get("latest_event_id")
-        if latest_event == source_event["event_id"]:
-            continuation = {
-                "run_id": envelope.run_id,
-                "go_id": envelope.go_id,
-                "cell_id": envelope.cell_id,
-                "attempt": source_event["attempt"],
-                "plan_revision": self.binding["plan_revision"],
-                "checker_endpoint": endpoint,
-                "state_command": self.state,
-                "occurred_at": datetime.now(timezone.utc).isoformat(),
-                "d1_correction_event_id": source_event["event_id"],
-                "d1_correction_id": correction_id,
-                "d1_correction_kind": "classification",
-            }
-            recorded = wc._record_checker_d1(
-                {"native_attempt_path": str(correction), "candidate_message_id": envelope.message_id},
-                continuation,
-                checker_credential_path=self.credential_path("checker"),
-                timeout_seconds=1,
-            )
-            if recorded.get("d1_verdict") != "FAIL":
-                raise wc.CompletionError(
-                    "CHECKER_CLASSIFICATION_CORRECTION_INVALID", "corrected evidence did not record FAIL"
-                )
-            projection = self.projection()
-            snapshot = projection["runtime_snapshot"]
+    def submit_checker_decision(self, source: Path, verdict: str, message: str | None = None) -> dict[str, Any]:
+        """The original Checker's deliberate call records D1 and runs its existing route."""
+        recorded = self.record_checker_decision(source, verdict, message)
+        envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "Checker source"))
+        root = source / "role-host" / "checker-handoff"
+        projection = self.projection()
+        decision = wc._read_object(Path(recorded["decision_path"]), "Checker decision")
+        if (root / "envelope.json").is_file():
+            outgoing = parse_delivery(wc._read_object(root / "endpoint.json", "Checker target"),
+                wc._read_object(root / "envelope.json", "Checker handoff")).envelope
         else:
-            matches = [event for event in events if event.get("event_id") == corrected_event_id]
-            if len(matches) != 1 or matches[0].get("corrects_event_id") != source_event["event_id"]:
-                raise wc.CompletionError(
-                    "CHECKER_CLASSIFICATION_CORRECTION_INVALID",
-                    "Checker boundary advanced outside the exact correction",
-                )
+            from . import checker_completion as completion, checker_escalation as escalation
+            from . import checker_management as management
+            root.mkdir(parents=True, exist_ok=True)
+            runtime = wc._write_or_reuse_stable_request(root / "runtime-projection.json", projection)
+            snapshot = projection["runtime_snapshot"]
+            frozen = next(c for c in self.binding["cells"] if c["cell_id"] == envelope.cell_id)
+            context = frozen["payload"]
+            event_type = {"PASS":"D1_PASSED", "FAIL":"D1_FAILED", "INCOMPLETE":"D1_INCOMPLETE"}[verdict]
+            event_id = wc._stable_id(envelope.message_id, event_type.lower())
+            attempts = (Path(str(self.binding["temporal"]["attempt_root"]))
+                        if "temporal" in self.binding else root / "attempts")
+            attempts.mkdir(parents=True, exist_ok=True)
+            common = {"method_version": projection["summary"]["slk_version"],
+                "run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
+                "attempt": wc._source_attempt(projection, envelope), "plan_revision": self.binding["plan_revision"],
+                "runtime_revision": snapshot["runtime_revision"], "token_sequence": snapshot["token_sequence"],
+                "checker_role_instance_id": envelope.receiver_role_instance_id,
+                "runtime_projection_path": str(runtime), "checker_credential_path": self.credential_path("checker"),
+                "state_command": self.state, "transport_command": self.transport,
+                "occurred_at": decision["decided_at"]}
+            if verdict == "PASS":
+                cells = completion._ordered_cells(projection)
+                ids = [cell["cell_id"] for cell in cells]
+                ordinal = ids.index(envelope.cell_id)
+                next_id = ids[ordinal + 1] if ordinal + 1 < len(ids) else None
+                route = "NEXT_CELL" if next_id else "D2_READY"
+                target = "worker" if next_id else "supervisor"
+                payload = (next(c["payload"] for c in self.binding["cells"] if c["cell_id"] == next_id)
+                    if next_id else {"d1_event_id": event_id, "required_cell_ids": ids, "accepted_cell_ids": ids,
+                        "final_candidate_message_id": decision["candidate_message_id"],
+                        "d2_criteria": self.binding["d2_criteria"], "evidence_refs": [recorded["decision_path"]]})
+                request = {**common, "schema_version": completion.REQUEST_SCHEMA,
+                    "completion_invocation_id": wc._stable_id(envelope.message_id, "explicit-pass"),
+                    "target_cell_id": next_id or envelope.cell_id, "d1_event_id": event_id, "route": route,
+                    "target_endpoint_path": self.binding["roles"][target]["endpoint_path"],
+                    "handoff_attempt_root": str(attempts), "payload": payload}
+                completion._validate_request(request)
+                prepared = completion._materialize(request, completion._validate_boundary(request))
+            else:
+                request = {**common, "native_attempt_path": str(source),
+                    "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
+                    "escalation_attempt_root": str(attempts), "evidence_refs": [recorded["decision_path"]]}
+                if verdict == "FAIL":
+                    request.update(schema_version=escalation.REQUEST_SCHEMA,
+                        post_d1_invocation_id=wc._stable_id(envelope.message_id, "explicit-fail"),
+                        d1_failure_event_id=event_id, rework_round=1 + sum(
+                            e.get("event_type") == "REWORK_REQUESTED" and e.get("cell_id") == envelope.cell_id
+                            for e in projection["events"]),
+                        cell_goal=context.get("task", context.get("cell_goal", "")),
+                        acceptance_criteria=context["d1_criteria"],
+                        findings=[message] if message is not None else [],
+                        reproduction_steps=[], expected_result=None)
+                    prepared = escalation.materialize_escalation(request)
+                else:
+                    request.update(schema_version=management.REQUEST_SCHEMA,
+                        management_invocation_id=wc._stable_id(envelope.message_id, "explicit-incomplete"),
+                        d1_incomplete_event_id=event_id, reason_codes=["CHECKER_EXPLICIT_INCOMPLETE"])
+                    prepared = management.materialize_management_escalation(request)
+            outgoing = Envelope.from_dict(prepared["envelope"])
+        if (outgoing.sender_role != "checker" or outgoing.sender_role_instance_id != envelope.receiver_role_instance_id
+            or outgoing.run_id != envelope.run_id or outgoing.go_id != envelope.go_id):
+            raise wc.CompletionError("ROLE_HOST_CONFLICT", "Checker action route changed identity")
+        handoff = self._send_owned(root, outgoing, decision["decided_at"], projection)
+        return {**recorded, "handoff": handoff}
 
-        projection_path = wc._write_or_reuse_stable_request(
-            correction / "d1-projection.json", projection
-        )
-        cell_goal = envelope.payload.get("cell_goal")
-        criteria = envelope.payload.get("d1_criteria")
-        if not isinstance(cell_goal, str) or not isinstance(criteria, list):
-            raise wc.CompletionError(
-                "CHECKER_CLASSIFICATION_CORRECTION_INVALID", "candidate acceptance contract is invalid"
-            )
-        escalation_root = correction / "post-d1"
-        escalation_root.mkdir(parents=True, exist_ok=True)
-        request_path = correction / "post-d1-request.json"
-        saved_request = (
-            wc._read_object(request_path, "existing classification escalation request")
-            if request_path.is_file() else {}
-        )
-        request_occurred_at = saved_request.get("occurred_at")
-        if not isinstance(request_occurred_at, str) or not request_occurred_at:
-            request_occurred_at = datetime.now(timezone.utc).isoformat()
-        request = {
-            "schema_version": failed.REQUEST_SCHEMA,
-            "method_version": snapshot["method_version"],
-            "post_d1_invocation_id": wc._stable_id(corrected_event_id, "classification-fail"),
-            "run_id": envelope.run_id,
-            "go_id": envelope.go_id,
-            "cell_id": envelope.cell_id,
-            "attempt": source_event["attempt"],
-            "plan_revision": self.binding["plan_revision"],
-            "runtime_revision": snapshot["runtime_revision"],
-            "token_sequence": snapshot["token_sequence"],
-            "checker_role_instance_id": endpoint["role_instance_id"],
-            "d1_failure_event_id": corrected_event_id,
-            "runtime_projection_path": str(projection_path),
-            "native_attempt_path": str(correction),
-            "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
-            "checker_credential_path": self.credential_path("checker"),
-            "state_command": self.state,
-            "transport_command": self.transport,
-            "escalation_attempt_root": str(escalation_root),
-            "rework_round": 1 + sum(
-                event.get("event_type") == "REWORK_REQUESTED"
-                and event.get("cell_id") == envelope.cell_id
-                for event in projection["events"]
-            ),
-            "cell_goal": cell_goal,
-            "acceptance_criteria": criteria,
-            "findings": normalized_checker_findings(corrected_result["findings"]),
-            "reproduction_steps": [
-                "Read the preserved Checker findings and cited evidence; do not infer a reproduction."
-            ],
-            "expected_result": "Satisfy the unchanged CELL acceptance criteria.",
-            "evidence_refs": [
-                str(corrected_result_path), str(correction / "normalization-correction.json")
-            ],
-            "occurred_at": request_occurred_at,
-        }
-        request_path = wc._write_or_reuse_stable_request(request_path, request)
-        result = failed.execute_checker_escalation(
-            request, request_path=request_path, request_sha256=wc._sha256(request_path)
-        )
-        receipt = {
-            **result,
-            "binding_sha256": self.digest,
-            "source_message_id": envelope.message_id,
-            "source_sha256": source_sha256,
-            "correction_id": correction_id,
-        }
-        wc._write_or_reuse_stable_request(final_path, receipt)
+    def _deliver_output(self, source: Path, envelope: Envelope, root: Path) -> dict[str, Any]:
+        """Existing transport carries complete files independently of TOKEN/state/ACK."""
+        from dataclasses import asdict
+        names = ("worker-result.json", "ocrv-result.json", "ocrv-review.json", "checker-receipt.json",
+                 "supervisor-result.json", "native.stdout.txt", "native.stderr.txt",
+                 "completed.json", "failed.json")
+        paths = [source / name for name in names if (source / name).is_file()]
+        for directory in ("review-segments", "review-corrections"):
+            paths.extend(path for path in (source / directory).rglob("*")
+                         if path.is_file() and not path.is_symlink())
+        files = [{"path": str(path.resolve()), "bytes": path.stat().st_size,
+                  "sha256": wc._sha256(path)} for path in sorted(set(paths))]
+        report = {"source_message_id": envelope.message_id, "source_role": envelope.receiver_role,
+                  "files": files}
+        if envelope.receiver_role == "checker":
+            report["input_report"] = dict(envelope.payload)
+            report["native_started"] = (source / "started.json").is_file()
+        # No output is itself an observable fact, not an invented engineering result.
+        report_path = wc._write_or_reuse_stable_request(root / "output.json", report)
+        if envelope.receiver_role == "supervisor":
+            return {"status": "OUTPUT_SAVED", "report_path": str(report_path)}
+        sender = envelope.receiver_role
+        credential = wc.unprotect_dpapi_hex(self.credential_path(sender))
+        try:
+            self._authenticate(sender, credential)
+        finally:
+            credential = ""
+        target_role = "checker" if sender == "worker" else "supervisor"
+        target = self.endpoint(target_role)
+        payload = report
+        kind = "D1_REPORT"
+        action = projection = None
+        action_error = None
+        if sender == "worker":
+            frozen = next(c for c in self.binding["cells"] if c["cell_id"] == envelope.cell_id)
+            context = frozen["payload"]
+            payload = {**report, "repository": self.endpoint("worker")["address"]["cwd"],
+                       "cell_goal": context.get("task", context.get("cell_goal", "")),
+                       "d1_criteria": context.get("d1_criteria", []),
+                       "evidence_files": [row["path"] for row in files]}
+            action_path = root / "worker-candidate_submitted.json"
+            if action_path.is_file():
+                try:
+                    submitted = wc._read_object(action_path, "explicit Worker candidate")
+                    projection = self.projection()
+                    matching = [e for e in projection.get("events", [])
+                        if e.get("event_id") == submitted.get("event_id")
+                        and e.get("event_type") == "CANDIDATE_SUBMITTED"
+                        and e.get("go_id") == envelope.go_id and e.get("cell_id") == envelope.cell_id
+                        and e.get("author_role_instance_id") == envelope.receiver_role_instance_id
+                        and wc._event_details(e) == submitted.get("details")]
+                    details = submitted["details"]
+                    if (len(matching) != 1 or submitted.get("attempt") != wc._source_attempt(projection, envelope)
+                        or details.get("decision_source") != "WORKER_EXPLICIT"
+                        or details.get("source_message_id") != envelope.message_id
+                        or details.get("handoff_message_id") != wc._stable_id(envelope.message_id, "output-delivery")
+                        or details.get("native_start_sha256") != wc._sha256(source / "started.json")
+                        or not isinstance(details.get("candidate"), Mapping)):
+                        raise wc.CompletionError("WORKER_ACTION_IDENTITY_MISMATCH", "candidate is not the original Worker's recorded action")
+                    action = submitted
+                    payload["candidate"] = dict(details["candidate"])
+                except (ValueError, OSError, KeyError, TypeError) as exc:
+                    action_error = {"status": "failed", "error_code": getattr(exc, "error_code", type(exc).__name__),
+                                    "message": str(exc)}
+            else:
+                # Legacy report locators may be reviewed, but never authorize D0/TOKEN actions.
+                try:
+                    worker_output = json.loads((source / "worker-result.json").read_bytes())
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    worker_output = None
+                if isinstance(worker_output, Mapping):
+                    candidate = worker_output.get("candidate")
+                    if isinstance(candidate, Mapping) and candidate.get("kind") != "none":
+                        payload["candidate"] = dict(candidate)
+            payload["candidate_status"] = "PROVIDED" if "candidate" in payload else "NOT_PROVIDED"
+            kind = "CANDIDATE_READY" if "candidate" in payload else "WORKER_REPORT"
+        outgoing = parse_delivery(target, {
+            **asdict(envelope), "message_id": wc._stable_id(envelope.message_id, "output-delivery"),
+            "token_sequence": envelope.token_sequence + 1 if action else envelope.token_sequence,
+            "sender_role": sender, "sender_role_instance_id": envelope.receiver_role_instance_id,
+            "receiver_role": target_role, "receiver_role_instance_id": target["role_instance_id"],
+            "receiver_endpoint_version": target["endpoint_version"], "payload_type": kind,
+            "payload": payload, "payload_sha256": canonical_json_sha256(payload),
+        }).envelope
+        target_path = wc._write_or_reuse_stable_request(root / "output-endpoint.json", target)
+        envelope_path = wc._write_or_reuse_stable_request(root / "output-envelope.json", asdict(outgoing))
+        attempts = ((Path(str(self.binding["temporal"]["attempt_root"])) if "temporal" in self.binding
+                     else root / "worker-handoff" / "attempts") if action else root / "output-attempts")
+        # dispatch_once provides immutable message de-duplication. No engineering event is written.
+        try:
+            result = wc._run_json_command(self.transport, ["send", "--endpoint", str(target_path),
+                "--envelope", str(envelope_path), "--attempt-root", str(attempts)], credential=None)
+        except (ValueError, OSError) as exc:
+            result = {"status": "failed", "error_code": getattr(exc, "error_code", type(exc).__name__),
+                      "message": str(exc)}
+        receipt = {"status": "OUTPUT_DELIVERED" if result.get("status") in {"started", "completed"}
+                else "OUTPUT_DELIVERY_UNCONFIRMED", "report_path": str(report_path),
+                "message_id": outgoing.message_id, "delivery": dict(result)}
+        if action is not None and receipt["status"] == "OUTPUT_DELIVERED":
+            try:
+                receipt["handoff"] = self._send_owned(root / "worker-handoff", outgoing,
+                    action["occurred_at"], projection, register_delivered_output=True)
+            except (ValueError, OSError) as exc:
+                action_error = {"status": "failed", "error_code": getattr(exc, "error_code", type(exc).__name__),
+                                "message": str(exc)}
+        if action_error is not None:
+            receipt["handoff"] = action_error
         return receipt
+
+
 
     def continue_staged_handoff(
         self,
@@ -751,37 +700,6 @@ class RoleHost:
             raise wc.CompletionError("ROLE_HOST_DISPATCH_INVALID", "dispatch differs from the frozen CELL or incoming responsibility")
         return outgoing
 
-    def _completion_proof(self, source: Path, envelope: Envelope) -> None:
-        try:
-            endpoint = self.endpoint(envelope.receiver_role)
-            parse_delivery(endpoint, wc._read_object(source / "envelope.json", "source envelope"))
-            terminal = DeliveryResult.from_dict(wc._read_object(source / "completed.json", "source terminal"))
-            native = validate_native_start(source / "started.json", adapter=endpoint["adapter"],
-                run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
-                request_sha256=envelope.payload_sha256)
-            if ((source / "failed.json").exists() or terminal.status != "completed" or terminal.error_code is not None
-                or terminal.run_id != envelope.run_id or terminal.message_id != envelope.message_id
-                or terminal.adapter != endpoint["adapter"]):
-                raise ValueError("terminal does not prove this completed delivery")
-            if envelope.receiver_role == "supervisor":
-                identity = terminal.native_identity
-                fields = {"thread_id", "turn_id", "turn_status"}
-                desktop = "desktop" in endpoint["address"]
-                fields.add("platform_item_id" if desktop else "turn_sha256")
-                if (set(identity) != fields or identity.get("thread_id") != endpoint["address"]["thread_id"]
-                    or identity.get("turn_status") != "completed"
-                    or any(not isinstance(identity.get(k), str) or not identity[k] for k in fields)):
-                    raise ValueError("terminal changed the Supervisor native identity")
-                task_id = f"{identity['thread_id']}:{identity['turn_id']}"
-                if desktop: task_id += f":{identity['platform_item_id']}"
-                elif not SHA256.fullmatch(identity["turn_sha256"]):
-                    raise ValueError("native completed turn hash is invalid")
-                if (native["native_task"]["id"] != task_id
-                    or native["native_task"]["kind"] != ("codex-desktop-turn" if desktop else "codex-turn")):
-                    raise ValueError("native start and completed turn differ")
-        except (OSError, KeyError, ValueError) as exc:
-            raise wc.CompletionError("ROLE_HOST_COMPLETION_UNPROVEN", "native completion does not match this source") from exc
-
     def _supervisor_result(self, source: Path, envelope: Envelope, root: Path, occurred_at: str) -> dict[str, Any]:
         """Consume the native Supervisor's decision, never derive a verdict."""
         from dataclasses import asdict
@@ -791,21 +709,15 @@ class RoleHost:
             "D1_INCOMPLETE_ESCALATION": "management",
             "D2_READY": "d2",
         }.get(envelope.payload_type)
-        if (set(result) != {"schema_version", "source_message_id", "operation", "decision"}
-            or result.get("schema_version") != "slk.supervisor-result/v1"
-            or result.get("source_message_id") != envelope.message_id or operation is None
+        if (result.get("source_message_id", envelope.message_id) != envelope.message_id or operation is None
             or result.get("operation") != operation or not isinstance(result.get("decision"), Mapping)):
-            raise wc.CompletionError("SUPERVISOR_RESULT_INVALID", "decision does not bind the native incoming responsibility")
+            raise wc.CompletionError("SUPERVISOR_ACTION_INVALID", "explicit action does not bind the native incoming responsibility")
         decision, outgoing = result["decision"], None
         if operation == "rework":
-            if envelope.payload.get("rework_round", 0) >= 2:
-                raise wc.CompletionError(
-                    "ROLE_HOST_CELL_SPLIT_REQUIRED",
-                    "the second consecutive formal D1 failure requires a versioned CELL split; the old host cannot issue ordinary rework",
-                )
-            for key in ("d1_failure_event_id", "failed_candidate_sha256", "rework_round", "cell_goal", "acceptance_criteria", "findings"):
-                if decision.get(key) != envelope.payload.get(key):
-                    raise wc.CompletionError("SUPERVISOR_RESULT_INVALID", "rework changed the original D1 or acceptance")
+            identity_keys = ("d1_failure_event_id", "failed_candidate_sha256", "rework_round")
+            if (any(key not in decision or decision[key] != envelope.payload.get(key) for key in identity_keys)
+                or not isinstance(decision.get("investigation_mode"), str) or not decision["investigation_mode"].strip()):
+                raise wc.CompletionError("SUPERVISOR_ACTION_INVALID", "rework changed the exact failure/candidate identity or omitted explicit intent")
             worker = self.endpoint("worker")
             outgoing = parse_delivery(worker, {**asdict(envelope),
                 "message_id": wc._stable_id(envelope.message_id, "supervisor-rework"),
@@ -817,22 +729,9 @@ class RoleHost:
             events = [("REWORK_REQUESTED", {key: decision[key] for key in (
                 "d1_failure_event_id", "failed_candidate_sha256", "rework_round", "investigation_mode")})]
         elif operation == "management":
-            if (
-                set(decision) != {"action", "summary", "evidence_refs"}
-                or decision.get("action") not in {
-                    "WAIT_FOR_NATIVE_WORK",
-                    "ADJUST_CAPACITY",
-                    "ADJUST_ENVIRONMENT",
-                    "MECHANICAL_RECOVERY",
-                }
-                or not isinstance(decision.get("summary"), str)
-                or not decision["summary"].strip()
-            ):
-                raise wc.CompletionError(
-                    "SUPERVISOR_RESULT_INVALID",
-                    "INCOMPLETE management must record one bounded Supervisor action",
-                )
             events = []
+            if not isinstance(decision.get("action"), str) or not decision["action"].strip():
+                raise wc.CompletionError("SUPERVISOR_ACTION_INVALID", "management requires an explicit action")
             if decision["action"] != "WAIT_FOR_NATIVE_WORK":
                 checker = self.endpoint("checker")
                 return_payload = {
@@ -841,8 +740,8 @@ class RoleHost:
                     "candidate_payload": envelope.payload["candidate_payload"],
                     "candidate_payload_sha256": envelope.payload["candidate_payload_sha256"],
                     "management_action": decision["action"],
-                    "management_summary": decision["summary"],
-                    "management_evidence_refs": list(decision["evidence_refs"]),
+                    "management_summary": decision.get("summary", ""),
+                    "management_evidence_refs": decision.get("evidence_refs", []),
                     "review_policy": {
                         "profile": "NORMAL_D1_DEFAULT",
                         "aggregate_budget": "NATIVE_UNLIMITED",
@@ -864,18 +763,11 @@ class RoleHost:
                     "payload_sha256": canonical_json_sha256(return_payload),
                 }).envelope
         else:
-            if (set(decision) != {"verdict", "summary", "evidence_refs"}
-                or decision.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
-                or not isinstance(decision.get("summary"), str) or not decision["summary"].strip()):
-                raise wc.CompletionError("SUPERVISOR_RESULT_INVALID", "D2 must contain the Supervisor's explicit verdict and evidence")
+            if decision.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}:
+                raise wc.CompletionError("SUPERVISOR_ACTION_INVALID", "D2 requires the Supervisor's explicit verdict")
             events = [] if decision["verdict"] == "INCOMPLETE" else [
                 ("D2_STARTED", {"source_message_id": envelope.message_id}),
                 ("D2_PASSED" if decision["verdict"] == "PASS" else "D2_FAILED", dict(decision))]
-        evidence = decision.get("evidence_refs")
-        if (not isinstance(evidence, list) or not evidence or not all(
-            isinstance(p, str) and Path(p).is_absolute() and Path(p).is_file() for p in evidence)):
-            raise wc.CompletionError("SUPERVISOR_RESULT_INVALID", "decision evidence is not readable local evidence")
-        wc._write_or_reuse_stable_request(root / "supervisor-decision.json", result)
         if outgoing is not None:
             attempts = (Path(str(self.binding["temporal"]["attempt_root"]))
                         if "temporal" in self.binding else root / "rework" / "attempts")
@@ -892,6 +784,7 @@ class RoleHost:
         credential = wc.unprotect_dpapi_hex(self.credential_path("supervisor"))
         try:
             self._authenticate("supervisor", credential)
+            wc._write_or_reuse_stable_request(root / "supervisor-decision.json", result)
             for event_type, details in events:
                 request = {"event_id": wc._stable_id(envelope.message_id, event_type.lower()),
                     "run_id": envelope.run_id, "go_id": envelope.go_id if outgoing else None,
@@ -935,6 +828,7 @@ class RoleHost:
         temporal_request_path: Path | None = None,
         temporal_request_sha256: str | None = None,
         decision_timing: Mapping[str, str] | None = None,
+        register_delivered_output: bool = False,
     ) -> dict[str, Any]:
         from dataclasses import asdict
         if decision_timing is not None:
@@ -1020,10 +914,18 @@ class RoleHost:
                     root, operation_id=operation_id,
                     run_id=envelope.run_id, message_id=envelope.message_id,
                 ):
-                    raise wc.CompletionError(
-                        "TEMPORAL_NATIVE_ACK_UNPROVED",
-                        "existing native start requires its exact original Temporal request or saved ACK",
-                    )
+                    if not register_delivered_output:
+                        raise wc.CompletionError(
+                            "TEMPORAL_NATIVE_ACK_UNPROVED",
+                            "existing native start requires its exact original Temporal request or saved ACK",
+                        )
+                    from .desktop_current_turn import resolve_delivery_start
+                    resolve_delivery_start(native, target, asdict(envelope))
+                    if (wc._read_object(native / "endpoint.json", "delivered endpoint") != target
+                        or wc._read_object(native / "envelope.json", "delivered envelope") != asdict(envelope)):
+                        raise wc.CompletionError("ROLE_HOST_START_INVALID", "delivered output identity differs")
+                    native = wc.start_temporal_delivery(self.binding["temporal"], root, target, asdict(envelope),
+                        attempt=attempt_number, source_runtime_revision=revision, required_attempt_root=attempts)
         elif not native.exists():
             wc._run_json_command(self.transport, ["send", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
                                                   "--attempt-root", str(attempts)], credential=None)
@@ -1106,6 +1008,23 @@ class RoleHost:
     @staticmethod
     def _outgoing_attempt(envelope: Envelope, projection: Mapping[str, Any]) -> int:
         if envelope.payload_type != "D1_REWORK_DIRECTIVE":
+            references = {envelope.payload[key] for key in ("d1_failure_event_id", "d1_incomplete_event_id", "d1_event_id",
+                                                           "source_d1_incomplete_event_id")
+                          if isinstance(envelope.payload.get(key), str)}
+            source_id = envelope.payload.get("source_message_id")
+            matches = []
+            for event in projection.get("events", []):
+                if event.get("go_id") != envelope.go_id or event.get("cell_id") != envelope.cell_id:
+                    continue
+                details = wc._event_details(event) or {}
+                if ((references and event.get("event_id") in references)
+                    or (source_id is not None and event.get("event_type") == "TRANSPORT_STARTED"
+                        and details.get("message_id") == source_id)):
+                    matches.append(event.get("attempt"))
+            if references or source_id is not None:
+                if len(matches) != 1 or type(matches[0]) is not int or matches[0] < 1:
+                    raise wc.CompletionError("ROLE_HOST_ATTEMPT_UNPROVEN", "handoff must bind its exact original engineering attempt")
+                return matches[0]
             return 1
         matches = []
         for event in projection.get("events", []):
@@ -1113,7 +1032,7 @@ class RoleHost:
                 or event.get("go_id") != envelope.go_id):
                 continue
             details = wc._event_details(event)
-            if details and all(details.get(k) == envelope.payload[k] for k in (
+            if details and all(details.get(k) == envelope.payload.get(k) for k in (
                 "d1_failure_event_id", "failed_candidate_sha256", "rework_round", "investigation_mode")):
                 matches.append(event.get("attempt"))
         if len(matches) != 1 or type(matches[0]) is not int or matches[0] < 1:
@@ -1145,6 +1064,7 @@ class RoleHost:
         if (any(token.get(k) != v for k, v in expected.items())
             or event.get("author_role_instance_id") != envelope.sender_role_instance_id
             or event.get("go_id") != envelope.go_id or event.get("cell_id") != envelope.cell_id
+            or event.get("attempt") != self._outgoing_attempt(envelope, projection)
             or event.get("corrects_event_id") is not None):
             raise wc.CompletionError("ROLE_HOST_CONFLICT", "central handoff changed scope or role")
         try:
@@ -1161,273 +1081,3 @@ class RoleHost:
         if not exact:
             raise wc.CompletionError("ROLE_HOST_CONFLICT", "committed native evidence changed")
         return True
-
-    def _resume_checker_failure_suffix(
-        self, source: Path, envelope: Envelope, root: Path, occurred_at: str,
-        current_projection: Mapping[str, Any], failed: Any, failure_path: Path,
-    ) -> dict[str, Any]:
-        projection_path = root / "d1-projection.json"
-        request_path = root / "post-d1-request.json"
-        failure_code = failure_path.stem.removeprefix("failure-")
-        try:
-            frozen = wc._read_object(projection_path, "frozen D1 projection")
-            request = wc._read_object(request_path, "frozen post-D1 request")
-            failure = wc._read_object(failure_path, "frozen post-D1 failure")
-        except (OSError, ValueError) as exc:
-            raise wc.CompletionError(
-                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix evidence is unavailable"
-            ) from exc
-        expected_failure = {
-            "status": "HOST_HANDOFF_FAILED",
-            "run_id": envelope.run_id,
-            "source_message_id": envelope.message_id,
-            "error_code": failure_code,
-        }
-        management_return = envelope.payload_type == "D1_MANAGEMENT_RETURN"
-        candidate_payload = (
-            dict(envelope.payload["candidate_payload"])
-            if management_return else dict(envelope.payload)
-        )
-        candidate_message_id = (
-            str(envelope.payload["candidate_message_id"])
-            if management_return else envelope.message_id
-        )
-        correction_id = wc._stable_id(envelope.message_id, "management-review") if management_return else None
-        event_id = wc._stable_id(
-            candidate_message_id,
-            f"d1-management-{correction_id}" if management_return else "d1-result-v2",
-        )
-        snapshot = frozen.get("runtime_snapshot", {})
-        try:
-            attempt = wc._source_attempt(frozen, envelope)
-            native = wc._read_object(source / "ocrv-result.json", "D1 result")
-        except (OSError, ValueError) as exc:
-            raise wc.CompletionError(
-                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker source identity is invalid"
-            ) from exc
-        expected_request = {
-            "schema_version": failed.REQUEST_SCHEMA,
-            "method_version": snapshot.get("method_version"),
-            "post_d1_invocation_id": wc._stable_id(event_id, "normal-fail"),
-            "run_id": envelope.run_id,
-            "go_id": envelope.go_id,
-            "cell_id": envelope.cell_id,
-            "attempt": attempt,
-            "plan_revision": self.binding["plan_revision"],
-            "runtime_revision": snapshot.get("runtime_revision"),
-            "token_sequence": snapshot.get("token_sequence"),
-            "checker_role_instance_id": envelope.receiver_role_instance_id,
-            "d1_failure_event_id": event_id,
-            "runtime_projection_path": str(projection_path),
-            "native_attempt_path": str(source),
-            "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
-            "checker_credential_path": self.credential_path("checker"),
-            "state_command": self.state,
-            "transport_command": self.transport,
-            "escalation_attempt_root": str(root),
-            "rework_round": 1 + sum(
-                event.get("event_type") == "REWORK_REQUESTED"
-                and event.get("cell_id") == envelope.cell_id
-                for event in frozen.get("events", []) if isinstance(event, Mapping)
-            ),
-            "cell_goal": candidate_payload["cell_goal"],
-            "acceptance_criteria": candidate_payload["d1_criteria"],
-            "findings": normalized_checker_findings(native["findings"]),
-            "reproduction_steps": [
-                "Read the original Checker findings and cited evidence; do not infer a reproduction."
-            ],
-            "expected_result": "Satisfy the unchanged CELL acceptance criteria.",
-            "evidence_refs": [str(source / "ocrv-result.json")],
-            "occurred_at": occurred_at,
-        }
-        frozen_snapshot = frozen.get("runtime_snapshot", {})
-        current_snapshot = current_projection.get("runtime_snapshot", {})
-        boundary_fields = {
-            "method_version", "plan_revision", "runtime_revision", "token_sequence",
-            "token_holder_role_instance_id", "latest_event_id", "latest_message_id",
-        }
-        frozen_event = [
-            item for item in frozen.get("events", [])
-            if isinstance(item, Mapping) and item.get("event_id") == event_id
-        ]
-        current_event = [
-            item for item in current_projection.get("events", [])
-            if isinstance(item, Mapping) and item.get("event_id") == event_id
-        ]
-        if (
-            failure != expected_failure
-            or request != expected_request
-            or any(frozen_snapshot.get(key) != current_snapshot.get(key)
-                   for key in boundary_fields - {"runtime_revision", "latest_event_id"})
-            or len(frozen_event) != 1
-            or current_event != frozen_event
-        ):
-            raise wc.CompletionError(
-                "ROLE_HOST_SUFFIX_RECOVERY_INVALID",
-                "frozen Checker suffix no longer matches its current D1 boundary",
-            )
-        try:
-            validated = failed._validate_request(request)
-            failed._validate_failure(validated)
-            if frozen_snapshot.get("runtime_revision") != current_snapshot.get("runtime_revision"):
-                wc._rebind_overwatcher_only_committed_boundary(
-                    {**request, "candidate_message_id": envelope.message_id}, frozen,
-                    current_projection, current_snapshot.get("runtime_revision"),
-                )
-            elif frozen_snapshot.get("latest_event_id") != current_snapshot.get("latest_event_id"):
-                raise ValueError("current event changed without an authenticated revision")
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            raise wc.CompletionError(
-                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix validation failed"
-            ) from exc
-        staged = root / ".checker-post-d1" / str(request["post_d1_invocation_id"])
-        delivery = root / str(request["run_id"]) / failed.escalation_message_id(request)
-        if failure_code == "CHECKER_ESCALATION_D1_MISMATCH" and (
-            any((staged / name).exists() for name in ("endpoint.json", "envelope.json")) or delivery.exists()
-        ):
-            raise wc.CompletionError(
-                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "Checker escalation was already materialized"
-            )
-        seal = {
-            "schema_version": "slk.role-host-post-d1-suffix-seal/v1",
-            "run_id": envelope.run_id,
-            "source_message_id": envelope.message_id,
-            "binding_sha256": self.digest,
-            "runtime_projection_sha256": wc._sha256(projection_path),
-            "post_d1_request_sha256": wc._sha256(request_path),
-            "failure_sha256": wc._sha256(failure_path),
-        }
-        try:
-            wc._write_or_reuse_stable_request(root / "post-d1-suffix-seal.json", seal)
-        except wc.CompletionError as exc:
-            raise wc.CompletionError(
-                "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix hash changed"
-            ) from exc
-        if frozen_snapshot.get("runtime_revision") != current_snapshot.get("runtime_revision"):
-            refreshed = root / ".checker-post-d1" / str(request["post_d1_invocation_id"]) / (
-                "runtime-rebind-" + str(current_snapshot["runtime_revision"])
-            )
-            refreshed.mkdir(parents=True, exist_ok=True)
-            refreshed_projection = wc._write_or_reuse_stable_request(
-                refreshed / "projection.json", current_projection
-            )
-            request = {**request, "runtime_revision": current_snapshot["runtime_revision"],
-                       "runtime_projection_path": str(refreshed_projection)}
-            request_path = wc._write_or_reuse_stable_request(refreshed / "request.json", request)
-        return failed.execute_checker_escalation(
-            request, request_path=request_path, request_sha256=wc._sha256(request_path)
-        )
-
-    def _checker_result(self, source: Path, envelope: Envelope, root: Path, occurred_at: str,
-                        projection: Mapping[str, Any]) -> dict[str, Any]:
-        from . import checker_completion as passed, checker_escalation as failed
-        from . import checker_management as incomplete
-
-        management_return = envelope.payload_type == "D1_MANAGEMENT_RETURN"
-        candidate_payload = (
-            dict(envelope.payload["candidate_payload"])
-            if management_return else dict(envelope.payload)
-        )
-        candidate_message_id = (
-            str(envelope.payload["candidate_message_id"])
-            if management_return else envelope.message_id
-        )
-        failures = [root / ("failure-" + code + ".json") for code in (
-            "CHECKER_ESCALATION_D1_MISMATCH", "CHECKER_ESCALATION_DELIVERY_INVALID",
-            "CODEX_DESKTOP_HOST_UNAVAILABLE",
-        ) if (root / ("failure-" + code + ".json")).exists()]
-        frozen_suffix = (
-            root / "d1-projection.json",
-            root / "post-d1-request.json",
-            *failures,
-        )
-        if any(path.exists() for path in frozen_suffix):
-            if len(failures) != 1 or not all(path.is_file() for path in frozen_suffix):
-                raise wc.CompletionError(
-                    "ROLE_HOST_SUFFIX_RECOVERY_INVALID", "frozen Checker suffix evidence is incomplete"
-                )
-            return self._resume_checker_failure_suffix(
-                source, envelope, root, occurred_at, projection, failed, failures[0]
-            )
-        attempt = wc._source_attempt(projection, envelope)
-        continuation = {"run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
-                        "attempt": attempt, "plan_revision": self.binding["plan_revision"],
-                        "checker_endpoint": self.endpoint("checker"), "state_command": self.state, "occurred_at": occurred_at}
-        if management_return:
-            correction_id = wc._stable_id(envelope.message_id, "management-review")
-            continuation.update({
-                "native_message_id": envelope.message_id,
-                "d1_correction_event_id": envelope.payload["source_d1_incomplete_event_id"],
-                "d1_correction_id": correction_id,
-                "d1_correction_kind": "management",
-            })
-        recorded = wc._record_checker_d1({"native_attempt_path": str(source), "candidate_message_id": candidate_message_id},
-                                        continuation, checker_credential_path=self.credential_path("checker"), timeout_seconds=1)
-        projection = self.projection()
-        projection_path = wc._write_or_reuse_stable_request(root / "d1-projection.json", projection)
-        snapshot = projection["runtime_snapshot"]
-        delivery_root = str(Path(self.binding["temporal"]["attempt_root"])) if "temporal" in self.binding else str(root)
-        common = {"method_version": snapshot["method_version"], "run_id": envelope.run_id,
-                  "go_id": envelope.go_id, "cell_id": envelope.cell_id, "attempt": attempt,
-                  "plan_revision": self.binding["plan_revision"],
-                  "runtime_revision": snapshot["runtime_revision"],
-                  "token_sequence": snapshot["token_sequence"],
-                  "checker_role_instance_id": envelope.receiver_role_instance_id,
-                  "runtime_projection_path": str(projection_path),
-                  "checker_credential_path": self.credential_path("checker"),
-                  "state_command": self.state, "transport_command": self.transport,
-                  "occurred_at": occurred_at}
-        event_id = wc._stable_id(
-            candidate_message_id,
-            f"d1-management-{correction_id}" if management_return else "d1-result-v2",
-        )
-        if recorded["d1_verdict"] == "INCOMPLETE":
-            matching = [event for event in projection["events"] if event.get("event_id") == event_id]
-            if len(matching) != 1:
-                raise wc.CompletionError("ROLE_HOST_D1_CHANGED", "current D1 INCOMPLETE is unavailable")
-            details = json.loads(matching[0]["details_json"])
-            terminal = source / ("completed.json" if (source / "completed.json").is_file() else "failed.json")
-            evidence_refs = [str(terminal)]
-            if (source / "ocrv-result.json").is_file():
-                evidence_refs.append(str(source / "ocrv-result.json"))
-            request = {**common, "schema_version": incomplete.REQUEST_SCHEMA,
-                "management_invocation_id": wc._stable_id(event_id, "normal-incomplete"),
-                "d1_incomplete_event_id": event_id, "native_attempt_path": str(source),
-                "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
-                "escalation_attempt_root": delivery_root, "reason_codes": list(details["reason_codes"]),
-                "evidence_refs": evidence_refs}
-            path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
-            return incomplete.execute_checker_management(
-                request, request_path=path, request_sha256=wc._sha256(path), temporal=self.binding.get("temporal")
-            )
-        if recorded["d1_verdict"] == "FAIL":
-            native = wc._read_object(source / "ocrv-result.json", "D1 result")
-            request = {**common, "schema_version": failed.REQUEST_SCHEMA,
-                "post_d1_invocation_id": wc._stable_id(event_id, "normal-fail"), "d1_failure_event_id": event_id,
-                "native_attempt_path": str(source), "supervisor_endpoint_path": self.binding["roles"]["supervisor"]["endpoint_path"],
-                "escalation_attempt_root": delivery_root,
-                "rework_round": 1 + sum(e.get("event_type") == "REWORK_REQUESTED" and e.get("cell_id") == envelope.cell_id for e in projection["events"]),
-                "cell_goal": candidate_payload["cell_goal"], "acceptance_criteria": candidate_payload["d1_criteria"],
-                "findings": normalized_checker_findings(native["findings"]),
-                "reproduction_steps": ["Read the original Checker findings and cited evidence; do not infer a reproduction."],
-                "expected_result": "Satisfy the unchanged CELL acceptance criteria.", "evidence_refs": [str(source / "ocrv-result.json")]}
-            execute = failed.execute_checker_escalation
-        else:
-            cells = passed._ordered_cells(projection)
-            ids = [c["cell_id"] for c in cells]
-            if ids != [c["cell_id"] for c in self.binding["cells"]]:
-                raise wc.CompletionError("ROLE_HOST_PLAN_CHANGED", "current required CELL set differs")
-            index = ids.index(envelope.cell_id)
-            final = index == len(ids) - 1
-            target_role = "supervisor" if final else "worker"
-            payload = ({"d1_event_id": event_id, "required_cell_ids": ids, "accepted_cell_ids": ids,
-                        "final_candidate_message_id": candidate_message_id, "d2_criteria": self.binding["d2_criteria"],
-                        "evidence_refs": [str(source / "ocrv-result.json")]} if final else self.binding["cells"][index + 1]["payload"])
-            request = {**common, "schema_version": passed.REQUEST_SCHEMA,
-                "completion_invocation_id": wc._stable_id(event_id, "normal-pass"), "d1_event_id": event_id,
-                "target_cell_id": envelope.cell_id if final else ids[index + 1], "route": "D2_READY" if final else "NEXT_CELL",
-                "target_endpoint_path": self.binding["roles"][target_role]["endpoint_path"],
-                "handoff_attempt_root": delivery_root, "payload": payload}
-            execute = passed.execute_checker_completion
-        path = wc._write_or_reuse_stable_request(root / "post-d1-request.json", request)
-        return execute(request, request_path=path, request_sha256=wc._sha256(path), temporal=self.binding.get("temporal"))

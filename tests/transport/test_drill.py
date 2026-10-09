@@ -36,7 +36,7 @@ def test_drill_completes_four_legs_without_cross_run_data(tmp_path: Path) -> Non
     b = summary["RUN-B"]["native_identities"]
     assert a["worker"]["instance_id"] != b["worker"]["instance_id"]
     assert a["worker"]["session_id"] != b["worker"]["session_id"]
-    assert a["checker"]["session_id"] != b["checker"]["session_id"]
+    assert a["checker"]["review_invocation_id"] != b["checker"]["review_invocation_id"]
     assert a["supervisor"]["thread_id"] != b["supervisor"]["thread_id"]
 
 

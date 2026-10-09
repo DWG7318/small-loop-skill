@@ -27,7 +27,7 @@ Supervisor 在现有工程权限和资源范围内给出能继续施工的具体
 
 Supervisor 可以按实际原因组合以下办法：
 
-1. 在现有权限内补充信息、可用资源或验证方式；对 D1 INCOMPLETE 明确选择 `WAIT_FOR_NATIVE_WORK`、`ADJUST_CAPACITY`、`ADJUST_ENVIRONMENT` 或 `MECHANICAL_RECOVERY`；真实 compression-only partial 按 [续审 Tool](../../docs/transport/SLK-OCRV-CONTEXT-RECOVERY.md) 生成冻结 plan，并把路径加入正式决定 `evidence_refs` 后交回原 Checker，复用完成项、细分失败组并汇总完整 scope；不要把“不限预算/timeout”或一句 resume 提示当作实际恢复；
+1. 在现有权限内补充信息、资源或验证方式；INCOMPLETE明确选择等待、容量、环境或机械修复等处理，不依赖固定动作枚举或旧partial自动续审；先交已有报告，再由原角色执行明确行动；
 2. D2 返工仍使用固定角色绑定；能力不足时调整 CELL 或路线，不由 Supervisor 临场升级、降级或替换模型；
 3. 调整当前或后续 CELL、施工顺序或技术路线，让已验证成果继续被继承；第二次连续 D1 FAIL 时把未接受范围拆成多个中小后继 CELL，各自独立 D0、独立 D1，并保留原目标、验收强度和失败历史；
 4. 解决方案需要 Owner 掌握的电脑、工具、账号、测试环境或业务权限时，提交推荐方案、预期影响、可行替代和最低必要授权；
@@ -39,7 +39,7 @@ Supervisor 可以按实际原因组合以下办法：
 
 调整通常保持原 Run 目标和已约定验收目标；Owner主动改变目标时，再更新相应定义。Supervisor 把原因、选择、影响、CELL n/N变化和未决风险写入根记录。
 
-首次正式 D1 FAIL 可沿 `$slk-rework-cell` 给同一 Worker 一次普通返工。第二次及以后由旧 RoleHost 返回 `ROLE_HOST_CELL_SPLIT_REQUIRED`；Supervisor 对两轮证据做 AGGRESSIVE 调查，用密封 `supervisor-admin revise-plan` 版本化拆分，冻结新 revision RoleHost，并更新标准 Temporal Run 配置的 Host 路径/哈希。计划调整沿 `Supervisor → Checker` 用 `SLK TOKEN` 和标准 `CELL_DISPATCH` 回到 `$slk-dispatch-cell`，再由 Checker 派首个后继 CELL；不能直接发给 Worker或开始第三次普通返工。原角色宿主核验 native start 并提交 TOKEN。结束处置前确认正确成员真实接手、OW 已恢复本 Run 巡查；否则保留明确未解决项和下一动作。
+首次正式 D1 FAIL 可沿 `$slk-rework-cell` 给同一 Worker 一次普通返工。第二次及以后工具不代做拆分裁决；Supervisor 对两轮证据做 AGGRESSIVE 调查，用密封 `supervisor-admin revise-plan` 版本化拆分，冻结新 revision RoleHost，并更新标准 Temporal Run 配置的 Host 路径/哈希。计划调整沿 `Supervisor → Checker` 用 `SLK TOKEN` 和标准 `CELL_DISPATCH` 回到 `$slk-dispatch-cell`，再由 Checker 派首个后继 CELL；不能直接发给 Worker或开始第三次普通返工。原角色宿主核验 native start 并提交 TOKEN。结束处置前确认正确成员真实接手、OW 已恢复本 Run 巡查；否则保留明确未解决项和下一动作。
 
 旧 Checker 端点的有限 aggregate budget/timeout 导致 INCOMPLETE，且 Supervisor 选择容量调整时，使用 `prepare-runtime-binding-migration` 按 [`slk-runtime-binding-migration.schema.json`](../../docs/contracts/slk-runtime-binding-migration.schema.json) 冻结同一角色、Session、模型、凭据、目标 RoleHost 与同一 Run Temporal config；Owner 明确冻结有限预算时不要迁移。Supervisor 先执行一次 `migrate-runtime-binding`，只在结果为 `RUNTIME_BINDING_REBOUND_AWAITING_PLAN_REVISION` 后执行既有 `supervisor-admin revise-plan`，再原样重放 `migrate-runtime-binding` 核验并发布目标 config。任一步失败或结果不匹配都保留 dispatch guard，不要派发下一 CELL；旧端点、历史 attempt 和结果不改写。
 

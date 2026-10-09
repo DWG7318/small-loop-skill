@@ -103,109 +103,6 @@ def run_script(script: Path, *arguments: str) -> subprocess.CompletedProcess[str
     )
 
 
-def test_ocrv_recovery_wrapper_preserves_the_existing_d1_entry() -> None:
-    wrapper = (INTEGRATION / "slk-checker.cmd").read_text(encoding="utf-8")
-    assert '"%~1"=="--slk-post-d1"' in wrapper
-    assert '"%~1"=="--slk-complete-d1"' in wrapper
-    assert "slk_checker_post_d1.py" in wrapper
-    assert '"%~1"=="--slk-worker-recovery"' in wrapper
-    assert '"%~1"=="--slk-existing-terminal"' in wrapper
-    assert '"%~1"=="--slk-committed-terminal"' in wrapper
-    assert '"%~1"=="--slk-resume-incomplete-checker"' in wrapper
-    assert '"%~1"=="--slk-resume-terminal-budget"' in wrapper
-    assert '"%~1"=="--slk-fresh-terminal-budget-review"' in wrapper
-    assert '"%~1"=="--slk-continue-consumed-partial"' in wrapper
-    assert '"%~1"=="--slk-resume-consumed-partial"' in wrapper
-    assert '"%~1"=="--slk-refine-consumed-partial"' in wrapper
-    assert '"%~1"=="--slk-consume-existing-partial"' in wrapper
-    assert "slk_checker_recovery.py" in wrapper
-    assert "slk_checker_adapter.py" in wrapper
-
-
-def test_terminal_budget_resolves_the_canonical_launcher_to_a_real_zipapp(
-    tmp_path: Path,
-) -> None:
-    module = _load_recovery()
-    runtime = tmp_path / "bin"
-    runtime.mkdir()
-    zipapp = runtime / "slk-transport.pyz"
-    built = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "build_transport_zipapp.py"),
-            "--output",
-            str(zipapp),
-        ],
-        cwd=ROOT,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    assert built.returncode == 0, built.stdout + built.stderr
-    launcher = runtime / "slk-transport.cmd"
-    launcher.write_text(
-        '@echo off\npython "%~dp0slk-transport.pyz" %*\nexit /b %ERRORLEVEL%\n',
-        encoding="utf-8",
-    )
-
-    assert module._transport_runtime_path([str(launcher)]) == zipapp.resolve()
-
-    if os.name == "nt":
-        launched = subprocess.run(
-            [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", str(launcher), "--help"],
-            cwd=ROOT,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        assert launched.returncode == 0, launched.stdout + launched.stderr
-        assert "resume-terminal-budget-checker" in launched.stdout
-
-
-def test_fresh_review_resolves_transport_only_from_its_hash_bound_source(tmp_path: Path) -> None:
-    module = _load_recovery()
-    source = tmp_path / "source.json"
-    source.write_text(json.dumps({"transport_command": ["managed-transport"]}), encoding="utf-8")
-    request = {
-        "source_request_path": str(source.resolve()),
-        "source_request_sha256": module._sha256(source),
-    }
-
-    assert module._request_transport_command(request, fresh=True) == ["managed-transport"]
-    request["source_request_sha256"] = "0" * 64
-    with pytest.raises(ValueError, match="source request"):
-        module._request_transport_command(request, fresh=True)
-
-
-def test_checker_capability_freezes_the_managed_terminal_budget_target() -> None:
-    capability = json.loads(
-        (INTEGRATION / "slk-checker-capabilities.json").read_text(encoding="utf-8")
-    )
-    identity = capability["terminal_budget_resume_identity"]
-
-    assert identity["ocrv_version"] == "v1.12.12"
-    assert identity["provider"] == "dashscope-tokenplan"
-    assert identity["model"] == "qwen3.8-max"
-    assert identity["rule_config_sha256"] == (
-        "03406157658b5549e2088b45059ea9cc7528c38eeb30f268b3decb6538737640"
-    )
-    assert identity["managed_rule_files"] == {
-        "slk/slk-d1-rule.json": (
-            "fb7ab06a64579a185a683a120c39e13ee82625aa29354b0df837462fcd4e166b"
-        ),
-        "slk/SLK-D1-REVIEW.md": (
-            "0ffdba9cf7c5934f4966f35e08a6000b7c630ce33a5d7d1e2626d4f13ed65693"
-        ),
-    }
-
-
 def test_ocrv_atomic_replace_retries_busy_and_cleans_temporary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -428,127 +325,6 @@ print(json.dumps({'schema_version':'slk.checker-completion-result/v1','status':'
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == "DESKTOP_BRIDGE_REQUIRED"
 
 
-def test_existing_terminal_wrapper_reuses_checker_command_without_publishing_new_start(
-    tmp_path: Path,
-) -> None:
-    fake = tmp_path / "fake_transport.py"
-    fake.write_text(
-        """import json, os, sys
-assert sys.argv[1] == 'checker-recover-worker'
-assert os.environ['SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID'] == 'checker-a'
-assert os.environ['SLK_OCRV_RECOVERY_INVOCATION_ID'] == 'recovery-a'
-assert os.environ['SLK_OCRV_RECOVERY_ENDPOINT_VERSION'] == '2'
-assert 'SLK_ROLE_CREDENTIAL' not in os.environ
-assert 'SLK_NATIVE_START_RECEIPT' not in os.environ
-assert 'SLK_NATIVE_START_CONTEXT' not in os.environ
-print(json.dumps({'schema_version':'slk.ocrv-worker-recovery-result/v1','status':'CHECKER_D1_RECORDED'}))
-""",
-        encoding="utf-8",
-    )
-    output = tmp_path / "checker-result.json"
-    request = tmp_path / "request.json"
-    request.write_text(
-        json.dumps(
-            {
-            "schema_version": "slk.ocrv-worker-recovery-request/v1",
-            "recovery_invocation_id": "recovery-a",
-            "result_path": str(output),
-            "transport_command": [sys.executable, str(fake)],
-            }
-        ),
-        encoding="utf-8",
-    )
-    environment = os.environ.copy()
-    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = "checker-a"
-    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = "recovery-a"
-    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = "2"
-    environment["SLK_ROLE_CREDENTIAL"] = "must-not-leak"
-    start_receipt = tmp_path / "must-not-exist.json"
-    environment["SLK_NATIVE_START_RECEIPT"] = str(start_receipt)
-    environment["SLK_NATIVE_START_CONTEXT"] = "{}"
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(INTEGRATION / "slk_checker_recovery.py"),
-            "--slk-existing-terminal",
-            "--request",
-            str(request),
-            "--output",
-            str(output),
-        ],
-        cwd=ROOT,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        env=environment,
-        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
-    )
-
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert json.loads(completed.stdout)["status"] == "CHECKER_D1_RECORDED"
-    assert not start_receipt.exists()
-
-
-def test_committed_terminal_wrapper_uses_the_dedicated_internal_consumer(
-    tmp_path: Path,
-) -> None:
-    fake = tmp_path / "fake_transport.py"
-    fake.write_text(
-        """import json, os, sys
-assert sys.argv[1] == 'checker-record-committed-terminal'
-assert 'SLK_ROLE_CREDENTIAL' not in os.environ
-assert 'SLK_NATIVE_START_RECEIPT' not in os.environ
-assert 'SLK_NATIVE_START_CONTEXT' not in os.environ
-print(json.dumps({'schema_version':'slk.ocrv-committed-terminal-result/v1','status':'CHECKER_D1_RECORDED'}))
-""",
-        encoding="utf-8",
-    )
-    output = tmp_path / "checker-result.json"
-    request = tmp_path / "request.json"
-    request.write_text(
-        json.dumps(
-            {
-                "schema_version": "slk.ocrv-committed-terminal-request/v1",
-                "result_path": str(output),
-                "transport_command": [sys.executable, str(fake)],
-            }
-        ),
-        encoding="utf-8",
-    )
-    environment = os.environ.copy()
-    environment["SLK_OCRV_RECOVERY_ROLE_INSTANCE_ID"] = "checker-a"
-    environment["SLK_OCRV_RECOVERY_INVOCATION_ID"] = "recovery-a"
-    environment["SLK_OCRV_RECOVERY_ENDPOINT_VERSION"] = "2"
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(INTEGRATION / "slk_checker_recovery.py"),
-            "--slk-committed-terminal",
-            "--request",
-            str(request),
-            "--output",
-            str(output),
-        ],
-        cwd=ROOT,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        env=environment,
-        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
-    )
-
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert json.loads(completed.stdout)["status"] == "CHECKER_D1_RECORDED"
-
-
 def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_path: Path) -> None:
     ocrv = tmp_path / "ocrv"
     ocrv.mkdir()
@@ -589,6 +365,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
         "slk-checker.cmd",
         "slk_checker_post_d1.py",
         "slk_checker_recovery.py",
+        "slk_checker_decision.py",
         "slk-checker-capabilities.json",
         "slk-native-activity-capabilities.json",
         "OCRV-SLK-CONFIGURATION.md",
@@ -606,6 +383,7 @@ def test_ocrv_integration_installs_hashes_and_rolls_back_all_managed_files(tmp_p
     assert (ocrv / "slk-checker.cmd").read_bytes() == original_wrapper
     assert not (ocrv / "slk_checker_post_d1.py").exists()
     assert not (ocrv / "slk_checker_recovery.py").exists()
+    assert not (ocrv / "slk_checker_decision.py").exists()
     assert (ocrv / "slk_checker_adapter.py").read_bytes() == adapter
     assert (ocrv / "slk-checker-capabilities.json").read_bytes() == original_capabilities
     assert not (ocrv / "slk-native-activity-capabilities.json").exists()

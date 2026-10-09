@@ -41,9 +41,9 @@ def test_426_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: 
         "overwatcher_worker_completion_guard": True,
         "one_overwatcher_binding": True,
         "one_overwatcher_foreground_turn": True,
-        "same_worker_session_continuation": True,
-        "authenticated_checker_recovery": True,
-        "deterministic_recovery_invocation": True,
+        "explicit_worker_actions_and_raw_report_delivery": True,
+        "authenticated_original_checker_action": True,
+        "exact_action_replay_without_resend": True,
         "projected_active_not_cycle_proof": True,
         "public_direct_resume_removed": True,
     }

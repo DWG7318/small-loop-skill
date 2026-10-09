@@ -1,10 +1,18 @@
 # Validation Report — SLK 4.4.2 local candidate
 
-Date: 2026-10-09 Asia/Shanghai
+Date: 2026-10-10 Asia/Shanghai
 Branch: feature/slk-4.4.2-runtime-recovery
-Base for this bounded correction: 88a12c5b0afc2a0fb2bfbc2b13829ce554f4cabc
+Base for this bounded correction: 5f1ced7bdc230f9bb90bf638e841a896f7ad65b4
 Method/tools: 4.4.2; BI/WebBI: 1.1.0
-Status: same-business-Run closed Temporal recovery plus retained compatible OCRV corrections; original D1, candidate, semantic roles, models and failed attempts are preserved. Product recovery/ACK/TOKEN advancement remains Supervisor-owned. Local source, package and installation evidence are separate from product acceptance. The branch is not merged, pushed, tagged or released.
+Status: local output-delivery simplification candidate; behavioral checks complete, final package/isolated-mirror and committed identity recorded in the local freeze receipt; independent acceptance and deployment remain Supervisor-owned. No product facts, existing/global installed runtime or remote state were changed. Historical sections below describe their original bounded checks, not current output gates.
+
+## 2026-10-10 Output delivery without host review
+
+- Scope/design and exact test-retirement mapping: [local evidence ledger](docs/superpowers/specs/2026-10-09-output-delivery-without-host-review-validation.md). Preserve and deliver original outputs independently of format/severity/coverage/native exits and engineering guards. Original Worker explicit D0/candidate, original OCRV explicit MCP D1 and Supervisor explicit management retain identity, candidate/attempt, sealed authority, real receive/start, immutable history and atomic TOKEN boundaries; no host-generated verdict or automatic supplement/review recovery remains.
+- Final behavioral suite after whole-candidate instruction correction: 978 passed /10 skipped; optimized output/action/MCP/CLI/Temporal/preflight 143 passed, expected pytest warning; Rust offline workspace 144 passed; BI frontend92 passed/typecheck; 42 schemas and16 Skills pass. Subsequent documentation/fixture-only cleanup passes173 repository/install/Skill checks; classification independently passes25 ordinary/25 optimized after removing its cross-directory fixture import dependency. No production behavior changed after the full run. Actual disposable-state attempt2 FAIL/rework/INCOMPLETE/management-return/PASS and next-CELL handoffs pass without report-body inference or duplicate native starts. Offline simulations prove wiring, not model competence or product D1/D2.
+- Upstream OCRV groups have separate plan/main conversations. Native review ID/concurrency1 do not prove whole-candidate review. Existing background/tool/Checker guidance now requires one decision for the entire frozen candidate/all CELL criteria, no per-group repeat, no whole-CELL PASS for unverified goals. No coverage/severity gate, grouping override, aggregate review round or extra Agent was added. Pre-correction 976/10 and139 optimized are separately recorded, not presented as final.
+- Deployment remains unperformed: matching integration/MCP plus actual forced rule JSON must be synchronized. Root will preserve include/test scope and unrelated config, remove only the legacy `SLK-D1-REVIEW.md` override, retain old history, then verify actual loaded rule/background, native preview and tool discovery. Exact steps are in the [OCRV configuration guide](integrations/ocrv/OCRV-SLK-CONFIGURATION.md). Installing Skills alone is insufficient; no real runtime or product Run was touched.
+- Standard release artifacts build locally; transport zipapp reproducibly hashes `063038828f8ca90bdbe0ca1bce1f4d8b8ad7ce56c9053e96b651d14c355af26c`. The preliminary standard package/isolated installation each verify179 managed files. Final local package location: `C:/Users/DWG/.codex/.tmp/slk-output-delivery-20261010-package`; exact final package/mirror/Manifest hashes, commit and clean-state evidence are in the ignored local [freeze receipt](.codex/.tmp/output-delivery-handoff.json). No global deployment, model execution, push, merge, tag or release is included.
 
 ## 2026-10-09 Desktop long-message pre-send Tool correction
 

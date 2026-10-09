@@ -28,9 +28,9 @@
     "rework_round": {"type": "integer", "minimum": 1},
     "cell_goal": {"type": "string", "minLength": 1},
     "acceptance_criteria": {"$ref": "#/$defs/nonEmptyStrings"},
-    "findings": {"$ref": "#/$defs/nonEmptyStrings"},
-    "reproduction_steps": {"$ref": "#/$defs/nonEmptyStrings"},
-    "expected_result": {"type": "string", "minLength": 1},
+    "findings": {"type": "array", "items": {"type": "string"}},
+    "reproduction_steps": {"type": "array", "items": {"type": "string"}},
+    "expected_result": {"type": ["string", "null"]},
     "evidence_refs": {"$ref": "#/$defs/nonEmptyStrings"},
     "occurred_at": {"type": "string", "format": "date-time"}
   },
