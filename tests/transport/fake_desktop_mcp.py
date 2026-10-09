@@ -28,6 +28,11 @@ for line in sys.stdin:
         previous_calls = calls_path.read_text(encoding="utf-8").splitlines() if calls_path.is_file() else []
         with calls_path.open("a", encoding="utf-8") as output:
             output.write(json.dumps(p) + "\n")
+        if (p["name"] == "read_thread"
+            and p["arguments"].get("maxOutputCharsPerItem", 0) > 20000):
+            emit(request, {"content": [{"type": "text", "text":
+                "read_thread received invalid arguments: maxOutputCharsPerItem: Too big: expected number to be <=20000."}], "isError": True})
+            continue
         if p["name"] == "send_message_to_thread":
             sent = p
             value = {"threadId": "thr_exact"}
@@ -51,17 +56,25 @@ for line in sys.stdin:
                 if effective_mode == "wrong-payload":
                     prompt += "changed"
                 text = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
-                items = [{"id": "item-exact", "type": "functionCallOutput", "name": "send_message_to_thread", "namespace": "codex_app", "output": {"text": text, "truncated": effective_mode == "truncated"}}]
+                limit = p["arguments"].get("maxOutputCharsPerItem", 20000)
+                over_limit = len(text) > limit
+                text = text[:limit]
+                items = [{"id": "item-exact", "type": "functionCallOutput", "name": "send_message_to_thread", "namespace": "codex_app", "output": {"text": text, "truncated": over_limit or effective_mode == "truncated"}}]
                 if effective_mode == "duplicate":
                     items.append({**items[0], "id": "item-other"})
             value = {"schemaVersion": 1, "thread": {"id": "thr_wrong" if mode == "wrong-thread" else "thr_exact", "hostId": "remote" if mode == "wrong-host" else "local", "cwd": str(Path.cwd()), "status": {"type": "active" if mode == "active" else "idle"}},
                      "page": {"hasMore": False}, "turns": [{"id": "turn-new" if effective_sent else "turn-old", "status": "completed", "items": items}]}
-            if mode in {"active", "active-running", "old-item", "ambiguous-active"}:
+            if mode in {"active", "active-running", "old-item", "active-old-output", "ambiguous-active"}:
                 value["thread"]["status"]["type"] = "active"
                 value["turns"][0]["id"] = "turn-old"
                 value["turns"][0]["status"] = "completed" if sent and mode != "active-running" else "inProgress"
                 if mode == "old-item" and not sent:
                     value["turns"][0]["items"] = [{"id": "item-exact", "type": "userMessage"}]
+                if mode == "active-old-output" and not sent:
+                    old_prompt = os.environ["FAKE_DESKTOP_OLD_PROMPT"]
+                    old_caller = p["_meta"]["codex_thread_id"]
+                    old_text = f"<codex_delegation>\n  <source_thread_id>{escape(old_caller)}</source_thread_id>\n  <input>{escape(old_prompt)}</input>\n</codex_delegation>"
+                    value["turns"][0]["items"] = [{"id": "item-exact", "type": "functionCallOutput", "name": "send_message_to_thread", "namespace": "codex_app", "output": {"text": old_text, "truncated": False}}]
                 if mode == "ambiguous-active" and not sent:
                     value["turns"].append({"id": "other-active", "status": "inProgress", "items": []})
             if mode == "malformed-status":
@@ -74,6 +87,11 @@ for line in sys.stdin:
                 value["turns"][0]["items"] = None
             if sent and mode == "failed-turn":
                 value["turns"][0]["status"] = "failed"
+            if p["arguments"].get("includeOutputs") is False:
+                for turn in value["turns"]:
+                    if isinstance(turn["items"], list):
+                        for item in turn["items"]:
+                            if isinstance(item, dict): item.pop("output", None)
         else:
             raise RuntimeError("unexpected tool")
         emit(request, {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False})

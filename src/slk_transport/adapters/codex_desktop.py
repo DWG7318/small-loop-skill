@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 from xml.sax.saxutils import escape
@@ -27,6 +28,54 @@ READBACK_ANCHOR_FIELDS = {
     "schema_version", "thread_id", "host_id", "caller_thread_id", "message_id",
     "prompt_sha256", "previous_turn_ids", "previous_item_ids", "active_turn_ids",
 }
+DESKTOP_READ_LIMIT = 20000
+MATERIAL_PREFIX = (
+    "SLK cross-Agent delivery. Read the complete UTF-8 JSON material at the absolute path below; "
+    "verify its byte count and SHA-256 before work. Its envelope is the unchanged assigned work; "
+    "follow its full prompt, including any Supervisor decision/result/submit instructions. "
+    "Do not truncate evidence, treat this as status-only, or locate another task by title.\n"
+)
+
+
+def _delegation(prompt: str, caller: str) -> str:
+    return f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
+
+
+def _material_prompt(path: Path, data: bytes, envelope: Envelope) -> str:
+    return MATERIAL_PREFIX + json.dumps({
+        "path": str(path.resolve()), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+        "message_id": envelope.message_id, "run_id": envelope.run_id, "cell_id": envelope.cell_id,
+        "payload_sha256": envelope.payload_sha256,
+    }, ensure_ascii=False, sort_keys=True)
+
+
+def _validate_material(prompt: str, envelope: Envelope, attempt: Attempt) -> None:
+    if not prompt.startswith(MATERIAL_PREFIX):
+        return  # Existing inline prompts keep their exact native proof.
+    path = attempt.root / "desktop-material.json"
+    try:
+        data = path.read_bytes()
+        value = json.loads(data)
+        if (not isinstance(value, dict) or set(value) != {"schema_version", "envelope", "prompt"}
+            or value["schema_version"] != "slk.desktop-material/v1"
+            or value["envelope"] != asdict(envelope) or not isinstance(value["prompt"], str)
+            or prompt != _material_prompt(path, data, envelope)):
+            raise ValueError("material identity or content changed")
+    except (OSError, ValueError, TypeError) as error:
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "Desktop full material is missing or changed") from error
+
+
+def _prepare_prompt(prompt: str, envelope: Envelope, attempt: Attempt, caller: str) -> str:
+    # Representation selection, not an engineering-message admission limit.
+    if len(_delegation(prompt, caller)) + 512 <= DESKTOP_READ_LIMIT:
+        _validate_material(prompt, envelope, attempt)
+        return prompt
+    value = {"schema_version": "slk.desktop-material/v1", "envelope": asdict(envelope), "prompt": prompt}
+    _write_or_match(attempt, "desktop-material.json", value)
+    path = attempt.root / "desktop-material.json"
+    compact = _material_prompt(path, path.read_bytes(), envelope)
+    _validate_material(compact, envelope, attempt)
+    return compact
 
 
 def _checker_return(endpoint: Endpoint, envelope: Envelope) -> bool:
@@ -251,7 +300,7 @@ def validate_late_desktop_start(
     expected_failure_evidence = tuple(sorted((
         "accepted.json", "desktop-prompt.json", "desktop-readback-anchor.json",
         "desktop-send.json", "endpoint.json", "envelope.json",
-    ) + tuple(name for name in ("command-rebind.json", "desktop-target-observation.json", "desktop-target-observation-latest.json")
+    ) + tuple(name for name in ("command-rebind.json", "desktop-target-observation.json", "desktop-target-observation-latest.json", "desktop-material.json")
               if (attempt.root / name).is_file())))
     if (
         saved_endpoint != endpoint
@@ -281,6 +330,7 @@ def validate_late_desktop_start(
             "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop prompt identity changed"
         )
     prompt_sha256 = hashlib.sha256(prompt["prompt"].encode()).hexdigest()
+    _validate_material(prompt["prompt"], envelope, attempt)
     anchor = _read_object(attempt.root / "desktop-readback-anchor.json", "Desktop readback anchor")
     caller = anchor.get("caller_thread_id")
     if (
@@ -379,6 +429,7 @@ def consume_desktop_readback(
             or not isinstance(prompt_record.get("prompt"), str)):
             raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "Desktop prompt evidence changed identity")
         prompt = prompt_record["prompt"]
+    _validate_material(prompt, envelope, attempt)
     prompt_sha256 = hashlib.sha256(prompt.encode()).hexdigest()
     anchor = _read_object(attempt.root / "desktop-readback-anchor.json", "Desktop readback anchor")
     caller = anchor.get("caller_thread_id")
@@ -422,7 +473,7 @@ def consume_desktop_readback(
              "platform_item_id": proof["platform_item_id"], "turn_status": turn_status}, None,
             ("started.json", "desktop-send.json", "desktop-readback.json"),
         )
-    expected = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
+    expected = _delegation(prompt, caller)
     timeout = float(address["startup_timeout_seconds"])
     client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
@@ -433,7 +484,7 @@ def consume_desktop_readback(
         if "read_thread" not in {t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}:
             raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "installed Desktop plugin lacks read_thread")
         args = {"threadId": target, "hostId": endpoint.host_id, "turnLimit": 2,
-                "includeOutputs": True, "maxOutputCharsPerItem": len(expected) + 512}
+                "includeOutputs": True, "maxOutputCharsPerItem": min(DESKTOP_READ_LIMIT, len(expected) + 512)}
         view = client.call(3, "read_thread", args, reader, timeout)
         _, turns = _view(view, endpoint)
         matches = _matching_items(turns, previous=set(anchor["previous_turn_ids"]),
@@ -454,7 +505,8 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
                     *, wait_for_completion: bool = True) -> DeliveryResult:
     address, binding = endpoint.address, endpoint.address["desktop"]
     caller, target = _executor(endpoint, envelope), address["thread_id"]
-    expected = f"<codex_delegation>\n  <source_thread_id>{escape(caller)}</source_thread_id>\n  <input>{escape(prompt)}</input>\n</codex_delegation>"
+    prompt = _prepare_prompt(prompt, envelope, attempt, caller)
+    expected = _delegation(prompt, caller)
     timeout = float(address["startup_timeout_seconds"])
     client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
@@ -465,8 +517,10 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
         if not {"read_thread", "send_message_to_thread"}.issubset({t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}):
             raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "installed Desktop plugin lacks the required native tools")
         args = {"threadId": target, "hostId": endpoint.host_id, "turnLimit": 2,
-                "includeOutputs": True, "maxOutputCharsPerItem": len(expected) + 512}
+                "includeOutputs": False, "maxOutputCharsPerItem": 4096}
         before = client.call(3, "read_thread", args, caller, timeout)
+        args = {**args, "includeOutputs": True,
+                "maxOutputCharsPerItem": min(DESKTOP_READ_LIMIT, len(expected) + 512)}
         thread, turns = _view(before, endpoint)
         status = thread.get("status", {}).get("type")
         active = [t["id"] for t in turns if t.get("status") in {"inProgress", "active"}]
