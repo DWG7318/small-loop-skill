@@ -37,6 +37,7 @@
 ## 4. Verification and handoff — active
 
 - [x] Targeted Python199 passed/62.00s; Rust workspace156 passed/0 failed; final scope/window OW rerun52 passed/5.29s; cargo fmt check passed. Logs: `.codex/.tmp/preparation-444/`.
-- [ ] Full Python, final manifest/repository checks, standard five-artifact release build and isolated package/install verification. No real installation or product-state commands.
+- [x] Standard five-artifact release build/production BI fingerprint/CLI version checks PASS. Supervisor independently199 Python/152 non-BI Rust/4 BI serial PASS; later Root BI fixture10035 failure retained, not hidden. Full Python third run uses existing offline SDK server/plugin, still pending, not a package PASS gate invented here.
+- [ ] Final manifest/repository checks and existing-builder package/isolated verification. No real installation or product-state commands.
 - [ ] Record exact changed files, line-count split, tests, artifact hashes and unverified native gaps here; do not use old4.4.3 acceptance as evidence for this patch.
 - [ ] Send completed package/evidence to exact Supervisor `01a0bed1-af60-7ac0-8003-d3d6f9d30124` for independent inspection. No self-deployment, new OW or sample READY claim.
