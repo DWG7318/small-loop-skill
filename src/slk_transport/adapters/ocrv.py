@@ -377,7 +377,7 @@ class OcrvAdapter:
         capacity = dict(DEFAULT_REVIEW_CAPACITY)
         if review_capacity is not None:
             capacity.update({field: int(review_capacity[field]) for field in REVIEW_CAPACITY_FIELDS})
-        return {
+        request = {
             "schema_version": "slk.ocrv-d1-request/v2",
             "run_id": envelope.run_id,
             "cell_id": envelope.cell_id,
@@ -389,6 +389,20 @@ class OcrvAdapter:
             "review_scope": scope,
             "capacity": capacity,
         }
+        if envelope.payload_type == "D1_MANAGEMENT_RETURN":
+            context = {key: envelope.payload[key] for key in (
+                "management_action", "management_summary", "management_evidence_refs")}
+            refs = context["management_evidence_refs"]
+            if not isinstance(refs, list):
+                raise AdapterError("OCRV_PAYLOAD_INVALID", "management evidence must be an array")
+            for ref in refs:
+                path = ref.get("path") if isinstance(ref, Mapping) else ref
+                if not isinstance(path, str) or not Path(path).is_absolute() or not Path(path).is_file():
+                    raise AdapterError("OCRV_PAYLOAD_INVALID", "management evidence must name existing absolute files")
+                if path not in request["evidence_files"]:
+                    request["evidence_files"].append(path)
+            request["management_context"] = context
+        return request
 
     def _read_ocrv_result(self, path: Path, request_path: Path, envelope: Envelope,
                           process_exit_code: int) -> Any:

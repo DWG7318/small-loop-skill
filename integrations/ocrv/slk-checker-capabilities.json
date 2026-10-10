@@ -5,13 +5,15 @@
     "ocrv-preview",
     "raw-output-preservation",
     "slk_checker_decide",
+    "slk_read_evidence",
     "original-native-invocation-binding"
   ],
   "explicit_d1": {
     "transport": "stdio-mcp",
     "tool": "slk_checker_decide",
     "tool_allowlist": [
-      "slk_checker_decide"
+      "slk_checker_decide",
+      "slk_read_evidence"
     ],
     "report_body_is_action": false
   },

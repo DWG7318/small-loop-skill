@@ -224,6 +224,7 @@ def test_management_return_reuses_same_candidate_with_normal_unlimited_profile(
         "timeout_minutes": 15,
     }
     endpoint = Endpoint.from_dict(endpoint_raw)
+    (tmp_path / "supervisor-decision.json").write_text("original management evidence", encoding="utf-8")
     payload = {
         "source_d1_incomplete_event_id": "d1-incomplete-001",
         "candidate_message_id": original.message_id,
@@ -256,6 +257,24 @@ def test_management_return_reuses_same_candidate_with_normal_unlimited_profile(
     assert request["capacity"]["max_tokens"] == 200_000
     assert request["capacity"]["max_tokens_budget"] == 0
     assert request["capacity"]["timeout_minutes"] == 0
+
+
+@pytest.mark.parametrize('hashed', [False, True])
+def test_management_return_preserves_summary_and_original_materials(tmp_path, hashed):
+    original = candidate_envelope(tmp_path)
+    evidence = tmp_path / 'supervisor-original.log'
+    evidence.write_text('full original test evidence', encoding='utf-8')
+    reference = {'path': str(evidence), 'sha256': hashlib.sha256(evidence.read_bytes()).hexdigest()} if hashed else str(evidence)
+    context = {'management_action': 'SUPPLY_EVIDENCE', 'management_summary': 'Read the supplied original.',
+               'management_evidence_refs': [reference]}
+    payload = {'candidate_payload': dict(original.payload), **context}
+    returned = Envelope.from_dict({**original.__dict__, 'sender_role': 'supervisor',
+        'sender_role_instance_id': 'RUN-A-supervisor-001', 'payload_type': 'D1_MANAGEMENT_RETURN',
+        'payload': payload, 'payload_sha256': canonical_json_sha256(payload)})
+    request = OcrvAdapter()._candidate_request(returned)
+    assert request['management_context'] == context
+    assert request['evidence_files'] == [str(evidence)]
+    assert request['cell_goal'] == original.payload['cell_goal']
 
 
 def test_ocrv_records_spawn_start_before_terminal_result(tmp_path: Path) -> None:

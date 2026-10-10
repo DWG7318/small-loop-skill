@@ -29,11 +29,18 @@ def test_tool_explains_whole_candidate_authority_not_group_completion(bridge):
         assert marker in description
 
 
+def test_tool_keeps_unchanged_cell_seams_and_final_action_order_explicit(bridge):
+    description = bridge.TOOL['description']
+    assert 'unchanged Shell/handshake seams' in description
+    assert description.index('save actual reports and evidence') < description.index('last action')
+    assert 'Do not continue reviewing after handoff' in description
+
+
 def test_discovery_and_notifications_do_not_decide_d1(bridge):
     no_action = lambda *_: pytest.fail('no explicit action')
     assert bridge.respond({'id':1,'method':'initialize','params':{'protocolVersion':'2025-03-26'}}, no_action)['result']['capabilities'] == {'tools':{}}
     tools = bridge.respond({'id':2,'method':'tools/list'}, no_action)['result']['tools']
-    assert [tool['name'] for tool in tools] == ['slk_checker_decide']
+    assert [tool['name'] for tool in tools] == ['slk_checker_decide', 'slk_read_evidence']
     assert bridge.respond({'method':'notifications/initialized'}, no_action) is None
 
 
@@ -53,6 +60,8 @@ def test_only_explicit_decision_reaches_existing_action(bridge, verdict):
     {'name':'slk_checker_decide','arguments':{}},
     {'name':'slk_checker_decide','arguments':{'verdict':'PASS','source':'other'}},
     {'name':'slk_checker_decide','arguments':{'verdict':'maybe'}},
+    {'name':'slk_checker_decide','arguments':{'group_verdict':'PASS'}},
+    {'name':'slk_checker_decide','arguments':{'coverage':{'completed':['modified-files']},'exit_code':0}},
 ])
 def test_no_generic_executor_or_implicit_decision(bridge, params):
     result = bridge.respond(call(params), lambda *_: pytest.fail('invalid action'))
@@ -78,6 +87,11 @@ def test_invalid_protocol_params_do_not_crash_or_call_action(bridge, method):
     result = bridge.respond({'jsonrpc':'2.0','id':4,'method':method,'params':[]},
                             lambda *_: pytest.fail('invalid protocol called action'))
     assert result['error']['code'] == -32602
+
+
+@pytest.mark.parametrize('frame', [[], None, 'invalid request'])
+def test_completion_ignores_non_object_protocol_requests(bridge, frame):
+    bridge._publish_completion(frame, {'error': {'code': -32700}})
 
 
 @pytest.mark.parametrize('receipt', ['', 'not-an-invocation.json'])
@@ -107,3 +121,17 @@ def test_stdio_imports_packaged_transport_without_source_pythonpath(tmp_path, re
     assert replies[2]['result']['isError'] is True
     assert 'CHECKER_DECISION_CALLER_UNPROVEN' in replies[2]['result']['content'][0]['text']
     assert not list(tmp_path.rglob('checker-decision.json'))
+
+
+def test_stdio_uses_utf8_independently_of_windows_locale(tmp_path):
+    from scripts.build_transport_zipapp import build_zipapp
+    package = build_zipapp(tmp_path / 'slk-transport.pyz')
+    script = Path(__file__).resolve().parents[2] / 'integrations/ocrv/slk_checker_decision.py'
+    environment = {**os.environ, 'PYTHONIOENCODING': 'ascii', 'SLK_NATIVE_START_RECEIPT': ''}
+    request_frame = call({'name': 'slk_checker_decide', 'arguments': {'verdict': 'INCOMPLETE', 'message': '原始证据🙂'}})
+    completed = subprocess.run([sys.executable, '-B', str(script), '--transport', str(package)],
+        input=json.dumps(request_frame, ensure_ascii=False)+'\n', env=environment,
+        text=True, encoding='utf-8', capture_output=True,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0))
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)['result']['isError'] is True

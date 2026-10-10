@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+from ctypes import wintypes
 import errno
 import hashlib
 import json
@@ -166,8 +167,9 @@ def _compact_evidence(path: Path) -> dict[str, Any]:
 
 
 def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
-    if set(value) != REQUEST_FIELDS or value.get("schema_version") != REQUEST_SCHEMA:
-        raise RequestError("request must use the exact v2 field set")
+    if (set(value) - {"management_context"} != REQUEST_FIELDS
+        or value.get("schema_version") != REQUEST_SCHEMA):
+        raise RequestError("request must use the v2 field set with optional management_context")
     repository = Path(_nonempty(value["repository"], "repository")).resolve()
     if not repository.is_dir():
         raise RequestError("repository must be an existing directory")
@@ -206,7 +208,28 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
         if not path.is_file():
             raise RequestError(f"evidence file does not exist: {path}")
         evidence.append(_compact_evidence(path))
-    return {
+    management = value.get("management_context")
+    if "management_context" in value:
+        fields = {"management_action", "management_summary", "management_evidence_refs"}
+        if not isinstance(management, dict) or set(management) != fields:
+            raise RequestError("management_context must use the exact field set")
+        _nonempty(management["management_action"], "management_action")
+        _nonempty(management["management_summary"], "management_summary")
+        refs = management["management_evidence_refs"]
+        if not isinstance(refs, list):
+            raise RequestError("management_evidence_refs must be an array")
+        indexed = {item["path"]: item for item in evidence}
+        for ref in refs:
+            if isinstance(ref, dict):
+                if set(ref) != {"path", "sha256"}:
+                    raise RequestError("management evidence accepts only path and sha256")
+                path, expected = ref["path"], ref["sha256"]
+            else:
+                path, expected = ref, None
+            item = indexed.get(str(Path(_nonempty(path, "management evidence")).resolve()))
+            if item is None or (expected is not None and expected != item["sha256"]):
+                raise RequestError("management evidence is missing or its hash changed")
+    normalized = {
         "schema_version": REQUEST_SCHEMA,
         "run_id": _identifier(value["run_id"], "run_id"),
         "cell_id": _identifier(value["cell_id"], "cell_id"),
@@ -218,6 +241,9 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
         "review_scope": {**scope_body, "scope_sha256": scope["scope_sha256"]},
         "capacity": dict(capacity),
     }
+    if management is not None:
+        normalized["management_context"] = management
+    return normalized
 
 
 def _discover_capabilities(request: dict[str, Any], artifact_root: Path) -> dict[str, Any]:
@@ -262,17 +288,21 @@ def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
         request["cell_goal"], "", "## D1 Criteria", "",
     ]
     lines.extend(f"{index}. {criterion}" for index, criterion in enumerate(request["d1_criteria"], 1))
+    if "management_context" in request:
+        context = request["management_context"]
+        lines.extend(["", "## Supervisor supplement — not a replacement CELL goal or D1 verdict", "",
+            context["management_action"], context["management_summary"]])
     lines.extend(["", "## Evidence Index — locators, not Worker acceptance conclusions", ""])
     scoped_paths = set(request["review_scope"]["include_paths"])
     if request["evidence"]:
-        for item in request["evidence"]:
+        for index, item in enumerate(request["evidence"]):
             summary = {key: value for key, value in item["summary"].items() if key in {
                 "format", "candidate", "changed_paths", "changed_paths_summary",
                 "base_commit", "head_commit", "candidate_commit"}}
             changed_paths = summary.get("changed_paths")
             if scoped_paths and isinstance(changed_paths, list):
                 summary["changed_paths"] = [path for path in changed_paths if path in scoped_paths]
-            lines.append(f"- `{item['path']}` — sha256 `{item['sha256']}`, {item['bytes']} bytes")
+            lines.append(f"- Evidence {index}: `{item['path']}` — sha256 `{item['sha256']}`, {item['bytes']} bytes")
             lines.append("  " + json.dumps(summary, ensure_ascii=False, sort_keys=True))
     else:
         lines.append("- None supplied; do not invent runtime evidence.")
@@ -281,16 +311,23 @@ def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
     lines.extend(["", "Inspect the candidate against every D1 criterion and form your independent preliminary judgment",
         "before reading Worker D0 originals; then read the indexed originals and reconcile any contradictions",
         "before your final D1 decision. The initial index contains locators only, not Worker self-evaluation.",
+        "Read runtime originals with slk_read_evidence(index, offset?, limit?) using the Evidence number",
+        "above; omit limit to read through EOF, or choose offset/limit yourself. There is no tool-imposed",
+        "content-length ceiling; originals are hash-checked. Git file_read in commit/range mode cannot read uncommitted runtime logs.",
+        "Do not treat an index, a summary, a missing file or a truncated chunk as the full original.",
         "Your D1 decision concerns the entire frozen candidate and every CELL criterion,",
         "not the current file or native group. Native grouping and concurrency=1 do not prove",
         "whole-candidate review. Use existing file_find/file_read_diff and indexed originals",
         "to inspect related changes across groups before deciding. Do not submit one decision per group",
         "or repeat a previously submitted whole-CELL decision. If you cannot establish all CELL goals,",
         "do not claim whole-CELL PASS; disclose the unverified scope and retain all existing output.",
+        "Review unchanged Shell/handshake seams required by CELL criteria; modified-file/group coverage is not whole-CELL acceptance.",
         "Only you, the original OCRV Checker, own D1. State your actual decision and limitations.",
         "Counts, severity, coverage and exit codes do not decide for you; host text never authorizes D1.",
-        "Use slk_checker_decide(verdict) for your explicit final D1 action when that bound MCP",
-        "tool is available. If unavailable or failed, disclose that fact; never claim a state",
+        "Finish this review and save actual reports and evidence before using slk_checker_decide(verdict)",
+        "as your last action for the explicit D1 decision and existing handoff; the MCP reply is flushed",
+        "before the original invocation ends. Do not continue reviewing after handoff.",
+        "If the bound tool is unavailable or failed, disclose that fact; never claim a state",
         "write succeeded. The report remains deliverable independently of this action."])
     return "\n".join(lines) + "\n"
 
@@ -349,10 +386,12 @@ def _artifact_root(request: dict[str, Any]) -> tuple[str, Path]:
 def _process_creation_time(pid: int) -> str:
     if os.name != "nt":
         stat = Path(f"/proc/{pid}/stat")
-        fields = stat.read_text(encoding="ascii").split()
-        return f"proc-start:{fields[21]}"
+        fields = stat.read_text(encoding="ascii").rsplit(")", 1)[1].split()
+        return f"proc-start:{fields[19]}"
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(ctypes.c_ulonglong)] * 4
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
     handle = kernel32.OpenProcess(0x1000, False, pid)
     if not handle:
         raise RequestError("native OCRV process is not queryable")
@@ -372,6 +411,102 @@ def _process_creation_time(pid: int) -> str:
         return f"win-filetime:{created.value}"
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _process_parents() -> dict[int, int]:
+    """Local OS facts, used once on explicit completion, not an activity probe."""
+    if os.name != "nt":
+        parents = {}
+        for path in Path('/proc').glob('[0-9]*/stat'):
+            try:
+                parents[int(path.parent.name)] = int(path.read_text().rsplit(')', 1)[1].split()[1])
+            except (OSError, ValueError, IndexError):
+                pass
+        return parents
+    class Entry(ctypes.Structure):
+        _fields_ = [("size", wintypes.DWORD), ("usage", wintypes.DWORD), ("pid", wintypes.DWORD),
+            ("heap", ctypes.c_size_t), ("module", wintypes.DWORD), ("threads", wintypes.DWORD),
+            ("parent", wintypes.DWORD), ("priority", wintypes.LONG), ("flags", wintypes.DWORD),
+            ("name", wintypes.WCHAR * 260)]
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    kernel.Process32FirstW.argtypes = kernel.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.POINTER(Entry)]
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    snapshot = kernel.CreateToolhelp32Snapshot(2, 0)
+    if snapshot == ctypes.c_void_p(-1).value:
+        raise RequestError("native review ancestry unavailable")
+    try:
+        entry = Entry()
+        entry.size = ctypes.sizeof(entry)
+        parents = {}
+        valid = kernel.Process32FirstW(snapshot, ctypes.byref(entry))
+        while valid:
+            parents[entry.pid] = entry.parent
+            valid = kernel.Process32NextW(snapshot, ctypes.byref(entry))
+        return parents
+    finally:
+        kernel.CloseHandle(snapshot)
+
+
+def _close_completed_review(process: Any, completion: dict[str, Any], launcher: dict[str, Any]) -> None:
+    """Stop ONLY the exact review process; NEVER tree-kill a handed-off successor."""
+    target = completion["review_process"]
+    pid = target["pid"]
+    if type(pid) is not int or pid <= 0 or process.poll() is not None:
+        raise RequestError("native review is not a live owned process")
+    if _process_creation_time(process.pid) != launcher["creation_time"]:
+        raise RequestError("native review launcher identity changed")
+    parents = _process_parents()
+    current = pid
+    for _ in range(32):
+        if current == process.pid:
+            break
+        current = parents.get(current, 0)
+    else:
+        raise RequestError("completion process is not this review's descendant")
+    if os.name != "nt":
+        if _process_creation_time(pid) != target["creation_time"]:
+            raise RequestError("native review process identity changed")
+        os.kill(pid, 15)
+        return
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(ctypes.c_ulonglong)] * 4
+    kernel.TerminateProcess.argtypes = [ctypes.c_void_p, wintypes.UINT]
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    handle = kernel.OpenProcess(0x1001, False, pid)
+    if not handle:
+        raise RequestError("native review process is not queryable")
+    try:
+        times = [ctypes.c_ulonglong() for _ in range(4)]
+        if (not kernel.GetProcessTimes(handle, *(ctypes.byref(value) for value in times))
+            or f"win-filetime:{times[0].value}" != target["creation_time"]
+            or not kernel.TerminateProcess(handle, 1)):
+            raise RequestError("exact native review closure failed")
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _completed_decision(path: Path, native: tuple[Path, dict], invocation: str) -> dict:
+    completed = _read_json(path)
+    receipt_path, context = native
+    if (completed.get("schema_version") != "slk.ocrv-completion/v1"
+        or any(completed.get(key) != context[key] for key in (
+            "run_id", "cell_id", "message_id", "native_request_sha256"))
+        or completed.get("native_task_id") != invocation
+        or completed.get("native_start_sha256") != _sha256(receipt_path)):
+        raise RequestError("completion receipt does not bind this native invocation")
+    decision_path = receipt_path.parent / "role-host" / "checker-decision.json"
+    if (Path(completed["decision_path"]).resolve() != decision_path.resolve()
+        or completed["decision_sha256"] != _sha256(decision_path)):
+        raise RequestError("completion decision changed")
+    decision = _read_json(decision_path)
+    if (decision.get("source_message_id") != context["message_id"]
+        or decision.get("native_task_id") != invocation
+        or decision.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
+        or decision["verdict"] != completed["verdict"]):
+        raise RequestError("completion is not this Checker's explicit decision")
+    return completed
 
 
 def _native_context() -> tuple[Path, dict[str, str]] | None:
@@ -531,12 +666,21 @@ def run(
     raw_path = root / "ocrv-review.json"
     stdout_path, stderr_path = root / "ocrv.stdout.txt", root / "ocrv.stderr.txt"
     command = _review_args(request, background_path, raw_path) + (["--resume", resume_session] if resume_session else [])
+    native = _native_context()
+    index_path = root / "evidence-index.json"
+    _write_json_atomic(index_path, {
+        **(native[1] if native is not None else {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
+        "native_task_id": invocation, "evidence": request["evidence"],
+    })
+    environment = os.environ.copy()
+    environment["SLK_CHECKER_EVIDENCE_INDEX"] = str(index_path)
+    environment["SLK_CHECKER_EVIDENCE_INDEX_SHA256"] = _sha256(index_path)
     process = subprocess.Popen(
         command, cwd=request["repository"],
+        env=environment,
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace", **_no_window_kwargs(),
     )
-    native = _native_context()
     activity_path: Path | None = None
     activity_tail: list[dict[str, Any]] = []
     if native is not None:
@@ -586,13 +730,34 @@ def run(
     stderr_thread = threading.Thread(target=drain, args=(process.stderr, stderr_lines, "OCRV_PROGRESS"))
     stdout_thread.start()
     stderr_thread.start()
-    returncode = process.wait()
+    completed_decision = None
+    closure_error = None
+    completion_path = root / "review-completed.json"
+    while True:
+        try:
+            returncode = process.wait(timeout=0.25)
+            break
+        except subprocess.TimeoutExpired:
+            if native is not None and completion_path.is_file() and completed_decision is None and closure_error is None:
+                try:
+                    candidate = _completed_decision(completion_path, native, invocation)
+                    launcher = _read_json(native[0])["process"]
+                    _close_completed_review(process, candidate, launcher)
+                    completed_decision = candidate
+                except (RequestError, OSError, KeyError, TypeError, UnicodeDecodeError) as exc:
+                    closure_error = str(exc)
     stdout_thread.join()
     stderr_thread.join()
     stdout = "".join(stdout_lines)
     stderr = "".join(stderr_lines)
     stdout_path.write_text(stdout, encoding="utf-8", newline="\n")
     stderr_path.write_text(stderr, encoding="utf-8", newline="\n")
+    if native is not None:
+        completed_decision = None
+        try:
+            completed_decision = _completed_decision(completion_path, native, invocation)
+        except (RequestError, OSError, KeyError, TypeError, UnicodeDecodeError) as exc:
+            closure_error = f"{closure_error}; {exc}" if closure_error is not None else str(exc)
     if activity_path is not None:
         exit_sequence = len(stderr_lines) + 1
         exit_observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
@@ -611,13 +776,14 @@ def run(
                 "cell_id": native[1]["cell_id"] if native is not None else request["cell_id"],
                 "message_id": native[1]["message_id"] if native is not None else "unknown",
                 "native_task_id": invocation,
-                "status": "COMPLETED" if returncode == 0 else "FAILED",
+                "status": "COMPLETED" if returncode == 0 or completed_decision is not None else "FAILED",
                 "sequence": exit_sequence,
                 "observed_at": exit_observed_at,
                 "last_event": {
                     "kind": "OCRV_PROCESS_EXITED",
                     "sequence": exit_sequence,
                     "exit_code": returncode,
+                    "closure_reason": "EXPLICIT_D1_COMPLETED" if completed_decision is not None else None,
                     "tail": list(activity_tail),
                 },
                 "waiting_on": None,
@@ -631,7 +797,8 @@ def run(
         except (UnicodeDecodeError, json.JSONDecodeError):
             pass
     # Only an explicit native Checker verdict may be copied; findings and exit are facts.
-    verdict = review.get("verdict") if isinstance(review, dict) else None
+    verdict = (completed_decision["verdict"] if completed_decision is not None else
+               review.get("verdict") if native is None and isinstance(review, dict) else None)
     reasons = review.get("reason_codes", []) if isinstance(review, dict) else []
     llm = review.get("llm", {}) if isinstance(review, dict) else {}
     result = {
@@ -645,6 +812,8 @@ def run(
             "model": llm.get("model") if isinstance(llm, dict) else None,
             "session_id": review.get("session_id") if isinstance(review, dict) else None,
             "exit_code": returncode,
+            "closure_reason": "EXPLICIT_D1_COMPLETED" if completed_decision is not None else None,
+            "closure_error": closure_error,
         },
         "evidence": request["evidence"], "request_sha256": _sha256(result_request_path or request_path),
         "artifacts": {
@@ -653,7 +822,7 @@ def run(
         },
     }
     _write_json_atomic(output_path.resolve(), result)
-    return returncode
+    return 0 if completed_decision is not None else returncode
 
 
 def main() -> int:
