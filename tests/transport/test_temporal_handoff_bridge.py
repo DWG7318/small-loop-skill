@@ -22,6 +22,7 @@ from slk_transport import worker_completion as wc
 from test_ocrv_adapter import candidate_envelope, checker_endpoint
 from test_role_host import host_boundary, prepared_host
 from test_worker_completion import write_json
+from test_worker_completion import actual_worker_state
 from test_contracts import endpoint_value, envelope_value
 
 
@@ -135,7 +136,7 @@ def test_accepted_without_native_start_is_fail_closed_and_not_redispatched(tmp_p
                       adapters={"ocrv-checker": ForbiddenAdapter()})
 
 
-@pytest.mark.parametrize("mode", ["new", "delivered", "delivered_identity_drift"])
+@pytest.mark.parametrize("mode", ["new", "delivered", "delivered_exact_retry", "delivered_identity_drift"])
 def test_temporal_host_is_original_sender_but_never_calls_direct_transport(tmp_path: Path, monkeypatch, mode) -> None:
     host, source, envelope = prepared_host(tmp_path)
     canonical = tmp_path / "canonical-attempts"
@@ -152,12 +153,18 @@ def test_temporal_host_is_original_sender_but_never_calls_direct_transport(tmp_p
         endpoint = host.endpoint(envelope.receiver_role)
         write_json(attempt / "endpoint.json", {**endpoint, **({"version": 999} if mode.endswith("drift") else {})})
         write_json(attempt / "envelope.json", asdict(envelope))
-        write_json(attempt / "started.json", make_native_start(
+        proof_root = attempt
+        if mode == "delivered_exact_retry":
+            write_json(attempt / "failed.json", {"error_code": "OCRV_NATIVE_START_UNPROVED"})
+            proof_root = attempt / "recovery" / "exact-1" / envelope.run_id / envelope.message_id
+            write_json(proof_root / "endpoint.json", endpoint)
+            write_json(proof_root / "envelope.json", asdict(envelope))
+        write_json(proof_root / "started.json", make_native_start(
             adapter=endpoint["adapter"], run_id=envelope.run_id, cell_id=envelope.cell_id,
             message_id=envelope.message_id, request_sha256=envelope.payload_sha256,
             native_request_sha256="c" * 64, native_task_kind="test-session",
             native_task_id="native-one", native_task_status="RUNNING", pid=os.getpid()))
-        original_start = (attempt / "started.json").read_bytes()
+        original_start = (proof_root / "started.json").read_bytes()
 
     def command(command, arguments, **_kwargs):
         calls.append((str(command[0]), arguments[0]))
@@ -174,7 +181,7 @@ def test_temporal_host_is_original_sender_but_never_calls_direct_transport(tmp_p
                     native_request_sha256="c" * 64, native_task_kind="test-session",
                     native_task_id="native-one", native_task_status="RUNNING", pid=os.getpid()))
             else:
-                assert (attempt / "started.json").read_bytes() == original_start
+                assert (proof_root / "started.json").read_bytes() == original_start
             return {"schema_version": "slk.temporal-delivery-update-result/v1", "status": "DELIVERY_REQUESTED",
                     "operation": "request_delivery", "run_id": envelope.run_id,
                     "operation_id": wc._stable_id(envelope.message_id, "temporal-delivery"),
@@ -199,7 +206,7 @@ def test_temporal_host_is_original_sender_but_never_calls_direct_transport(tmp_p
         assert all(kind == "authenticate-role" for _command, kind in calls)
         return
     result = host._send_owned(source / "temporal-owned", envelope, "2026-10-05T00:00:00Z", projection,
-                              register_delivered_output=mode == "delivered")
+                              register_delivered_output=mode.startswith("delivered"))
 
     assert result["status"] == "OWNED_HANDOFF_COMMITTED"
     assert [kind for _command, kind in calls].count("request-delivery") == 1
@@ -207,9 +214,106 @@ def test_temporal_host_is_original_sender_but_never_calls_direct_transport(tmp_p
     assert [kind for _command, kind in calls].count("commit-delivery-start") == 1
     assert all(command != "transport" for command, _kind in calls)
     if original_start is not None:
-        assert (attempt / "started.json").read_bytes() == original_start
+        assert (proof_root / "started.json").read_bytes() == original_start
+    if mode == "delivered_exact_retry":
+        assert not (attempt / "started.json").exists()
+        assert wc._read_object(attempt / "failed.json", "original failure")["error_code"] == "OCRV_NATIVE_START_UNPROVED"
     attempt = canonical / envelope.run_id / envelope.message_id
     assert wc._read_object(attempt / "envelope.json", "staged envelope")["message_id"] == envelope.message_id
+
+
+def test_original_authenticated_worker_finishes_exact_retry_suffix_once(tmp_path, monkeypatch):
+    from slk_transport.recovery import retry_exact
+    binary, config, worker_secret, _checker_secret, _revision = actual_worker_state(tmp_path)
+    host, source, original = prepared_host(tmp_path)
+    for role in ("checker", "supervisor"):
+        path = Path(host.binding["roles"][role]["endpoint_path"])
+        write_json(path, {**host.endpoint(role), "endpoint_version": 1})
+        host.binding["roles"][role]["endpoint_sha256"] = wc._sha256(path)
+    attempts = tmp_path / "canonical-attempts"
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+        "state_command": [str(binary)], "temporal": temporal_binding(tmp_path, attempts)},
+        host.digest, state_config_path=str(config))
+    monkeypatch.setenv("SLK_NATIVE_ACTIVITY_PATH", str(source / "native-activity.json"))
+    monkeypatch.setenv("SLK_NATIVE_ACTIVITY_CONTEXT", json.dumps({"adapter": "dsh-worker",
+        "run_id": original.run_id, "cell_id": original.cell_id, "message_id": original.message_id}))
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: worker_secret
+        if Path(path) == Path(host.credential_path("worker")) else pytest.fail("wrong role credential"))
+    candidate = {"kind": "commit", "commit": "b" * 40, "baseline": "a" * 40,
+        "changed_paths": ["src/example.py"], "repository": str(tmp_path / "repository")}
+    message_id = wc._stable_id(original.message_id, "output-delivery")
+    for event_type, details in (("WORK_STARTED", {}), ("D0_COMPLETED", {"d0": "explicit test proof"}),
+        ("CANDIDATE_SUBMITTED", {"candidate": candidate,
+            "source_message_id": original.message_id, "handoff_message_id": message_id})):
+        host.record_worker_action(source, event_type, details)
+    calls, starts = [], []
+    actual_command = wc._run_json_command
+
+    class Receiver:
+        def validate_address(self, _endpoint):
+            pass
+
+        def deliver(self, endpoint, envelope, attempt):
+            starts.append(envelope.message_id)
+            write_json(attempt.root / "started.json", make_native_start(adapter=endpoint.adapter,
+                run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
+                request_sha256=envelope.payload_sha256, native_request_sha256="c" * 64,
+                native_task_kind="ocrv-review", native_task_id="only-original-review",
+                native_task_status="RUNNING", pid=os.getpid()))
+            return DeliveryResult("slk.transport-result/v1", envelope.message_id, envelope.run_id,
+                endpoint.adapter, "completed", {}, None, ("started.json",))
+
+    def command(executable, arguments, **kwargs):
+        if executable == host.transport:
+            calls.append(arguments[0])
+            assert arguments[0] == "send"
+            from slk_transport.contracts import Endpoint
+            endpoint = wc._read_object(Path(arguments[arguments.index("--endpoint") + 1]), "endpoint")
+            envelope = wc._read_object(Path(arguments[arguments.index("--envelope") + 1]), "envelope")
+            attempt = AttemptStore(attempts).create(Envelope.from_dict(envelope))
+            write_json(attempt.root / "endpoint.json", endpoint)
+            write_json(attempt.root / "envelope.json", envelope)
+            write_json(attempt.root / "accepted.json", {"status": "accepted"})
+            result = DeliveryResult("slk.transport-result/v1", envelope["message_id"], envelope["run_id"],
+                Endpoint.from_dict(endpoint).adapter, "failed", {}, "OCRV_NATIVE_START_UNPROVED", ())
+            write_json(attempt.root / "failed.json", asdict(result))
+            return asdict(result)
+        if executable == host.binding["temporal"]["client_command"]:
+            calls.append(arguments[0])
+            request_path = Path(arguments[arguments.index("--request") + 1])
+            request = wc._read_object(request_path, "Temporal request")
+            if arguments[0] == "native-started":
+                proof = attempts / original.run_id / message_id / "recovery" / "exact-1" / original.run_id / message_id / "started.json"
+                assert request["started_receipt_sha256"] == wc._sha256(proof)
+            return {"schema_version": "slk.temporal-delivery-update-result/v1",
+                "status": "DELIVERY_REQUESTED" if arguments[0] == "request-delivery" else "DELIVERY_ACKNOWLEDGED",
+                "operation": arguments[0].replace("-", "_"), "run_id": original.run_id,
+                "operation_id": request["operation_id"], "message_id": message_id}
+        if arguments[0] == "commit-delivery-start":
+            calls.append(arguments[0])
+        return actual_command(executable, arguments, **kwargs)
+
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    first = host.complete(source)
+    assert first["status"] == "OUTPUT_DELIVERY_UNCONFIRMED"
+    native = attempts / original.run_id / message_id
+    original_bytes = {p.name: p.read_bytes() for p in native.iterdir() if p.is_file()}
+    before = host.projection()
+    assert before["runtime_snapshot"]["token_holder_role_instance_id"] == original.receiver_role_instance_id
+    endpoint, envelope = (wc._read_object(native / name, name) for name in ("endpoint.json", "envelope.json"))
+    assert envelope["payload"]["candidate"] == candidate
+    assert retry_exact(attempts, endpoint, envelope, adapters={"ocrv-checker": Receiver()})["status"] == "RETRY_COMPLETED"
+    result = host.complete(source)
+    assert result["handoff"]["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert host.complete(source)["handoff"]["status"] == "OWNED_HANDOFF_ALREADY_COMMITTED"
+    after = host.projection()
+    assert after["runtime_snapshot"]["token_holder_role_instance_id"] == envelope["receiver_role_instance_id"]
+    assert len(after["token_history"]) == len(before["token_history"]) + 1
+    assert calls == ["send", "request-delivery", "native-started", "commit-delivery-start"]
+    assert starts == [message_id]
+    assert not any(event["event_type"].startswith("D1_") for event in after["events"])
+    assert not (native / "started.json").exists()
+    assert {p.name: p.read_bytes() for p in native.iterdir() if p.is_file()} == original_bytes
 
 
 @pytest.mark.parametrize("status", ["BLOCKED", "RECOVERY_REQUIRED"])

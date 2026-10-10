@@ -357,6 +357,8 @@ class OcrvAdapter:
         candidate = payload["candidate"]
         if not isinstance(candidate, Mapping):
             raise AdapterError("OCRV_PAYLOAD_INVALID", "candidate must be an object")
+        if candidate.get("kind") == "commit":
+            candidate = {"kind": "commit", "commit": candidate.get("commit")}
         criteria = payload["d1_criteria"]
         if not isinstance(criteria, list) or not criteria or not all(
             isinstance(item, str) and item.strip() for item in criteria

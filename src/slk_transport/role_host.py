@@ -1028,8 +1028,16 @@ class RoleHost:
                      else root / "worker-handoff" / "attempts") if action else root / "output-attempts")
         # dispatch_once provides immutable message de-duplication. No engineering event is written.
         try:
-            result = wc._run_json_command(self.transport, ["send", "--endpoint", str(target_path),
-                "--envelope", str(envelope_path), "--attempt-root", str(attempts)], credential=None)
+            result = None
+            native = attempts / outgoing.run_id / outgoing.message_id
+            if (native / "endpoint.json").is_file() and (native / "envelope.json").is_file():
+                from .recovery import inspect_delivery
+                inspected = inspect_delivery(attempts, target, asdict(outgoing))
+                if inspected["status"] == "ALREADY_STARTED":
+                    result = {**inspected, "status": "started"}
+            if result is None:
+                result = wc._run_json_command(self.transport, ["send", "--endpoint", str(target_path),
+                    "--envelope", str(envelope_path), "--attempt-root", str(attempts)], credential=None)
         except (ValueError, OSError) as exc:
             result = {"status": "failed", "error_code": getattr(exc, "error_code", type(exc).__name__),
                       "message": str(exc)}
@@ -1326,6 +1334,8 @@ class RoleHost:
         envelope_path = wc._write_or_reuse_stable_request(root / "envelope.json", asdict(envelope))
         self.validate_native_dispatch(target, envelope, attempts)
         if "temporal" in self.binding:
+            from .desktop_current_turn import resolve_delivery_start
+            _, existing_start = resolve_delivery_start(native, target, asdict(envelope), missing_ok=True)
             revision = latest.get("runtime_snapshot", {}).get("runtime_revision")
             if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
                 raise wc.CompletionError("ROLE_HOST_BOUNDARY_CHANGED", "source runtime revision is unavailable")
@@ -1337,7 +1347,7 @@ class RoleHost:
                     attempt=attempt_number,
                     required_attempt_root=attempts,
                 )
-            elif not (native / "started.json").is_file():
+            elif existing_start is None:
                 native = wc.start_temporal_delivery(
                     self.binding["temporal"], root, target, asdict(envelope),
                     attempt=attempt_number, source_runtime_revision=revision,

@@ -362,6 +362,14 @@ async def deliver_message(value: dict[str, Any]) -> dict[str, Any]:
             core = {"status": "PAUSED", "operation_id": request.operation_id}
             return {**core, "receipt_sha256": _receipt(core)}
         host = config["role_host_binding"]
+        if any((attempt / name).is_file() for name in ("accepted.json", "completed.json", "failed.json")):
+            inspected = _run_json(list(config["transport_command"]),
+                ["inspect", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
+                 "--attempt-root", str(config["attempt_root"])],
+                environment={"SLK_CONFIG_PATH": str(config["state_config_path"])})
+            if inspected.get("status") == "ALREADY_STARTED":
+                core = {"status": "DELIVERED", "operation_id": request.operation_id}
+                return {**core, "receipt_sha256": _receipt(core)}
         result = _run_json(
             list(config["transport_command"]),
             ["send", "--endpoint", str(endpoint_path), "--envelope", str(envelope_path),
@@ -417,8 +425,6 @@ async def request_recovery(value: dict[str, Any]) -> dict[str, Any]:
         # An already proven start lets the original sender finish its normal ACK.
         # Otherwise the adapter stops; Supervisor chooses any exact mechanical retry.
         status = "RECOVERY_REQUESTED" if result.get("status") == "ALREADY_STARTED" else "BLOCKED"
-        if status == "RECOVERY_REQUESTED" and not (attempt / "started.json").is_file():
-            status = "BLOCKED"
         core = {"status": status, "operation_id": delivery.operation_id}
         return {**core, "receipt_sha256": _receipt(core)}
 

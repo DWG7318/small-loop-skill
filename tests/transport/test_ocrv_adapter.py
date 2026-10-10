@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -8,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -54,6 +56,48 @@ def candidate_envelope(tmp_path: Path) -> Envelope:
     raw["payload"] = payload
     raw["payload_sha256"] = canonical_json_sha256(payload)
     return Envelope.from_dict(raw)
+
+
+@pytest.fixture
+def original_checker_adapter():
+    path = Path(__file__).parents[2] / "integrations/ocrv/slk_checker_adapter.py"
+    spec = importlib.util.spec_from_file_location("original_checker_adapter", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("commit", ["a" * 40, "b" * 64])
+def test_commit_candidate_request_projects_only_native_fields_and_preserves_original(
+    tmp_path: Path, original_checker_adapter, commit,
+) -> None:
+    raw = asdict(candidate_envelope(tmp_path))
+    candidate = {"kind": "commit", "commit": commit, "baseline": "b" * 40,
+                 "repository": raw["payload"]["repository"], "changed_paths": ["probe.py"],
+                 "endpoint_sha256": "c" * 64}
+    raw["payload"]["candidate"] = candidate
+    raw["payload_sha256"] = canonical_json_sha256(raw["payload"])
+    envelope = Envelope.from_dict(raw)
+    original = json.dumps(asdict(envelope), sort_keys=True)
+
+    request = OcrvAdapter()._candidate_request(envelope)
+
+    assert request["candidate"] == {"kind": "commit", "commit": commit}
+    assert original_checker_adapter._validate_candidate(request["candidate"]) == request["candidate"]
+    assert json.dumps(asdict(envelope), sort_keys=True) == original
+    assert envelope.payload["candidate"] == candidate
+
+
+@pytest.mark.parametrize("commit", [None, 123, "", "z" * 40, "a" * 39, "a" * 65])
+def test_commit_candidate_projection_never_accepts_invalid_native_commit(
+    tmp_path: Path, original_checker_adapter, commit,
+) -> None:
+    raw = asdict(candidate_envelope(tmp_path))
+    raw["payload"]["candidate"] = {"kind": "commit", "commit": commit, "baseline": "b" * 40}
+    raw["payload_sha256"] = canonical_json_sha256(raw["payload"])
+    request = OcrvAdapter()._candidate_request(Envelope.from_dict(raw))
+    with pytest.raises(original_checker_adapter.RequestError, match="commit"):
+        original_checker_adapter._validate_candidate(request["candidate"])
 
 
 def recovery_envelope(tmp_path: Path) -> Envelope:

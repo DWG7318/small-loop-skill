@@ -492,10 +492,15 @@ def complete_desktop_current_turn(
 
 def resolve_delivery_start(
     original: Path, endpoint: Mapping[str, Any], envelope: Mapping[str, Any],
-) -> tuple[Path, dict[str, Any]]:
+    *, missing_ok: bool = False,
+) -> tuple[Path, dict[str, Any] | None]:
     """Resolve ordinary v2 or explicit recovery lineage, without canonical backfill."""
     ordinary = original / "started.json"
     retry = original / "recovery" / "exact-1" / str(envelope["run_id"]) / str(envelope["message_id"])
+    if missing_ok and not any(path.is_file() for path in (
+        ordinary, retry / "started.json", original / "recovery/desktop-current-turn/started.json",
+    )):
+        return ordinary, None
     if not ordinary.is_file() and (retry / "started.json").is_file():
         if (_object(retry / "endpoint.json", "exact retry endpoint") != dict(endpoint)
             or _object(retry / "envelope.json", "exact retry envelope") != dict(envelope)):

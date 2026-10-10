@@ -565,22 +565,17 @@ def start_temporal_delivery(
             f"TEMPORAL_DELIVERY_{requested['status']}",
             f"Temporal request returned {requested['status']}",
         )
-    started_path = native / "started.json"
+    from .desktop_current_turn import resolve_delivery_start
+    started_path, started = resolve_delivery_start(native, endpoint_raw, envelope_raw, missing_ok=True)
     failed_path = native / "failed.json"
     deadline = time.monotonic() + 300
-    while not started_path.is_file() and time.monotonic() < deadline:
+    while started is None and time.monotonic() < deadline:
         if failed_path.is_file():
             break
         time.sleep(0.05)
+        started_path, started = resolve_delivery_start(native, endpoint_raw, envelope_raw, missing_ok=True)
     try:
-        validate_native_start(
-            started_path,
-            adapter=endpoint.adapter,
-            run_id=envelope.run_id,
-            cell_id=envelope.cell_id,
-            message_id=envelope.message_id,
-            request_sha256=envelope.payload_sha256,
-        )
+        started_path, _ = resolve_delivery_start(native, endpoint_raw, envelope_raw)
     except NativeActivityError as exc:
         raise CompletionError("TEMPORAL_NATIVE_START_UNPROVED", "Temporal delivery produced no exact native v2 start") from exc
     if requested["status"] == "DELIVERY_ACKNOWLEDGED":

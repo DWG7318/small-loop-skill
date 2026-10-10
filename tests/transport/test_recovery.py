@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -8,6 +9,7 @@ import pytest
 
 from slk_transport.contracts import ContractError, DeliveryResult, RESULT_SCHEMA
 from slk_transport.recovery import inspect_delivery, retry_exact
+from slk_transport.native_activity import make_native_start
 
 from test_contracts import endpoint_value, envelope_value, payload_hash
 
@@ -65,9 +67,38 @@ def failed(envelope: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def start_proof(endpoint, envelope):
+    return make_native_start(adapter=endpoint["adapter"], run_id=envelope["run_id"],
+        cell_id=envelope["cell_id"], message_id=envelope["message_id"],
+        request_sha256=envelope["payload_sha256"], native_request_sha256="a" * 64,
+        native_task_kind="ocrv-review", native_task_id="checker-a", native_task_status="RUNNING", pid=os.getpid())
+
+
+@pytest.mark.parametrize("changed", [None, "endpoint", "envelope", "start"])
+def test_inspection_resolves_only_the_exact_retry_without_rewriting_original(tmp_path, changed):
+    endpoint, envelope, attempt = seed_identity(tmp_path)
+    write_json(attempt / "failed.json", failed(envelope))
+    original = {path.name: path.read_bytes() for path in attempt.iterdir() if path.is_file()}
+    retry = attempt / "recovery" / "exact-1" / envelope["run_id"] / envelope["message_id"]
+    write_json(retry / "endpoint.json", {**endpoint, **({"endpoint_version": 999} if changed == "endpoint" else {})})
+    write_json(retry / "envelope.json", {**envelope, **({"token_sequence": 999} if changed == "envelope" else {})})
+    write_json(retry / "started.json", {**start_proof(endpoint, envelope),
+        **({"request_sha256": "f" * 64} if changed == "start" else {})})
+    if changed:
+        with pytest.raises(ValueError):
+            inspect_delivery(tmp_path, endpoint, envelope)
+    else:
+        result = inspect_delivery(tmp_path, endpoint, envelope)
+        assert result["status"] == "ALREADY_STARTED" and not result["should_retry"]
+        assert result["native_start"]["message_id"] == envelope["message_id"]
+        assert result["native_start_path"] == str(retry / "started.json")
+    assert not (attempt / "started.json").exists()
+    assert {path.name: path.read_bytes() for path in attempt.iterdir() if path.is_file()} == original
+
+
 def test_inspect_stops_when_original_delivery_has_native_start_proof(tmp_path: Path) -> None:
     endpoint, envelope, attempt = seed_identity(tmp_path)
-    write_json(attempt / "started.json", {"native_session_id": "checker-a"})
+    write_json(attempt / "started.json", start_proof(endpoint, envelope))
     write_json(attempt / "completed.json", completed(envelope))
 
     result = inspect_delivery(tmp_path, endpoint, envelope)
@@ -122,7 +153,7 @@ def test_retry_dispatches_the_exact_original_once(tmp_path: Path) -> None:
         )
         write_json(retry_attempt / "endpoint.json", endpoint_raw)
         write_json(retry_attempt / "envelope.json", envelope_raw)
-        write_json(retry_attempt / "started.json", {"native_session_id": "checker-a"})
+        write_json(retry_attempt / "started.json", start_proof(endpoint_raw, envelope_raw))
         write_json(retry_attempt / "completed.json", completed(envelope_raw))
         return DeliveryResult.from_dict(completed(envelope_raw))
 
@@ -177,7 +208,7 @@ def test_persisted_retry_completion_without_start_proof_is_rejected(tmp_path: Pa
 
 def test_retry_is_not_attempted_when_native_start_is_already_proven(tmp_path: Path) -> None:
     endpoint, envelope, attempt = seed_identity(tmp_path)
-    write_json(attempt / "started.json", {"native_session_id": "checker-a"})
+    write_json(attempt / "started.json", start_proof(endpoint, envelope))
     called = False
 
     def dispatch(*args, **kwargs):

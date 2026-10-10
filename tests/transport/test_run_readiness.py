@@ -513,6 +513,53 @@ def test_normal_chain_seal_rejects_a_non_ready_source(tmp_path):
         seal_normal_chain_source(request_path, config, tmp_path / "normal-chain-source.json")
 
 
+def test_normal_chain_seal_uses_native_candidate_view_without_discarding_report(tmp_path):
+    request = _request(tmp_path, method_version="4.4.5")
+    packet_path = Path(request["communication_rehearsal"])
+    packet = json.loads(packet_path.read_text())
+    leg = packet["legs"][2]
+
+    def replace(reference, change):
+        path = Path(reference["path"])
+        value = json.loads(path.read_text())
+        change(value)
+        write_json(path, value)
+        reference["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def add_report(envelope):
+        envelope["payload"]["candidate"].update(baseline="a" * 40,
+            changed_paths=["src/sample.py"], report={"d0": "explicit Worker evidence"})
+        envelope["payload_sha256"] = canonical_json_sha256(envelope["payload"])
+    replace(leg["envelope"], add_report)
+    envelope_path = Path(leg["envelope"]["path"])
+    envelope = json.loads(envelope_path.read_text())
+    digest = envelope["payload_sha256"]
+    replace(leg["receiver_started"], lambda value: value.update(request_sha256=digest))
+    def update_commit(value):
+        value["payload_sha256"] = digest
+        value["start_evidence"].update(sha256=leg["receiver_started"]["sha256"],
+            envelope_sha256=leg["envelope"]["sha256"])
+    replace(leg["commit_request"], update_commit)
+    write_json(packet_path, packet)
+    original = envelope_path.read_bytes()
+    request_path = write_json(tmp_path / "readiness-request.json", request)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "slk.db").write_bytes(b"isolated-source-database")
+    config = write_json(tmp_path / "config.json", {
+        "schema_version": "slk.config/v1", "data_root": str(state.resolve()),
+    })
+
+    sealed = seal_normal_chain_source(request_path, config, tmp_path / "normal-chain-source.json")
+
+    assert sealed["status"] == "PASS"
+    assert envelope_path.read_bytes() == original
+    assert json.loads(original)["payload"]["candidate"]["report"]["d0"] == "explicit Worker evidence"
+    # The projection does not excuse a changed authenticated original.
+    envelope_path.write_bytes(original + b"\n")
+    assert evaluate_run_readiness(request)["status"] == "REPAIR_NEEDED"
+
+
 def test_inflight_admission_separates_reusable_normal_chain_from_current_run_identity(tmp_path):
     source_root = tmp_path / "source"
     current_root = tmp_path / "current"

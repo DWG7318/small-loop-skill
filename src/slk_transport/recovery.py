@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping
 from .adapters.base import Adapter
 from .contracts import ContractError, DeliveryResult, parse_delivery
 from .dispatcher import dispatch_once
+from .desktop_current_turn import resolve_delivery_start
 
 
 Dispatch = Callable[..., DeliveryResult]
@@ -78,7 +79,7 @@ def inspect_delivery(
 ) -> dict[str, Any]:
     """Inspect one immutable delivery without polling or inferring liveness."""
 
-    attempt, _endpoint, envelope = _exact_original(
+    attempt, endpoint, envelope = _exact_original(
         attempt_root, endpoint_raw, envelope_raw
     )
     terminal, native_result = _terminal(attempt)
@@ -98,13 +99,16 @@ def inspect_delivery(
             facts["job_status"] = job.get("status")
         except (ContractError, UnicodeDecodeError) as exc:
             facts["job_result_error"] = str(exc)
-    if (attempt / "started.json").is_file():
+    started_path, started = resolve_delivery_start(attempt, endpoint, envelope, missing_ok=True)
+    if started is not None:
         return {
             **facts,
             "status": "ALREADY_STARTED",
             "should_retry": False,
             "run_id": envelope["run_id"],
             "message_id": envelope["message_id"],
+            "native_start_path": str(started_path),
+            "native_start": started,
         }
     if terminal == "completed":
         return {
@@ -140,6 +144,8 @@ def retry_exact(
     )
     inspection = inspect_delivery(attempt_root, endpoint, envelope)
     if inspection["status"] == "ALREADY_STARTED":
+        if Path(inspection["native_start_path"]) != attempt / "started.json":
+            return {**inspection, "status": "RETRY_COMPLETED"}
         return inspection
     if not inspection["should_retry"]:
         return inspection

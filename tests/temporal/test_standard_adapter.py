@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -276,6 +277,71 @@ def test_standard_adapter_preserves_failed_send_as_activity_error(tmp_path, monk
             "receiver_role_instance_id": "worker-a", "payload_sha256": "b" * 64,
             "source_runtime_revision": 9,
         }))
+
+
+@pytest.mark.parametrize("proof", ["ordinary", "exact", "missing", "wrong_endpoint", "wrong_envelope", "wrong_start"])
+def test_standard_adapter_reads_real_transport_retry_evidence(tmp_path, monkeypatch, proof):
+    from slk_transport.contracts import canonical_json_sha256
+    from slk_transport.native_activity import make_native_start
+    root, config = config_root(tmp_path, method_version="4.4.5")
+    standard_adapter.configure(root)
+    monkeypatch.setattr(standard_adapter, "_query", lambda _config: {
+        "summary": {"run_id": RUN_ID, "state": "active"}})
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[2] / "src"))
+    message = "11111111-1111-4111-8111-111111111111"
+    endpoint = {"schema_version": "slk.transport-endpoint/v1", "run_id": RUN_ID,
+        "role": "checker", "role_instance_id": "checker-a", "agent_runtime": "ocrv",
+        "adapter": "ocrv-checker", "host_id": "local", "endpoint_version": 1,
+        "state": "active", "address": {"command": [sys.executable, "-c", "raise SystemExit('unexpected native start')"],
+            "runtime_root": str(tmp_path.resolve()), "timeout_seconds": 5}}
+    envelope = {"schema_version": "slk.transport-envelope/v1", "run_id": RUN_ID,
+        "go_id": "GO-001", "cell_id": "CELL-001", "message_id": message, "token_sequence": 1,
+        "sender_role": "worker", "sender_role_instance_id": "worker-a",
+        "receiver_role": "checker", "receiver_role_instance_id": "checker-a",
+        "receiver_endpoint_version": 1, "payload_type": "TRANSPORT_PROBE", "payload": {"probe_nonce": "A"}}
+    envelope["payload_sha256"] = canonical_json_sha256(envelope["payload"])
+    attempt = Path(config["attempt_root"]) / RUN_ID / message
+    write_json(attempt / "endpoint.json", endpoint)
+    write_json(attempt / "envelope.json", envelope)
+    write_json(attempt / "accepted.json", {"status": "accepted"})
+    if proof != "ordinary":
+        write_json(attempt / "failed.json", {"status": "failed", "error_code": "OCRV_NATIVE_START_UNPROVED"})
+    original = {p.name: p.read_bytes() for p in attempt.iterdir() if p.is_file()}
+    native = attempt if proof == "ordinary" else attempt / "recovery/exact-1" / RUN_ID / message
+    if proof != "missing":
+        if proof != "ordinary":
+            write_json(native / "endpoint.json", {**endpoint,
+                **({"endpoint_version": 99} if proof == "wrong_endpoint" else {})})
+            write_json(native / "envelope.json", {**envelope,
+                **({"token_sequence": 99} if proof == "wrong_envelope" else {})})
+        write_json(native / "started.json", make_native_start(adapter="ocrv-checker",
+            run_id=RUN_ID, cell_id="CELL-001", message_id=message,
+            request_sha256="f" * 64 if proof == "wrong_start" else envelope["payload_sha256"],
+            native_request_sha256="c" * 64, native_task_kind="ocrv-review",
+            native_task_id="one-exact-review", native_task_status="RUNNING", pid=os.getpid()))
+    delivery = {"operation_id": "original-operation", "run_id": RUN_ID, "cell_id": "CELL-001",
+        "attempt": 1, "message_id": message, "sender_role_instance_id": "worker-a",
+        "receiver_role_instance_id": "checker-a", "payload_sha256": envelope["payload_sha256"],
+        "source_runtime_revision": 9}
+    recovery = {"delivery": delivery, "recovery_target_role_instance_id": "worker-a"}
+    if proof.startswith("wrong_"):
+        for action, request in ((standard_adapter.deliver_message, delivery),
+                                (standard_adapter.request_recovery, recovery)):
+            with pytest.raises(standard_adapter.CommandFailure):
+                asyncio.run(action(request))
+    elif proof == "missing":
+        try:
+            result = asyncio.run(standard_adapter.request_recovery(recovery))
+        except standard_adapter.CommandFailure as error:
+            pytest.fail(str(error.evidence))
+        assert result["status"] == "BLOCKED"
+    else:
+        for _ in range(2):
+            assert asyncio.run(standard_adapter.deliver_message(delivery))["status"] == "DELIVERED"
+            assert asyncio.run(standard_adapter.request_recovery(recovery))["status"] == "RECOVERY_REQUESTED"
+    assert all((attempt / name).read_bytes() == raw for name, raw in original.items())
+    if proof != "ordinary":
+        assert not (attempt / "started.json").exists()
 
 
 def test_paused_central_boundary_defers_same_operation_without_native_send(tmp_path, monkeypatch):

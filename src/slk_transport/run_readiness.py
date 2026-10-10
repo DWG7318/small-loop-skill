@@ -291,8 +291,7 @@ def _normal_payload(host: Any, envelope: Any, roles: Mapping[str, Any]) -> None:
         if payload != task:
             raise ValueError("Worker did not receive the frozen engineering task")
     elif kind == "CANDIDATE_READY":
-        OcrvAdapter()._candidate_request(envelope)
-        candidate = payload["candidate"]
+        candidate = OcrvAdapter()._candidate_request(envelope)["candidate"]
         if (payload["cell_goal"] != goal or payload["d1_criteria"] != criteria
             or Path(payload["repository"]).resolve() != Path(roles["worker"]["workspace_root"]).resolve()
             or set(candidate) != {"kind", "commit"} or candidate["kind"] != "commit"
