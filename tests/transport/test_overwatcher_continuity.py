@@ -2,6 +2,19 @@ from __future__ import annotations
 
 from slk_transport.overwatcher_continuity import inspect_overwatcher_cadence
 import pytest
+import json
+from pathlib import Path
+from jsonschema import Draft202012Validator
+
+
+def test_missing_current_overwatcher_alarm_matches_published_schema():
+    result = inspect_overwatcher_cadence(
+        {"summary": {"run_id": "RUN-A", "slk_version": "4.4.3"},
+            "roles": [], "overwatch_cycles": []}, observed_at="2026-10-10T11:00:00Z")
+    schema = Path(__file__).resolve().parents[2] / "docs/contracts/slk-overwatcher-cadence-inspection.schema.json"
+    Draft202012Validator(json.loads(schema.read_text())).validate(result)
+    assert result["anomaly_codes"] == ["OVERWATCHER_MISSING"]
+    assert result["action"] == "SUPERVISOR_RECOVERY_REVIEW"
 
 
 def projection(*, completed_at: str = "2026-09-23T00:00:00Z") -> dict[str, object]:

@@ -21,7 +21,7 @@ VERIFY = ROOT / "scripts" / "verify_local_install.py"
 def fake_artifacts(root: Path) -> Path:
     root.mkdir()
     for name in ARTIFACT_NAMES:
-        (root / name).write_bytes(f"new-{name}-4.4.3\n".encode())
+        (root / name).write_bytes(f"new-{name}-4.4.4\n".encode())
     return root
 
 
@@ -113,8 +113,8 @@ def test_successful_install_matches_package_manifest(tmp_path: Path) -> None:
         check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "PASS SLK_LOCAL_INSTALL 4.4.3" in completed.stdout
-    assert (codex_home / "tools/slk/share/small-loop-skill/VERSION").read_text(encoding="utf-8").strip() == "4.4.3"
+    assert "PASS SLK_LOCAL_INSTALL 4.4.4" in completed.stdout
+    assert (codex_home / "tools/slk/share/small-loop-skill/VERSION").read_text(encoding="utf-8").strip() == "4.4.4"
     assert (codex_home / "docs/state/SLK-STATE.md").read_bytes() == (
         codex_home / "tools/slk/share/small-loop-skill/docs/state/SLK-STATE.md"
     ).read_bytes()

@@ -99,9 +99,9 @@ def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A", met
         tmp_path / "bi-open.json",
         {
             "schema_version": "slk.bi-open-readiness/v1",
-            "method_version": "4.4.0",
+            "method_version": method_version,
             "run_id": run_id,
-            "bi_version": "1.1.0",
+            "bi_version": "1.1.1" if method_version in {"4.4.3", "4.4.4"} else "1.1.0",
             "device_id": "device-a",
             "visible": True,
             "evidence_sha256": "a" * 64,
@@ -307,7 +307,7 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
 
 
-@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3"])
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4"])
 def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundary(tmp_path, method_version):
     source_root, current_root = tmp_path / "source", tmp_path / "current"
     source_root.mkdir()
@@ -920,6 +920,48 @@ def test_role_context_estimate_is_advisory_not_an_admission_gate(tmp_path: Path)
     worker = next(item for item in result["roles"] if item["role"] == "worker")
     assert worker["reason_codes"] == []
     assert worker["advisory_codes"] == ["TASK_CONTEXT_ESTIMATE_EXCEEDS_DECLARED_CAPACITY"]
+
+
+@pytest.mark.parametrize("unknown", ["omit", "null"])
+def test_unpublished_context_values_remain_unknown_without_blocking_readiness(tmp_path, unknown):
+    from jsonschema import Draft202012Validator
+    request = _request(tmp_path)
+    worker = request["roles"][1]
+    for field in ("context_capacity", "task_context_estimate"):
+        if unknown == "omit":
+            worker.pop(field)
+        else:
+            worker[field] = None
+    schema = Path(__file__).resolve().parents[2] / "docs/contracts/slk-run-readiness.schema.json"
+    Draft202012Validator(json.loads(schema.read_text())).validate(request)
+    result = evaluate_run_readiness(request)
+    assert result["status"] == "READY"
+    assert result["roles"][1]["advisory_codes"] == ["TASK_CONTEXT_UNKNOWN"]
+    worker["actual_model"] = "wrong-model"
+    assert evaluate_run_readiness(request)["status"] == "INCOMPATIBLE"
+
+
+@pytest.mark.parametrize("field", ["context_capacity", "task_context_estimate"])
+@pytest.mark.parametrize("invalid", [0, -1, True, "unknown"])
+def test_context_unknown_does_not_accept_false_numeric_facts(tmp_path, field, invalid):
+    request = _request(tmp_path)
+    request["roles"][1][field] = invalid
+    with pytest.raises(ValueError, match="positive integer"):
+        evaluate_run_readiness(request)
+
+
+@pytest.mark.parametrize("method_version", ["4.4.3", "4.4.4"])
+@pytest.mark.parametrize("receipt_method", ["4.4.2", "4.4.3"])
+def test_current_readiness_requires_actual_bi_111_even_with_legacy_receipt_label(tmp_path, receipt_method, method_version):
+    request = _request(tmp_path, method_version=method_version)
+    path = Path(request["bi_open_receipt"])
+    receipt = json.loads(path.read_text())
+    receipt.update(method_version=receipt_method, bi_version="1.1.0")
+    write_json(path, receipt)
+    assert "BI_OPEN_RECEIPT_INVALID" in evaluate_run_readiness(request)["reason_codes"]
+    receipt["bi_version"] = "1.1.1"
+    write_json(path, receipt)
+    assert evaluate_run_readiness(request)["status"] == "READY"
 
 
 def test_unconfirmed_or_missing_optional_feature_keeps_run_in_preparation(tmp_path: Path) -> None:

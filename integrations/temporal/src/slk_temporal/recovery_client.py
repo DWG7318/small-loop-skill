@@ -58,7 +58,7 @@ def validate_request(value: object) -> tuple[dict, dict, dict]:
     checkpoint = validate_checkpoint(read_proof(value["checkpoint"], "checkpoint"))
     startup = StartSlkRequest.from_dict(checkpoint["startup"])
     if (value["run_id"] != startup.run_id or identity["run_id"] != startup.run_id
-        or startup.method_version not in {"4.4.2", "4.4.3"} or identity["task_queue"] != startup.task_queue
+        or startup.method_version not in {"4.4.2", "4.4.3", "4.4.4"} or identity["task_queue"] != startup.task_queue
         or identity["startup_fingerprint"] != startup.startup_fingerprint):
         raise ValueError("recovery changed business Run, method, queue or immutable startup")
     executions = value["source_executions"]
@@ -133,7 +133,7 @@ def _central(config: Mapping, startup: StartSlkRequest, checkpoint: Mapping, hos
     state = {"REQUESTED": "pause_requested", "PAUSED": "paused", "RESUMED": "active"}.get(
         pause["phase"] if pause else "RESUMED")
     if (projection.get("summary", {}).get("run_id") != startup.run_id
-        or runtime.get("method_version") not in {"4.4.2", "4.4.3"} or runtime.get("plan_revision") != host.get("plan_revision")
+        or runtime.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4"} or runtime.get("plan_revision") != host.get("plan_revision")
         or type(runtime.get("runtime_revision")) is not int
         or pending is not None and (runtime["runtime_revision"] < pending["source_runtime_revision"]
             or runtime.get("token_holder_role_instance_id") != pending["sender_role_instance_id"])

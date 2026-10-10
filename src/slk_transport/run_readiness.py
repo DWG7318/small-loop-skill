@@ -132,7 +132,7 @@ def _receipt(path_value: Any) -> Mapping[str, Any] | None:
     return value if isinstance(value, Mapping) else None
 
 
-def _valid_bi_receipt(path_value: Any, run_id: str) -> bool:
+def _valid_bi_receipt(path_value: Any, run_id: str, *, method_version: Any) -> bool:
     value = _receipt(path_value)
     return bool(
         value is not None
@@ -144,7 +144,9 @@ def _valid_bi_receipt(path_value: Any, run_id: str) -> bool:
         and value.get("schema_version") == "slk.bi-open-readiness/v1"
         and value.get("method_version") in SUPPORTED_METHOD_VERSIONS
         and value.get("run_id") == run_id
-        and value.get("bi_version") in {"1.1.0", "1.1.1"}
+        and value.get("bi_version") in (
+            {"1.1.1"} if method_version in ("4.4.3", "4.4.4") or value.get("method_version") in ("4.4.3", "4.4.4")
+            else {"1.1.0", "1.1.1"})
         and isinstance(value.get("device_id"), str)
         and bool(str(value.get("device_id")).strip())
         and value.get("visible") is True
@@ -160,7 +162,7 @@ def _temporal_binding_from_receipt(path_value: Any, run_id: str) -> dict[str, An
                 "workflow_templates", "client_command", "workflow_identity", "attempt_root",
                 "evidence_sha256",
             } or value.get("schema_version") != "slk.temporal-readiness/v2"
-            or value.get("method_version") not in {"4.4.2", "4.4.3"} or value.get("run_id") != run_id
+            or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4"} or value.get("run_id") != run_id
             or value.get("status") != "READY" or value.get("service_mode") != "SHARED_LOCAL"
             or value.get("workflow_templates") != ["SLK.Start", "SLK.Run"]
             or not _sha256(value.get("evidence_sha256"))):
@@ -316,7 +318,7 @@ def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
         and set(value) == {"schema_version", "method_version", "run_id", "plan_revision", "status",
                            "host_binding", "sealed_role_receipts", "legs"}
         and value.get("schema_version") == "slk.communication-rehearsal/v2"
-        and value.get("method_version") in {"4.4.2", "4.4.3"}
+        and value.get("method_version") in {"4.4.2", "4.4.3", "4.4.4"}
         and value.get("run_id") == run_id
         and value.get("plan_revision") == revision
         and value.get("status") == "PASS"
@@ -543,7 +545,7 @@ def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | Non
     try:
         if value is not None and value.get("schema_version") == "slk.normal-chain-source/v1":
             _closed(value, NORMAL_CHAIN_SOURCE_FIELDS, "normal chain source")
-            if (value["method_version"] not in {"4.4.2", "4.4.3"} or value["status"] != "PASS"
+            if (value["method_version"] not in {"4.4.2", "4.4.3", "4.4.4"} or value["status"] != "PASS"
                 or not isinstance(value["source_run_id"], str)
                 or value["source_run_id"] == current_run_id):
                 raise ValueError("normal chain source scope is invalid")
@@ -562,7 +564,7 @@ def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | Non
         if (value is None or set(value) != {"schema_version", "method_version", "status", "source_run_id",
                 "source_readiness_request", "source_communication_rehearsal"}
             or value["schema_version"] != "slk.normal-chain-conformance/v1"
-            or value["method_version"] not in {"4.4.2", "4.4.3"} or value["status"] != "PASS"
+            or value["method_version"] not in {"4.4.2", "4.4.3", "4.4.4"} or value["status"] != "PASS"
             or not isinstance(value["source_run_id"], str) or value["source_run_id"] == current_run_id):
             raise ValueError("normal-chain conformance scope is invalid")
         source_request = _proof(value["source_readiness_request"])
@@ -662,7 +664,7 @@ def _valid_conformance_sample_isolation(
         run_id = _nonempty(request["run_id"], "run_id")
         evidence_root = Path(_nonempty(contract["evidence_root"], "sample evidence root"))
         if (contract["schema_version"] != "slk.conformance-sample-isolation/v1"
-            or contract["method_version"] not in {"4.4.2", "4.4.3"}
+            or contract["method_version"] not in {"4.4.2", "4.4.3", "4.4.4"}
             or contract["run_id"] != run_id
             or contract["kind"] != "ISOLATED_NORMAL_CHAIN_SAMPLE"
             or contract["disposable"] is not True
@@ -795,7 +797,7 @@ def _native_activity_capability(path_value: Any, runtime: str) -> str | None:
 
 
 def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
-    _closed(raw, ROLE_FIELDS, "role")
+    _closed({"context_capacity": None, "task_context_estimate": None, **raw}, ROLE_FIELDS, "role")
     role = _nonempty(raw["role"], "role")
     _nonempty(raw["role_instance_id"], "role_instance_id")
     expected_runtime = _nonempty(raw["expected_runtime"], "expected_runtime")
@@ -805,8 +807,12 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     command = _string_array(raw["adapter_command"], "adapter_command")
     endpoint = Path(_nonempty(raw["endpoint_path"], "endpoint_path"))
     workspace = Path(_nonempty(raw["workspace_root"], "workspace_root"))
-    capacity = _positive_int(raw["context_capacity"], "context_capacity")
-    estimate = _positive_int(raw["task_context_estimate"], "task_context_estimate")
+    capacity = raw.get("context_capacity")
+    estimate = raw.get("task_context_estimate")
+    if capacity is not None:
+        capacity = _positive_int(capacity, "context_capacity")
+    if estimate is not None:
+        estimate = _positive_int(estimate, "task_context_estimate")
     skills = _string_array(raw["required_skills"], "required_skills")
     tools = _string_array(raw["required_tools"], "required_tools")
     native_capability = raw["native_activity_capability"]
@@ -819,7 +825,9 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
         incompatible.append("RUNTIME_MISMATCH")
     if actual_model != expected_model:
         incompatible.append("MODEL_MISMATCH")
-    if estimate > capacity:
+    if capacity is None or estimate is None:
+        advisory.append("TASK_CONTEXT_UNKNOWN")
+    elif estimate > capacity:
         advisory.append("TASK_CONTEXT_ESTIMATE_EXCEEDS_DECLARED_CAPACITY")
     if not _tool_exists(command[0]):
         repair.append("ADAPTER_COMMAND_MISSING")
@@ -908,7 +916,8 @@ def evaluate_run_readiness(request: Mapping[str, Any], *,
                 reason_codes.append(code)
     if unsupported_option_declared:
         reason_codes.append("OPTION_UNSUPPORTED")
-    if not _valid_bi_receipt(request["bi_open_receipt"], run_id):
+    method_version = (_receipt(request["temporal_readiness_receipt"]) or {}).get("method_version")
+    if not _valid_bi_receipt(request["bi_open_receipt"], run_id, method_version=method_version):
         reason_codes.append("BI_OPEN_RECEIPT_INVALID")
     temporal_binding = _temporal_binding_from_receipt(request["temporal_readiness_receipt"], run_id)
     if temporal_binding is None:
@@ -1055,7 +1064,8 @@ def _evaluate_run_admission(request: Mapping[str, Any], *,
                 reason_codes.append(code)
     if unsupported:
         reason_codes.append("OPTION_UNSUPPORTED")
-    if not _valid_bi_receipt(request["bi_open_receipt"], run_id):
+    method_version = (_receipt(request["temporal_readiness_receipt"]) or {}).get("method_version")
+    if not _valid_bi_receipt(request["bi_open_receipt"], run_id, method_version=method_version):
         reason_codes.append("BI_OPEN_RECEIPT_INVALID")
     temporal_binding = _temporal_binding_from_receipt(request["temporal_readiness_receipt"], run_id)
     if temporal_binding is None:

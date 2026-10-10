@@ -15,7 +15,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its shared Temp
 ## 开工准备
 
 1. 检查本机登记的 Temporal 地址、namespace、task queue、执行进程和持久数据库可达；不为每个 Run 另装服务、另开端口或另建数据库。
-2. 用 `RUN_TEAM_REGISTRY` 的四角色端点和当前 runtime revision 构造闭合 `StartSlkRequest`；新 Run 方法版本为 4.4.3，旧 Run 保留已明确采用的受支持版本；config、startup、中央快照和 OW 证明必须同一方法绑定，未知字段、混版、重复角色或缺少 OW 都保持未就绪。
+2. 用 `RUN_TEAM_REGISTRY` 的四角色端点和当前 runtime revision 构造闭合 `StartSlkRequest`；新 Run 方法版本为 4.4.4，旧 Run 保留已明确采用的受支持版本；config、startup、中央快照和 OW 证明必须同一方法绑定，未知字段、混版、重复角色或缺少 OW 都保持未就绪。
 3. 标准 worker 使用 `--standard-config-root`，不要求项目自写 adapter。先用 `<run>.bootstrap.json` 校验真实中央初始登记和启动输入，再以稳定 Run ID 创建且仅创建一次工作流对并保存真实 identity；此时 `SLK.Run` 应停在 `AWAITING_ADMISSION`，任何投递均被拒绝。
 4. 取得真实 identity 后才冻结 RoleHost、OW 活动证据和 `<run>.json`。现成 Codex Desktop OW 由继承真实 Desktop 能力的宿主执行 `attest-desktop-overwatcher --request <json> --sha256 <hash> --evidence-root <dir>`：闭合请求固定 `thread_id/host_id/cwd/turn_id/platform_input_item_id`，入口只调用 `read_thread`，生成匹配 `slk.native-start/v2` 与 `slk.desktop-overwatcher-attestation/v1`；不发送消息、不调用模型、不建 daemon。`<run>.json` 使用 `slk.temporal-standard-adapter/v2` 并绑定 attestation 路径/哈希，同时明确 `admission_kind=PRODUCT|ISOLATED_CONFORMANCE_SAMPLE` 和对应 `admission_path`；前者只执行 `preflight-new-run`，后者只允许一次性单 CELL 样本执行 `preflight-conformance-sample`。再用 `slk-temporal-admit` 触发唯一 `slk.prepare_run`；只有状态成为 `READY/IDLE` 才把 readiness 收据交给 `$slk-manage-team`，未证明时不派首 CELL，同 ID 改参数不重建、不覆盖。
 

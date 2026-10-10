@@ -99,7 +99,7 @@ def _validate_ow_attestation(
     value = _object(path, "Overwatcher Desktop attestation")
     if (set(value) != OW_ATTESTATION_FIELDS
         or value.get("schema_version") != "slk.desktop-overwatcher-attestation/v1"
-        or value.get("method_version") not in {"4.4.2", "4.4.3"}):
+        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4"}):
         raise ValueError("Overwatcher attestation is not closed")
     if value["method_version"] != method_version:
         raise ValueError("Overwatcher attestation method differs from the frozen Run config")
@@ -157,7 +157,7 @@ def _load_config(run_id: str) -> dict[str, Any]:
     schema_version = value.get("schema_version")
     if (set(value) != CONFIG_FIELDS or schema_version not in {
             "slk.temporal-standard-adapter/v1", "slk.temporal-standard-adapter/v2"}
-        or value.get("method_version") not in {"4.4.2", "4.4.3"} or value.get("run_id") != run_id):
+        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4"} or value.get("run_id") != run_id):
         raise ValueError("standard adapter Run config is not closed")
     value["transport_command"] = _command(value["transport_command"], "transport command")
     value["query_command"] = _command(value["query_command"], "query command")
@@ -208,7 +208,7 @@ def _load_bootstrap_config(run_id: str) -> dict[str, Any]:
     value = _object(_CONFIG_ROOT / f"{run_id}.bootstrap.json", "standard adapter bootstrap config")
     if (set(value) != BOOTSTRAP_FIELDS
         or value.get("schema_version") != "slk.temporal-standard-bootstrap/v1"
-        or value.get("method_version") not in {"4.4.2", "4.4.3"} or value.get("run_id") != run_id):
+        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4"} or value.get("run_id") != run_id):
         raise ValueError("standard adapter bootstrap config is not closed")
     value["query_command"] = _command(value["query_command"], "query command")
     value["state_config_path"] = str(_existing_path(value["state_config_path"], "state config"))

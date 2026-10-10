@@ -3059,7 +3059,7 @@ dependencies = [
 
 [[package]]
 name = "slk-bi-query"
-version = "4.4.3"
+version = "4.4.4"
 dependencies = [
  "serde_json",
  "slk-state-core",
@@ -3067,7 +3067,7 @@ dependencies = [
 
 [[package]]
 name = "slk-cargo"
-version = "4.4.3"
+version = "4.4.4"
 dependencies = [
  "serde_json",
  "slk-state-core",
@@ -3078,7 +3078,7 @@ dependencies = [
 
 [[package]]
 name = "slk-state-cli"
-version = "4.4.3"
+version = "4.4.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -3088,7 +3088,7 @@ dependencies = [
 
 [[package]]
 name = "slk-state-core"
-version = "4.4.3"
+version = "4.4.4"
 dependencies = [
  "directories",
  "quick-xml",

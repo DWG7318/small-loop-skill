@@ -70,8 +70,8 @@ def load_pack(path: Path | str) -> dict[str, Any]:
     _closed(pack, PACK_FIELDS, "case pack")
     if pack["schema_version"] != "slk.role-eval-pack/v1":
         raise EvalError("case pack schema_version is unsupported")
-    if pack["method_version"] not in {"4.4.2", "4.4.3"}:
-        raise EvalError("case pack method_version must be 4.4.2 or 4.4.3")
+    if pack["method_version"] not in {"4.4.2", "4.4.3", "4.4.4"}:
+        raise EvalError("case pack method_version must be 4.4.2, 4.4.3 or 4.4.4")
     raw_cases = pack["cases"]
     if not isinstance(raw_cases, list) or len(raw_cases) < 36:
         raise EvalError("case pack must contain at least 36 cases")

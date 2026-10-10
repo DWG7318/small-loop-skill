@@ -77,7 +77,7 @@ def config_root(tmp_path: Path, method_version="4.4.2") -> tuple[Path, dict[str,
     return root, config
 
 
-@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3"])
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4"])
 def test_standard_bootstrap_needs_only_live_central_registry(tmp_path, monkeypatch, method_version):
     root, config = config_root(tmp_path, method_version)
     Path(config["role_host_binding"]["path"]).unlink()
@@ -133,7 +133,7 @@ def test_standard_adapter_bootstrap_and_final_configs_match_published_schemas(tm
     ).validate(config)
 
 
-@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3"])
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4"])
 @pytest.mark.parametrize("mixed_live_method", [False, True])
 def test_standard_adapter_prepares_from_new_run_admission_and_live_revision(tmp_path, monkeypatch, method_version, mixed_live_method):
     root, config = config_root(tmp_path, method_version)

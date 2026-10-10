@@ -186,7 +186,8 @@ def test_close_run_admin_rejects_nonterminal_write_before_credential_access(tmp_
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
 
 
-def test_terminal_admin_preserves_safe_state_rejection_details(tmp_path, monkeypatch):
+@pytest.mark.parametrize("code_field", ["error_code", "code"])
+def test_terminal_admin_preserves_safe_state_rejection_details(tmp_path, monkeypatch, code_field):
     request = terminal_request_fixture(tmp_path, "close-run")
     monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _path: "slk_" + "s" * 64)
 
@@ -200,7 +201,7 @@ def test_terminal_admin_preserves_safe_state_rejection_details(tmp_path, monkeyp
                 "runtime_revision": 7,
             }
         return {
-            "error_code": "SLK_STATE_TERMINAL_ORDER_INVALID",
+            code_field: "SLK_STATE_TERMINAL_ORDER_INVALID",
             "message": "final cycle is missing",
             "_slk_command": {
                 "process_exit": 1,
@@ -216,6 +217,28 @@ def test_terminal_admin_preserves_safe_state_rejection_details(tmp_path, monkeyp
     ):
         admin.execute_sealed_supervisor_admin(
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+
+
+@pytest.mark.parametrize("code,message", [
+    ("SLK_STATE_REJECTED", "secret slk_" + "x" * 64),
+    ("bad-code", "final cycle is missing"),
+])
+def test_native_state_rejection_keeps_unsafe_details_private(tmp_path, monkeypatch, code, message):
+    request = terminal_request_fixture(tmp_path, "close-run")
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _path: "slk_" + "s" * 64)
+
+    def run(command, arguments, credential=None):
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "supervisor",
+                "role_instance_id": "RUN-A-supervisor-001", "runtime_revision": 7}
+        return {"status": "error", "code": code, "message": message,
+            "_slk_command": {"process_exit": 1, "json_parse": "PARSED_STDERR", "business_status": None}}
+
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(ValueError, match="without safe structured details"):
+        admin.execute_sealed_supervisor_admin(request,
+            request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+    assert not Path(json.loads(request.read_text())["result_path"]).exists()
 
 
 def test_closed_admin_consumer_authenticates_then_executes_without_exposing_secret(tmp_path, monkeypatch):

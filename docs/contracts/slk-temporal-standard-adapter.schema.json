@@ -5,7 +5,7 @@
   "type": "object", "additionalProperties": false,
   "required": ["schema_version", "method_version", "run_id", "transport_command", "query_command", "state_config_path", "admission_kind", "admission_path", "attempt_root", "notification_attempt_root", "supervisor_endpoint_path", "role_host_binding", "overwatcher_activity"],
   "properties": {
-    "schema_version": {"enum": ["slk.temporal-standard-adapter/v1", "slk.temporal-standard-adapter/v2"]}, "method_version": {"enum": ["4.4.2", "4.4.3"]},
+    "schema_version": {"enum": ["slk.temporal-standard-adapter/v1", "slk.temporal-standard-adapter/v2"]}, "method_version": {"enum": ["4.4.2", "4.4.3", "4.4.4"]},
     "run_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
     "transport_command": {"$ref": "#/$defs/command"}, "query_command": {"$ref": "#/$defs/command"},
     "state_config_path": {"type": "string", "minLength": 1},

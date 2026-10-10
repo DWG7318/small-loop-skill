@@ -16,7 +16,7 @@ from skill_testkit import (
 
 
 def test_version_is_current() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.4.3"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "4.4.4"
 
 
 def test_collection_has_one_main_and_fourteen_children() -> None:
@@ -286,7 +286,7 @@ def test_426_worker_handoff_and_overwatcher_resume_are_exact_and_agent_first() -
     assert "一次性Worker进程不托管OCRV长审查" in recover
     assert "任意 OW Session 退出" in overwatch
     assert "Supervisor 修复并提交匹配证据" in overwatch
-    assert "4.4.3" in main
+    assert "4.4.4" in main
 
 
 def test_retired_result_format_recovery_does_not_restart_or_replace_original_roles() -> None:
@@ -1519,7 +1519,7 @@ def test_optional_features_use_the_declared_catalog() -> None:
     assert "未登记功能不能靠任意 ON/OFF" in main
     assert "Ponytail、RTK、Probe CLI" in plan
     assert "Supervisor 可补充项目所需 Skill/Tool" in plan
-    assert "Overwatcher 与 Temporal 是 4.4.3 readiness 必需项" in plan
+    assert "Overwatcher 与 Temporal 是 4.4.4 readiness 必需项" in plan
 
 
 def test_431_context_restoration_revalidates_authoritative_run_facts() -> None:

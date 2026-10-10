@@ -56,7 +56,7 @@ fn current_443_central_writes_keep_long_original_identifiers() {
 }
 
 #[test]
-fn current_443_run_can_admit_its_registered_overwatcher_without_relabeling_history() {
+fn current_release_can_admit_its_registered_overwatcher_without_relabeling_history() {
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
     let initialized = store
@@ -84,8 +84,32 @@ fn current_443_run_can_admit_its_registered_overwatcher_without_relabeling_histo
         .bind_overwatcher(&initialized.supervisor_credential, binding)
         .unwrap();
     let current = store.query_run("run-a").unwrap();
-    assert_eq!(current.summary.slk_version, "4.4.3");
-    assert_eq!(current.summary.origin_slk_version, "4.4.3");
+    assert_eq!(current.summary.slk_version, "4.4.4");
+    assert_eq!(current.summary.origin_slk_version, "4.4.4");
+
+    let second = store
+        .init_run(init_request("run-b", "supervisor-b"))
+        .unwrap();
+    let mut shared = overwatcher_binding("run-b", "overwatcher-b", "session-overwatcher-a");
+    shared.cadence_seconds = 600;
+    shared.native_active_session_evidence_ref = "run-b/independent-native-proof.json".into();
+    let mut wrong_host = shared.clone();
+    wrong_host.endpoint.host_identity = "different-real-host".into();
+    assert!(matches!(
+        store.bind_overwatcher(&second.supervisor_credential, wrong_host),
+        Err(StateError::OverwatcherSessionReused)
+    ));
+    store
+        .bind_overwatcher(&second.supervisor_credential, shared)
+        .unwrap();
+    let other = store.query_run("run-b").unwrap();
+    assert_eq!(
+        other.role("overwatcher").unwrap().session_id,
+        "session-overwatcher-a"
+    );
+    assert!(other.events.iter().any(|event| event
+        .details_json
+        .contains("run-b/independent-native-proof.json")));
 }
 
 #[test]
@@ -2410,6 +2434,7 @@ fn slk_440_allows_one_exact_overwatcher_session_to_bind_multiple_runs() {
     drop(database);
     let mut shared = overwatcher_binding("run-b", "overwatcher-b", "session-overwatcher-shared");
     shared.cadence_seconds = 600;
+    shared.native_active_session_evidence_ref = "run-b/independent-native-proof.json".into();
     fixture
         .store
         .bind_overwatcher(&second_run.supervisor_credential, shared)
@@ -2469,11 +2494,11 @@ fn slk_440_replacement_may_join_an_exact_shared_overwatcher_session() {
         .unwrap();
     drop(database);
 
-    let replacement_evidence = fixture.evidence_ref("replacement-live.json", b"active");
+    let shared_evidence = fixture.evidence_ref("run-b-live.json", b"active");
     let mut shared = overwatcher_binding("run-b", "overwatcher-shared", "session-overwatcher-b");
     shared.cadence_seconds = 600;
     shared.foreground_turn_id = "foreground-turn-b".into();
-    shared.native_active_session_evidence_ref = replacement_evidence.path.clone();
+    shared.native_active_session_evidence_ref = shared_evidence.path.clone();
     shared.canonical_task_id = "session-overwatcher-b".into();
     fixture
         .store
@@ -2487,6 +2512,18 @@ fn slk_440_replacement_may_join_an_exact_shared_overwatcher_session() {
         None,
     );
     replacement.cadence_seconds = 600;
+    assert_ne!(
+        replacement.native_active_session_evidence.path,
+        shared_evidence.path
+    );
+    let mut wrong_host = replacement.clone();
+    wrong_host.endpoint.host_identity = "different-real-host".into();
+    assert!(matches!(
+        fixture
+            .store
+            .replace_overwatcher(&fixture.supervisor, wrong_host),
+        Err(StateError::OverwatcherSessionReused)
+    ));
     fixture
         .store
         .replace_overwatcher(&fixture.supervisor, replacement)
@@ -3464,6 +3501,12 @@ fn overwatch_cycle_attempt_must_match_current_engineering_cell() {
 
 #[test]
 fn current_nonworker_cycle_requires_real_query_window_but_can_report_no_task_unknown() {
+    for method_version in ["4.4.3", "4.4.4"] {
+        nonworker_query_window_for_method(method_version);
+    }
+}
+
+fn nonworker_query_window_for_method(method_version: &str) {
     let fixture = Fixture::new_440();
     let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
     binding.cadence_seconds = 600;
@@ -3473,8 +3516,8 @@ fn current_nonworker_cycle_requires_real_query_window_but_can_report_no_task_unk
         .unwrap();
     let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
     db.execute(
-        "UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'",
-        [],
+        "UPDATE runs SET slk_version=?1 WHERE run_id='run-a'",
+        [method_version],
     )
     .unwrap();
     drop(db);
@@ -3538,6 +3581,12 @@ fn current_nonworker_cycle_requires_real_query_window_but_can_report_no_task_unk
 
 #[test]
 fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window() {
+    for method_version in ["4.4.3", "4.4.4"] {
+        worker_query_window_for_method(method_version);
+    }
+}
+
+fn worker_query_window_for_method(method_version: &str) {
     let fixture = Fixture::new_423();
     let issued = fixture
         .store
@@ -3582,8 +3631,8 @@ fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window(
         .unwrap();
     let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
     db.execute(
-        "UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'",
-        [],
+        "UPDATE runs SET slk_version=?1 WHERE run_id='run-a'",
+        [method_version],
     )
     .unwrap();
     db.execute(
@@ -3649,6 +3698,12 @@ fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window(
 
 #[test]
 fn paused_idle_cycle_needs_fresh_complete_census_not_a_fabricated_native_source() {
+    for method_version in ["4.4.3", "4.4.4"] {
+        paused_idle_census_for_method(method_version);
+    }
+}
+
+fn paused_idle_census_for_method(method_version: &str) {
     let fixture = Fixture::new_440();
     let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
     binding.cadence_seconds = 600;
@@ -3658,8 +3713,8 @@ fn paused_idle_cycle_needs_fresh_complete_census_not_a_fabricated_native_source(
         .unwrap();
     let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
     db.execute(
-        "UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'",
-        [],
+        "UPDATE runs SET slk_version=?1 WHERE run_id='run-a'",
+        [method_version],
     )
     .unwrap();
     drop(db);

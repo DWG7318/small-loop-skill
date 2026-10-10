@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "run_id", "go_id", "cell_id", "attempt", "plan_revision", "runtime_revision", "source_message_id", "source_attempt_root", "continuation_result_path", "source_endpoint_sha256", "source_envelope_sha256", "source_runtime_projection_sha256", "source_runtime_snapshot", "recovery_mode", "worker_result_path", "worker_result_sha256", "source_terminal_sha256", "source_task_sha256", "source_started_sha256", "source_invalid_result_sha256", "source_candidate", "source_candidate_parent", "source_repository", "source_changed_paths", "supplement_result_contract", "worker_role_instance_id", "worker_instance_id", "worker_session_id", "checker_endpoint", "credential_path", "state_command", "transport_command", "token_sequence", "checker_token_already_committed", "occurred_at"],
   "properties": {
     "schema_version": {"enum": ["slk.worker-continuation/v1", "slk.worker-continuation/v2", "slk.worker-continuation/v3"]},
-    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4"]},
     "run_id": {"$ref": "#/$defs/identifier"},
     "go_id": {"$ref": "#/$defs/identifier"},
     "cell_id": {"$ref": "#/$defs/identifier"},
@@ -25,7 +25,7 @@
       "additionalProperties": false,
       "required": ["method_version", "plan_revision", "runtime_revision", "token_sequence", "token_holder_role_instance_id", "latest_message_id"],
       "properties": {
-        "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3"]},
+        "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4"]},
         "plan_revision": {"type": "integer", "minimum": 1},
         "runtime_revision": {"type": "integer", "minimum": 1},
         "token_sequence": {"type": "integer", "minimum": 1},

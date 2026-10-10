@@ -300,7 +300,7 @@ def execute_sealed_supervisor_admin(
         secret = ""
     command_meta = state_result.get("_slk_command")
     if isinstance(command_meta, Mapping) and command_meta.get("process_exit") != 0:
-        error_code = state_result.get("error_code")
+        error_code = state_result.get("error_code", state_result.get("code"))
         message = state_result.get("message")
         safe_code = (
             isinstance(error_code, str) and 0 < len(error_code) <= 128

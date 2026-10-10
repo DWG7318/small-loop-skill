@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "completion_invocation_id", "run_id", "go_id", "cell_id", "target_cell_id", "attempt", "plan_revision", "runtime_revision", "token_sequence", "checker_role_instance_id", "d1_event_id", "route", "runtime_projection_path", "target_endpoint_path", "checker_credential_path", "state_command", "transport_command", "handoff_attempt_root", "payload", "occurred_at"],
   "properties": {
     "schema_version": {"const": "slk.checker-completion-request/v1"},
-    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4"]},
     "completion_invocation_id": {"$ref": "#/$defs/identifier"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "go_id": {"$ref": "#/$defs/identifier"},

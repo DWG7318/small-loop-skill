@@ -127,8 +127,8 @@ class StartSlkRequest:
             "roles",
         }
         source = _closed(value, fields, "SLK startup request")
-        if source["method_version"] not in ("4.4.0", "4.4.1", "4.4.2", "4.4.3"):
-            raise ContractError("method_version must be 4.4.0, 4.4.1, 4.4.2 or 4.4.3")
+        if source["method_version"] not in ("4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4"):
+            raise ContractError("method_version must be 4.4.0, 4.4.1, 4.4.2, 4.4.3 or 4.4.4")
         raw_roles = source["roles"]
         if not isinstance(raw_roles, list):
             raise ContractError("roles must be an array")

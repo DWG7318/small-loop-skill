@@ -17,7 +17,7 @@
     "elapsed_seconds": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
     "missed_intervals": {"type": "integer", "minimum": 0},
     "status": {"enum": ["ABSENT", "CURRENT", "LATE", "CONTINUITY_UNPROVEN"]},
-    "anomaly_codes": {"type": "array", "uniqueItems": true, "items": {"enum": ["OVERWATCHER_CADENCE_LATE", "OVERWATCHER_CONTINUITY_UNPROVEN"]}},
+    "anomaly_codes": {"type": "array", "uniqueItems": true, "items": {"enum": ["OVERWATCHER_CADENCE_LATE", "OVERWATCHER_CONTINUITY_UNPROVEN", "OVERWATCHER_MISSING"]}},
     "action": {"enum": ["NONE", "WAKE_BOUND_OVERWATCHER", "SUPERVISOR_RECOVERY_REVIEW"]}
   },
   "$defs": {

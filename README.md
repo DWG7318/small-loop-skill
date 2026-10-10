@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **4.4.3**
+Current version: **4.4.4**
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 

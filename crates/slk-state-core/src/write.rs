@@ -755,7 +755,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -799,20 +799,19 @@ impl StateStore {
             }
             let shared_session: Option<(
                 String, String, String, String, u32, String, String, String, String, i64,
-                String, String, String,
+                String, String,
             )> = transaction
                 .query_row(
                     "SELECT agent_runtime, provider, model, reasoning, endpoint_version,
                             transport_adapter, host_identity, native_address_json,
-                            observation_mode, cadence_seconds, foreground_turn_id,
-                            native_active_session_evidence_ref, canonical_task_id
+                            observation_mode, cadence_seconds, foreground_turn_id, canonical_task_id
                      FROM overwatcher_bindings WHERE session_id=?1 LIMIT 1",
                     [&request.identity.session_id],
                     |row| {
                         Ok((
                             row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
                             row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?,
-                            row.get(10)?, row.get(11)?, row.get(12)?,
+                            row.get(10)?, row.get(11)?,
                         ))
                     },
                 )
@@ -830,8 +829,7 @@ impl StateStore {
                     || existing.8 != request.observation_mode.as_str()
                     || existing.9 != i64::from(request.cadence_seconds)
                     || existing.10 != request.foreground_turn_id
-                    || existing.11 != request.native_active_session_evidence_ref
-                    || existing.12 != canonical_task_id
+                    || existing.11 != canonical_task_id
                 {
                     return Err(StateError::OverwatcherSessionReused);
                 }
@@ -1173,10 +1171,10 @@ impl StateStore {
             }
             let native_start = if matches!(
                 method_version.as_str(),
-                "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3"
+                "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4"
             ) {
                 Some(
-                    if matches!(method_version.as_str(), "4.4.2" | "4.4.3")
+                    if matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
                         && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
                             .ok()
                             .is_some_and(|v| {
@@ -1280,7 +1278,7 @@ impl StateStore {
                 payload_location: Some(request.start_evidence.stored_path.clone()),
                 occurred_at: request.occurred_at.clone(),
             };
-            let recovered_history = matches!(method_version.as_str(), "4.4.2" | "4.4.3")
+            let recovered_history = matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
                 && actor.role == Role::Checker
                 && target_role == Role::Supervisor
                 && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
@@ -1296,7 +1294,7 @@ impl StateStore {
                     &request,
                     native_start.as_ref().unwrap(),
                 )?;
-            if matches!(method_version.as_str(), "4.4.2" | "4.4.3")
+            if matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
                 && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
                     .ok()
                     .is_some_and(|v| {
@@ -2186,6 +2184,7 @@ impl StateStore {
                     | "4.4.1"
                     | "4.4.2"
                     | "4.4.3"
+                    | "4.4.4"
             ) || matches!(
                 request.event_type,
                 EventType::RunPauseRequested | EventType::RunPaused | EventType::RunResumed
@@ -2306,7 +2305,7 @@ impl StateStore {
             if request.event_type == EventType::ReworkRequested {
                 validate_rework_requested(transaction, &request)?;
             }
-            if method_version == "4.4.3"
+            if (method_version == "4.4.3" || method_version == "4.4.4")
                 && matches!(
                     request.event_type,
                     EventType::D2Started | EventType::D2Passed | EventType::D2Failed
@@ -2314,7 +2313,9 @@ impl StateStore {
             {
                 validate_d2_event(transaction, &request, token.sequence)?;
             }
-            if method_version == "4.4.3" && request.event_type == EventType::RunClosed {
+            if (method_version == "4.4.3" || method_version == "4.4.4")
+                && request.event_type == EventType::RunClosed
+            {
                 validate_run_close_proof(transaction, &request)?;
             }
             if let Some(corrects_event_id) = request.corrects_event_id.as_deref() {
@@ -2641,9 +2642,9 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                let original_available = method_version != "4.4.3"
+                let original_available = (method_version != "4.4.3" && method_version != "4.4.4")
                     || validate_current_scope_query(transaction, &request, &runtime_snapshot)?;
-                if original_available && matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3") {
+                if original_available && matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2830,7 +2831,7 @@ impl StateStore {
                 let preclose_terminal = closure_state == "open"
                     && matches!(
                         method_version.as_str(),
-                        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3"
+                        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4"
                     );
                 if closure_state == "open" && !preclose_terminal {
                     return Err(StateError::OverwatcherObservationInvalid(
@@ -3060,13 +3061,12 @@ impl StateStore {
                 .optional()?;
             let shared_session: Option<(
                 String, String, String, String, u32, String, String, String, String, i64,
-                String, String, String,
+                String, String,
             )> = transaction
                 .query_row(
                     "SELECT agent_runtime, provider, model, reasoning, endpoint_version,
                             transport_adapter, host_identity, native_address_json,
-                            observation_mode, cadence_seconds, foreground_turn_id,
-                            native_active_session_evidence_ref, canonical_task_id
+                            observation_mode, cadence_seconds, foreground_turn_id, canonical_task_id
                      FROM overwatcher_bindings
                      WHERE session_id=?1 AND run_id<>?2 LIMIT 1",
                     params![request.replacement.session_id, request.run_id],
@@ -3074,7 +3074,7 @@ impl StateStore {
                         Ok((
                             row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
                             row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?,
-                            row.get(10)?, row.get(11)?, row.get(12)?,
+                            row.get(10)?, row.get(11)?,
                         ))
                     },
                 )
@@ -3095,8 +3095,7 @@ impl StateStore {
                     || existing.8 != ObservationMode::ForegroundActiveTurn.as_str()
                     || existing.9 != i64::from(request.cadence_seconds)
                     || existing.10 != request.foreground_turn_id
-                    || existing.11 != request.native_active_session_evidence.path
-                    || existing.12 != request.replacement.session_id
+                    || existing.11 != request.replacement.session_id
                 {
                     return Err(StateError::OverwatcherSessionReused);
                 }
@@ -3330,6 +3329,7 @@ impl StateStore {
                     | "4.4.1"
                     | "4.4.2"
                     | "4.4.3"
+                    | "4.4.4"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3612,13 +3612,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -4146,7 +4146,7 @@ fn validate_worker_completion_cycle(
         ));
     }
     let inspection = &inspections[0];
-    if method_version == "4.4.3" {
+    if method_version == "4.4.3" || method_version == "4.4.4" {
         let invalid = || {
             StateError::OverwatcherCycleInvalid(
                 "Worker completion sample exceeds the bound cadence or cycle window".into(),
@@ -4442,7 +4442,7 @@ fn apply_cell_split(
         [run_id],
         |row| row.get(0),
     )?;
-    if !matches!(version.as_str(), "4.4.2" | "4.4.3") {
+    if !matches!(version.as_str(), "4.4.2" | "4.4.3" | "4.4.4") {
         return Err(StateError::InvalidPlan(
             "second-failure CELL split is owned by the SLK 4.4.2 contract".into(),
         ));
@@ -5032,7 +5032,7 @@ fn validate_rework_requested(
     ];
     if matches!(
         method_version.as_str(),
-        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3"
+        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4"
     ) {
         required.push("investigation_mode");
     }
@@ -5063,7 +5063,7 @@ fn validate_rework_requested(
         .as_u64()
         .filter(|value| *value > 0)
         .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
-    if matches!(method_version.as_str(), "4.4.2" | "4.4.3")
+    if matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
         && details["investigation_mode"]
             .as_str()
             .filter(|value| !value.trim().is_empty())
@@ -5903,11 +5903,12 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
             | "4.4.1"
             | "4.4.2"
             | "4.4.3"
+            | "4.4.4"
     )
 }
 
 fn valid_overwatcher_cadence(version: &str, cadence_seconds: u32) -> bool {
-    if matches!(version, "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3") {
+    if matches!(version, "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4") {
         cadence_seconds == 600
     } else {
         (180..=300).contains(&cadence_seconds)
