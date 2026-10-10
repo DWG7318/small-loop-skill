@@ -1,9 +1,10 @@
 # Changelog
 
-## 4.4.5 — OPEN maintenance (unreleased, not deployed)
+## 4.4.5 — CLOSED source maintenance (unreleased, not deployed)
 
 - Correct the existing DSH activity plugin's native dependency declaration: require only `agents` and read optional `workspaceRegistry` through Cordis `ctx.get`, so headless startup does not require the workspace service. Replace config-text composition checks with real framework mounting/sampling regressions, without calling a model or mutating live DSH configuration.
-- Pair current source/package metadata with 4.4.5 and append reader compatibility while preserving existing versions, workflow markers and BI/WebBI 1.1.1. Keep the live 4.4.4 installation, immutable package and original failure evidence unchanged. This batch adds no recovery protocol; 4.4.5 remains open for further repairs.
+- Pair current source/package metadata with 4.4.5 and append reader compatibility while preserving existing versions, workflow markers and BI/WebBI 1.1.1. Keep the live 4.4.4 installation, immutable package and original failure evidence unchanged. No new recovery protocol is added.
+- Close source maintenance at Owner request on 2026-10-11 after merging the verified repairs into main: OCRV candidate/source-seal projection and existing exact-1 ACK/TOKEN continuation are aligned; the Windows BI socket correction is test-only. Verification and remaining live-acceptance boundaries are recorded in `VALIDATION-REPORT.md`. Deployment, release and 4.5.0 work do not start automatically.
 
 ## 4.4.3 — original material, explicit actions and authorized pause (local candidate)
 

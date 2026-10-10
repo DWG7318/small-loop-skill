@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "9e8c05348823a405d63f638c50e3dcfbb2c07587d090ede9ff32e1f3f147dcf5"
+      "sha256": "858cff2d09ef9793ebd9d27a37765d63bc2ffde6e9752943c2404c680786685c"
     },
     {
       "path": "Cargo.lock",
@@ -1080,7 +1080,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-slk-4.4.5-open-maintenance.md",
-      "sha256": "81c621c48b8b161e66ce47f8035c688c96a306f2d621a64596c3ca7837557897"
+      "sha256": "e2482da179461966bdee2511f8ad17e80bdec4534a612b478f3e51372f33a18f"
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-slk-443-preparation-corrections.md",
