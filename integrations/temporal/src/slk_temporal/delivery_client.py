@@ -54,9 +54,35 @@ def _identity(value: Mapping[str, Any]) -> dict[str, str]:
 
 
 async def _submit_once(*, operation: str, identity: Mapping[str, str], request: Mapping[str, Any]) -> dict[str, Any]:
+    if operation == "close-run":
+        arguments = {field: identity[field] for field in IDENTITY_FIELDS - {"schema_version"}}
+        description = await inspect_pair(**arguments, diagnostic=True)
+        client = await Client.connect(identity["address"])
+        handle = client.get_workflow_handle(identity["run_workflow_id"], run_id=identity["run_run_id"])
+        status = await handle.query(RunSlkWorkflow.status)
+        if status.get("phase") != "TERMINAL":
+            if any(row["status"] != "RUNNING" for row in description["executions"].values()):
+                raise ValueError("nonterminal Run has a closed native pair; diagnose before cleanup")
+            await handle.execute_update(RunSlkWorkflow.close_run, request["event_id"])
+        elif status.get("terminal_reason") != request["event_id"]:
+            raise ValueError("pair terminal reason differs from this exact close event")
+        # Only this pair: Start naturally awaits its child. Never cancel the
+        # shared worker/service, nor another workflow with a similar name.
+        await handle.result()
+        parent = client.get_workflow_handle(identity["start_workflow_id"], run_id=identity["start_run_id"])
+        await parent.result()
+        final = await inspect_pair(**arguments, diagnostic=True)
+        if any(row["status"] != "COMPLETED" or not row["close_time"] for row in final["executions"].values()):
+            raise ValueError("exact native pair has not completed")
+        return {"schema_version": "slk.temporal-close-result/v1", "status": "PAIR_CLOSED",
+                "run_id": identity["run_id"], "event_id": request["event_id"]}
     await inspect_pair(**{field: identity[field] for field in IDENTITY_FIELDS - {"schema_version"}})
     client = await Client.connect(identity["address"])
     handle = client.get_workflow_handle(identity["run_workflow_id"], run_id=identity["run_run_id"])
+    if operation == "set-run-pause":
+        status = await handle.execute_update(RunSlkWorkflow.set_run_pause, dict(request))
+        return {"schema_version": "slk.temporal-lifecycle-update-result/v1", "status": status,
+                "run_id": identity["run_id"], "event_id": request["event_id"]}
     if operation == "request-delivery":
         parsed = DeliveryRequest.from_dict(request)
         if parsed.run_id != identity["run_id"]:
@@ -109,6 +135,26 @@ def run_update(*, operation: str, identity_path: Path, identity_sha256: str,
                request_path: Path, request_sha256: str) -> dict[str, Any]:
     identity = _identity(_load_hashed(identity_path, identity_sha256, "identity"))
     request = _load_hashed(request_path, request_sha256, "request")
+    if operation == "close-run":
+        if set(request) != {"run_id", "event_id"} or request.get("run_id") != identity["run_id"]:
+            raise ValueError("close request changed the exact existing Run")
+        result = submit(operation=operation, identity=identity, request=request)
+        if result != {"schema_version": "slk.temporal-close-result/v1", "status": "PAIR_CLOSED",
+                      "run_id": identity["run_id"], "event_id": request["event_id"]}:
+            raise ValueError("Temporal close result identity is invalid")
+        return dict(result)
+    if operation == "set-run-pause":
+        fields = {"run_id", "supervisor_role_instance_id", "pause_id", "event_id", "phase"}
+        if "confirmed_at" in request: fields.add("confirmed_at")
+        if (set(request) != fields or request.get("run_id") != identity["run_id"]
+            or request.get("phase") not in {"REQUESTED", "PAUSED", "RESUMED"}
+            or ("confirmed_at" in request and request["phase"] != "PAUSED")):
+            raise ValueError("lifecycle request changed the existing Run")
+        result = submit(operation=operation, identity=identity, request=request)
+        if result != {"schema_version": "slk.temporal-lifecycle-update-result/v1", "status": request["phase"],
+                      "run_id": identity["run_id"], "event_id": request["event_id"]}:
+            raise ValueError("Temporal lifecycle result identity is invalid")
+        return dict(result)
     if operation == "request-delivery":
         parsed = DeliveryRequest.from_dict(request)
         expected_operation, allowed = "request_delivery", {
@@ -144,7 +190,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "operation",
-        choices=("request-delivery", "native-started", "abandon-pre-start-rejection"),
+        choices=("request-delivery", "native-started", "abandon-pre-start-rejection", "set-run-pause", "close-run"),
     )
     parser.add_argument("--identity", required=True, type=Path)
     parser.add_argument("--identity-sha256", required=True)

@@ -272,6 +272,7 @@ pub struct RunProjection {
     pub roles: Vec<RoleProjection>,
     pub plan_revisions: Vec<PlanRevisionProjection>,
     pub events: Vec<EventProjection>,
+    pub native_invocations: Vec<NativeInvocationProjection>,
     pub token_history: Vec<TokenProjection>,
     pub evidence: Vec<EvidenceProjection>,
     pub overwatch_cycles: Vec<OverwatchCycleProjection>,
@@ -281,6 +282,14 @@ pub struct RunProjection {
     pub operational_observations: Vec<OperationalObservationProjection>,
     pub reconciliation_receipts: Vec<RunIdentityReconciliationReceiptProjection>,
     pub method_adoption_receipts: Vec<MethodAdoptionReceiptProjection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NativeInvocationProjection {
+    pub message_id: String,
+    pub role_instance_id: String,
+    pub start_evidence_path: String,
+    pub start_evidence_sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -374,6 +383,15 @@ impl StateStore {
             roles: load_roles(&connection, run_id)?,
             plan_revisions: load_plan_revisions(&connection, run_id)?,
             events: load_events(&connection, run_id)?,
+            native_invocations: {
+                let mut statement = connection.prepare("SELECT message_id, to_role_instance_id, evidence_path, evidence_sha256
+                    FROM transport_start_receipts WHERE run_id=?1 ORDER BY rowid")?;
+                let rows = statement.query_map([run_id], |row| Ok(NativeInvocationProjection {
+                    message_id: row.get(0)?, role_instance_id: row.get(1)?,
+                    start_evidence_path: row.get(2)?, start_evidence_sha256: row.get(3)?,
+                }))?.collect::<Result<Vec<_>, _>>()?;
+                rows
+            },
             token_history: load_tokens(&connection, run_id)?,
             evidence: load_evidence(&connection, run_id)?,
             overwatch_cycles: load_overwatch_cycles(&connection, run_id)?,

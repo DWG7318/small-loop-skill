@@ -3478,6 +3478,55 @@ fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window(
     fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
 }
 
+#[test]
+fn paused_idle_cycle_needs_fresh_complete_census_not_a_fabricated_native_source() {
+    let fixture = Fixture::new_440();
+    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.cadence_seconds = 600;
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let requested = WriteRequest {event_id:"pause-requested".into(), run_id:"run-a".into(),
+        go_id:None, cell_id:None, attempt:None, plan_revision:1, role_instance_id:"supervisor-a".into(),
+        event_type:EventType::RunPauseRequested, details:json!({"pause_id":"pause-1","expected_runtime_revision":snapshot.runtime_revision}),
+        corrects_event_id:None, occurred_at:"2026-09-22T00:03:57Z".into()};
+    fixture.store.write_event(&fixture.supervisor, requested.clone()).unwrap();
+    let before = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let original = json!({"schema_version":"slk.run-quiescence/v1","run_id":"run-a","pause_id":"pause-1",
+        "runtime_revision":before.runtime_revision,"status":"QUIESCENT","inspections":[],
+        "attempt_roots":[fixture._root.path()],"observed_at":"2026-09-22T00:03:58Z"});
+    let evidence = fixture.evidence_ref("original-pause.json", &serde_json::to_vec(&original).unwrap());
+    fixture.store.write_event(&fixture.supervisor, WriteRequest {event_id:"paused".into(), event_type:EventType::RunPaused,
+        details:json!({"pause_id":"pause-1","expected_runtime_revision":before.runtime_revision,
+            "quiescence_path":evidence.path,"quiescence_sha256":evidence.sha256}),
+        occurred_at:"2026-09-22T00:03:58Z".into(), ..requested}).unwrap();
+    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    assert!(snapshot.latest_message_id.is_none());
+    let query = json!({"schema_version":"slk.overwatch-scope-inspection/v1","run_id":"run-a",
+        "source_message_id":null,"runtime_snapshot":snapshot,"runtime_projection_sha256":"a".repeat(64),
+        "native_start_path":null,"native_start_sha256":null,"query_error":null,
+        "query_started_at":"2026-09-22T00:03:59Z","query_completed_at":"2026-09-22T00:04:00Z",
+        "native_activity":{"status":"UNKNOWN","observed_at":"2026-09-22T00:03:59Z","error":"NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}});
+    let query_ref = fixture.evidence_ref("paused-query.json", &serde_json::to_vec(&query).unwrap());
+    let mut cycle = overwatch_cycle(1);
+    cycle.go_id=None; cycle.cell_id=None; cycle.attempt=None;
+    cycle.runtime_revision=snapshot.runtime_revision; cycle.latest_event_id=snapshot.latest_event_id;
+    cycle.cadence_seconds=600; cycle.next_cycle_at="2026-09-22T00:14:00Z".into();
+    cycle.native_active_session_evidence_ref=query_ref.path.clone(); cycle.evidence_refs=vec![query_ref.clone()];
+    assert!(fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone()).is_err());
+    let mut fresh=original;
+    fresh["runtime_revision"]=json!(snapshot.runtime_revision);
+    fresh["observed_at"]=json!("2026-09-22T00:03:59Z");
+    fresh["status"]=json!("NOT_QUIESCENT");
+    cycle.evidence_refs.push(fixture.evidence_ref("paused-fresh.json", &serde_json::to_vec(&fresh).unwrap()));
+    assert!(fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone()).is_err());
+    fresh["status"]=json!("QUIESCENT");
+    cycle.evidence_refs=vec![query_ref, fixture.evidence_ref("paused-fresh.json", &serde_json::to_vec(&fresh).unwrap())];
+    fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
+}
+
 fn observation(
     observation_id: &str,
     kind: ObservationKind,

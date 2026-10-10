@@ -112,6 +112,8 @@ def _job(args: argparse.Namespace) -> int:
     endpoint_raw = _read_object(args.endpoint, "endpoint")
     envelope_raw = _read_object(args.envelope, "envelope")
     host = load_role_host(endpoint_raw)
+    if host is not None:
+        host.validate_native_dispatch(endpoint_raw, Envelope.from_dict(envelope_raw), args.attempt_root.resolve())
     result = dispatch_once(
         endpoint_raw,
         envelope_raw,
@@ -186,6 +188,9 @@ def _spawn_send_job(
 
 def _send(args: argparse.Namespace) -> int:
     endpoint, envelope = _load_delivery(args.endpoint, args.envelope)
+    host = load_role_host(_read_object(args.endpoint, "endpoint"))
+    if host is not None:
+        host.validate_native_dispatch(_read_object(args.endpoint, "endpoint"), envelope, args.attempt_root.resolve())
     attempt_root = args.attempt_root.resolve()
     attempt_path = attempt_root / envelope.run_id / envelope.message_id
     job_log_root = attempt_root / ".jobs"
@@ -460,6 +465,57 @@ def _inspect_recovery_authority(args: argparse.Namespace) -> int:
     return 0
 
 
+def _inspect_run_quiescence(args: argparse.Namespace) -> int:
+    from .worker_completion import _event_details
+    path = args.binding.resolve()
+    if hashlib.sha256(path.read_bytes()).hexdigest() != args.sha256:
+        raise ValueError("quiescence host binding hash changed")
+    host = RoleHost(_read_object(path, "quiescence host binding"), args.sha256)
+    config_path = args.adapter_config.resolve()
+    if hashlib.sha256(config_path.read_bytes()).hexdigest() != args.adapter_config_sha256:
+        raise ValueError("quiescence adapter config hash changed")
+    config = _read_object(config_path, "quiescence adapter config")
+    if (config.get("run_id") != host.binding["run_id"]
+        or config.get("role_host_binding") != {"path": str(path), "sha256": args.sha256}
+        or "temporal" not in host.binding
+        or Path(config["attempt_root"]).resolve() != Path(host.binding["temporal"]["attempt_root"]).resolve()):
+        raise ValueError("quiescence config changed the exact Run/root")
+    roots = [Path(config[key]) for key in ("attempt_root", "notification_attempt_root")]
+    coordinator_observer = False
+    if args.coordinator_started is not None:
+        projection = host.projection()
+        pauses = [event for event in projection.get("events", [])
+                  if event.get("event_type") in {"RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"}]
+        if (projection.get("summary", {}).get("state") == "paused" and pauses
+            and pauses[-1]["event_type"] == "RUN_PAUSED"):
+            details = _event_details(pauses[-1])
+            if details.get("pause_id") == args.pause_id:
+                original_path = Path(details["quiescence_path"])
+                if (not original_path.is_absolute()
+                    or hashlib.sha256(original_path.read_bytes()).hexdigest() != details["quiescence_sha256"]):
+                    raise ValueError("original confirmed pause census changed")
+                original = _read_object(original_path, "confirmed pause census")
+                coordinators = [row for row in original.get("inspections", []) if row.get("status") == "COORDINATING"]
+                coordinator_observer = (original.get("schema_version") == "slk.run-quiescence/v1"
+                    and original.get("run_id") == host.binding["run_id"] and original.get("pause_id") == args.pause_id
+                    and original.get("status") == "QUIESCENT"
+                    and original.get("attempt_roots") == [str(root.resolve()) for root in roots]
+                    and len(coordinators) == 1
+                    and Path(coordinators[0]["native_start_path"]).resolve() == args.coordinator_started.resolve()
+                    and coordinators[0]["native_start_sha256"] == hashlib.sha256(args.coordinator_started.read_bytes()).hexdigest())
+    # Only a centrally confirmed original coordinator can be observed without
+    # being its author. The Host still validates its exact live native receipt.
+    proof = host.inspect_run_quiescence(args.pause_id, roots, args.coordinator_started,
+                                       coordinator_observer=coordinator_observer)
+    from .worker_completion import _write_or_reuse_stable_request
+    output = args.output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    _write_or_reuse_stable_request(output, proof)
+    _emit({"status": proof["status"], "run_id": host.binding["run_id"], "path": str(output),
+           "sha256": hashlib.sha256(output.read_bytes()).hexdigest()})
+    return 0 if proof["status"] == "QUIESCENT" else 3
+
+
 def _continue_staged_handoff(args: argparse.Namespace) -> int:
     binding_path = args.binding.resolve()
     digest = hashlib.sha256(binding_path.read_bytes()).hexdigest()
@@ -725,6 +781,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     d2_start = subparsers.add_parser("start-d2", help="start D2 through the sealed Supervisor admin request")
     d2_start.add_argument("--request", required=True, type=Path)
     d2_start.add_argument("--sha256", required=True)
+    for action in ("pause-run", "resume-run"):
+        lifecycle = subparsers.add_parser(action, help="use the sealed Supervisor lifecycle request")
+        lifecycle.add_argument("--request", required=True, type=Path)
+        lifecycle.add_argument("--sha256", required=True)
+    quiescence = subparsers.add_parser("inspect-run-quiescence", help="read original native calls; never stop a shared service")
+    quiescence.add_argument("--binding", required=True, type=Path)
+    quiescence.add_argument("--sha256", required=True)
+    quiescence.add_argument("--adapter-config", required=True, type=Path)
+    quiescence.add_argument("--adapter-config-sha256", required=True)
+    quiescence.add_argument("--pause-id", required=True)
+    quiescence.add_argument("--coordinator-started", type=Path)
+    quiescence.add_argument("--output", required=True, type=Path)
     overwatcher_admin = subparsers.add_parser("overwatcher-admin")
     overwatcher_admin.add_argument("--request", required=True, type=Path)
     overwatcher_admin.add_argument("--sha256", required=True)
@@ -812,9 +880,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _consume_desktop_readback(args)
         if args.command == "supervisor-admin":
             return _supervisor_admin(args)
-        if args.command == "start-d2":
-            if _read_object(args.request, "D2 admin request").get("operation") != "start-d2":
-                raise ValueError("start-d2 requires the exact sealed start-d2 action")
+        if args.command == "inspect-run-quiescence":
+            return _inspect_run_quiescence(args)
+        if args.command in {"start-d2", "pause-run", "resume-run"}:
+            if _read_object(args.request, "Supervisor admin request").get("operation") != args.command:
+                raise ValueError("CLI action requires the exact sealed Supervisor operation")
             return _supervisor_admin(args)
         if args.command == "overwatcher-admin":
             return _overwatcher_admin(args)

@@ -305,7 +305,9 @@ def test_real_job_relays_missing_candidate_receipt_to_supervisor_once(tmp_path, 
     monkeypatch.setattr(cli, 'ADAPTERS', {'ocrv-checker':OcrvAdapter()})
     monkeypatch.setattr(wc, 'unprotect_dpapi_hex', lambda _: 'offline-secret')
     monkeypatch.setattr(host, '_authenticate', lambda *_: None)
-    monkeypatch.setattr(host, 'projection', lambda: pytest.fail('report cannot require engineering state'))
+    # Read-only lifecycle state is required; a report still needs no TOKEN,
+    # engineering result, D1 decision or engineering-state mutation.
+    monkeypatch.setattr(host, 'projection', lambda: {'summary': {'state': 'active'}})
     calls = []
     class Supervisor:
         def validate_address(self, endpoint):

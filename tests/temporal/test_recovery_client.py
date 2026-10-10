@@ -69,6 +69,28 @@ def test_existing_supervisor_disposition_needs_no_new_human_item(tmp_path):
     assert recovery.validate_request(request)[0] == request
 
 
+def test_source_business_queue_is_bound_to_checkpoint_before_rpc(tmp_path):
+    request = request_fixture(tmp_path)
+    path = Path(request["source_identity"]["path"])
+    value = json.loads(path.read_text())
+    value["task_queue"] = "wrong-source-queue"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    request["source_identity"] = recovery.proof(path)
+    with pytest.raises(ValueError, match="queue"):
+        recovery.validate_request(request)
+
+
+def test_target_business_queue_cannot_change_even_if_sdk_execution_queue_differs(monkeypatch):
+    source = identity()
+    target = {**source, "start_workflow_id": "slk-start-RUN-A-recovery-" + source["run_run_id"],
+        "run_workflow_id": "slk-run-RUN-A-recovery-" + source["run_run_id"], "task_queue": "wrong-target-queue"}
+    monkeypatch.setattr(recovery, "read_proof", lambda *_a, **_k: source)
+    async def inspect(**_k): pytest.fail("invalid queue must reject before RPC")
+    monkeypatch.setattr(recovery, "inspect_pair", inspect)
+    with pytest.raises(ValueError, match="lineage"):
+        asyncio.run(recovery.verify_target({"run_id": "RUN-A", "source_identity": {}}, target, packet(), initial=True))
+
+
 def test_frozen_forward_slash_refs_match_resolved_absolute_proofs(tmp_path):
     request = request_fixture(tmp_path)
     host_path = Path(request["source_host"]["path"])

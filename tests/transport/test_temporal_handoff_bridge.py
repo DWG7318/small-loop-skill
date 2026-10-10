@@ -397,8 +397,9 @@ def test_public_sender_host_starts_one_not_yet_started_canonical_handoff(
     assert starts == [source]
 
 
+@pytest.mark.parametrize("central_state", ["active", "pause_requested", "paused"])
 def test_public_sender_host_acks_existing_external_operation_before_token_commit(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path, monkeypatch, central_state,
 ) -> None:
     host, _source, envelope = prepared_host(tmp_path)
     canonical = tmp_path / "canonical-attempts"
@@ -421,6 +422,7 @@ def test_public_sender_host_acks_existing_external_operation_before_token_commit
         "payload_sha256": envelope.payload_sha256, "source_runtime_revision": 4,
     })
     projection = host_boundary(host, envelope)
+    projection["summary"]["state"] = central_state
     monkeypatch.setattr(host, "projection", lambda: projection)
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _p: "sealed-test-secret")
     calls: list[str] = []
@@ -443,6 +445,8 @@ def test_public_sender_host_acks_existing_external_operation_before_token_commit
                     "role_instance_id": envelope.sender_role_instance_id,
                     "runtime_revision": 7}
         if kind == "commit-delivery-start":
+            if projection["summary"]["state"] == "paused":
+                return {"status": "error", "code": "SLK_RUN_PAUSED", "message": "Run pause keeps new TOKEN commits fenced"}
             return {"status": "committed", "message_id": envelope.message_id,
                     "runtime_revision": 8, "token_sequence": envelope.token_sequence,
                     "run_id": envelope.run_id,
@@ -450,6 +454,16 @@ def test_public_sender_host_acks_existing_external_operation_before_token_commit
         pytest.fail(f"existing native start must not repeat request-delivery, got {kind}")
 
     monkeypatch.setattr(wc, "_run_json_command", command)
+    if central_state == "paused":
+        with pytest.raises(wc.CompletionError, match="new TOKEN commits fenced"):
+            host.continue_staged_handoff(source, temporal_request_path=request,
+                temporal_request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+        # The original ACK was saved before the central fence rejected its TOKEN
+        # commit. It can unblock same-pause confirmation; resume then commits the
+        # original delivery, without another native start or ACK.
+        assert calls == ["authenticate-role", "native-started", "authenticate-role", "commit-delivery-start"]
+        projection["summary"]["state"] = "active"
+        calls.clear()
     result = host.continue_staged_handoff(
         source,
         temporal_request_path=request,
@@ -457,7 +471,8 @@ def test_public_sender_host_acks_existing_external_operation_before_token_commit
     )
 
     assert result["status"] == "OWNED_HANDOFF_COMMITTED"
-    assert calls == ["authenticate-role", "native-started", "authenticate-role", "commit-delivery-start"]
+    assert calls == (["authenticate-role", "authenticate-role", "commit-delivery-start"] if central_state == "paused"
+        else ["authenticate-role", "native-started", "authenticate-role", "commit-delivery-start"])
 
 
 def test_public_sender_host_rejects_noncanonical_staged_handoff_before_authentication(

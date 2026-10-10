@@ -1,5 +1,15 @@
 # Required Temporal continuity for SLK 4.4.2
 
+## Authorized pause and exact close
+
+The original sealed Supervisor [lifecycle commands](../transport/SLK-TRANSPORT.md#run-lifecycle) update the existing pair, not a new service. REQUESTED fences new construction but preserves original result/ACK/commit-only closure. PAUSED requires the Host's complete original-call census. Resume preserves pending operation/message, TOKEN, completed D0/D1 and guards. Temporal resumes first, central releases last; repeating the same resume wakes an original Activity that raced central PAUSED, never failure/timeout/recovery or busy loop.
+
+Checkpoint v1 still requires its original pending delivery. Lifecycle checkpoint v2 retains run_pause phase/pause_id, immutable events, confirmation time, deferred operation/generation and original status/timers. It permits legitimate nonterminal IDLE without fake pending. Restore retains original source/target lineage and startup/checkpoint queue; SDK Replayer execution queue is not the business queue. Already-started operations do not repeat prepare/admission/delivery/recovery.
+
+Original member notice threshold is `elapsed >= 1800 seconds`. Deduct only confirmed PAUSED overlap (central confirmation time survives retry), not REQUESTED. Responsibility starting during pause loses only its own overlap; duplicate resume does not deduct twice. 20 active + 60 paused + 10 active minutes still reaches 30. OW 600-second patrol, 1200-second audit and other Runs continue.
+
+After D2, terminal snapshot, actual final OW cycle and own-Run OW close, sealed close-run records RUN_CLOSED then uses the original delivery client's close-run to finish only the exact bound Run and Start. Native COMPLETED/close times are verified; matching already-completed pair is accepted on retry. A different terminal reason or failed nonterminal pair requires diagnosis. Central closed alone is not complete cleanup. Never stop the shared worker/service or another Run pair.
+
 ## Boundary
 
 One shared, headless local Temporal service may host many SLK Runs. Every 4.4.2 Run must prove service/worker readiness before dispatch and owns one deterministic `SLK.Start` plus one independent `SLK.Run`; ending one Run closes only its workflows, not the shared service or another Run.
@@ -17,7 +27,7 @@ The only positive activation fact is a matching `slk.native-start/v2` acknowledg
 ## Runtime guarantees
 
 - Delivery timeout asks the exact original sender to recover the unchanged message; OW never relays or retries normal communication.
-- A member timer begins only after matching native start. If one responsibility remains on that member for more than 30 minutes, Temporal sends one scoped notice directly to the registered Supervisor; it does not decide whether the work is defective.
+- A member timer begins only after matching native start. When one responsibility reaches 30 effective minutes on that member, Temporal sends one scoped notice directly to the registered Supervisor; it does not decide whether the work is defective. Only confirmed PAUSED overlap with that responsibility is deducted; REQUESTED time still counts.
 - Every 20 minutes Temporal checks the registered OW native activity. Missing, mismatched, terminal, or anomalous evidence freezes the Run runtime guard and notifies Supervisor.
 - Every OW exit, including a Supervisor-requested stop, freezes the guard and notifies Supervisor for a second confirmation. Only an exact current-Supervisor resolution with restored OW evidence clears it.
 - While the guard is unresolved, no next CELL may dispatch. Mechanical recovery and Supervisor-directed repair may coexist, but Supervisor chooses and records the resolution.
@@ -50,7 +60,7 @@ Service/worker/adapter failure after readiness preserves the last authoritative 
 
 ## Closed execution recovery
 
-This is a communication-continuity repair, not a new engineering Run. Both source native executions must be FAILED, while the central business Run remains `summary.state=active`, `closure_state=open`, `closed_at=null` and still owns the original pending delivery. The standard SDK preserves full source histories, startup/admission identity, all seen/completed/abandoned operations, pending scope and runtime observations in an immutable checkpoint. A deterministic replacement pair has suffix `-recovery-<source child native run ID>`; source identities/history, role instances, Sessions, endpoints, plan, candidates, D0/D1/D2 and TOKEN are never replaced or replayed. Source query is diagnostic only; RUNNING/no close time is established independently for both target executions before accepting a result.
+This is a communication-continuity repair, not a new engineering Run. Both source native executions must be FAILED, while the central business Run remains open (`closure_state=open`, `closed_at=null`) at the saved boundary. Checkpoint v1 requires the original pending delivery and active central state. Lifecycle checkpoint v2 also permits pause_requested/paused, or legitimate IDLE without a pending delivery; recovery never fabricates one. The standard SDK preserves full source histories, startup/admission identity, all seen/completed/abandoned operations, any pending scope and runtime observations in an immutable checkpoint. A deterministic replacement pair has suffix `-recovery-<source child native run ID>`; source identities/history, role instances, Sessions, endpoints, plan, candidates, D0/D1/D2 and TOKEN are never replaced or replayed. Source query is diagnostic only; RUNNING/no close time is established independently for both target executions before accepting a result.
 
 Use this sequence from the existing Supervisor, not an ad-hoc daemon or an external product executor:
 

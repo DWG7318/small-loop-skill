@@ -160,7 +160,7 @@ def _validate_explicit_decision(
             and event.get("author_role_instance_id") == endpoint.role_instance_id
             and decision.get("native_start_path") == str(receipt.resolve())
             and decision.get("native_start_sha256") == _sha256(receipt)
-            and start["native_task"]["kind"] == "ocrv-review"
+            and start["native_task"]["kind"] in {"ocrv-review", "ocrv-invocation"}
             and decision.get("native_task_id") == start["native_task"]["id"]
             and decided_at.tzinfo is not None and occurred_at == decided_at)
     except (ValueError, OSError, KeyError, TypeError) as exc:

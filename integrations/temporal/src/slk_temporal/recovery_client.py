@@ -58,7 +58,7 @@ def validate_request(value: object) -> tuple[dict, dict, dict]:
     checkpoint = validate_checkpoint(read_proof(value["checkpoint"], "checkpoint", limit=1024 * 1024))
     startup = StartSlkRequest.from_dict(checkpoint["startup"])
     if (value["run_id"] != startup.run_id or identity["run_id"] != startup.run_id
-        or startup.method_version != "4.4.2" or identity["task_queue"] != startup.task_queue
+        or startup.method_version not in {"4.4.2", "4.4.3"} or identity["task_queue"] != startup.task_queue
         or identity["startup_fingerprint"] != startup.startup_fingerprint):
         raise ValueError("recovery changed business Run, method, queue or immutable startup")
     executions = value["source_executions"]
@@ -127,14 +127,20 @@ def _central(config: Mapping, startup: StartSlkRequest, checkpoint: Mapping, hos
             if role in active:
                 raise ValueError("recovery team registry is ambiguous")
             active[role] = row.get("role_instance_id")
-    pending = checkpoint["continuity"]["pending"]["delivery"]
+    packet = checkpoint["continuity"]["pending"]
+    pending = packet["delivery"] if packet is not None else None
+    pause = checkpoint.get("status", {}).get("run_pause")
+    state = {"REQUESTED": "pause_requested", "PAUSED": "paused", "RESUMED": "active"}.get(
+        pause["phase"] if pause else "RESUMED")
     if (projection.get("summary", {}).get("run_id") != startup.run_id
-        or runtime.get("method_version") != "4.4.2" or runtime.get("plan_revision") != host.get("plan_revision")
+        or runtime.get("method_version") not in {"4.4.2", "4.4.3"} or runtime.get("plan_revision") != host.get("plan_revision")
         or type(runtime.get("runtime_revision")) is not int
-        or runtime["runtime_revision"] < pending["source_runtime_revision"]
-        or runtime.get("token_holder_role_instance_id") != pending["sender_role_instance_id"]
+        or pending is not None and (runtime["runtime_revision"] < pending["source_runtime_revision"]
+            or runtime.get("token_holder_role_instance_id") != pending["sender_role_instance_id"])
+        or pending is None and runtime.get("token_holder_role_instance_id") != (
+            checkpoint.get("status", {}).get("responsible_role_instance_id") or startup.supervisor.role_instance_id)
         or active != {row.role: row.role_instance_id for row in startup.roles}
-        or summary.get("state") != "active" or summary.get("closure_state") != "open"
+        or summary.get("state") != state or summary.get("closure_state") != "open"
         or summary.get("closed_at") is not None):
         raise ValueError("current central boundary/team no longer owns the original pending delivery")
     authority = adapter._run_json(list(config["transport_command"]), [

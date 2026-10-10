@@ -29,6 +29,8 @@ WORKER_PROVISION_FIELDS = PROVISION_FIELDS | {
 }
 OVERWATCHER_CLOSE_FIELDS = FIELDS | {"sealed_overwatcher_credential_path"}
 OPERATIONS = {
+    "pause-run": {"pause_requested", "paused"},
+    "resume-run": {"resumed", "pause_requested"},
     "start-d2": {"recorded"},
     "adopt-method-contract": {"applied", "idempotent_replay"},
     "revise-role-model": {"model_revised", "already_applied"},
@@ -203,9 +205,24 @@ def execute_sealed_supervisor_admin(
         if (authenticated.get("status") != "authenticated"
             or authenticated.get("run_id") != run_id
             or authenticated.get("role") != "supervisor"
-            or authenticated.get("role_instance_id") != role_instance_id
-            or authenticated.get("runtime_revision") != revision):
+            or authenticated.get("role_instance_id") != role_instance_id):
             raise ValueError("saved credential does not authenticate the exact current Supervisor revision")
+        if authenticated.get("runtime_revision") != revision:
+            if operation not in {"pause-run", "resume-run", "close-run"}:
+                raise ValueError("saved credential does not authenticate the exact current Supervisor revision")
+            from .role_host import RoleHost
+            projection = wc._default_load_current_projection(run_id, list(state_command))
+            saved_close = next((event for event in projection.get("events", [])
+                                if event.get("event_id") == operation_value.get("event_id")), None)
+            same_close = (operation == "close-run" and saved_close is not None
+                and saved_close.get("event_type") == "RUN_CLOSED"
+                and saved_close.get("author_role_instance_id") == role_instance_id
+                and saved_close.get("occurred_at") == operation_value.get("occurred_at")
+                and wc._event_details(saved_close) == operation_value.get("details")
+                and all(saved_close.get(key) == operation_value.get(key) for key in ("go_id", "cell_id", "attempt", "corrects_event_id")))
+            if not same_close and not RoleHost.lifecycle_retry_matches(projection, operation, operation_value,
+                    request["operation_request_sha256"], revision, role_instance_id):
+                raise ValueError("stale lifecycle revision does not belong to this exact operation")
         operation_secret = secret
         if worker_provisioning:
             checker_secret = wc.unprotect_dpapi_hex(checker_sealed)
@@ -228,12 +245,12 @@ def execute_sealed_supervisor_admin(
         elif overwatcher_closing:
             overwatcher_secret = wc.unprotect_dpapi_hex(overwatcher_sealed)
             operation_secret = overwatcher_secret
-        if operation == "start-d2":
+        if operation in {"start-d2", "pause-run", "resume-run"}:
             from .role_host import RoleHost
-            if set(operation_value) != {"run_id", "role_instance_id", "binding_path", "binding_sha256", "source_attempt_path"}:
+            if operation == "start-d2" and set(operation_value) != {"run_id", "role_instance_id", "binding_path", "binding_sha256", "source_attempt_path"}:
                 raise ValueError("D2 start request is not closed")
-            binding_path, source = Path(operation_value["binding_path"]), Path(operation_value["source_attempt_path"])
-            if (not binding_path.is_absolute() or not source.is_absolute()
+            binding_path = Path(operation_value["binding_path"])
+            if (not binding_path.is_absolute()
                 or _sha256(binding_path) != operation_value["binding_sha256"]):
                 raise ValueError("D2 start binding is missing or changed")
             host = RoleHost(_object(binding_path, "D2 host binding"), operation_value["binding_sha256"])
@@ -242,10 +259,29 @@ def execute_sealed_supervisor_admin(
                 or host.endpoint("supervisor")["role_instance_id"] != role_instance_id
                 or Path(host.credential_path("supervisor")).resolve() != sealed.resolve()):
                 raise ValueError("D2 start differs from the authenticated Supervisor host")
-            state_result = host.start_d2(source)
+            if operation == "start-d2":
+                source = Path(operation_value["source_attempt_path"])
+                if not source.is_absolute(): raise ValueError("D2 source must be absolute")
+                state_result = host.start_d2(source)
+            else:
+                state_result = host.run_lifecycle(operation, operation_value,
+                    operation_sha256=request["operation_request_sha256"], expected_revision=revision)
+        close_host = None
+        close_binding = operation_value.get("details", {}).get("close_binding_path") if operation == "close-run" else None
+        if close_binding is not None:
+            from .role_host import RoleHost
+            digest = operation_value["details"]["close_binding_sha256"]
+            path = Path(close_binding)
+            if not path.is_absolute() or _sha256(path) != digest: raise ValueError("close binding changed")
+            close_host = RoleHost(_object(path, "close host binding"), digest)
+            if (close_host.binding["run_id"] != run_id or close_host.state != state_command
+                or close_host.endpoint("supervisor")["role_instance_id"] != role_instance_id
+                or Path(close_host.credential_path("supervisor")).resolve() != sealed.resolve()
+                or "temporal" not in close_host.binding):
+                raise ValueError("close binding differs from the sealed Supervisor and original pair")
         state_operation = "write" if operation == "close-run" else operation
         state_arguments = [state_operation, "--request", str(operation_request)]
-        if operation == "start-d2":
+        if operation in {"start-d2", "pause-run", "resume-run"}:
             pass  # Original RoleHost wrote the single existing D2_STARTED event.
         elif overwatcher_closing:
             state_result = wc._run_json_command(
@@ -256,6 +292,8 @@ def execute_sealed_supervisor_admin(
             state_result = wc._run_json_command(
                 list(state_command), state_arguments, credential=operation_secret,
             )
+        if close_host is not None and state_result.get("status") == "recorded":
+            close_host.close_run_pair(operation_value, operation_request.parent)
     finally:
         overwatcher_secret = ""
         checker_secret = ""
@@ -299,7 +337,7 @@ def execute_sealed_supervisor_admin(
         raise ValueError("Supervisor administration returned credential material unexpectedly")
     receipt = {
         "schema_version": "slk.supervisor-admin-result/v1",
-        "status": "SUPERVISOR_ADMIN_COMPLETED",
+        "status": "SUPERVISOR_ADMIN_PENDING" if state_result.get("status") == "pause_requested" else "SUPERVISOR_ADMIN_COMPLETED",
         "run_id": run_id,
         "supervisor_role_instance_id": role_instance_id,
         "operation": operation,
@@ -313,5 +351,6 @@ def execute_sealed_supervisor_admin(
             "issued_role_instance_id": request["issued_role_instance_id"],
             "sealed_credential": sealed_result,
         })
-    wc._write_or_reuse_stable_request(result_path, receipt)
+    if receipt["status"] == "SUPERVISOR_ADMIN_COMPLETED":
+        wc._write_or_reuse_stable_request(result_path, receipt)
     return receipt

@@ -148,7 +148,16 @@ async def _run_standard_client_drives_one_real_sdk_update_and_one_fake_ocrv_nati
         assert native_calls == 1
         snapshot = await _idle(child)
         assert snapshot["last_completed_operation_id"] == operation_id
-        assert await child.execute_update(RunSlkWorkflow.close_run, "ISOLATED_TEST_CLOSED") == "TERMINAL"
+        from slk_temporal.delivery_client import run_update
+        close = _write(tmp_path / "close.json", {"run_id": run_id, "event_id": "ISOLATED_TEST_CLOSED"})
+        def close_pair():
+            return run_update(operation="close-run", identity_path=identity_path,
+                identity_sha256=hashlib.sha256(identity_path.read_bytes()).hexdigest(),
+                request_path=close, request_sha256=hashlib.sha256(close.read_bytes()).hexdigest())
+        closed = await asyncio.to_thread(close_pair)
+        assert closed["status"] == "PAIR_CLOSED"
+        assert await asyncio.to_thread(close_pair) == closed  # completed pair suffix retry, no new update
+        assert native_calls == 1
         assert (await parent.result())["phase"] == "TERMINAL"
 
 

@@ -20,6 +20,7 @@ with workflow.unsafe.imports_passed_through():
         OverwatcherExitNotice,
         RuntimeGuardResolution,
         StartSlkRequest,
+        IDENTIFIER,
         validate_supervisor_notification,
     )
 
@@ -160,6 +161,7 @@ class RunSlkWorkflow:
         self._admission_failure: str | None = None
         self._recovery_failure: dict[str, Any] | None = None
         self._restored_pending_operation: str | None = None
+        self._run_pause: dict[str, Any] | None = None
 
     @workflow.run
     async def run(self, value: dict[str, Any]) -> dict[str, Any]:
@@ -179,8 +181,7 @@ class RunSlkWorkflow:
             prefix = f"slk-run-{self._startup.run_id}-recovery-"
             if (info.parent is None or not info.workflow_id.startswith(prefix)
                 or info.workflow_id == prefix
-                or info.parent.workflow_id != info.workflow_id.replace("slk-run-", "slk-start-", 1)
-                or info.task_queue != self._startup.task_queue):
+                or info.parent.workflow_id != info.workflow_id.replace("slk-run-", "slk-start-", 1)):
                 raise ApplicationError("checkpoint requires the exact recovery parent", non_retryable=True)
             self._restore_checkpoint(value["recovery_checkpoint"])
             # Closed executions did not monitor the gap. Do not replay missed
@@ -238,13 +239,41 @@ class RunSlkWorkflow:
                 # An audit/residency timer can wake an otherwise idle Run.
                 continue
             operation_id = delivery.operation_id
+            if self._run_pause is None and self._continuity.pending_delivery_result() == "PAUSED":
+                # The central gate may precede its original Temporal update.
+                # Retain the receipt, not a fabricated lifecycle phase or ACK.
+                try:
+                    await workflow.wait_condition(lambda: self._run_pause is not None
+                        or self._continuity.is_terminal() or self._continuity.is_resolved(operation_id),
+                        timeout=self._runtime_check_timeout())
+                except asyncio.TimeoutError:
+                    await self._perform_runtime_checks()
+                continue
+            if self._run_pause is not None:
+                workflow.patched("slk-4.4.3-run-pause")
+                sender = next(role.role for role in self._startup.roles if role.role_instance_id == delivery.sender_role_instance_id)
+                receiver = next(role.role for role in self._startup.roles if role.role_instance_id == delivery.receiver_role_instance_id)
+                blocked = self._run_pause["phase"] == "PAUSED" or (self._run_pause["phase"] == "REQUESTED"
+                    and (sender, receiver) not in {("WORKER", "CHECKER"), ("CHECKER", "SUPERVISOR")})
+                generation = self._run_pause["delivery_generation"]
+                deferred = self._run_pause["deferred_operation_id"] == operation_id
+                if blocked or deferred:
+                    try:
+                        await workflow.wait_condition(lambda: self._continuity.is_terminal()
+                            or self._continuity.is_resolved(operation_id)
+                            or self._run_pause["delivery_generation"] != generation,
+                            timeout=self._runtime_check_timeout())
+                    except asyncio.TimeoutError:
+                        await self._perform_runtime_checks()
+                    continue
             if operation_id == self._restored_pending_operation:
                 # The source history already attempted delivery/recovery. Only its
                 # original, independently proven native-start ACK may release it.
                 await self._wait_for_completion(operation_id)
                 self._restored_pending_operation = None
                 continue
-            if operation_id not in self._delivery_started:
+            if (operation_id not in self._delivery_started
+                or (self._run_pause is not None and self._run_pause["deferred_operation_id"] == "RETRY:" + operation_id)):
                 self._delivery_started.add(operation_id)
                 try:
                     receipt = await workflow.execute_activity(
@@ -253,14 +282,26 @@ class RunSlkWorkflow:
                         result_type=dict,
                         start_to_close_timeout=timedelta(minutes=5),
                         retry_policy=ONE_ATTEMPT,
-                        activity_id=f"deliver-{operation_id}",
+                        activity_id=(f"deliver-{operation_id}-pause-{self._run_pause['delivery_generation']}"
+                            if self._run_pause is not None else f"deliver-{operation_id}"),
                     )
+                    early_pause = (self._run_pause is None and isinstance(receipt, Mapping) and receipt.get("status") == "PAUSED"
+                        and workflow.patched("slk-4.4.3-central-pause-receipt"))
                     _closed_receipt(
                         receipt,
                         {"status", "operation_id", "receipt_sha256"},
-                        status={"DELIVERED", "FAILED"},
+                        status={"DELIVERED", "FAILED", "PAUSED"} if self._run_pause is not None or early_pause else {"DELIVERED", "FAILED"},
                         operation_id=operation_id,
                     )
+                    if receipt["status"] == "PAUSED":
+                        if self._continuity.is_resolved(operation_id): continue
+                        if self._run_pause is None:
+                            self._continuity.record_delivery_result(operation_id, "PAUSED")
+                        else:
+                            self._run_pause["deferred_operation_id"] = operation_id
+                        continue
+                    if self._run_pause is not None:
+                        self._run_pause["deferred_operation_id"] = None
                     if not self._continuity.is_completed(operation_id):
                         self._continuity.record_delivery_result(
                             operation_id, str(receipt["status"])
@@ -348,7 +389,8 @@ class RunSlkWorkflow:
             raise ValueError("SLK Run has not initialized")
         now = workflow.now()
         deadlines = [self._next_overwatcher_audit_at]
-        if self._member_residency_since is not None and not self._member_residency_notice_sent:
+        if (self._member_residency_since is not None and not self._member_residency_notice_sent
+            and not self._pause_confirmed()):
             deadlines.append(self._member_residency_since + MEMBER_RESIDENCY_LIMIT)
         due = min(item for item in deadlines if item is not None)
         return max(0.001, (due - now).total_seconds())
@@ -403,6 +445,7 @@ class RunSlkWorkflow:
         )
         if (
             member_deadline is not None
+            and not self._pause_confirmed()
             and now >= member_deadline
             and not self._member_residency_notice_sent
         ):
@@ -559,6 +602,72 @@ class RunSlkWorkflow:
         return "ADMISSION_REQUESTED"
 
     @workflow.update
+    def set_run_pause(self, value: dict[str, Any]) -> str:
+        if self._startup is None or self._continuity is None:
+            raise ApplicationError("SLK Run has not initialized", non_retryable=True)
+        fields = {"run_id", "supervisor_role_instance_id", "pause_id", "event_id", "phase"}
+        if isinstance(value, Mapping) and "confirmed_at" in value: fields.add("confirmed_at")
+        if (not isinstance(value, Mapping) or set(value) != fields
+            or value["run_id"] != self._startup.run_id
+            or value["supervisor_role_instance_id"] != self._startup.supervisor.role_instance_id):
+            raise ApplicationError("pause requires the exact frozen Supervisor", non_retryable=True)
+        if (value["phase"] not in {"REQUESTED", "PAUSED", "RESUMED"}
+            or any(not isinstance(value[key], str) or not IDENTIFIER.fullmatch(value[key]) for key in ("pause_id", "event_id"))
+            or self._continuity.is_terminal()):
+            raise ApplicationError("pause lifecycle identity or phase is invalid", non_retryable=True)
+        old = self._run_pause
+        if old is not None and value["event_id"] in old["events"]:
+            if old["events"][value["event_id"]] != dict(value):
+                raise ApplicationError("pause event identity changed", non_retryable=True)
+            if value["phase"] == "RESUMED" and old["deferred_operation_id"] is not None:
+                operation = old["deferred_operation_id"].removeprefix("RETRY:")
+                old["delivery_generation"] += 1
+                old["deferred_operation_id"] = "RETRY:" + operation
+            return value["phase"]
+        prior = old["phase"] if old is not None else None
+        if (value["phase"] == "REQUESTED" and old is not None
+            and any(event["pause_id"] == value["pause_id"] for event in old["events"].values())):
+            raise ApplicationError("pause cycle identity was already used", non_retryable=True)
+        required = {"REQUESTED": {None, "RESUMED"}, "PAUSED": {"REQUESTED"}, "RESUMED": {"PAUSED"}}
+        if prior not in required[value["phase"]] or (value["phase"] != "REQUESTED" and value["pause_id"] != old["pause_id"]):
+            raise ApplicationError("pause lifecycle transition is invalid", non_retryable=True)
+        pending = self._continuity.pending_delivery()
+        deferred = (old["deferred_operation_id"] if old is not None else
+            pending.operation_id if pending is not None and self._continuity.pending_delivery_result() == "PAUSED" else None)
+        if (value["phase"] == "PAUSED" and pending is not None
+            and pending.operation_id in self._delivery_started and deferred != pending.operation_id):
+            raise ApplicationError("pause cannot confirm an unresolved native delivery", non_retryable=True)
+        paused_at = old["paused_at"] if old is not None else None
+        if value["phase"] == "PAUSED":
+            confirmed = workflow.now()
+            if "confirmed_at" in value:
+                try:
+                    confirmed = datetime.fromisoformat(value["confirmed_at"].replace("Z", "+00:00"))
+                    if confirmed.tzinfo is None or confirmed > workflow.now(): raise ValueError("timestamp")
+                except (AttributeError, TypeError, ValueError) as exc:
+                    raise ApplicationError("pause confirmation timestamp is invalid", non_retryable=True) from exc
+            paused_at = confirmed.isoformat()
+        elif "confirmed_at" in value:
+            raise ApplicationError("only PAUSED may contain its central confirmation time", non_retryable=True)
+        if value["phase"] == "RESUMED" and self._member_residency_since is not None:
+            # A role whose responsibility began inside a pause only loses its
+            # own overlap, never the time before it took responsibility.
+            start = max(datetime.fromisoformat(paused_at), self._member_residency_since)
+            self._member_residency_since += max(timedelta(), workflow.now() - start)
+        events = dict(old["events"]) if old is not None else {}
+        events[value["event_id"]] = dict(value)
+        self._run_pause = {"phase": value["phase"], "pause_id": value["pause_id"],
+                           "paused_at": paused_at, "events": events,
+                           "deferred_operation_id": deferred,
+                           "delivery_generation": old["delivery_generation"] + (value["phase"] == "RESUMED") if old else 0}
+        if value["phase"] == "RESUMED" and deferred is not None:
+            self._run_pause["deferred_operation_id"] = "RETRY:" + deferred
+        return value["phase"]
+
+    def _pause_confirmed(self) -> bool:
+        return self._run_pause is not None and self._run_pause["phase"] == "PAUSED"
+
+    @workflow.update
     def request_delivery(self, value: dict[str, Any]) -> str:
         if self._continuity is None:
             raise ApplicationError("SLK Run has not initialized", non_retryable=True)
@@ -567,7 +676,18 @@ class RunSlkWorkflow:
         if self._runtime_guard_blocker is not None:
             raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
         request = self._update_value(DeliveryRequest.from_dict, value)
-        return self._update_value(self._continuity.request_delivery, request)
+        if (self._run_pause is not None and self._run_pause["phase"] != "RESUMED"
+            and not self._continuity.knows_delivery(request.operation_id)):
+            sender = next((role.role for role in self._startup.roles if role.role_instance_id == request.sender_role_instance_id), None)
+            receiver = next((role.role for role in self._startup.roles if role.role_instance_id == request.receiver_role_instance_id), None)
+            if self._pause_confirmed() or (sender, receiver) not in {("WORKER", "CHECKER"), ("CHECKER", "SUPERVISOR")}:
+                raise ApplicationError("Run pause blocks new engineering delivery", non_retryable=True)
+        result = self._update_value(self._continuity.request_delivery, request)
+        if (self._run_pause is not None and self._run_pause["phase"] == "RESUMED"
+            and self._run_pause["deferred_operation_id"] == request.operation_id):
+            self._run_pause["delivery_generation"] += 1
+            self._run_pause["deferred_operation_id"] = "RETRY:" + request.operation_id
+        return result
 
     @workflow.update
     def native_started(self, value: dict[str, Any]) -> str:
@@ -646,7 +766,7 @@ class RunSlkWorkflow:
     def recovery_checkpoint(self) -> dict[str, Any]:
         if self._startup is None or self._continuity is None:
             raise ValueError("SLK Run has not initialized")
-        return {"schema_version": "slk.temporal-execution-checkpoint/v1",
+        return {"schema_version": "slk.temporal-execution-checkpoint/v2" if self._run_pause is not None else "slk.temporal-execution-checkpoint/v1",
                 "startup": self._startup.to_dict(), "continuity": self._continuity.checkpoint(),
                 "delivery_started": sorted(self._delivery_started),
                 "recovery_started": sorted(self._recovery_started), "status": self.status(),
@@ -670,7 +790,12 @@ class RunSlkWorkflow:
             setattr(self, "_" + field, datetime.fromisoformat(state[field]) if state[field] else None)
         self._admission_requested = packet["admission_requested"]
         self._admission_request_sha256 = packet["admission_request_sha256"]
-        self._restored_pending_operation = self._continuity.pending_delivery().operation_id
+        self._run_pause = state.get("run_pause")
+        pending = self._continuity.pending_delivery()
+        self._restored_pending_operation = (pending.operation_id if pending is not None
+            and pending.operation_id in self._delivery_started
+            and self._continuity.pending_delivery_result() != "PAUSED"
+            and (self._run_pause is None or self._run_pause["deferred_operation_id"] not in {pending.operation_id, "RETRY:" + pending.operation_id}) else None)
 
     @workflow.query
     def status(self) -> dict[str, Any]:
@@ -681,6 +806,7 @@ class RunSlkWorkflow:
             snapshot["phase"] = "ADMISSION_FAILED" if self._admission_failure else "AWAITING_ADMISSION"
         return {
             **snapshot,
+            **({"run_pause": self._run_pause} if self._run_pause is not None else {}),
             "admitted": self._admitted,
             "admission_attempt": self._admission_attempt,
             "admission_failure": self._admission_failure,

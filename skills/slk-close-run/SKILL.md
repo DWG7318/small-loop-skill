@@ -39,9 +39,17 @@ Checker → Worker → Checker
 
 唯一顺序：`D2_PASSED → terminal snapshot → OW final cycle → close-overwatcher → RUN_CLOSED → close-role`；本 Run 从未绑定 OW 时跳过两个 OW 节点，不改变其余顺序。
 
+`D2_PASSED` 是工程验收通过，不是全部收尾完成。冻结其真实 query 投影作为 terminal snapshot；OW 最后一轮必须实际核验本 Run 的原生调用、残留 executor/子进程、状态与证据。共享 OW 只解除本 Run 绑定，其他 active/PAUSED Run 的巡查继续；所有绑定均结束后才可按 Supervisor 授权结束 Session，由退出 hook 二次确认。
+
+4.4.3 的原 `close-run` 请求按 [Transport 生命周期](../../docs/transport/SLK-TRANSPORT.md#run-lifecycle) 绑定 snapshot、Host 与停稳 proof。用原 `inspect-run-quiescence` 实际生成新 proof，覆盖本 Run 所有 Worker/Checker/Supervisor 旧调用、非持令牌者、OCRV 实际 executor；仅准确当前 Supervisor 收尾调用可协调。缺证记 UNKNOWN，活调用等待原生安全停点/自然退出，不用 completed/archived 标签或猜 PID 假停。OW close 后 revision 已变，应在当前 revision 取新 proof 再密封 RUN_CLOSED，不伪造 JSON。
+
 1. 用密封 `supervisor-admin` 之外的既有 D2 路径记录 `D2_PASSED`，冻结同一 runtime revision 的 `terminal snapshot`；若本 Run 绑定 Overwatcher，Supervisor 应在 `RUN_CLOSED` 前恢复仍属同一 Session 的必要 foreground turn，由 OW 写唯一 `OW final cycle`，再让 `supervisor-admin close-overwatcher` 同时消费密封 Supervisor/OW 凭据并绑定该 cycle ID 与同一 revision。关闭成功只归档本 Run 的 OW 绑定，不改变工程历史或 TOKEN。
 2. OW 已关闭（或本 Run 从未绑定 OW）后才让密封 `supervisor-admin close-run` 写唯一 `RUN_CLOSED`，调用 `$slk-record-run` 导出最终 CELL 数、D0、D1通过数、Supervisor豁免数、限制和证据位置，并把最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转。随后调用 `$slk-manage-team`：Supervisor 以 `supervisor-admin close-role` 按准确身份分别归档 Worker、Checker；重放同一请求是安全的，event ID 复用来表达不同内容会被拒绝。模型和普通 shell 均不接触角色凭据明文。只有中央投影同时显示 `lifecycle=exited`、`display_state=archived` 且没有 `active endpoint`，才可称该角色已经归档。保留 Supervisor 对话，不对其执行 `close-role`。本 Run 使用过 Cargo 隔离目录时，在相关命令全部结束后执行 `slk-cargo cleanup` 清理其精确 Run runtime。
 3. 向 Owner 发送一个简洁结论，例如：Run 已完工，D0/D1/D2结果、豁免数量、已知限制和根记录路径。
+
+密封 close-run 写中央事实后还要通过原客户端结束或核实该 Run 精确 `SLK.Run/SLK.Start` 的实际 COMPLETED/close time，成功最终收据才缓存为完成；共享 Temporal 服务/Worker、其他 Run pair、Supervisor 对话均保留。中途失败保留原 close 请求、event ID、原 native identity 与证据，续做未完成后缀；不重复 D2/工程动作，不因 RUN_CLOSED 已写就报告全部清理完成。随后 close-role 的原请求也逐个核对收据。
+
+Cargo 只处理此项目/Run 的精确 runtime/lease：先核实 lease 的真实 owner、PID/创建身份与相关命令已退出；活 owner 不清理。旧 lease 缺精确存活证明时保留诊断与归档证据，不猜死、不删除共享缓存根。原 `slk-cargo cleanup` 遇任何 lease 会拒绝；这不是扩大清理范围或绕过 lease 的理由。不得删除源码 Git、提交、验收原件或共享 evidence。Owner 撤销/放弃沿原 RUN_ABANDONED/SUPERSEDED 终态路径，分别记录真实结果，不伪造 D2 PASS。
 
 Owner 可以根据结论继续查询；Supervisor 保留最终交接、D2结论和根记录路径，需要时再查阅详细工程历史。
 

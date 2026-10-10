@@ -14,7 +14,7 @@ from test_role_host import prepared_host
 from test_worker_completion import actual_state_call, actual_worker_state, write_json
 
 
-def live_checker(tmp_path, monkeypatch, *, credentials=None, second_cell=False):
+def live_checker(tmp_path, monkeypatch, *, credentials=None, second_cell=False, native_kind="ocrv-review"):
     binary, config, worker_secret, checker_secret, revision = actual_worker_state(tmp_path, credentials=credentials, second_cell=second_cell)
     host, worker_source, original = prepared_host(tmp_path)
     if second_cell:
@@ -54,7 +54,7 @@ def live_checker(tmp_path, monkeypatch, *, credentials=None, second_cell=False):
             native = make_native_start(adapter=endpoint.adapter, run_id=envelope.run_id,
                 cell_id=envelope.cell_id, message_id=envelope.message_id,
                 request_sha256=envelope.payload_sha256, native_request_sha256="a" * 64,
-                native_task_kind={"checker":"ocrv-review", "supervisor":"codex-turn", "worker":"dsh-session"}[endpoint.role],
+                native_task_kind={"checker":native_kind, "supervisor":"codex-turn", "worker":"dsh-session"}[endpoint.role],
                 native_task_id=("original-review:" + envelope.message_id if endpoint.role == "checker" else
                     host.endpoint("supervisor")["address"]["thread_id"] + ":fixture-turn" if endpoint.role == "supervisor" else
                     host.endpoint("worker")["address"]["session_id"] or "original-worker-session"),
@@ -186,10 +186,11 @@ def downstream_request(host, source, incoming, verdict):
 
 @pytest.mark.parametrize("verdict", ["FAIL", "INCOMPLETE"])
 @pytest.mark.parametrize("report", ["absent", "partial", "native-failed"])
+@pytest.mark.parametrize("native_kind", ["ocrv-review", "ocrv-invocation"])
 def test_actual_checker_action_reaches_downstream_without_future_output(
-    tmp_path, monkeypatch, verdict, report,
+    tmp_path, monkeypatch, verdict, report, native_kind,
 ):
-    host, source, incoming, native = live_checker(tmp_path, monkeypatch)
+    host, source, incoming, native = live_checker(tmp_path, monkeypatch, native_kind=native_kind)
     result = host.record_checker_decision(source, verdict)
     assert result["status"] == "CHECKER_D1_RECORDED"
     assert not (source / "ocrv-result.json").exists()

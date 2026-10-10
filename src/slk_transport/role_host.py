@@ -134,6 +134,381 @@ class RoleHost:
     def credential_path(self, role: str) -> str:
         return str(self.binding["roles"][role]["credential_path"])
 
+    def validate_native_dispatch(self, endpoint: Mapping[str, Any], envelope: Envelope,
+                                 attempt_root: Path) -> None:
+        if endpoint.get("role") == "overwatcher": return
+        source = attempt_root / envelope.run_id / envelope.message_id
+        if (source / "started.json").is_file():
+            validate_native_start(source / "started.json", run_id=envelope.run_id,
+                message_id=envelope.message_id, adapter=endpoint["adapter"], request_sha256=envelope.payload_sha256)
+            return  # dispatcher only reads immutable terminal evidence or rejects an interrupted call
+        state = self.projection().get("summary", {}).get("state")
+        if state in {"closed", "archived"}:
+            raise wc.CompletionError("RUN_CLOSED", "terminal Run rejects new native engineering dispatch")
+        if state == "paused" or (state == "pause_requested" and (envelope.sender_role, envelope.receiver_role)
+            not in {("worker", "checker"), ("checker", "supervisor")}):
+            raise wc.CompletionError("RUN_PAUSED", "Run pause blocks new native engineering dispatch; retain the original operation")
+
+    def close_run_pair(self, event: Mapping[str, Any], root: Path) -> dict[str, Any]:
+        projection = self.projection()
+        if (projection.get("summary", {}).get("run_id") != self.binding["run_id"]
+            or projection.get("summary", {}).get("state") != "closed" or "temporal" not in self.binding
+            or not any(row.get("event_id") == event["event_id"] and row.get("event_type") == "RUN_CLOSED"
+                       for row in projection.get("events", []))):
+            raise ValueError("pair cleanup requires this exact recorded RUN_CLOSED")
+        value = {"run_id": self.binding["run_id"], "event_id": event["event_id"]}
+        path = wc._write_or_reuse_stable_request(root / (event["event_id"] + "-pair-close.json"), value)
+        binding = self.binding["temporal"]
+        result = wc._run_json_command(binding["client_command"], ["close-run", "--identity", binding["workflow_identity_path"],
+            "--identity-sha256", binding["workflow_identity_sha256"], "--request", str(path), "--request-sha256", wc._sha256(path)])
+        if {key: value for key, value in result.items() if key != "_slk_command"} != {
+            "schema_version": "slk.temporal-close-result/v1", "status": "PAIR_CLOSED", **value}:
+            raise ValueError("exact native pair cleanup was not confirmed")
+        return dict(result)
+
+    def _resume_preflight(self, config_path: Path, root: Path) -> None:
+        from .cli import _preflight_recovery_endpoints
+        _preflight_recovery_endpoints(self)
+        current = self.projection()
+        if current["runtime_snapshot"]["plan_revision"] != self.binding["plan_revision"]:
+            raise ValueError("resume Host plan is not the current central revision")
+        roles = {row["role"]: row for row in current.get("roles", []) if row.get("lifecycle") == "active"}
+        for role in ("supervisor", "checker", "worker"):
+            endpoint = self.endpoint(role)
+            registered = roles.get(role, {})
+            if (registered.get("role_instance_id") != endpoint["role_instance_id"]
+                or not any(row.get("state") == "active" and row.get("endpoint_version") == endpoint["endpoint_version"]
+                    and row.get("transport_adapter") == endpoint["adapter"] for row in registered.get("endpoints", []))):
+                raise ValueError("resume Host differs from the registered original role/endpoint")
+        config = wc._read_object(config_path, "resume original adapter config")
+        ow = config["overwatcher_activity"]
+        arguments = ["inspect-native-activity", "--started", ow["started_path"]]
+        if config["schema_version"] == "slk.temporal-standard-adapter/v2":
+            arguments += ["--desktop-overwatcher-attestation", ow["attestation_path"],
+                          "--desktop-overwatcher-attestation-sha256", ow["attestation_sha256"]]
+        for option, field in (("--completed", "completed_path"), ("--failed", "failed_path")):
+            if ow[field] is not None: arguments += [option, ow[field]]
+        observation = wc._run_json_command(self.transport, arguments)
+        path = wc._write_or_reuse_stable_request(root / ("resume-projection-" + str(time.time_ns()) + ".json"), current)
+        cadence = wc._run_json_command(self.transport, ["inspect-overwatcher-cadence", "--runtime-projection", str(path),
+            "--observed-at", datetime.now(timezone.utc).isoformat()])
+        if (observation.get("status") not in {"ACTIVE", "IDLE", "PENDING"}
+            or cadence.get("status") != "CURRENT" or cadence.get("run_id") != self.binding["run_id"]
+            or cadence.get("overwatcher_role_instance_id") != ow["role_instance_id"]):
+            raise ValueError("resume requires the original OW's live native and current same-Run cycle proof")
+
+    @staticmethod
+    def lifecycle_retry_matches(projection: Mapping[str, Any], operation: str,
+                                request: Mapping[str, Any], digest: str,
+                                revision: int, supervisor: str) -> bool:
+        """Only this request's append-only lifecycle prefix can explain staleness."""
+        kind = "RUN_PAUSE_REQUESTED" if operation == "pause-run" else "RUN_RESUMED"
+        event_id = wc._stable_id(digest, kind.lower())
+        own = next((event for event in projection.get("events", []) if event.get("event_id") == event_id), None)
+        if (own is None or own.get("event_type") != kind or own.get("author_role_instance_id") != supervisor
+            or projection.get("summary", {}).get("run_id") != request.get("run_id")
+            or wc._event_details(own).get("pause_id") != request.get("pause_id")
+            or wc._event_details(own).get("expected_runtime_revision") != revision):
+            return False
+        # Other engineering writes may have drained during REQUESTED. They do
+        # not authorize a new operation; the current last lifecycle must still
+        # be this exact pause, never a later Run pause or another Supervisor.
+        lifecycle = [event for event in projection.get("events", [])
+                     if event.get("event_type") in {"RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"}]
+        return bool(lifecycle and wc._event_details(lifecycle[-1]).get("pause_id") == request.get("pause_id")
+                    and lifecycle[-1].get("author_role_instance_id") == supervisor
+                    and lifecycle[-1]["event_id"] in {event_id, wc._stable_id(digest, "run_paused")})
+
+    def run_lifecycle(self, operation: str, request: Mapping[str, Any], *,
+                      operation_sha256: str, expected_revision: int) -> dict[str, Any]:
+        fields = {"schema_version", "run_id", "role_instance_id", "pause_id", "binding_path", "binding_sha256",
+                  "adapter_config_path", "adapter_config_sha256", "evidence_root", "coordinator_started_path"}
+        if operation == "resume-run": fields |= {"pause_request_path", "pause_request_sha256"}
+        if (operation not in {"pause-run", "resume-run"} or set(request) != fields
+            or request.get("schema_version") != "slk.run-lifecycle/v1"
+            or request["run_id"] != self.binding["run_id"]
+            or request["role_instance_id"] != self.endpoint("supervisor")["role_instance_id"]
+            or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", str(request["pause_id"]))
+            or request["binding_sha256"] != self.digest or "temporal" not in self.binding):
+            raise ValueError("Run lifecycle request is not the closed frozen Supervisor operation")
+        def roots(value):
+            path = Path(value["adapter_config_path"])
+            if not path.is_absolute() or wc._sha256(path) != value["adapter_config_sha256"]:
+                raise ValueError("lifecycle adapter config is missing or changed")
+            config = wc._read_object(path, "lifecycle adapter config")
+            if (config.get("run_id") != request["run_id"]
+                or config.get("role_host_binding") != {"path": value["binding_path"], "sha256": value["binding_sha256"]}):
+                raise ValueError("lifecycle adapter config changed its Run host")
+            values = [Path(config[key]) for key in ("attempt_root", "notification_attempt_root")]
+            if any(not path.is_absolute() or not path.is_dir() for path in values):
+                raise ValueError("lifecycle original attempt root is unavailable")
+            return values
+        attempt_roots = roots(request)
+        if attempt_roots[0].resolve() != Path(self.binding["temporal"]["attempt_root"]).resolve():
+            raise ValueError("lifecycle must retain the original native attempt root")
+        if operation == "resume-run":
+            old_path = Path(request["pause_request_path"])
+            if not old_path.is_absolute() or wc._sha256(old_path) != request["pause_request_sha256"]:
+                raise ValueError("resume requires the exact original pause request")
+            old = wc._read_object(old_path, "original pause request")
+            if old.get("pause_id") != request["pause_id"] or old.get("run_id") != request["run_id"]:
+                raise ValueError("resume changed the original pause identity")
+            attempt_roots += roots(old)
+        attempt_roots = list(dict.fromkeys(path.resolve() for path in attempt_roots))
+        root = Path(request["evidence_root"])
+        coordinator = Path(request["coordinator_started_path"]) if request["coordinator_started_path"] is not None else None
+        if not root.is_absolute() or (coordinator is not None and not coordinator.is_absolute()):
+            raise ValueError("lifecycle evidence paths must be absolute")
+        root = root / operation_sha256
+        root.mkdir(parents=True, exist_ok=True)
+        credential = wc.unprotect_dpapi_hex(self.credential_path("supervisor"))
+        try:
+            self._authenticate("supervisor", credential)
+            def central(kind, *, proof=None):
+                identity = wc._stable_id(operation_sha256, kind.lower())
+                projection = self.projection()
+                existing = next((event for event in projection.get("events", []) if event.get("event_id") == identity), None)
+                if existing is not None: return existing
+                revision = projection["runtime_snapshot"]["runtime_revision"]
+                details = {"pause_id": request["pause_id"], "expected_runtime_revision": revision}
+                if proof is not None:
+                    details.update(quiescence_path=str(proof), quiescence_sha256=wc._sha256(proof))
+                event = {"event_id": identity, "run_id": request["run_id"], "role_instance_id": request["role_instance_id"],
+                    "go_id": None, "cell_id": None, "attempt": None, "plan_revision": projection["runtime_snapshot"]["plan_revision"],
+                    "event_type": kind, "details": details, "corrects_event_id": None,
+                    "occurred_at": datetime.now(timezone.utc).isoformat()}
+                path = root / (kind.lower() + ".json")
+                if path.is_file():
+                    event = wc._read_object(path, "original lifecycle event request")
+                    if (event.get("event_id") != identity or event.get("run_id") != request["run_id"]
+                        or wc._event_details(event).get("expected_runtime_revision") != revision):
+                        raise ValueError("uncommitted lifecycle request boundary changed; keep the gate closed")
+                else:
+                    wc._write_or_reuse_stable_request(path, event)
+                result = self._state_json(["write", "--request", str(path)], credential=credential)
+                if result.get("status") != "recorded": raise ValueError("lifecycle central event was not recorded")
+                return event
+            def temporal(phase, event):
+                value = {"run_id": request["run_id"], "supervisor_role_instance_id": request["role_instance_id"],
+                         "pause_id": request["pause_id"], "event_id": event["event_id"], "phase": phase}
+                if phase == "PAUSED": value["confirmed_at"] = event["occurred_at"]
+                path = wc._write_or_reuse_stable_request(root / (phase.lower() + "-temporal.json"), value)
+                binding = self.binding["temporal"]
+                result = wc._run_json_command(binding["client_command"], ["set-run-pause", "--identity", binding["workflow_identity_path"],
+                    "--identity-sha256", binding["workflow_identity_sha256"], "--request", str(path), "--request-sha256", wc._sha256(path)])
+                core = {key: item for key, item in result.items() if key != "_slk_command"}
+                if core != {"schema_version": "slk.temporal-lifecycle-update-result/v1", "status": phase,
+                            "run_id": request["run_id"], "event_id": event["event_id"]}:
+                    raise ValueError("lifecycle Temporal update did not confirm the exact event")
+            if operation == "pause-run":
+                requested = central("RUN_PAUSE_REQUESTED")
+                if wc._event_details(requested)["expected_runtime_revision"] != expected_revision:
+                    raise ValueError("pause request changed its initial revision")
+                temporal("REQUESTED", requested)
+            else:
+                completed = next((event for event in self.projection().get("events", [])
+                                  if event.get("event_id") == wc._stable_id(operation_sha256, "run_resumed")), None)
+                if completed is not None:
+                    temporal("RESUMED", completed)
+                    return {"status": "resumed", "run_id": request["run_id"], "pause_id": request["pause_id"]}
+            proof = self.inspect_run_quiescence(request["pause_id"], attempt_roots, coordinator)
+            if proof["status"] != "QUIESCENT":
+                return {"status": "pause_requested", "run_id": request["run_id"], "quiescence": proof}
+            path = root / f"quiescence-{proof['runtime_revision']}.json"
+            # A fresh observation is immutable evidence, not a mutable stop label.
+            path = path.with_name(path.stem + "-" + str(time.time_ns()) + path.suffix)
+            wc._write_or_reuse_stable_request(path, proof)
+            if operation == "pause-run":
+                paused = central("RUN_PAUSED", proof=path)
+                temporal("PAUSED", paused)
+                return {"status": "paused", "run_id": request["run_id"], "pause_id": request["pause_id"]}
+            resumed_id = wc._stable_id(operation_sha256, "run_resumed")
+            resumed = {"event_id": resumed_id}
+            self._resume_preflight(Path(request["adapter_config_path"]), root)
+            temporal("RESUMED", resumed)  # Keep central dispatch fenced if this side fails.
+            central("RUN_RESUMED", proof=path)
+            temporal("RESUMED", resumed)  # Wake the same pending op after the central gate opens.
+            return {"status": "resumed", "run_id": request["run_id"], "pause_id": request["pause_id"]}
+        finally:
+            credential = ""
+
+    def inspect_run_quiescence(self, pause_id: str, attempt_roots: list[Path],
+                               coordinator_started_path: Path | None = None, *, coordinator_observer: bool = False) -> dict[str, Any]:
+        """Recheck every original call, including old endpoints and nonholders.
+
+        Transport terminal files are output facts, not native-stop evidence. No
+        process is killed here and shared services/OW are never stop targets.
+        """
+        from . import native_activity as native
+        projection = self.projection()
+        run_id = str(self.binding["run_id"])
+        sources: dict[Path, Mapping[str, Any] | None] = {}
+        # Original output/legacy continuation paths are bounded descendants of
+        # each actual source. Do not glob arbitrary JSON or infer by adapter.
+        pending_roots = list(attempt_roots)
+        for call in projection.get("native_invocations", []):
+            path = Path(call["start_evidence_path"])
+            if not path.is_absolute(): raise ValueError("central native path is not absolute")
+            sources[path.resolve()] = call
+            pending_roots.append(path.parent.parent.parent)
+        visited = set()
+        while pending_roots:
+            root = pending_roots.pop()
+            root = root.resolve()
+            if root in visited: continue
+            visited.add(root)
+            scope = (root / run_id).resolve()
+            if not scope.is_relative_to(root) or scope.is_symlink():
+                raise ValueError("native census escaped its exact Run root")
+            if scope.is_dir():
+                for source in scope.iterdir():
+                    if source.is_symlink() or (source.is_dir() and not source.resolve().is_relative_to(scope)):
+                        raise ValueError("native census cannot follow an alternate Run path")
+                    if source.is_dir():
+                        sources.setdefault(source / "started.json", None)
+                        pending_roots.extend(source / suffix for suffix in (
+                            "role-host/output-attempts", "role-host/worker-handoff/attempts", "role-host/attempts",
+                            "role-host/rework/attempts", "role-host/management-return/attempts",
+                            "worker-continuation/checker-attempts", "invalid-result-supplement/checker-attempts",
+                            "pre-d0-blocked-recovery/checker-attempts", "incomplete-handoff/checker-attempts"))
+        inspections = []
+        for path, central in sorted(sources.items(), key=lambda row: str(row[0])):
+            source = path.parent
+            row = {"native_start_path": str(path), "native_start_sha256": None,
+                   "message_id": central.get("message_id") if central else source.name,
+                   "status": "UNKNOWN", "processes": []}
+            try:
+                endpoint = wc._read_object(source / "endpoint.json", "native census endpoint")
+                envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "native census envelope"))
+                parse_delivery(endpoint, wc._read_object(source / "envelope.json", "native census envelope"))
+                if envelope.run_id != run_id or endpoint.get("role") == "overwatcher":
+                    raise ValueError("native census changed Run or included shared OW")
+                if not path.is_file():
+                    prestart = False
+                    if envelope.payload_type == "WORKER_REPORT" and endpoint.get("adapter") == "ocrv-checker":
+                        receipt_path, failed_path = source / "checker-receipt.json", source / "failed.json"
+                        if receipt_path.is_file() and failed_path.is_file():
+                            receipt = wc._read_object(receipt_path, "original pre-start Checker receipt")
+                            failed = DeliveryResult.from_dict(wc._read_object(failed_path, "original pre-start result"))
+                            prestart = (receipt.get("native_started") is False and receipt.get("error_code") == "OCRV_CANDIDATE_NOT_PROVIDED"
+                                and failed.run_id == run_id and failed.message_id == envelope.message_id
+                                and failed.status == "failed" and failed.error_code == "OCRV_CANDIDATE_NOT_PROVIDED")
+                    if central is None and (not (source / "accepted.json").exists() or prestart):
+                        row["status"] = "STAGED_NOT_STARTED"
+                    else:
+                        row["reason"] = "native start or exact prelaunch stop proof is unavailable"
+                    inspections.append(row)
+                    continue
+                start = validate_native_start(path, run_id=run_id, message_id=envelope.message_id,
+                    adapter=endpoint["adapter"], request_sha256=envelope.payload_sha256)
+                row.update(native_start_sha256=wc._sha256(path), message_id=envelope.message_id)
+                if central is not None and (central["start_evidence_sha256"] != row["native_start_sha256"]
+                    or central["role_instance_id"] != envelope.receiver_role_instance_id):
+                    raise ValueError("old central native identity changed")
+                activity = native._file_native_probe(path, start)
+                # An original native end record remains valid historical stop
+                # evidence. A DSH registry sample, by contrast, must be fresh.
+                observed = native.utc_now()
+                if (isinstance(activity, Mapping) and activity.get("status") in {"COMPLETED", "FAILED"}
+                    and start["adapter"] != "dsh-worker"):
+                    observed = activity.get("observed_at", observed)
+                native.validate_native_task_activity(activity, adapter=start["adapter"], run_id=run_id,
+                    cell_id=start["cell_id"], message_id=start["message_id"], native_task_id=start["native_task"]["id"],
+                    observed_at=observed)
+                if start["adapter"] == "dsh-worker" and activity.get("sample") is None:
+                    raise ValueError("DSH stop requires its original live registry sample")
+                if coordinator_started_path is not None and path.resolve() == coordinator_started_path.resolve():
+                    if endpoint != self.endpoint("supervisor") or activity["status"] != "RUNNING":
+                        raise ValueError("pause coordinator is not the exact current Supervisor call")
+                    self._supervisor_start_proof(source, envelope, observer=coordinator_observer)
+                    row["status"] = "COORDINATING"
+                elif activity["status"] in {"COMPLETED", "FAILED"}:
+                    row["status"] = "STOPPED"
+                else:
+                    row["reason"] = "original native call is still active or unknown"
+                # OCRV owns a separate review process, not its launcher. Check
+                # that precise saved identity even after a Session end record.
+                process_path = source / "ocrv-native-process.json"
+                if process_path.is_file():
+                    process = wc._read_object(process_path, "OCRV original process")
+                    if (process.get("schema_version") != "slk.ocrv-native-process/v1"
+                        or any(process.get(key) != start[key] for key in ("run_id", "cell_id", "message_id", "native_request_sha256"))
+                        or process.get("native_task_id") != start["native_task"]["id"]):
+                        raise ValueError("OCRV residual process identity changed")
+                    identity = process["process"]
+                    live = native.process_probe(identity["pid"], identity["creation_time"])
+                    row["processes"].append({**identity, **live})
+                    if live["exists"] and live["identity_matches"]:
+                        row["status"] = "UNKNOWN"
+                        row["reason"] = "original OCRV process is still alive"
+                    elif (activity.get("error") == "OCRV_SESSION_STATUS_UNAVAILABLE"
+                          and start["native_task"]["kind"] in {"ocrv-review", "ocrv-invocation"}):
+                        # Explicit decision completion can end the exact OCRV
+                        # executor before native session_end is flushed. Keep
+                        # the public Session UNKNOWN; authenticate its original
+                        # completion and central action, not a terminal label.
+                        self._validate_stopped_checker_completion(source, start, process, envelope, projection)
+                        row["status"] = "STOPPED"
+                        row.pop("reason", None)
+                elif start["native_task"]["kind"] == "ocrv-invocation":
+                    row["status"], row["reason"] = "UNKNOWN", "original OCRV executor receipt is missing; launcher disappearance is not a stop proof"
+                elif start["native_task"]["kind"] not in {"dsh-session", "codex-desktop-turn", "codex-turn"}:
+                    live = native.process_probe(start["process"]["pid"], start["process"]["creation_time"])
+                    row["processes"].append({**start["process"], **live})
+                    if live["exists"] and live["identity_matches"]:
+                        row["status"] = "UNKNOWN"
+                        row["reason"] = "original executor is still alive"
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                row["status"], row["reason"] = "UNKNOWN", str(exc)
+            inspections.append(row)
+        return {"schema_version": "slk.run-quiescence/v1", "run_id": run_id, "pause_id": pause_id,
+            "runtime_revision": projection["runtime_snapshot"]["runtime_revision"],
+            "status": "QUIESCENT" if all(row["status"] in {"STOPPED", "STAGED_NOT_STARTED", "COORDINATING"}
+                for row in inspections) else "NOT_QUIESCENT", "inspections": inspections,
+            "attempt_roots": [str(root.resolve()) for root in attempt_roots], "observed_at": native.utc_now()}
+
+    @staticmethod
+    def _validate_stopped_checker_completion(source: Path, start: Mapping[str, Any], process: Mapping[str, Any],
+                                             envelope: Envelope, projection: Mapping[str, Any]) -> None:
+        receipt = source / "native-start.received.json"
+        index_path = Path(process["index_path"])
+        if not index_path.is_absolute():
+            raise ValueError("original OCRV evidence index is not absolute")
+        index = wc._read_object(index_path, "original OCRV evidence index")
+        completed = wc._read_object(index_path.with_name("review-completed.json"), "original OCRV completion")
+        decision_path = source / "role-host" / "checker-decision.json"
+        decision = wc._read_object(decision_path, "original Checker action")
+        keys = ("run_id", "cell_id", "message_id", "native_request_sha256")
+        if (validate_native_start(receipt) != dict(start)
+            or process.get("native_start_sha256") != wc._sha256(receipt)
+            or process.get("launcher_process") != start["process"]
+            or process.get("index_sha256") != wc._sha256(index_path)
+            or any(index.get(key) != start[key] or completed.get(key) != start[key] for key in keys)
+            or index.get("native_task_id") != start["native_task"]["id"]
+            or completed.get("schema_version") != "slk.ocrv-completion/v1"
+            or completed.get("native_task_id") != start["native_task"]["id"]
+            or completed.get("native_start_sha256") != wc._sha256(receipt)
+            or completed.get("review_process") != process["process"]
+            or Path(completed["decision_path"]).resolve() != decision_path.resolve()
+            or completed.get("decision_sha256") != wc._sha256(decision_path)
+            or decision.get("decision_source") != "CHECKER_EXPLICIT"
+            or decision.get("source_message_id") != envelope.message_id
+            or decision.get("native_message_id") != envelope.message_id
+            or decision.get("role_instance_id") != envelope.receiver_role_instance_id
+            or decision.get("native_task_id") != start["native_task"]["id"]
+            or decision.get("native_start_path") != str(receipt.resolve())
+            or decision.get("native_start_sha256") != wc._sha256(receipt)
+            or decision.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
+            or completed.get("verdict") != decision["verdict"]):
+            raise ValueError("original OCRV completion or executor identity changed")
+        event_type = {"PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE"}[decision["verdict"]]
+        if not any(event.get("event_type") == event_type
+                   and event.get("author_role_instance_id") == envelope.receiver_role_instance_id
+                   and event.get("go_id") == envelope.go_id and event.get("cell_id") == envelope.cell_id
+                   and event.get("occurred_at") == decision.get("decided_at")
+                   and wc._event_details(event) == decision for event in projection.get("events", [])):
+            raise ValueError("original Checker completion has no matching authenticated central decision")
+
     def projection(self) -> Mapping[str, Any]:
         if self.state_config_path is None:
             return wc._default_load_current_projection(str(self.binding["run_id"]), self.state)
@@ -198,10 +573,10 @@ class RoleHost:
             value["incomplete-handoff/evidence.json"] = wc._sha256(handoff_evidence)
         return canonical_json_sha256(value)
 
-    def _supervisor_start_proof(self, source: Path, envelope: Envelope) -> None:
+    def _supervisor_start_proof(self, source: Path, envelope: Envelope, *, observer: bool = False) -> None:
         endpoint = self.endpoint("supervisor")
         expected_thread = endpoint.get("address", {}).get("thread_id")
-        if os.environ.get("CODEX_THREAD_ID") != expected_thread:
+        if not observer and os.environ.get("CODEX_THREAD_ID") != expected_thread:
             raise wc.CompletionError(
                 "ROLE_HOST_SESSION_MISMATCH",
                 "Supervisor decision submit must run inside the exact registered Session",
@@ -444,7 +819,7 @@ class RoleHost:
         native = validate_native_start(Path(receipt), adapter=endpoint["adapter"],
             run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
             request_sha256=envelope.payload_sha256)
-        if native["native_task"]["kind"] != "ocrv-review":
+        if native["native_task"]["kind"] not in {"ocrv-review", "ocrv-invocation"}:
             raise wc.CompletionError("CHECKER_DECISION_CALLER_UNPROVEN", "not an OCRV review")
         root = source / "role-host"
         root.mkdir(parents=True, exist_ok=True)
@@ -949,6 +1324,7 @@ class RoleHost:
         root.mkdir(parents=True, exist_ok=True)
         endpoint_path = wc._write_or_reuse_stable_request(root / "endpoint.json", target)
         envelope_path = wc._write_or_reuse_stable_request(root / "envelope.json", asdict(envelope))
+        self.validate_native_dispatch(target, envelope, attempts)
         if "temporal" in self.binding:
             revision = latest.get("runtime_snapshot", {}).get("runtime_revision")
             if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:

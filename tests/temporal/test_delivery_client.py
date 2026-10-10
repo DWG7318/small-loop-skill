@@ -124,3 +124,25 @@ def test_client_accepts_only_bound_pre_start_abandonment_result(tmp_path: Path, 
         request_path=request_path,
         request_sha256=hashlib.sha256(request_path.read_bytes()).hexdigest(),
     )["status"] == "PRE_START_REJECTION_ABANDONED"
+
+
+def test_close_pair_retry_describes_native_terminal_instead_of_resending_update(monkeypatch):
+    inspections = []
+    async def inspect(**kwargs):
+        inspections.append(kwargs)
+        return {"executions": {key: {"status": "COMPLETED", "close_time": "2026-10-10T00:00:00Z"}
+                               for key in ("start", "run")}}
+    class Handle:
+        async def query(self, _query): return {"phase": "TERMINAL", "terminal_reason": "closed-event"}
+        async def execute_update(self, *_args): pytest.fail("must not update closed pair")
+        async def result(self): return {}
+    class Client:
+        @staticmethod
+        async def connect(_address): return Client()
+        def get_workflow_handle(self, *_args, **_kwargs): return Handle()
+    monkeypatch.setattr(delivery_client, "inspect_pair", inspect)
+    monkeypatch.setattr(delivery_client, "Client", Client)
+    result = asyncio.run(delivery_client._submit_once(operation="close-run", identity=identity(),
+        request={"run_id": "RUN-A", "event_id": "closed-event"}))
+    assert result["status"] == "PAIR_CLOSED"
+    assert inspections[0]["diagnostic"] is True

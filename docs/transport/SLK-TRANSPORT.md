@@ -107,6 +107,37 @@ If an adapter explicitly fails or lacks start evidence, the sender keeps TOKEN a
 
 On Windows, Codex App Server, DSH, OCRV, detached transport jobs, and drill/recovery helper processes use the shared hidden-start flags by default. A bounded timeout terminates the whole wrapper process tree so inherited pipes cannot hang after the outer `.cmd` exits. No helper may flash a PowerShell/console window; a visible interactive window is an explicit Owner choice, not a recovery fallback.
 
+## Run lifecycle
+
+`pause-run`/`resume-run` consume the existing hash-bound `slk.supervisor-admin/v1` sealed request, using the same Supervisor credential consumer as `start-d2`. Outer operation must match CLI action. The operation request has exactly:
+
+```json
+{"schema_version":"slk.run-lifecycle/v1","run_id":"RUN-A","role_instance_id":"RUN-A-supervisor-001","pause_id":"pause-001","binding_path":"<absolute frozen Host>","binding_sha256":"<sha256>","adapter_config_path":"<absolute original Run config>","adapter_config_sha256":"<sha256>","evidence_root":"<absolute Run evidence directory>","coordinator_started_path":null}
+```
+
+Resume additionally requires `pause_request_path/pause_request_sha256`, identifying the unchanged original operation request; old and new roots are inspected together. A coordinator path names only the exact current Supervisor invocation and must pass its original current-thread/start proof. Use native safe stop/natural exit, never guessed PID/shared-service kill. Invoke:
+
+```powershell
+slk-transport pause-run --request <absolute sealed-admin.json> --sha256 <hash>
+slk-transport resume-run --request <absolute sealed-resume-admin.json> --sha256 <hash>
+```
+
+REQUESTED fences new construction/rework but preserves original result, Worker→Checker/Checker→Supervisor return, ACK and commit-only closure. `SUPERVISOR_ADMIN_PENDING` is not cached as completion; retain evidence and retry the unchanged request. Only own exact lifecycle events explain a changed revision. Central pauses first. Resume confirms Temporal first, releases central last, then wakes the same queued operation. A queued Activity encountering central PAUSED stays pending, never timeout/failure/recovery/new message.
+
+The Host generates `slk.run-quiescence/v1`; do not manufacture it. For close or read-only inspection, use the same original census:
+
+```powershell
+slk-transport inspect-run-quiescence --binding <absolute host.json> --sha256 <hash> --adapter-config <absolute Run.json> --adapter-config-sha256 <hash> --pause-id <unique inspection-id> --output <absolute new-proof.json>
+```
+
+Optionally add `--coordinator-started <absolute current Supervisor started.json>`. While centrally PAUSED, OW uses the current pause ID and original RUN_PAUSED census's exact coordinator path/hash; the CLI automatically permits only this read-only observation, retaining the original Supervisor author check otherwise. Use a new output path per observation. Result is QUIESCENT/exit 0 or NOT_QUIESCENT/exit 3, path and SHA-256. Proof fields are exactly `schema_version,run_id,pause_id,runtime_revision,status,inspections,attempt_roots,observed_at`. Rows contain `native_start_path,native_start_sha256,message_id,status,processes` (UNKNOWN may add `reason`). Safe statuses: STOPPED, STAGED_NOT_STARTED, one exact COORDINATING. Processes retain original PID/creation-time plus exists/identity_matches. Missing evidence is UNKNOWN, not stopped.
+
+Sources are original state `query --run-id` projection `native_invocations`, bound construction/notification roots and original bounded output/continuation subpaths. Actual native end records remain valid historical stop proof; DSH needs the current original Session registry sample. OCRV checks its actual executor even after Session end; launcher exit is not executor exit. No arbitrary JSON inference, transport terminal-label shortcut, other Run, Git/evidence deletion or shared-cache cleanup.
+
+OW still collects its original scope query during PAUSED, including a truthful UNKNOWN when legitimate IDLE has no native source. For authorized static construction, the cycle additionally references one new census from the command above and the original Host binding (path/hash only, obtained from the original pause operation, never guessed). `overwatcher-admin` rechecks exact current pause/revision, original census roots, registered roles/endpoints and every native call live; state rechecks fresh census/complete native receipts. Only a matching QUIESCENT census replaces the engineering source/completion requirement, not OW's active Session, real cycle window, cadence or other Runs. NOT_QUIESCENT/UNKNOWN remains reportable by the ordinary anomaly path; REQUESTED has no exception.
+
+For 4.4.3 close-run, original RUN_CLOSED details additionally binds `terminal_snapshot_path/terminal_snapshot_sha256` (actual query projection immediately after D2_PASSED), fresh `quiescence_path/quiescence_sha256`, and `close_binding_path/close_binding_sha256` (original Temporal-enabled Supervisor Host). Freeze snapshot, obtain actual OW final cycle and close only that Run binding first; then obtain fresh census at current revision and seal RUN_CLOSED. State verifies D2 snapshot, closed OW and all original native receipts. The same sealed close request then closes/verifies only the exact SLK.Run/SLK.Start pair via the original client before caching final success. Failure after central close leaves a suffix: retry the same request, not D2/new close. Only then close-role Worker/Checker.
+
 ## Acceptance
 
 Historical live two-Run evidence is recorded in [`SLK-TRANSPORT-LIVE-ACCEPTANCE.md`](SLK-TRANSPORT-LIVE-ACCEPTANCE.md).

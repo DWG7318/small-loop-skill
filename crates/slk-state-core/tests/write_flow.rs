@@ -5,9 +5,9 @@ use sha2::{Digest, Sha256};
 
 use slk_state_core::auth::StateError;
 use slk_state_core::model::{
-    CellDefinition, CloseRoleRequest, CommitDeliveryStartRequest, DeliveryStartEvidence,
+    BindOverwatcherRequest, CellDefinition, CloseRoleRequest, CommitDeliveryStartRequest, DeliveryStartEvidence,
     EndpointIdentity, EventType, EvidenceReference, GoDefinition, InitRunRequest,
-    NativeStartStatus, ProjectIdentity, RebindSessionRequest, RegisterRoleRequest,
+    NativeStartStatus, ObservationMode, ProjectIdentity, RebindSessionRequest, RegisterRoleRequest,
     ReplaceRoleRequest, RevisePlanRequest, ReviseRoleModelRequest, Role, RoleIdentity,
     TokenHandoffRequest, WriteRequest,
 };
@@ -75,6 +75,9 @@ fn current_d2_start_requires_delivered_d2_ready_and_result_requires_real_start()
     fs::write(path, serde_json::to_vec(&native).unwrap()).unwrap();
     ready.start_evidence.sha256=format!("{:x}", Sha256::digest(fs::read(path).unwrap()));
     fixture.store.commit_delivery_start(&fixture.checker, ready.clone()).unwrap();
+    let calls = fixture.store.query_run("run-a").unwrap().native_invocations;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].start_evidence_path, ready.start_evidence.stored_path);
     let mut started = event("real-d2-start", EventType::D2Started, json!({
         "source_message_id":ready.message_id, "token_sequence":3,
         "native_start_path":ready.start_evidence.stored_path, "native_start_sha256":ready.start_evidence.sha256,
@@ -99,6 +102,54 @@ fn current_d2_start_requires_delivered_d2_ready_and_result_requires_real_start()
     too_early.occurred_at="2026-09-20T00:01:00.499999Z".into();
     assert!(fixture.store.write_event(&fixture.supervisor, too_early).is_err());
     fixture.store.write_event(&fixture.supervisor, final_result).unwrap();
+    let mut close = event("close-without-stop-proof", EventType::RunClosed, json!({"outcome":"passed"}));
+    close.role_instance_id="supervisor-a".into(); close.go_id=None; close.cell_id=None; close.attempt=None;
+    close.occurred_at="2026-09-20T00:03:00Z".into();
+    assert!(fixture.store.write_event(&fixture.supervisor, close.clone()).is_err());
+    let terminal = fixture.store.query_run("run-a").unwrap();
+    let snapshot = fixture._root.path().join("d2-terminal.json");
+    fs::write(&snapshot, serde_json::to_vec(&terminal).unwrap()).unwrap();
+    let proof = fixture._root.path().join("close-quiescence.json");
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.2' WHERE run_id='run-a'", []).unwrap();
+    fixture.store.bind_overwatcher(&fixture.supervisor, BindOverwatcherRequest {
+        event_id:"bind-close-ow".into(), run_id:"run-a".into(), identity:role("overwatcher-a", Role::Overwatcher),
+        endpoint:endpoint("session-overwatcher-a"), observation_mode:ObservationMode::ForegroundActiveTurn,
+        cadence_seconds:600, foreground_turn_id:"close-ow-turn".into(),
+        native_active_session_evidence_ref:"codex:active:overwatcher-a".into(), binding_revision:1,
+        canonical_task_id:"close-ow-task".into(), reason:"Observe only this Run".into(),
+        occurred_at:"2026-09-20T00:02:01Z".into(),
+    }).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    pause_run(&fixture);
+    assert_eq!(fixture.store.query_run("run-a").unwrap().summary.state, "paused");
+    let mut census = json!({"schema_version":"slk.run-quiescence/v1", "run_id":"run-a", "pause_id":"close-proof",
+        "runtime_revision":fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision, "status":"QUIESCENT",
+        "attempt_roots":[fixture._root.path()], "observed_at":close.occurred_at,
+        "inspections":[{"native_start_path":ready.start_evidence.stored_path,"native_start_sha256":ready.start_evidence.sha256,
+            "message_id":ready.message_id,"status":"COORDINATING","processes":[]}]});
+    fs::write(&proof, serde_json::to_vec(&census).unwrap()).unwrap();
+    close.details = json!({"outcome":"passed", "terminal_snapshot_path":snapshot,
+        "terminal_snapshot_sha256":format!("{:x}", Sha256::digest(fs::read(&snapshot).unwrap())),
+        "quiescence_path":proof,"quiescence_sha256":format!("{:x}", Sha256::digest(fs::read(&proof).unwrap())),
+        "close_binding_path":snapshot,"close_binding_sha256":format!("{:x}", Sha256::digest(fs::read(&snapshot).unwrap()))});
+    assert!(fixture.store.write_event(&fixture.supervisor, close.clone()).is_err());
+    // Isolate the central close predicate; authenticated OW close/cycle behavior
+    // is exercised through the original entry in the overwatcher test suite.
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE overwatcher_bindings SET lifecycle_state='closed' WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    census["inspections"][0]["processes"] = json!([{"exists":true,"identity_matches":true}]);
+    fs::write(&proof, serde_json::to_vec(&census).unwrap()).unwrap();
+    close.details["quiescence_sha256"] = json!(format!("{:x}", Sha256::digest(fs::read(&proof).unwrap())));
+    assert!(fixture.store.write_event(&fixture.supervisor, close.clone()).is_err());
+    census["inspections"][0]["processes"] = json!([]);
+    fs::write(&proof, serde_json::to_vec(&census).unwrap()).unwrap();
+    close.details["quiescence_sha256"] = json!(format!("{:x}", Sha256::digest(fs::read(&proof).unwrap())));
+    fixture.store.write_event(&fixture.supervisor, close.clone()).unwrap();
+    fixture.store.write_event(&fixture.supervisor, close).unwrap();
+    assert_eq!(fixture.store.query_run("run-a").unwrap().summary.state, "closed");
 }
 
 #[test]
@@ -118,6 +169,111 @@ fn failed_transport_is_recorded_without_advancing_responsibility() {
         .unwrap();
     let after = fixture.store.current_token("run-a").unwrap();
     assert_eq!(before, after);
+}
+
+fn lifecycle_event(fixture: &Fixture, id: &str, kind: &str, pause_id: &str) -> WriteRequest {
+    let mut request = event(id, serde_json::from_value(json!(kind)).unwrap(), json!({
+        "pause_id": pause_id,
+        "expected_runtime_revision": fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision,
+    }));
+    request.role_instance_id = "supervisor-a".into();
+    request.go_id = None; request.cell_id = None; request.attempt = None;
+    request
+}
+
+fn pause_run(fixture: &Fixture) {
+    fixture.store.write_event(&fixture.supervisor, lifecycle_event(fixture, "terminal-pause-request", "RUN_PAUSE_REQUESTED", "terminal-pause")).unwrap();
+    let projection = fixture.store.query_run("run-a").unwrap();
+    let mut request = lifecycle_event(fixture, "terminal-paused", "RUN_PAUSED", "terminal-pause");
+    let rows: Vec<_> = projection.native_invocations.iter().map(|call| json!({
+        "native_start_path":call.start_evidence_path, "native_start_sha256":call.start_evidence_sha256,
+        "message_id":call.message_id, "status":"STOPPED", "processes":[]})).collect();
+    let path = fixture._root.path().join("terminal-pause-proof.json");
+    fs::write(&path, serde_json::to_vec(&json!({"schema_version":"slk.run-quiescence/v1", "run_id":"run-a", "pause_id":"terminal-pause",
+        "runtime_revision":projection.runtime_snapshot.unwrap().runtime_revision, "status":"QUIESCENT",
+        "attempt_roots":[fixture._root.path()], "inspections":rows, "observed_at":request.occurred_at})).unwrap()).unwrap();
+    request.details["quiescence_path"] = json!(path);
+    request.details["quiescence_sha256"] = json!(format!("{:x}", Sha256::digest(fs::read(&path).unwrap())));
+    fixture.store.write_event(&fixture.supervisor, request).unwrap();
+}
+
+#[test]
+fn paused_terminal_operations_retain_original_supervisor_token_and_close_proofs() {
+    for kind in [EventType::RunAbandoned, EventType::RunSuperseded] {
+        let fixture = Fixture::new();
+        pause_run(&fixture);
+        let mut request = event("paused-owner-terminal", kind, json!({"reason":"Owner replaced the scheme", "superseded_by_run_id":"run-b"}));
+        request.role_instance_id = "supervisor-a".into();
+        request.go_id = None; request.cell_id = None; request.attempt = None;
+        assert!(fixture.store.write_event(&fixture.worker, request.clone()).is_err());
+        fixture.store.write_event(&fixture.supervisor, request).unwrap();
+        let projection = fixture.store.query_run("run-a").unwrap();
+        assert_eq!(projection.summary.state, "archived");
+        assert!(!projection.events.iter().any(|event| event.event_type == "D2_PASSED"));
+    }
+    let fixture = Fixture::new();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    pause_run(&fixture);
+    let mut request = event("paused-close-without-d2", EventType::RunClosed, json!({}));
+    request.role_instance_id = "supervisor-a".into();
+    request.go_id = None; request.cell_id = None; request.attempt = None;
+    assert!(matches!(fixture.store.write_event(&fixture.supervisor, request),
+        Err(StateError::WorkEventInvalid(reason)) if reason.contains("D2 PASS")));
+    let fixture = Fixture::worker_active();
+    pause_run(&fixture);
+    let mut request = event("paused-abandon-without-token", EventType::RunAbandoned, json!({"reason":"Owner decision"}));
+    request.role_instance_id = "supervisor-a".into();
+    assert!(matches!(fixture.store.write_event(&fixture.supervisor, request), Err(StateError::TokenOwnerMismatch { .. })));
+}
+
+#[test]
+fn pause_request_is_supervisor_only_without_stealing_token_and_fences_new_work() {
+    let fixture = Fixture::worker_active();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    let before = fixture.store.current_token("run-a").unwrap();
+    let request = lifecycle_event(&fixture, "pause-request", "RUN_PAUSE_REQUESTED", "pause-1");
+    assert!(fixture.store.write_event(&fixture.worker, request.clone()).is_err());
+    fixture.store.write_event(&fixture.supervisor, request.clone()).unwrap();
+    fixture.store.write_event(&fixture.supervisor, request).unwrap();
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), before);
+    assert_eq!(fixture.store.query_run("run-a").unwrap().summary.state, "pause_requested");
+    fixture.store.write_event(&fixture.worker, event("saved-d0", EventType::D0Completed, json!({}))).unwrap();
+    let mut work = event("new-work", EventType::CellDispatched, json!({}));
+    work.role_instance_id="checker-a".into();
+    assert!(fixture.store.write_event(&fixture.checker, work).is_err());
+    let resume = lifecycle_event(&fixture, "early-resume", "RUN_RESUMED", "pause-1");
+    assert!(fixture.store.write_event(&fixture.supervisor, resume).is_err());
+    let paused = lifecycle_event(&fixture, "false-paused", "RUN_PAUSED", "pause-1");
+    assert!(fixture.store.write_event(&fixture.supervisor, paused).is_err());
+    assert_eq!(fixture.store.query_run("run-a").unwrap().summary.state, "pause_requested");
+}
+
+#[test]
+fn pause_confirmation_requires_complete_fresh_native_census_and_preserves_token() {
+    let fixture = Fixture::worker_active();
+    let before = fixture.store.current_token("run-a").unwrap();
+    fixture.store.write_event(&fixture.supervisor, lifecycle_event(&fixture, "request", "RUN_PAUSE_REQUESTED", "p")).unwrap();
+    let mut paused = lifecycle_event(&fixture, "paused", "RUN_PAUSED", "p");
+    let path = fixture._root.path().join("quiescence.json");
+    let mut proof = json!({"schema_version":"slk.run-quiescence/v1", "run_id":"run-a", "pause_id":"p",
+        "runtime_revision": fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision,
+        "status":"QUIESCENT"});
+    fs::write(&path, serde_json::to_vec(&proof).unwrap()).unwrap();
+    paused.details["quiescence_path"] = json!(path.to_str().unwrap());
+    paused.details["quiescence_sha256"] = json!(format!("{:x}", Sha256::digest(fs::read(&path).unwrap())));
+    assert!(fixture.store.write_event(&fixture.supervisor, paused.clone()).is_err());
+    proof["inspections"] = json!([]);
+    proof["attempt_roots"] = json!([fixture._root.path().to_str().unwrap()]);
+    proof["observed_at"] = json!(paused.occurred_at);
+    fs::write(&path, serde_json::to_vec(&proof).unwrap()).unwrap();
+    paused.details["quiescence_sha256"] = json!(format!("{:x}", Sha256::digest(fs::read(&path).unwrap())));
+    fixture.store.write_event(&fixture.supervisor, paused.clone()).unwrap();
+    fixture.store.write_event(&fixture.supervisor, paused).unwrap();
+    assert_eq!(fixture.store.query_run("run-a").unwrap().summary.state, "paused");
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), before);
+    assert!(fixture.store.write_event(&fixture.worker, event("late-result", EventType::D0Completed, json!({}))).is_err());
 }
 
 #[test]

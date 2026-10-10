@@ -69,6 +69,190 @@ def isolated_current_projection(tmp_path, monkeypatch):
                         lambda *_a, **_k: json.loads((tmp_path / "runtime.json").read_text()))
 
 
+@pytest.mark.parametrize("damage", [None, "requested", "writer-active", "role-drift", "forged-proof"])
+def test_paused_idle_cycle_checks_fresh_whole_run_quiescence_not_absent_pending(tmp_path, monkeypatch, damage):
+    from test_role_host import prepared_host
+    from test_temporal_handoff_bridge import temporal_binding
+    from slk_transport.role_host import RoleHost
+    from slk_transport.native_activity import collect_overwatch_scope, utc_now
+    (tmp_path / "host").mkdir()
+    host, source, _incoming = prepared_host(tmp_path / "host")
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+        "temporal": temporal_binding(tmp_path, source.parents[1])}, "b" * 64)
+    binding = write_json(tmp_path / "pause-host.json", host.binding)
+    projection = {"summary": {"run_id": "RUN-A", "state": "pause_requested" if damage == "requested" else "paused"},
+        "runtime_snapshot": {"runtime_revision": 7, "plan_revision": 1, "token_sequence": 1,
+            "token_holder_role_instance_id": host.endpoint("supervisor")["role_instance_id"], "latest_message_id": None},
+        "roles": [{"role": role, "role_instance_id": host.endpoint(role)["role_instance_id"], "lifecycle": "active",
+            "endpoints": [{"state": "active", "endpoint_version": host.endpoint(role)["endpoint_version"],
+                "transport_adapter": host.endpoint(role)["adapter"]}]} for role in ("supervisor", "checker", "worker")],
+        "events": [], "native_invocations": []}
+    if damage == "role-drift": projection["roles"][2]["role_instance_id"] = "different-worker"
+    original = write_json(tmp_path / "confirmed-pause.json", {"schema_version": "slk.run-quiescence/v1",
+        "run_id": "RUN-A", "pause_id": "pause-1", "runtime_revision": 6, "status": "QUIESCENT",
+        "inspections": [], "attempt_roots": [str(source.parents[1])], "observed_at": utc_now()})
+    projection["events"] = [{"event_type": "RUN_PAUSED", "details_json": json.dumps({"pause_id": "pause-1",
+        "quiescence_path": str(original), "quiescence_sha256": hashlib.sha256(original.read_bytes()).hexdigest()})}]
+    write_json(tmp_path / "runtime.json", projection)
+    began = utc_now()
+    query = collect_overwatch_scope(None, run_id="RUN-A", state_command=host.state)
+    query_path = write_json(tmp_path / "scope-query.json", query)
+    fresh = {**json.loads(original.read_text()), "runtime_revision": 7, "observed_at": utc_now()}
+    proof = write_json(tmp_path / "fresh-quiescence.json", {**fresh, "runtime_revision": 8} if damage == "forged-proof" else fresh)
+    monkeypatch.setattr(RoleHost, "inspect_run_quiescence", lambda *_a, **_k: {
+        **fresh, "status": "NOT_QUIESCENT" if damage == "writer-active" else "QUIESCENT"})
+    cycle = {**projection["runtime_snapshot"], "go_id": None, "cell_id": None, "attempt": None,
+        "started_at": began, "completed_at": utc_now(), "cadence_seconds": 600,
+        "checklist": {"stall_and_duplicates": "CLEAR"}, "anomaly_codes": [],
+        "evidence_refs": [{"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            for path in (binding, proof, query_path)]}
+    assert query["native_activity"]["status"] == "UNKNOWN"  # never rewrite public activity
+    if damage is None:
+        admin._verify_cycle(cycle, "RUN-A", host.state)
+    else:
+        with pytest.raises(ValueError, match="OVERWATCHER_CYCLE"):
+            admin._verify_cycle(cycle, "RUN-A", host.state)
+
+
+def paused_cli_fixture(tmp_path, monkeypatch):
+    """Actual v2 Host/config/CLI boundary; only central/native queries are isolated."""
+    import os
+    import sys
+    from test_role_host import supervisor_result_fixture
+    from test_temporal_handoff_bridge import temporal_binding
+    from slk_temporal import standard_adapter
+    from slk_transport import native_activity as native
+    from slk_transport.role_host import RoleHost
+
+    host, source, incoming, _result, _old_projection = supervisor_result_fixture(tmp_path)
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+        "temporal": temporal_binding(tmp_path, source.parents[1])}, "b" * 64)
+    binding = write_json(tmp_path / "pause-host.json", host.binding)
+    roots = [source.parents[1], tmp_path / "notices"]
+    roots[1].mkdir()
+    executable = str(Path(sys.executable).resolve())
+    state_config = write_json(tmp_path / "state-config.json", {"schema_version": "slk.config/v1"})
+    admission = write_json(tmp_path / "admission.json", {"run_id": "RUN-A"})
+    ow_dir = tmp_path / "ow"
+    ow_dir.mkdir()
+    ow_start = write_json(ow_dir / "started.json", native.make_native_start(
+        adapter="codex-app-server", run_id="RUN-A", cell_id="OVERWATCH", message_id=admin.wc._stable_id("ow", "start"),
+        request_sha256="c" * 64, native_request_sha256="d" * 64, native_task_kind="codex-turn",
+        native_task_id="independent-ow:turn", native_task_status="RUNNING", pid=os.getpid()))
+    config = write_json(tmp_path / "RUN-A.json", {
+        "schema_version": "slk.temporal-standard-adapter/v1", "method_version": "4.4.2", "run_id": "RUN-A",
+        "transport_command": [executable, "-m", "slk_transport.cli"],
+        "query_command": [executable, "-m", "slk_bi_query"], "state_config_path": str(state_config),
+        "admission_kind": "ISOLATED_CONFORMANCE_SAMPLE", "admission_path": str(admission),
+        "attempt_root": str(roots[0]), "notification_attempt_root": str(roots[1]),
+        "supervisor_endpoint_path": host.binding["roles"]["supervisor"]["endpoint_path"],
+        "role_host_binding": {"path": str(binding), "sha256": admin.wc._sha256(binding)},
+        "overwatcher_activity": {"endpoint_ref": "RUN-A-ow", "role_instance_id": "RUN-A-overwatcher-001",
+            "started_path": str(ow_start), "completed_path": None, "failed_path": None}})
+    monkeypatch.setattr(standard_adapter, "_CONFIG_ROOT", tmp_path)
+    assert standard_adapter._load_config("RUN-A")["role_host_binding"]["path"] == str(binding)
+    projection = {"summary": {"run_id": "RUN-A", "state": "pause_requested"},
+        "runtime_snapshot": {"runtime_revision": 6, "plan_revision": 1, "token_sequence": 3,
+            "token_holder_role_instance_id": host.endpoint("supervisor")["role_instance_id"], "latest_message_id": None},
+        "roles": [{"role": role, "role_instance_id": host.endpoint(role)["role_instance_id"], "lifecycle": "active",
+            "endpoints": [{"state": "active", "endpoint_version": host.endpoint(role)["endpoint_version"],
+                "transport_adapter": host.endpoint(role)["adapter"]}]} for role in ("supervisor", "checker", "worker")],
+        "events": [], "native_invocations": [{"message_id": incoming.message_id,
+            "role_instance_id": incoming.receiver_role_instance_id, "start_evidence_path": str(source / "started.json"),
+            "start_evidence_sha256": admin.wc._sha256(source / "started.json")}]}
+    write_json(tmp_path / "runtime.json", projection)
+    def activity(_path, start):
+        return {"schema_version": native.TASK_ACTIVITY_SCHEMA,
+            **{key: start[key] for key in ("adapter", "run_id", "cell_id", "message_id")},
+            "native_task_id": start["native_task"]["id"], "status": "RUNNING", "sequence": 1,
+            "observed_at": native.utc_now(), "last_event": {"kind": "NATIVE_EVENT", "sequence": 1}, "waiting_on": None}
+    monkeypatch.setattr(native, "_file_native_probe", activity)
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
+    original = host.inspect_run_quiescence("pause-1", roots, source / "started.json")
+    assert original["status"] == "QUIESCENT" and original["inspections"][0]["status"] == "COORDINATING"
+    original_path = write_json(tmp_path / "confirmed-pause.json", original)
+    projection["summary"]["state"] = "paused"
+    projection["runtime_snapshot"]["runtime_revision"] = 7
+    projection["events"] = [{"event_type": "RUN_PAUSED", "details_json": json.dumps({"pause_id": "pause-1",
+        "quiescence_path": str(original_path), "quiescence_sha256": admin.wc._sha256(original_path)})}]
+    write_json(tmp_path / "runtime.json", projection)
+    monkeypatch.setenv("CODEX_THREAD_ID", "independent-ow")
+    return host, source, binding, config, original_path, projection
+
+
+@pytest.mark.parametrize("damage", [None, "requested", "resumed", "wrong-coordinator", "wrong-native-hash",
+                                    "wrong-pause", "wrong-run", "changed-original"])
+def test_ow_cli_rechecks_only_original_confirmed_pause_coordinator(tmp_path, monkeypatch, damage):
+    from slk_transport import cli, native_activity as native
+    host, source, binding, config, original_path, projection = paused_cli_fixture(tmp_path, monkeypatch)
+    coordinator = source / "started.json"
+    pause_id = "pause-1"
+    original = json.loads(original_path.read_text())
+    if damage == "requested": projection["summary"]["state"] = "pause_requested"
+    if damage == "resumed": projection["events"].append({"event_type": "RUN_RESUMED", "details_json": "{}"})
+    if damage == "wrong-coordinator":
+        # A genuine new Sup receipt must not replace the original coordinator,
+        # even when the original writer has stopped and the new one is live.
+        alternate = source.with_name(admin.wc._stable_id("different-supervisor", "start"))
+        alternate.mkdir()
+        write_json(alternate / "endpoint.json", json.loads((source / "endpoint.json").read_text()))
+        envelope = json.loads((source / "envelope.json").read_text())
+        envelope["message_id"] = alternate.name
+        write_json(alternate / "envelope.json", envelope)
+        start = json.loads(coordinator.read_text())
+        start.update(message_id=alternate.name, native_task={**start["native_task"], "id": "isolated-test-supervisor:new-turn"})
+        coordinator = write_json(alternate / "started.json", start)
+        probe = native._file_native_probe
+        monkeypatch.setattr(native, "_file_native_probe", lambda path, receipt: {
+            **probe(path, receipt), "status": "COMPLETED" if path == source / "started.json" else "RUNNING"})
+    if damage == "wrong-native-hash": original["inspections"][0]["native_start_sha256"] = "0" * 64
+    if damage == "wrong-pause": pause_id = "different-pause"
+    if damage == "wrong-run": original["run_id"] = "RUN-OTHER"
+    if damage in {"wrong-native-hash", "wrong-run", "changed-original"}:
+        if damage == "changed-original": original["observed_at"] = native.utc_now()
+        write_json(original_path, original)
+        if damage != "changed-original":
+            details = json.loads(projection["events"][0]["details_json"])
+            details["quiescence_sha256"] = admin.wc._sha256(original_path)
+            projection["events"][0]["details_json"] = json.dumps(details)
+    write_json(tmp_path / "runtime.json", projection)
+    output = tmp_path / "fresh-quiescence.json"
+    began = native.utc_now()
+    result = cli.main(["inspect-run-quiescence", "--binding", str(binding), "--sha256", admin.wc._sha256(binding),
+        "--adapter-config", str(config), "--adapter-config-sha256", admin.wc._sha256(config),
+        "--pause-id", pause_id, "--coordinator-started", str(coordinator), "--output", str(output)])
+    if damage is not None:
+        assert result != 0
+        assert not output.exists() or json.loads(output.read_text())["status"] == "NOT_QUIESCENT"
+        return
+    assert result == 0
+    proof = json.loads(output.read_text())
+    assert proof["inspections"][0]["status"] == "COORDINATING" and proof["runtime_revision"] == 7
+    query = native.collect_overwatch_scope(None, run_id="RUN-A", state_command=host.state)
+    assert query["native_activity"]["status"] == "UNKNOWN"  # raw absent-source facts remain truthful
+    query_path = write_json(tmp_path / "scope-query.json", query)
+    cycle = {**projection["runtime_snapshot"], "go_id": None, "cell_id": None, "attempt": None,
+        "started_at": began, "completed_at": native.utc_now(), "cadence_seconds": 600,
+        "checklist": {"stall_and_duplicates": "CLEAR"}, "anomaly_codes": [],
+        "evidence_refs": [{"path": str(path), "sha256": admin.wc._sha256(path)} for path in (binding, output, query_path)]}
+    admin._verify_cycle(cycle, "RUN-A", host.state)
+
+
+def test_quiescence_cli_preserves_original_supervisor_author_check_before_pause(tmp_path, monkeypatch):
+    from slk_transport import cli
+    host, source, binding, config, _original, projection = paused_cli_fixture(tmp_path, monkeypatch)
+    projection["summary"]["state"] = "pause_requested"
+    write_json(tmp_path / "runtime.json", projection)
+    arguments = ["inspect-run-quiescence", "--binding", str(binding), "--sha256", admin.wc._sha256(binding),
+        "--adapter-config", str(config), "--adapter-config-sha256", admin.wc._sha256(config),
+        "--pause-id", "pause-1", "--coordinator-started", str(source / "started.json"),
+        "--output", str(tmp_path / "ow-rejected.json")]
+    assert cli.main(arguments) == 3
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
+    arguments[-1] = str(tmp_path / "supervisor-author.json")
+    assert cli.main(arguments) == 0
+
+
 @pytest.mark.parametrize("damage", ["forged-status", "missing-start", "duplicate-inspection", "wrong-source",
                                     "old-clock", "instant-cycle", "future-cycle"])
 def test_cycle_requires_real_recollected_worker_facts_before_state_write(tmp_path, monkeypatch, damage):

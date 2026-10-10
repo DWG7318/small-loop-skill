@@ -209,6 +209,8 @@ def test_standard_adapter_delivers_exact_staged_message_with_current_role_host(t
     seen: dict[str, object] = {}
 
     def run(command, arguments, **kwargs):
+        if command == config["query_command"]:
+            return {"summary": {"run_id": RUN_ID, "state": "active"}}
         seen.update(command=command, arguments=arguments, environment=kwargs["environment"])
         return {"status": "started", "run_id": RUN_ID, "message_id": message_id}
 
@@ -251,6 +253,23 @@ def test_standard_adapter_preserves_failed_send_as_activity_error(tmp_path, monk
             "receiver_role_instance_id": "worker-a", "payload_sha256": "b" * 64,
             "source_runtime_revision": 9,
         }))
+
+
+def test_paused_central_boundary_defers_same_operation_without_native_send(tmp_path, monkeypatch):
+    root, config = config_root(tmp_path)
+    standard_adapter.configure(root)
+    message = "11111111-1111-4111-8111-111111111111"
+    attempt = Path(config["attempt_root"]) / RUN_ID / message
+    write_json(attempt / "endpoint.json", {"run_id": RUN_ID, "role_instance_id": "worker-a", "role": "worker"})
+    write_json(attempt / "envelope.json", {"run_id": RUN_ID, "cell_id": "CELL-001", "message_id": message,
+        "sender_role_instance_id": "checker-a", "receiver_role_instance_id": "worker-a", "payload_sha256": "b" * 64})
+    monkeypatch.setattr(standard_adapter, "_query", lambda _config: {"summary": {"run_id": RUN_ID, "state": "paused"}})
+    monkeypatch.setattr(standard_adapter, "_run_json", lambda *_a, **_k: pytest.fail("paused operation physically started"))
+    result = asyncio.run(standard_adapter.deliver_message({"operation_id": "original-op", "run_id": RUN_ID,
+        "cell_id": "CELL-001", "attempt": 1, "message_id": message, "sender_role_instance_id": "checker-a",
+        "receiver_role_instance_id": "worker-a", "payload_sha256": "b" * 64, "source_runtime_revision": 9}))
+    assert result["status"] == "PAUSED" and result["operation_id"] == "original-op"
+    assert not (attempt / "started.json").exists() and not (attempt / "failed.json").exists()
 
 
 def test_standard_adapter_inspects_ow_and_notifies_with_fresh_projection(tmp_path, monkeypatch):

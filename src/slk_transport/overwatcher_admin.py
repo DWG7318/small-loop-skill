@@ -104,6 +104,51 @@ def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) 
         if (query["source_message_id"] != snapshot["latest_message_id"] or query["runtime_snapshot"] != snapshot
             or query["runtime_projection_sha256"] != wc.canonical_json_sha256(projection)):
             raise ValueError("scope query differs from the current authoritative projection")
+        censuses = [value for _path, value in objects if value.get("schema_version") == "slk.run-quiescence/v1"]
+        if projection["summary"].get("state") == "paused" and any(proof.get("status") == "QUIESCENT" for proof in censuses):
+            from .role_host import RoleHost
+            hosts = [(path, value) for path, value in objects
+                     if value.get("schema_version") in {"slk.role-host/v1", "slk.role-host/v2"}]
+            if len(censuses) != 1 or len(hosts) != 1:
+                raise ValueError("paused cycle needs one fresh census and its original Host binding")
+            proof, (host_path, binding) = censuses[0], hosts[0]
+            pauses = [event for event in projection["events"]
+                      if event.get("event_type") in {"RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"}]
+            if not pauses or pauses[-1]["event_type"] != "RUN_PAUSED":
+                raise ValueError("paused cycle has no authoritative confirmed pause")
+            details = wc._event_details(pauses[-1])
+            original_path = Path(details["quiescence_path"])
+            if _sha256(original_path) != details["quiescence_sha256"]:
+                raise ValueError("original confirmed pause census changed")
+            original = _object(original_path, "confirmed pause census")
+            if (proof.get("run_id") != run_id or proof.get("pause_id") != details["pause_id"]
+                or proof.get("status") != "QUIESCENT" or proof.get("runtime_revision") != snapshot["runtime_revision"]
+                or proof.get("attempt_roots") != original.get("attempt_roots")
+                or not start <= wc._timestamp(proof["observed_at"]) <= end):
+                raise ValueError("paused cycle census changed its original scope or collection window")
+            host = RoleHost(binding, _sha256(host_path))
+            if host.binding["run_id"] != run_id or host.state != state_command:
+                raise ValueError("paused cycle Host changed Run or central authority")
+            for role in ("supervisor", "checker", "worker"):
+                endpoint = host.endpoint(role)
+                if not any(row.get("role") == role and row.get("lifecycle") == "active"
+                    and row.get("role_instance_id") == endpoint["role_instance_id"]
+                    and any(item.get("state") == "active" and item.get("endpoint_version") == endpoint["endpoint_version"]
+                        and item.get("transport_adapter") == endpoint["adapter"] for item in row.get("endpoints", []))
+                    for row in projection.get("roles", [])):
+                    raise ValueError("paused cycle registered role/endpoint drifted")
+            coordinators = [Path(row["native_start_path"]) for row in proof["inspections"] if row["status"] == "COORDINATING"]
+            if len(coordinators) > 1: raise ValueError("paused cycle cannot exempt multiple Supervisors")
+            if coordinators and not any(row.get("status") == "COORDINATING"
+                and Path(row["native_start_path"]).resolve() == coordinators[0].resolve()
+                and row.get("native_start_sha256") == _sha256(coordinators[0]) for row in original["inspections"]):
+                raise ValueError("paused observation cannot exempt a different Supervisor invocation")
+            actual = host.inspect_run_quiescence(details["pause_id"], [Path(root) for root in proof["attempt_roots"]],
+                coordinators[0] if coordinators else None, coordinator_observer=True)
+            if ({key: value for key, value in actual.items() if key != "observed_at"}
+                != {key: value for key, value in proof.items() if key != "observed_at"}):
+                raise ValueError("paused cycle native writers changed; recollect and report actual facts")
+            return  # Authorized static construction is not missing engineering work.
         if snapshot["latest_message_id"] is None or query["native_start_sha256"] is None:
             if not unknown or not reported_unproven:
                 raise ValueError("absent native task/source must be reported as genuinely unproven")

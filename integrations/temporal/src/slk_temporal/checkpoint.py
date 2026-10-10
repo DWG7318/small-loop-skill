@@ -11,12 +11,13 @@ def validate_checkpoint(value: object) -> dict:
     fields = {"schema_version", "startup", "continuity", "delivery_started", "recovery_started",
               "status", "admission_requested", "admission_request_sha256"}
     if (not isinstance(value, Mapping) or set(value) != fields
-        or value["schema_version"] != "slk.temporal-execution-checkpoint/v1"):
+        or value["schema_version"] not in {"slk.temporal-execution-checkpoint/v1", "slk.temporal-execution-checkpoint/v2"}):
         raise ValueError("execution checkpoint is not closed")
     startup = StartSlkRequest.from_dict(value["startup"])
     continuity = RunContinuity.from_checkpoint(value["continuity"])
     pending = continuity.pending_delivery()
-    if continuity.run_id != startup.run_id or continuity.is_terminal() or pending is None:
+    v2 = value["schema_version"] == "slk.temporal-execution-checkpoint/v2"
+    if continuity.run_id != startup.run_id or continuity.is_terminal() or (pending is None and not v2):
         raise ValueError("recovery requires the same nonterminal business Run and pending delivery")
     identities = {role.role_instance_id for role in startup.roles}
     seen = value["continuity"]["seen"]
@@ -30,7 +31,7 @@ def validate_checkpoint(value: object) -> dict:
             or rows != sorted(set(rows))):
             raise ValueError("checkpoint activity identities changed")
     if (not set(value["recovery_started"]) <= set(value["delivery_started"])
-        or pending.operation_id not in value["delivery_started"]):
+        or (pending is not None and pending.operation_id not in value["delivery_started"] and not v2)):
         raise ValueError("recovery cannot silently skip an unattempted delivery")
     state = value["status"]
     summary = continuity.snapshot()
@@ -38,6 +39,47 @@ def validate_checkpoint(value: object) -> dict:
              "responsibility_operation_id", "member_residency_since", "member_residency_notice_sent",
              "overwatcher_audit_cycle", "next_overwatcher_audit_at", "runtime_guard_blocker",
              "notification_failure", "recovery_failure"}
+    if v2:
+        extra.add("run_pause")
+        pause = state.get("run_pause") if isinstance(state, Mapping) else None
+        if (not isinstance(pause, Mapping) or set(pause) != {"phase", "pause_id", "paused_at", "events", "deferred_operation_id", "delivery_generation"}
+            or pause["phase"] not in {"REQUESTED", "PAUSED", "RESUMED"}
+            or not isinstance(pause["events"], Mapping) or not pause["events"]
+            or not isinstance(pause["pause_id"], str) or not IDENTIFIER.fullmatch(pause["pause_id"])):
+            raise ValueError("checkpoint pause lifecycle is invalid")
+        if (type(pause["delivery_generation"]) is not int or pause["delivery_generation"] < 0
+            or pause["deferred_operation_id"] is not None and (pending is None or pause["deferred_operation_id"] not in {
+                pending.operation_id, "RETRY:" + pending.operation_id})):
+            raise ValueError("checkpoint deferred pause operation is invalid")
+        for event_id, event in pause["events"].items():
+            event_fields = {"run_id", "supervisor_role_instance_id", "pause_id", "event_id", "phase"}
+            if isinstance(event, Mapping) and "confirmed_at" in event: event_fields.add("confirmed_at")
+            if (not isinstance(event, Mapping) or set(event) != event_fields
+                or event["event_id"] != event_id or event["run_id"] != startup.run_id
+                or event["supervisor_role_instance_id"] != startup.supervisor.role_instance_id
+                or event["phase"] not in {"REQUESTED", "PAUSED", "RESUMED"}
+                or not IDENTIFIER.fullmatch(str(event["pause_id"])) or not IDENTIFIER.fullmatch(str(event_id))
+                or "confirmed_at" in event and (event["phase"] != "PAUSED"
+                    or datetime.fromisoformat(event["confirmed_at"]).utcoffset() is None)):
+                raise ValueError("checkpoint pause event changed frozen authority")
+        # JSON object key order is not a lifecycle sequence. Reconstruct each
+        # unique pause by its phases and require this packet's current phase.
+        groups = {}
+        for event in pause["events"].values():
+            phases = groups.setdefault(event["pause_id"], set())
+            if event["phase"] in phases: raise ValueError("checkpoint repeats a lifecycle phase")
+            phases.add(event["phase"])
+        expected = {"REQUESTED": {"REQUESTED"}, "PAUSED": {"REQUESTED", "PAUSED"},
+                    "RESUMED": {"REQUESTED", "PAUSED", "RESUMED"}}
+        if groups[pause["pause_id"]] != expected[pause["phase"]] or any(
+            phases != expected["RESUMED"] for identity, phases in groups.items() if identity != pause["pause_id"]):
+            raise ValueError("checkpoint pause transition is incomplete")
+        if pause["phase"] in {"PAUSED", "RESUMED"}:
+            if not isinstance(pause["paused_at"], str) or datetime.fromisoformat(pause["paused_at"]).utcoffset() is None:
+                raise ValueError("checkpoint pause timestamp is invalid")
+        if (pause["phase"] == "PAUSED" and pending is not None and pending.operation_id in value["delivery_started"]
+            and pause["deferred_operation_id"] != pending.operation_id):
+            raise ValueError("confirmed pause cannot retain unresolved delivery")
     if (not isinstance(state, Mapping) or set(state) != set(summary) | extra
         or any(state[key] != val for key, val in summary.items()) or state["admitted"] is not True):
         raise ValueError("checkpoint summary or admission changed")

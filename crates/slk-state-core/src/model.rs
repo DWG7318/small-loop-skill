@@ -130,6 +130,9 @@ pub enum EventType {
     RunSuperseded,
     RunAbandoned,
     RunClosed,
+    RunPauseRequested,
+    RunPaused,
+    RunResumed,
     CellDispatched,
     D1Started,
     D1Incomplete,
@@ -169,6 +172,9 @@ impl EventType {
             | RunSuperseded
             | RunAbandoned
             | RunClosed
+            | RunPauseRequested
+            | RunPaused
+            | RunResumed
             | ReworkRequested => role == Role::Supervisor,
             RoleRegistered | RoleReplaced => role == Role::Supervisor || role == Role::Checker,
             CellDispatched | D1Started | D1Incomplete | D1Passed | D1Failed | CellSplit
@@ -199,6 +205,9 @@ impl EventType {
             RunSuperseded => "RUN_SUPERSEDED",
             RunAbandoned => "RUN_ABANDONED",
             RunClosed => "RUN_CLOSED",
+            RunPauseRequested => "RUN_PAUSE_REQUESTED",
+            RunPaused => "RUN_PAUSED",
+            RunResumed => "RUN_RESUMED",
             CellDispatched => "CELL_DISPATCHED",
             D1Started => "D1_STARTED",
             D1Incomplete => "D1_INCOMPLETE",

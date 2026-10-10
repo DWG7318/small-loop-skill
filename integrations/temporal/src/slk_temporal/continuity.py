@@ -213,6 +213,12 @@ class RunContinuity:
     def pending_delivery(self) -> DeliveryRequest | None:
         return self._pending.delivery if self._pending else None
 
+    def pending_delivery_result(self) -> str | None:
+        return self._pending.delivery_result if self._pending else None
+
+    def knows_delivery(self, operation_id: str) -> bool:
+        return operation_id in self._seen
+
     def is_completed(self, operation_id: str) -> bool:
         return operation_id in self._completed
 

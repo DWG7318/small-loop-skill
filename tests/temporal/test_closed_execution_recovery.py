@@ -96,7 +96,17 @@ def test_checkpoint_retains_completed_operation_and_pending_without_replaying():
         RunContinuity.from_checkpoint({**packet, "extra": True})
 
 
-def test_restored_workflow_only_waits_for_original_ack_not_an_activity(monkeypatch):
+def test_restore_still_rejects_startup_checkpoint_business_queue_mismatch():
+    from .test_recovery_client import packet
+    source = packet()
+    restored = workflows.RunSlkWorkflow()
+    restored._startup = workflows.StartSlkRequest.from_dict({**source["startup"], "task_queue": "wrong-business-queue"})
+    with pytest.raises(ValueError, match="immutable startup"):
+        restored._restore_checkpoint(source)
+
+
+@pytest.mark.parametrize("execution_queue", [None, "replay-build-id"])
+def test_restored_workflow_only_waits_for_original_ack_not_an_activity(monkeypatch, execution_queue):
     from slk_temporal.continuity import RunContinuity
     from slk_temporal.contracts import DeliveryRequest
     run = workflows.RunSlkWorkflow()
@@ -110,7 +120,7 @@ def test_restored_workflow_only_waits_for_original_ack_not_an_activity(monkeypat
     checkpoint = run.recovery_checkpoint()
     restored = workflows.RunSlkWorkflow()
     monkeypatch.setattr(workflows.workflow, "info", lambda: SimpleNamespace(
-        workflow_id="slk-run-RUN-A-recovery-source", task_queue=run._startup.task_queue,
+        workflow_id="slk-run-RUN-A-recovery-source", task_queue=execution_queue or run._startup.task_queue,
         parent=SimpleNamespace(workflow_id="slk-start-RUN-A-recovery-source")))
     monkeypatch.setattr(workflows.workflow, "now", lambda: datetime(2026, 10, 9, tzinfo=timezone.utc))
     monkeypatch.setattr(workflows.workflow, "patched", lambda _name: True)
@@ -157,7 +167,13 @@ def test_restored_ack_wait_keeps_existing_runtime_guard_checks(monkeypatch):
     assert result["phase"] == "TERMINAL" and checks == [True]
 
 
-def test_recovery_child_cannot_bypass_admission_without_recovery_parent(monkeypatch):
+@pytest.mark.parametrize("identity", [
+    SimpleNamespace(parent=None),
+    SimpleNamespace(workflow_id="slk-run-RUN-A-recovery-source", parent=SimpleNamespace(workflow_id="wrong-parent")),
+    SimpleNamespace(workflow_id="slk-run-RUN-A", parent=SimpleNamespace(workflow_id="slk-start-RUN-A")),
+    SimpleNamespace(workflow_id="slk-run-RUN-A-recovery-", parent=SimpleNamespace(workflow_id="slk-start-RUN-A-recovery-")),
+])
+def test_recovery_child_cannot_bypass_admission_without_recovery_parent(monkeypatch, identity):
     from slk_temporal.continuity import RunContinuity
     from slk_temporal.contracts import DeliveryRequest
     source = workflows.RunSlkWorkflow()
@@ -166,7 +182,7 @@ def test_recovery_child_cannot_bypass_admission_without_recovery_parent(monkeypa
     source._continuity.request_delivery(DeliveryRequest.from_dict(delivery_value()))
     source._delivery_started.add(delivery_value()["operation_id"])
     source._admitted = True
-    monkeypatch.setattr(workflows.workflow, "info", lambda: SimpleNamespace(parent=None))
+    monkeypatch.setattr(workflows.workflow, "info", lambda: identity)
     monkeypatch.setattr(workflows.workflow, "now", lambda: datetime(2026, 10, 9, tzinfo=timezone.utc))
     async def activity(*args, **kwargs): pytest.fail("unbound restore cannot run activities")
     async def wait(*args, **kwargs): pytest.fail("unbound restore cannot wait as admitted")

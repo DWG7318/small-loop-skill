@@ -421,7 +421,7 @@ def test_441_saved_authority_and_reload_contracts_are_closed() -> None:
     supervisor = json.loads(read("docs/contracts/slk-supervisor-admin.schema.json"))
     overwatcher = json.loads(read("docs/contracts/slk-overwatcher-admin.schema.json"))
     assert set(supervisor["$defs"]["request"]["properties"]["operation"]["enum"]) == {
-        "adopt-method-contract", "revise-role-model", "resume-overwatcher-turn", "rebind-session",
+        "start-d2", "pause-run", "resume-run", "adopt-method-contract", "revise-role-model", "resume-overwatcher-turn", "rebind-session",
         "revise-plan", "close-run", "close-role",
     }
     assert supervisor["$defs"]["overwatcherCloseRequest"]["properties"]["operation"] == {

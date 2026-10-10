@@ -256,6 +256,29 @@ def test_closed_admin_consumer_allows_authenticated_endpoint_rebind(tmp_path, mo
     assert result["operation"] == "rebind-session"
 
 
+@pytest.mark.parametrize("operation", ["pause-run", "resume-run"])
+def test_lifecycle_admin_uses_bound_host_and_does_not_save_pending_result(tmp_path, monkeypatch, operation):
+    from test_role_host import prepared_host
+    from slk_transport.role_host import RoleHost
+    host, source, _ = prepared_host(tmp_path)
+    binding = write_json(tmp_path / "binding.json", host.binding)
+    request = request_fixture(tmp_path, operation)
+    raw = json.loads(request.read_text())
+    raw["state_command"] = host.state
+    raw["sealed_credential_path"] = host.credential_path("supervisor")
+    op = write_json(Path(raw["operation_request_path"]), {"run_id": "RUN-A", "role_instance_id": "RUN-A-supervisor-001",
+        "binding_path": str(binding), "binding_sha256": hashlib.sha256(binding.read_bytes()).hexdigest()})
+    raw["operation_request_sha256"] = hashlib.sha256(op.read_bytes()).hexdigest()
+    request.write_text(json.dumps(raw))
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _path: "slk_" + "a" * 64)
+    monkeypatch.setattr(admin.wc, "_run_json_command", lambda *_a, **_k: {"status": "authenticated", "run_id": "RUN-A",
+        "role": "supervisor", "role_instance_id": "RUN-A-supervisor-001", "runtime_revision": 7})
+    monkeypatch.setattr(RoleHost, "run_lifecycle", lambda _self, *args, **kwargs: {"run_id": "RUN-A", "status": "pause_requested" if operation == "pause-run" else "resumed"})
+    result = admin.execute_sealed_supervisor_admin(request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+    assert result["status"] == ("SUPERVISOR_ADMIN_PENDING" if operation == "pause-run" else "SUPERVISOR_ADMIN_COMPLETED")
+    assert Path(raw["result_path"]).exists() == (operation != "pause-run")
+
+
 def test_closed_admin_consumer_allows_versioned_cell_split_revise_plan(tmp_path, monkeypatch):
     request = request_fixture(tmp_path, "revise-plan")
     monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda path: "slk_" + "c" * 64)
@@ -488,3 +511,51 @@ def test_admin_consumer_fails_closed_before_mutation(tmp_path, monkeypatch, dama
         admin.execute_sealed_supervisor_admin(
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
     assert "revise-role-model" not in calls
+
+
+def test_close_pair_suffix_retries_only_its_own_recorded_close_and_caches_final_success(tmp_path, monkeypatch):
+    from slk_transport import role_host
+    request = terminal_request_fixture(tmp_path, "close-run")
+    raw = json.loads(request.read_text())
+    operation_path = Path(raw["operation_request_path"])
+    operation = json.loads(operation_path.read_text())
+    binding = write_json(tmp_path / "close-host.json", {"run_id": "RUN-A", "temporal": {"original": True}})
+    operation["details"] = {"close_binding_path": str(binding), "close_binding_sha256": hashlib.sha256(binding.read_bytes()).hexdigest()}
+    write_json(operation_path, operation)
+    raw["operation_request_sha256"] = hashlib.sha256(operation_path.read_bytes()).hexdigest()
+    write_json(request, raw)
+    revision, events, suffix_calls = [7], [], []
+    class Host:
+        lifecycle_retry_matches = staticmethod(lambda *_a: False)
+        def __init__(self, value, _digest):
+            self.binding, self.state = value, raw["state_command"]
+        def endpoint(self, _role): return {"role_instance_id": raw["supervisor_role_instance_id"]}
+        def credential_path(self, _role): return raw["sealed_credential_path"]
+        def close_run_pair(self, _event, _root):
+            suffix_calls.append(_event)
+            if len(suffix_calls) == 1: raise ValueError("pair RPC unavailable")
+    monkeypatch.setattr(role_host, "RoleHost", Host)
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda *_a: "secret")
+    monkeypatch.setattr(admin.wc, "_default_load_current_projection", lambda *_a: {"events": events})
+    def state(_command, arguments, **_k):
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "supervisor",
+                "role_instance_id": raw["supervisor_role_instance_id"], "runtime_revision": revision[0]}
+        assert arguments[0] == "write"
+        if not events:
+            events.append({**operation, "author_role_instance_id": operation["role_instance_id"], "details_json": json.dumps(operation["details"])})
+            revision[0] += 1
+        return {"status": "recorded", "run_id": "RUN-A"}
+    monkeypatch.setattr(admin.wc, "_run_json_command", state)
+    digest = hashlib.sha256(request.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="RPC"):
+        admin.execute_sealed_supervisor_admin(request, request_sha256=digest)
+    assert len(events) == 1 and not Path(raw["result_path"]).exists()
+    events[0]["author_role_instance_id"] = "different-supervisor"
+    with pytest.raises(ValueError, match="stale"):
+        admin.execute_sealed_supervisor_admin(request, request_sha256=digest)
+    assert len(suffix_calls) == 1
+    events[0]["author_role_instance_id"] = operation["role_instance_id"]
+    receipt = admin.execute_sealed_supervisor_admin(request, request_sha256=digest)
+    assert admin.execute_sealed_supervisor_admin(request, request_sha256=digest) == receipt
+    assert len(events) == 1 and len(suffix_calls) == 2

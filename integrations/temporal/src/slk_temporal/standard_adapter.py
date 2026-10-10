@@ -154,7 +154,7 @@ def _load_config(run_id: str) -> dict[str, Any]:
     schema_version = value.get("schema_version")
     if (set(value) != CONFIG_FIELDS or schema_version not in {
             "slk.temporal-standard-adapter/v1", "slk.temporal-standard-adapter/v2"}
-        or value.get("method_version") != "4.4.2" or value.get("run_id") != run_id):
+        or value.get("method_version") not in {"4.4.2", "4.4.3"} or value.get("run_id") != run_id):
         raise ValueError("standard adapter Run config is not closed")
     value["transport_command"] = _command(value["transport_command"], "transport command")
     value["query_command"] = _command(value["query_command"], "query command")
@@ -342,6 +342,16 @@ async def deliver_message(value: dict[str, Any]) -> dict[str, Any]:
 
     def perform() -> dict[str, Any]:
         attempt, endpoint_path, envelope_path = _delivery_files(config, request)
+        current = _query(config)
+        if current.get("summary", {}).get("run_id") != request.run_id:
+            raise ValueError("delivery central Run identity is unavailable")
+        state = current["summary"].get("state")
+        endpoint = _object(endpoint_path, "staged endpoint")
+        envelope = _object(envelope_path, "staged envelope")
+        if state == "paused" or (state == "pause_requested" and (envelope.get("sender_role"), endpoint.get("role"))
+            not in {("worker", "checker"), ("checker", "supervisor")}):
+            core = {"status": "PAUSED", "operation_id": request.operation_id}
+            return {**core, "receipt_sha256": _receipt(core)}
         host = config["role_host_binding"]
         result = _run_json(
             list(config["transport_command"]),

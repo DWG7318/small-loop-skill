@@ -32,6 +32,9 @@ def test_normal_job_consumes_frozen_host_binding_after_terminal(tmp_path, monkey
     terminal = DeliveryResult.from_dict(json.loads((attempt / "completed.json").read_text()))
 
     class Bound:
+        def validate_native_dispatch(self, *_args):
+            seen.append("gate")
+
         def complete(self, source):
             assert source == attempt
             assert (source / "completed.json").is_file()
@@ -43,7 +46,7 @@ def test_normal_job_consumes_frozen_host_binding_after_terminal(tmp_path, monkey
     args = argparse.Namespace(endpoint=attempt / "endpoint.json", envelope=attempt / "envelope.json",
                               attempt_root=attempt.parents[1])
     assert cli._job(args) == 0
-    assert seen == ["binding", "delivery", "suffix"]
+    assert seen == ["binding", "gate", "delivery", "suffix"]
 
 
 def test_host_binding_is_checked_before_any_native_delivery(tmp_path, monkeypatch):

@@ -21,11 +21,11 @@ OW 自己在同一前台 turn 内按 600 秒 cadence 继续循环，用实际有
 1. 用真实 UTC 记下本轮开始，再从中央状态读取本 Run 当前 plan revision、CELL/attempt、TOKEN、最后权威事件、四角色登记和最近消息；BI 仅作为只读投影。每次 Tool 执行前重新取当时 UTC，不复用 cycle 初值；结束时另取真实完成时间，不把起止写成同一时刻或补写过去。
 2. 对当前责任成员执行 `slk-transport inspect-native-activity --run-id <run> --state-command <登记的中央查询命令> [--started <准确原件>]`；位置取原 transport/RoleHost result，不猜最新目录。保存返回的 `slk.overwatch-scope-inspection/v1` 小收据，cycle 的 revision/计划/TOKEN/message 取此返回。DSH 原绑定 hook 每分钟查真实 Agent registry，区分采样时间与旧事件时间；OCRV 以原输入标记关联准确 Session，再核对原生动作与真实执行进程，launcher 存活不算审查活跃。这不是全工具全 Session 采集器；仅保存紧凑观测，不复制原日志，10MB 观测存储要求不是原件读取上限，归档只认原生标记。工具核对同目录终态；Worker 持 TOKEN 时另存其原 `worker_completion` 作为 completion inspection，不手填。无原生来源或无法核实时保留 `UNKNOWN` 和原因，不补造 start。自身用登记的 status adapter；Codex Desktop OW 用已准备的 `slk.desktop-overwatcher-attestation/v1` 核对原 thread/turn/input，不把整段对话送入模型。
 3. 交叉核对并逐一对准 Run/CELL/attempt/message：声称送达就查接收者 native start；声称工作就查该原生任务；有不可变终态就查已有报告是否实际投递、责任角色是否真实接手；`OUTPUT_DELIVERED_AWAITING_ROLE_ACTION`只证明报告接收，不证明D0/D1/工程推进，未见工程事件也不能反推报告不存在。中央 active、旧 TOKEN/PID 不能覆盖原生已结束的事实，BI 差异另报，不修改投影。
-4. 给出 `CLEAR`、`ANOMALY` 或 `UNKNOWN`；checklist 每项仅用 `CLEAR`、`ANOMALY`、`NOT_APPLICABLE`，不能把 `UNKNOWN` 填成 checklist 枚举。全员 inactive 无接手、终态无交接、FAIL 未交 Supervisor、D1 未完却申请 D2等可机械核实的矛盾上报；缺失/过期证据明确 UNKNOWN 理由并异常报告，不默写 CLEAR，不根据耗时推断空转，不找根因，也不把工具失败算产品返工。
+4. 给出 `CLEAR`、`ANOMALY` 或 `UNKNOWN`；checklist 每项仅用 `CLEAR`、`ANOMALY`、`NOT_APPLICABLE`，不能把 `UNKNOWN` 填成 checklist 枚举。未授权施工静止时的全员 inactive 无接手、终态无交接、FAIL 未交 Supervisor、D1 未完却申请 D2等可机械核实的矛盾上报。中央已确认 `PAUSED` 则全部施工成员静止是正常期待：保留原 scope/native 的 UNKNOWN，不伪造 pending/start；从中央最后 `RUN_PAUSED` 取原 census/pause_id，再沿原暂停操作取准确 Host/config，按[原取证命令](../../docs/transport/SLK-TRANSPORT.md#run-lifecycle)生成本轮 fresh quiescence，cycle 仅引用此文件与原 Host 的路径/hash。原 admin 现场重查当前同 Run/pause/revision、全部旧调用和角色登记，完整静止才可 CLEAR；旧 writer 复活、漂移或缺证仍如实异常报告。REQUESTED 不享受此例外。其他缺失/过期证据明确 UNKNOWN 理由并异常报告，不默写 CLEAR，不根据耗时推断空转，不找根因，也不把工具失败算产品返工。
 5. 追加一条紧凑 cycle；引用本次 scope 小收据、自身真实 Session 证据及可用的原始 `started.json`，Worker 持令牌时再引用原 completion inspection；只传路径/SHA-256，不复制日志、不增加工程进度。工程 attempt 从已有 CELL 取，不把补证次数或 cycle 当 attempt。`overwatcher-admin` 对所有责任角色核对本次查询窗口/权威范围与原生来源，Worker 还重核 completion；原件可以是历史资料，但此次实时查询不能复用旧样本或手填时间。未知如实报告，不伪造缺失证明；`SNAPSHOT_STALE` 则重查新观察，不回放旧请求，也不因单次 revision 变化重登记同一 OW turn。正常且无新事实时不发可见消息，继续下一轮。
-6. `ANOMALY` 或 `UNKNOWN` 立即按登记端点实际投递并核对 Supervisor 接收证据。仅送达或新 turn 启动时仍继续观察；只有 Supervisor 针对此异常明确要求暂停，才暂停这个 Run。收到其明确恢复指令即继续，不因历史异常再次停下或无新事实重复报警。共享 OW 的其他 Run 继续，Session 不退出。
+6. `ANOMALY` 或 `UNKNOWN` 立即按登记端点实际投递并核对 Supervisor 接收证据，随后继续巡查。Supervisor 授权暂停的是本 Run 施工，不是 OW 巡查；REQUESTED/PAUSED 仍按原 cadence 核查该 Run 的旧 writer、登记与真实暂停状态。共享 OW 的其他 Run 同样继续，Session 不退出；历史异常或无新事实不重复报警。
 
-Temporal 独立按 1200 秒核查 OW 是否真的在运行；当前责任成员停留超过 1800 秒时，Temporal 直接提醒对应 Supervisor。这两个计时不代替 OW 的 600 秒主动核查，也不要求 OW 判断长工作是否合理。
+Temporal 独立按 1200 秒核查 OW 是否真的在运行；当前责任成员有效停留达到 1800 秒时，Temporal 直接提醒对应 Supervisor。只扣除已确认 PAUSED 与该成员责任区间重叠的时间，REQUESTED 不扣除。这两个计时不代替 OW 的 600 秒主动核查，也不要求 OW 判断长工作是否合理。
 
 ## 报告内容
 
@@ -56,6 +56,6 @@ OW 使用 `RUN_TEAM_REGISTRY` 中唯一 Supervisor endpoint 和 transport adapte
 - 缺少 `WORK_STARTED` 不能单独证明 Worker 未接手、未施工或已停止；以当前原生任务、终态与唯一 completion inspection 交叉判断。
 - 不要参与正常 `Supervisor → Checker`、`Checker → Worker → Checker` 或 D1 FAIL 返工传输；不要替任何成员投递、重试、恢复、施工或验收。
 - 不要写 BI、TOKEN、CELL、D0/D1/D2、计划、角色替换或 Owner 决定；不要把 cycle 变成第二套工程记录。
-- 不要把 accepted、native start 或“收到”冒充接管决定；不要因报告成功而暂停或退出，不要因历史异常或普通处置决定而自行暂停，不要等待 Supervisor 回复；只有明确暂停指令才暂停对应 Run，暂停巡查不等于空 final 结束 Session；不要因一个 Run 接管而停止其他 Run 或整个 Session；不要由 OW 代替 Supervisor 恢复，也不要重复发送没有新事实的同一告警。
+- 不要把 accepted、native start 或“收到”冒充接管决定；不要因报告成功、历史异常、处置决定或施工暂停而暂停巡查/退出，不等待 Supervisor 回复；不要因一个 Run 接管或关闭而停止其他 Run 或整个 Session。OW 不代替 Supervisor 暂停/恢复施工，也不重复发送没有新事实的同一告警。
 - 不要混合多个 Run 的 scope、成员、计时、证据或 Supervisor 端点；共享 Session 不等于共享事实。
 - 不要创建 heartbeat、automation、cron、计划任务、daemon、后台 Agent 或第二个 OW Session 来维持巡查。
