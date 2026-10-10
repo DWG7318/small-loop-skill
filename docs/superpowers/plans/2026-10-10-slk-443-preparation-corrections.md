@@ -34,10 +34,10 @@
 - [x] Runtime guide current4.4.4/17Skills/BI1.1.1/OCRV1.12.13; existing preparation order and normal seven-leg communication clarified in place.
 - [x] Existing DSH subprocess preservation/cleanup tests passed; no native DSH model permission/readback acceptance claimed. Supervisor reruns native preparation only after independent review/deployment.
 
-## 4. Verification and handoff — active
+## 4. Verification and handoff — delivered, known BI fixture issue retained
 
 - [x] Targeted Python199 passed/62.00s; Rust workspace156 passed/0 failed; final scope/window OW rerun52 passed/5.29s; cargo fmt check passed. Logs: `.codex/.tmp/preparation-444/`.
-- [x] Standard five-artifact release build/production BI fingerprint/CLI version checks PASS. Supervisor independently199 Python/152 non-BI Rust/4 BI serial PASS; later Root BI fixture10035 failure retained, not hidden. Full Python third run uses existing offline SDK server/plugin, still pending, not a package PASS gate invented here.
-- [ ] Final manifest/repository checks and existing-builder package/isolated verification. No real installation or product-state commands.
-- [ ] Record exact changed files, line-count split, tests, artifact hashes and unverified native gaps here; do not use old4.4.3 acceptance as evidence for this patch.
-- [ ] Send completed package/evidence to exact Supervisor `01a0bed1-af60-7ac0-8003-d3d6f9d30124` for independent inspection. No self-deployment, new OW or sample READY claim.
+- [x] Standard five-artifact release build/BI fingerprint/CLI version checks PASS. Supervisor independently199 Python/152 non-BI Rust/4 BI serial PASS; later Root BI fixture10035 failure retained, not hidden. Final full Python1461 passed/3 skipped/388.97s/exit0 with existing offline SDK server/plugin; frontend154 passed/19 files/44.92s/exit0. Exact commands/log hashes are in source `VALIDATION-REPORT.md`.
+- [x] Manifest/repository, standard package and isolated install checks PASS4.4.4/files180. Root issued no real installation or product-state commands.
+- [x] Diff/file categories and remaining native gaps recorded in `VALIDATION-REPORT.md`. Package `C:/Users/DWG/.codex/.tmp/slk-4.4.4-preparation-review`, install-manifest SHA256 `8f84c67d784df1d1aa5d754c405392072b61b259323edabb676768f5d92cf96f` binds all5 artifact hashes. Production freezefe644123; package source08d2642; later evidence-only updates do not alter this package.
+- [x] Actually delivered to Supervisor `01a0bed1-af60-7ac0-8003-d3d6f9d30124`, which independently verified/deployed and owns native preparation rerun. No Root self-deployment/new OW/sample READY claim. BI fixture stability and codebase-scale slimming remain open; no merge/push in this handoff.
