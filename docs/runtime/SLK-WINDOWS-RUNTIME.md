@@ -97,7 +97,7 @@ D:\DSH\dsh-slk.cmd runtime-check --profile headless "只回复 DSH_RUNTIME_OK"
 
 如需 RTK、Probe CLI 或 Ponytail，把经 Owner 选择的工具配置到 DSH 的共享 Skill 目录即可；它们不是 DSH 或 SLK 的启动前提。
 
-准备 Eval/报告不要要求模型直接写未授权的 Git 外目录或依赖退出后可能消失的 TEMP。沿现有 DSH 标准任务描述符使用工作区内 `result_path`（`.slk-transport/<message_id>/worker-result.json`）；可信适配器退出前原样保存到 Git 外 attempt 根，再清理临时 drop。Eval 让原 Worker 将完整答卷直接写入该结果文件，宿主只搬运原字节，随后用 `validate-role-eval --response <原件路径>` 验证；不从 stdout 代码块另造答卷。接收者必须实际回读保存的原件并核对哈希，不能把路径已发、宿主读得到或 unit tests 当成真实成员回读通过；权限/保存/回读失败如实保留，不扩大沙箱。
+准备 Eval/报告通过既有已授权原生准备请求，让原 Worker 在 `workspace-write` 允许的工作区内输出完整原件；可信准备宿主只原字节保存到 Git 外证据目录、核hash并执行 `validate-role-eval --response <原件路径>`。准备不借Checker权限、不伪造正式WORKER_TASK，也不算正常通讯腿；不得直写未授权外部目录、依赖易消失TEMP或从stdout代码块另造答卷。正式任务才沿现有标准描述符的工作区 `result_path`（`.slk-transport/<message_id>/worker-result.json`），由可信适配器原样保存到Git外attempt根后清理drop。接收者必须实际回读原件并核hash；路径已发、宿主可读或unit tests都不代表成员回读通过，失败如实保留，不扩大沙箱。
 
 ## 3. 配置 OCRV Checker
 

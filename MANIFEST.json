@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "4a2de5075ec4e7e1383961c36b4038fbd5e530697f0e4d6315ff80a5baeaf409"
+      "sha256": "9e14538bd54d3c34e791ab6d92523cdc0b861a317f9ba8e114a95b11065f20bd"
     },
     {
       "path": "VERSION",
@@ -928,7 +928,7 @@
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
-      "sha256": "c0b114ec09c2266e05d61005fc68c4c027fdbb6a097dd8a88270f5956cb151d5"
+      "sha256": "fcf7eb921f232074e0bb7e77358db5ce56ed3a95a8ec8c6c8bfba2f8afe3fc61"
     },
     {
       "path": "docs/state/SLK-BI-ACCEPTANCE.md",
@@ -1080,7 +1080,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-10-10-slk-443-preparation-corrections.md",
-      "sha256": "ca3fbc9948f0e2e9f06dfcded5617e54b5af1d9625d36ae9f6cd0989a84a50c5"
+      "sha256": "55a3f8906d8131113a0c1837b05414102eedd43b08c320602b5a2f87d6f18019"
     },
     {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",

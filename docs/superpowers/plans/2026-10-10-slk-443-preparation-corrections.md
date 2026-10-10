@@ -30,13 +30,13 @@
 
 ## 3. PA004 / release guidance — complete (native rerun deferred)
 
-- [x] Existing DSH `workspace-write` + descriptor `result_path` + host byte-exact preservation remains unchanged. Guide forbids Git-external direct writes, vanished TEMP and fenced-stdout extraction as normal-chain proof.
+- [x] Preparation uses existing authorized native requests and workspace originals, then trusted host byte-exact preservation/hash/standard Eval validation; it does not borrow Checker authority or count as a communication leg. Formal tasks retain descriptor `result_path`. No Git-external direct writes, vanished TEMP or stdout reconstruction.
 - [x] Runtime guide current4.4.4/17Skills/BI1.1.1/OCRV1.12.13; existing preparation order and normal seven-leg communication clarified in place.
 - [x] Existing DSH subprocess preservation/cleanup tests passed; no native DSH model permission/readback acceptance claimed. Supervisor reruns native preparation only after independent review/deployment.
 
 ## 4. Verification and handoff — active
 
-- [x] Targeted Python199 passed/62.00s; Rust workspace166 passed/0 failed; final scope/window OW rerun52 passed/5.29s; cargo fmt check passed. Logs: `.codex/.tmp/preparation-444/`.
+- [x] Targeted Python199 passed/62.00s; Rust workspace156 passed/0 failed; final scope/window OW rerun52 passed/5.29s; cargo fmt check passed. Logs: `.codex/.tmp/preparation-444/`.
 - [ ] Full Python, final manifest/repository checks, standard five-artifact release build and isolated package/install verification. No real installation or product-state commands.
 - [ ] Record exact changed files, line-count split, tests, artifact hashes and unverified native gaps here; do not use old4.4.3 acceptance as evidence for this patch.
 - [ ] Send completed package/evidence to exact Supervisor `01a0bed1-af60-7ac0-8003-d3d6f9d30124` for independent inspection. No self-deployment, new OW or sample READY claim.
