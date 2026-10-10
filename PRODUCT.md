@@ -6,7 +6,9 @@
 
 ## Product purpose
 
-The main surface shows only SLK Runs. Each row answers: which project and Run is this, when did it start, how much CELL work is complete, how much active work time was recorded, who owns the next action, and which SLK version is in use. Expanding a row reveals that SLK's Supervisor, Checker, Worker, model choices, and medium-detail CELL records.
+The main surface shows only SLK Runs. Each row answers: which project and Run is this, when did it start, how much CELL work is complete, how much active work time was recorded, who owns the next action, and which SLK version is in use. Expanding a row reveals that SLK's Supervisor, Checker, Worker, and registered Overwatcher identities and model choices, Overwatcher assurance facts, and medium-detail CELL records.
+
+Only one Run is expanded across the active list and archive. Both share one outer scrolling surface with a five-Run-header budget; the selected detail body adds height separately. Within that body, only CELL records scroll, with at most six visible rows and the newest execution record first. Screen work-area constraints may show fewer rows, but never discard records. Role and Overwatcher facts remain outside the CELL scroller.
 
 An SLK may be independent or belong to a CLK/GLK project. That origin is a grouping dimension, not a second execution hierarchy in BI: LE BI never renders Chain, Node, Fusion, or DAG internals. Runs from the same independent project or CLK/GLK parent receive the same stable quiet tint and retain an explicit source label.
 
@@ -26,4 +28,4 @@ Compact, factual, and calm, with the restrained feel of a 1990s engineering calc
 
 ## Accessibility
 
-All status meaning has text as well as color or shape. Rows and window controls are keyboard reachable with visible focus. The surface supports reduced motion, zoom-safe text, and a minimum 720 px desktop width.
+All status meaning has text as well as color or shape. Rows, both scrolling surfaces, and window controls are keyboard reachable with visible focus. The surface supports reduced motion, zoom-safe text, and a minimum 720 px desktop width with the SLK version retained. Height follows the complete content border box within the current monitor's work area, accounting for window position and display scale, and shrinks directly on collapse.

@@ -263,7 +263,7 @@ describe("compact Run presentation", () => {
     expect(view.progress).toEqual({ passed: 0, total: 1 });
   });
 
-  it("pauses the Overwatcher display after an unresolved incident without changing CELL progress", () => {
+  it("shows an unresolved Overwatcher incident without claiming the observer paused", () => {
     const run = {
       ...runFixture,
       overwatcher_incident_transitions: [
@@ -286,9 +286,60 @@ describe("compact Run presentation", () => {
       new Date("2026-09-20T00:11:00Z"),
     );
 
-    expect(view.overwatcher?.label).toBe("异常后暂停");
+    expect(view.overwatcher?.label).toBe("异常待处理");
     expect(view.overwatcher?.tone).toBe("blocked");
     expect(view.progress).toEqual({ passed: 0, total: 1 });
+  });
+
+  it.each([
+    ["RUN_PAUSE_REQUESTED", "暂停请求中"],
+    ["RUN_PAUSED", "已暂停"],
+    ["RUN_RESUMED", "已恢复"],
+    ["D2_PASSED", "验收通过 · 待收尾"],
+    ["D1_FAILED", "等待 Supervisor 指引"],
+    ["REWORK_REQUESTED", "Worker 返工中"],
+  ])("projects %s facts even after role registration", (event_type, expected) => {
+    const run: RunView = {
+      ...runFixture,
+      events: [
+        ...runFixture.events,
+        { ...runFixture.events[0]!, event_id: "fact", event_type, occurred_at: "2026-09-20T00:01:00Z" },
+        { ...runFixture.events[0]!, event_id: "role", event_type: "ROLE_REGISTERED", occurred_at: "2026-09-20T00:02:00Z" },
+      ],
+    };
+    const view = buildRunStripView(project, run, new Date("2026-09-20T00:03:00Z"));
+    expect(view.status).toBe(expected);
+    if (event_type === "D1_FAILED") expect(view.cells[0]!.meta).toContain("等待 Supervisor 指引");
+  });
+
+  it.each(["D1_INCOMPLETE", "D0_COMPLETED"])("keeps %s phase-ending facts through TOKEN handoff and role registration", (event_type) => {
+    const event = runFixture.events[0]!;
+    const run: RunView = { ...runFixture,
+      token_history: [{ ...runFixture.token_history[0]!, to_role_instance_id: "supervisor-a" }],
+      events: [
+        { ...event, event_id: "inspection", event_type: "D1_STARTED", occurred_at: "2026-09-20T00:01:00Z" },
+        { ...event, event_id: "phase-ended", event_type, occurred_at: "2026-09-20T00:02:00Z" },
+        { ...event, event_id: "token", event_type: "TOKEN_HANDED_OFF", occurred_at: "2026-09-20T00:03:00Z" },
+        { ...event, event_id: "register", event_type: "ROLE_REGISTERED", occurred_at: "2026-09-20T00:04:00Z" },
+      ],
+    };
+    const before = JSON.stringify(run);
+    const view = buildRunStripView(project, run, new Date("2026-09-20T00:05:00Z"));
+    expect(view.status).toBe("等待 Supervisor");
+    expect(view.statusTone).toBe("wait");
+    expect(view.cells[0]!.tone).toBe("wait");
+    expect(view.cells[0]!.meta).not.toContain("进行中");
+    expect(JSON.stringify(run)).toBe(before);
+  });
+
+  it("holds a formal pause until a formal resume, then projects subsequent work normally", () => {
+    const events = ["RUN_PAUSE_REQUESTED", "RUN_PAUSED", "WORK_PROGRESS", "RUN_RESUMED", "WORK_STARTED"]
+      .map((event_type, index) => ({ ...runFixture.events[0]!, event_id: String(index), event_type,
+        occurred_at: `2026-09-20T00:0${index + 1}:00Z` }));
+    expect(buildRunStripView(project, { ...runFixture, events: events.slice(0, 3) }, new Date()).status).toBe("已暂停");
+    expect(buildRunStripView(project, { ...runFixture, events: events.slice(0, 4) }, new Date()).status).toBe("已恢复");
+    expect(buildRunStripView(project, { ...runFixture, events }, new Date()).status).toBe("Worker 工作中");
+    expect(buildRunStripView(project, { ...runFixture, summary: { ...runFixture.summary, closure_state: "closed" }, events }, new Date()).status).toBe("已完成");
   });
 
   it("shows a terminally closed Overwatcher separately from engineering completion", () => {

@@ -17,6 +17,7 @@ export interface RunStripRole {
 }
 
 export interface RunStripCell {
+  cellId: string;
   id: string;
   name: string;
   note: string;
@@ -56,6 +57,14 @@ const ROLE_LABELS = {
   worker: "Worker",
   overwatcher: "Overwatcher",
 } as const;
+
+// Administrative registration must not erase the last authored engineering fact.
+const STATUS_EVENTS = new Set([
+  "D0_COMPLETED", "WORK_STARTED", "WORK_PROGRESS", "CANDIDATE_SUBMITTED", "D1_STARTED", "D1_PASSED", "D1_FAILED", "D1_INCOMPLETE",
+  "REWORK_REQUESTED", "D2_STARTED", "D2_PASSED", "D2_FAILED", "RUN_CLOSED", "BLOCKER_REPORTED",
+  "RESOURCE_CONTENDED", "RESOURCE_RECOVERED", "TRANSPORT_FAILED",
+  "RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED",
+]);
 
 export function visibleRunSummaries(runs: RunSummary[]) {
   return runs.filter(
@@ -198,7 +207,12 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
   if (run.summary.closure_state === "closed") return ["已完成", "done"];
   if (run.summary.closure_state === "abandoned") return ["已废弃", "exempt"];
   if (run.summary.closure_state === "superseded") return ["已替代", "exempt"];
-  const latestEvent = effectiveEvents(run.events).at(-1);
+  const events = effectiveEvents(run.events);
+  const pause = events.filter((event) =>
+    ["RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"].includes(event.event_type)).at(-1);
+  if (pause?.event_type === "RUN_PAUSE_REQUESTED") return ["暂停请求中", "wait"];
+  if (pause?.event_type === "RUN_PAUSED") return ["已暂停", "wait"];
+  const latestEvent = events.filter((event) => STATUS_EVENTS.has(event.event_type)).at(-1);
   const latestObservation = [...run.operational_observations]
     .sort((left, right) => Date.parse(left.occurred_at) - Date.parse(right.occurred_at))
     .at(-1);
@@ -213,6 +227,7 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
     if (latestObservation.kind === "RECOVERY_ESCALATED") return ["等待 Supervisor 决策", "blocked"];
   }
   const event = latestEvent?.event_type;
+  if (event === "RUN_RESUMED") return ["已恢复", "wait"];
   if (event === "WORK_STARTED" || event === "WORK_PROGRESS") return ["Worker 工作中", "active"];
   if (event === "CANDIDATE_SUBMITTED") return ["等待 Checker", "wait"];
   if (event === "D1_STARTED") return ["Checker 检验中", "active"];
@@ -221,9 +236,11 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
     const allPassed = allCells.length > 0 && allCells.every((cell) => cell.state === "d1_passed");
     return allPassed ? ["等待 D2", "wait"] : ["等待下一 CELL", "wait"];
   }
-  if (event === "D1_FAILED" || event === "REWORK_REQUESTED") return ["Worker 返工中", "rework"];
+  if (event === "D1_FAILED") return ["等待 Supervisor 指引", "blocked"];
+  if (event === "REWORK_REQUESTED") return ["Worker 返工中", "rework"];
   if (event === "D2_STARTED") return ["D2 检验中", "active"];
-  if (event === "D2_PASSED" || event === "RUN_CLOSED") return ["已完成", "done"];
+  if (event === "D2_PASSED") return ["验收通过 · 待收尾", "wait"];
+  if (event === "RUN_CLOSED") return ["已完成", "done"];
   if (
     event === "BLOCKER_REPORTED" ||
     event === "RESOURCE_CONTENDED" ||
@@ -238,7 +255,7 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
 
 function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): RunStripCell {
   const events = effectiveEvents(run.events).filter((event) => event.cell_id === cell.cell_id);
-  const latest = events.at(-1)?.event_type;
+  const latest = events.filter((event) => STATUS_EVENTS.has(event.event_type)).at(-1)?.event_type;
   let tone: RunTone = "wait";
   let state = "未开始";
   if (cell.state === "split") {
@@ -247,7 +264,10 @@ function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): Ru
   } else if (cell.state === "d1_passed" || latest === "D1_PASSED") {
     tone = "done";
     state = "已完成 · D1 PASS";
-  } else if (latest === "D1_FAILED" || latest === "REWORK_REQUESTED") {
+  } else if (latest === "D1_FAILED") {
+    tone = "blocked";
+    state = "D1 FAIL · 等待 Supervisor 指引";
+  } else if (latest === "REWORK_REQUESTED") {
     tone = "rework";
     state = "返工中";
   } else if (latest === "BLOCKER_REPORTED" || latest === "RESOURCE_CONTENDED") {
@@ -267,6 +287,7 @@ function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): Ru
   const attemptText = cell.attempt > 1 ? ` · 第${cell.attempt}次施工` : "";
   const notePrefix = tone === "done" ? "结果" : tone === "active" || tone === "rework" ? "当前" : "目标";
   return {
+    cellId: cell.cell_id,
     id: `CELL ${String(cell.ordinal).padStart(2, "0")}`,
     name: cell.title,
     note: `${notePrefix}：${cell.outcome || cell.objective}`,
@@ -318,14 +339,14 @@ function overwatcher(run: RunView): RunStripView["overwatcher"] {
     latestIncidentStates.set(transition.incident_id, transition.state);
   }
   if ([...latestIncidentStates.values()].some((state) => state !== "RESOLVED")) {
-    return { label: "异常后暂停", detail, tone: "blocked" };
+    return { label: "异常待处理", detail, tone: "blocked" };
   }
   if (native === "COMPLETED") return { label: "原生会话已结束", detail, tone: "blocked" };
   if (native === "MISSING") return { label: "原生会话缺失", detail, tone: "blocked" };
   if (native === "MISMATCHED") return { label: "原生会话不匹配", detail, tone: "blocked" };
   if (native !== "IN_PROGRESS") return { label: "等待原生状态", detail, tone: "wait" };
   if (!latestCycle) return { label: "等待首轮巡查", detail, tone: "wait" };
-  if (latestCycle.cadence_health !== "ON_TIME") return { label: "巡查逾期后暂停", detail, tone: "blocked" };
+  if (latestCycle.cadence_health !== "ON_TIME") return { label: "巡查逾期", detail, tone: "blocked" };
   return { label: "巡查正常", detail, tone: "active" };
 }
 

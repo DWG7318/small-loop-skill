@@ -36,7 +36,7 @@ export function AppState({ state, onRetry }: { state: AppStateValue; onRetry?: (
   const message = copy[state.kind];
   const retryable = state.kind === "unconfigured" || state.kind === "unsupported" || state.kind === "error";
   return (
-    <main className={`app-state state-${state.kind}`} aria-live="polite">
+    <main className={`app-state state-${state.kind}`} tabIndex={0} aria-live="polite">
       <div className="app-state-mark" aria-hidden="true" />
       <p className="eyebrow">Read-only boundary</p>
       <h1>{message.title}</h1>

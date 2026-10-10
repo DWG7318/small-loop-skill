@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -54,17 +54,31 @@ describe("LE BI shell", () => {
     expect(screen.queryByText(/GO\s*and\s*CELL/i)).not.toBeInTheDocument();
   });
 
-  it.each([
-    [5, false],
-    [6, true],
-  ])("marks vertical scrolling only after five active Runs", async (count, scrollable) => {
+  it.each([5, 6, 10])("keeps all %i Runs in one keyboard-reachable outer scroll surface", async (count) => {
     render(<App api={activeRunApi(count)} />);
 
     const list = await screen.findByRole("list", { name: "进行中的 SLK Runs" });
     expect(list).toHaveAttribute("data-run-count", String(count));
     expect(list).toHaveClass("active-run-strips");
-    if (scrollable) expect(list).toHaveClass("is-scrollable");
-    else expect(list).not.toHaveClass("is-scrollable");
+    expect(list).not.toHaveClass("is-scrollable");
+    const main = screen.getByRole("main", { name: "SLK Runs" });
+    expect(main).toHaveAttribute("tabindex", "0");
+    expect(main).toContainElement(list);
+    expect(list.children).toHaveLength(count);
+  });
+
+  it("allows only one expanded Run across active and archive, and toggles it closed", async () => {
+    const user = userEvent.setup();
+    render(<App api={fixtureApi} />);
+    await user.click(await screen.findByRole("button", { name: "展开 Close flow" }));
+    await user.click(screen.getByRole("button", { name: "归档箱" }));
+    await user.click(screen.getByRole("button", { name: "展开 Previous attempt" }));
+    expect(screen.getByRole("button", { name: "展开 Close flow" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "收起 Previous attempt" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("list", { name: /CELL 记录/ })).toHaveLength(1);
+    expect(screen.getByRole("main")).toContainElement(screen.getByRole("list", { name: "已归档的 SLK Runs" }));
+    await user.click(screen.getByRole("button", { name: "收起 Previous attempt" }));
+    expect(screen.queryByRole("list", { name: /CELL 记录/ })).not.toBeInTheDocument();
   });
 
   it("shows BI 1.1.0 and the exact local device identity in the header", async () => {
@@ -72,6 +86,42 @@ describe("LE BI shell", () => {
 
     expect(await screen.findByText("1.1.0")).toBeVisible();
     expect(screen.getByText("Workstation A · device-a")).toBeVisible();
+  });
+
+  it("clears archived disclosure when its archive surface closes", async () => {
+    const user = userEvent.setup();
+    render(<App api={fixtureApi} />);
+    await screen.findByText("Close flow");
+    await user.click(screen.getByRole("button", { name: "归档箱" }));
+    await user.click(screen.getByRole("button", { name: "展开 Previous attempt" }));
+    await user.click(screen.getByRole("button", { name: "归档箱" }));
+    expect(screen.queryByRole("list", { name: /CELL 记录/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "归档箱" }));
+    expect(screen.getByRole("button", { name: "展开 Previous attempt" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it.each(["archived", "removed"])("clears disclosure after a poll makes its Run %s and invisible", async (change) => {
+    const user = userEvent.setup();
+    let summaries = [runFixture.summary];
+    const api: SlkApi = {
+      ...fixtureApi,
+      runs: async () => ({ ...twoRunFixture.runs, runs: summaries }),
+      run: async () => ({ ...runFixture, summary: summaries[0] ?? runFixture.summary }),
+    };
+    render(<App api={api} />);
+    await user.click(await screen.findByRole("button", { name: "展开 Close flow" }));
+    summaries = change === "archived" ? [{ ...runFixture.summary, closure_state: "closed", state: "archived" }] : [];
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "收起 Close flow" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("list", { name: /CELL 记录/ })).not.toBeInTheDocument();
+    if (change === "archived") {
+      await user.click(screen.getByRole("button", { name: "归档箱" }));
+      expect(screen.getByRole("button", { name: "展开 Close flow" })).toHaveAttribute("aria-expanded", "false");
+    } else {
+      summaries = [runFixture.summary];
+      window.dispatchEvent(new Event("focus"));
+      expect(await screen.findByRole("button", { name: "展开 Close flow" })).toHaveAttribute("aria-expanded", "false");
+    }
   });
 
   it("renders a blocked CELL as a visible business state instead of an empty shell", async () => {
@@ -169,6 +219,17 @@ describe("LE BI shell", () => {
     window.dispatchEvent(new Event("focus"));
     expect(await screen.findByLabelText("有新消息")).toBeVisible();
 
+    await user.click(screen.getByRole("button", { name: "展开 Close flow" }));
+    expect(screen.queryByLabelText("有新消息")).not.toBeInTheDocument();
+
+    current = { ...current, events: [...current.events, {
+      ...runFixture.events[0]!, event_id: "progress-while-open", event_type: "WORK_PROGRESS",
+      occurred_at: "2026-09-20T00:00:05Z",
+    }] };
+    window.dispatchEvent(new Event("focus"));
+    expect(await screen.findByLabelText("有新消息")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "收起 Close flow" }));
+    expect(screen.getByLabelText("有新消息")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "展开 Close flow" }));
     expect(screen.queryByLabelText("有新消息")).not.toBeInTheDocument();
   });

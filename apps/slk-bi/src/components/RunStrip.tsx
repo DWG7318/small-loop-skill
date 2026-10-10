@@ -1,12 +1,11 @@
-import { useState } from "react";
-
 import { formatDuration, type RunStripCell, type RunStripView } from "../runPresentation";
 
 interface RunStripProps {
   view: RunStripView;
   archived?: boolean;
   unread?: boolean;
-  onOpen?: () => void;
+  open?: boolean;
+  onToggle?: () => void;
 }
 
 const MARK = {
@@ -25,8 +24,10 @@ export function groupTone(groupKey: string) {
 }
 
 function SegmentedProgress({ passed, total, tone }: { passed: number; total: number; tone: string }) {
-  const segments = 8;
-  const filled = total ? Math.round((passed / total) * segments) : 0;
+  const segments = total <= 8 ? 8 : total <= 16 ? 16 : 24;
+  const filled = total > 0
+    ? passed >= total ? segments : Math.min(segments - 1, Math.floor((passed / total) * segments))
+    : 0;
   return (
     <span
       className="segmented-progress"
@@ -35,6 +36,7 @@ function SegmentedProgress({ passed, total, tone }: { passed: number; total: num
       aria-valuemin={0}
       aria-valuemax={total}
       aria-valuenow={passed}
+      title={`CELL 进度比例概览 ${passed}/${total}，每格不对应具体 CELL`}
     >
       {Array.from({ length: segments }, (_, index) => (
         <span key={index} className={index < filled ? `segment segment-${tone}` : "segment"} />
@@ -57,8 +59,7 @@ function CellRow({ cell }: { cell: RunStripCell }) {
   );
 }
 
-export function RunStrip({ view, archived = false, unread = false, onOpen }: RunStripProps) {
-  const [open, setOpen] = useState(false);
+export function RunStrip({ view, archived = false, unread = false, open = false, onToggle }: RunStripProps) {
   const progressTone = view.statusTone === "done" ? "done" : view.statusTone === "active" ? "active" : "wait";
   const tone = groupTone(view.sourceGroupKey);
 
@@ -69,11 +70,7 @@ export function RunStrip({ view, archived = false, unread = false, onOpen }: Run
         type="button"
         aria-expanded={open}
         aria-label={`${open ? "收起" : "展开"} ${view.runName}`}
-        onClick={() => setOpen((value) => {
-          const next = !value;
-          if (next) onOpen?.();
-          return next;
-        })}
+        onClick={onToggle}
       >
         <time dateTime={view.startDate}>{view.startDate}</time>
         <span className={`source source-${view.source.kind}`}>{view.source.label}</span>
@@ -114,8 +111,8 @@ export function RunStrip({ view, archived = false, unread = false, onOpen }: Run
               <code>{view.overwatcher.detail}</code>
             </div>
           ) : null}
-          <ol className="cell-list" aria-label={`${view.runName} CELL 记录`}>
-            {view.cells.map((cell) => <CellRow key={cell.id} cell={cell} />)}
+          <ol className="cell-list" tabIndex={0} aria-label={`${view.runName} CELL 记录`}>
+            {[...view.cells].reverse().map((cell) => <CellRow key={cell.cellId} cell={cell} />)}
           </ol>
         </div>
       ) : null}

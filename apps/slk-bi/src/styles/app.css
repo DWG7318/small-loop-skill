@@ -1,6 +1,6 @@
 .app-shell {
   width: 100%;
-  min-height: 100vh;
+  min-height: 94px;
   overflow: hidden;
   border: 1px solid var(--frame);
   border-radius: 3px;
@@ -93,13 +93,17 @@
 
 .window-controls .close-button:hover { background: #9b433f; }
 
-.runs-surface { background: var(--lcd); }
-.run-strips { margin: 0; padding: 0; list-style: none; }
-.active-run-strips.is-scrollable {
-  max-height: calc((var(--run-row-height) + 1px) * 5);
+.runs-surface {
+  overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+  background: var(--lcd);
 }
+.run-strips { margin: 0; padding: 0; list-style: none; }
+.runs-surface:focus-visible,
+.app-state:focus-visible,
+.cell-list:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 
 .slk-block {
   --group-bg: #c7d0c1;
@@ -124,7 +128,7 @@
 
 .slk-row {
   display: grid;
-  grid-template-columns: 38px 132px minmax(180px, 1fr) 47px 74px 108px 104px 62px 10px 13px;
+  grid-template-columns: 38px 132px minmax(0, 1fr) 47px 62px 108px 104px 62px 10px 13px;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -172,6 +176,7 @@
 
 .segmented-progress {
   display: grid;
+  width: 62px;
   grid-template-columns: repeat(8, 6px);
   gap: 2px;
 }
@@ -245,7 +250,7 @@
 .role-strip dt { color: var(--ink-3); font: 700 var(--text-8)/1.2 var(--mono); letter-spacing: .08em; }
 .role-strip dd { display: grid; gap: 2px; margin: 4px 0 0; }
 .role-strip dd strong { font-size: var(--text-10); }
-.role-strip dd code { color: var(--ink-2); font-size: var(--text-8); }
+.role-strip dd code { color: var(--ink-2); font-size: var(--text-8); overflow-wrap: anywhere; }
 
 .overwatch-status {
   display: flex;
@@ -260,13 +265,22 @@
 .overwatch-status strong { font-size: var(--text-9); }
 .overwatch-status code { color: var(--ink-2); font-size: var(--text-8); }
 
-.cell-list { margin: 0; padding: 0; list-style: none; }
+.cell-list {
+  max-height: calc(var(--cell-row-height) * 6);
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+  list-style: none;
+}
 .cell-row {
   display: grid;
   grid-template-columns: 12px 49px minmax(220px, 1fr) minmax(130px, auto);
   gap: 6px;
   align-items: center;
-  min-height: 43px;
+  min-height: var(--cell-row-height);
   padding: 5px 12px;
   border-bottom: 1px solid rgb(83 96 85 / 28%);
 }
@@ -335,10 +349,9 @@
 
 @media (max-width: 820px) {
   .slk-row {
-    grid-template-columns: 34px 112px minmax(170px, 1fr) 42px 66px 96px 92px 10px 13px;
+    grid-template-columns: 34px 80px minmax(0, 1fr) 42px 62px 82px 78px 62px 10px 13px;
     gap: 6px;
   }
-  .slk-version { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

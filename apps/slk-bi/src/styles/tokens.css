@@ -21,6 +21,7 @@
   --text-11: 13.2px;
   --text-17: 20.4px;
   --run-row-height: 68px;
+  --cell-row-height: 43px;
   background: var(--lcd);
   color: var(--ink);
   font-family: var(--sans);
@@ -28,7 +29,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; min-width: 720px; min-height: 100%; overflow: hidden; background: var(--lcd); }
+html, body, #root { margin: 0; min-width: 720px; overflow: hidden; background: var(--lcd); }
 button, input { font: inherit; }
 button:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 code { font-family: var(--mono); }
