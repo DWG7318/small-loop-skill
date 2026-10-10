@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from .contracts import ContractError, DeliveryResult
+from .contracts import ContractError, DeliveryResult, parse_delivery
 
 
 START_SCHEMA = "slk.native-start/v2"
@@ -254,6 +254,9 @@ def validate_native_start(
 
 
 def _file_native_probe(started_path: Path, start: Mapping[str, Any]) -> Mapping[str, Any]:
+    if start["adapter"] == "ocrv-checker" and start["native_task"]["kind"] in {"ocrv-review", "ocrv-invocation"}:
+        from .native_ocrv import inspect_ocrv_session
+        return inspect_ocrv_session(started_path, start)
     activity_path = started_path.with_name("native-activity.json")
     if not activity_path.is_file():
         return {"status": "UNKNOWN", "error": "NATIVE_ACTIVITY_MISSING"}
@@ -261,28 +264,6 @@ def _file_native_probe(started_path: Path, start: Mapping[str, Any]) -> Mapping[
     if not isinstance(value, Mapping):
         raise NativeActivityError("native activity projection is invalid")
     return value
-
-
-def _current_native_start(started_path: Path, start: Mapping[str, Any]) -> tuple[Path, dict[str, Any]]:
-    """Select the newest proven OCRV segment without rewriting the first start receipt."""
-
-    if start["adapter"] != "ocrv-checker" or start["native_task"]["kind"] != "ocrv-review":
-        return started_path, dict(start)
-    candidates = sorted(started_path.parent.glob("review-segments/segment-*/started.json"))
-    if not candidates:
-        return started_path, dict(start)
-    current_path = candidates[-1]
-    current = validate_native_start(
-        current_path,
-        adapter=str(start["adapter"]),
-        run_id=str(start["run_id"]),
-        cell_id=str(start["cell_id"]),
-        message_id=str(start["message_id"]),
-        request_sha256=str(start["request_sha256"]),
-    )
-    if current["native_task"]["kind"] != "ocrv-review":
-        raise NativeActivityError("current OCRV segment native task kind is invalid")
-    return current_path, current
 
 
 def validate_native_task_activity(
@@ -296,7 +277,7 @@ def validate_native_task_activity(
     observed_at: str | None = None,
     max_activity_age_seconds: int = 300,
 ) -> dict[str, Any]:
-    if set(value) != ACTIVITY_FIELDS or value.get("schema_version") != TASK_ACTIVITY_SCHEMA:
+    if set(value) - {"sample", "error"} != ACTIVITY_FIELDS or value.get("schema_version") != TASK_ACTIVITY_SCHEMA:
         raise NativeActivityError("native activity must use the closed task projection")
     expected = {
         "adapter": adapter,
@@ -309,7 +290,16 @@ def validate_native_task_activity(
     task_id = _nonempty(value.get("native_task_id"), "native_task_id")
     if native_task_id is not None and task_id != native_task_id:
         raise NativeActivityError("native activity task identity does not match")
-    if value.get("status") not in {"RUNNING", "PENDING", "IDLE", "COMPLETED", "FAILED"}:
+    sample = value.get("sample")
+    if sample is not None and (not isinstance(sample, Mapping)
+        or set(sample) != {"source", "native_task_id", "observed_at"}
+        or sample["source"] != "DSH_LIVE_AGENT_REGISTRY" or sample["native_task_id"] != task_id
+        or sample["observed_at"] != value.get("observed_at")):
+        raise NativeActivityError("native activity sample identity is invalid")
+    if "error" in value:
+        _nonempty(value["error"], "error")
+    if (value.get("status") not in {"RUNNING", "PENDING", "IDLE", "COMPLETED", "FAILED", "UNKNOWN"}
+        or (value.get("status") == "UNKNOWN" and "error" not in value)):
         raise NativeActivityError("native activity status is invalid")
     sequence = value.get("sequence")
     if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
@@ -322,6 +312,32 @@ def validate_native_task_activity(
         or event.get("sequence") != sequence
     ):
         raise NativeActivityError("native activity event is invalid")
+    scalar_types = {"kind": (str,), "sequence": (int,), "observed_at": (str,),
+        "detail_sha256": (str,), "summary_sha256": (str,), "session_id": (str,), "tool_name": (str,),
+        "ok": (bool,), "duration_ms": (int, float), "duration_seconds": (int, float), "exit_code": (int,)}
+    if (set(event) - set(scalar_types) - {"tail", "native_process", "native_process_state"}
+        or any(type(event[key]) not in types for key, types in scalar_types.items() if key in event)):
+        raise NativeActivityError("native activity event must be public metadata-only")
+    for key in ("detail_sha256", "summary_sha256"):
+        if key in event and not SHA256.fullmatch(event[key]):
+            raise NativeActivityError("native activity event hash is invalid")
+    if "observed_at" in event:
+        try:
+            if datetime.fromisoformat(event["observed_at"].replace("Z", "+00:00")).tzinfo is None:
+                raise ValueError("timezone is missing")
+        except ValueError as exc:
+            raise NativeActivityError("native activity event timestamp is invalid") from exc
+    if "native_process" in event:
+        process = event["native_process"]
+        if (not isinstance(process, Mapping) or set(process) != PROCESS_FIELDS
+            or type(process["pid"]) is not int or process["pid"] < 1
+            or not isinstance(process["creation_time"], str) or not process["creation_time"]):
+            raise NativeActivityError("native activity process metadata is invalid")
+    if "native_process_state" in event:
+        state = event["native_process_state"]
+        if (not isinstance(state, Mapping) or set(state) != {"exists", "identity_matches"}
+            or any(type(item) is not bool for item in state.values())):
+            raise NativeActivityError("native activity process state metadata is invalid")
     tail = event.get("tail")
     if tail is not None:
         if not isinstance(tail, list) or len(tail) > 12:
@@ -369,7 +385,7 @@ def validate_native_task_activity(
     except ValueError as exc:
         raise NativeActivityError("native activity timestamp is invalid") from exc
     age = (observed_time - activity_time).total_seconds()
-    if age > max_activity_age_seconds:
+    if age > max_activity_age_seconds and value.get("status") != "UNKNOWN":
         raise NativeActivityError("native activity is stale")
     if age < -1:
         raise NativeActivityError("native activity is from the future")
@@ -387,7 +403,11 @@ def _inspect_native_projection(
         validation_observed = observed or utc_now()
         native_error = native.get("error")
         if native_error is not None:
-            return native, "UNKNOWN", str(native_error), validation_observed
+            _nonempty(native_error, "error")
+            if (set(native) <= {"status", "error", "last_event", "waiting_on"}
+                and native.get("status") == "UNKNOWN" and native.get("last_event") is None
+                and native.get("waiting_on") is None):
+                return {"last_event": None, "waiting_on": None}, "UNKNOWN", native_error, validation_observed
         validate_native_task_activity(
             native,
             adapter=str(start["adapter"]),
@@ -398,6 +418,10 @@ def _inspect_native_projection(
             observed_at=validation_observed,
             max_activity_age_seconds=max_activity_age_seconds,
         )
+        if native_error is not None:
+            return native, "UNKNOWN", native_error, validation_observed
+        if start["adapter"] == "dsh-worker" and native.get("sample") is None:
+            return native, "UNKNOWN", "NATIVE_STATUS_NOT_SAMPLED", validation_observed
         mapped = {
             "RUNNING": "ACTIVE",
             "PENDING": "PENDING",
@@ -421,7 +445,8 @@ def _inspect_native_projection(
             error = "NATIVE_ACTIVITY_IDENTITY_MISMATCH"
         else:
             error = "NATIVE_QUERY_FAILED"
-        return {"last_event": None, "waiting_on": None}, "UNKNOWN", error, observed or utc_now()
+        historical = native if error == "NATIVE_ACTIVITY_STALE" else {"last_event": None, "waiting_on": None}
+        return historical, "UNKNOWN", error, observed or utc_now()
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return (
             {"last_event": None, "waiting_on": None},
@@ -501,26 +526,13 @@ def inspect_native_activity(
     current_started_path = started_path
     current_start = start
     if native_probe is None:
-        try:
-            current_started_path, current_start = _current_native_start(started_path, start)
-        except NativeActivityError:
-            return {
-                "schema_version": ACTIVITY_SCHEMA,
-                "status": "UNKNOWN",
-                "observed_at": observed,
-                "process": {"exists": None, "identity_matches": None},
-                "native_task": start["native_task"],
-                "last_event": None,
-                "waiting_on": None,
-                "terminal_evidence": None,
-                "error": "NATIVE_ACTIVITY_IDENTITY_MISMATCH",
-            }
         native_probe = lambda value: _file_native_probe(current_started_path, value)
 
-    # A Desktop bridge CLI only attests the platform injection.  It is not the
-    # executor of the already-running Desktop turn, so platform activity is the
-    # authoritative liveness source for this backend.
-    if current_start["native_task"]["kind"] in PLATFORM_ACTIVITY_TASK_KINDS:
+    # Desktop injection and OCRV launcher receipts are not executor liveness.
+    # Their original native readers query the exact turn or bound Session/PID.
+    if (current_start["native_task"]["kind"] in PLATFORM_ACTIVITY_TASK_KINDS
+        or (current_start["adapter"] == "ocrv-checker"
+            and current_start["native_task"]["kind"] == "ocrv-invocation")):
         native, mapped, error, projection_observed = _inspect_native_projection(
             current_start, native_probe, observed_at, max_activity_age_seconds
         )
@@ -614,6 +626,42 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
             start_sha256 = sha256_file(started_path)
             start = validate_native_start(started_path, run_id=run_id, message_id=snapshot["latest_message_id"])
             source = started_path.parent
+            events = [event for event in projection.get("events", []) if event.get("event_type") == "TRANSPORT_STARTED"
+                      and wc._event_details(event).get("message_id") == snapshot["latest_message_id"]]
+            if len(events) != 1:
+                raise NativeActivityError("central native start is not uniquely bound")
+            proof = wc._event_details(events[0])
+            if (proof.get("start_evidence_sha256") != start_sha256
+                or any(sha256_file(source / (name + ".json")) != proof.get(name + "_sha256")
+                       for name in ("endpoint", "envelope"))):
+                raise NativeActivityError("original delivery differs from the central start proof")
+            endpoint = wc._read_object(source / "endpoint.json", "endpoint")
+            envelope = wc._read_object(source / "envelope.json", "envelope")
+            parse_delivery(endpoint, envelope)
+            event = events[0]
+            plan = projection["summary"].get("current_plan_revision", projection["summary"].get("plan_revision"))
+            holders = [role for role in projection.get("roles", [])
+                       if role.get("role_instance_id") == snapshot["token_holder_role_instance_id"]]
+            gos = [go for go in projection.get("go_nodes", []) if go.get("go_id") == envelope["go_id"]]
+            cells = [cell for go in gos for cell in go.get("cell_nodes", []) if cell.get("cell_id") == envelope["cell_id"]]
+            if (snapshot.get("run_id", run_id) != run_id
+                or not isinstance(plan, int) or isinstance(plan, bool) or plan < 1
+                or snapshot.get("plan_revision") != plan or event.get("plan_revision", plan) != plan
+                or event.get("go_id") != envelope["go_id"] or event.get("cell_id") != envelope["cell_id"]
+                or event.get("author_role_instance_id") != envelope["sender_role_instance_id"]
+                or event.get("corrects_event_id") is not None
+                or not isinstance(event.get("attempt"), int) or isinstance(event["attempt"], bool) or event["attempt"] < 1
+                or len(gos) != 1 or len(cells) != 1 or cells[0].get("attempt") != event["attempt"]
+                or len(holders) != 1 or holders[0].get("role") != endpoint["role"]
+                or holders[0].get("lifecycle", "active") != "active"
+                or envelope["token_sequence"] != snapshot["token_sequence"]):
+                raise NativeActivityError("central start is not the exact current Run/GO/CELL/attempt/plan/member")
+            if (endpoint.get("role_instance_id") != snapshot["token_holder_role_instance_id"]
+                or envelope.get("receiver_role_instance_id") != snapshot["token_holder_role_instance_id"]
+                or envelope.get("run_id") != run_id or envelope.get("message_id") != snapshot["latest_message_id"]
+                or start["cell_id"] != envelope.get("cell_id") or start["adapter"] != endpoint.get("adapter")
+                or start["request_sha256"] != envelope.get("payload_sha256")):
+                raise NativeActivityError("native delivery is not the current holder/CELL/message/request")
             native = inspect_native_activity(started_path, terminal_paths=(source / "completed.json", source / "failed.json"))
             worker = any(role.get("role") == "worker"
                          and role.get("role_instance_id") == snapshot.get("token_holder_role_instance_id")

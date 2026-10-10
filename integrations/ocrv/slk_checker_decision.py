@@ -86,6 +86,36 @@ def read_evidence(index: int, offset: int = 0, limit: int | None = None) -> dict
             "text": text, "next_offset": offset + len(text), "eof": eof}
 
 
+def _publish_native_process() -> None:
+    """Original stdio client parent, not the launcher PID or an engineering action."""
+    from slk_checker_adapter import _process_creation_time, _process_parents, _sha256, _write_json_atomic
+    index, receipt = _bound_index()
+    source = Path(os.environ["SLK_NATIVE_START_RECEIPT"])
+    launcher = receipt["process"]
+    if _process_creation_time(launcher["pid"]) != launcher["creation_time"]:
+        raise ValueError("native launcher identity changed")
+    pid = os.getppid()  # official OCRV stdio MCP client is the direct parent
+    parents, current = _process_parents(), pid
+    for _ in range(32):
+        if current == launcher["pid"]:
+            break
+        current = parents.get(current, 0)
+    else:
+        raise ValueError("native MCP parent is not under this launcher")
+    path = source.with_name("ocrv-native-process.json")
+    value = {"schema_version": "slk.ocrv-native-process/v1",
+        **{key: receipt[key] for key in ("run_id", "cell_id", "message_id", "native_request_sha256")},
+        "native_task_id": index["native_task_id"], "native_start_sha256": _sha256(source),
+        "index_path": os.environ["SLK_CHECKER_EVIDENCE_INDEX"],
+        "index_sha256": os.environ["SLK_CHECKER_EVIDENCE_INDEX_SHA256"],
+        "launcher_process": launcher, "process": {"pid": pid, "creation_time": _process_creation_time(pid)}}
+    if path.exists():
+        if json.loads(path.read_text(encoding="utf-8")) != value:
+            raise ValueError("native process observation conflicts with original")
+        return
+    _write_json_atomic(path, value)
+
+
 def _publish_completion(request: dict, response: dict) -> None:
     """Only after the explicit host action returns AND its MCP reply is flushed."""
     if not isinstance(request, dict):
@@ -186,6 +216,10 @@ def main() -> int:
     if not package.is_absolute() or not package.is_file() or package.suffix != ".pyz":
         parser.error("--transport must name the installed absolute slk-transport.pyz")
     sys.path.insert(0, str(package))
+    try:
+        _publish_native_process()
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        print(f"CHECKER_NATIVE_PROCESS_UNCONFIRMED: {exc}", file=sys.stderr, flush=True)
     for line in sys.stdin:
         value = {}
         try:

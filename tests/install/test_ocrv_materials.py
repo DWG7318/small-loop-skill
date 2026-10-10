@@ -184,6 +184,32 @@ def test_no_completion_is_published_for_an_action_error_or_non_decision(tmp_path
     assert not index.with_name('review-completed.json').exists()
 
 
+@pytest.mark.parametrize('related', [True, False])
+def test_native_bridge_observes_only_exact_parent_under_original_launcher(tmp_path, monkeypatch, related):
+    import sys
+    bridge, adapter = load('slk_checker_decision.py'), load('slk_checker_adapter.py')
+    _, receipt, index = bind(tmp_path, monkeypatch)
+    value = json.loads(receipt.read_text())
+    value['process'] = {'pid': 100, 'creation_time': 'created-100'}
+    receipt.write_text(json.dumps(value), encoding='utf-8')
+    monkeypatch.setitem(sys.modules, 'slk_checker_adapter', adapter)
+    monkeypatch.setattr(bridge.os, 'getppid', lambda: 200)
+    monkeypatch.setattr(adapter, '_process_creation_time', lambda pid: f'created-{pid}')
+    monkeypatch.setattr(adapter, '_process_parents', lambda: {200: 100 if related else 999})
+    if not related:
+        with pytest.raises(ValueError, match='launcher'):
+            bridge._publish_native_process()
+        assert not receipt.with_name('ocrv-native-process.json').exists()
+        return
+    bridge._publish_native_process()
+    saved = json.loads(receipt.with_name('ocrv-native-process.json').read_text())
+    assert saved['process'] == {'pid': 200, 'creation_time': 'created-200'}
+    assert saved['native_start_sha256'] == adapter._sha256(receipt)
+    assert saved['index_sha256'] == adapter._sha256(index)
+    assert saved['native_task_id'] == 'native-A'
+    assert 'verdict' not in saved and 'decision' not in saved
+
+
 def test_completed_receipt_cannot_close_an_unrelated_process(tmp_path, monkeypatch):
     adapter = load('slk_checker_adapter.py')
     class Process:

@@ -45,6 +45,68 @@ def test_dsh_activity_plugin_uses_native_status_and_session_events() -> None:
     assert "Start-Process" not in wrapper
 
 
+def test_dsh_samples_exact_live_registry_without_inventing_events(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js unavailable")
+    environment = os.environ.copy()
+    environment.update(SLK_ACTIVITY_PLUGIN_URI=(INTEGRATION / "slk_native_activity.mjs").as_uri(),
+        SLK_NATIVE_ACTIVITY_PATH=str(tmp_path / "activity.json"),
+        SLK_NATIVE_ACTIVITY_CONTEXT=json.dumps({"adapter": "dsh-worker", "run_id": "RUN-A",
+            "cell_id": "CELL-001", "message_id": "message-a"}))
+    script = r'''
+import { readFileSync } from "node:fs";
+const { apply } = await import(process.env.SLK_ACTIVITY_PLUGIN_URI);
+const callbacks = new Map(); let sample, disposed = false, now = 0;
+const RealDate = Date; globalThis.Date = class extends RealDate { constructor() { super(now); } };
+globalThis.setInterval = (callback, ms) => { if (ms !== 60000) throw Error("wrong cadence"); sample = callback; return 1; };
+globalThis.clearInterval = () => { disposed = true; };
+let agent = { session: { id: "exact-session" }, status: "running" }, unavailable = false;
+const cleanups = [];
+const archived = [];
+apply({ on: (name, callback) => callbacks.set(name, callback), effect: (body) => cleanups.push(body()),
+  agents: { get: (id) => { if (unavailable) throw Error("registry unavailable"); return id === "exact-session" ? agent : undefined; } },
+  workspaceRegistry: { archivedSessionIds: archived } });
+callbacks.get("agent/status")({ agent, status: "running" });
+callbacks.get("session/event")({ id: "exact-session" }, { type: "tool/completed" });
+const read = () => JSON.parse(readFileSync(process.env.SLK_NATIVE_ACTIVITY_PATH, "utf8"));
+const before = read(); now = 60000; agent.status = "idle"; sample(); const after = read();
+callbacks.get("agent/status")({ agent, status: "running" }); const eventOnly = read();
+callbacks.get("agent/status")({ agent: { session: { id: "other-session" }, status: "running" }, status: "running" });
+const wrong = read(); archived.push("exact-session"); now = 120000; sample(); const hidden = read();
+archived.length = 0; agent = { session: { id: "wrong-session" }, status: "running" };
+now = 180000; sample(); const mismatch = read(); agent = undefined; now = 240000; sample(); const missing = read();
+callbacks.get("session/event")({ id: "exact-session" }, { type: "tool/completed" }); const stillMissing = read();
+now = 300000; unavailable = true; sample(); const failed = read();
+callbacks.get("session/event")({ id: "exact-session" }, { type: "tool/completed" }); const stillFailed = read();
+now = 360000; unavailable = false; agent = { session: { id: "exact-session" }, status: "running" }; sample(); const recovered = read();
+cleanups.forEach((dispose) => dispose());
+console.log(JSON.stringify({ before, after, eventOnly, wrong, hidden, mismatch, missing, stillMissing, failed, stillFailed, recovered, disposed }));
+'''
+    completed = subprocess.run([node, "--input-type=module", "-e", script], env=environment,
+        capture_output=True, text=True, encoding="utf-8", check=False,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["after"]["status"] == "IDLE"
+    assert result["after"]["sequence"] == result["before"]["sequence"]
+    assert result["after"]["last_event"] == result["before"]["last_event"]
+    assert result["after"]["observed_at"] != result["before"]["observed_at"]
+    assert result["after"]["sample"]["source"] == "DSH_LIVE_AGENT_REGISTRY"
+    assert result["eventOnly"]["status"] == "IDLE"
+    assert result["eventOnly"]["sample"] == result["after"]["sample"]
+    assert result["wrong"]["native_task_id"] == "exact-session"
+    assert result["missing"]["status"] == "UNKNOWN"
+    assert result["missing"]["error"] == "DSH_AGENT_NOT_REGISTERED"
+    assert result["hidden"]["error"] == "DSH_SESSION_ARCHIVED"
+    assert result["mismatch"]["error"] == "DSH_SESSION_IDENTITY_MISMATCH"
+    assert result["stillMissing"]["error"] == "DSH_AGENT_NOT_REGISTERED"
+    assert result["failed"]["error"] == result["stillFailed"]["error"] == "DSH_STATUS_QUERY_UNAVAILABLE"
+    assert result["failed"]["observed_at"] != result["missing"]["observed_at"]
+    assert result["recovered"]["status"] == "RUNNING" and "error" not in result["recovered"]
+    assert result["disposed"] is True
+
+
 def test_installed_dsh_can_compose_the_activity_patch_without_a_model_call() -> None:
     dsh = Path(r"D:\DSH\node_modules\.bin\dsh.cmd")
     if not dsh.is_file():

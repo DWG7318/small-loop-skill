@@ -315,3 +315,27 @@ def test_notice_status_retry_retains_first_observation_without_second_send(tmp_p
     assert result["status"] == "NOTIFIED"
     assert (root / "desktop-target-observation.json").read_bytes() == original
     assert notification.wc._read_object(root / "desktop-target-observation-latest.json", "latest")["thread_status"] == "idle"
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(call["name"] == "send_message_to_thread" for call in calls) == 1
+
+
+@pytest.mark.parametrize("damage", ["material", "endpoint", "started", "delivery"])
+def test_unsent_notice_retry_revalidates_material_endpoint_and_uncertain_delivery(tmp_path, monkeypatch, damage):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "unknown-status")
+    with pytest.raises(AdapterError):
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    root = tmp_path / "notices" / notice["run_id"] / notice["event_id"]
+    if damage == "material":
+        path = root / "desktop-material.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["prompt"] = "another notice"
+        path.write_text(json.dumps(value), encoding="utf-8")
+    if damage == "endpoint": endpoint["endpoint_version"] += 1
+    if damage in {"started", "delivery"}:
+        (root / ("started.json" if damage == "started" else "delivery-result.json")).write_text("{}")
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "normal")
+    with pytest.raises((AdapterError, ValueError)):
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert not any(call["name"] == "send_message_to_thread" for call in calls)

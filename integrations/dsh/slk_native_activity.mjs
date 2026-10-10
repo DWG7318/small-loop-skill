@@ -57,6 +57,45 @@ export function apply(ctx) {
   let status = "PENDING";
   let nativeTaskId;
   let eventTail = [];
+  let lastEvent;
+  let sample;
+  let sampleError;
+
+  const write = () => {
+    if (!nativeTaskId || !lastEvent) return;
+    writeAtomic(binding.output, {
+      schema_version: "slk.native-task-activity/v1",
+      ...binding.value,
+      native_task_id: nativeTaskId,
+      status: sampleError ? "UNKNOWN" : status,
+      sequence,
+      observed_at: sample?.observed_at ?? lastEvent.observed_at,
+      last_event: { ...lastEvent, tail: eventTail },
+      waiting_on: status === "RUNNING" ? "DSH_AGENT" : null,
+      ...(sample ? { sample } : {}),
+      ...(sampleError ? { error: sampleError } : {}),
+    });
+  };
+
+  const sampleLive = () => {
+    if (!nativeTaskId || !ctx.agents?.get) return;
+    const fail = (error) => { sampleError = error; write(); };
+    sample = { source: "DSH_LIVE_AGENT_REGISTRY", native_task_id: nativeTaskId,
+      observed_at: new Date().toISOString() };
+    try {
+      const agent = ctx.agents.get(nativeTaskId);
+      if (!agent) return fail("DSH_AGENT_NOT_REGISTERED");
+      if (String(agent.session.id) !== nativeTaskId) return fail("DSH_SESSION_IDENTITY_MISMATCH");
+      if (ctx.workspaceRegistry?.archivedSessionIds?.includes(nativeTaskId)) {
+        return fail("DSH_SESSION_ARCHIVED");
+      }
+      status = String(agent.status).toUpperCase();
+      sampleError = undefined;
+      write();
+    } catch {
+      fail("DSH_STATUS_QUERY_UNAVAILABLE");
+    }
+  };
 
   const publish = (kind, detail) => {
     if (!nativeTaskId) return;
@@ -67,32 +106,28 @@ export function apply(ctx) {
       ...eventTail,
       { kind, sequence, observed_at: observedAt, detail_sha256: detailSha256 },
     ].slice(-12);
-    writeAtomic(binding.output, {
-      schema_version: "slk.native-task-activity/v1",
-      ...binding.value,
-      native_task_id: nativeTaskId,
-      status,
-      sequence,
-      observed_at: observedAt,
-      last_event: {
-        kind,
-        sequence,
-        detail_sha256: detailSha256,
-        tail: eventTail,
-      },
-      waiting_on: status === "RUNNING" ? "DSH_AGENT" : null,
-    });
+    lastEvent = { kind, sequence, observed_at: observedAt, detail_sha256: detailSha256 };
+    write();
   };
 
   ctx.on("agent/status", ({ agent, status: next }) => {
+    if (nativeTaskId && String(agent.session.id) !== nativeTaskId) return;
+    const initial = !nativeTaskId;
     nativeTaskId = String(agent.session.id);
-    status = String(next).toUpperCase();
-    publish("DSH_AGENT_STATUS", status);
+    const eventStatus = String(next).toUpperCase();
+    if (!sample) status = eventStatus;
+    publish("DSH_AGENT_STATUS", eventStatus);
+    if (initial) sampleLive();
   });
   ctx.on("session/event", (session, event) => {
     const sessionId = String(session.id);
-    if (nativeTaskId && sessionId !== nativeTaskId) return;
-    nativeTaskId = sessionId;
+    if (!nativeTaskId || sessionId !== nativeTaskId) return;
     publish("DSH_SESSION_EVENT", event?.type ?? "unknown");
   });
+  if (ctx.effect && ctx.agents?.get) {
+    ctx.effect(() => {
+      const timer = setInterval(sampleLive, 60000);
+      return () => clearInterval(timer);
+    });
+  }
 }

@@ -5,6 +5,10 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "adapter", "run_id", "cell_id", "message_id", "native_task_id", "status", "sequence", "observed_at", "last_event", "waiting_on"],
+  "allOf": [{
+    "if": {"properties": {"status": {"const": "UNKNOWN"}}},
+    "then": {"required": ["error"]}
+  }],
   "properties": {
     "schema_version": {"const": "slk.native-task-activity/v1"},
     "adapter": {"type": "string", "minLength": 1},
@@ -12,18 +16,54 @@
     "cell_id": {"type": "string", "minLength": 1},
     "message_id": {"type": "string", "format": "uuid"},
     "native_task_id": {"type": "string", "minLength": 1},
-    "status": {"enum": ["PENDING", "RUNNING", "IDLE", "COMPLETED", "FAILED"]},
+    "status": {"enum": ["PENDING", "RUNNING", "IDLE", "COMPLETED", "FAILED", "UNKNOWN"]},
+    "error": {"type": "string", "minLength": 1},
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "native_task_id", "observed_at"],
+      "properties": {
+        "source": {"const": "DSH_LIVE_AGENT_REGISTRY"},
+        "native_task_id": {"type": "string", "minLength": 1},
+        "observed_at": {"type": "string", "format": "date-time"}
+      }
+    },
     "sequence": {"type": "integer", "minimum": 0},
     "observed_at": {"type": "string", "format": "date-time"},
     "last_event": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["kind", "sequence"],
       "properties": {
         "kind": {"type": "string", "minLength": 1},
         "sequence": {"type": "integer", "minimum": 0},
+        "observed_at": {"type": "string", "format": "date-time"},
         "detail_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "summary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "session_id": {"type": "string"},
+        "tool_name": {"type": "string"},
+        "ok": {"type": "boolean"},
+        "duration_ms": {"type": "number"},
+        "duration_seconds": {"type": "number"},
         "exit_code": {"type": "integer"},
+        "native_process": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pid", "creation_time"],
+          "properties": {
+            "pid": {"type": "integer", "minimum": 1},
+            "creation_time": {"type": "string", "minLength": 1}
+          }
+        },
+        "native_process_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exists", "identity_matches"],
+          "properties": {
+            "exists": {"type": "boolean"},
+            "identity_matches": {"type": "boolean"}
+          }
+        },
         "tail": {
           "type": "array",
           "maxItems": 12,

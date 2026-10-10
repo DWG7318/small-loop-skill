@@ -18,10 +18,14 @@ def write_json(path: Path, value: dict) -> Path:
 def request_fixture(tmp_path: Path, operation: str = "record-overwatch-cycle") -> Path:
     from test_worker_completion import completion_fixture, runtime_projection
     source, endpoint, _ = completion_fixture(tmp_path)
+    envelope = json.loads((source / "envelope.json").read_text())
+    envelope["token_sequence"] = 14
+    write_json(source / "envelope.json", envelope)
     projection = runtime_projection(token_owner=endpoint["role_instance_id"])
     projection["runtime_snapshot"]["method_version"] = "4.4.2"
     projection["roles"] = [{"role": "worker", "role_instance_id": endpoint["role_instance_id"]}]
     projection["go_nodes"] = [{"go_id": "GO-001", "cell_nodes": [{"cell_id": "CELL-001", "attempt": 1}]}]
+    projection["events"][0].update(go_id="GO-001", author_role_instance_id=envelope["sender_role_instance_id"])
     details = json.loads(projection["events"][0]["details_json"])
     details.update(start_evidence_sha256=hashlib.sha256((source / "started.json").read_bytes()).hexdigest(),
                    endpoint_sha256=hashlib.sha256((source / "endpoint.json").read_bytes()).hexdigest(),
@@ -278,6 +282,7 @@ def test_nonworker_real_requery_accepts_historical_report_but_binds_original_sta
     source = Path(old["native_start_path"]).parent
     endpoint = endpoint_value(role=role)
     envelope = envelope_value(sender_role="worker" if role == "checker" else "checker", receiver_role=role)
+    envelope["token_sequence"] = 14
     write_json(source / "endpoint.json", endpoint)
     write_json(source / "envelope.json", envelope)
     write_json(source / "started.json", make_native_start(adapter=endpoint["adapter"], run_id="RUN-A",
@@ -289,6 +294,7 @@ def test_nonworker_real_requery_accepts_historical_report_but_binds_original_sta
     projection = json.loads((tmp_path / "runtime.json").read_text())
     projection["roles"] = [{"role": role, "role_instance_id": endpoint["role_instance_id"]}]
     projection["runtime_snapshot"]["token_holder_role_instance_id"] = endpoint["role_instance_id"]
+    projection["events"][0]["author_role_instance_id"] = envelope["sender_role_instance_id"]
     projection["events"][0]["details_json"] = json.dumps({"message_id": envelope["message_id"],
         **{key: hashlib.sha256((source / filename).read_bytes()).hexdigest() for key, filename in (
             ("start_evidence_sha256", "started.json"), ("endpoint_sha256", "endpoint.json"), ("envelope_sha256", "envelope.json"))}})
@@ -379,3 +385,94 @@ def test_real_unknown_query_is_recordable_without_inventing_native_proof(tmp_pat
     cycle["checklist"]["bi_projection"] = "CLEAR"
     with pytest.raises(ValueError, match="unproven"):
         admin._verify_cycle(cycle, "RUN-A", ["slk-state"])
+
+
+def test_scope_collector_queries_central_exact_delivery_before_touching_native(tmp_path, monkeypatch):
+    import slk_transport.native_activity as native
+    request_fixture(tmp_path)
+    query = json.loads((tmp_path / "scope-query.json").read_text())
+    start = Path(query["native_start_path"])
+    endpoint = json.loads(start.with_name("endpoint.json").read_text())
+    endpoint["role_instance_id"] = "different-worker"
+    write_json(start.with_name("endpoint.json"), endpoint)
+    monkeypatch.setattr(native, "inspect_native_activity", lambda *_a, **_k: pytest.fail("unbound native source must not be queried"))
+    actual = native.collect_overwatch_scope(start, run_id="RUN-A", state_command=["slk-state"])
+    assert actual["native_activity"]["status"] == "UNKNOWN"
+    assert actual["native_start_sha256"] is None
+
+
+@pytest.mark.parametrize("role", ["worker", "checker", "supervisor"])
+@pytest.mark.parametrize("damage", [None, "event-go", "event-cell", "event-attempt", "event-author",
+    "missing-go", "missing-attempt", "duplicate-cell", "current-attempt", "plan", "role", "missing-role",
+    "event-correction", "snapshot-run", "token-sequence"])
+def test_scope_collector_checks_current_central_scope_before_any_roles_native_query(tmp_path, monkeypatch, role, damage):
+    import os
+    import slk_transport.native_activity as native
+    from test_contracts import endpoint_value, envelope_value
+    request_fixture(tmp_path)
+    source = Path(json.loads((tmp_path / "scope-query.json").read_text())["native_start_path"]).parent
+    endpoint = endpoint_value(role=role)
+    envelope = envelope_value(sender_role="worker" if role == "checker" else "checker", receiver_role=role)
+    envelope["token_sequence"] = 14
+    if role == "supervisor": envelope["payload_type"] = "D2_READY"
+    write_json(source / "endpoint.json", endpoint)
+    write_json(source / "envelope.json", envelope)
+    write_json(source / "started.json", native.make_native_start(adapter=endpoint["adapter"], run_id="RUN-A",
+        cell_id=envelope["cell_id"], message_id=envelope["message_id"], request_sha256=envelope["payload_sha256"],
+        native_request_sha256="b" * 64, native_task_kind="role-invocation", native_task_id="exact-task",
+        native_task_status="RUNNING", pid=os.getpid()))
+    terminal = json.loads((source / "completed.json").read_text())
+    write_json(source / "completed.json", {**terminal, "adapter": endpoint["adapter"]})
+    projection = json.loads((tmp_path / "runtime.json").read_text())
+    projection["roles"] = [{"role": role, "role_instance_id": endpoint["role_instance_id"],
+                            "lifecycle": "active", "current_go_id": None, "current_cell_id": None}]
+    projection["runtime_snapshot"]["token_holder_role_instance_id"] = endpoint["role_instance_id"]
+    event = projection["events"][0]
+    event.update(go_id=envelope["go_id"], author_role_instance_id=envelope["sender_role_instance_id"])
+    event["details_json"] = json.dumps({"message_id": envelope["message_id"],
+        **{key: hashlib.sha256((source / filename).read_bytes()).hexdigest() for key, filename in (
+            ("start_evidence_sha256", "started.json"), ("endpoint_sha256", "endpoint.json"), ("envelope_sha256", "envelope.json"))}})
+    if damage == "event-go": event["go_id"] = "wrong-go"
+    if damage == "event-cell": event["cell_id"] = "wrong-cell"
+    if damage == "event-attempt": event["attempt"] = 99
+    if damage == "event-author": event["author_role_instance_id"] = "different-sender"
+    if damage == "missing-go": event.pop("go_id")
+    if damage == "missing-attempt": event.pop("attempt")
+    if damage == "duplicate-cell": projection["go_nodes"][0]["cell_nodes"] *= 2
+    if damage == "current-attempt": projection["go_nodes"][0]["cell_nodes"][0]["attempt"] = 2
+    if damage == "plan": projection["summary"]["current_plan_revision"] = 2
+    if damage == "role": projection["roles"][0]["role"] = "different-role"
+    if damage == "missing-role": projection["roles"] = []
+    if damage == "event-correction": event["corrects_event_id"] = "different-event"
+    if damage == "snapshot-run": projection["runtime_snapshot"]["run_id"] = "different-run"
+    if damage == "token-sequence": projection["runtime_snapshot"]["token_sequence"] += 1
+    write_json(tmp_path / "runtime.json", projection)
+    calls = []
+    original = native.inspect_native_activity
+    def inspect(*args, **kwargs):
+        assert damage is None, "mismatched central scope reached the native inspector"
+        calls.append(args[0])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(native, "inspect_native_activity", inspect)
+    actual = native.collect_overwatch_scope(source / "started.json", run_id="RUN-A", state_command=["slk-state"])
+    assert len(calls) == (1 if damage is None else 0)
+    assert actual["native_activity"]["status"] == ("COMPLETED" if damage is None else "UNKNOWN")
+    if damage is not None:
+        assert actual["native_start_sha256"] is None and actual["worker_completion"] is None
+
+
+def test_initial_supervisor_without_current_cell_or_message_does_not_invent_a_native_task(tmp_path, monkeypatch):
+    import slk_transport.native_activity as native
+    request_fixture(tmp_path)
+    projection = json.loads((tmp_path / "runtime.json").read_text())
+    projection["runtime_snapshot"].update(token_holder_role_instance_id="RUN-A-supervisor-001", latest_message_id=None)
+    projection["roles"] = [{"role": "supervisor", "role_instance_id": "RUN-A-supervisor-001",
+                            "current_go_id": None, "current_cell_id": None}]
+    projection["go_nodes"] = []
+    projection["events"] = []
+    write_json(tmp_path / "runtime.json", projection)
+    monkeypatch.setattr(native, "inspect_native_activity", lambda *_a, **_k: pytest.fail("initial TOKEN has no native task"))
+    actual = native.collect_overwatch_scope(None, run_id="RUN-A", state_command=["slk-state"])
+    assert actual["query_error"] is None
+    assert actual["native_activity"]["error"] == "NO_NATIVE_TASK_FOR_CURRENT_TOKEN"
+    assert actual["worker_completion"] is None and actual["native_start_sha256"] is None

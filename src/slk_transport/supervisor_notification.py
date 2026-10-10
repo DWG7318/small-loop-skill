@@ -75,7 +75,7 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
     if root.is_dir() and any(root.iterdir()):
         names = {p.name for p in root.iterdir()}
         if (not {"endpoint.json", "notification.json"}.issubset(names)
-            or names - {"endpoint.json", "notification.json", "desktop-target-observation.json", "desktop-target-observation-latest.json"}
+            or names - {"endpoint.json", "notification.json", "desktop-material.json", "desktop-target-observation.json", "desktop-target-observation-latest.json"}
             or wc._read_object(root / "notification.json", "notice") != dict(notice)
             or wc._read_object(root / "endpoint.json", "notification endpoint") != dict(endpoint_raw)):
             raise ValueError("previous operational send is uncertain; inspect it before another send")

@@ -138,6 +138,33 @@ def test_natural_exit_validates_explicit_completion_without_timeout(tmp_path, mo
     assert result['review']['closure_error'] is None
 
 
+def test_ocrv_source_binds_marker_to_original_invocation_without_claiming_native_pid(tmp_path, monkeypatch):
+    _natural_exit(tmp_path, monkeypatch)
+    start = json.loads((tmp_path / 'source/native-start.received.json').read_text())
+    assert start['native_task']['kind'] == 'ocrv-invocation'
+    source = json.loads((tmp_path / 'source/ocrv-native-source.json').read_text())
+    assert source['native_start_sha256'] == hashlib.sha256((tmp_path / 'source/native-start.received.json').read_bytes()).hexdigest()
+    background = Path(source['background_path']).read_text(encoding='utf-8')
+    assert background.splitlines()[0] == source['marker']
+    assert 'native-A' in source['marker'] and start['native_request_sha256'] in source['marker']
+    assert source['invocation_id'] == start['native_task']['id']
+    assert 'native_pid' not in source
+
+
+def test_ocrv_capability_names_only_public_native_session_events():
+    value = json.loads((ROOT / 'integrations/ocrv/slk-native-activity-capabilities.json').read_text())
+    assert value['native_events'] == ['session_start', 'tool_call', 'session_end']
+
+
+def test_ocrv_wrapper_observes_both_streams_without_claiming_session_activity(tmp_path, monkeypatch):
+    _natural_exit(tmp_path, monkeypatch)
+    activity = json.loads((tmp_path / 'source/native-activity.json').read_text())
+    tail = activity['last_event']['tail']
+    assert {event['kind'] for event in tail} == {'OCRV_PROCESS_STARTED', 'OCRV_STDOUT', 'OCRV_PROGRESS', 'OCRV_PROCESS_EXITED'}
+    assert [event['sequence'] for event in tail] == [0, 1, 2, 3]
+    assert activity['native_task_id'] == 'native-A'
+
+
 @pytest.mark.parametrize('damage', ['missing', 'json', 'utf8', 'invocation', 'start-hash', 'decision-hash'])
 def test_natural_rc0_without_valid_completion_is_not_d1(tmp_path, monkeypatch, damage):
     status, result = _natural_exit(tmp_path, monkeypatch, damage=damage)
@@ -260,6 +287,12 @@ def load_role_host(endpoint): return Host()
                 creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0))
             assert completed.returncode == 0, completed.stderr
         result = json.loads(output.read_text(encoding='utf-8'))
+        observed_process = json.loads((source / 'ocrv-native-process.json').read_text(encoding='utf-8'))
+        native_start = json.loads((source / 'native-start.received.json').read_text(encoding='utf-8'))
+        assert observed_process['native_start_sha256'] == hashlib.sha256((source / 'native-start.received.json').read_bytes()).hexdigest()
+        assert observed_process['launcher_process'] == native_start['process']
+        if wrapped:
+            assert observed_process['process']['pid'] != native_start['process']['pid']
         assert result['verdict'] == verdict
         assert result['review']['closure_reason'] == 'EXPLICIT_D1_COMPLETED'
         assert result['review']['exit_code'] != 0  # do not invent a natural OCRV exit

@@ -553,7 +553,7 @@ def _publish_native_start(
         "native_request_sha256": context["native_request_sha256"],
         "observed_at": datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z"),
         "process": {"pid": pid, "creation_time": _process_creation_time(pid)},
-        "native_task": {"kind": "ocrv-review", "id": invocation, "status": "RUNNING"},
+        "native_task": {"kind": "ocrv-invocation", "id": invocation, "status": "RUNNING"},
     }
     _write_json_atomic(receipt_path, value)
     activity_path = receipt_path.with_name("native-activity.json")
@@ -660,13 +660,32 @@ def run(
 ) -> int:
     request = _validate_request(_read_json(request_path))
     invocation, root = (invocation_override, output_path.resolve().parent) if invocation_override else _artifact_root(request)
+    native = _native_context()
     background_path = background_override or root / "d1-background.md"
     if background_override is None:
         background_path.write_text(_background(request, _discover_capabilities(request, root)), encoding="utf-8", newline="\n")
+    source = None
+    if native is not None:
+        marker = f"SLK_NATIVE_INVOCATION={invocation};REQUEST_SHA256={native[1]['native_request_sha256']}"
+        if background_override is not None:
+            background_path = root / "d1-native-background.md"
+            original_background = background_override.read_text(encoding="utf-8")
+        else:
+            original_background = background_path.read_text(encoding="utf-8")
+        background_path.write_text(marker + "\n" + original_background, encoding="utf-8", newline="\n")
+        repo = Path(request["repository"]).resolve()
+        encoded_repo = repo.drive.replace(":", "_") + str(repo)[len(repo.drive):].lstrip("/\\").replace("\\", "-").replace("/", "-")
+        sessions = Path(os.environ.get("OCRV_RUNTIME_ROOT", r"F:\OCRV")) / "home" / ".opencodereview" / "sessions" / encoded_repo
+        source = {"schema_version": "slk.ocrv-native-source/v1",
+            **{key: native[1][key] for key in ("run_id", "cell_id", "message_id")},
+            "invocation_id": invocation, "request_path": str(request_path.resolve()),
+            "background_path": str(background_path.resolve()), "background_sha256": _sha256(background_path),
+            "marker": marker, "session_directory": str(sessions.resolve()),
+            "prior_sessions": sorted(path.name for path in sessions.glob("*.jsonl")),
+            "resume_session_id": resume_session}
     raw_path = root / "ocrv-review.json"
     stdout_path, stderr_path = root / "ocrv.stdout.txt", root / "ocrv.stderr.txt"
     command = _review_args(request, background_path, raw_path) + (["--resume", resume_session] if resume_session else [])
-    native = _native_context()
     index_path = root / "evidence-index.json"
     _write_json_atomic(index_path, {
         **(native[1] if native is not None else {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
@@ -687,43 +706,46 @@ def run(
         activity_path, activity_tail = _publish_native_start(
             native[0], native[1], invocation, process.pid
         )
+        _write_json_atomic(native[0].with_name("ocrv-native-source.json"),
+            {**source, "native_start_sha256": _sha256(native[0])})
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
+    activity_lock = threading.Lock()
 
     def drain(stream: Any, destination: list[str], kind: str) -> None:
-        sequence = 0
         for line in iter(stream.readline, ""):
             destination.append(line)
-            if kind == "OCRV_PROGRESS" and activity_path is not None:
-                sequence += 1
-                observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
-                detail_sha256 = hashlib.sha256(line.encode("utf-8")).hexdigest()
-                activity_tail.append({
-                    "kind": kind, "sequence": sequence, "observed_at": observed_at,
-                    "detail_sha256": detail_sha256,
-                })
-                del activity_tail[:-12]
-                _write_json_atomic(
-                    activity_path,
-                    {
-                        "schema_version": "slk.native-task-activity/v1",
-                        "adapter": native[1]["adapter"] if native is not None else "ocrv-checker",
-                        "run_id": native[1]["run_id"] if native is not None else request["run_id"],
-                        "cell_id": native[1]["cell_id"] if native is not None else request["cell_id"],
-                        "message_id": native[1]["message_id"] if native is not None else "unknown",
-                        "native_task_id": invocation,
-                        "status": "RUNNING",
-                        "sequence": sequence,
-                        "observed_at": observed_at,
-                        "last_event": {
-                            "kind": kind,
+            if activity_path is not None:
+                with activity_lock:
+                    sequence = activity_tail[-1]["sequence"] + 1
+                    observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+                    detail_sha256 = hashlib.sha256(line.encode("utf-8")).hexdigest()
+                    activity_tail.append({
+                        "kind": kind, "sequence": sequence, "observed_at": observed_at,
+                        "detail_sha256": detail_sha256,
+                    })
+                    del activity_tail[:-12]
+                    _write_json_atomic(
+                        activity_path,
+                        {
+                            "schema_version": "slk.native-task-activity/v1",
+                            "adapter": native[1]["adapter"] if native is not None else "ocrv-checker",
+                            "run_id": native[1]["run_id"] if native is not None else request["run_id"],
+                            "cell_id": native[1]["cell_id"] if native is not None else request["cell_id"],
+                            "message_id": native[1]["message_id"] if native is not None else "unknown",
+                            "native_task_id": invocation,
+                            "status": "RUNNING",
                             "sequence": sequence,
-                            "summary_sha256": detail_sha256,
-                            "tail": list(activity_tail),
+                            "observed_at": observed_at,
+                            "last_event": {
+                                "kind": kind,
+                                "sequence": sequence,
+                                "summary_sha256": detail_sha256,
+                                "tail": list(activity_tail),
+                            },
+                            "waiting_on": "OCRV_REVIEW",
                         },
-                        "waiting_on": "OCRV_REVIEW",
-                    },
-                )
+                    )
         stream.close()
 
     stdout_thread = threading.Thread(target=drain, args=(process.stdout, stdout_lines, "OCRV_STDOUT"))
@@ -759,7 +781,7 @@ def run(
         except (RequestError, OSError, KeyError, TypeError, UnicodeDecodeError) as exc:
             closure_error = f"{closure_error}; {exc}" if closure_error is not None else str(exc)
     if activity_path is not None:
-        exit_sequence = len(stderr_lines) + 1
+        exit_sequence = activity_tail[-1]["sequence"] + 1
         exit_observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
         activity_tail.append({
             "kind": "OCRV_PROCESS_EXITED", "sequence": exit_sequence,

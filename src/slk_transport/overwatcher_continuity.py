@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Mapping
 
+from . import SUPPORTED_METHOD_VERSIONS
+
 
 class OverwatcherContinuityError(ValueError):
     pass
@@ -59,7 +61,7 @@ def inspect_overwatcher_cadence(
         "action": "NONE",
     }
     now = _time(observed_at)
-    current_method = summary.get("slk_version") in {"4.4.0", "4.4.1", "4.4.2"}
+    current_method = summary.get("slk_version") in SUPPORTED_METHOD_VERSIONS
     if not active:
         if current_method:
             return {**base, "status": "CONTINUITY_UNPROVEN", "anomaly_codes": ["OVERWATCHER_MISSING"],

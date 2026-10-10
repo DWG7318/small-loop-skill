@@ -64,3 +64,17 @@ def test_current_method_rejects_old_cadence():
     value["summary"]["slk_version"] = "4.4.0"
     with pytest.raises(ValueError):
         inspect_overwatcher_cadence(value, observed_at="2026-09-23T00:04:00Z")
+
+
+def test_443_shared_session_keeps_each_runs_cadence_separate():
+    a, b = projection(), projection()
+    for value, run in ((a, "RUN-A"), (b, "RUN-B")):
+        value["summary"].update(run_id=run, slk_version="4.4.3")
+        value["roles"][0].update(role_instance_id=run + "-ow", session_id="shared-session")
+        value["overwatch_cycles"][0].update(overwatcher_role_instance_id=run + "-ow",
+            cadence_seconds=600, next_cycle_at="2026-09-23T00:10:00Z")
+    b["overwatch_cycles"][0].update(completed_at="2026-09-23T00:20:00Z", next_cycle_at="2026-09-23T00:30:00Z")
+    assert inspect_overwatcher_cadence(a, observed_at="2026-09-23T00:25:00Z")["status"] == "CONTINUITY_UNPROVEN"
+    assert inspect_overwatcher_cadence(b, observed_at="2026-09-23T00:25:00Z")["status"] == "CURRENT"
+    a["roles"][0]["lifecycle"] = "closed"
+    assert inspect_overwatcher_cadence(b, observed_at="2026-09-23T00:25:00Z")["status"] == "CURRENT"

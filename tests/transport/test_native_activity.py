@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator, FormatChecker
 
 from slk_transport.native_activity import (
     NativeActivityError,
@@ -427,7 +428,7 @@ def test_stale_or_wrong_session_activity_never_inherits_started_running(tmp_path
     assert result["error"] in {"NATIVE_ACTIVITY_IDENTITY_MISMATCH", "NATIVE_ACTIVITY_STALE"}
 
 
-def test_later_ocrv_segment_activity_supersedes_exited_first_segment(tmp_path: Path) -> None:
+def test_arbitrary_later_ocrv_segment_never_replaces_exact_transport_start(tmp_path: Path) -> None:
     receipt = _start_receipt(tmp_path, native_task_kind="ocrv-review")
     segment_root = tmp_path / "review-segments" / "segment-002"
     segment_root.mkdir(parents=True)
@@ -484,6 +485,184 @@ def test_later_ocrv_segment_activity_supersedes_exited_first_segment(tmp_path: P
         observed_at="2026-10-01T00:05:00Z",
     )
 
+    assert result["status"] == "DEAD_WITHOUT_TERMINAL"
+    assert result["native_task"]["id"] == "ocrv-session-a"
+    assert probed == [4321]
+
+
+def test_wrapper_stderr_is_not_native_session_activity(tmp_path: Path) -> None:
+    receipt = _start_receipt(tmp_path, native_task_kind="ocrv-review")
+    start = validate_native_start(receipt)
+    (tmp_path / "native-activity.json").write_text(json.dumps({
+        "schema_version": "slk.native-task-activity/v1", "adapter": "ocrv-checker",
+        "run_id": start["run_id"], "cell_id": start["cell_id"], "message_id": start["message_id"],
+        "native_task_id": start["native_task"]["id"], "status": "RUNNING", "sequence": 7,
+        "observed_at": "2026-10-01T00:05:00Z", "last_event": {"kind": "OCRV_PROGRESS", "sequence": 7},
+        "waiting_on": "OCRV_REVIEW"}), encoding="utf-8")
+    result = inspect_native_activity(receipt, observed_at="2026-10-01T00:05:01Z",
+        process_probe=lambda *_: {"exists": True, "identity_matches": True})
+    assert result["status"] == "UNKNOWN"
+    assert result["error"] == "OCRV_NATIVE_SESSION_UNPROVEN"
+
+
+def test_dsh_sample_and_last_action_have_separate_clocks(tmp_path: Path) -> None:
+    receipt = _start_receipt(tmp_path, native_task_kind="dsh-session")
+    start = validate_native_start(receipt)
+    start["adapter"] = "dsh-worker"
+    receipt.write_text(json.dumps(start), encoding="utf-8")
+    value = {"schema_version": "slk.native-task-activity/v1", "adapter": "dsh-worker",
+        "run_id": start["run_id"], "cell_id": start["cell_id"], "message_id": start["message_id"],
+        "native_task_id": start["native_task"]["id"], "status": "RUNNING", "sequence": 3,
+        "observed_at": "2026-10-01T00:10:00Z",
+        "last_event": {"kind": "DSH_SESSION_EVENT", "sequence": 3, "observed_at": "2026-10-01T00:00:00Z"},
+        "sample": {"source": "DSH_LIVE_AGENT_REGISTRY", "native_task_id": start["native_task"]["id"],
+                   "observed_at": "2026-10-01T00:10:00Z"}, "waiting_on": "DSH_AGENT"}
+    (tmp_path / "native-activity.json").write_text(json.dumps(value), encoding="utf-8")
+    result = inspect_native_activity(receipt, observed_at="2026-10-01T00:10:01Z",
+        process_probe=lambda *_: {"exists": True, "identity_matches": True})
     assert result["status"] == "ACTIVE"
-    assert result["native_task"]["id"] == "ocrv-session-segment-two"
-    assert probed == [9876]
+    assert result["last_event"]["observed_at"] == "2026-10-01T00:00:00Z"
+    value.pop("sample")
+    (tmp_path / "native-activity.json").write_text(json.dumps(value), encoding="utf-8")
+    legacy = inspect_native_activity(receipt, observed_at="2026-10-01T00:10:01Z",
+        process_probe=lambda *_: {"exists": True, "identity_matches": True})
+    assert legacy["status"] == "UNKNOWN"
+    assert legacy["error"] == "NATIVE_STATUS_NOT_SAMPLED"
+    value["sample"] = {"source": "DSH_LIVE_AGENT_REGISTRY", "native_task_id": start["native_task"]["id"],
+                       "observed_at": value["observed_at"]}
+    (tmp_path / "native-activity.json").write_text(json.dumps(value), encoding="utf-8")
+    stale = inspect_native_activity(receipt, observed_at="2026-10-01T00:20:01Z",
+        process_probe=lambda *_: {"exists": True, "identity_matches": True})
+    assert stale["status"] == "UNKNOWN"
+    assert stale["error"] == "NATIVE_ACTIVITY_STALE"
+    assert stale["last_event"]["observed_at"] == "2026-10-01T00:00:00Z"
+
+
+@pytest.mark.parametrize("damage", [None, "adapter", "run_id", "cell_id", "message_id", "native_task_id",
+    "messages", "arguments", "results", "reasoning", "native_payload", "nested-private", "top-private", "error-object"])
+def test_unknown_error_only_retains_exact_scope_public_historical_metadata(tmp_path, damage):
+    receipt = _start_receipt(tmp_path)
+    start = validate_native_start(receipt)
+    event = {"kind": "OCRV_TOOL_CALL", "sequence": 3, "session_id": "exact-session",
+             "observed_at": "2026-10-01T00:00:00Z", "tool_name": "file_read", "ok": True, "duration_ms": 4}
+    value = {"schema_version": "slk.native-task-activity/v1",
+        **{key: start[key] for key in ("adapter", "run_id", "cell_id", "message_id")},
+        "native_task_id": start["native_task"]["id"], "status": "UNKNOWN", "sequence": 3,
+        "observed_at": "2026-10-01T00:00:01Z", "last_event": event,
+        "waiting_on": None, "error": "NATIVE_STATUS_QUERY_UNAVAILABLE"}
+    if damage in {"adapter", "run_id", "cell_id", "message_id", "native_task_id"}:
+        value[damage] = "different-identity"
+    elif damage in {"messages", "arguments", "results", "reasoning", "native_payload"}:
+        event[damage] = ["PRIVATE_NATIVE_TEXT"]
+    elif damage == "nested-private":
+        event["native_process"] = {"pid": 1, "creation_time": "original:1", "messages": "PRIVATE_NATIVE_TEXT"}
+    elif damage == "top-private":
+        value["messages"] = "PRIVATE_NATIVE_TEXT"
+    elif damage == "error-object":
+        value["error"] = {"messages": "PRIVATE_NATIVE_TEXT"}
+    result = inspect_native_activity(receipt, native_probe=lambda _: value,
+        process_probe=lambda *_: {"exists": True, "identity_matches": True}, observed_at="2026-10-10T00:00:00Z")
+    assert result["status"] == "UNKNOWN"
+    assert "PRIVATE" not in json.dumps(result)
+    if damage is None:
+        assert result["error"] == "NATIVE_STATUS_QUERY_UNAVAILABLE"
+        assert result["last_event"] == event  # historical clock/sequence are not refreshed
+    else:
+        assert result["last_event"] is None
+        assert result["error"] != "NATIVE_STATUS_QUERY_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("private", [False, True])
+def test_minimal_unknown_error_needs_no_history_but_cannot_carry_private_payload(tmp_path, private):
+    receipt = _start_receipt(tmp_path)
+    value = {"status": "UNKNOWN", "error": "NATIVE_ACTIVITY_MISSING"}
+    if private: value["messages"] = ["PRIVATE_NATIVE_TEXT"]
+    result = inspect_native_activity(receipt, native_probe=lambda _: value,
+        process_probe=lambda *_: {"exists": True, "identity_matches": True})
+    assert result["status"] == "UNKNOWN" and result["last_event"] is None
+    assert "PRIVATE" not in json.dumps(result)
+    assert result["error"] == ("NATIVE_QUERY_FAILED" if private else "NATIVE_ACTIVITY_MISSING")
+
+
+@pytest.mark.parametrize("damage", [None, "messages", "arguments", "result", "results", "reasoning",
+    "reasoning_content", "native_payload", "nested-private"])
+def test_normal_projection_retains_legacy_public_metadata_but_not_private_payloads(tmp_path, damage):
+    receipt = _start_receipt(tmp_path)
+    start = validate_native_start(receipt)
+    event = {"kind": "OCRV_PROGRESS", "sequence": 3, "observed_at": "2026-10-01T00:00:00Z",
+        "detail_sha256": "a" * 64, "summary_sha256": "b" * 64, "exit_code": 0,
+        "native_process": {"pid": 1, "creation_time": "original:1"},
+        "native_process_state": {"exists": True, "identity_matches": True}}
+    value = {"schema_version": "slk.native-task-activity/v1",
+        **{key: start[key] for key in ("adapter", "run_id", "cell_id", "message_id")},
+        "native_task_id": start["native_task"]["id"], "status": "RUNNING", "sequence": 3,
+        "observed_at": "2026-10-01T00:00:01Z", "last_event": event, "waiting_on": None}
+    if damage == "nested-private":
+        event["native_process"]["messages"] = "PRIVATE_NATIVE_TEXT"
+    elif damage is not None:
+        event[damage] = ["PRIVATE_NATIVE_TEXT"]
+    result = inspect_native_activity(receipt, native_probe=lambda _: value,
+        process_probe=lambda *_: {"exists": True, "identity_matches": True}, observed_at="2026-10-01T00:00:02Z")
+    assert "PRIVATE" not in json.dumps(result)
+    assert result["status"] == ("ACTIVE" if damage is None else "UNKNOWN")
+    assert result["last_event"] == (event if damage is None else None)
+
+
+@pytest.mark.parametrize("case", ["minimal", "legacy-hash-exit", "public-native", "unknown-with-error", "dsh-live-sample",
+    "messages", "arguments", "result", "results", "reasoning", "reasoning_content", "native_payload",
+    "process-messages", "state-messages", "unknown-without-error", "error-object", "event-extra",
+    "process-pid-bool", "process-missing-creation", "state-nonbool", "duration-object", "bad-detail-hash", "tail-private"])
+def test_native_projection_schema_and_python_accept_the_same_public_metadata_contract(case):
+    valid_cases = {"minimal", "legacy-hash-exit", "public-native", "unknown-with-error", "dsh-live-sample"}
+    event = {"kind": "OCRV_TOOL_CALL", "sequence": 3, "observed_at": "2026-10-01T00:00:00Z",
+        "detail_sha256": "a" * 64, "summary_sha256": "b" * 64, "exit_code": 0,
+        "session_id": "exact-session", "tool_name": "file_read", "ok": True,
+        "duration_ms": 7, "duration_seconds": 1.5,
+        "native_process": {"pid": 1, "creation_time": "original:1"},
+        "native_process_state": {"exists": True, "identity_matches": True},
+        "tail": [{"kind": "OCRV_TOOL_CALL", "sequence": 3, "observed_at": "2026-10-01T00:00:00Z",
+                  "detail_sha256": "c" * 64}]}
+    value = {"schema_version": "slk.native-task-activity/v1", "adapter": "ocrv-checker", "run_id": "RUN-A",
+        "cell_id": "CELL-001", "message_id": "11111111-1111-4111-8111-111111111111", "native_task_id": "exact-task",
+        "status": "RUNNING", "sequence": 3, "observed_at": "2026-10-01T00:00:01Z", "last_event": event, "waiting_on": None}
+    if case == "minimal":
+        value["last_event"] = {key: event[key] for key in ("kind", "sequence")}
+    elif case == "legacy-hash-exit":
+        value["last_event"] = {key: event[key] for key in ("kind", "sequence", "detail_sha256", "summary_sha256", "exit_code", "tail")}
+    elif case in {"unknown-with-error", "unknown-without-error", "error-object"}:
+        value["status"] = "UNKNOWN"
+        if case != "unknown-without-error":
+            value["error"] = "NATIVE_STATUS_QUERY_UNAVAILABLE" if case == "unknown-with-error" else {"messages": "private"}
+    elif case == "dsh-live-sample":
+        value["adapter"] = "dsh-worker"
+        value["sample"] = {"source": "DSH_LIVE_AGENT_REGISTRY", "native_task_id": value["native_task_id"],
+                           "observed_at": value["observed_at"]}
+    elif case in {"messages", "arguments", "result", "results", "reasoning", "reasoning_content", "native_payload", "event-extra"}:
+        event[case] = ["private"]
+    elif case == "process-messages":
+        event["native_process"]["messages"] = "private"
+    elif case == "state-messages":
+        event["native_process_state"]["messages"] = "private"
+    elif case == "process-pid-bool":
+        event["native_process"]["pid"] = True
+    elif case == "process-missing-creation":
+        del event["native_process"]["creation_time"]
+    elif case == "state-nonbool":
+        event["native_process_state"]["exists"] = "yes"
+    elif case == "duration-object":
+        event["duration_ms"] = {"result": "private"}
+    elif case == "bad-detail-hash":
+        event["detail_sha256"] = "not-a-hash"
+    elif case == "tail-private":
+        event["tail"][0]["messages"] = "private"
+    python_valid = True
+    try:
+        validate_native_task_activity(value, **{key: value[key] for key in ("adapter", "run_id", "cell_id", "message_id", "native_task_id")},
+                                      observed_at="2026-10-01T00:00:02Z")
+    except NativeActivityError:
+        python_valid = False
+    schema = json.loads((Path(__file__).resolve().parents[2] / "docs/contracts/slk-native-task-activity.schema.json").read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    schema_valid = Draft202012Validator(schema, format_checker=FormatChecker()).is_valid(value)
+    assert python_valid is (case in valid_cases)
+    assert schema_valid is python_valid

@@ -4,5 +4,5 @@
   "runtime": "ocrv",
   "read_only_observation": true,
   "model_call_required": false,
-  "native_events": ["review/progress", "task/status"]
+  "native_events": ["session_start", "tool_call", "session_end"]
 }
