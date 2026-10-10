@@ -29,6 +29,7 @@ WORKER_PROVISION_FIELDS = PROVISION_FIELDS | {
 }
 OVERWATCHER_CLOSE_FIELDS = FIELDS | {"sealed_overwatcher_credential_path"}
 OPERATIONS = {
+    "start-d2": {"recorded"},
     "adopt-method-contract": {"applied", "idempotent_replay"},
     "revise-role-model": {"model_revised", "already_applied"},
     "resume-overwatcher-turn": {"overwatcher_turn_resumed"},
@@ -227,9 +228,26 @@ def execute_sealed_supervisor_admin(
         elif overwatcher_closing:
             overwatcher_secret = wc.unprotect_dpapi_hex(overwatcher_sealed)
             operation_secret = overwatcher_secret
+        if operation == "start-d2":
+            from .role_host import RoleHost
+            if set(operation_value) != {"run_id", "role_instance_id", "binding_path", "binding_sha256", "source_attempt_path"}:
+                raise ValueError("D2 start request is not closed")
+            binding_path, source = Path(operation_value["binding_path"]), Path(operation_value["source_attempt_path"])
+            if (not binding_path.is_absolute() or not source.is_absolute()
+                or _sha256(binding_path) != operation_value["binding_sha256"]):
+                raise ValueError("D2 start binding is missing or changed")
+            host = RoleHost(_object(binding_path, "D2 host binding"), operation_value["binding_sha256"])
+            if (host.binding["run_id"] != run_id or host.state != state_command
+                or operation_value["role_instance_id"] != role_instance_id
+                or host.endpoint("supervisor")["role_instance_id"] != role_instance_id
+                or Path(host.credential_path("supervisor")).resolve() != sealed.resolve()):
+                raise ValueError("D2 start differs from the authenticated Supervisor host")
+            state_result = host.start_d2(source)
         state_operation = "write" if operation == "close-run" else operation
         state_arguments = [state_operation, "--request", str(operation_request)]
-        if overwatcher_closing:
+        if operation == "start-d2":
+            pass  # Original RoleHost wrote the single existing D2_STARTED event.
+        elif overwatcher_closing:
             state_result = wc._run_json_command(
                 list(state_command), state_arguments, credential=operation_secret,
                 credential_scope="overwatcher",

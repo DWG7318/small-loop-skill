@@ -28,7 +28,7 @@ from .contracts import ContractError, Endpoint, Envelope, parse_delivery
 from .dispatcher import dispatch_once
 from .drill_verify import DrillVerificationError, verify_drill
 from .evidence import Attempt
-from .native_activity import NativeActivityError, inspect_native_activity, validate_native_start
+from .native_activity import NativeActivityError, collect_overwatch_scope, inspect_native_activity, validate_native_start
 from .overwatcher_desktop import attest_desktop_overwatcher, desktop_overwatcher_probe
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
@@ -346,7 +346,17 @@ def _inspect_overwatcher_cadence(args: argparse.Namespace) -> int:
 
 
 def _inspect_native_activity(args: argparse.Namespace) -> int:
+    if getattr(args, "run_id", None) is not None or getattr(args, "state_command", None) is not None:
+        if not args.run_id or not args.state_command:
+            raise ValueError("scope query requires both the exact Run and state command")
+        if args.desktop_overwatcher_attestation is not None:
+            raise ValueError("engineering scope query cannot substitute an OW attestation")
+        result = collect_overwatch_scope(args.started, run_id=args.run_id, state_command=args.state_command)
+        _emit(result)
+        return 0 if result["native_activity"]["error"] is None else 3
     terminals = tuple(path for path in (args.completed, args.failed) if path is not None)
+    if args.started is None:
+        raise ValueError("native activity query requires its original started.json")
     supplied = (args.desktop_overwatcher_attestation, args.desktop_overwatcher_attestation_sha256)
     if (supplied[0] is None) != (supplied[1] is None):
         raise ValueError("Desktop Overwatcher attestation path and hash must be supplied together")
@@ -661,9 +671,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     cadence.add_argument("--runtime-projection", required=True, type=Path)
     cadence.add_argument("--observed-at", required=True)
     native_activity = subparsers.add_parser("inspect-native-activity")
-    native_activity.add_argument("--started", required=True, type=Path)
+    native_activity.add_argument("--started", type=Path)
     native_activity.add_argument("--completed", type=Path)
     native_activity.add_argument("--failed", type=Path)
+    native_activity.add_argument("--run-id", help="collect current central and native scope in one real tool-clock window")
+    native_activity.add_argument("--state-command", nargs="+", help="exact current state/query command for --run-id")
     native_activity.add_argument("--desktop-overwatcher-attestation", type=Path)
     native_activity.add_argument("--desktop-overwatcher-attestation-sha256")
     ow_desktop = subparsers.add_parser("attest-desktop-overwatcher")
@@ -710,6 +722,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     supervisor_admin = subparsers.add_parser("supervisor-admin")
     supervisor_admin.add_argument("--request", required=True, type=Path)
     supervisor_admin.add_argument("--sha256", required=True)
+    d2_start = subparsers.add_parser("start-d2", help="start D2 through the sealed Supervisor admin request")
+    d2_start.add_argument("--request", required=True, type=Path)
+    d2_start.add_argument("--sha256", required=True)
     overwatcher_admin = subparsers.add_parser("overwatcher-admin")
     overwatcher_admin.add_argument("--request", required=True, type=Path)
     overwatcher_admin.add_argument("--sha256", required=True)
@@ -796,6 +811,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "consume-desktop-readback":
             return _consume_desktop_readback(args)
         if args.command == "supervisor-admin":
+            return _supervisor_admin(args)
+        if args.command == "start-d2":
+            if _read_object(args.request, "D2 admin request").get("operation") != "start-d2":
+                raise ValueError("start-d2 requires the exact sealed start-d2 action")
             return _supervisor_admin(args)
         if args.command == "overwatcher-admin":
             return _overwatcher_admin(args)

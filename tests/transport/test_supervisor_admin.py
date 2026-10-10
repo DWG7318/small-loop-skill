@@ -22,17 +22,41 @@ def request_fixture(tmp_path: Path, operation: str = "revise-role-model") -> Pat
     sealed = tmp_path / "supervisor.sealed"
     sealed.write_text("sealed", encoding="ascii")
     return write_json(tmp_path / "admin.json", {
-        "schema_version": "slk.supervisor-admin/v1",
-        "run_id": "RUN-A",
-        "supervisor_role_instance_id": "RUN-A-supervisor-001",
-        "expected_runtime_revision": 7,
-        "sealed_credential_path": str(sealed),
-        "state_command": ["slk-state"],
-        "operation": operation,
+        "schema_version": "slk.supervisor-admin/v1", "run_id": "RUN-A",
+        "supervisor_role_instance_id": "RUN-A-supervisor-001", "expected_runtime_revision": 7,
+        "sealed_credential_path": str(sealed), "state_command": ["slk-state"], "operation": operation,
         "operation_request_path": str(operation_request),
         "operation_request_sha256": hashlib.sha256(operation_request.read_bytes()).hexdigest(),
         "result_path": str(tmp_path / "admin-result.json"),
     })
+
+
+def test_start_d2_admin_uses_original_bound_host_and_sealed_supervisor(tmp_path, monkeypatch):
+    from test_role_host import current_d2_fixture
+    host, source, _incoming, _result, _projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+    binding = write_json(tmp_path / "binding.json", host.binding)
+    operation = write_json(tmp_path / "start-d2.json", {"run_id": "RUN-A",
+        "role_instance_id": host.endpoint("supervisor")["role_instance_id"],
+        "binding_path": str(binding), "binding_sha256": hashlib.sha256(binding.read_bytes()).hexdigest(),
+        "source_attempt_path": str(source)})
+    request = request_fixture(tmp_path, "start-d2")
+    raw = json.loads(request.read_text())
+    raw.update(sealed_credential_path=host.credential_path("supervisor"), state_command=host.state,
+        operation_request_path=str(operation), operation_request_sha256=hashlib.sha256(operation.read_bytes()).hexdigest())
+    write_json(request, raw)
+    monkeypatch.setattr(admin.wc, "_default_load_current_projection", lambda *_a, **_k: _projection)
+    digest = hashlib.sha256(request.read_bytes()).hexdigest()
+    receipt = admin.execute_sealed_supervisor_admin(request, request_sha256=digest)
+    assert receipt["operation"] == "start-d2"
+    assert [e["event_type"] for e in seen] == ["D2_STARTED"]
+    assert admin.execute_sealed_supervisor_admin(request, request_sha256=digest) == receipt
+    from jsonschema import Draft202012Validator
+    from slk_transport.cli import main
+    contract = Path(__file__).resolve().parents[2] / "docs/contracts/slk-supervisor-admin.schema.json"
+    validator = Draft202012Validator(json.loads(contract.read_text()))
+    validator.validate(raw)
+    validator.validate(receipt)
+    assert main(["start-d2", "--request", str(request), "--sha256", digest]) == 0
 
 
 def terminal_request_fixture(tmp_path: Path, operation: str) -> Path:

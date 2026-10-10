@@ -19,6 +19,7 @@ from .contracts import ContractError, DeliveryResult
 
 START_SCHEMA = "slk.native-start/v2"
 ACTIVITY_SCHEMA = "slk.native-activity/v1"
+SCOPE_INSPECTION_SCHEMA = "slk.overwatch-scope-inspection/v1"
 TASK_ACTIVITY_SCHEMA = "slk.native-task-activity/v1"
 START_FIELDS = frozenset(
     {
@@ -584,3 +585,51 @@ def inspect_native_activity(
         "terminal_evidence": None,
         "error": error,
     }
+
+
+def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_command: list[str]) -> dict[str, Any]:
+    """One tool-clock window around the original central and native queries."""
+    from . import worker_completion as wc
+
+    query_started_at = utc_now()
+    projection = snapshot = None
+    start_sha256 = completion = None
+    query_error = None
+    native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
+              "error": "NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}
+    try:
+        projection = wc._default_load_current_projection(run_id, state_command)
+        snapshot = projection["runtime_snapshot"]
+        if projection["summary"]["run_id"] != run_id:
+            raise NativeActivityError("central query returned a different Run")
+    except (KeyError, TypeError, OSError, ValueError) as exc:
+        query_error = f"CURRENT_PROJECTION_UNAVAILABLE: {exc}"
+        native["error"] = query_error
+        native["observed_at"] = utc_now()
+    if query_error is None and projection is not None and snapshot is not None and snapshot.get("latest_message_id") is not None:
+        try:
+            if started_path is None:
+                raise NativeActivityError("original started.json was not supplied")
+            started_path = started_path.resolve()
+            start_sha256 = sha256_file(started_path)
+            start = validate_native_start(started_path, run_id=run_id, message_id=snapshot["latest_message_id"])
+            source = started_path.parent
+            native = inspect_native_activity(started_path, terminal_paths=(source / "completed.json", source / "failed.json"))
+            worker = any(role.get("role") == "worker"
+                         and role.get("role_instance_id") == snapshot.get("token_holder_role_instance_id")
+                         for role in projection.get("roles", []))
+            completion = (wc.inspect_worker_completion(source, projection, observed_at=utc_now(), cadence_seconds=600,
+                          native_inspector=lambda *_a, **_k: native) if worker else None)
+            if sha256_file(started_path) != start_sha256:
+                raise NativeActivityError("original native start changed during query")
+        except (KeyError, TypeError, OSError, ValueError) as exc:
+            start_sha256 = None
+            native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
+                      "error": f"ORIGINAL_NATIVE_QUERY_UNAVAILABLE: {exc}"}
+    return {"schema_version": SCOPE_INSPECTION_SCHEMA, "run_id": run_id,
+            "source_message_id": snapshot.get("latest_message_id") if snapshot is not None else None,
+            "native_start_path": str(started_path.resolve()) if started_path is not None else None,
+            "native_start_sha256": start_sha256, "runtime_snapshot": snapshot,
+            "runtime_projection_sha256": wc.canonical_json_sha256(projection) if query_error is None else None,
+            "native_activity": native, "worker_completion": completion,
+            "query_error": query_error, "query_started_at": query_started_at, "query_completed_at": utc_now()}

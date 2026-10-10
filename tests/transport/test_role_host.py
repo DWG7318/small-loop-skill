@@ -482,6 +482,128 @@ def supervisor_result_fixture(tmp_path, *, d2=False):
     return host, source, incoming, result, projection
 
 
+def current_d2_fixture(tmp_path, monkeypatch):
+    host, source, incoming, result, projection = supervisor_result_fixture(tmp_path, d2=True)
+    projection["summary"]["slk_version"] = projection["runtime_snapshot"]["method_version"] = "4.4.3"
+    event = projection["events"][0]
+    event.update(plan_revision=1, go_id=incoming.go_id, author_role_instance_id=incoming.sender_role_instance_id)
+    event["details_json"] = json.dumps({"message_id": incoming.message_id,
+        "start_evidence_sha256": wc._sha256(source / "started.json"),
+        "endpoint_sha256": wc._sha256(source / "endpoint.json"),
+        "envelope_sha256": wc._sha256(source / "envelope.json")})
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _path: "sealed-supervisor")
+    seen = []
+    def run(_command, args, **_kwargs):
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": incoming.run_id, "role": "supervisor",
+                "role_instance_id": incoming.receiver_role_instance_id, "runtime_revision": 7}
+        assert args[0] == "write"
+        request = wc._read_object(Path(args[-1]), "event")
+        if request["event_id"] not in [e["event_id"] for e in seen]:
+            seen.append(request)
+            projection["events"].append({**request, "details_json": json.dumps(request["details"])})
+        return {"status": "recorded", "run_id": incoming.run_id}
+    monkeypatch.setattr(wc, "_run_json_command", run)
+    return host, source, incoming, result, projection, seen
+
+
+def test_d2_start_is_queryable_before_final_result_and_replay_keeps_original_time(tmp_path, monkeypatch):
+    host, source, incoming, result, projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+    (source / "supervisor-result.json").unlink()
+    started = host.start_d2(source)
+    assert [e["event_type"] for e in projection["events"]] == ["TRANSPORT_STARTED", "D2_STARTED"]
+    assert not (source / "role-host" / "result.json").exists()
+    assert host.start_d2(source) == started
+    assert len(seen) == 1
+    write_json(source / "supervisor-result.json", result)
+    final = host.submit_supervisor_decision(source)
+    assert final["status"] == "SUPERVISOR_D2_RECORDED"
+    assert [e["event_type"] for e in seen] == ["D2_STARTED", "D2_PASSED"]
+    assert seen[1]["details"]["d2_started_event_id"] == seen[0]["event_id"]
+    assert seen[1]["occurred_at"] >= seen[0]["occurred_at"]
+
+
+def test_current_d2_final_verdict_cannot_invent_start(tmp_path, monkeypatch):
+    host, source, _incoming, _result, _projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: _projection)
+    with pytest.raises(wc.CompletionError, match="D2.*start"):
+        host.submit_supervisor_decision(source)
+    assert seen == []
+
+
+def test_legacy_d2_partial_commit_retries_with_its_original_start_shape(tmp_path, monkeypatch):
+    host, source, incoming, _result, projection = supervisor_result_fixture(tmp_path, d2=True)
+    monkeypatch.setenv("CODEX_THREAD_ID", host.endpoint("supervisor")["address"]["thread_id"])
+    monkeypatch.setattr(host, "_boundary", lambda _envelope: projection)
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _path: "sealed-supervisor")
+    committed, failed_once = [], False
+    def run(_command, args, **_kwargs):
+        nonlocal failed_once
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": incoming.run_id, "role": "supervisor",
+                "role_instance_id": incoming.receiver_role_instance_id, "runtime_revision": 7}
+        assert args[0] == "write"
+        event = wc._read_object(Path(args[-1]), "event")
+        if event["event_type"] == "D2_PASSED" and not failed_once:
+            failed_once = True
+            raise wc.CompletionError("TEST_STATE_UNAVAILABLE", "temporary state write failure")
+        if event["event_id"] not in [item["event_id"] for item in committed]:
+            committed.append(event)
+            projection["events"].append({**event, "details_json": json.dumps(event["details"])})
+        return {"status": "recorded", "run_id": incoming.run_id}
+    monkeypatch.setattr(wc, "_run_json_command", run)
+    with pytest.raises(wc.CompletionError) as failed:
+        host.submit_supervisor_decision(source)
+    assert failed.value.error_code == "TEST_STATE_UNAVAILABLE"
+    assert [item["event_type"] for item in committed] == ["D2_STARTED"]
+    assert committed[0]["details"] == {"source_message_id": incoming.message_id}
+    start_bytes = (source / "role-host" / "d2_started.json").read_bytes()
+    assert not (source / "role-host" / "result.json").exists()
+    receipt = host.submit_supervisor_decision(source)
+    assert receipt["status"] == "SUPERVISOR_D2_RECORDED"
+    assert [item["event_type"] for item in committed] == ["D2_STARTED", "D2_PASSED"]
+    assert (source / "role-host" / "d2_started.json").read_bytes() == start_bytes
+    assert host.submit_supervisor_decision(source) == receipt
+
+
+@pytest.mark.parametrize("damaged_proof", ["legacy-shape", "wrong-native-hash"])
+def test_current_d2_final_cannot_use_legacy_or_changed_start_proof(tmp_path, monkeypatch, damaged_proof):
+    host, source, _incoming, result, projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+    host.start_d2(source)
+    write_json(source / "supervisor-result.json", result)
+    start = projection["events"][-1]
+    details = wc._event_details(start)
+    start["details"] = (
+        {"source_message_id": details["source_message_id"]} if damaged_proof == "legacy-shape"
+        else {**details, "native_start_sha256": "0" * 64})
+    start["details_json"] = json.dumps(start["details"])
+    with pytest.raises(wc.CompletionError) as rejected:
+        host.submit_supervisor_decision(source)
+    assert rejected.value.error_code == "D2_START_INVALID"
+    assert [item["event_type"] for item in seen] == ["D2_STARTED"]
+
+
+@pytest.mark.parametrize("damage", ["session", "native-start", "token", "plan", "ready-message"])
+def test_d2_start_rejects_changed_original_identity(tmp_path, monkeypatch, damage):
+    host, source, incoming, _result, projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+    if damage == "session": monkeypatch.setenv("CODEX_THREAD_ID", "other-session")
+    elif damage == "native-start":
+        started = wc._read_object(source / "started.json", "start")
+        started["native_task"]["id"] = "other-session:turn"
+        write_json(source / "started.json", started)
+    elif damage == "token": projection["runtime_snapshot"]["token_sequence"] += 1
+    elif damage == "plan": projection["runtime_snapshot"]["plan_revision"] += 1
+    else: projection["events"][0]["details_json"] = json.dumps({"message_id": "other-message"})
+    # Exercise original boundary checks without waiting for an impossible commit.
+    if damage == "token":
+        monkeypatch.setattr(role_host_module.time, "monotonic", iter([0, 0, 11]).__next__)
+    with pytest.raises(wc.CompletionError): host.start_d2(source)
+    assert seen == []
+
+
 @pytest.mark.parametrize("d2", [False, True])
 def test_native_supervisor_decision_uses_own_sealed_suffix_only(tmp_path, monkeypatch, d2):
     host, source, incoming, result, projection = supervisor_result_fixture(tmp_path, d2=d2)

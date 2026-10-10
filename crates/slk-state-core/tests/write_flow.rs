@@ -47,6 +47,61 @@ fn one_run_has_one_monotonic_current_token_and_linear_nodes() {
 }
 
 #[test]
+fn current_d2_start_requires_delivered_d2_ready_and_result_requires_real_start() {
+    let fixture = Fixture::new();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    let mut request = event("d2-forged", EventType::D2Started, json!({"source_message_id":"accepted-only"}));
+    request.role_instance_id = "supervisor-a".into();
+    request.go_id = None; request.cell_id = None; request.attempt = None;
+    assert!(fixture.store.write_event(&fixture.supervisor, request.clone()).is_err());
+    request.event_type = EventType::D2Passed;
+    assert!(fixture.store.write_event(&fixture.supervisor, request).is_err());
+
+    let fixture = Fixture::new();
+    fixture.store.handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a")).unwrap();
+    let mut passed = event("d1-passed", EventType::D1Passed, json!({"verdict":"PASS"}));
+    passed.role_instance_id="checker-a".into();
+    fixture.store.write_event(&fixture.checker, passed).unwrap();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    let mut ready = fixture.revisioned_start_request(3, "checker-a", "supervisor-a", "CELL-001", "D2_READY", "codex-app-server");
+    let path = &ready.start_evidence.stored_path;
+    let mut native: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    native["native_task"]["kind"]=json!("codex-turn");
+    native["native_task"]["id"]=json!("session-supervisor-a:turn");
+    fs::write(path, serde_json::to_vec(&native).unwrap()).unwrap();
+    ready.start_evidence.sha256=format!("{:x}", Sha256::digest(fs::read(path).unwrap()));
+    fixture.store.commit_delivery_start(&fixture.checker, ready.clone()).unwrap();
+    let mut started = event("real-d2-start", EventType::D2Started, json!({
+        "source_message_id":ready.message_id, "token_sequence":3,
+        "native_start_path":ready.start_evidence.stored_path, "native_start_sha256":ready.start_evidence.sha256,
+        "native_task_id":"session-supervisor-a:turn"}));
+    started.role_instance_id="supervisor-a".into();
+    started.go_id=None; started.cell_id=None; started.attempt=None;
+    started.occurred_at="2026-09-20T00:01:00.500000Z".into();
+    let mut final_result = started.clone();
+    final_result.event_id="real-d2-pass".into(); final_result.event_type=EventType::D2Passed;
+    final_result.occurred_at="2026-09-20T00:02:00Z".into();
+    final_result.details=json!({"source_message_id":ready.message_id, "d2_started_event_id":started.event_id});
+    assert!(fixture.store.write_event(&fixture.supervisor, final_result.clone()).is_err());
+    fixture.store.write_event(&fixture.supervisor, started.clone()).unwrap();
+    let in_progress=fixture.store.query_run("run-a").unwrap();
+    assert!(in_progress.events.iter().any(|e| e.event_type=="D2_STARTED"));
+    assert!(!in_progress.events.iter().any(|e| e.event_type=="D2_PASSED"));
+    fixture.store.write_event(&fixture.supervisor, started.clone()).unwrap();
+    assert_eq!(fixture.store.query_run("run-a").unwrap().runtime_snapshot, in_progress.runtime_snapshot);
+    started.event_id="different-d2-start".into();
+    assert!(fixture.store.write_event(&fixture.supervisor, started).is_err());
+    let mut too_early = final_result.clone();
+    too_early.occurred_at="2026-09-20T00:01:00.499999Z".into();
+    assert!(fixture.store.write_event(&fixture.supervisor, too_early).is_err());
+    fixture.store.write_event(&fixture.supervisor, final_result).unwrap();
+}
+
+#[test]
 fn failed_transport_is_recorded_without_advancing_responsibility() {
     let fixture = Fixture::worker_active();
     let before = fixture.store.current_token("run-a").unwrap();

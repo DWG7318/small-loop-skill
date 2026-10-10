@@ -14,11 +14,11 @@ description: Use when an active Small Loop Skill (SLK) Run has D1 PASS or Superv
 
 ## 激活与 D2 交接
 
-所有 Required CELL 都有明确处理结果后，Checker 使用 OCRV 标准 `--slk-complete-d1` 后缀，沿 `Checker → Supervisor` 发送闭合 `D2_READY` 并以最终令牌激活 Supervisor；只有匹配 Supervisor v2 start 和 Checker 原子 TOKEN commit 都成立才完成交接。每个 CELL 的结果是 `D1 PASS` 或版本化 Supervisor 豁免；两者分别记录，不把豁免改写为完成。初始交接聚焦原始 Run 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
+所有 Required CELL 都有明确处理结果后，原 Checker 以最后一个 `slk_checker_decide` 动作沿 `Checker → Supervisor` 发送闭合 `D2_READY` 并以最终令牌激活 Supervisor；只有匹配 Supervisor v2 start 和 Checker 原子 TOKEN commit 都成立才完成交接。每个 CELL 的结果是 `D1 PASS` 或版本化 Supervisor 豁免；两者分别记录，不把豁免改写为完成。初始交接聚焦原始 Run 目标、最终候选、端到端入口和必要的客观环境信息，不先展开 Worker 判断与详细 D1 历史。
 
 ## 检查对象隔离
 
-1. Supervisor 先用 `slk-state write` 记录 `D2_STARTED`，然后先从 Run 目标、各 CELL 结果、最终候选和端到端入口开始检查真实组合结果。
+1. 原 Supervisor 实际开始 D2 时调用 `slk-transport start-d2 --request <密封管理请求> --sha256 <请求哈希>`：`operation=start-d2` 的原请求绑定本 Run、Supervisor role instance、RoleHost binding 路径/哈希和准确 `D2_READY` 的 `source_attempt_path`，由原 Host 核对当前 TOKEN/计划/原生身份并记录一次 `D2_STARTED`；重放不改开始时间。随后从 Run 目标、各 CELL 结果、最终候选和端到端入口检查真实组合结果，最终决定引用这次开始，不等到结果时补记开始。
 2. 优先用现有入口直接检查 CELL 间衔接、主要端到端路径、关键风险、相关回归、副作用和剩余限制；按 Run 风险选择必要检查，不以新建检查体系替代真实组合验证。检查工具或环境故障先定位，不直接算作组合缺陷；证据不足记录未证明，交回可行验证路线，不写为 PASS。
 3. 形成初步 D2 判断后，随后读取详细 D1 记录、D0、返工、豁免和证据位置，核对 CELL 是否完整、D1 是否由对应候选的证据支持、是否出现遗漏事实以及记录是否一致；缺少实质支持时交回 Checker 重判，不由 Supervisor 补写 D1。
 4. D1 PASS 不作为 D2 通过证明；它只说明单个 CELL 的 D1 结果。D2 结论仍由组合、衔接和端到端证据支持。

@@ -67,6 +67,7 @@ slk-transport inspect-native-activity --started STARTED.json [--completed COMPLE
 slk-transport retry-exact --endpoint ENDPOINT.json --envelope ENVELOPE.json --attempt-root EVIDENCE_ROOT
 slk-transport continue-staged-handoff --binding HOST.json --sha256 HOST-SHA256 --source-attempt EXACT-ATTEMPT [--temporal-request ORIGINAL.json --temporal-request-sha256 SHA256]
 slk-transport submit-worker-action --event WORK_STARTED|D0_COMPLETED|CANDIDATE_SUBMITTED [--details OWN-ACTION.json]
+slk-transport start-d2 --request SEALED-ADMIN.json --sha256 ADMIN-SHA256
 slk-transport submit-supervisor-decision --binding HOST.json --sha256 HOST-SHA256 --source-attempt EXACT-ATTEMPT
 ```
 
@@ -75,6 +76,8 @@ Worker action source comes only from its bound native invocation, never a select
 The original OCRV Checker uses the existing stdio MCP bridge: `slk_checker_decide(verdict, message?)` submits its decision; `slk_read_evidence(index, offset?, limit?)` reads hash-checked indexed originals outside Git without arbitrary paths. Reads return the full original by default, with no content-length ceiling; optional offset/limit ranges are chosen by OCRV, not imposed by the tool. Its deliberate PASS/FAIL/INCOMPLETE call authenticates only that role, records its actual decision time and runs the existing normal successor: next Required CELL/final D2, Supervisor rework, or Supervisor management. After the action returns and its reply is flushed, invocation-bound cleanup ends only the exact old review, preserving logs and successor processes. Optional message is its own original text; absent reproduction/expected-result facts are not invented. No shell tool or second review role is added. See [installed MCP setup](../../integrations/ocrv/OCRV-SLK-CONFIGURATION.md).
 
 Supervisor saves arbitrary output independently. Only its explicit same-Session submit changes D2/rework/management state; outgoing identity/failure/candidate intent remains checked, not report quality, field completeness or evidence availability. The same CELL's second formal FAIL still requires more serious investigation and consideration of smaller successor CELLs in Skill guidance; it is no longer a report/rework hard veto.
+
+At actual D2 start, the original Supervisor uses the existing [sealed admin request](../contracts/slk-supervisor-admin.schema.json) with `operation=start-d2`. Its hash-bound operation file has exactly `run_id`, `role_instance_id`, `binding_path`, `binding_sha256`, and `source_attempt_path`; these point to the current prepared RoleHost and the original received `D2_READY` attempt, not an outgoing/recovery directory guessed by name. The Host verifies native caller/start, current plan/TOKEN and committed delivery before writing the single `D2_STARTED`. Replaying that start preserves its original time; a 4.4.3 final D2 decision references it and never synthesizes a start at completion. Earlier-version history remains readable under its original contract.
 
 ## Evidence and responsibility
 

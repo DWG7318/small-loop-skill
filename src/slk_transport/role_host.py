@@ -232,6 +232,47 @@ class RoleHost:
                 "Supervisor decision submit lacks the exact native start proof",
             ) from exc
 
+    def start_d2(self, source: Path) -> dict[str, Any]:
+        """Record the original Supervisor's actual start, independently of its verdict."""
+        source = source.resolve()
+        endpoint = self.endpoint("supervisor")
+        envelope = parse_delivery(endpoint, wc._read_object(source / "envelope.json", "D2_READY")).envelope
+        if (envelope.payload_type != "D2_READY" or envelope.receiver_role != "supervisor"
+            or wc._read_object(source / "endpoint.json", "Supervisor endpoint") != endpoint):
+            raise wc.CompletionError("D2_START_INVALID", "D2 start requires the original Supervisor D2_READY")
+        self._supervisor_start_proof(source, envelope)
+        projection = self._boundary(envelope)
+        starts = [event for event in projection.get("events", []) if event.get("event_type") == "TRANSPORT_STARTED"
+                  and wc._event_details(event).get("message_id") == envelope.message_id]
+        if len(starts) != 1 or any(wc._event_details(starts[0]).get(field) != wc._sha256(source / name)
+            for field, name in (("start_evidence_sha256", "started.json"),
+                                ("endpoint_sha256", "endpoint.json"), ("envelope_sha256", "envelope.json"))):
+            raise wc.CompletionError("D2_START_INVALID", "D2 start requires the exact committed native delivery")
+        native = wc._read_object(source / "started.json", "Supervisor native start")
+        root = source / "role-host"
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / "d2_started.json"
+        request = {"event_id": wc._stable_id(envelope.message_id, "d2_started"), "run_id": envelope.run_id,
+            "go_id": None, "cell_id": None, "attempt": None, "plan_revision": self.binding["plan_revision"],
+            "role_instance_id": envelope.receiver_role_instance_id, "event_type": "D2_STARTED",
+            "details": {"source_message_id": envelope.message_id, "token_sequence": envelope.token_sequence,
+                "native_start_path": str(source / "started.json"), "native_start_sha256": wc._sha256(source / "started.json"),
+                "native_task_id": native["native_task"]["id"]},
+            "corrects_event_id": None, "occurred_at": datetime.now(timezone.utc).isoformat()}
+        if path.is_file():
+            request["occurred_at"] = wc._read_object(path, "D2 start")["occurred_at"]
+        credential = wc.unprotect_dpapi_hex(self.credential_path("supervisor"))
+        try:
+            self._authenticate("supervisor", credential)
+            wc._write_or_reuse_stable_request(path, request)
+            written = self._state_json(["write", "--request", str(path)], credential=credential)
+            if written.get("status") != "recorded" or written.get("run_id") != envelope.run_id:
+                raise wc.CompletionError("SUPERVISOR_STATE_WRITE_FAILED", "D2 start was not recorded")
+        finally:
+            credential = ""
+        return {"status": "recorded", "run_id": envelope.run_id, "event_id": request["event_id"],
+                "occurred_at": request["occurred_at"]}
+
     def submit_supervisor_decision(self, source: Path) -> dict[str, Any]:
         """Submit one Supervisor decision from its live native Session, before turn end."""
         envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "source envelope"))
@@ -781,6 +822,24 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") == "4.4.3"
+            or any(event.get("event_type") == "D2_STARTED"
+                   and wc._event_details(event).get("source_message_id") == envelope.message_id
+                   and any(key in wc._event_details(event) for key in (
+                       "native_start_path", "native_start_sha256", "native_task_id"))
+                   for event in projection.get("events", []))):
+            starts = [event for event in projection.get("events", []) if event.get("event_type") == "D2_STARTED"
+                      and event.get("plan_revision") == self.binding["plan_revision"]
+                      and wc._event_details(event).get("source_message_id") == envelope.message_id]
+            if len(starts) != 1:
+                raise wc.CompletionError("D2_START_REQUIRED", "D2 requires its real recorded start before a final decision")
+            start = starts[0]
+            if (wc._event_details(start).get("native_start_sha256") != wc._sha256(source / "started.json")
+                or wc._timestamp(occurred_at) < wc._timestamp(start["occurred_at"])):
+                raise wc.CompletionError("D2_START_INVALID", "D2 result differs from its real start or predates it")
+            events = [] if decision["verdict"] == "INCOMPLETE" else [
+                ("D2_PASSED" if decision["verdict"] == "PASS" else "D2_FAILED",
+                 {**dict(decision), "source_message_id": envelope.message_id, "d2_started_event_id": start["event_id"]})]
         credential = wc.unprotect_dpapi_hex(self.credential_path("supervisor"))
         try:
             self._authenticate("supervisor", credential)

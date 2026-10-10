@@ -2,4 +2,4 @@
 
 __version__ = "4.4.2"
 # Only this compatible patch line; never relabel an existing Run or request.
-SUPPORTED_METHOD_VERSIONS = ("4.4.0", "4.4.1", "4.4.2")
+SUPPORTED_METHOD_VERSIONS = ("4.4.0", "4.4.1", "4.4.2", "4.4.3")

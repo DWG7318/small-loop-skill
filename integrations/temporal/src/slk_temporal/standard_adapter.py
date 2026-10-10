@@ -385,13 +385,15 @@ async def request_recovery(value: dict[str, Any]) -> dict[str, Any]:
                 environment={"SLK_CONFIG_PATH": str(config["state_config_path"])},
             )
         except CommandFailure as error:
+            diagnostics = attempt / "diagnostics"
+            diagnostics.mkdir(exist_ok=True)
             for name, raw in (("stdout", error.stdout), ("stderr", error.stderr)):
-                path = attempt / f"recovery-inspection.{name}.log"
+                path = diagnostics / f"recovery-inspection.{name}.log"
                 if path.exists() and path.read_bytes() != raw:
                     raise ValueError("recovery inspection evidence changed") from error
                 path.write_bytes(raw)
                 error.evidence[name + "_path"] = str(path)
-            _write_once(attempt / "recovery-inspection-failure.json", error.evidence)
+            _write_once(diagnostics / "recovery-inspection-failure.json", error.evidence)
             raise
         # An already proven start lets the original sender finish its normal ACK.
         # Otherwise the adapter stops; Supervisor chooses any exact mechanical retry.

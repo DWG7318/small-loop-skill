@@ -209,3 +209,42 @@ def test_same_message_id_with_changed_payload_is_rejected(tmp_path: Path) -> Non
         )
 
     assert adapter.calls == 1
+
+
+def test_failed_recovery_diagnostics_do_not_block_first_dispatch(tmp_path, monkeypatch):
+    import asyncio
+    import subprocess
+    pytest.importorskip("temporalio")
+    from slk_temporal import standard_adapter
+
+    endpoint, envelope = endpoint_value(), envelope_value()
+    attempt = tmp_path / envelope["run_id"] / envelope["message_id"]
+    attempt.mkdir(parents=True)
+    for name, value in (("endpoint", endpoint), ("envelope", envelope)):
+        (attempt / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
+    monkeypatch.setattr(standard_adapter, "_load_config", lambda _run: {
+        "attempt_root": str(tmp_path), "transport_command": ["test-only"],
+        "state_config_path": str(tmp_path / "config.json"),
+    })
+    failure = standard_adapter.CommandFailure("inspection failed", subprocess.CompletedProcess(
+        ["test-only"], 1, b"original stdout", b"original stderr"))
+    monkeypatch.setattr(standard_adapter, "_run_json", lambda *_a, **_k: (_ for _ in ()).throw(failure))
+    with pytest.raises(standard_adapter.CommandFailure):
+        asyncio.run(standard_adapter.request_recovery({"delivery": {
+            "operation_id": "22222222-2222-4222-8222-222222222222",
+            "run_id": envelope["run_id"], "cell_id": envelope["cell_id"], "attempt": 1,
+            "message_id": envelope["message_id"], "sender_role_instance_id": envelope["sender_role_instance_id"],
+            "receiver_role_instance_id": envelope["receiver_role_instance_id"],
+            "payload_sha256": envelope["payload_sha256"], "source_runtime_revision": 1,
+        }, "recovery_target_role_instance_id": envelope["sender_role_instance_id"]}))
+    adapter = CompletingAdapter()
+    first = dispatch_once(endpoint, envelope, tmp_path, adapters=adapter_map(adapter))
+    assert first.status == "completed"
+    assert dispatch_once(endpoint, envelope, tmp_path, adapters=adapter_map(adapter)) == first
+    assert adapter.calls == 1
+    diagnostics = attempt / "diagnostics"
+    assert (diagnostics / "recovery-inspection.stdout.log").read_bytes() == b"original stdout"
+    assert (diagnostics / "recovery-inspection.stderr.log").read_bytes() == b"original stderr"
+    assert json.loads((diagnostics / "recovery-inspection-failure.json").read_text())["exit_code"] == 1
+    with pytest.raises(ContractError, match="identity collision"):
+        dispatch_once(endpoint, {**envelope, "token_sequence": 2}, tmp_path, adapters=adapter_map(adapter))

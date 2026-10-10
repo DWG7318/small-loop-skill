@@ -3362,6 +3362,122 @@ fn overwatch_cycle(cycle_sequence: u64) -> OverwatchCycleRequest {
     }
 }
 
+#[test]
+fn overwatch_cycle_attempt_must_match_current_engineering_cell() {
+    let fixture = Fixture::new();
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
+        overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    database.execute("UPDATE cell_nodes SET attempt=2 WHERE run_id='run-a' AND cell_id='CELL-001'", []).unwrap();
+    drop(database);
+    assert!(matches!(fixture.store.record_overwatch_cycle(&issued.credential, overwatch_cycle(1)),
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("attempt")));
+    let mut valid = overwatch_cycle(1);
+    valid.attempt = Some(2);
+    fixture.store.record_overwatch_cycle(&issued.credential, valid).unwrap();
+}
+
+#[test]
+fn current_nonworker_cycle_requires_real_query_window_but_can_report_no_task_unknown() {
+    let fixture = Fixture::new_440();
+    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.cadence_seconds = 600;
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let mut query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
+        "source_message_id":null, "runtime_snapshot":snapshot, "runtime_projection_sha256":"a".repeat(64),
+        "native_start_path":null, "native_start_sha256":null, "query_error":null,
+        "query_started_at":"2026-09-22T00:03:00Z", "query_completed_at":"2026-09-22T00:03:01Z",
+        "native_activity":{"status":"UNKNOWN", "observed_at":"2026-09-22T00:03:00Z", "error":"NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}});
+    let mut cycle = overwatch_cycle(1);
+    cycle.go_id=None; cycle.cell_id=None; cycle.attempt=None;
+    cycle.runtime_revision = snapshot.runtime_revision;
+    cycle.cadence_seconds=600; cycle.next_cycle_at="2026-09-22T00:14:00Z".into();
+    cycle.checklist.bi_projection=OverwatchCheckResult::Anomaly;
+    cycle.anomaly_codes=vec![OverwatchAnomalyCode::ActivityUnproven];
+    let old = fixture.evidence_ref("scope-query.json", &serde_json::to_vec(&query).unwrap());
+    cycle.native_active_session_evidence_ref=old.path.clone(); cycle.evidence_refs=vec![old];
+    let rejected = fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone());
+    assert!(matches!(&rejected,
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("query")), "{rejected:?}");
+    // Extending only the cycle cannot make a 17-day-old live sample current.
+    let mut wide_cycle = cycle.clone();
+    wide_cycle.started_at="2026-09-05T00:03:00Z".into();
+    query["query_started_at"]=json!("2026-09-05T00:03:00Z");
+    query["query_completed_at"]=json!("2026-09-05T00:03:01Z");
+    query["native_activity"]["observed_at"]=json!("2026-09-05T00:03:00Z");
+    let stale = fixture.evidence_ref("scope-query.json", &serde_json::to_vec(&query).unwrap());
+    wide_cycle.evidence_refs=vec![stale];
+    let rejected = fixture.store.record_overwatch_cycle(&issued.credential, wide_cycle);
+    assert!(matches!(&rejected,
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("query")), "{rejected:?}");
+    query["query_started_at"]=json!("2026-09-22T00:03:59Z");
+    query["query_completed_at"]=json!("2026-09-22T00:04:00Z");
+    query["native_activity"]["observed_at"]=json!("2026-09-22T00:03:59.5Z");
+    let fresh = fixture.evidence_ref("scope-query.json", &serde_json::to_vec(&query).unwrap());
+    cycle.evidence_refs=vec![fresh];
+    fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
+}
+
+#[test]
+fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window() {
+    let fixture = Fixture::new_423();
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
+        overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let mut initial = overwatch_cycle(1);
+    initial.runtime_revision=fixture.runtime_revision();
+    initial.latest_event_id=fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().latest_event_id;
+    initial.evidence_refs=vec![fixture.evidence_ref("initial-worker-query.json", b"active")];
+    initial.native_active_session_evidence_ref=initial.evidence_refs[0].path.clone();
+    fixture.store.record_overwatch_cycle(&issued.credential, initial).unwrap();
+    fixture.store.commit_delivery_start(&fixture.supervisor,
+        fixture.delivery_start_request("checker-freshness", "2026-09-22T00:00:03Z")).unwrap();
+    let mut delivery = fixture.delivery_start_request("worker-freshness", "2026-09-22T00:00:04Z");
+    delivery.token_sequence=3;
+    delivery.from_role_instance_id="checker-a".into();
+    delivery.to_role_instance_id="worker-a".into();
+    let source = EvidenceReference {path: delivery.start_evidence.stored_path.clone(),
+        sha256: delivery.start_evidence.sha256.clone()};
+    fixture.store.commit_delivery_start(&fixture.checker, delivery).unwrap();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    db.execute("UPDATE overwatcher_bindings SET cadence_seconds=600 WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
+        "source_message_id":snapshot.latest_message_id, "runtime_snapshot":snapshot,
+        "runtime_projection_sha256":"a".repeat(64), "query_error":null,
+        "native_start_path":source.path, "native_start_sha256":source.sha256,
+        "query_started_at":"2026-10-09T00:03:59Z", "query_completed_at":"2026-10-09T00:04:00Z",
+        "native_activity":{"status":"ACTIVE", "observed_at":"2026-10-09T00:03:59.5Z"}});
+    let query_ref = fixture.evidence_ref("fresh-worker-query.json", &serde_json::to_vec(&query).unwrap());
+    let mut inspection = json!({"schema_version":"slk.worker-completion-inspection/v1",
+        "status":"IN_PROGRESS", "run_id":"run-a", "go_id":"GO-001", "cell_id":"CELL-001",
+        "worker_role_instance_id":"worker-a", "source_message_id":snapshot.latest_message_id,
+        "observed_at":"2026-09-22T00:04:01Z", "anomaly_codes":[], "notification_already_sent":false});
+    let old = fixture.evidence_ref("worker-inspection.json", &serde_json::to_vec(&inspection).unwrap());
+    let mut cycle = overwatch_cycle(2);
+    cycle.started_at="2026-09-22T00:04:01Z".into();
+    cycle.completed_at="2026-10-09T00:04:00Z".into();
+    cycle.cadence_seconds=600; cycle.next_cycle_at="2026-10-09T00:14:00Z".into();
+    cycle.runtime_revision=snapshot.runtime_revision;
+    cycle.token_sequence=snapshot.token_sequence;
+    cycle.token_holder_role_instance_id=snapshot.token_holder_role_instance_id.clone();
+    cycle.latest_event_id=snapshot.latest_event_id.clone();
+    cycle.latest_message_id=snapshot.latest_message_id.clone();
+    cycle.native_active_session_evidence_ref=query_ref.path.clone();
+    cycle.evidence_refs=vec![source, query_ref, old];
+    let rejected = fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone());
+    assert!(matches!(&rejected,
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("cadence")), "{rejected:?}");
+    inspection["observed_at"]=json!("2026-10-09T00:03:59.5Z");
+    cycle.evidence_refs[2]=fixture.evidence_ref("worker-inspection.json", &serde_json::to_vec(&inspection).unwrap());
+    fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
+}
+
 fn observation(
     observation_id: &str,
     kind: ObservationKind,

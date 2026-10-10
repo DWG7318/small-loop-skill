@@ -1172,10 +1172,10 @@ impl StateStore {
             }
             let native_start = if matches!(
                 method_version.as_str(),
-                "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2"
+                "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3"
             ) {
                 Some(
-                    if method_version == "4.4.2"
+                    if matches!(method_version.as_str(), "4.4.2" | "4.4.3")
                         && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
                             .ok()
                             .is_some_and(|v| {
@@ -2181,6 +2181,7 @@ impl StateStore {
                     | "4.4.0"
                     | "4.4.1"
                     | "4.4.2"
+                    | "4.4.3"
             ) {
                 type ExistingWorkEvent = (
                     String,
@@ -2279,6 +2280,10 @@ impl StateStore {
             }
             if request.event_type == EventType::ReworkRequested {
                 validate_rework_requested(transaction, &request)?;
+            }
+            if method_version == "4.4.3" && matches!(request.event_type,
+                EventType::D2Started | EventType::D2Passed | EventType::D2Failed) {
+                validate_d2_event(transaction, &request, token.sequence)?;
             }
             if let Some(corrects_event_id) = request.corrects_event_id.as_deref() {
                 let target_author: Option<String> = transaction
@@ -2593,12 +2598,15 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                if matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2") {
+                let original_available = method_version != "4.4.3"
+                    || validate_current_scope_query(transaction, &request, &runtime_snapshot)?;
+                if original_available && matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
                         &runtime_snapshot,
                         authoritative_message_id.as_deref(),
+                        &method_version,
                     )?;
                 }
             }
@@ -2612,16 +2620,21 @@ impl StateStore {
             if let (Some(go_id), Some(cell_id)) =
                 (request.go_id.as_deref(), request.cell_id.as_deref())
             {
-                let exists: Option<i64> = transaction
+                let attempt: Option<u32> = transaction
                     .query_row(
-                        "SELECT 1 FROM cell_nodes WHERE run_id=?1 AND go_id=?2 AND cell_id=?3",
+                        "SELECT attempt FROM cell_nodes WHERE run_id=?1 AND go_id=?2 AND cell_id=?3",
                         params![request.run_id, go_id, cell_id],
                         |row| row.get(0),
                     )
                     .optional()?;
-                if exists.is_none() {
+                if attempt.is_none() {
                     return Err(StateError::OverwatcherCycleInvalid(
                         "cycle CELL scope is not in the current plan".into(),
+                    ));
+                }
+                if request.attempt != attempt {
+                    return Err(StateError::OverwatcherCycleInvalid(
+                        "cycle engineering attempt must match the current CELL".into(),
                     ));
                 }
             }
@@ -3917,11 +3930,68 @@ fn validate_evidence_reference(reference: &EvidenceReference) -> Result<(), Stat
     Ok(())
 }
 
+fn validate_current_scope_query(connection: &Connection, request: &OverwatchCycleRequest, snapshot: &RuntimeSnapshot) -> Result<bool, StateError> {
+    let invalid = || StateError::OverwatcherCycleInvalid("real query window, current scope, or original native source is invalid".into());
+    let mut queries = Vec::new();
+    for reference in &request.evidence_refs {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&fs::read(&reference.path)?) {
+            if value["schema_version"] == "slk.overwatch-scope-inspection/v1" { queries.push(value); }
+        }
+    }
+    if queries.len() != 1 { return Err(invalid()); }
+    let query = &queries[0];
+    let timestamp = |value: &serde_json::Value| value.as_str()
+        .and_then(|text| OffsetDateTime::parse(text, &Rfc3339).ok()).ok_or_else(invalid);
+    let started = timestamp(&query["query_started_at"])?;
+    let completed = timestamp(&query["query_completed_at"])?;
+    let cycle_completed = OffsetDateTime::parse(&request.completed_at, &Rfc3339).map_err(|_| invalid())?;
+    if query["run_id"].as_str() != Some(request.run_id.as_str())
+        || started < OffsetDateTime::parse(&request.started_at, &Rfc3339).map_err(|_| invalid())?
+        || completed < started
+        || completed > cycle_completed
+        || cycle_completed - started > time::Duration::seconds(i64::from(request.cadence_seconds))
+        || timestamp(&query["native_activity"]["observed_at"])? < started
+        || timestamp(&query["native_activity"]["observed_at"])? > completed {
+        return Err(invalid());
+    }
+    let unknown = query["native_activity"]["status"] == "UNKNOWN"
+        && query["native_activity"]["error"].as_str().is_some_and(|s| !s.is_empty());
+    // The existing cycle shape already requires a corresponding anomalous check;
+    // member uncertainty need not label the Overwatcher's own Session unhealthy.
+    let reported_unproven = request.anomaly_codes.contains(&crate::model::OverwatchAnomalyCode::ActivityUnproven);
+    if !query["query_error"].is_null() {
+        return if unknown && reported_unproven && query["runtime_projection_sha256"].is_null() { Ok(false) } else { Err(invalid()) };
+    }
+    if query["runtime_snapshot"] != serde_json::to_value(snapshot)?
+        || query["source_message_id"].as_str() != snapshot.latest_message_id.as_deref()
+        || !query["runtime_projection_sha256"].as_str().is_some_and(is_lower_sha256) {
+        return Err(invalid());
+    }
+    if snapshot.latest_message_id.is_none() || query["native_start_sha256"].is_null() {
+        return if unknown && reported_unproven { Ok(false) } else { Err(invalid()) };
+    }
+    if unknown && !reported_unproven { return Err(invalid()); }
+    let source: Option<(String, String)> = connection.query_row(
+        "SELECT evidence_path, evidence_sha256 FROM transport_start_receipts
+         WHERE run_id=?1 AND message_id=?2 AND token_sequence=?3 AND to_role_instance_id=?4 AND plan_revision=?5",
+        params![request.run_id, snapshot.latest_message_id, snapshot.token_sequence,
+                snapshot.token_holder_role_instance_id, snapshot.plan_revision],
+        |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
+    let Some((path, digest)) = source else { return Err(invalid()); };
+    if query["native_start_path"].as_str() != Some(path.as_str())
+        || query["native_start_sha256"].as_str() != Some(digest.as_str())
+        || !request.evidence_refs.iter().any(|reference| reference.path == path && reference.sha256 == digest) {
+        return Err(invalid());
+    }
+    Ok(true)
+}
+
 fn validate_worker_completion_cycle(
     connection: &Connection,
     request: &OverwatchCycleRequest,
     runtime_snapshot: &RuntimeSnapshot,
     authoritative_message_id: Option<&str>,
+    method_version: &str,
 ) -> Result<(), StateError> {
     let token_role: Option<String> = connection
         .query_row(
@@ -3954,6 +4024,17 @@ fn validate_worker_completion_cycle(
         ));
     }
     let inspection = &inspections[0];
+    if method_version == "4.4.3" {
+        let invalid = || StateError::OverwatcherCycleInvalid("Worker completion sample exceeds the bound cadence or cycle window".into());
+        let observed = inspection["observed_at"].as_str()
+            .and_then(|text| OffsetDateTime::parse(text, &Rfc3339).ok()).ok_or_else(invalid)?;
+        let started = OffsetDateTime::parse(&request.started_at, &Rfc3339).map_err(|_| invalid())?;
+        let completed = OffsetDateTime::parse(&request.completed_at, &Rfc3339).map_err(|_| invalid())?;
+        if observed < started || observed > completed
+            || completed - observed > time::Duration::seconds(i64::from(request.cadence_seconds)) {
+            return Err(invalid());
+        }
+    }
     let status = inspection
         .get("status")
         .and_then(serde_json::Value::as_str)
@@ -5239,6 +5320,64 @@ fn validate_reconciliation_request(
     Ok(())
 }
 
+fn validate_d2_event(connection: &Connection, request: &WriteRequest, token_sequence: u64) -> Result<(), StateError> {
+    let invalid = || StateError::InvalidPlan("D2 requires its exact delivered D2_READY and real original start".into());
+    let timestamp = |text: &str| OffsetDateTime::parse(text, &Rfc3339).map_err(|_| invalid());
+    let message = request.details.get("source_message_id").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
+    let receipt: Option<(String, String, String)> = connection.query_row(
+        "SELECT evidence_path, evidence_sha256, occurred_at FROM transport_start_receipts
+         WHERE run_id=?1 AND message_id=?2 AND token_sequence=?3 AND to_role_instance_id=?4
+           AND payload_type='D2_READY' AND plan_revision=?5",
+        params![request.run_id, message, token_sequence, request.role_instance_id, request.plan_revision],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
+    let Some((path, digest, delivered_at)) = receipt else { return Err(invalid()); };
+    let latest_message: Option<String> = connection.query_row(
+        "SELECT message_id FROM token_events WHERE run_id=?1 ORDER BY token_sequence DESC LIMIT 1",
+        [&request.run_id], |row| row.get(0))?;
+    if latest_message.as_deref() != Some(message) || request.go_id.is_some() || request.cell_id.is_some()
+        || request.attempt.is_some() || request.corrects_event_id.is_some() {
+        return Err(invalid());
+    }
+    if request.event_type == EventType::D2Started {
+        let count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM work_events WHERE run_id=?1 AND event_type='D2_STARTED'
+             AND json_extract(details_json, '$.source_message_id')=?2",
+            params![request.run_id, message], |row| row.get(0))?;
+        if count != 0 || request.details.get("token_sequence").and_then(serde_json::Value::as_u64) != Some(token_sequence)
+            || request.details.get("native_start_path").and_then(serde_json::Value::as_str) != Some(path.as_str())
+            || request.details.get("native_start_sha256").and_then(serde_json::Value::as_str) != Some(digest.as_str())
+            || timestamp(&request.occurred_at)? < timestamp(&delivered_at)? {
+            return Err(invalid());
+        }
+        validate_evidence_reference(&EvidenceReference { path: path.clone(), sha256: digest })?;
+        let native: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+        let session: String = connection.query_row(
+            "SELECT session_id FROM role_instances WHERE run_id=?1 AND role_instance_id=?2",
+            params![request.run_id, request.role_instance_id], |row| row.get(0))?;
+        let task = native.pointer("/native_task/id").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
+        if native.get("run_id").and_then(serde_json::Value::as_str) != Some(request.run_id.as_str())
+            || native.get("message_id").and_then(serde_json::Value::as_str) != Some(message)
+            || !task.starts_with(&format!("{session}:"))
+            || request.details.get("native_task_id").and_then(serde_json::Value::as_str) != Some(task) {
+            return Err(invalid());
+        }
+    } else {
+        let started = request.details.get("d2_started_event_id").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
+        let start_time: Option<String> = connection.query_row(
+            "SELECT occurred_at FROM work_events WHERE event_id=?1 AND run_id=?2 AND event_type='D2_STARTED'
+               AND plan_revision=?3 AND author_role_instance_id=?4
+               AND json_extract(details_json, '$.source_message_id')=?5
+               AND json_extract(details_json, '$.token_sequence')=?6",
+            params![started, request.run_id, request.plan_revision, request.role_instance_id, message, token_sequence],
+            |row| row.get(0)).optional()?;
+        let Some(start_time) = start_time else { return Err(invalid()); };
+        if timestamp(&request.occurred_at)? < timestamp(&start_time)? {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
+
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
     matches!(
         version,
@@ -5261,11 +5400,12 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
             | "4.4.0"
             | "4.4.1"
             | "4.4.2"
+            | "4.4.3"
     )
 }
 
 fn valid_overwatcher_cadence(version: &str, cadence_seconds: u32) -> bool {
-    if matches!(version, "4.4.0" | "4.4.1" | "4.4.2") {
+    if matches!(version, "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3") {
         cadence_seconds == 600
     } else {
         (180..=300).contains(&cadence_seconds)
