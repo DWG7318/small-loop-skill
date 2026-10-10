@@ -46,6 +46,14 @@ function envelope(run: RunView = runFixture): WebBiUploadEnvelope {
 }
 
 describe("WebBI upload contract", () => {
+  it.each(["1.1.0", "1.1.1"])("reads %s archives without relabeling their producer", (version) => {
+    expect(parseUploadEnvelope({ ...envelope(), bi_version: version }, catalog).bi_version).toBe(version);
+  });
+
+  it("rejects unsupported release versions independently from the v1 upload schema", () => {
+    expect(() => parseUploadEnvelope({ ...envelope(), bi_version: "9.0.0" }, catalog))
+      .toThrow("SLK_WEBBI_UPLOAD_VERSION_UNSUPPORTED");
+  });
   it("accepts only BI 1.1 envelopes with exact catalog types", () => {
     expect(parseUploadEnvelope(envelope(), catalog).runs[0]?.messages).toEqual([
       { ...message, occurred_at: "2026-09-20T00:00:03.000Z" },

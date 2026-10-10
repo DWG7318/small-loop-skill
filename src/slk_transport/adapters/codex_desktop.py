@@ -494,7 +494,7 @@ def consume_desktop_readback(
     client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "slk_transport_desktop_readback", "version": "4.4.2"}}, timeout)
+            "clientInfo": {"name": "slk_transport_desktop_readback", "version": "4.4.3"}}, timeout)
         client.notify("notifications/initialized", {})
         catalog = client.request(2, "tools/list", {}, timeout)
         if "read_thread" not in {t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}:
@@ -527,7 +527,7 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
     client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.2"}}, timeout)
+            "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.3"}}, timeout)
         client.notify("notifications/initialized", {})
         catalog = client.request(2, "tools/list", {}, timeout)
         if not {"read_thread", "send_message_to_thread"}.issubset({t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}):
@@ -588,6 +588,20 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
                         and item.get("namespace") == "codex_app" and isinstance(output, Mapping)
                         and output.get("truncated") is False and output.get("text") == expected):
                         matches.append((turn, item))
+            if proven is not None:
+                for observed_turn in turns:
+                    for observed_item in observed_turn["items"]:
+                        if observed_item.get("id") == proven[1] and (
+                            observed_turn["id"] != proven[0]
+                            or any(observed_item.get(key) != proof["platform_item"].get(key)
+                                   for key in ("type", "name", "namespace", "output"))
+                        ):
+                            raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "saved delivery item changed in native readback")
+            if not matches and proven is not None:
+                # The exact delivery item is immutable evidence already captured above.
+                # Bounded native history may omit it later; only that same turn's
+                # authoritative status is needed, never a newer turn or guessed exit.
+                matches = [(turn, proof["platform_item"]) for turn in turns if turn["id"] == proven[0]]
             if len(matches) > 1:
                 raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "multiple native items claim this exact delivery")
             if matches:

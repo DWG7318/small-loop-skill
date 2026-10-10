@@ -21,7 +21,7 @@
     "action": {"enum": ["NONE", "WAKE_BOUND_OVERWATCHER", "SUPERVISOR_RECOVERY_REVIEW"]}
   },
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
     "nullable_identifier": {"oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]}
   }
 }

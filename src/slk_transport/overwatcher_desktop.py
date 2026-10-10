@@ -66,7 +66,7 @@ def _request(path: Path, expected_sha256: str) -> dict[str, Any]:
     value = _read_object(path, "Desktop OW request")
     if set(value) != REQUEST_FIELDS or value.get("schema_version") != REQUEST_SCHEMA:
         raise OverwatcherDesktopError("Desktop OW request is not closed")
-    if value.get("method_version") != "4.4.2":
+    if value.get("method_version") not in {"4.4.2", "4.4.3"}:
         raise OverwatcherDesktopError("Desktop OW request method version is unsupported")
     try:
         UUID(_text(value.get("attestation_id"), "attestation_id"))
@@ -122,7 +122,7 @@ def _platform_snapshot(
     try:
         client.request(1, "initialize", {
             "protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "slk_overwatcher_desktop_status", "version": "4.4.2"},
+            "clientInfo": {"name": "slk_overwatcher_desktop_status", "version": "4.4.3"},
         }, timeout)
         client.notify("notifications/initialized", {})
         catalog = client.request(2, "tools/list", {}, timeout)
@@ -285,7 +285,7 @@ def attest_desktop_overwatcher(
         )
         _write_once(started_path, started)
     attestation = {
-        "schema_version": ATTESTATION_SCHEMA, "method_version": "4.4.2",
+        "schema_version": ATTESTATION_SCHEMA, "method_version": request["method_version"],
         "attestation_id": request["attestation_id"], "run_id": request["run_id"],
         "role_instance_id": request["role_instance_id"], "endpoint_ref": request["endpoint_ref"],
         "thread_id": request["thread_id"], "host_id": request["host_id"], "cwd": request["cwd"],
@@ -320,7 +320,7 @@ def validate_desktop_overwatcher_attestation(
     value = _read_object(path, "Overwatcher Desktop attestation")
     if set(value) != ATTESTATION_FIELDS or value.get("schema_version") != ATTESTATION_SCHEMA:
         raise OverwatcherDesktopError("Overwatcher Desktop attestation is not closed")
-    if value.get("method_version") != "4.4.2":
+    if value.get("method_version") not in {"4.4.2", "4.4.3"}:
         raise OverwatcherDesktopError("Overwatcher Desktop attestation version is unsupported")
     for field in ATTESTATION_FIELDS - {"schema_version", "method_version"}:
         if not isinstance(value.get(field), str) or not value[field]:

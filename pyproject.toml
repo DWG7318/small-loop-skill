@@ -4,10 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slk-transport"
-version = "4.4.2"
+version = "4.4.3"
 description = "Exact cross-agent transport for Small Loop Skill"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.24", "jsonschema>=4", "temporalio>=1.8"]
 
 [project.scripts]
 slk-transport = "slk_transport.cli:main"

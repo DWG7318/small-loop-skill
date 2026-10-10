@@ -65,7 +65,7 @@ fn desktop_registers_the_nine_read_only_projection_commands() {
 fn metadata_exposes_bi_version_and_a_nonempty_device_identity_without_secrets() {
     let value = metadata().unwrap();
     assert_eq!(value["schema_version"], "slk.bi.metadata/v1");
-    assert_eq!(value["bi_version"], "1.1.0");
+    assert_eq!(value["bi_version"], "1.1.1");
     assert!(value["device_id"].as_str().unwrap().len() >= 3);
     assert!(value["device_name"].as_str().unwrap().len() >= 1);
     let serialized = value.to_string().to_ascii_lowercase();
@@ -84,6 +84,14 @@ fn upload_payload_is_version_and_device_bound_before_network_use() {
         "runs":[]
     });
     assert!(validate_sync_payload(&valid, "device-a").is_ok());
+    let mut current = valid.clone();
+    current["bi_version"] = serde_json::json!("1.1.1");
+    assert!(validate_sync_payload(&current, "device-a").is_ok());
+    current["bi_version"] = serde_json::json!("9.0.0");
+    assert_eq!(
+        validate_sync_payload(&current, "device-a").unwrap_err(),
+        "SLK_WEBBI_UPLOAD_VERSION_UNSUPPORTED"
+    );
     assert_eq!(
         validate_sync_payload(&valid, "device-b").unwrap_err(),
         "SLK_WEBBI_DEVICE_INVALID"

@@ -7,6 +7,9 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -25,7 +28,7 @@ def _load_adapter():
 
 
 def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=None,
-                  timeout_mode=None, post_damage=False):
+                  timeout_mode=None, post_damage=False, stream_failure=None):
     """Force wait's natural-return branch; keep receipt validation and drains real."""
     adapter = _load_adapter()
     request, output, _ = _request(tmp_path)
@@ -56,8 +59,8 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
 
     class ExitedProcess:
         pid = os.getpid()
-        stdout = io.StringIO('original stdout before natural exit\n')
-        stderr = io.StringIO('original stderr before natural exit\n')
+        stdout = io.BytesIO(b'original stdout before natural exit\n')
+        stderr = io.BytesIO(b'original stderr before natural exit\n')
         waits = 0
 
         def poll(self):
@@ -104,6 +107,49 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
             return exit_code  # No TimeoutExpired in the natural-only cases.
 
     process = ExitedProcess()
+    original_open = Path.open
+
+    class FailingSink:
+        def __init__(self, saved):
+            self.saved = saved
+
+        def write(self, value):
+            if stream_failure == 'write':
+                self.saved.write(value[:9])
+                raise OSError('isolated original stream write unavailable')
+            return self.saved.write(value)
+
+        def flush(self):
+            self.saved.flush()
+            if stream_failure == 'flush':
+                raise OSError('isolated original stream flush unavailable')
+
+        def close(self):
+            self.saved.close()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            self.close()
+
+    def open_original_stream(path, mode='r', *args, **kwargs):
+        if path.name == 'ocrv.stdout.txt' and mode == 'wb':
+            if stream_failure == 'open':
+                raise OSError('isolated original stream open unavailable')
+            return FailingSink(original_open(path, mode, *args, **kwargs))
+        return original_open(path, mode, *args, **kwargs)
+
+    class FailingReader(io.BytesIO):
+        def read1(self, size):
+            if self.tell():
+                raise OSError('isolated original stream read unavailable')
+            return super().read1(9)
+
+    if stream_failure in ('open', 'write', 'flush'):
+        monkeypatch.setattr(Path, 'open', open_original_stream)
+    if stream_failure == 'read':
+        process.stdout = FailingReader(b'original stdout before natural exit\n')
     authenticate = adapter._completed_decision
     auth_after_saved_logs = []
 
@@ -115,16 +161,39 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
     monkeypatch.setattr(adapter, '_completed_decision', authenticate_original)
     monkeypatch.setattr(adapter.subprocess, 'Popen', lambda *_args, **_kwargs: process)
     status = adapter.run(request, output, invocation_override='native-A')
-    assert auth_after_saved_logs[-1] is True
+    assert auth_after_saved_logs[-1] is (stream_failure != 'open')
     assert len(close_calls) == (1 if timeout_mode is not None and damage is None else 0)
     assert process.stdout.closed and process.stderr.closed
     result = json.loads(output.read_text(encoding='utf-8'))
     assert result['review']['exit_code'] == exit_code
-    assert Path(result['artifacts']['stdout']).read_text(encoding='utf-8') == 'original stdout before natural exit\n'
+    stdout = Path(result['artifacts']['stdout'])
+    if stream_failure == 'open':
+        assert not stdout.exists()
+    else:
+        expected = 'original ' if stream_failure in ('write', 'read') else 'original stdout before natural exit\n'
+        assert stdout.read_text(encoding='utf-8') == expected
     assert Path(result['artifacts']['stderr']).read_text(encoding='utf-8') == 'original stderr before natural exit\n'
     assert json.loads(Path(result['artifacts']['raw_review']).read_text(encoding='utf-8'))['status'] == 'partial'
     assert result['findings'] == [{'severity': 'LOW', 'message': 'original finding'}]
     return status, result
+
+
+@pytest.mark.parametrize('stage', ['open', 'write', 'flush', 'read'])
+@pytest.mark.parametrize('exit_code', [0, 9])
+def test_stream_failure_is_reported_without_erasing_authenticated_d1(tmp_path, monkeypatch, stage, exit_code):
+    status, result = _natural_exit(tmp_path, monkeypatch, verdict='FAIL', exit_code=exit_code,
+                                   stream_failure=stage)
+    assert status != 0
+    assert result['verdict'] == 'FAIL' and result['verdict_source'] == 'CHECKER_EXPLICIT'
+    assert result['review']['exit_code'] == exit_code
+    assert result['review']['closure_reason'] == 'EXPLICIT_D1_COMPLETED'
+    assert f'ocrv.stdout.txt {stage}' in result['review']['closure_error']
+    assert f'isolated original stream {stage} unavailable' in result['review']['closure_error']
+    completion = json.loads((tmp_path / 'review-completed.json').read_text())
+    assert completion['decision_sha256'] == hashlib.sha256(Path(completion['decision_path']).read_bytes()).hexdigest()
+    activity = json.loads((tmp_path / 'source/native-activity.json').read_text())
+    assert activity['status'] == 'COMPLETED'  # original native outcome, not adapter IO success
+    assert activity['error'] == 'OCRV_STREAM_FAILED'
 
 
 @pytest.mark.parametrize('verdict', ['PASS', 'FAIL', 'INCOMPLETE'])
@@ -136,6 +205,76 @@ def test_natural_exit_validates_explicit_completion_without_timeout(tmp_path, mo
     assert result['verdict_source'] == 'CHECKER_EXPLICIT'
     assert result['review']['closure_reason'] == 'EXPLICIT_D1_COMPLETED'
     assert result['review']['closure_error'] is None
+
+
+@pytest.mark.parametrize('stage', ['open', 'write', 'flush'])
+def test_failed_sink_still_drains_a_real_native_pipe_without_retry(tmp_path, monkeypatch, stage):
+    adapter = _load_adapter()
+    request, output, _ = _request(tmp_path)
+    monkeypatch.delenv('SLK_NATIVE_START_RECEIPT', raising=False)
+    monkeypatch.delenv('SLK_NATIVE_START_CONTEXT', raising=False)
+    monkeypatch.setattr(adapter, '_discover_capabilities', lambda *_: {'invocations': []})
+    monkeypatch.setattr(adapter, '_review_args', lambda *_: [sys.executable, '-u', '-c',
+        "import sys; sys.stdout.buffer.write(b'x'*(2*1024*1024)); sys.stdout.buffer.flush(); "
+        "sys.stderr.buffer.write(b'original untouched stderr'); sys.stderr.buffer.flush()"])
+    original_open, popen = Path.open, adapter.subprocess.Popen
+    processes, operations = [], []
+
+    class Sink:
+        def __init__(self, saved):
+            self.saved = saved
+
+        def write(self, value):
+            operations.append('write')
+            if stage == 'write':
+                self.saved.write(value[:9])
+                raise OSError('isolated sink write failed')
+            return self.saved.write(value)
+
+        def flush(self):
+            operations.append('flush')
+            self.saved.flush()
+            if stage == 'flush':
+                raise OSError('isolated sink flush failed')
+
+        def close(self):
+            self.saved.close()
+
+    def open_sink(path, mode='r', *args, **kwargs):
+        if path.name == 'ocrv.stdout.txt' and mode == 'wb':
+            operations.append('open')
+            if stage == 'open':
+                raise OSError('isolated sink open failed')
+            return Sink(original_open(path, mode, *args, **kwargs))
+        return original_open(path, mode, *args, **kwargs)
+
+    def start(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(Path, 'open', open_sink)
+    monkeypatch.setattr(adapter.subprocess, 'Popen', start)
+    outcome = []
+    running = threading.Thread(target=lambda: outcome.append(adapter.run(request, output, invocation_override='stream-test')))
+    running.start()
+    try:
+        running.join(8)
+        assert not running.is_alive(), 'a failed sink must not leave a full native pipe'
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()  # only this test's exact local fake process
+                process.wait(timeout=5)
+        running.join(5)
+    result = json.loads(output.read_text())
+    assert outcome == [1] and result['review']['exit_code'] == 0
+    assert f'ocrv.stdout.txt {stage}' in result['review']['closure_error']
+    assert (tmp_path / 'ocrv.stderr.txt').read_bytes() == b'original untouched stderr'
+    assert operations.count(stage) == 1
+    if stage != 'open':
+        saved = (tmp_path / 'ocrv.stdout.txt').read_bytes()
+        assert saved and saved == b'x' * len(saved)
 
 
 def test_ocrv_source_binds_marker_to_original_invocation_without_claiming_native_pid(tmp_path, monkeypatch):
@@ -193,6 +332,104 @@ def test_live_cleanup_error_does_not_erase_d1_or_retry_cleanup(tmp_path, monkeyp
     assert result['verdict_source'] == 'CHECKER_EXPLICIT'
     assert result['review']['closure_reason'] == 'EXPLICIT_D1_COMPLETED'
     assert 'original review termination denied' in result['review']['closure_error']
+
+
+@pytest.mark.parametrize('ending', ['\n', ''])
+def test_denied_cleanup_exposes_original_streams_and_failure_before_native_exit(tmp_path, monkeypatch, ending):
+    adapter = _load_adapter()
+    request, output, _ = _request(tmp_path)
+    source = tmp_path / 'source'
+    source.mkdir()
+    receipt = source / 'native-start.received.json'
+    context = {'adapter': 'ocrv-checker', 'run_id': 'RUN-PREFLIGHT-A', 'cell_id': 'CELL-001',
+        'message_id': 'message-A', 'request_sha256': 'b' * 64,
+        'native_request_sha256': hashlib.sha256(request.read_bytes()).hexdigest()}
+    monkeypatch.setenv('SLK_NATIVE_START_RECEIPT', str(receipt))
+    monkeypatch.setenv('SLK_NATIVE_START_CONTEXT', json.dumps(context))
+    monkeypatch.setattr(adapter, '_discover_capabilities', lambda *_: {'invocations': []})
+    release = tmp_path / 'release'
+    command = [sys.executable, '-u', '-c',
+        f"import pathlib,sys,time; print('original stdout',end={ending!r},flush=True); "
+        f"print('original stderr',end={ending!r},file=sys.stderr,flush=True); "
+        f"p=pathlib.Path({str(release)!r}); "
+        "exec('while not p.exists(): time.sleep(0.02)'); sys.exit(9)"]
+    monkeypatch.setattr(adapter, '_review_args', lambda *_: command)
+    denied = threading.Event()
+    streams_saved = threading.Event()
+    diagnostic_saved = threading.Event()
+    saved_kinds = set()
+    write_json = adapter._write_json_atomic
+
+    def observe_saved(path, value):
+        write_json(path, value)
+        if path.name == 'native-activity.json':
+            saved_kinds.add(value.get('last_event', {}).get('kind'))
+            if {'OCRV_STDOUT', 'OCRV_PROGRESS'} <= saved_kinds:
+                streams_saved.set()
+            if value.get('error') == 'OCRV_CLEANUP_FAILED':
+                diagnostic_saved.set()
+
+    monkeypatch.setattr(adapter, '_write_json_atomic', observe_saved)
+    calls = []
+
+    def deny(process, *_):
+        assert process.poll() is None
+        calls.append(process.pid)
+        denied.set()
+        raise OSError('original review termination denied')
+
+    monkeypatch.setattr(adapter, '_close_completed_review', deny)
+    outcome = []
+    running = threading.Thread(target=lambda: outcome.append(adapter.run(request, output, invocation_override='native-A')))
+    running.start()
+    try:
+        deadline = time.monotonic() + 8
+        while not receipt.is_file() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        start = json.loads(receipt.read_text())
+        assert streams_saved.wait(8), 'flushed partial native output must not wait for exit'
+        decision = source / 'role-host' / 'checker-decision.json'
+        decision.parent.mkdir()
+        decision.write_text(json.dumps({'source_message_id': context['message_id'],
+            'native_task_id': 'native-A', 'verdict': 'FAIL'}))
+        completion = {**context, 'schema_version': 'slk.ocrv-completion/v1', 'native_task_id': 'native-A',
+            'native_start_sha256': adapter._sha256(receipt), 'decision_path': str(decision),
+            'decision_sha256': adapter._sha256(decision), 'verdict': 'FAIL', 'review_process': start['process']}
+        (tmp_path / 'review-completed.json').write_text(json.dumps(completion))
+        assert denied.wait(8)
+        assert diagnostic_saved.wait(8)
+        activity = json.loads((source / 'native-activity.json').read_text())
+        assert running.is_alive() and not output.exists()
+        assert (tmp_path / 'ocrv.stdout.txt').read_text() == 'original stdout' + ending
+        assert (tmp_path / 'ocrv.stderr.txt').read_text() == 'original stderr' + ending
+        assert activity['status'] == 'RUNNING' and activity['error'] == 'OCRV_CLEANUP_FAILED'
+        # Final authentication must still reject a changed decision after denied cleanup.
+        completion['native_task_id'] = 'other-invocation'
+        (tmp_path / 'review-completed.json').write_text(json.dumps(completion))
+    finally:
+        release.touch()
+        running.join(8)
+    assert not running.is_alive() and len(calls) == 1
+    result = json.loads(output.read_text())
+    assert outcome == [9] and result['review']['exit_code'] == 9
+    assert result['verdict'] is None and 'termination denied' in result['review']['closure_error']
+
+
+def test_owned_cleanup_ancestry_has_no_depth_cap_and_rejects_cycles(monkeypatch):
+    adapter = _load_adapter()
+    killed = []
+    monkeypatch.setattr(adapter, 'os', SimpleNamespace(name='posix', kill=lambda *args: killed.append(args)))
+    monkeypatch.setattr(adapter, '_process_creation_time', lambda _: 'original-time')
+    parents = {pid: pid - 1 for pid in range(2, 70)}
+    monkeypatch.setattr(adapter, '_process_parents', lambda: parents)
+    process = SimpleNamespace(pid=1, poll=lambda: None)
+    completed = {'review_process': {'pid': 69, 'creation_time': 'original-time'}}
+    adapter._close_completed_review(process, completed, {'creation_time': 'original-time'})
+    assert killed == [(69, 15)]
+    parents[2] = 69
+    with pytest.raises(adapter.RequestError, match='descendant'):
+        adapter._close_completed_review(process, completed, {'creation_time': 'original-time'})
+    assert killed == [(69, 15)]
 
 
 @pytest.mark.parametrize('timeout_mode', ['already-exited', 'denied', 'closed'])

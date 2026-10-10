@@ -40,7 +40,7 @@ export interface WebBiSyncResult {
 
 export interface BiMetadata {
   schema_version: "slk.bi.metadata/v1";
-  bi_version: "1.1.0";
+  bi_version: import("./version").BiVersion;
   device_id: string;
   device_name: string;
   webbi_sync_enabled: boolean;

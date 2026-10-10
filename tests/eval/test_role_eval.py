@@ -36,7 +36,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.4.2"
+    assert pack["method_version"] == "4.4.3"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -187,6 +187,23 @@ def test_pack_covers_fixed_topology_incomplete_and_supervisor_rework() -> None:
     assert second_fail["correct_choice"] == "REPLAN_AND_SPLIT_BEFORE_REDISPATCH"
 
 
+def test_current_eval_distinguishes_original_read_action_normal_recovery_and_shared_pause():
+    cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
+    expected = {
+        "CHK-D1-INCOMPLETE": "ESCALATE_INCOMPLETE_TO_SUPERVISOR",
+        "CHK-WHOLE-CANDIDATE": "CHECK_ALL_CELL_CRITERIA_ONCE",
+        "CHK-GIT-EXTERNAL-ORIGINAL": "READ_HASH_BOUND_ORIGINAL_BEFORE_DECIDING",
+        "CHK-FINAL-DECISION-ACTION": "DECIDE_AND_HANDOFF_AS_FINAL_ACTION",
+        "SUP-NORMAL-NOT-RECOVERY": "VERIFY_ORIGINAL_NORMAL_LEG",
+        "SUP-NO-INSPECTION-CELL": "KEEP_VERIFICATION_IN_D0_D1_D2",
+        "OVW-SHARED-AUTHORIZED-PAUSE": "OBSERVE_PAUSED_A_AND_ACTIVE_B",
+        "SUP-PAUSE-TIME-FACTS": "COUNT_THIRTY_WORK_MINUTES",
+    }
+    for identity, choice in expected.items():
+        assert cases[identity]["correct_choice"] == choice
+        assert choice in cases[identity]["choices"]
+
+
 def test_pack_covers_preparation_goal_only_without_growing_runtime_subset() -> None:
     cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
     for identity in ("SUP-PREP-GOAL-RESUME", "SUP-PREP-GOAL-ERROR", "SUP-PREP-GOAL-NATIVE",
@@ -242,7 +259,7 @@ def test_pack_covers_4210_field_correction_failures() -> None:
         "SUP-NO-DELAYED-SELF-WAKE",
         "CHK-LOW-ONLY-NOT-FAIL",
         "WRK-NO-RECOVERY-REPLAY",
-        "OVW-CONTINUOUS-FOREGROUND-LOOP",
+        "OVW-SHARED-AUTHORIZED-PAUSE",
     } <= case_ids
 
 

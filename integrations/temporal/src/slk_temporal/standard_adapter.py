@@ -1,4 +1,4 @@
-"""Built-in, file-bound Temporal adapter for ordinary SLK 4.4.2 Runs.
+"""Built-in, file-bound Temporal adapter for ordinary compatible SLK 4.4.x Runs.
 
 One shared worker may serve many Runs.  Each Run has one closed JSON file named
 ``<run_id>.json`` under the configured root.  Activities use only existing SLK
@@ -44,7 +44,7 @@ OW_ATTESTATION_FIELDS = {
     "turn_status", "native_task_id", "started_sha256",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]+$")
 _CONFIG_ROOT: Path | None = None
 
 
@@ -92,14 +92,17 @@ def _validate_ow_attestation(
     role_instance_id: str,
     endpoint_ref: str,
     started_path: Path,
+    method_version: str,
 ) -> None:
     if not SHA256.fullmatch(expected_sha256) or _sha256(path) != expected_sha256:
         raise ValueError("Overwatcher attestation hash changed")
     value = _object(path, "Overwatcher Desktop attestation")
     if (set(value) != OW_ATTESTATION_FIELDS
         or value.get("schema_version") != "slk.desktop-overwatcher-attestation/v1"
-        or value.get("method_version") != "4.4.2"):
+        or value.get("method_version") not in {"4.4.2", "4.4.3"}):
         raise ValueError("Overwatcher attestation is not closed")
+    if value["method_version"] != method_version:
+        raise ValueError("Overwatcher attestation method differs from the frozen Run config")
     for field in OW_ATTESTATION_FIELDS - {"schema_version", "method_version"}:
         if not isinstance(value.get(field), str) or not value[field] or value[field] != value[field].strip():
             raise ValueError(f"Overwatcher attestation {field} is invalid")
@@ -192,6 +195,7 @@ def _load_config(run_id: str) -> dict[str, Any]:
             role_instance_id=str(ow["role_instance_id"]),
             endpoint_ref=str(ow["endpoint_ref"]),
             started_path=Path(normalized_ow["started_path"]),
+            method_version=value["method_version"],
         )
         normalized_ow["attestation_path"] = str(attestation_path)
     value["overwatcher_activity"] = normalized_ow
@@ -204,7 +208,7 @@ def _load_bootstrap_config(run_id: str) -> dict[str, Any]:
     value = _object(_CONFIG_ROOT / f"{run_id}.bootstrap.json", "standard adapter bootstrap config")
     if (set(value) != BOOTSTRAP_FIELDS
         or value.get("schema_version") != "slk.temporal-standard-bootstrap/v1"
-        or value.get("method_version") != "4.4.2" or value.get("run_id") != run_id):
+        or value.get("method_version") not in {"4.4.2", "4.4.3"} or value.get("run_id") != run_id):
         raise ValueError("standard adapter bootstrap config is not closed")
     value["query_command"] = _command(value["query_command"], "query command")
     value["state_config_path"] = str(_existing_path(value["state_config_path"], "state config"))
@@ -215,6 +219,8 @@ def bootstrap_run(value: dict[str, Any]) -> dict[str, Any]:
     """Validate only the live central registry needed before creating a workflow pair."""
     request = StartSlkRequest.from_dict(value)
     config = _load_bootstrap_config(request.run_id)
+    if config["method_version"] != request.method_version:
+        raise ValueError("bootstrap config method differs from the immutable startup")
     projection = _run_json(
         list(config["query_command"]), ["run", "--run-id", request.run_id],
         environment={"SLK_CONFIG_PATH": str(config["state_config_path"])},
@@ -297,6 +303,8 @@ async def prepare_run(value: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(fingerprint, str) or not SHA256.fullmatch(fingerprint):
         raise ValueError("startup fingerprint is invalid")
     config = _load_config(request.run_id)
+    if config["method_version"] != request.method_version:
+        raise ValueError("Run config method differs from the immutable startup")
 
     def perform() -> dict[str, Any]:
         command = ("preflight-new-run" if config["admission_kind"] == "PRODUCT"
@@ -309,7 +317,8 @@ async def prepare_run(value: dict[str, Any]) -> dict[str, Any]:
         projection = _query(config)
         if (admission.get("status") != "READY" or admission.get("run_id") != request.run_id
             or projection.get("summary", {}).get("run_id") != request.run_id
-            or projection.get("runtime_snapshot", {}).get("runtime_revision") != request.runtime_revision):
+            or projection.get("runtime_snapshot", {}).get("runtime_revision") != request.runtime_revision
+            or projection.get("runtime_snapshot", {}).get("method_version") != request.method_version):
             raise ValueError("new Run admission or live runtime revision does not match startup")
         core = {"status": "READY", "run_id": request.run_id,
                 "runtime_revision": request.runtime_revision,

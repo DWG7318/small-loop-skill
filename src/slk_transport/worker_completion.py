@@ -449,7 +449,7 @@ def acknowledge_temporal_delivery(
     operation_id = request.get("operation_id")
     if (set(request) != TEMPORAL_DELIVERY_REQUEST_FIELDS
         or not isinstance(operation_id, str)
-        or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", operation_id)
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+", operation_id)
         or request.get("run_id") != envelope.run_id
         or request.get("cell_id") != envelope.cell_id
         or request.get("attempt") != attempt

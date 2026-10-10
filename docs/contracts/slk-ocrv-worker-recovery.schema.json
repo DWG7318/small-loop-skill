@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "recovery_invocation_id", "recovery_envelope_message_id", "run_id", "go_id", "cell_id", "checker_role_instance_id", "checker_endpoint_version", "checker_endpoint", "source_attempt_root", "runtime_projection_path", "plan_revision", "runtime_revision", "token_sequence", "worker_credential_path", "checker_credential_path", "state_command", "transport_command", "occurred_at", "result_path"],
   "properties": {
     "schema_version": {"const": "slk.ocrv-worker-recovery-request/v1"},
-    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3"]},
     "recovery_invocation_id": {"type": "string", "format": "uuid"},
     "recovery_envelope_message_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/identifier"},
@@ -54,7 +54,7 @@
     {"required": ["environment_adjustment_path", "environment_adjustment_sha256"]}
   ],
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
   }

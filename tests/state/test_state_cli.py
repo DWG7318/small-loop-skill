@@ -11,7 +11,7 @@ import pytest
 
 from slk_transport.adapters.dsh import DshAdapter
 from slk_transport.adapters.ocrv import OcrvAdapter
-from slk_transport import overwatcher_admin, supervisor_admin, worker_completion
+from slk_transport import native_activity, overwatcher_admin, supervisor_admin, worker_completion
 from slk_transport.contracts import canonical_json_sha256
 from slk_transport.dispatcher import dispatch_once
 
@@ -57,7 +57,8 @@ def write_json(path, value):
 
 def test_state_cli_reports_the_exact_build_version(tmp_path):
     result = json.loads(invoke(["--version"], configured_environment(tmp_path)).stdout)
-    assert result == {"status": "ok", "version": "4.4.2"}
+    version = (Path(__file__).parents[2] / 'VERSION').read_text(encoding='utf-8').strip()
+    assert result == {"status": "ok", "version": version}
 
 
 def test_one_process_authenticates_two_runs_through_separate_state_configs(
@@ -427,15 +428,15 @@ def init_request():
 
 def supervisor_event():
     return {
-        "event_id": "d2-started",
+        "event_id": "resource-contended",
         "run_id": "run-a",
         "go_id": None,
         "cell_id": None,
         "attempt": None,
         "plan_revision": 1,
         "role_instance_id": "supervisor-a",
-        "event_type": "D2_STARTED",
-        "details": {},
+        "event_type": "RESOURCE_CONTENDED",
+        "details": {"reason": "Supervisor reports a local resource wait"},
         "occurred_at": "2026-09-20T00:00:01Z",
     }
 
@@ -539,10 +540,18 @@ def observation():
     }
 
 
-def overwatch_cycle(tmp_path):
+def overwatch_cycle(tmp_path, environment, monkeypatch):
     state_evidence = tmp_path / "state-revision-2.json"
     native_evidence = tmp_path / "foreground-turn-a.json"
-    state_evidence.write_bytes(b'{"runtime_revision":2}')
+    with monkeypatch.context() as collected:
+        collected.setenv('SLK_CONFIG_PATH', environment['SLK_CONFIG_PATH'])
+        collected.setattr(native_activity, 'utc_now', lambda: '2026-09-20T00:03:59.500000Z')
+        query = native_activity.collect_overwatch_scope(
+            None, run_id='run-a', state_command=[str(state_binary())])
+    assert query['query_error'] is None
+    assert query['native_activity']['status'] == 'UNKNOWN'
+    assert query['native_activity']['error'] == 'NO_NATIVE_TASK_FOR_CURRENT_TOKEN'
+    write_json(state_evidence, query)
     native_evidence.write_bytes(b'{"native_liveness":"IN_PROGRESS"}')
 
     def evidence(path):
@@ -575,12 +584,12 @@ def overwatch_cycle(tmp_path):
             "role_bindings": "CLEAR",
             "direct_handoffs": "CLEAR",
             "cell_lifecycle": "CLEAR",
-            "stall_and_duplicates": "CLEAR",
+            "stall_and_duplicates": "ANOMALY",
             "bi_projection": "CLEAR",
             "active_session": "CLEAR",
             "terminal_closure": "NOT_APPLICABLE",
         },
-        "anomaly_codes": [],
+        "anomaly_codes": ["ACTIVITY_UNPROVEN"],
         "evidence_refs": [
             evidence(state_evidence),
             evidence(native_evidence),
@@ -609,6 +618,12 @@ def test_writer_configures_initializes_and_applies_one_role_event(tmp_path):
     event_path = write_json(tmp_path / "event.json", supervisor_event())
     role_environment = environment.copy()
     role_environment["SLK_ROLE_CREDENTIAL"] = credential
+    missing_d2 = {**supervisor_event(), 'event_id': 'missing-d2-start',
+                  'event_type': 'D2_STARTED', 'details': {}}
+    rejected = invoke(['write', '--request', write_json(tmp_path / 'missing-d2.json', missing_d2)],
+                      role_environment, check=False)
+    assert rejected.returncode != 0
+    assert 'exact delivered D2_READY and real original start' in rejected.stderr
     result = json.loads(
         invoke(["write", "--request", event_path], role_environment).stdout
     )
@@ -666,10 +681,19 @@ def test_close_role_cli_retires_exact_terminal_checker_and_worker(tmp_path):
             "occurred_at": "2026-09-20T00:00:02Z",
         }
     )
-    invoke(
+    rejected = invoke(
         ["write", "--request", write_json(tmp_path / "closed.json", closed)],
         supervisor_environment,
+        check=False,
     )
+    assert rejected.returncode != 0
+    assert 'D2 PASS, its terminal snapshot, closed OW and all original native writers stopped' in rejected.stderr
+    # This fixture has no engineering D2 execution. Use an explicit real
+    # abandonment event for terminal-role retirement, never fabricate D2 PASS.
+    abandoned = {**closed, 'event_id': 'run-abandoned', 'event_type': 'RUN_ABANDONED',
+                 'details': {'reason': 'Supervisor explicitly ends the disposable test Run'}}
+    invoke(['write', '--request', write_json(tmp_path / 'abandoned.json', abandoned)],
+           supervisor_environment)
 
     for role in ("worker", "checker"):
         role_id = f"{role}-a"
@@ -691,6 +715,12 @@ def test_close_role_cli_retires_exact_terminal_checker_and_worker(tmp_path):
             assert replay["status"] == "already_closed"
 
     with sqlite3.connect(data_root / "slk.db") as database:
+        assert database.execute(
+            "SELECT state, closure_state FROM runs WHERE run_id='run-a'"
+        ).fetchone() == ('archived', 'abandoned')
+        assert database.execute(
+            "SELECT COUNT(*) FROM work_events WHERE run_id='run-a' AND event_type IN ('D2_PASSED','RUN_CLOSED')"
+        ).fetchone()[0] == 0
         roles = database.execute(
             "SELECT role, lifecycle, successor_role_instance_id FROM role_instances WHERE role IN ('checker','worker') ORDER BY role"
         ).fetchall()
@@ -778,7 +808,7 @@ def test_writer_has_no_owner_or_anonymous_write_mode(tmp_path):
     assert "SLK_ROLE_CREDENTIAL" in error["message"]
 
 
-def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
+def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path, monkeypatch):
     environment = configured_environment(tmp_path)
     invoke(["configure", "--data-root", tmp_path / "state"], environment)
     initialized = json.loads(
@@ -810,7 +840,7 @@ def test_overwatcher_cli_uses_a_separate_observation_credential(tmp_path):
             [
                 "record-overwatch-cycle",
                 "--request",
-                write_json(tmp_path / "cycle.json", overwatch_cycle(tmp_path)),
+                write_json(tmp_path / "cycle.json", overwatch_cycle(tmp_path, environment, monkeypatch)),
             ],
             observer_environment,
         ).stdout
@@ -870,7 +900,7 @@ def test_real_overwatcher_admin_uses_the_ow_environment_for_cycle_write(tmp_path
         source, sealed, run_id="run-a", role="overwatcher",
         role_instance_id="overwatcher-a", state_command=[str(state_binary())],
     )
-    operation = write_json(tmp_path / "cycle.json", overwatch_cycle(tmp_path))
+    operation = write_json(tmp_path / "cycle.json", overwatch_cycle(tmp_path, environment, monkeypatch))
     result_path = tmp_path / "overwatcher-admin-result.json"
     request = write_json(tmp_path / "overwatcher-admin.json", {
         "schema_version": "slk.overwatcher-admin/v1",
@@ -995,7 +1025,7 @@ def test_overwatcher_credential_rotation_uses_unambiguous_one_time_fields(tmp_pa
     assert rejected.returncode != 0
 
 
-def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
+def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path, monkeypatch):
     environment = configured_environment(tmp_path)
     invoke(["configure", "--data-root", tmp_path / "state"], environment)
     initialized = json.loads(
@@ -1039,7 +1069,7 @@ def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
     observer_environment["SLK_OVERWATCHER_CREDENTIAL"] = bound[
         "overwatcher_write_credential"
     ]
-    incomplete = overwatch_cycle(tmp_path)
+    incomplete = overwatch_cycle(tmp_path, environment, monkeypatch)
     del incomplete["checklist"]["active_session"]
     rejected = invoke(
         [
@@ -1052,7 +1082,7 @@ def test_overwatcher_cli_rejects_passive_binding_and_incomplete_cycle(tmp_path):
     )
     assert rejected.returncode != 0
 
-    unknown_anomaly = overwatch_cycle(tmp_path)
+    unknown_anomaly = overwatch_cycle(tmp_path, environment, monkeypatch)
     unknown_anomaly["checklist"]["active_session"] = "ANOMALY"
     unknown_anomaly["anomaly_codes"] = ["FREE_TEXT_HEARTBEAT_OK"]
     rejected = invoke(

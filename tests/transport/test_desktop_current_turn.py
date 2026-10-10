@@ -168,7 +168,8 @@ def native_platform_record(tmp_path, monkeypatch, request, receipt):
     return path
 
 
-def test_current_turn_recovery_closes_original_temporal_ack_without_canonical_backfill(tmp_path, monkeypatch):
+@pytest.mark.parametrize("operation_id", ["original-operation", "original-" + "a" * 129])
+def test_current_turn_recovery_closes_original_temporal_ack_without_canonical_backfill(tmp_path, monkeypatch, operation_id):
     from slk_transport import worker_completion as wc
     from test_temporal_handoff_bridge import temporal_binding
     endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
@@ -178,7 +179,7 @@ def test_current_turn_recovery_closes_original_temporal_ack_without_canonical_ba
     complete_desktop_current_turn(attempts, endpoint, envelope, receipt, environment=desktop_environment())
     failed_before = (original / "failed.json").read_bytes()
     temporal_request = {
-        "operation_id": "original-operation", "run_id": envelope["run_id"], "cell_id": envelope["cell_id"],
+        "operation_id": operation_id, "run_id": envelope["run_id"], "cell_id": envelope["cell_id"],
         "attempt": 2, "message_id": envelope["message_id"],
         "sender_role_instance_id": envelope["sender_role_instance_id"],
         "receiver_role_instance_id": envelope["receiver_role_instance_id"],
@@ -196,7 +197,7 @@ def test_current_turn_recovery_closes_original_temporal_ack_without_canonical_ba
             (original / "recovery/desktop-current-turn/start-evidence.json").read_bytes()).hexdigest()
         return {"schema_version": "slk.temporal-delivery-update-result/v1", "operation": "native_started",
                 "status": "DELIVERY_ACKNOWLEDGED", "run_id": envelope["run_id"],
-                "operation_id": "original-operation", "message_id": envelope["message_id"]}
+                "operation_id": operation_id, "message_id": envelope["message_id"]}
     monkeypatch.setattr(wc, "_run_json_command", client)
     binding = temporal_binding(tmp_path, attempts)
     for _ in range(2):

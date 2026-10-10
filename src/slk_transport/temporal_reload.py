@@ -236,9 +236,7 @@ def reload_temporal_worker(request_path: Path | str, *, request_sha256: str) -> 
         except (ValueError, IndexError) as exc:
             raise ValueError("Temporal worker command changed frozen routing") from exc
     for label in ("adapter_source", "workflow_source"):
-        path = _file_proof(request[label], label)
-        if path.stat().st_size > 8 * 1024 * 1024:
-            raise ValueError(f"{label} exceeds the bounded source limit")
+        _file_proof(request[label], label)
     _, identity = _proof(request["workflow_identity"], "workflow identity")
     if (set(identity) != IDENTITY_FIELDS or identity["schema_version"] != "slk.temporal-workflow-identity/v1"
         or identity["run_id"] != run_id or identity["address"] != address or identity["task_queue"] != queue

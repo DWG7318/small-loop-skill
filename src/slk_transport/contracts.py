@@ -38,7 +38,7 @@ ROLE_EDGES = frozenset(
         ("checker", "supervisor"),
     }
 )
-IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 

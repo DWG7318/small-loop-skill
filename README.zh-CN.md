@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**4.4.2**
+当前版本：**4.4.3**
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小工程 Run，或大型工程中相对独立的范围。一个 SLK 就是一个 Run，只含一条串行 CELL 路径。
 
@@ -15,7 +15,7 @@ Overwatcher：必需、非权威，只核实真假并向 Supervisor 报告
 Temporal：必需的连续性与计时保障，不拥有工程权威
 ```
 
-任何 CELL 开工前，Supervisor 必须打开 BI 1.1.0，建立四角色 `RUN_TEAM_REGISTRY`，证明工具/能力和设备 readiness，并绑定由七条准确通讯演练产生的真实隔离来源。第一份来源只能由一次性单 CELL Run 通过 `preflight-conformance-sample` 产生：运行证据位于 `slk-conformance/<SLK-CONFORMANCE-…>`，Worker 工作区是与其分离、clean、固定 HEAD 且无 remote 的样本 Git，其他角色保留真实原生 cwd，绝不能派产品工作。Temporal 使用内置两阶段标准适配器：中央 bootstrap 只创建一次真实工作流对，得到真实 identity/Host/OW 证据后再按显式样本或产品模式准入；产品 Run 永远以 `preflight-new-run` 绑定另一 Run 的密封来源，不重放假 FAIL/返工/D2。证据缺失、过期、猜测、循环依赖或不可查询时禁止派工。
+任何 CELL 开工前，Supervisor 必须打开 BI 1.1.1，建立四角色 `RUN_TEAM_REGISTRY`，证明工具/能力和设备 readiness，并绑定由七条准确通讯演练产生的真实隔离来源。第一份来源只能由一次性单 CELL Run 通过 `preflight-conformance-sample` 产生：运行证据位于 `slk-conformance/<SLK-CONFORMANCE-…>`，Worker 工作区是与其分离、clean、固定 HEAD 且无 remote 的样本 Git，其他角色保留真实原生 cwd，绝不能派产品工作。Temporal 使用内置两阶段标准适配器：中央 bootstrap 只创建一次真实工作流对，得到真实 identity/Host/OW 证据后再按显式样本或产品模式准入；产品 Run 永远以 `preflight-new-run` 绑定另一 Run 的密封来源，不重放假 FAIL/返工/D2。证据缺失、过期、猜测、循环依赖或不可查询时禁止派工。
 
 Codex 担任 Supervisor，固定 canonical `gpt-6.1-sol`，每个 Run 由 Owner 选择 `high` 或 `xhigh`；OCRV 担任 Checker（Qwen3.8-Max）；DSH 担任 Worker（DeepSeek V4 Flash）。runtime、model、reasoning、Session、adapter、endpoint 与原生活动都由工具验证，不从提示词推断。Supervisor 还要按 DSH 实际能力给冻结方案定 CELL：大工作在派工前拆成可独立 D0/D1 的中小 CELL，不降低验收。目标是绝大部分 CELL 首轮 D1 PASS；同一 CELL 第二次连续正式 D1 FAIL 后停止普通返工，版本化拆分未接受范围，D1 权威仍属于 Checker。
 
@@ -29,11 +29,11 @@ Run 的测试、复核与验收仍归入 D0、D1、D2，不另建纯检验 CELL�
 
 ## 状态与 BI
 
-SLK 使用版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出和只读 LE BI。BI/WebBI 1.1.0 显示设备/版本、四角色身份、Agent 明确标注的新消息和归档 Run。WebBI 接收各设备独立上传的 Run，并可用服务器 URL、用户名、密码、Topic 四项配置 ntfy；BI/WebBI 不推断消息类型，也不修改工程事实。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
+SLK 使用版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出和只读 LE BI。BI/WebBI 1.1.1 显示设备/版本、四角色身份、Agent 明确标注的新消息和归档 Run。WebBI 接收各设备独立上传的 Run，并可用服务器 URL、用户名、密码、Topic 四项配置 ntfy；BI/WebBI 不推断消息类型，也不修改工程事实。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
 
 ## Skill 集合
 
-把 [`skills/`](skills/) 下 16 个同级目录作为完整包安装：[主 Skill](skills/small-loop-skill/SKILL.md) 加 15 个情境子 Skill，覆盖计划、容量、模型、角色 Eval/团队准备、Temporal、OW 观察、CELL 施工/检查/返工、记录、调整、恢复和收尾。它们属于同一方法，不是独立方法，不能脱离 SLK Run 单独使用。
+把 [`skills/`](skills/) 下 17 个同级目录作为完整包安装：[主 Skill](skills/small-loop-skill/SKILL.md) 加 16 个情境子 Skill，覆盖计划、容量、模型、角色 Eval/团队准备、Temporal、OW 观察、CELL 施工/检查/返工、记录、调整、恢复和收尾。它们属于同一方法，不是独立方法，不能脱离 SLK Run 单独使用。
 
 ## 验证
 

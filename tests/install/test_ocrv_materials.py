@@ -184,7 +184,7 @@ def test_no_completion_is_published_for_an_action_error_or_non_decision(tmp_path
     assert not index.with_name('review-completed.json').exists()
 
 
-@pytest.mark.parametrize('related', [True, False])
+@pytest.mark.parametrize('related', [True, False, 'deep', 'cycle'])
 def test_native_bridge_observes_only_exact_parent_under_original_launcher(tmp_path, monkeypatch, related):
     import sys
     bridge, adapter = load('slk_checker_decision.py'), load('slk_checker_adapter.py')
@@ -195,8 +195,13 @@ def test_native_bridge_observes_only_exact_parent_under_original_launcher(tmp_pa
     monkeypatch.setitem(sys.modules, 'slk_checker_adapter', adapter)
     monkeypatch.setattr(bridge.os, 'getppid', lambda: 200)
     monkeypatch.setattr(adapter, '_process_creation_time', lambda pid: f'created-{pid}')
-    monkeypatch.setattr(adapter, '_process_parents', lambda: {200: 100 if related else 999})
-    if not related:
+    parents = {200: 100 if related else 999}
+    if related == 'deep':
+        parents = {i: i - 1 for i in range(101, 201)}
+    elif related == 'cycle':
+        parents = {200: 199, 199: 200}
+    monkeypatch.setattr(adapter, '_process_parents', lambda: parents)
+    if not related or related == 'cycle':
         with pytest.raises(ValueError, match='launcher'):
             bridge._publish_native_process()
         assert not receipt.with_name('ocrv-native-process.json').exists()

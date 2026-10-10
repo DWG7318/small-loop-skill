@@ -33,4 +33,4 @@ Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实�
 
 - 不要把当前文件/原生group完成、同native review ID或concurrency=1当成整个冻结候选已审；先用跨文件工具核对全部CELL目标，不能证明全目标就不要声称全CELL PASS，不逐组或重复提交决定；不要让工具按正文/coverage/severity合成或纠正D1；不再使用旧partial/context/terminal自动消费或补交恢复路径，历史报告和FAIL只读保留。
 - 不要让 Supervisor、OW、传输成功、原生终态、零 finding或D0代替D1或自动 PASS；不要复用失效证据、伪造真实目标环境验证、把工具故障计入产品返工，或把单段结果冒充完整候选。
-- 不要跳过角色授权、当前Run/CELL/候选绑定、真实接收启动或TOKEN原子提交；报告送达本身既不授权下一CELL，也不等于工程PASS。
+- 不要跳过角色授权、当前Run/CELL/候选绑定、真实接收启动或TOKEN原子提交；REQUESTED/PAUSED 不开新审查/派工，保留原明确决定和待续 operation，不借恢复重审；原报告/管理回传按暂停边界交出，送达不授权下一CELL或工程PASS。

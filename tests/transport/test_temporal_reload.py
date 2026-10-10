@@ -66,8 +66,15 @@ def isolated_reload_runtime(monkeypatch):
     monkeypatch.setattr(reload, "_verify_new_worker", lambda *args: {}, raising=False)
 
 
-def test_reload_stops_only_exact_worker_and_preserves_workflow_identity(tmp_path, monkeypatch):
+@pytest.mark.parametrize('large_source', [None, 'adapter_source', 'workflow_source'])
+def test_reload_stops_only_exact_worker_and_preserves_workflow_identity(tmp_path, monkeypatch, large_source):
     request = reload_request(tmp_path)
+    if large_source is not None:
+        value = json.loads(request.read_text())
+        path = Path(value[large_source]['path'])
+        path.write_bytes(b'#' + b'x' * (8 * 1024 * 1024))
+        value[large_source]['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        write_json(request, value)
     snapshots = {101: {"pid": 101, "parent_pid": 100, "creation_time": "2026-10-05T00:00:00Z",
                        "command_sha256": "b" * 64}}
     calls = []
@@ -83,6 +90,11 @@ def test_reload_stops_only_exact_worker_and_preserves_workflow_identity(tmp_path
     assert result["new_worker_pid"] == 202
     assert result["workflow_identity"] == identity
     assert [call[0] for call in calls] == ["stop", "spawn"]
+    if large_source is not None:
+        path.write_bytes(path.read_bytes() + b'changed')
+        with pytest.raises(ValueError, match='proof changed'):
+            reload.reload_temporal_worker(request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+        assert [call[0] for call in calls] == ['stop', 'spawn']
 
 
 def test_process_chain_is_stopped_child_first_not_by_pid_number():

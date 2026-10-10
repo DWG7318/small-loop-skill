@@ -74,6 +74,61 @@ def test_proven_desktop_work_is_not_failed_by_transport_finish_clock(tmp_path, m
     assert not (attempt.root / "failed.json").exists()
 
 
+@pytest.mark.parametrize("terminal", ["completed", "failed"])
+def test_proven_delivery_uses_exact_turn_status_after_original_item_leaves_bounded_window(tmp_path, monkeypatch, terminal):
+    from slk_transport.adapters import codex_desktop as desktop
+    endpoint = prepared(tmp_path, monkeypatch, "active-running")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    original_call = desktop.DesktopClient.call
+    reads = []
+    def call(self, *args, **kwargs):
+        result = original_call(self, *args, **kwargs)
+        if (attempt.root / "started.json").is_file():
+            reads.append(result)
+            assert len(reads) == 1, "must not require the old item to reappear"
+            result["turns"][0]["items"] = []
+            result["turns"][0]["status"] = terminal
+        return result
+    monkeypatch.setattr(desktop.DesktopClient, "call", call)
+    monkeypatch.setattr(desktop.time, "sleep", lambda _: None)
+    if terminal == "failed":
+        with pytest.raises(AdapterError, match="did not complete") as error:
+            desktop.deliver_desktop(endpoint, envelope, attempt, "exact original handoff")
+        assert error.value.error_code == "CODEX_TURN_FAILED"
+    else:
+        result = desktop.deliver_desktop(endpoint, envelope, attempt, "exact original handoff")
+        assert result.status == "completed" and result.native_identity["turn_id"] == "turn-old"
+        assert json.loads((attempt.root / "native-activity.json").read_text())["status"] == "COMPLETED"
+    assert len(reads) == 1
+    assert json.loads((attempt.root / "desktop-readback.json").read_text())["platform_item_id"] == "item-exact"
+
+
+@pytest.mark.parametrize("damage", ["text", "truncated", "namespace", "type"])
+def test_saved_delivery_proof_does_not_hide_a_contradictory_present_native_item(tmp_path, monkeypatch, damage):
+    from slk_transport.adapters import codex_desktop as desktop
+    endpoint = prepared(tmp_path, monkeypatch, "active-running")
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    original_call = desktop.DesktopClient.call
+    def call(self, *args, **kwargs):
+        result = original_call(self, *args, **kwargs)
+        if (attempt.root / "started.json").is_file():
+            turn = result["turns"][0]
+            turn["status"] = "completed"
+            item = turn["items"][0]
+            if damage == "text": item["output"]["text"] = "different original input"
+            elif damage == "truncated": item["output"]["truncated"] = True
+            else: item[damage] = "different-native-identity"
+        return result
+    monkeypatch.setattr(desktop.DesktopClient, "call", call)
+    monkeypatch.setattr(desktop.time, "sleep", lambda _: None)
+    with pytest.raises(AdapterError) as error:
+        desktop.deliver_desktop(endpoint, envelope, attempt, "exact original handoff")
+    assert error.value.error_code == "CODEX_DESKTOP_READBACK_DRIFT"
+    assert json.loads((attempt.root / "desktop-readback.json").read_text())["platform_item_id"] == "item-exact"
+
+
 def test_desktop_does_not_invent_a_16k_prompt_admission_limit(tmp_path, monkeypatch):
     endpoint = prepared(tmp_path, monkeypatch)
     envelope = supervisor_envelope()
@@ -127,6 +182,9 @@ def test_desktop_polling_does_not_retain_whole_repeated_thread_history(monkeypat
 ])
 def test_desktop_does_not_turn_accepted_or_wrong_evidence_into_start(tmp_path, monkeypatch, mode, code):
     endpoint = prepared(tmp_path, monkeypatch, mode)
+    if mode == "duplicate":
+        # Validate ambiguous evidence, not one-second child startup under suite load.
+        endpoint = replace(endpoint, address={**endpoint.address, "startup_timeout_seconds": 10})
     envelope = supervisor_envelope()
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
     with pytest.raises(AdapterError) as error:

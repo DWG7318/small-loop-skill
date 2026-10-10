@@ -144,7 +144,7 @@ def _valid_bi_receipt(path_value: Any, run_id: str) -> bool:
         and value.get("schema_version") == "slk.bi-open-readiness/v1"
         and value.get("method_version") in SUPPORTED_METHOD_VERSIONS
         and value.get("run_id") == run_id
-        and value.get("bi_version") == "1.1.0"
+        and value.get("bi_version") in {"1.1.0", "1.1.1"}
         and isinstance(value.get("device_id"), str)
         and bool(str(value.get("device_id")).strip())
         and value.get("visible") is True
@@ -160,7 +160,7 @@ def _temporal_binding_from_receipt(path_value: Any, run_id: str) -> dict[str, An
                 "workflow_templates", "client_command", "workflow_identity", "attempt_root",
                 "evidence_sha256",
             } or value.get("schema_version") != "slk.temporal-readiness/v2"
-            or value.get("method_version") != "4.4.2" or value.get("run_id") != run_id
+            or value.get("method_version") not in {"4.4.2", "4.4.3"} or value.get("run_id") != run_id
             or value.get("status") != "READY" or value.get("service_mode") != "SHARED_LOCAL"
             or value.get("workflow_templates") != ["SLK.Start", "SLK.Run"]
             or not _sha256(value.get("evidence_sha256"))):
@@ -189,8 +189,8 @@ def _proof(reference: Any) -> Mapping[str, Any]:
     if not isinstance(reference, Mapping) or set(reference) != {"path", "sha256"} or not _sha256(reference["sha256"]):
         raise ValueError("evidence reference is not closed")
     path = Path(reference["path"])
-    if not path.is_absolute() or not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
-        raise ValueError("evidence is missing or exceeds the compact receipt limit")
+    if not path.is_absolute() or not path.is_file():
+        raise ValueError("evidence is missing")
     raw = path.read_bytes()
     if hashlib.sha256(raw).hexdigest() != reference["sha256"]:
         raise ValueError("evidence bytes changed")
@@ -233,7 +233,7 @@ def _source_state_config(value: Any) -> str:
     if not _sha256(value["config_sha256"]):
         raise ValueError("source state config hash is invalid")
     path = Path(_nonempty(value["config_path"], "source state config path"))
-    if not path.is_absolute() or not path.is_file() or path.stat().st_size > 131072:
+    if not path.is_absolute() or not path.is_file():
         raise ValueError("source state config is unavailable")
     raw = path.read_bytes()
     if hashlib.sha256(raw).hexdigest() != value["config_sha256"]:
@@ -316,7 +316,7 @@ def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
         and set(value) == {"schema_version", "method_version", "run_id", "plan_revision", "status",
                            "host_binding", "sealed_role_receipts", "legs"}
         and value.get("schema_version") == "slk.communication-rehearsal/v2"
-        and value.get("method_version") == "4.4.2"
+        and value.get("method_version") in {"4.4.2", "4.4.3"}
         and value.get("run_id") == run_id
         and value.get("plan_revision") == revision
         and value.get("status") == "PASS"
@@ -543,7 +543,7 @@ def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | Non
     try:
         if value is not None and value.get("schema_version") == "slk.normal-chain-source/v1":
             _closed(value, NORMAL_CHAIN_SOURCE_FIELDS, "normal chain source")
-            if (value["method_version"] != "4.4.2" or value["status"] != "PASS"
+            if (value["method_version"] not in {"4.4.2", "4.4.3"} or value["status"] != "PASS"
                 or not isinstance(value["source_run_id"], str)
                 or value["source_run_id"] == current_run_id):
                 raise ValueError("normal chain source scope is invalid")
@@ -562,7 +562,7 @@ def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | Non
         if (value is None or set(value) != {"schema_version", "method_version", "status", "source_run_id",
                 "source_readiness_request", "source_communication_rehearsal"}
             or value["schema_version"] != "slk.normal-chain-conformance/v1"
-            or value["method_version"] != "4.4.2" or value["status"] != "PASS"
+            or value["method_version"] not in {"4.4.2", "4.4.3"} or value["status"] != "PASS"
             or not isinstance(value["source_run_id"], str) or value["source_run_id"] == current_run_id):
             raise ValueError("normal-chain conformance scope is invalid")
         source_request = _proof(value["source_readiness_request"])
@@ -662,7 +662,7 @@ def _valid_conformance_sample_isolation(
         run_id = _nonempty(request["run_id"], "run_id")
         evidence_root = Path(_nonempty(contract["evidence_root"], "sample evidence root"))
         if (contract["schema_version"] != "slk.conformance-sample-isolation/v1"
-            or contract["method_version"] != "4.4.2"
+            or contract["method_version"] not in {"4.4.2", "4.4.3"}
             or contract["run_id"] != run_id
             or contract["kind"] != "ISOLATED_NORMAL_CHAIN_SAMPLE"
             or contract["disposable"] is not True
@@ -981,7 +981,7 @@ def seal_normal_chain_source(readiness_request_path: Path, state_config_path: Pa
     rehearsal_path = Path(request["communication_rehearsal"]).resolve()
     contract = {
         "schema_version": "slk.normal-chain-source/v1",
-        "method_version": "4.4.2",
+        "method_version": _receipt(request["communication_rehearsal"])["method_version"],
         "status": "PASS",
         "source_run_id": request["run_id"],
         "plan_revision": request["plan_revision"],

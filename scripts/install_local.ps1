@@ -43,7 +43,7 @@ function Invoke-HiddenPython([string[]]$Arguments) {
 function Get-ManagedRoots([string]$Root) {
     $manifest = Get-Content -LiteralPath (Join-Path $Root 'install-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $skills = @($manifest.files.path | Where-Object { $_ -like 'skills/*/SKILL.md' } | ForEach-Object { ($_ -split '/')[1] } | Sort-Object -Unique)
-    if ($skills.Count -ne 16) { throw "Package does not enumerate exactly 16 Skill roots" }
+    if ($skills.Count -ne $manifest.skill_count) { throw "Package Skill roots differ from its verified manifest" }
     $roots = [System.Collections.Generic.List[string]]::new()
     foreach ($skill in $skills) { $roots.Add("skills/$skill") }
     foreach ($document in @($manifest.files.path | Where-Object { $_ -like 'docs/*' } | Sort-Object)) {
@@ -85,9 +85,11 @@ $managedRoots = @()
 $oldState = ""
 $backupRoot = ""
 $mutated = $false
+$targetVersion = "unverified"
 
 try {
     [void](Invoke-HiddenPython @($verifyScript, '--root', $package, '--package-mode'))
+    $targetVersion = (Get-Content -LiteralPath (Join-Path $package 'install-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
     $managedRoots = @(Get-ManagedRoots $package)
     $oldState = Get-ManagedState $codexRoot $managedRoots
 
@@ -108,7 +110,7 @@ try {
     $oldVersionPath = Join-Path $codexRoot 'tools/slk/share/small-loop-skill/VERSION'
     $oldVersion = if (Test-Path -LiteralPath $oldVersionPath) { (Get-Content -LiteralPath $oldVersionPath -Raw).Trim() } else { 'absent' }
     $safeOldVersion = $oldVersion -replace '[^0-9A-Za-z._-]', '_'
-    $backupRoot = Assert-Within $codexRoot (Join-Path $codexRoot "tools/slk/backups/$safeOldVersion-to-4.4.2-$timestamp")
+    $backupRoot = Assert-Within $codexRoot (Join-Path $codexRoot "tools/slk/backups/$safeOldVersion-to-$targetVersion-$timestamp")
     [void][System.IO.Directory]::CreateDirectory($backupRoot)
 
     $mutated = $true
@@ -129,7 +131,7 @@ try {
     }
     [void](Invoke-HiddenPython @($verifyScript, '--root', $codexRoot))
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-    [ordered]@{status='INSTALLED'; version='4.4.2'; backup_root=$backupRoot} | ConvertTo-Json -Compress
+    [ordered]@{status='INSTALLED'; version=$targetVersion; backup_root=$backupRoot} | ConvertTo-Json -Compress
     exit 0
 } catch {
     $message = $_.Exception.Message
@@ -161,7 +163,7 @@ try {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     [ordered]@{
         status=$status
-        version='4.4.2'
+        version=$targetVersion
         error=$message
         active_tree_verified=$rollbackVerified
         backup_root=$backupRoot

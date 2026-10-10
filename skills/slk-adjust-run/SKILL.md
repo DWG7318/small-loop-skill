@@ -45,4 +45,4 @@ Supervisor 可以按实际原因组合以下办法：
 
 不要在线等待或持续介入普通 CELL；Overwatcher 只核实并报告运行证据，不能替 Supervisor 恢复成员、决定路线、修改计划、TOKEN 或 BI。INCOMPLETE 管理决定不能改写成 PASS/FAIL、普通返工或 Supervisor 代做 D1；同一 CELL 第二次正式 D1 FAIL 起，对照两轮 findings、candidate diff、实际步骤、复现/回归证据和环境假设做 `AGGRESSIVE` 调查，结果应进入版本化拆分或其他明确路线，不能只重复普通建议、接管 D1，或直接开始第三次普通返工。
 
-不要按标题、最近时间或自由文本猜 canonical Run；不要直接编辑 SQLite、伪造失效凭证、新建替代 Run、用终态结果补造启动、自动升级模型，或借身份对账改写 CELL、D0/D1/D2、角色、证据和 TOKEN。
+不要按标题、最近时间或自由文本猜 canonical Run；不要直接编辑 SQLite、伪造凭证、新建替代 Run、用终态补造启动、自动升级模型，或借对账改写 CELL、D0/D1/D2、角色、证据和 TOKEN。参数变更只在已证实 PAUSED 后按原管理入口版本化；REQUESTED 不等于停稳，恢复不清故障 guard 或重做已完成工作。

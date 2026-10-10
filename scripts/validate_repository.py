@@ -11,7 +11,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "4.4.2"
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -22,6 +22,7 @@ EXPECTED_SKILLS = (
     "slk-manage-team",
     "slk-overwatch-run",
     "slk-manage-temporal",
+    "slk-pause-run",
     "slk-dispatch-cell",
     "slk-execute-cell",
     "slk-check-cell",
@@ -234,7 +235,7 @@ def validate(root: Path) -> list[str]:
     ):
         check(marker in audit, "SLK_REPO_AUDIT_MATRIX", marker, errors)
     for name in EXPECTED_SKILLS:
-        if name == "slk-manage-temporal":
+        if name in {"slk-manage-temporal", "slk-pause-run"}:
             continue
         check(f"`{name}`" in audit, "SLK_REPO_AUDIT_SKILL", name, errors)
 
@@ -279,7 +280,7 @@ def main(argv: Iterable[str]) -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS: SLK 4.4.2 skill collection structure, identity, and Manifest are valid.")
+    print(f"PASS: SLK {VERSION} skill collection structure, identity, and Manifest are valid.")
     return 0
 
 

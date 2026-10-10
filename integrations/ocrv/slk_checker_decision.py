@@ -96,12 +96,12 @@ def _publish_native_process() -> None:
         raise ValueError("native launcher identity changed")
     pid = os.getppid()  # official OCRV stdio MCP client is the direct parent
     parents, current = _process_parents(), pid
-    for _ in range(32):
-        if current == launcher["pid"]:
-            break
+    visited = set()
+    while current != launcher["pid"]:
+        if current in visited or current not in parents:
+            raise ValueError("native MCP parent is not under this launcher")
+        visited.add(current)
         current = parents.get(current, 0)
-    else:
-        raise ValueError("native MCP parent is not under this launcher")
     path = source.with_name("ocrv-native-process.json")
     value = {"schema_version": "slk.ocrv-native-process/v1",
         **{key: receipt[key] for key in ("run_id", "cell_id", "message_id", "native_request_sha256")},
@@ -172,7 +172,7 @@ def respond(message: dict, action=record) -> dict | None:
         response["result"] = {"protocolVersion": requested if requested in {
             "2024-11-05", "2025-03-26", "2025-06-18"} else "2025-03-26",
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "slk-original-checker-decision", "version": "4.4.2"}}
+            "serverInfo": {"name": "slk-original-checker-decision", "version": "4.4.3"}}
     elif method == "ping":
         response["result"] = {}
     elif method == "tools/list":

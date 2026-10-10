@@ -64,8 +64,10 @@ def test_request_fails_closed_on_scope_authority_or_source_drift(tmp_path, damag
     with pytest.raises(ValueError): recovery.validate_request(request)
 
 
-def test_existing_supervisor_disposition_needs_no_new_human_item(tmp_path):
+@pytest.mark.parametrize("reason", ["same-scope reversible repair", "original disposition " + "x" * 5000], ids=["normal", "long-original"])
+def test_existing_supervisor_disposition_needs_no_new_human_item(tmp_path, reason):
     request = request_fixture(tmp_path)
+    request["decision"]["reason"] = reason
     assert recovery.validate_request(request)[0] == request
 
 

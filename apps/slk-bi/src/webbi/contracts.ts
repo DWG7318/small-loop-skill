@@ -1,4 +1,5 @@
 import { parseRunProjection, type RunView } from "../contracts";
+import { isCompatibleBiVersion, type BiVersion } from "../version";
 import { catalogEntry, catalogKey } from "../messages/catalog";
 import type {
   AuthoritativeMessage,
@@ -21,7 +22,7 @@ export interface WebBiRunUpload {
 
 export interface WebBiUploadEnvelope {
   schema_version: "slk.bi.upload/v1";
-  bi_version: "1.1.0";
+  bi_version: BiVersion;
   upload_id: string;
   generated_at: string;
   device: WebBiDevice;
@@ -126,7 +127,7 @@ export function parseUploadEnvelope(
     ["schema_version", "bi_version", "upload_id", "generated_at", "device", "runs"],
     "SLK_WEBBI_UPLOAD_INVALID",
   );
-  if (raw.schema_version !== "slk.bi.upload/v1" || raw.bi_version !== "1.1.0") {
+  if (raw.schema_version !== "slk.bi.upload/v1" || !isCompatibleBiVersion(raw.bi_version)) {
     throw new Error("SLK_WEBBI_UPLOAD_VERSION_UNSUPPORTED");
   }
   const deviceRaw = object(raw.device, "SLK_WEBBI_DEVICE_INVALID");
@@ -156,7 +157,7 @@ export function parseUploadEnvelope(
   }
   return {
     schema_version: "slk.bi.upload/v1",
-    bi_version: "1.1.0",
+    bi_version: raw.bi_version,
     upload_id: text(raw.upload_id, 160, "SLK_WEBBI_UPLOAD_INVALID"),
     generated_at: iso(raw.generated_at, "SLK_WEBBI_UPLOAD_INVALID"),
     device,

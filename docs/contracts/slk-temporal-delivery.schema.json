@@ -10,14 +10,14 @@
     {"$ref": "#/$defs/result"}
   ],
   "$defs": {
-    "id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
     "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "proof": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"],
       "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}},
     "readiness": {"type": "object", "additionalProperties": false,
       "required": ["schema_version", "method_version", "run_id", "status", "service_mode", "workflow_templates", "client_command", "workflow_identity", "attempt_root", "evidence_sha256"],
       "properties": {
-        "schema_version": {"const": "slk.temporal-readiness/v2"}, "method_version": {"const": "4.4.2"},
+        "schema_version": {"const": "slk.temporal-readiness/v2"}, "method_version": {"enum": ["4.4.2", "4.4.3"]},
         "run_id": {"$ref": "#/$defs/id"}, "status": {"const": "READY"}, "service_mode": {"const": "SHARED_LOCAL"},
         "workflow_templates": {"const": ["SLK.Start", "SLK.Run"]},
         "client_command": {"type": "array", "minItems": 3, "maxItems": 3,

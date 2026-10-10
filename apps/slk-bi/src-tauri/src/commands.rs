@@ -10,7 +10,121 @@ pub const REGISTERED_READ_COMMANDS: [&str; 9] = [
     "metadata", "projects", "runs", "run", "graph", "roles", "plans", "events", "evidence",
 ];
 
-const BI_VERSION: &str = "1.1.0";
+const BI_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod sync_boundary_tests {
+    use super::*;
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn upload_url_requires_real_https_or_http_loopback_without_ambiguous_credentials() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let names = [
+            "SLK_WEBBI_URL",
+            "SLK_WEBBI_UPLOAD_TOKEN",
+            "SLK_BI_DEVICE_ID",
+        ];
+        let original = names.map(|name| env::var_os(name));
+        env::set_var(names[1], "test-token");
+        env::set_var(names[2], "test-device");
+        let cases = [
+            ("http://localhost.evil.invalid", false),
+            ("http://localhost@evil.invalid", false),
+            ("https://user:password@example.com", false),
+            ("https://example.com?next=http://evil.invalid", false),
+            ("https://example.com/#fragment", false),
+            ("http://localhost:8123", true),
+            ("http://127.0.0.1:8123", true),
+            ("http://[::1]:8123/base", true),
+            ("https://example.com/webbi", true),
+        ];
+        let results: Vec<_> = cases
+            .iter()
+            .map(|(url, expected)| {
+                env::set_var(names[0], url);
+                (*url, sync_configuration().is_ok(), *expected)
+            })
+            .collect();
+        for (name, value) in names.into_iter().zip(original) {
+            if let Some(value) = value {
+                env::set_var(name, value);
+            } else {
+                env::remove_var(name);
+            }
+        }
+        for (url, actual, expected) in results {
+            assert_eq!(actual, expected, "{url}");
+        }
+    }
+
+    #[test]
+    fn authenticated_upload_never_follows_a_redirect_to_another_path() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc, Mutex,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let (done, captured) = (stop.clone(), requests.clone());
+        let server = std::thread::spawn(move || {
+            while !done.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(2)))
+                            .unwrap();
+                        let mut bytes = [0; 8192];
+                        let size = stream.read(&mut bytes).unwrap();
+                        let mut rows = captured.lock().unwrap();
+                        rows.push(String::from_utf8_lossy(&bytes[..size]).into_owned());
+                        let reply = if rows.len() == 1 {
+                            format!("HTTP/1.1 302 Found\r\nLocation: http://localhost:{}/credential-sink\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", address.port())
+                        } else {
+                            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                                .into()
+                        };
+                        stream.write_all(reply.as_bytes()).unwrap();
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5))
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            }
+        });
+        let names = [
+            "SLK_WEBBI_URL",
+            "SLK_WEBBI_UPLOAD_TOKEN",
+            "SLK_BI_DEVICE_ID",
+        ];
+        let original = names.map(|name| env::var_os(name));
+        env::set_var(names[0], format!("http://localhost:{}", address.port()));
+        env::set_var(names[1], "private-upload-token");
+        env::set_var(names[2], "test-device");
+        let result = tauri::async_runtime::block_on(sync_webbi(json!({
+            "schema_version":"slk.bi.upload/v1", "bi_version":BI_VERSION, "upload_id":"upload-test",
+            "generated_at":"2026-10-10T00:00:00Z", "device":{"device_id":"test-device", "device_name":"Test"}, "runs":[]
+        })));
+        stop.store(true, Ordering::SeqCst);
+        server.join().unwrap();
+        for (name, value) in names.into_iter().zip(original) {
+            if let Some(value) = value {
+                env::set_var(name, value);
+            } else {
+                env::remove_var(name);
+            }
+        }
+        assert_eq!(result.unwrap_err(), "SLK_WEBBI_UPLOAD_REJECTED:302");
+        assert_eq!(requests.lock().unwrap().len(), 1);
+    }
+}
 
 fn nonempty_env(name: &str) -> Option<String> {
     env::var(name).ok().filter(|value| !value.trim().is_empty())
@@ -68,7 +182,10 @@ pub fn validate_sync_payload(payload: &Value, expected_device_id: &str) -> Resul
         return Err("SLK_WEBBI_UPLOAD_INVALID".into());
     }
     if object.get("schema_version").and_then(Value::as_str) != Some("slk.bi.upload/v1")
-        || object.get("bi_version").and_then(Value::as_str) != Some(BI_VERSION)
+        || !matches!(
+            object.get("bi_version").and_then(Value::as_str),
+            Some("1.1.0") | Some(BI_VERSION)
+        )
     {
         return Err("SLK_WEBBI_UPLOAD_VERSION_UNSUPPORTED".into());
     }
@@ -113,11 +230,29 @@ fn sync_configuration() -> Result<Option<(String, String, String)>, String> {
     let Some(device_id) = nonempty_env("SLK_BI_DEVICE_ID") else {
         return Ok(None);
     };
-    let endpoint = format!("{}/api/v1/uploads", url.trim_end_matches('/'));
-    if !(endpoint.starts_with("https://") || endpoint.starts_with("http://localhost")) {
+    let mut endpoint =
+        reqwest::Url::parse(&url).map_err(|_| "SLK_WEBBI_URL_INVALID".to_string())?;
+    let loopback = endpoint.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if !(endpoint.scheme() == "https" || (endpoint.scheme() == "http" && loopback))
+        || endpoint.host_str().is_none()
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+    {
         return Err("SLK_WEBBI_URL_INVALID".into());
     }
-    Ok(Some((endpoint, token, device_id)))
+    endpoint.set_path(&format!(
+        "{}/api/v1/uploads",
+        endpoint.path().trim_end_matches('/')
+    ));
+    Ok(Some((endpoint.to_string(), token, device_id)))
 }
 
 #[tauri::command]
@@ -133,6 +268,7 @@ pub async fn sync_webbi(payload: Value) -> Result<Value, String> {
         .to_string();
     let response = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "SLK_WEBBI_CLIENT_UNAVAILABLE".to_string())?
         .post(endpoint)

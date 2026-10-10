@@ -56,7 +56,7 @@ Owner 可以根据结论继续查询；Supervisor 保留最终交接、D2结论�
 ## 负面提示词
 
 - 不要把 D1 PASS 当成 D2 通过证明，或用逐 CELL 重跑完整 D1 替代真实组合、衔接与端到端检查；不要复用已失效的证据、跳过关键未覆盖风险，也不要把豁免写成通过或把归档计划写成已经归档。
-- 不要把“计划归档”、原生 Session 已结束或已发出关闭命令写成“已经归档”；缺少 Worker/Checker 的中央 `close-role` 收据时，active/ready 就是真实未归档状态。
+- 不要把“计划归档”、原生 Session 已结束或已发出关闭命令写成“已经归档”；缺少 Worker/Checker 中央 `close-role` 收据仍未归档。PAUSED 不是终结，不能以暂停代替 D2、准确原生清理或角色/Run 收尾；共享 OW/Temporal 和其他 Run 保留。
 - 不要忽略这一边界：Supervisor 后补证据不能替代 Checker 的 D1；不要追认原本证据不足的 PASS，也不要在令牌尚未真实交回 Supervisor 时写入 D2 已开始或 Run 已关闭。
 - 不要在 `D2_PASSED` 前或缺少 OW final cycle/匹配 runtime revision 时关闭 Overwatcher；不要先写 `RUN_CLOSED` 再尝试恢复 OW turn、补 terminal cycle 或关闭 OW，也不要在普通 CELL 边界关闭、暂停、释放或重新确认 Overwatcher。
 - 不要让单条“请做 D2”、可见消息、终态结果或 Desktop bridge 已准备冒充 `D2_READY` 已交付；缺少全部 Required CELL 的当前 D1 结果、Supervisor v2 start 或 Checker 原子 TOKEN commit 时，不开始 D2。

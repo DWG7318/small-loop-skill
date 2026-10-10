@@ -41,7 +41,7 @@ def write_json(path: Path, value: object) -> Path:
     return path
 
 
-def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A") -> dict[str, object]:
+def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A", method_version="4.4.2") -> dict[str, object]:
     workspace = tmp_path / "workspace"
     workspace.mkdir(exist_ok=True)
     endpoint = tmp_path / "endpoint.json"
@@ -122,7 +122,7 @@ def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A") -> 
         tmp_path / "temporal-ready.json",
         {
             "schema_version": "slk.temporal-readiness/v2",
-            "method_version": "4.4.2",
+            "method_version": method_version,
             "run_id": run_id,
             "status": "READY",
             "service_mode": "SHARED_LOCAL",
@@ -168,7 +168,7 @@ def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A") -> 
         ],
     }
     if not legacy_echo:
-        _attach_verified_rehearsal(tmp_path, request)
+        _attach_verified_rehearsal(tmp_path, request, method_version=method_version)
     return request
 
 
@@ -195,7 +195,7 @@ def isolated_consumer_boundary(monkeypatch):
     monkeypatch.setattr(wc, "_run_json_command", authenticate)
 
 
-def _attach_verified_rehearsal(root, request):
+def _attach_verified_rehearsal(root, request, *, method_version="4.4.2"):
     """Generated artifact fixtures validate joins, not a real-role acceptance claim."""
     def proof(name, value):
         path = write_json(root / f"{name}.json", value)
@@ -287,7 +287,7 @@ def _attach_verified_rehearsal(root, request):
         legs.append({"leg_id": leg_id, "sender_role": sender, "receiver_role": receiver, "endpoint": endpoints[receiver],
                      "envelope": env_ref, "sent_receipt": sent_ref, "receiver_started": start_ref,
                      "commit_request": commit_ref, "commit_result": result_ref})
-    write_json(Path(request["communication_rehearsal"]), {"schema_version": "slk.communication-rehearsal/v2", "method_version": "4.4.2",
+    write_json(Path(request["communication_rehearsal"]), {"schema_version": "slk.communication-rehearsal/v2", "method_version": method_version,
         "run_id": run_id, "plan_revision": 1, "status": "PASS", "host_binding": binding, "sealed_role_receipts": consumers, "legs": legs})
 
 
@@ -307,11 +307,12 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
 
 
-def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundary(tmp_path):
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3"])
+def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundary(tmp_path, method_version):
     source_root, current_root = tmp_path / "source", tmp_path / "current"
     source_root.mkdir()
     current_root.mkdir()
-    source = _request(source_root, run_id="RUN-SOURCE")
+    source = _request(source_root, run_id="RUN-SOURCE", method_version=method_version)
     source_request = write_json(source_root / "readiness-request.json", source)
     source_state = source_root / "state"
     source_state.mkdir()
@@ -326,7 +327,8 @@ def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundar
     assert sealed["schema_version"] == "slk.normal-chain-source/v1"
     assert sealed["source_run_id"] == "RUN-SOURCE"
     assert normal_chain.is_file()
-    current = _request(current_root, run_id="RUN-CURRENT")
+    assert sealed["method_version"] == method_version
+    current = _request(current_root, run_id="RUN-CURRENT", method_version=method_version)
     packet = json.loads(Path(current["communication_rehearsal"]).read_text())
     admission = {
         "schema_version": "slk.run-admission-request/v1", "run_id": "RUN-CURRENT",

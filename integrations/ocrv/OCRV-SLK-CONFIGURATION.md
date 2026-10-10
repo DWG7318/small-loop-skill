@@ -1,4 +1,4 @@
-# OCRV integration for SLK 4.4.2
+# OCRV integration for SLK 4.4.3
 
 OCRV is the registered original Checker, normally Qwen3.8-Max. Worker owns D0, original Checker owns D1, Supervisor owns D2. SLK never derives D1 from severity, finding counts, coverage, task_done, native exit or missing output.
 

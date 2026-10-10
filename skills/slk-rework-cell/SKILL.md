@@ -28,4 +28,4 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 ## 负面提示词
 
 - 不要把 D0 草稿自修或 Checker 自建检查器故障计入 Worker 的 D1 返工次数；不要在初始施工、D1 PASS、D1 INCOMPLETE 或工具故障时创建 `D1_REWORK_DIRECTIVE`，不要把 `Supervisor → Worker` 扩成普通派工，也不要让 Supervisor 重判 D1、直接改代码或替 Worker 施工。
-- 不要让 Overwatcher 提出修复假设、执行返工或判定回归；它只观察通讯与运行证据。不要在第二次连续 D1 FAIL 后重复原返工内容、让 Worker 私自拆 CELL，或用新 ordinal/plan revision 隐藏原失败历史。
+- 不要让 Overwatcher 提出修复假设、执行返工或判定回归；它只观察与报告。REQUESTED/PAUSED 不派新返工，恢复保留原失败/候选/operation；第二次连续 D1 FAIL 不重复普通返工、不让 Worker 私拆，也不用新 ordinal/revision 隐藏原失败。

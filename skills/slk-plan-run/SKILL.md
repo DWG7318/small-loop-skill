@@ -32,7 +32,7 @@ RTK 用于压缩高噪声终端输出，Probe CLI 用于在精准读取前定位
 3. 依次写出需要完成的工程范围和 CELL 结果，保持单一线性顺序。接手已完成或部分完成项目时，先识别并保留、复用已完成工作，再按“合理最小施工”规划稳定达到当前目标所需的施工范围；这不等于最小代码改动，并应避免重复施工、提前开展无关工作和不必要的全局重构。
 4. 使用 `$slk-guard-resources` 静态确认 Cargo 和其他明显独占资源的隔离、恢复与清理安排；没有相应资源时简要记为无特别安排。
 5. Agent 根据项目目标、现有测试、可观察结果和相关检验 Skill 自行设计分层检查；对依赖 UI、运行时或真实环境的 CELL，注明现有直接证据入口、能取得证据的角色与保存位置。D0提供最低施工信心，D1检查当前 CELL，D2检查成果组合；建议减少重复和过度检验，优先使用现有入口或直接操作取得产品证据，不把搭建检查体系当作开工前提。测试、复核、验收或独立检查本身不另列为独立 CELL，只有检查发现且确需实施的工程工作才进入 CELL。
-6. 在创建 Supervisor 前使用 `$slk-select-models`，再用 `$slk-manage-team` 建立四角色 `RUN_TEAM_REGISTRY`，打开可见 BI 1.1.0，核对真实 runtime、model、adapter、endpoint、设备、上下文/任务容量、可写工作区及必需 Skill/Tool；以合法隔离小样本由原责任成员完成七腿演练并 `seal-normal-chain-source`，产品 Run 只执行 `preflight-new-run` 当前准入。Owner 对 Ponytail、RTK、Probe CLI 明确 ON/OFF；Supervisor 可补充项目所需 Skill/Tool并纳入真实预检，不凭自由配置启用未登记功能。Overwatcher 与 Temporal 是 4.4.2 readiness 必需项。
+6. 在创建 Supervisor 前使用 `$slk-select-models`，再用 `$slk-manage-team` 建立四角色 `RUN_TEAM_REGISTRY`，打开可见 BI 1.1.1，核对真实 runtime、model、adapter、endpoint、设备、上下文/任务容量、可写工作区及必需 Skill/Tool；以合法隔离小样本由原责任成员完成七腿演练并 `seal-normal-chain-source`，产品 Run 只执行 `preflight-new-run` 当前准入。Owner 对 Ponytail、RTK、Probe CLI 明确 ON/OFF；Supervisor 可补充项目所需 Skill/Tool并纳入真实预检，不凭自由配置启用未登记功能。Overwatcher 与 Temporal 是 4.4.3 readiness 必需项。
 7. 使用 `$slk-manage-temporal` 验证共享本地服务，并以稳定 Run ID 启动本 Run 独立的 `SLK.Start` 与 `SLK.Run` 工作流；服务、worker、adapter 或 readiness 收据未证明时保持阻断，不以直连正常代替运行保障。
 8. 工程方案和验收结果已经确定后，Supervisor 仍须按 DSH Worker 的实际能力、电脑和累积工程量划分为初始 CELL：大 CELL 在派工前拆成依赖明确、可独立 D0、独立 D1 的多个中小 CELL，并为测试、意外依赖和返工保留余量；越靠后的 CELL，尤其衔接或融合工作的 CELL，在可行时拆得更小。这只调整施工颗粒，不改变原 Run 结果和验收强度，也不把逐条命令包装成 CELL。
 9. 说明后续由 Checker 根据前序 CELL 的实际施工事实、D1和返工表现动态校准待派发 CELL，不把初始估计冻结成固定容量。

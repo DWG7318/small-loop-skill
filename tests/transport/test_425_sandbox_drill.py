@@ -17,17 +17,18 @@ def state_binary() -> Path:
         suffix = ".exe" if os.name == "nt" else ""
         path = Path(__file__).parents[2] / "target" / "debug" / f"slk-state{suffix}"
     if not path.is_file():
-        pytest.skip("build slk-state or set SLK_STATE_BIN before the 4.4.2 sandbox drill")
+        pytest.skip("build slk-state or set SLK_STATE_BIN before the current sandbox drill")
     return path.resolve()
 
 
 def test_426_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: Path) -> None:
-    output = tmp_path / "slk-4.4.2-sandbox"
+    output = tmp_path / "slk-current-sandbox"
 
     report = run_sandbox_drill(output, state_binary())
 
     assert report["schema_version"] == "slk.sandbox-drill-report/v1"
-    assert report["method_version"] == "4.4.2"
+    version = (Path(__file__).parents[2] / 'VERSION').read_text(encoding='utf-8').strip()
+    assert report["method_version"] == version
     assert report["status"] == "PASS"
     assert report["proofs"] == {
         "active_writer_new_message_recovery": True,

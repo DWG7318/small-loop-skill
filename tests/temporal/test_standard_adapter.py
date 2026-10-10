@@ -29,7 +29,7 @@ def write_json(path: Path, value: object) -> Path:
     return path
 
 
-def config_root(tmp_path: Path) -> tuple[Path, dict[str, object]]:
+def config_root(tmp_path: Path, method_version="4.4.2") -> tuple[Path, dict[str, object]]:
     root = tmp_path / "standard-config"
     root.mkdir()
     attempts = tmp_path / "attempts"
@@ -44,7 +44,7 @@ def config_root(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     state_config = write_json(tmp_path / "state-config.json", {"schema_version": "slk.config/v1"})
     config = {
         "schema_version": "slk.temporal-standard-adapter/v1",
-        "method_version": "4.4.2",
+        "method_version": method_version,
         "run_id": RUN_ID,
         "transport_command": [str(executable), "-m", "slk_transport.cli"],
         "query_command": [str(executable), "-m", "slk_bi_query"],
@@ -68,7 +68,7 @@ def config_root(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     }
     write_json(root / f"{RUN_ID}.bootstrap.json", {
         "schema_version": "slk.temporal-standard-bootstrap/v1",
-        "method_version": "4.4.2",
+        "method_version": method_version,
         "run_id": RUN_ID,
         "query_command": [str(executable), "-m", "slk_bi_query"],
         "state_config_path": str(state_config.resolve()),
@@ -77,14 +77,15 @@ def config_root(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     return root, config
 
 
-def test_standard_bootstrap_needs_only_live_central_registry(tmp_path, monkeypatch):
-    root, config = config_root(tmp_path)
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3"])
+def test_standard_bootstrap_needs_only_live_central_registry(tmp_path, monkeypatch, method_version):
+    root, config = config_root(tmp_path, method_version)
     Path(config["role_host_binding"]["path"]).unlink()
     Path(config["overwatcher_activity"]["started_path"]).unlink()
     (root / f"{RUN_ID}.json").unlink()
     standard_adapter.configure(root)
     request = {
-        "run_id": RUN_ID, "method_version": "4.4.2", "runtime_revision": 9,
+        "run_id": RUN_ID, "method_version": method_version, "runtime_revision": 9,
         "task_queue": "slk-local", "ack_timeout_seconds": 30,
         "startup_idempotency_key": "start-a",
         "roles": [
@@ -94,7 +95,7 @@ def test_standard_bootstrap_needs_only_live_central_registry(tmp_path, monkeypat
     }
     monkeypatch.setattr(standard_adapter, "_run_json", lambda *_args, **_kwargs: {
         "summary": {"run_id": RUN_ID},
-        "runtime_snapshot": {"runtime_revision": 9, "method_version": "4.4.2"},
+        "runtime_snapshot": {"runtime_revision": 9, "method_version": method_version},
         "roles": [{"role": row["role"].lower(), "role_instance_id": row["role_instance_id"], "lifecycle": "active"}
                   for row in request["roles"]],
     })
@@ -103,6 +104,21 @@ def test_standard_bootstrap_needs_only_live_central_registry(tmp_path, monkeypat
 
     assert receipt["status"] == "BOOTSTRAP_READY"
     assert receipt["run_id"] == RUN_ID
+
+
+def test_bootstrap_rejects_mixed_method_identity_even_with_same_run_and_revision(tmp_path, monkeypatch):
+    root, _ = config_root(tmp_path, "4.4.2")
+    standard_adapter.configure(root)
+    from .test_contracts import start_value
+    request = {**start_value(), "run_id": RUN_ID, "method_version": "4.4.3"}
+    monkeypatch.setattr(standard_adapter, "_run_json", lambda *_args, **_kwargs: {
+        "summary": {"run_id": RUN_ID},
+        "runtime_snapshot": {"runtime_revision": request["runtime_revision"], "method_version": "4.4.3"},
+        "roles": [{"role": row["role"].lower(), "role_instance_id": row["role_instance_id"], "lifecycle": "active"}
+                  for row in request["roles"]],
+    })
+    with pytest.raises(ValueError, match="method"):
+        standard_adapter.bootstrap_run(request)
 
 
 def test_standard_adapter_bootstrap_and_final_configs_match_published_schemas(tmp_path):
@@ -117,11 +133,13 @@ def test_standard_adapter_bootstrap_and_final_configs_match_published_schemas(tm
     ).validate(config)
 
 
-def test_standard_adapter_prepares_from_new_run_admission_and_live_revision(tmp_path, monkeypatch):
-    root, config = config_root(tmp_path)
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3"])
+@pytest.mark.parametrize("mixed_live_method", [False, True])
+def test_standard_adapter_prepares_from_new_run_admission_and_live_revision(tmp_path, monkeypatch, method_version, mixed_live_method):
+    root, config = config_root(tmp_path, method_version)
     standard_adapter.configure(root)
     request = {
-        "run_id": RUN_ID, "method_version": "4.4.2", "runtime_revision": 9,
+        "run_id": RUN_ID, "method_version": method_version, "runtime_revision": 9,
         "task_queue": "slk-local", "ack_timeout_seconds": 30,
         "startup_idempotency_key": "start-a",
         "roles": [
@@ -135,9 +153,14 @@ def test_standard_adapter_prepares_from_new_run_admission_and_live_revision(tmp_
         calls.append([*command, *arguments])
         if "preflight-new-run" in arguments:
             return {"status": "READY", "run_id": RUN_ID, "plan_revision": 1}
-        return {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"runtime_revision": 9}}
+        return {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {
+            "runtime_revision": 9, "method_version": "4.4.1" if mixed_live_method else method_version}}
 
     monkeypatch.setattr(standard_adapter, "_run_json", run)
+    if mixed_live_method:
+        with pytest.raises(ValueError, match="startup"):
+            asyncio.run(standard_adapter.prepare_run({"request": request, "startup_fingerprint": "a" * 64}))
+        return
     result = asyncio.run(standard_adapter.prepare_run({
         "request": request, "startup_fingerprint": "a" * 64,
     }))
@@ -158,7 +181,7 @@ def test_standard_adapter_uses_only_the_explicit_isolated_conformance_entry(tmp_
         calls.append([*command, *arguments])
         if "preflight-conformance-sample" in arguments:
             return {"status": "READY", "run_id": RUN_ID, "plan_revision": 1}
-        return {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"runtime_revision": 9}}
+        return {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"runtime_revision": 9, "method_version": "4.4.2"}}
 
     monkeypatch.setattr(standard_adapter, "_run_json", run)
     result = asyncio.run(standard_adapter.prepare_run({

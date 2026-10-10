@@ -25,15 +25,15 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.4.2 skill collection" in result.stdout
+    assert "PASS: SLK 4.4.3 skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.4.2"
-    assert manifest["skill_count"] == 16
+    assert manifest["version"] == "4.4.3"
+    assert manifest["skill_count"] == len(validate_repository.EXPECTED_SKILLS)
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
     assert "skills/slk-close-run/SKILL.md" in paths
@@ -278,7 +278,7 @@ def test_426_public_runtime_contracts_are_closed_and_versioned() -> None:
                 'schema_version','request','result','raw_review','session_record','role_host','scope_plan',
                 'd1_started_event_id','d1_incomplete_event_id','owner_continuation','supervisor_confirmation'}
             assert independent['properties']['schema_version']['const'] == 'slk.ocrv-independent-fail/v1'
-            assert schema['allOf'][0]['then']['properties']['method_version']['const'] == '4.4.2'
+            assert schema['allOf'][0]['then']['properties']['method_version']['enum'] == ['4.4.2', '4.4.3']
         else:
             assert set(schema["required"]) == required
 
@@ -364,15 +364,15 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.4.2" in text
-        assert "16" in text
+        assert "4.4.3" in text
+        assert "17" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text
     assert "seven exact communication rehearsals" in english
-    assert "BI 1.1.0" in english
+    assert "BI 1.1.1" in english
     assert "七条准确通讯演练" in chinese
-    assert "BI 1.1.0" in chinese
+    assert "BI 1.1.1" in chinese
     assert "not standalone methods" in english
     assert "不是独立方法" in chinese
     for marker in ("RTK", "Probe CLI", "Ponytail"):
@@ -447,7 +447,7 @@ def test_431_consistency_audit_is_complete_and_packaged() -> None:
         encoding="utf-8"
     )
     for skill in validate_repository.EXPECTED_SKILLS:
-        if skill == "slk-manage-temporal":
+        if skill in {"slk-manage-temporal", "slk-pause-run"}:
             continue
         assert f"`{skill}`" in audit
     for marker in (

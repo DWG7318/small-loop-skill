@@ -108,7 +108,7 @@ def _repository_sources(repository: Path, listed: dict[str, str]) -> list[tuple[
     skills_root = repository / "skills"
     actual_skills = {path.name for path in skills_root.iterdir() if path.is_dir()}
     if actual_skills != set(EXPECTED_SKILLS):
-        raise PackageError("repository skill set does not match the 16 managed Skills")
+        raise PackageError(f"repository skill set does not match the {len(EXPECTED_SKILLS)} managed Skills")
 
     mappings: list[tuple[Path, Path]] = []
     for name in EXPECTED_SKILLS:

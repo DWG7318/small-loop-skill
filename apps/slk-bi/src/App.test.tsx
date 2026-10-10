@@ -81,10 +81,10 @@ describe("LE BI shell", () => {
     expect(screen.queryByRole("list", { name: /CELL 记录/ })).not.toBeInTheDocument();
   });
 
-  it("shows BI 1.1.0 and the exact local device identity in the header", async () => {
+  it("shows BI 1.1.1 and the exact local device identity in the header", async () => {
     render(<App api={fixtureApi} />);
 
-    expect(await screen.findByText("1.1.0")).toBeVisible();
+    expect(await screen.findByText("1.1.1")).toBeVisible();
     expect(screen.getByText("Workstation A · device-a")).toBeVisible();
   });
 

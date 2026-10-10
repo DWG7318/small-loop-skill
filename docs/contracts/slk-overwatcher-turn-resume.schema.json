@@ -25,7 +25,7 @@
     "occurred_at": {"type": "string", "format": "date-time"}
   },
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
     "evidence_ref": {
       "type": "object",
       "additionalProperties": false,

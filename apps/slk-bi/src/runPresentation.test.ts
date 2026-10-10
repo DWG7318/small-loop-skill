@@ -24,6 +24,28 @@ function splitHistoryRun(): RunView {
 describe("compact Run presentation", () => {
   const project = { project_id: "project-a", name: "LCaS", repository_url: null, last_known_path: "D:/LCaS", run_count: 1 };
 
+  it("excludes only confirmed pause time and resumes the same open work interval", () => {
+    const fact = (event_type: string, minutes: number): EventProjection => ({
+      event_id: event_type, event_type, author_role_instance_id: "worker-a", go_id: "GO-001",
+      cell_id: "CELL-001", attempt: 1, details_json: "{}", corrects_event_id: null,
+      occurred_at: new Date(Date.parse("2026-09-20T00:00:00Z") + minutes * 60_000).toISOString(),
+    });
+    const run = { ...runFixture, events: [fact("WORK_STARTED", 0), fact("RUN_PAUSE_REQUESTED", 10),
+      fact("RUN_PAUSED", 20), fact("RUN_RESUMED", 80), fact("CANDIDATE_SUBMITTED", 90)] };
+    expect(buildRunStripView(project, run, new Date("2026-09-20T02:00:00Z")).totalWorkMs).toBe(30 * 60_000);
+  });
+
+  it("ends D1 elapsed work at the Checker's INCOMPLETE fact before TOKEN handoff", () => {
+    const event = (event_type: string, minute: number): EventProjection => ({
+      event_id: event_type, event_type, author_role_instance_id: "checker-a", go_id: "GO-001",
+      cell_id: "CELL-001", attempt: 1, details_json: "{}", corrects_event_id: null,
+      occurred_at: `2026-09-20T00:${String(minute).padStart(2, "0")}:00Z`,
+    });
+    const run = { ...runFixture, events: [event("D1_STARTED", 0), event("D1_INCOMPLETE", 20)],
+      roles: runFixture.roles.map((role) => ({ ...role, display_state: "waiting" })) };
+    expect(buildRunStripView(project, run, new Date("2026-09-20T01:00:00Z")).totalWorkMs).toBe(20 * 60_000);
+  });
+
   it("counts only effective CELLs while preserving every split history record", () => {
     const run = splitHistoryRun();
     const before = JSON.stringify(run);

@@ -26,7 +26,7 @@ def test_active_install_does_not_export_historical_auxiliary_instructions():
 def fake_artifacts(root: Path) -> Path:
     root.mkdir()
     for name in ARTIFACT_NAMES:
-        (root / name).write_bytes(f"fake-{name}-4.4.2\n".encode())
+        (root / name).write_bytes(f"fake-{name}-4.4.3\n".encode())
     return root
 
 
@@ -35,8 +35,8 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
     manifest = json.loads((package / "install-manifest.json").read_text(encoding="utf-8"))
 
     assert manifest["schema_version"] == "slk.install-manifest/v1"
-    assert manifest["version"] == "4.4.2"
-    assert manifest["skill_count"] == 16
+    assert manifest["version"] == "4.4.3"
+    assert manifest["skill_count"] == len(EXPECTED_SKILLS)
     assert manifest["artifact_count"] == 5
     paths = {entry["path"] for entry in manifest["files"]}
     assert {f"skills/{name}/SKILL.md" for name in EXPECTED_SKILLS} <= paths

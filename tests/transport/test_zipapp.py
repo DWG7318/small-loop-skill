@@ -29,7 +29,8 @@ def test_transport_zipapp_is_reproducible_and_runnable(tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode == 0
-    assert result.stdout.strip() == "slk-transport 4.4.2"
+    version = (Path(__file__).parents[2] / 'VERSION').read_text(encoding='utf-8').strip()
+    assert result.stdout.strip() == f"slk-transport {version}"
 
 
 def test_transport_zipapp_contains_only_transport_source(tmp_path: Path) -> None:

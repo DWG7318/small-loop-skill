@@ -18,7 +18,7 @@ Supervisor 由 Owner 明确确认；其余成员由 Supervisor 按计划创建�
 
 Owner 已授权本 Run 启动准备且准备未完时，Supervisor 先查询当前 Goal；核对并续用同一未完成准备 Goal，不重复建立。没有未完成 Goal 才创建；若已有其他任务的未完成 Goal，报告冲突，不占用或伪称完成。目标只到真实预检和首 CELL 交接，不是整个 Run。`$slk-plan-run` 已完成原对话 ↔ Supervisor 测试且身份/通道未变时复用结果，随后按顺序进行：
 
-1. 打开可见 BI 1.1.0，绑定设备与当前 SLK Run 身份；核对实际安装路径/版本、原生模型权限下的工作区、Skill、OCRV、DSH 和工具。角色凭据由准备宿主通过 `prepare-role-credential` 认证、DPAPI 密封并重新用保存后的消费者认证，不能把 `credential-out` 的明文误当密封文件；确定性失败先纠正，不自动轮换全部凭据。
+1. 打开可见 BI 1.1.1，绑定设备与当前 SLK Run 身份；核对实际安装路径/版本、原生模型权限下的工作区、Skill、OCRV、DSH 和工具。角色凭据由准备宿主通过 `prepare-role-credential` 认证、DPAPI 密封并重新用保存后的消费者认证，不能把 `credential-out` 的明文误当密封文件；确定性失败先纠正，不自动轮换全部凭据。
 2. 登记 Owner 已确认的 Supervisor，并登记 OCRV Checker、DSH Worker 与 Supervisor 指定的 Overwatcher；四个 role instance 彼此唯一，模型和 reasoning 来自本 Run 冻结策略。
 3. 用标准 headless 入口演练七条必要腿：`slk-conformance/<SLK-CONFORMANCE-run_id>` 证据根绑定独立 clean/no-remote 样本 Git 和单 CELL，经 `preflight-conformance-sample` 实走 `Supervisor → Checker → Worker → Checker`、FAIL 的 `Checker → Supervisor → 同一 Worker`、PASS 的 `Checker → Supervisor` 及 `Overwatcher → Supervisor`，再以 `seal-normal-chain-source` 密封。接收 Agent 必须实际读取并核验 Git 外原件，再完成原生接收/启动和合法 TOKEN 交接；路径已发或发送方读得到不算通过。产品改走 `preflight-new-run`，核验初始 TOKEN、四角色/端点/消费者、BI、Temporal 和不同来源；预设 JSON/echo、假 D1/D2、OW/异常补救代发均不合格。
 4. 做角色理解确认：Checker 解释日常派发、隔离 D1、FAIL 上报与 PASS 后缀；Worker 解释施工、D0 与候选交付；OW 解释真实性核查、UNKNOWN 和只向对应 Supervisor 报告。回答模糊时先纠正再复测受影响项；Worker 不重复完整方法问答。
@@ -68,5 +68,5 @@ D2 通过后按 `$slk-close-run` 完成 terminal snapshot、OW final cycle、`cl
 - 不要创建 Codex Checker 或 Codex Worker，不要用提示词把 Codex 对话伪装成 OCRV/DSH，也不要把已登记的 DSH、OCRV 原生端点误写成隐藏成员；不要用标题、角色名称或一次启动命令代替精确身份与真实激活证据。
 - 不要把 D1 返工例外扩成 Supervisor 的一般 Worker 派工权，也不要用它绕过 OCRV 的 D1 或 Checker 通讯恢复。
 - 不要缺少、重复绑定或混淆 Overwatcher；不要因共享 Session 就共享 Run scope、cycle 或 Supervisor 端点，也不要让它成为通讯中继、TOKEN 持有者、工程裁决者或 BI 写入者；不要用正时长 `wait_threads` 维持工程角色在线，也不要用 heartbeat/定时任务冒充 OW 的前台 active turn。
-- 不要以 OW/脚本补救成功代替开工前由真实责任成员完成的必要通讯演练；不要在 BI、Temporal、工具更新或任一必需端点仍未证明时写 READY。
+- 不要以 OW/脚本补救成功代替真实责任成员的必要正常通讯演练；BI、Temporal、工具或必需端点未证明不写 READY。暂停不退出共享 OW/Temporal；参数变更后的原预检和必要正常腿按变化范围复测，不拿 recovery 当正常验收。
 - 不要把计划归档、原生 Session 结束或发出命令当作已经归档；没有中央 `ROLE_CLOSED` 收据且仍显示 active/ready 时，应如实报告未归档，不能用自由文本覆盖事实。

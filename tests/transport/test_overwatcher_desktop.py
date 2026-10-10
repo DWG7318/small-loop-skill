@@ -22,10 +22,10 @@ SERVER = Path(__file__).with_name("fake_overwatcher_desktop_mcp.py")
 INPUT_TEXT = "<codex_delegation><input>observe the exact run</input></codex_delegation>"
 
 
-def write_request(tmp_path: Path) -> tuple[Path, str]:
+def write_request(tmp_path: Path, method_version="4.4.2") -> tuple[Path, str]:
     request = {
         "schema_version": "slk.desktop-overwatcher-attestation-request/v1",
-        "method_version": "4.4.2",
+        "method_version": method_version,
         "attestation_id": "11111111-1111-4111-8111-111111111111",
         "run_id": "RUN-OW-A",
         "role_instance_id": "ow-a",
@@ -52,9 +52,10 @@ def prepare_host(monkeypatch: pytest.MonkeyPatch, mode: str = "active") -> None:
     monkeypatch.setenv("FAKE_OW_DESKTOP_MODE", mode)
 
 
-def test_attests_existing_ow_turn_without_send_or_model_call(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3"])
+def test_attests_existing_ow_turn_without_send_or_model_call(tmp_path: Path, monkeypatch, method_version) -> None:
     prepare_host(monkeypatch)
-    request, digest = write_request(tmp_path)
+    request, digest = write_request(tmp_path, method_version)
     evidence = tmp_path / "evidence"
 
     result = attest_desktop_overwatcher(request, request_sha256=digest, evidence_root=evidence)
@@ -72,6 +73,7 @@ def test_attests_existing_ow_turn_without_send_or_model_call(tmp_path: Path, mon
     }
     assert started["native_request_sha256"] == hashlib.sha256(INPUT_TEXT.encode()).hexdigest()
     assert attestation["role_instance_id"] == "ow-a"
+    assert attestation["method_version"] == method_version
     assert attestation["endpoint_ref"] == "ow-endpoint-a"
     assert INPUT_TEXT not in (evidence / "desktop-overwatcher-attestation.json").read_text()
     assert {call["name"] for call in calls} == {"read_thread"}

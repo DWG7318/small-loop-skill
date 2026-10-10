@@ -25,7 +25,7 @@ describe("desktop BI WebBI upload", () => {
       "2026-10-04T00:00:00Z",
     );
     expect(envelope.schema_version).toBe("slk.bi.upload/v1");
-    expect(envelope.bi_version).toBe("1.1.0");
+    expect(envelope.bi_version).toBe("1.1.1");
     expect(envelope.device).toEqual({ device_id: "device-a", device_name: "Workstation A" });
     expect(envelope.runs.map(({ run }) => run.run_id)).toEqual(["run-a", "run-b"]);
     expect(envelope.runs[0]?.messages.map(({ message_id }) => message_id)).toEqual([

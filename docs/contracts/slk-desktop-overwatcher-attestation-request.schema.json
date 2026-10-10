@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "attestation_id", "run_id", "role_instance_id", "endpoint_ref", "thread_id", "host_id", "cwd", "turn_id", "platform_input_item_id", "reader_thread_id", "command", "plugin_sha256", "timeout_seconds"],
   "properties": {
     "schema_version": {"const": "slk.desktop-overwatcher-attestation-request/v1"},
-    "method_version": {"const": "4.4.2"},
+    "method_version": {"enum": ["4.4.2", "4.4.3"]},
     "attestation_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/text"},
     "role_instance_id": {"$ref": "#/$defs/text"},

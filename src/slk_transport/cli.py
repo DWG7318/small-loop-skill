@@ -53,7 +53,7 @@ from .overwatcher_continuity import OverwatcherContinuityError, inspect_overwatc
 from .worker_completion import CompletionError, inspect_worker_completion
 
 
-VERSION = "4.4.2"
+from . import __version__ as VERSION
 ADAPTERS: Mapping[str, Adapter] = {
     "codex-app-server": CodexAdapter(),
     "ocrv-checker": OcrvAdapter(),

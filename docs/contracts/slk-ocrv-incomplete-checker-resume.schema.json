@@ -19,7 +19,7 @@
   ],
   "properties": {
     "schema_version": {"const": "slk.ocrv-incomplete-checker-resume-request/v1"},
-    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3"]},
     "recovery_invocation_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "go_id": {"$ref": "#/$defs/identifier"},
@@ -134,7 +134,7 @@
     "then": {"properties": {"ocrv_session": {"properties": {"aborted": {"const": false}, "selected_files": {"const": 2}, "completed_files": {"const": 1}}}}},
     "else": {"properties": {"ocrv_session": {"properties": {"aborted": {"const": true}, "selected_files": {"const": 0}, "completed_files": {"const": 0}}}}}}],
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
     "path": {"type": "string", "minLength": 1},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},

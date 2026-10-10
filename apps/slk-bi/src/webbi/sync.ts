@@ -1,4 +1,5 @@
 import type { SlkSnapshot } from "../useSlkData";
+import { BI_VERSION } from "../version";
 import { MESSAGE_CATALOG } from "../messages/catalog";
 import { projectSupportedAuthoritativeMessages } from "../messages/messageFeed";
 import type { WebBiUploadEnvelope } from "./contracts";
@@ -19,7 +20,7 @@ export function buildUploadEnvelope(
 ): WebBiUploadEnvelope {
   return {
     schema_version: "slk.bi.upload/v1",
-    bi_version: "1.1.0",
+    bi_version: BI_VERSION,
     upload_id: uploadId,
     generated_at: generatedAt,
     device: {

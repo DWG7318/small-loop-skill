@@ -1,4 +1,4 @@
-# SLK 4.4.2 Temporal continuity templates
+# SLK 4.4.3 Temporal continuity templates
 
 This package provides the required reusable `SLK.Start` and `SLK.Run` templates. A shared headless Temporal service may run many isolated Run workflow pairs; each pair keeps exact startup, delivery/native-start acknowledgement, original-sender recovery, 30-minute member residency, 20-minute OW audit, OW-exit guard and terminal closure facts.
 
@@ -13,7 +13,9 @@ py -m venv .venv-slk-temporal
 .\.venv-slk-temporal\Scripts\python -m pip install .\integrations\temporal
 ```
 
-This installs the official Python SDK only. It does not install/start a Temporal server, Docker, Windows service, Agent or hidden scheduler. SLK core imports remain usable without the SDK, but a 4.4.2 Run cannot pass readiness until the separately provisioned service, worker and adapter are verifiably READY.
+This installs the official Python SDK only. It does not install/start a Temporal server, Docker, Windows service, Agent or hidden scheduler. SLK core imports remain usable without the SDK, but a 4.4.3 Run cannot pass readiness until the separately provisioned service, worker and adapter are verifiably READY.
+
+Installing files does not upgrade an already-loaded worker or an old Python environment. Before the next Run, install the accepted global mirror into its operator-managed environment, verify package version 4.4.3 plus actual imported source paths/hashes and the new queue/config binding. Preserve completed old pairs/history and the shared service; do not relabel a loaded 4.4.2 worker or silently restart its old pair.
 
 ## Entry points and adapter
 
@@ -32,6 +34,6 @@ The adapter defines five async functions: `prepare_run(value)`, `deliver_message
 
 For an already-active Codex Desktop OW, run installed `slk-transport attest-desktop-overwatcher` from a trusted Desktop host before admission. It reads the exact registered thread/turn/input item without sending or invoking a model and emits hash-bound start/attestation files. The frozen reader identifies that attestation creator only; every 1200-second audit must inherit its own real Desktop caller thread/pipe/originator, while the attested target identity stays unchanged. Use `slk.temporal-standard-adapter/v2` with `attestation_path` and `attestation_sha256`; each audit performs a fresh `read_thread` through `inspect-native-activity` instead of trusting the saved snapshot. Point OW readiness at installed `slk-overwatcher-capabilities.json`.
 
-For new 4.4.2 histories, `notify_supervisor` calls the installed `slk-transport notify-supervisor --request <json>` with its frozen Supervisor endpoint and fresh Run projection; it returns the exact native-proof receipt, not a preset `NOTIFIED`. Supply genuinely inherited native Desktop host capability; do not fabricate a caller or resume a Desktop-owned thread through CLI. The existing OW audit/owning-host exit hook uses `observe_overwatcher_exit` and sends its notice to `overwatcher_exited`; unexpected exits do not rely on OW's final message. Failed or malformed notification keeps a visible runtime guard and bounded monitoring; it never clears the guard or counts as takeover. Historical 4.4.1 patch markers retain old command/receipt replay branches, not permission to use legacy echo-only readiness for new work.
+For new 4.4.3 histories, `notify_supervisor` calls the installed `slk-transport notify-supervisor --request <json>` with its frozen Supervisor endpoint and fresh Run projection; it returns the exact native-proof receipt, not a preset `NOTIFIED`. Supply genuinely inherited native Desktop host capability; do not fabricate a caller or resume a Desktop-owned thread through CLI. The existing OW audit/owning-host exit hook uses `observe_overwatcher_exit` and sends its notice to `overwatcher_exited`; unexpected exits do not rely on OW's final message. Failed or malformed notification keeps a visible runtime guard and bounded monitoring; it never clears the guard or counts as takeover. Historical 4.4.1 patch markers retain old command/receipt replay branches, not permission to use legacy echo-only readiness for new work.
 
 See [`docs/runtime/SLK-TEMPORAL.md`](../../docs/runtime/SLK-TEMPORAL.md) for the fail-closed runtime and closure contract.

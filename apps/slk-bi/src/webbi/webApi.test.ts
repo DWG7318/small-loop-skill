@@ -5,9 +5,9 @@ import { webBiApi } from "./webApi";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("WebBI browser authorization", () => {
-  it("does not attach a viewing credential or require a login", async () => {
+  it.each(["1.1.0", "1.1.1"])("reads %s without attaching a viewing credential or requiring a login", async (bi_version) => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({
-      schema_version: "slk.webbi.runs/v1", bi_version: "1.1.0", runs: [],
+      schema_version: "slk.webbi.runs/v1", bi_version, runs: [],
     }));
     vi.stubGlobal("fetch", fetchMock);
     await webBiApi.listRuns(false);

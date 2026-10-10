@@ -66,7 +66,7 @@
     "next_cycle_at": {"type": "string", "format": "date-time"}
   },
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
     "nullable_identifier": {"oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]},
     "check_result": {"enum": ["CLEAR", "ANOMALY", "NOT_APPLICABLE"]},
     "evidence_ref": {

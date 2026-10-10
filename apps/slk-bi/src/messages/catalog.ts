@@ -12,6 +12,9 @@ const ALL: readonly SlkRole[] = ["supervisor", "checker", "worker", "overwatcher
 
 const EVENT_SEEDS: readonly CatalogSeed[] = [
   ["RUN_INITIALIZED", "Run 已建立", SUPERVISOR],
+  ["RUN_PAUSE_REQUESTED", "Run 暂停已请求", SUPERVISOR],
+  ["RUN_PAUSED", "Run 已暂停", SUPERVISOR],
+  ["RUN_RESUMED", "Run 已继续", SUPERVISOR],
   ["OVERWATCHER_BOUND", "Overwatcher 已绑定", SUPERVISOR],
   ["PLAN_REVISED", "计划已修订", SUPERVISOR],
   ["ROLE_REGISTERED", "角色已登记", ["supervisor", "checker"]],

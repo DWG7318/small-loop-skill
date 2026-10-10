@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **4.4.2**
+Current version: **4.4.3**
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 
@@ -15,7 +15,7 @@ Overwatcher: required, non-authoritative truth observation → Supervisor only
 Temporal: required continuity/timing guard; never engineering authority
 ```
 
-Before any CELL, Supervisor opens BI 1.1.0, establishes the four-role `RUN_TEAM_REGISTRY`, proves current tools/capabilities and device readiness, and binds a real isolated source produced by seven exact communication rehearsals. To create the first source, only a disposable one-CELL Run with a `slk-conformance/<SLK-CONFORMANCE-…>` evidence root and a separate clean, fixed-HEAD, no-remote sample Git may use `preflight-conformance-sample`; it can never dispatch product work. Temporal then uses the built-in two-stage standard adapter: central bootstrap creates the deterministic pair once, and explicit sample or product admission—after its real identity/Host/OW evidence exists—opens delivery. Product Runs always use `preflight-new-run` with a distinct sealed source. Missing, stale, guessed, circular or unqueryable evidence blocks dispatch.
+Before any CELL, Supervisor opens BI 1.1.1, establishes the four-role `RUN_TEAM_REGISTRY`, proves current tools/capabilities and device readiness, and binds a real isolated source produced by seven exact communication rehearsals. To create the first source, only a disposable one-CELL Run with a `slk-conformance/<SLK-CONFORMANCE-…>` evidence root and a separate clean, fixed-HEAD, no-remote sample Git may use `preflight-conformance-sample`; it can never dispatch product work. Temporal then uses the built-in two-stage standard adapter: central bootstrap creates the deterministic pair once, and explicit sample or product admission—after its real identity/Host/OW evidence exists—opens delivery. Product Runs always use `preflight-new-run` with a distinct sealed source. Missing, stale, guessed, circular or unqueryable evidence blocks dispatch.
 
 Codex is Supervisor using canonical `gpt-6.1-sol`; Owner freezes `high` or `xhigh` per Run. OCRV is Checker (Qwen3.8-Max); DSH is Worker (DeepSeek V4 Flash). Runtime, model, reasoning, Session, adapter, endpoint and native activity are validated rather than inferred from prompts. Supervisor sizes the frozen engineering solution for DSH: oversized work is pre-split into independently D0/D1-checkable small or medium CELLs without changing acceptance. Most CELLs should pass D1 first try; a second consecutive formal D1 failure requires more serious Supervisor investigation and consideration of smaller versioned successor CELLs (Skill guidance, not an output veto), while Checker retains D1 authority.
 
@@ -29,11 +29,11 @@ Cross-Agent delivery uses `slk-transport` with immutable endpoints, envelopes, c
 
 ## State and BI
 
-SLK uses a versioned SQLite authority, durable evidence, deterministic Markdown exports and read-only LE BI. BI/WebBI 1.1.0 shows device/version, four-role identity, exact Agent-authored unread messages and archived Runs; the desktop shell stays opaque, renders a visible failure boundary, and rejects an accidental second instance. WebBI accepts independent per-device Run uploads and optional ntfy delivery configured by server URL, username, password and topic; BI/WebBI never infer message types or modify engineering state. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
+SLK uses a versioned SQLite authority, durable evidence, deterministic Markdown exports and read-only LE BI. BI/WebBI 1.1.1 shows device/version, four-role identity, exact Agent-authored unread messages and archived Runs; the desktop shell stays opaque, renders a visible failure boundary, and rejects an accidental second instance. WebBI accepts independent per-device Run uploads and optional ntfy delivery configured by server URL, username, password and topic; BI/WebBI never infer message types or modify engineering state. See [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) and [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md).
 
 ## Skill collection
 
-Install all 16 sibling directories under [`skills/`](skills/): [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) is the main router and 15 focused companion Skills cover planning, capacity, models, role Eval/team readiness, Temporal, Overwatcher observation, CELL execution/checking/rework, records, adjustment, recovery and closure. They are one method collection, not standalone methods.
+Install all 17 sibling directories under [`skills/`](skills/): [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) is the main router and 16 focused companion Skills cover planning, capacity, models, role Eval/team readiness, Temporal, authorized pause/resume, Overwatcher observation, CELL execution/checking/rework, records, adjustment, recovery and closure. They are one method collection, not standalone methods.
 
 ## Validation
 

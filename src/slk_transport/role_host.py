@@ -45,7 +45,7 @@ def load_role_host(endpoint_raw: Mapping[str, Any]) -> "RoleHost | None":
         return None  # historical transports; new readiness requires the bound path
     try:
         path = Path(path_value or "")
-        if not path.is_absolute() or path.stat().st_size > 131072 or wc._sha256(path) != digest:
+        if not path.is_absolute() or not path.is_file() or wc._sha256(path) != digest:
             raise ValueError("missing or changed host binding")
         host = RoleHost(wc._read_object(path, "role host binding"), str(digest))
         endpoint = Endpoint.from_dict(endpoint_raw)
@@ -228,7 +228,7 @@ class RoleHost:
             or request.get("schema_version") != "slk.run-lifecycle/v1"
             or request["run_id"] != self.binding["run_id"]
             or request["role_instance_id"] != self.endpoint("supervisor")["role_instance_id"]
-            or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", str(request["pause_id"]))
+            or not re.fullmatch(r"[A-Za-z0-9_.-]+", str(request["pause_id"]))
             or request["binding_sha256"] != self.digest or "temporal" not in self.binding):
             raise ValueError("Run lifecycle request is not the closed frozen Supervisor operation")
         def roots(value):

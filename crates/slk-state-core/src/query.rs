@@ -384,12 +384,20 @@ impl StateStore {
             plan_revisions: load_plan_revisions(&connection, run_id)?,
             events: load_events(&connection, run_id)?,
             native_invocations: {
-                let mut statement = connection.prepare("SELECT message_id, to_role_instance_id, evidence_path, evidence_sha256
-                    FROM transport_start_receipts WHERE run_id=?1 ORDER BY rowid")?;
-                let rows = statement.query_map([run_id], |row| Ok(NativeInvocationProjection {
-                    message_id: row.get(0)?, role_instance_id: row.get(1)?,
-                    start_evidence_path: row.get(2)?, start_evidence_sha256: row.get(3)?,
-                }))?.collect::<Result<Vec<_>, _>>()?;
+                let mut statement = connection.prepare(
+                    "SELECT message_id, to_role_instance_id, evidence_path, evidence_sha256
+                    FROM transport_start_receipts WHERE run_id=?1 ORDER BY rowid",
+                )?;
+                let rows = statement
+                    .query_map([run_id], |row| {
+                        Ok(NativeInvocationProjection {
+                            message_id: row.get(0)?,
+                            role_instance_id: row.get(1)?,
+                            start_evidence_path: row.get(2)?,
+                            start_evidence_sha256: row.get(3)?,
+                        })
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
                 rows
             },
             token_history: load_tokens(&connection, run_id)?,

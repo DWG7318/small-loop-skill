@@ -37,7 +37,7 @@ CAPACITY_FIELDS = {
     "max_background_characters", "max_background_bytes", "max_changed_lines",
     "max_segment_paths", "max_tokens", "max_tokens_budget", "timeout_minutes",
 }
-ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40,64}$")
 
 
@@ -458,12 +458,12 @@ def _close_completed_review(process: Any, completion: dict[str, Any], launcher: 
         raise RequestError("native review launcher identity changed")
     parents = _process_parents()
     current = pid
-    for _ in range(32):
-        if current == process.pid:
-            break
+    visited = set()
+    while current != process.pid:
+        if current in visited or current not in parents:
+            raise RequestError("completion process is not this review's descendant")
+        visited.add(current)
         current = parents.get(current, 0)
-    else:
-        raise RequestError("completion process is not this review's descendant")
     if os.name != "nt":
         if _process_creation_time(pid) != target["creation_time"]:
             raise RequestError("native review process identity changed")
@@ -698,7 +698,7 @@ def run(
         command, cwd=request["repository"],
         env=environment,
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, encoding="utf-8", errors="replace", **_no_window_kwargs(),
+        **_no_window_kwargs(),
     )
     activity_path: Path | None = None
     activity_tail: list[dict[str, Any]] = []
@@ -708,18 +708,40 @@ def run(
         )
         _write_json_atomic(native[0].with_name("ocrv-native-source.json"),
             {**source, "native_start_sha256": _sha256(native[0])})
-    stdout_lines: list[str] = []
-    stderr_lines: list[str] = []
+    closure_error = None
     activity_lock = threading.Lock()
+    stream_errors: list[str] = []
 
-    def drain(stream: Any, destination: list[str], kind: str) -> None:
-        for line in iter(stream.readline, ""):
-            destination.append(line)
-            if activity_path is not None:
+    def drain(stream: Any, destination: Path, kind: str) -> None:
+        # Original evidence is available even when exact cleanup is denied and
+        # the native process remains alive. Never accumulate the full logs in RAM.
+        saved = None
+        stage = "open"
+
+        def failed(operation: str, exc: Exception) -> None:
+            with activity_lock:
+                stream_errors.append(f"{destination.name} {operation}: {type(exc).__name__}: {exc}")
+
+        try:
+            saved = destination.open("wb")
+            # A read buffer is not a total-output limit. read1 also exposes
+            # flushed partial lines without waiting for a newline or native exit.
+            while True:
+                stage = "read"
+                chunk = stream.read1(65536)
+                if not chunk:
+                    break
+                stage = "write"
+                saved.write(chunk)
+                stage = "flush"
+                saved.flush()
+                if activity_path is None:
+                    continue
+                stage = "activity"
                 with activity_lock:
                     sequence = activity_tail[-1]["sequence"] + 1
                     observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
-                    detail_sha256 = hashlib.sha256(line.encode("utf-8")).hexdigest()
+                    detail_sha256 = hashlib.sha256(chunk).hexdigest()
                     activity_tail.append({
                         "kind": kind, "sequence": sequence, "observed_at": observed_at,
                         "detail_sha256": detail_sha256,
@@ -735,6 +757,8 @@ def run(
                             "message_id": native[1]["message_id"] if native is not None else "unknown",
                             "native_task_id": invocation,
                             "status": "RUNNING",
+                            **({"error": "OCRV_STREAM_FAILED"} if stream_errors else
+                               {"error": "OCRV_CLEANUP_FAILED"} if closure_error is not None else {}),
                             "sequence": sequence,
                             "observed_at": observed_at,
                             "last_event": {
@@ -746,14 +770,29 @@ def run(
                             "waiting_on": "OCRV_REVIEW",
                         },
                     )
-        stream.close()
+        except Exception as exc:
+            failed(stage, exc)
+            if stage != "read":
+                # A failed sink must not block the original native writer on a
+                # full pipe. Do not retry the failed sink or invent missing bytes.
+                try:
+                    for _chunk in iter(lambda: stream.read1(65536), b""):
+                        pass
+                except Exception as exc:
+                    failed("read", exc)
+        finally:
+            for handle, operation in ((saved, "close evidence"), (stream, "close pipe")):
+                if handle is not None:
+                    try:
+                        handle.close()
+                    except Exception as exc:
+                        failed(operation, exc)
 
-    stdout_thread = threading.Thread(target=drain, args=(process.stdout, stdout_lines, "OCRV_STDOUT"))
-    stderr_thread = threading.Thread(target=drain, args=(process.stderr, stderr_lines, "OCRV_PROGRESS"))
+    stdout_thread = threading.Thread(target=drain, args=(process.stdout, stdout_path, "OCRV_STDOUT"))
+    stderr_thread = threading.Thread(target=drain, args=(process.stderr, stderr_path, "OCRV_PROGRESS"))
     stdout_thread.start()
     stderr_thread.start()
     completed_decision = None
-    closure_error = None
     completion_path = root / "review-completed.json"
     while True:
         try:
@@ -768,18 +807,22 @@ def run(
                     completed_decision = candidate
                 except (RequestError, OSError, KeyError, TypeError, UnicodeDecodeError) as exc:
                     closure_error = str(exc)
+                    if activity_path is not None:
+                        with activity_lock:
+                            activity = _read_json(activity_path)
+                            activity["error"] = "OCRV_CLEANUP_FAILED"
+                            _write_json_atomic(activity_path, activity)
     stdout_thread.join()
     stderr_thread.join()
-    stdout = "".join(stdout_lines)
-    stderr = "".join(stderr_lines)
-    stdout_path.write_text(stdout, encoding="utf-8", newline="\n")
-    stderr_path.write_text(stderr, encoding="utf-8", newline="\n")
     if native is not None:
         completed_decision = None
         try:
             completed_decision = _completed_decision(completion_path, native, invocation)
         except (RequestError, OSError, KeyError, TypeError, UnicodeDecodeError) as exc:
             closure_error = f"{closure_error}; {exc}" if closure_error is not None else str(exc)
+    if stream_errors:
+        stream_error = "OCRV_STREAM_FAILED: " + "; ".join(stream_errors)
+        closure_error = f"{closure_error}; {stream_error}" if closure_error is not None else stream_error
     if activity_path is not None:
         exit_sequence = activity_tail[-1]["sequence"] + 1
         exit_observed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
@@ -799,6 +842,7 @@ def run(
                 "message_id": native[1]["message_id"] if native is not None else "unknown",
                 "native_task_id": invocation,
                 "status": "COMPLETED" if returncode == 0 or completed_decision is not None else "FAILED",
+                **({"error": "OCRV_STREAM_FAILED"} if stream_errors else {}),
                 "sequence": exit_sequence,
                 "observed_at": exit_observed_at,
                 "last_event": {
@@ -844,6 +888,8 @@ def run(
         },
     }
     _write_json_atomic(output_path.resolve(), result)
+    if stream_errors:
+        return returncode or 1
     return 0 if completed_decision is not None else returncode
 
 

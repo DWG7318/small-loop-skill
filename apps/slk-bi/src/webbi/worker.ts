@@ -1,4 +1,5 @@
 import type { RunView } from "../contracts";
+import { BI_VERSION } from "../version";
 import type { AuthoritativeMessage, MessageCatalogEntry } from "../messages/messageFeed";
 import {
   parseNotificationSettingsInput,
@@ -166,7 +167,7 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
         }
         return json({
           schema_version: "slk.webbi.runs/v1",
-          bi_version: "1.1.0",
+          bi_version: BI_VERSION,
           runs: await dependencies.store.listRuns(archive === "archived"),
         });
       }
@@ -177,7 +178,7 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
           decodeURIComponent(runMatch[2]!),
         );
         return record
-          ? json({ schema_version: "slk.webbi.run/v1", bi_version: "1.1.0", record })
+          ? json({ schema_version: "slk.webbi.run/v1", bi_version: BI_VERSION, record })
           : json({ error: "SLK_WEBBI_RUN_NOT_FOUND" }, 404);
       }
       if (url.pathname === "/api/v1/notification-settings") {

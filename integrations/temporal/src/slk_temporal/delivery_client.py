@@ -27,7 +27,7 @@ RPC_TIMEOUT_SECONDS = 30.0
 
 
 def _load_hashed(path: Path, expected_sha256: str, label: str) -> dict[str, Any]:
-    if not path.is_absolute() or not path.is_file() or path.stat().st_size > 131072:
+    if not path.is_absolute() or not path.is_file():
         raise ValueError(f"{label} is unavailable")
     raw = path.read_bytes()
     if hashlib.sha256(raw).hexdigest() != expected_sha256:

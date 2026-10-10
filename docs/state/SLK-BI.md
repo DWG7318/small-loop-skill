@@ -1,6 +1,6 @@
-# LE BI / WebBI 1.1.0 — SLK Read-Only View
+# LE BI / WebBI 1.1.1 — SLK Read-Only View
 
-LE BI presents machine-wide role-authored state plus accepted operational observations. BI 1.1.0 is versioned independently from the SLK method contract: the desktop and browser share one source version while every Run continues to show its actual SLK version. Neither surface participates in construction, inspection, transport, recovery, exemption, or closure.
+LE BI presents machine-wide role-authored state plus accepted operational observations. BI 1.1.1 is versioned independently from the SLK method contract: the desktop and browser share one source version while every Run continues to show its actual SLK version. Neither surface participates in construction, inspection, transport, recovery, exemption, or closure.
 
 ## Data source
 
@@ -50,7 +50,7 @@ SLK_WEBBI_URL=https://slk.lcsp.work
 SLK_WEBBI_UPLOAD_TOKEN=<device upload token>
 ```
 
-All four values are required to enable upload. Missing values leave local BI fully operational and make sync a no-op. The uploader accepts HTTPS (or localhost for development), caps one envelope at 10 MiB, uses a 15-second timeout, sends only messages not yet confirmed during the current process, and safely relies on server deduplication after restart. It does not copy local proxy, path, port, credential, hardware, source, or log data.
+All four values are required to enable upload. Missing values leave local BI fully operational and make sync a no-op. The uploader accepts HTTPS or actual HTTP loopback for development, rejects userinfo/query/fragment ambiguity and never follows authenticated upload redirects. It caps one envelope at 10 MiB, uses a 15-second timeout, sends only unconfirmed messages, and relies on server deduplication after restart. No local proxy/path/credential/source/log data is uploaded. Release 1.1.1 reads 1.1.0 and 1.1.1 `slk.bi.upload/v1` without relabeling old payloads; deploy the paired Worker/assets before new uploads, never emit a false old software version.
 
 Cloudflare deployment uses one Worker, static assets and D1. Before initial deployment, replace the D1 placeholder in `apps/slk-bi/wrangler.jsonc`, apply `webbi/migrations/0001.sql`, and set `WEBBI_INGEST_TOKEN` and a base64-encoded 32-byte `WEBBI_SETTINGS_ENCRYPTION_KEY` as Worker secrets. The Owner-approved browser surface, exact GET Run/catalog routes and redacted notification settings are public: no login or Cloudflare Access gate. Notification settings PUT and test-send POST allow direct manual use without a management token; any visitor can edit that configuration. Engineering Run facts remain read-only, and uploads still require the ingest bearer. Public Run metadata includes the same device, role and Session identities as BI; stored credentials remain private.
 

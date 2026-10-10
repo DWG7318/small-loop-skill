@@ -1,4 +1,5 @@
 import type { IngestedMessage, NtfyDeliveryTarget, WebBiNotifier } from "./worker";
+import { BI_VERSION } from "../version";
 
 function endpoint(target: NtfyDeliveryTarget) {
   return `${target.settings.server_url.replace(/\/$/, "")}/${encodeURIComponent(target.settings.topic)}`;
@@ -47,6 +48,6 @@ export class NtfyNotifier implements WebBiNotifier {
   }
 
   async test(target: NtfyDeliveryTarget) {
-    await publish(target, "WebBI 1.1.0 的 ntfy 配置测试成功。", "SLK WebBI 测试");
+    await publish(target, `WebBI ${BI_VERSION} 的 ntfy 配置测试成功。`, "SLK WebBI 测试");
   }
 }

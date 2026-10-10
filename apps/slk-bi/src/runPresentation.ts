@@ -91,6 +91,7 @@ function workIntervals(run: RunView, now: Date): Interval[] {
   const open = new Map<string, { start: number; cellId: string | null; author: string }>();
   const intervals: Interval[] = [];
   const events = effectiveEvents(run.events);
+  let paused = false;
 
   function key(phase: string, event: EventProjection) {
     return `${phase}:${event.author_role_instance_id}:${event.cell_id ?? "run"}:${event.attempt ?? 0}`;
@@ -112,12 +113,21 @@ function workIntervals(run: RunView, now: Date): Interval[] {
     const started = open.get(intervalKey);
     const time = Date.parse(event.occurred_at);
     if (!started || !Number.isFinite(time) || time < started.start) return;
-    intervals.push({ start: started.start, end: time, cellId: started.cellId });
+    if (!paused) intervals.push({ start: started.start, end: time, cellId: started.cellId });
     open.delete(intervalKey);
   }
 
   for (const event of events) {
-    if (event.event_type === "WORK_STARTED" || event.event_type === "RESOURCE_RECOVERED") {
+    const time = Date.parse(event.occurred_at);
+    if (event.event_type === "RUN_PAUSED" && !paused && Number.isFinite(time)) {
+      for (const started of open.values()) {
+        if (time >= started.start) intervals.push({ start: started.start, end: time, cellId: started.cellId });
+      }
+      paused = true;
+    } else if (event.event_type === "RUN_RESUMED" && paused && Number.isFinite(time)) {
+      for (const started of open.values()) started.start = time;
+      paused = false;
+    } else if (event.event_type === "WORK_STARTED" || event.event_type === "RESOURCE_RECOVERED") {
       begin("worker", event);
     } else if (
       event.event_type === "CANDIDATE_SUBMITTED" ||
@@ -127,7 +137,7 @@ function workIntervals(run: RunView, now: Date): Interval[] {
       end("worker", event);
     } else if (event.event_type === "D1_STARTED") {
       begin("d1", event);
-    } else if (event.event_type === "D1_PASSED" || event.event_type === "D1_FAILED") {
+    } else if (["D1_PASSED", "D1_FAILED", "D1_INCOMPLETE"].includes(event.event_type)) {
       end("d1", event);
     } else if (event.event_type === "D2_STARTED") {
       begin("d2", event);
@@ -135,6 +145,8 @@ function workIntervals(run: RunView, now: Date): Interval[] {
       end("d2", event);
     }
   }
+
+  if (paused) return intervals;
 
   const activityUnproven = [...run.operational_observations]
     .filter((observation) => observation.kind === "ACTIVITY_UNPROVEN")

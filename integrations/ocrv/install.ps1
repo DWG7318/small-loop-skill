@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = [System.IO.Path]::GetFullPath($OcrvRoot).TrimEnd('\', '/')
 $source = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$version = (Get-Content -LiteralPath (Join-Path $source 'slk-checker-capabilities.json') -Raw -Encoding UTF8 | ConvertFrom-Json).method_version
 if (-not (Test-Path -LiteralPath $root -PathType Container)) {
     throw 'OCRV root must be an existing directory'
 }
@@ -26,8 +27,8 @@ foreach ($name in $names) {
     }
 }
 $timestamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss-fffffff')
-$backup = Join-Path $root ".slk-backups\slk-4.4.2-ocrv-native-activity-$timestamp"
-$stage = Join-Path $root ".slk-stage-4.4.2-$timestamp"
+$backup = Join-Path $root ".slk-backups\slk-$version-ocrv-native-activity-$timestamp"
+$stage = Join-Path $root ".slk-stage-$version-$timestamp"
 [void][System.IO.Directory]::CreateDirectory($backup)
 [void][System.IO.Directory]::CreateDirectory($stage)
 $originalExisted = [ordered]@{}
@@ -49,7 +50,7 @@ try {
     $receipt = [ordered]@{
         schema_version = 'slk.ocrv-install/v2'
         status = 'INSTALLED'
-        version = '4.4.2'
+        version = $version
         ocrv_root = $root
         backup_root = $backup
         installed_at = [DateTimeOffset]::UtcNow.ToString('o')

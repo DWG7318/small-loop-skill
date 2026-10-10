@@ -33,4 +33,4 @@ Checker 使用 `$slk-check-cell` 对同一候选执行隔离 D1。
 ## 负面提示词
 
 - 不要以接收令牌、代码完成、提交存在、测试变绿、单条命令结束或中间结果代替完整 CELL 候选交付，也不要重复执行相同令牌、重复 Worker→Checker handoff 或自行进入未派发 CELL；不要提前把完整 D1/D2 当成 D0，也不要把 D0 结论或判断过程塞入初始 D1 交付；不要在交付后等待或读取 Checker 检查过程。
-- 不要接受缺少正式 D1 FAIL 锚点的返工指引，不要把 Supervisor 指引当成 D1 裁决；顺序内部段只用于完成同一正式 CELL，不要自行拆分正式 CELL、并行施工、替换 Worker、改变验收目标、跳过 Git workspace 预检、把 `completed.json` 当成 Checker start，或让别的角色补写 Worker 的 D0/候选事实。
+- 不要接受缺少正式 D1 FAIL 锚点的返工指引，不要把 Supervisor 指引当成 D1 裁决；REQUESTED/PAUSED 不开新施工，原输出/ACK/commit-only 依原暂停边界闭合；内部段不变正式 CELL，不并行、换 Worker、改目标、跳过 Git 预检、把 `completed.json` 当 Checker start，或让别人补写 Worker D0/候选。

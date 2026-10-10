@@ -19,6 +19,76 @@ use slk_state_core::model::{
 use slk_state_core::write::StateStore;
 
 #[test]
+fn current_443_central_writes_keep_long_original_identifiers() {
+    let root = tempfile::tempdir().unwrap();
+    let store = StateStore::new(root.path());
+    let run_id = format!("run-{}", "r".repeat(512));
+    let supervisor_id = format!("supervisor-{}", "s".repeat(512));
+    let checker_id = format!("checker-{}", "c".repeat(512));
+    let initialized = store
+        .init_run(init_request(&run_id, &supervisor_id))
+        .unwrap();
+    let mut registration = register_role(&run_id, &checker_id, Role::Checker);
+    registration.event_id = format!("register-{}", "e".repeat(512));
+    store
+        .register_role(&initialized.supervisor_credential, registration)
+        .unwrap();
+    let current = store.query_run(&run_id).unwrap();
+    assert_eq!(current.summary.run_id, run_id);
+    assert!(current
+        .roles
+        .iter()
+        .any(|role| role.role_instance_id == supervisor_id));
+    assert!(current
+        .roles
+        .iter()
+        .any(|role| role.role_instance_id == checker_id));
+
+    let mut invalid = register_role(&run_id, "invalid/checker", Role::Checker);
+    invalid.event_id = "invalid\\event".into();
+    assert!(store
+        .register_role(&initialized.supervisor_credential, invalid)
+        .is_err());
+    assert_eq!(
+        store.query_run(&run_id).unwrap().roles.len(),
+        current.roles.len()
+    );
+}
+
+#[test]
+fn current_443_run_can_admit_its_registered_overwatcher_without_relabeling_history() {
+    let root = tempfile::tempdir().unwrap();
+    let store = StateStore::new(root.path());
+    let initialized = store
+        .init_run(init_request("run-a", "supervisor-a"))
+        .unwrap();
+    let checker = store
+        .register_role(
+            &initialized.supervisor_credential,
+            register_role("run-a", "checker-a", Role::Checker),
+        )
+        .unwrap();
+    store
+        .register_role(
+            &checker.credential,
+            register_role("run-a", "worker-a", Role::Worker),
+        )
+        .unwrap();
+    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.cadence_seconds = 300;
+    assert!(store
+        .bind_overwatcher(&initialized.supervisor_credential, binding.clone())
+        .is_err());
+    binding.cadence_seconds = 600;
+    store
+        .bind_overwatcher(&initialized.supervisor_credential, binding)
+        .unwrap();
+    let current = store.query_run("run-a").unwrap();
+    assert_eq!(current.summary.slk_version, "4.4.3");
+    assert_eq!(current.summary.origin_slk_version, "4.4.3");
+}
+
+#[test]
 fn supervisor_rebinds_overwatcher_endpoint_without_changing_role_or_session() {
     let fixture = Fixture::new_440();
     let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
@@ -3365,16 +3435,31 @@ fn overwatch_cycle(cycle_sequence: u64) -> OverwatchCycleRequest {
 #[test]
 fn overwatch_cycle_attempt_must_match_current_engineering_cell() {
     let fixture = Fixture::new();
-    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
-        overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
     let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
-    database.execute("UPDATE cell_nodes SET attempt=2 WHERE run_id='run-a' AND cell_id='CELL-001'", []).unwrap();
+    database
+        .execute(
+            "UPDATE cell_nodes SET attempt=2 WHERE run_id='run-a' AND cell_id='CELL-001'",
+            [],
+        )
+        .unwrap();
     drop(database);
-    assert!(matches!(fixture.store.record_overwatch_cycle(&issued.credential, overwatch_cycle(1)),
-        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("attempt")));
+    assert!(
+        matches!(fixture.store.record_overwatch_cycle(&issued.credential, overwatch_cycle(1)),
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("attempt"))
+    );
     let mut valid = overwatch_cycle(1);
     valid.attempt = Some(2);
-    fixture.store.record_overwatch_cycle(&issued.credential, valid).unwrap();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, valid)
+        .unwrap();
 }
 
 #[test]
@@ -3382,100 +3467,184 @@ fn current_nonworker_cycle_requires_real_query_window_but_can_report_no_task_unk
     let fixture = Fixture::new_440();
     let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
     binding.cadence_seconds = 600;
-    let issued = fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    let issued = fixture
+        .store
+        .bind_overwatcher(&fixture.supervisor, binding)
+        .unwrap();
     let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
-    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    db.execute(
+        "UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'",
+        [],
+    )
+    .unwrap();
     drop(db);
-    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
     let mut query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
         "source_message_id":null, "runtime_snapshot":snapshot, "runtime_projection_sha256":"a".repeat(64),
         "native_start_path":null, "native_start_sha256":null, "query_error":null,
         "query_started_at":"2026-09-22T00:03:00Z", "query_completed_at":"2026-09-22T00:03:01Z",
         "native_activity":{"status":"UNKNOWN", "observed_at":"2026-09-22T00:03:00Z", "error":"NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}});
     let mut cycle = overwatch_cycle(1);
-    cycle.go_id=None; cycle.cell_id=None; cycle.attempt=None;
+    cycle.go_id = None;
+    cycle.cell_id = None;
+    cycle.attempt = None;
     cycle.runtime_revision = snapshot.runtime_revision;
-    cycle.cadence_seconds=600; cycle.next_cycle_at="2026-09-22T00:14:00Z".into();
-    cycle.checklist.bi_projection=OverwatchCheckResult::Anomaly;
-    cycle.anomaly_codes=vec![OverwatchAnomalyCode::ActivityUnproven];
+    cycle.cadence_seconds = 600;
+    cycle.next_cycle_at = "2026-09-22T00:14:00Z".into();
+    cycle.checklist.bi_projection = OverwatchCheckResult::Anomaly;
+    cycle.anomaly_codes = vec![OverwatchAnomalyCode::ActivityUnproven];
     let old = fixture.evidence_ref("scope-query.json", &serde_json::to_vec(&query).unwrap());
-    cycle.native_active_session_evidence_ref=old.path.clone(); cycle.evidence_refs=vec![old];
-    let rejected = fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone());
-    assert!(matches!(&rejected,
-        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("query")), "{rejected:?}");
+    cycle.native_active_session_evidence_ref = old.path.clone();
+    cycle.evidence_refs = vec![old];
+    let rejected = fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle.clone());
+    assert!(
+        matches!(&rejected,
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("query")),
+        "{rejected:?}"
+    );
     // Extending only the cycle cannot make a 17-day-old live sample current.
     let mut wide_cycle = cycle.clone();
-    wide_cycle.started_at="2026-09-05T00:03:00Z".into();
-    query["query_started_at"]=json!("2026-09-05T00:03:00Z");
-    query["query_completed_at"]=json!("2026-09-05T00:03:01Z");
-    query["native_activity"]["observed_at"]=json!("2026-09-05T00:03:00Z");
+    wide_cycle.started_at = "2026-09-05T00:03:00Z".into();
+    query["query_started_at"] = json!("2026-09-05T00:03:00Z");
+    query["query_completed_at"] = json!("2026-09-05T00:03:01Z");
+    query["native_activity"]["observed_at"] = json!("2026-09-05T00:03:00Z");
     let stale = fixture.evidence_ref("scope-query.json", &serde_json::to_vec(&query).unwrap());
-    wide_cycle.evidence_refs=vec![stale];
-    let rejected = fixture.store.record_overwatch_cycle(&issued.credential, wide_cycle);
-    assert!(matches!(&rejected,
-        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("query")), "{rejected:?}");
-    query["query_started_at"]=json!("2026-09-22T00:03:59Z");
-    query["query_completed_at"]=json!("2026-09-22T00:04:00Z");
-    query["native_activity"]["observed_at"]=json!("2026-09-22T00:03:59.5Z");
+    wide_cycle.evidence_refs = vec![stale];
+    let rejected = fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, wide_cycle);
+    assert!(
+        matches!(&rejected,
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("query")),
+        "{rejected:?}"
+    );
+    query["query_started_at"] = json!("2026-09-22T00:03:59Z");
+    query["query_completed_at"] = json!("2026-09-22T00:04:00Z");
+    query["native_activity"]["observed_at"] = json!("2026-09-22T00:03:59.5Z");
     let fresh = fixture.evidence_ref("scope-query.json", &serde_json::to_vec(&query).unwrap());
-    cycle.evidence_refs=vec![fresh];
-    fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
+    cycle.evidence_refs = vec![fresh];
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
 }
 
 #[test]
 fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window() {
     let fixture = Fixture::new_423();
-    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
-        overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let issued = fixture
+        .store
+        .bind_overwatcher(
+            &fixture.supervisor,
+            overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a"),
+        )
+        .unwrap();
     let mut initial = overwatch_cycle(1);
-    initial.runtime_revision=fixture.runtime_revision();
-    initial.latest_event_id=fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().latest_event_id;
-    initial.evidence_refs=vec![fixture.evidence_ref("initial-worker-query.json", b"active")];
-    initial.native_active_session_evidence_ref=initial.evidence_refs[0].path.clone();
-    fixture.store.record_overwatch_cycle(&issued.credential, initial).unwrap();
-    fixture.store.commit_delivery_start(&fixture.supervisor,
-        fixture.delivery_start_request("checker-freshness", "2026-09-22T00:00:03Z")).unwrap();
+    initial.runtime_revision = fixture.runtime_revision();
+    initial.latest_event_id = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap()
+        .latest_event_id;
+    initial.evidence_refs = vec![fixture.evidence_ref("initial-worker-query.json", b"active")];
+    initial.native_active_session_evidence_ref = initial.evidence_refs[0].path.clone();
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, initial)
+        .unwrap();
+    fixture
+        .store
+        .commit_delivery_start(
+            &fixture.supervisor,
+            fixture.delivery_start_request("checker-freshness", "2026-09-22T00:00:03Z"),
+        )
+        .unwrap();
     let mut delivery = fixture.delivery_start_request("worker-freshness", "2026-09-22T00:00:04Z");
-    delivery.token_sequence=3;
-    delivery.from_role_instance_id="checker-a".into();
-    delivery.to_role_instance_id="worker-a".into();
-    let source = EvidenceReference {path: delivery.start_evidence.stored_path.clone(),
-        sha256: delivery.start_evidence.sha256.clone()};
-    fixture.store.commit_delivery_start(&fixture.checker, delivery).unwrap();
+    delivery.token_sequence = 3;
+    delivery.from_role_instance_id = "checker-a".into();
+    delivery.to_role_instance_id = "worker-a".into();
+    let source = EvidenceReference {
+        path: delivery.start_evidence.stored_path.clone(),
+        sha256: delivery.start_evidence.sha256.clone(),
+    };
+    fixture
+        .store
+        .commit_delivery_start(&fixture.checker, delivery)
+        .unwrap();
     let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
-    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
-    db.execute("UPDATE overwatcher_bindings SET cadence_seconds=600 WHERE run_id='run-a'", []).unwrap();
+    db.execute(
+        "UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'",
+        [],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE overwatcher_bindings SET cadence_seconds=600 WHERE run_id='run-a'",
+        [],
+    )
+    .unwrap();
     drop(db);
-    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
     let query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
         "source_message_id":snapshot.latest_message_id, "runtime_snapshot":snapshot,
         "runtime_projection_sha256":"a".repeat(64), "query_error":null,
         "native_start_path":source.path, "native_start_sha256":source.sha256,
         "query_started_at":"2026-10-09T00:03:59Z", "query_completed_at":"2026-10-09T00:04:00Z",
         "native_activity":{"status":"ACTIVE", "observed_at":"2026-10-09T00:03:59.5Z"}});
-    let query_ref = fixture.evidence_ref("fresh-worker-query.json", &serde_json::to_vec(&query).unwrap());
+    let query_ref = fixture.evidence_ref(
+        "fresh-worker-query.json",
+        &serde_json::to_vec(&query).unwrap(),
+    );
     let mut inspection = json!({"schema_version":"slk.worker-completion-inspection/v1",
         "status":"IN_PROGRESS", "run_id":"run-a", "go_id":"GO-001", "cell_id":"CELL-001",
         "worker_role_instance_id":"worker-a", "source_message_id":snapshot.latest_message_id,
         "observed_at":"2026-09-22T00:04:01Z", "anomaly_codes":[], "notification_already_sent":false});
-    let old = fixture.evidence_ref("worker-inspection.json", &serde_json::to_vec(&inspection).unwrap());
+    let old = fixture.evidence_ref(
+        "worker-inspection.json",
+        &serde_json::to_vec(&inspection).unwrap(),
+    );
     let mut cycle = overwatch_cycle(2);
-    cycle.started_at="2026-09-22T00:04:01Z".into();
-    cycle.completed_at="2026-10-09T00:04:00Z".into();
-    cycle.cadence_seconds=600; cycle.next_cycle_at="2026-10-09T00:14:00Z".into();
-    cycle.runtime_revision=snapshot.runtime_revision;
-    cycle.token_sequence=snapshot.token_sequence;
-    cycle.token_holder_role_instance_id=snapshot.token_holder_role_instance_id.clone();
-    cycle.latest_event_id=snapshot.latest_event_id.clone();
-    cycle.latest_message_id=snapshot.latest_message_id.clone();
-    cycle.native_active_session_evidence_ref=query_ref.path.clone();
-    cycle.evidence_refs=vec![source, query_ref, old];
-    let rejected = fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone());
-    assert!(matches!(&rejected,
-        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("cadence")), "{rejected:?}");
-    inspection["observed_at"]=json!("2026-10-09T00:03:59.5Z");
-    cycle.evidence_refs[2]=fixture.evidence_ref("worker-inspection.json", &serde_json::to_vec(&inspection).unwrap());
-    fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
+    cycle.started_at = "2026-09-22T00:04:01Z".into();
+    cycle.completed_at = "2026-10-09T00:04:00Z".into();
+    cycle.cadence_seconds = 600;
+    cycle.next_cycle_at = "2026-10-09T00:14:00Z".into();
+    cycle.runtime_revision = snapshot.runtime_revision;
+    cycle.token_sequence = snapshot.token_sequence;
+    cycle.token_holder_role_instance_id = snapshot.token_holder_role_instance_id.clone();
+    cycle.latest_event_id = snapshot.latest_event_id.clone();
+    cycle.latest_message_id = snapshot.latest_message_id.clone();
+    cycle.native_active_session_evidence_ref = query_ref.path.clone();
+    cycle.evidence_refs = vec![source, query_ref, old];
+    let rejected = fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle.clone());
+    assert!(
+        matches!(&rejected,
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("cadence")),
+        "{rejected:?}"
+    );
+    inspection["observed_at"] = json!("2026-10-09T00:03:59.5Z");
+    cycle.evidence_refs[2] = fixture.evidence_ref(
+        "worker-inspection.json",
+        &serde_json::to_vec(&inspection).unwrap(),
+    );
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
 }
 
 #[test]
@@ -3483,26 +3652,63 @@ fn paused_idle_cycle_needs_fresh_complete_census_not_a_fabricated_native_source(
     let fixture = Fixture::new_440();
     let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
     binding.cadence_seconds = 600;
-    let issued = fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    let issued = fixture
+        .store
+        .bind_overwatcher(&fixture.supervisor, binding)
+        .unwrap();
     let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
-    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    db.execute(
+        "UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'",
+        [],
+    )
+    .unwrap();
     drop(db);
-    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
-    let requested = WriteRequest {event_id:"pause-requested".into(), run_id:"run-a".into(),
-        go_id:None, cell_id:None, attempt:None, plan_revision:1, role_instance_id:"supervisor-a".into(),
-        event_type:EventType::RunPauseRequested, details:json!({"pause_id":"pause-1","expected_runtime_revision":snapshot.runtime_revision}),
-        corrects_event_id:None, occurred_at:"2026-09-22T00:03:57Z".into()};
-    fixture.store.write_event(&fixture.supervisor, requested.clone()).unwrap();
-    let before = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
+    let requested = WriteRequest {
+        event_id: "pause-requested".into(),
+        run_id: "run-a".into(),
+        go_id: None,
+        cell_id: None,
+        attempt: None,
+        plan_revision: 1,
+        role_instance_id: "supervisor-a".into(),
+        event_type: EventType::RunPauseRequested,
+        details: json!({"pause_id":"pause-1","expected_runtime_revision":snapshot.runtime_revision}),
+        corrects_event_id: None,
+        occurred_at: "2026-09-22T00:03:57Z".into(),
+    };
+    fixture
+        .store
+        .write_event(&fixture.supervisor, requested.clone())
+        .unwrap();
+    let before = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
     let original = json!({"schema_version":"slk.run-quiescence/v1","run_id":"run-a","pause_id":"pause-1",
         "runtime_revision":before.runtime_revision,"status":"QUIESCENT","inspections":[],
         "attempt_roots":[fixture._root.path()],"observed_at":"2026-09-22T00:03:58Z"});
-    let evidence = fixture.evidence_ref("original-pause.json", &serde_json::to_vec(&original).unwrap());
+    let evidence = fixture.evidence_ref(
+        "original-pause.json",
+        &serde_json::to_vec(&original).unwrap(),
+    );
     fixture.store.write_event(&fixture.supervisor, WriteRequest {event_id:"paused".into(), event_type:EventType::RunPaused,
         details:json!({"pause_id":"pause-1","expected_runtime_revision":before.runtime_revision,
             "quiescence_path":evidence.path,"quiescence_sha256":evidence.sha256}),
         occurred_at:"2026-09-22T00:03:58Z".into(), ..requested}).unwrap();
-    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let snapshot = fixture
+        .store
+        .query_run("run-a")
+        .unwrap()
+        .runtime_snapshot
+        .unwrap();
     assert!(snapshot.latest_message_id.is_none());
     let query = json!({"schema_version":"slk.overwatch-scope-inspection/v1","run_id":"run-a",
         "source_message_id":null,"runtime_snapshot":snapshot,"runtime_projection_sha256":"a".repeat(64),
@@ -3511,20 +3717,39 @@ fn paused_idle_cycle_needs_fresh_complete_census_not_a_fabricated_native_source(
         "native_activity":{"status":"UNKNOWN","observed_at":"2026-09-22T00:03:59Z","error":"NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}});
     let query_ref = fixture.evidence_ref("paused-query.json", &serde_json::to_vec(&query).unwrap());
     let mut cycle = overwatch_cycle(1);
-    cycle.go_id=None; cycle.cell_id=None; cycle.attempt=None;
-    cycle.runtime_revision=snapshot.runtime_revision; cycle.latest_event_id=snapshot.latest_event_id;
-    cycle.cadence_seconds=600; cycle.next_cycle_at="2026-09-22T00:14:00Z".into();
-    cycle.native_active_session_evidence_ref=query_ref.path.clone(); cycle.evidence_refs=vec![query_ref.clone()];
-    assert!(fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone()).is_err());
-    let mut fresh=original;
-    fresh["runtime_revision"]=json!(snapshot.runtime_revision);
-    fresh["observed_at"]=json!("2026-09-22T00:03:59Z");
-    fresh["status"]=json!("NOT_QUIESCENT");
-    cycle.evidence_refs.push(fixture.evidence_ref("paused-fresh.json", &serde_json::to_vec(&fresh).unwrap()));
-    assert!(fixture.store.record_overwatch_cycle(&issued.credential, cycle.clone()).is_err());
-    fresh["status"]=json!("QUIESCENT");
-    cycle.evidence_refs=vec![query_ref, fixture.evidence_ref("paused-fresh.json", &serde_json::to_vec(&fresh).unwrap())];
-    fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
+    cycle.go_id = None;
+    cycle.cell_id = None;
+    cycle.attempt = None;
+    cycle.runtime_revision = snapshot.runtime_revision;
+    cycle.latest_event_id = snapshot.latest_event_id;
+    cycle.cadence_seconds = 600;
+    cycle.next_cycle_at = "2026-09-22T00:14:00Z".into();
+    cycle.native_active_session_evidence_ref = query_ref.path.clone();
+    cycle.evidence_refs = vec![query_ref.clone()];
+    assert!(fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle.clone())
+        .is_err());
+    let mut fresh = original;
+    fresh["runtime_revision"] = json!(snapshot.runtime_revision);
+    fresh["observed_at"] = json!("2026-09-22T00:03:59Z");
+    fresh["status"] = json!("NOT_QUIESCENT");
+    cycle
+        .evidence_refs
+        .push(fixture.evidence_ref("paused-fresh.json", &serde_json::to_vec(&fresh).unwrap()));
+    assert!(fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle.clone())
+        .is_err());
+    fresh["status"] = json!("QUIESCENT");
+    cycle.evidence_refs = vec![
+        query_ref,
+        fixture.evidence_ref("paused-fresh.json", &serde_json::to_vec(&fresh).unwrap()),
+    ];
+    fixture
+        .store
+        .record_overwatch_cycle(&issued.credential, cycle)
+        .unwrap();
 }
 
 fn observation(

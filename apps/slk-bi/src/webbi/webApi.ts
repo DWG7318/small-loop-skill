@@ -1,4 +1,5 @@
 import type { MessageCatalogEntry } from "../messages/messageFeed";
+import { isCompatibleBiVersion } from "../version";
 import type { NotificationSettingsInput } from "./contracts";
 import type { PublicNotificationSettings } from "./notifications";
 import type { WebBiArchiveRecord } from "./worker";
@@ -32,7 +33,7 @@ export const webBiApi: WebBiApi = {
       bi_version: string;
       runs: WebBiArchiveRecord[];
     }>(`/api/v1/runs?archive=${archived ? "archived" : "active"}`);
-    if (body.schema_version !== "slk.webbi.runs/v1" || body.bi_version !== "1.1.0" || !Array.isArray(body.runs)) {
+    if (body.schema_version !== "slk.webbi.runs/v1" || !isCompatibleBiVersion(body.bi_version) || !Array.isArray(body.runs)) {
       throw new Error("SLK_WEBBI_RESPONSE_INVALID");
     }
     return body.runs;
@@ -43,7 +44,7 @@ export const webBiApi: WebBiApi = {
       bi_version: string;
       record: WebBiArchiveRecord;
     }>(`/api/v1/runs/${encodeURIComponent(deviceId)}/${encodeURIComponent(runId)}`);
-    if (body.schema_version !== "slk.webbi.run/v1" || body.bi_version !== "1.1.0" || !body.record) {
+    if (body.schema_version !== "slk.webbi.run/v1" || !isCompatibleBiVersion(body.bi_version) || !body.record) {
       throw new Error("SLK_WEBBI_RESPONSE_INVALID");
     }
     return body.record;

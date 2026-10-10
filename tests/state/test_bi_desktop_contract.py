@@ -16,7 +16,7 @@ def test_bi_has_no_slk_state_mutation_surface():
     )
 
     assert package["name"] == "slk-bi"
-    assert package["version"] == "1.1.0"
+    assert package["version"] == "1.1.1"
     assert set(capability["permissions"]) == {
         "core:default",
         "core:window:allow-start-dragging",
@@ -24,6 +24,7 @@ def test_bi_has_no_slk_state_mutation_surface():
         "core:window:allow-close",
         "core:window:allow-set-always-on-top",
         "core:window:allow-set-size",
+        "core:window:allow-set-position",
     }
 
     inspected = [
@@ -49,7 +50,7 @@ def test_bi_has_no_slk_state_mutation_surface():
     commands = (BI_ROOT / "src-tauri" / "src" / "commands.rs").read_text(
         encoding="utf-8"
     )
-    assert 'const BI_VERSION: &str = "1.1.0"' in commands
+    assert 'const BI_VERSION: &str = env!("CARGO_PKG_VERSION")' in commands
     assert "sync_webbi" in commands
     assert "SLK_WEBBI_UPLOAD_TOKEN" in commands
     assert '"webbi_sync_enabled"' in commands
@@ -68,7 +69,7 @@ def test_bi_window_is_compact_and_not_maximizable():
     assert window["closable"] is True
     assert window["decorations"] is False
     assert window["title"] == "LE BI"
-    assert config["version"] == "1.1.0"
+    assert config["version"] == "1.1.1"
 
 
 def test_archived_runs_keep_an_opaque_readable_surface():
@@ -78,7 +79,15 @@ def test_archived_runs_keep_an_opaque_readable_surface():
     archived = re.search(r"\.is-archived\s*\{(?P<body>[^}]*)\}", styles, re.S)
 
     assert shell is not None
-    assert "min-height: 100vh" in shell.group("body")
+    assert "min-height: 94px" in shell.group("body")
+    assert "overflow: hidden" in shell.group("body")
+    assert "background: var(--lcd)" in shell.group("body")
+    for selector in ("runs-surface", "cell-list"):
+        surface = re.search(rf"\.{selector}\s*\{{(?P<body>[^}}]*)\}}", styles, re.S)
+        assert surface is not None
+        assert "overflow-y: auto" in surface.group("body")
+        assert "overscroll-behavior-y: contain" in surface.group("body")
+        assert "scrollbar-gutter: stable" in surface.group("body")
     assert archived is not None
     assert "opacity" not in archived.group("body")
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
-IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]+$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ENGINEERING_ROLES = ("SUPERVISOR", "CHECKER", "WORKER")
 ALL_ROLES = frozenset((*ENGINEERING_ROLES, "OVERWATCHER"))

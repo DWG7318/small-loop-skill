@@ -38,12 +38,12 @@ def same_proof(left: object, right: object) -> bool:
     return Path(left["path"]).resolve() == Path(right["path"]).resolve() and left["sha256"] == right["sha256"]
 
 
-def read_proof(value: object, label: str, *, limit: int = 16 * 1024 * 1024) -> dict:
+def read_proof(value: object, label: str) -> dict:
     if not isinstance(value, Mapping) or set(value) != {"path", "sha256"}:
         raise ValueError(f"{label} proof is not closed")
     path = Path(value["path"])
-    if not path.is_absolute() or not path.is_file() or path.stat().st_size > limit or not same_proof(proof(path), value):
-        raise ValueError(f"{label} proof changed or exceeds bound")
+    if not path.is_absolute() or not path.is_file() or not same_proof(proof(path), value):
+        raise ValueError(f"{label} proof changed")
     result = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(result, dict):
         raise ValueError(f"{label} must be an object")
@@ -54,8 +54,8 @@ def validate_request(value: object) -> tuple[dict, dict, dict]:
     if (not isinstance(value, Mapping) or set(value) != FIELDS
         or value["schema_version"] != "slk.temporal-execution-recovery/v1"):
         raise ValueError("execution recovery request is not closed")
-    identity = _identity(read_proof(value["source_identity"], "source identity", limit=131072))
-    checkpoint = validate_checkpoint(read_proof(value["checkpoint"], "checkpoint", limit=1024 * 1024))
+    identity = _identity(read_proof(value["source_identity"], "source identity"))
+    checkpoint = validate_checkpoint(read_proof(value["checkpoint"], "checkpoint"))
     startup = StartSlkRequest.from_dict(checkpoint["startup"])
     if (value["run_id"] != startup.run_id or identity["run_id"] != startup.run_id
         or startup.method_version not in {"4.4.2", "4.4.3"} or identity["task_queue"] != startup.task_queue
@@ -76,13 +76,13 @@ def validate_request(value: object) -> tuple[dict, dict, dict]:
     if (not isinstance(decision, Mapping) or set(decision) != {"supervisor_role_instance_id", "reason", "evidence_ref"}
         or decision["supervisor_role_instance_id"] != startup.supervisor.role_instance_id
         or not all(isinstance(decision[k], str) and decision[k].strip() == decision[k]
-                   and 0 < len(decision[k]) <= 4000 for k in decision)):
-        raise ValueError("recovery requires the registered Supervisor's bounded disposition")
+                   and bool(decision[k]) for k in decision)):
+        raise ValueError("recovery requires the registered Supervisor's explicit disposition")
     root = Path(value["evidence_root"])
     if not root.is_absolute():
         raise ValueError("recovery evidence root must be absolute")
-    host = read_proof(value["source_host"], "source host", limit=131072)
-    config = read_proof(value["source_config"], "source config", limit=131072)
+    host = read_proof(value["source_host"], "source host")
+    config = read_proof(value["source_config"], "source config")
     if (host.get("schema_version") != "slk.role-host/v2" or host.get("run_id") != startup.run_id
         or not same_proof({"path": host.get("temporal", {}).get("workflow_identity_path"),
                            "sha256": host.get("temporal", {}).get("workflow_identity_sha256")}, value["source_identity"])
@@ -168,7 +168,7 @@ async def validate_source(request: dict, *, config_root: Path) -> dict:
                for name in ("start", "run"))):
         raise ValueError("source checkpoint/history changed")
     startup = StartSlkRequest.from_dict(checkpoint["startup"])
-    host = read_proof(value["source_host"], "host", limit=131072)
+    host = read_proof(value["source_host"], "host")
     current = await asyncio.to_thread(_central, config, startup, checkpoint, host)
     if not same_central_boundary(read_proof(value["central_projection"], "central projection"), current):
         raise ValueError("central Run changed after recovery preparation")
@@ -204,13 +204,13 @@ def same_central_boundary(saved: dict, current: dict) -> bool:
 async def prepare(*, identity_path: Path, identity_sha256: str, config_root: Path,
                   evidence_root: Path, reason: str, evidence_ref: str) -> dict:
     source = {"path": str(identity_path.resolve()), "sha256": identity_sha256}
-    identity = _identity(read_proof(source, "source identity", limit=131072))
+    identity = _identity(read_proof(source, "source identity"))
     adapter.configure(config_root)
     config_path = config_root.resolve() / (identity["run_id"] + ".json")
     config = adapter._load_config(identity["run_id"])
     executions, checkpoint, histories = await source_snapshot(identity)
     startup = StartSlkRequest.from_dict(checkpoint["startup"])
-    host = read_proof(config["role_host_binding"], "source host", limit=131072)
+    host = read_proof(config["role_host_binding"], "source host")
     projection = await asyncio.to_thread(_central, config, startup, checkpoint, host)
     root = evidence_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -234,12 +234,12 @@ def materialize_bindings(request: Mapping, identity: dict) -> dict:
     root = Path(request["evidence_root"])
     identity_path = root / "workflow-identity.json"
     _write_identity(identity_path, identity)
-    host = read_proof(request["source_host"], "source host", limit=131072)
+    host = read_proof(request["source_host"], "source host")
     host["temporal"] = {**host["temporal"], "workflow_identity_path": str(identity_path),
                         "workflow_identity_sha256": proof(identity_path)["sha256"]}
     host_path = root / "role-host.json"
     _write_identity(host_path, host)
-    config = read_proof(request["source_config"], "source config", limit=131072)
+    config = read_proof(request["source_config"], "source config")
     config["role_host_binding"] = proof(host_path)
     config_path = root / "adapter-config" / (request["run_id"] + ".json")
     _write_identity(config_path, config)
@@ -306,11 +306,11 @@ async def verify_target(request: dict, identity: dict, checkpoint: dict, *, init
 async def restore(*, request_path: Path, request_sha256: str, config_root: Path) -> dict:
     from .workflows import StartSlkWorkflow
     request, source, checkpoint = validate_request(read_proof(
-        {"path": str(request_path.resolve()), "sha256": request_sha256}, "recovery request", limit=131072))
+        {"path": str(request_path.resolve()), "sha256": request_sha256}, "recovery request"))
     adapter.configure(config_root)
     result_path = Path(request["evidence_root"]) / "result.json"
     if result_path.exists():
-        saved = read_proof(proof(result_path), "saved recovery result", limit=131072)
+        saved = read_proof(proof(result_path), "saved recovery result")
         if (set(saved) != {"schema_version", "status", "run_id", "source_identity", "target_identity",
                            "request_sha256", "identity", "role_host", "adapter_config"}
             or saved["schema_version"] != "slk.temporal-execution-recovery-result/v1"
@@ -318,7 +318,7 @@ async def restore(*, request_path: Path, request_sha256: str, config_root: Path)
             or saved["source_identity"] != source or saved["request_sha256"] != request_sha256):
             raise ValueError("saved recovery result changed immutable lineage")
         for key in ("identity", "role_host", "adapter_config"):
-            read_proof(saved[key], key, limit=131072)
+            read_proof(saved[key], key)
         if materialize_bindings(request, saved["target_identity"]) != {k: saved[k] for k in ("identity", "role_host", "adapter_config")}:
             raise ValueError("saved recovery binding changed")
         await verify_target(request, saved["target_identity"], checkpoint, initial=False)

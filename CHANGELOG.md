@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.4.3 — original material, explicit actions and authorized pause (local candidate)
+
+- Preserve full original Worker/Checker reports and hash-bound Git-external material; original role actions alone authorize D0/D1 and formal handoff. Capacity facts are advisory, not universal quotas; repeated product FAIL follows Supervisor investigation and versioned split.
+- Add authorized construction pause/resume with exact quiescence and original-operation continuation. OW's 600-second observation and Temporal's 1200-second audit continue; confirmed PAUSED time is excluded from actual work/residency, never REQUESTED time.
+- Stream original OCRV stdout/stderr before true native exit and expose cleanup failure in the existing activity diagnostic. Reuse immutable Desktop delivery proof when its exact turn later terminates outside the bounded item window; never infer terminal status or resend.
+- Remove arbitrary identity/proof-size caps while preserving safe grammar, actual filesystem errors, hashes and authority. Close current 4.4.3 admission without relabeling supported old proof/history, and route all 17 Skills from the verified collection.
+- BI/WebBI 1.1.1 reads 1.1.0 wire archives without relabeling them, reports its actual release, binds canonical pause messages, and rejects ambiguous upload destinations/credential redirects. Paired deployment and full release verification remain separate evidence.
+
 ## 4.4.2 — runtime recovery and DSH-aware capacity (local candidate)
 
 - Current output-delivery simplification supersedes this candidate's earlier format/partial/context/terminal-budget recovery machinery: original reports always travel; Worker explicit actions and original Checker stdio MCP decisions alone authorize engineering state and existing successor routes. Native/central/Temporal exact receipts retain old identities without resend. Second-FAIL investigation remains Skill guidance, not a host veto. Earlier entries below describe superseded behavior, not current execution instructions.

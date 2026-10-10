@@ -755,7 +755,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1280,7 +1280,7 @@ impl StateStore {
                 payload_location: Some(request.start_evidence.stored_path.clone()),
                 occurred_at: request.occurred_at.clone(),
             };
-            let recovered_history = method_version == "4.4.2"
+            let recovered_history = matches!(method_version.as_str(), "4.4.2" | "4.4.3")
                 && actor.role == Role::Checker
                 && target_role == Role::Supervisor
                 && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
@@ -1296,7 +1296,7 @@ impl StateStore {
                     &request,
                     native_start.as_ref().unwrap(),
                 )?;
-            if method_version == "4.4.2"
+            if matches!(method_version.as_str(), "4.4.2" | "4.4.3")
                 && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
                     .ok()
                     .is_some_and(|v| {
@@ -2186,7 +2186,10 @@ impl StateStore {
                     | "4.4.1"
                     | "4.4.2"
                     | "4.4.3"
-            ) || matches!(request.event_type, EventType::RunPauseRequested | EventType::RunPaused | EventType::RunResumed) {
+            ) || matches!(
+                request.event_type,
+                EventType::RunPauseRequested | EventType::RunPaused | EventType::RunResumed
+            ) {
                 type ExistingWorkEvent = (
                     String,
                     Option<String>,
@@ -2258,12 +2261,22 @@ impl StateStore {
                 return Err(StateError::RoleInstanceMismatch);
             }
             let token = current_token_from(transaction, &request.run_id)?;
-            let lifecycle = matches!(request.event_type, EventType::RunPauseRequested | EventType::RunPaused | EventType::RunResumed);
-            let terminal = matches!(request.event_type, EventType::RunClosed | EventType::RunAbandoned | EventType::RunSuperseded);
+            let lifecycle = matches!(
+                request.event_type,
+                EventType::RunPauseRequested | EventType::RunPaused | EventType::RunResumed
+            );
+            let terminal = matches!(
+                request.event_type,
+                EventType::RunClosed | EventType::RunAbandoned | EventType::RunSuperseded
+            );
             if lifecycle {
                 validate_pause_event(transaction, &request)?;
-            } else if !terminal && run_pause_state(transaction, &request.run_id)?.as_deref() == Some("RUN_PAUSED") {
-                return Err(StateError::WorkEventInvalid("paused Run rejects engineering writers".into()));
+            } else if !terminal
+                && run_pause_state(transaction, &request.run_id)?.as_deref() == Some("RUN_PAUSED")
+            {
+                return Err(StateError::WorkEventInvalid(
+                    "paused Run rejects engineering writers".into(),
+                ));
             }
             if !lifecycle && token.owner_role_instance_id != actor.role_instance_id {
                 return Err(StateError::TokenOwnerMismatch {
@@ -2293,8 +2306,12 @@ impl StateStore {
             if request.event_type == EventType::ReworkRequested {
                 validate_rework_requested(transaction, &request)?;
             }
-            if method_version == "4.4.3" && matches!(request.event_type,
-                EventType::D2Started | EventType::D2Passed | EventType::D2Failed) {
+            if method_version == "4.4.3"
+                && matches!(
+                    request.event_type,
+                    EventType::D2Started | EventType::D2Passed | EventType::D2Failed
+                )
+            {
                 validate_d2_event(transaction, &request, token.sequence)?;
             }
             if method_version == "4.4.3" && request.event_type == EventType::RunClosed {
@@ -2387,7 +2404,10 @@ impl StateStore {
                     EventType::RunPaused => "paused",
                     _ => "active",
                 };
-                transaction.execute("UPDATE runs SET state=?2 WHERE run_id=?1", params![request.run_id, state])?;
+                transaction.execute(
+                    "UPDATE runs SET state=?2 WHERE run_id=?1",
+                    params![request.run_id, state],
+                )?;
             }
             if uses_revisioned_runtime_contract(&method_version) {
                 let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
@@ -2808,7 +2828,10 @@ impl StateStore {
             )?;
             if uses_revisioned_runtime_contract(&method_version) {
                 let preclose_terminal = closure_state == "open"
-                    && matches!(method_version.as_str(), "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3");
+                    && matches!(
+                        method_version.as_str(),
+                        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3"
+                    );
                 if closure_state == "open" && !preclose_terminal {
                     return Err(StateError::OverwatcherObservationInvalid(
                         "a whole-Run Overwatcher cannot close at a CELL or GO boundary".into(),
@@ -3306,6 +3329,7 @@ impl StateStore {
                     | "4.4.0"
                     | "4.4.1"
                     | "4.4.2"
+                    | "4.4.3"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3588,13 +3612,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -3953,77 +3977,132 @@ fn validate_evidence_reference(reference: &EvidenceReference) -> Result<(), Stat
     Ok(())
 }
 
-fn validate_current_scope_query(connection: &Connection, request: &OverwatchCycleRequest, snapshot: &RuntimeSnapshot) -> Result<bool, StateError> {
-    let invalid = || StateError::OverwatcherCycleInvalid("real query window, current scope, or original native source is invalid".into());
+fn validate_current_scope_query(
+    connection: &Connection,
+    request: &OverwatchCycleRequest,
+    snapshot: &RuntimeSnapshot,
+) -> Result<bool, StateError> {
+    let invalid = || {
+        StateError::OverwatcherCycleInvalid(
+            "real query window, current scope, or original native source is invalid".into(),
+        )
+    };
     let mut queries = Vec::new();
     let mut censuses = Vec::new();
     for reference in &request.evidence_refs {
-        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&fs::read(&reference.path)?) {
-            if value["schema_version"] == "slk.overwatch-scope-inspection/v1" { queries.push(value); }
-            else if value["schema_version"] == "slk.run-quiescence/v1" { censuses.push(value); }
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&fs::read(&reference.path)?)
+        {
+            if value["schema_version"] == "slk.overwatch-scope-inspection/v1" {
+                queries.push(value);
+            } else if value["schema_version"] == "slk.run-quiescence/v1" {
+                censuses.push(value);
+            }
         }
     }
-    if queries.len() != 1 { return Err(invalid()); }
+    if queries.len() != 1 {
+        return Err(invalid());
+    }
     let query = &queries[0];
-    let timestamp = |value: &serde_json::Value| value.as_str()
-        .and_then(|text| OffsetDateTime::parse(text, &Rfc3339).ok()).ok_or_else(invalid);
+    let timestamp = |value: &serde_json::Value| {
+        value
+            .as_str()
+            .and_then(|text| OffsetDateTime::parse(text, &Rfc3339).ok())
+            .ok_or_else(invalid)
+    };
     let started = timestamp(&query["query_started_at"])?;
     let completed = timestamp(&query["query_completed_at"])?;
-    let cycle_completed = OffsetDateTime::parse(&request.completed_at, &Rfc3339).map_err(|_| invalid())?;
+    let cycle_completed =
+        OffsetDateTime::parse(&request.completed_at, &Rfc3339).map_err(|_| invalid())?;
     if query["run_id"].as_str() != Some(request.run_id.as_str())
         || started < OffsetDateTime::parse(&request.started_at, &Rfc3339).map_err(|_| invalid())?
         || completed < started
         || completed > cycle_completed
         || cycle_completed - started > time::Duration::seconds(i64::from(request.cadence_seconds))
         || timestamp(&query["native_activity"]["observed_at"])? < started
-        || timestamp(&query["native_activity"]["observed_at"])? > completed {
+        || timestamp(&query["native_activity"]["observed_at"])? > completed
+    {
         return Err(invalid());
     }
     let unknown = query["native_activity"]["status"] == "UNKNOWN"
-        && query["native_activity"]["error"].as_str().is_some_and(|s| !s.is_empty());
+        && query["native_activity"]["error"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty());
     // The existing cycle shape already requires a corresponding anomalous check;
     // member uncertainty need not label the Overwatcher's own Session unhealthy.
-    let reported_unproven = request.anomaly_codes.contains(&crate::model::OverwatchAnomalyCode::ActivityUnproven);
+    let reported_unproven = request
+        .anomaly_codes
+        .contains(&crate::model::OverwatchAnomalyCode::ActivityUnproven);
     if !query["query_error"].is_null() {
-        return if unknown && reported_unproven && query["runtime_projection_sha256"].is_null() { Ok(false) } else { Err(invalid()) };
+        return if unknown && reported_unproven && query["runtime_projection_sha256"].is_null() {
+            Ok(false)
+        } else {
+            Err(invalid())
+        };
     }
     if query["runtime_snapshot"] != serde_json::to_value(snapshot)?
         || query["source_message_id"].as_str() != snapshot.latest_message_id.as_deref()
-        || !query["runtime_projection_sha256"].as_str().is_some_and(is_lower_sha256) {
+        || !query["runtime_projection_sha256"]
+            .as_str()
+            .is_some_and(is_lower_sha256)
+    {
         return Err(invalid());
     }
-    if run_pause_state(connection, &request.run_id)?.as_deref() == Some("RUN_PAUSED") && censuses.iter().any(|proof| proof["status"] == "QUIESCENT") {
-        if censuses.len() != 1 { return Err(invalid()); }
+    if run_pause_state(connection, &request.run_id)?.as_deref() == Some("RUN_PAUSED")
+        && censuses.iter().any(|proof| proof["status"] == "QUIESCENT")
+    {
+        if censuses.len() != 1 {
+            return Err(invalid());
+        }
         let proof = &censuses[0];
         let details: String = connection.query_row("SELECT details_json FROM work_events WHERE run_id=?1 AND event_type='RUN_PAUSED' ORDER BY rowid DESC LIMIT 1",
             [&request.run_id], |row| row.get(0))?;
         let details: serde_json::Value = serde_json::from_str(&details)?;
         let path = details["quiescence_path"].as_str().ok_or_else(invalid)?;
         let original_bytes = fs::read(path)?;
-        if details["quiescence_sha256"].as_str() != Some(sha256_hex(&original_bytes).as_str()) { return Err(invalid()); }
+        if details["quiescence_sha256"].as_str() != Some(sha256_hex(&original_bytes).as_str()) {
+            return Err(invalid());
+        }
         let original: serde_json::Value = serde_json::from_slice(&original_bytes)?;
-        if proof["run_id"] != request.run_id || proof["pause_id"] != details["pause_id"]
-            || proof["status"] != "QUIESCENT" || proof["runtime_revision"] != snapshot.runtime_revision
+        if proof["run_id"] != request.run_id
+            || proof["pause_id"] != details["pause_id"]
+            || proof["status"] != "QUIESCENT"
+            || proof["runtime_revision"] != snapshot.runtime_revision
             || proof["attempt_roots"] != original["attempt_roots"]
-            || timestamp(&proof["observed_at"])? < OffsetDateTime::parse(&request.started_at, &Rfc3339).map_err(|_| invalid())?
-            || timestamp(&proof["observed_at"])? > cycle_completed { return Err(invalid()); }
+            || timestamp(&proof["observed_at"])?
+                < OffsetDateTime::parse(&request.started_at, &Rfc3339).map_err(|_| invalid())?
+            || timestamp(&proof["observed_at"])? > cycle_completed
+        {
+            return Err(invalid());
+        }
         validate_quiescence_census(connection, &request.run_id, &request.completed_at, proof)?;
         return Ok(false); // Fresh all-call proof replaces only engineering source/completion, never OW liveness.
     }
     if snapshot.latest_message_id.is_none() || query["native_start_sha256"].is_null() {
-        return if unknown && reported_unproven { Ok(false) } else { Err(invalid()) };
+        return if unknown && reported_unproven {
+            Ok(false)
+        } else {
+            Err(invalid())
+        };
     }
-    if unknown && !reported_unproven { return Err(invalid()); }
+    if unknown && !reported_unproven {
+        return Err(invalid());
+    }
     let source: Option<(String, String)> = connection.query_row(
         "SELECT evidence_path, evidence_sha256 FROM transport_start_receipts
          WHERE run_id=?1 AND message_id=?2 AND token_sequence=?3 AND to_role_instance_id=?4 AND plan_revision=?5",
         params![request.run_id, snapshot.latest_message_id, snapshot.token_sequence,
                 snapshot.token_holder_role_instance_id, snapshot.plan_revision],
         |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
-    let Some((path, digest)) = source else { return Err(invalid()); };
+    let Some((path, digest)) = source else {
+        return Err(invalid());
+    };
     if query["native_start_path"].as_str() != Some(path.as_str())
         || query["native_start_sha256"].as_str() != Some(digest.as_str())
-        || !request.evidence_refs.iter().any(|reference| reference.path == path && reference.sha256 == digest) {
+        || !request
+            .evidence_refs
+            .iter()
+            .any(|reference| reference.path == path && reference.sha256 == digest)
+    {
         return Err(invalid());
     }
     Ok(true)
@@ -4068,13 +4147,23 @@ fn validate_worker_completion_cycle(
     }
     let inspection = &inspections[0];
     if method_version == "4.4.3" {
-        let invalid = || StateError::OverwatcherCycleInvalid("Worker completion sample exceeds the bound cadence or cycle window".into());
-        let observed = inspection["observed_at"].as_str()
-            .and_then(|text| OffsetDateTime::parse(text, &Rfc3339).ok()).ok_or_else(invalid)?;
-        let started = OffsetDateTime::parse(&request.started_at, &Rfc3339).map_err(|_| invalid())?;
-        let completed = OffsetDateTime::parse(&request.completed_at, &Rfc3339).map_err(|_| invalid())?;
-        if observed < started || observed > completed
-            || completed - observed > time::Duration::seconds(i64::from(request.cadence_seconds)) {
+        let invalid = || {
+            StateError::OverwatcherCycleInvalid(
+                "Worker completion sample exceeds the bound cadence or cycle window".into(),
+            )
+        };
+        let observed = inspection["observed_at"]
+            .as_str()
+            .and_then(|text| OffsetDateTime::parse(text, &Rfc3339).ok())
+            .ok_or_else(invalid)?;
+        let started =
+            OffsetDateTime::parse(&request.started_at, &Rfc3339).map_err(|_| invalid())?;
+        let completed =
+            OffsetDateTime::parse(&request.completed_at, &Rfc3339).map_err(|_| invalid())?;
+        if observed < started
+            || observed > completed
+            || completed - observed > time::Duration::seconds(i64::from(request.cadence_seconds))
+        {
             return Err(invalid());
         }
     }
@@ -4353,7 +4442,7 @@ fn apply_cell_split(
         [run_id],
         |row| row.get(0),
     )?;
-    if version != "4.4.2" {
+    if !matches!(version.as_str(), "4.4.2" | "4.4.3") {
         return Err(StateError::InvalidPlan(
             "second-failure CELL split is owned by the SLK 4.4.2 contract".into(),
         ));
@@ -4941,7 +5030,10 @@ fn validate_rework_requested(
         "failed_candidate_sha256",
         "rework_round",
     ];
-    if matches!(method_version.as_str(), "4.4.0" | "4.4.1" | "4.4.2") {
+    if matches!(
+        method_version.as_str(),
+        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3"
+    ) {
         required.push("investigation_mode");
     }
     if details.len() != required.len() || required.iter().any(|field| !details.contains_key(*field))
@@ -4971,7 +5063,7 @@ fn validate_rework_requested(
         .as_u64()
         .filter(|value| *value > 0)
         .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
-    if method_version == "4.4.2"
+    if matches!(method_version.as_str(), "4.4.2" | "4.4.3")
         && details["investigation_mode"]
             .as_str()
             .filter(|value| !value.trim().is_empty())
@@ -5144,9 +5236,16 @@ fn valid_token_handoff_route(
 ) -> Result<bool, StateError> {
     // Requests fence new construction, not the original result/management return.
     if let Some(state) = run_pause_state(connection, &request.run_id)? {
-        if state == "RUN_PAUSED" || (state == "RUN_PAUSE_REQUESTED"
-            && !matches!((from, to), (Role::Worker, Role::Checker) | (Role::Checker, Role::Supervisor))) {
-            return Err(StateError::RunAdministrationInvalid("Run pause blocks new delivery".into()));
+        if state == "RUN_PAUSED"
+            || (state == "RUN_PAUSE_REQUESTED"
+                && !matches!(
+                    (from, to),
+                    (Role::Worker, Role::Checker) | (Role::Checker, Role::Supervisor)
+                ))
+        {
+            return Err(StateError::RunAdministrationInvalid(
+                "Run pause blocks new delivery".into(),
+            ));
         }
     }
     if from == Role::Supervisor {
@@ -5205,58 +5304,109 @@ fn valid_token_handoff_route(
 }
 
 fn run_pause_state(connection: &Connection, run_id: &str) -> Result<Option<String>, StateError> {
-    Ok(connection.query_row("SELECT event_type FROM work_events WHERE run_id=?1 AND event_type IN
+    Ok(connection
+        .query_row(
+            "SELECT event_type FROM work_events WHERE run_id=?1 AND event_type IN
         ('RUN_PAUSE_REQUESTED','RUN_PAUSED','RUN_RESUMED') ORDER BY rowid DESC LIMIT 1",
-        [run_id], |row| row.get(0)).optional()?)
+            [run_id],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 fn validate_run_dispatch_open(connection: &Connection, run_id: &str) -> Result<(), StateError> {
     if run_pause_state(connection, run_id)?.is_some_and(|state| state != "RUN_RESUMED") {
-        return Err(StateError::RunAdministrationInvalid("Run pause blocks new construction".into()));
+        return Err(StateError::RunAdministrationInvalid(
+            "Run pause blocks new construction".into(),
+        ));
     }
     Ok(())
 }
 
 fn validate_run_parameter_change(connection: &Connection, run_id: &str) -> Result<(), StateError> {
     if run_pause_state(connection, run_id)?.as_deref() == Some("RUN_PAUSE_REQUESTED") {
-        return Err(StateError::RunAdministrationInvalid("Run must be proven PAUSED before changing parameters or adopting a method".into()));
+        return Err(StateError::RunAdministrationInvalid(
+            "Run must be proven PAUSED before changing parameters or adopting a method".into(),
+        ));
     }
     Ok(())
 }
 
 fn validate_pause_event(connection: &Connection, request: &WriteRequest) -> Result<(), StateError> {
-    let invalid = || StateError::WorkEventInvalid("pause lifecycle requires the exact current revision, pause identity and safe transition".into());
+    let invalid = || {
+        StateError::WorkEventInvalid("pause lifecycle requires the exact current revision, pause identity and safe transition".into())
+    };
     let details = request.details.as_object().ok_or_else(invalid)?;
-    let pause_id = details.get("pause_id").and_then(serde_json::Value::as_str).filter(|id| !id.trim().is_empty()).ok_or_else(invalid)?;
-    if request.go_id.is_some() || request.cell_id.is_some() || request.attempt.is_some() || request.corrects_event_id.is_some()
-        || details.get("expected_runtime_revision").and_then(serde_json::Value::as_u64) != Some(current_runtime_revision(connection, &request.run_id)?)
-        || !snapshot_is_open(&run_state_snapshot_from(connection, &request.run_id)?) {
+    let pause_id = details
+        .get("pause_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(invalid)?;
+    if request.go_id.is_some()
+        || request.cell_id.is_some()
+        || request.attempt.is_some()
+        || request.corrects_event_id.is_some()
+        || details
+            .get("expected_runtime_revision")
+            .and_then(serde_json::Value::as_u64)
+            != Some(current_runtime_revision(connection, &request.run_id)?)
+        || !snapshot_is_open(&run_state_snapshot_from(connection, &request.run_id)?)
+    {
         return Err(invalid());
     }
-    let previous: Option<(String, String)> = connection.query_row(
-        "SELECT event_type, details_json FROM work_events WHERE run_id=?1 AND event_type IN
-        ('RUN_PAUSE_REQUESTED','RUN_PAUSED','RUN_RESUMED') ORDER BY rowid DESC LIMIT 1", [&request.run_id],
-        |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
+    let previous: Option<(String, String)> = connection
+        .query_row(
+            "SELECT event_type, details_json FROM work_events WHERE run_id=?1 AND event_type IN
+        ('RUN_PAUSE_REQUESTED','RUN_PAUSED','RUN_RESUMED') ORDER BY rowid DESC LIMIT 1",
+            [&request.run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
     let previous_kind = previous.as_ref().map(|item| item.0.as_str());
     if request.event_type == EventType::RunPauseRequested {
-        if details.len() != 2 || !matches!(previous_kind, None | Some("RUN_RESUMED")) { return Err(invalid()); }
+        if details.len() != 2 || !matches!(previous_kind, None | Some("RUN_RESUMED")) {
+            return Err(invalid());
+        }
     } else {
-        let required = if request.event_type == EventType::RunPaused { "RUN_PAUSE_REQUESTED" } else { "RUN_PAUSED" };
-        if previous_kind != Some(required) || serde_json::from_str::<serde_json::Value>(&previous.unwrap().1)?["pause_id"] != pause_id {
+        let required = if request.event_type == EventType::RunPaused {
+            "RUN_PAUSE_REQUESTED"
+        } else {
+            "RUN_PAUSED"
+        };
+        if previous_kind != Some(required)
+            || serde_json::from_str::<serde_json::Value>(&previous.unwrap().1)?["pause_id"]
+                != pause_id
+        {
             return Err(invalid());
         }
         // The original Host records a complete native/writer census before confirmation
         // and rechecks it before resume. A label or an unbound free-text assertion is insufficient.
-        if details.len() != 4 { return Err(invalid()); }
-        let path = details.get("quiescence_path").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
-        let hash = details.get("quiescence_sha256").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
-        if !Path::new(path).is_absolute() || !is_lower_sha256(hash) { return Err(invalid()); }
+        if details.len() != 4 {
+            return Err(invalid());
+        }
+        let path = details
+            .get("quiescence_path")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(invalid)?;
+        let hash = details
+            .get("quiescence_sha256")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(invalid)?;
+        if !Path::new(path).is_absolute() || !is_lower_sha256(hash) {
+            return Err(invalid());
+        }
         let bytes = fs::read(path)?;
-        if sha256_hex(&bytes) != hash { return Err(invalid()); }
+        if sha256_hex(&bytes) != hash {
+            return Err(invalid());
+        }
         let proof: serde_json::Value = serde_json::from_slice(&bytes)?;
-        if proof["schema_version"] != "slk.run-quiescence/v1" || proof["run_id"] != request.run_id
-            || proof["pause_id"] != pause_id || proof["status"] != "QUIESCENT"
-            || proof["runtime_revision"].as_u64() != Some(current_runtime_revision(connection, &request.run_id)?) {
+        if proof["schema_version"] != "slk.run-quiescence/v1"
+            || proof["run_id"] != request.run_id
+            || proof["pause_id"] != pause_id
+            || proof["status"] != "QUIESCENT"
+            || proof["runtime_revision"].as_u64()
+                != Some(current_runtime_revision(connection, &request.run_id)?)
+        {
             return Err(invalid());
         }
         validate_quiescence_census(connection, &request.run_id, &request.occurred_at, &proof)?;
@@ -5264,66 +5414,152 @@ fn validate_pause_event(connection: &Connection, request: &WriteRequest) -> Resu
     Ok(())
 }
 
-fn validate_quiescence_census(connection: &Connection, run_id: &str, occurred_at: &str, proof: &serde_json::Value) -> Result<(), StateError> {
-    let invalid = || StateError::WorkEventInvalid("quiescence requires a complete fresh original native-call census".into());
+fn validate_quiescence_census(
+    connection: &Connection,
+    run_id: &str,
+    occurred_at: &str,
+    proof: &serde_json::Value,
+) -> Result<(), StateError> {
+    let invalid = || {
+        StateError::WorkEventInvalid(
+            "quiescence requires a complete fresh original native-call census".into(),
+        )
+    };
     let object = proof.as_object().ok_or_else(invalid)?;
-    if object.len() != 8 { return Err(invalid()); }
+    if object.len() != 8 {
+        return Err(invalid());
+    }
     let observed = proof["observed_at"].as_str().ok_or_else(invalid)?;
     let age = parse_rfc3339(occurred_at)? - parse_rfc3339(observed)?;
-    if !(0..=60).contains(&age) { return Err(invalid()); }
-    let roots = proof["attempt_roots"].as_array().filter(|roots| !roots.is_empty()).ok_or_else(invalid)?;
-    if roots.iter().any(|root| !root.as_str().is_some_and(|path| Path::new(path).is_absolute())) { return Err(invalid()); }
+    if !(0..=60).contains(&age) {
+        return Err(invalid());
+    }
+    let roots = proof["attempt_roots"]
+        .as_array()
+        .filter(|roots| !roots.is_empty())
+        .ok_or_else(invalid)?;
+    if roots.iter().any(|root| {
+        !root
+            .as_str()
+            .is_some_and(|path| Path::new(path).is_absolute())
+    }) {
+        return Err(invalid());
+    }
     let rows = proof["inspections"].as_array().ok_or_else(invalid)?;
     let mut inspected = BTreeMap::new();
     let mut coordinators = 0;
     for row in rows {
         let value = row.as_object().ok_or_else(invalid)?;
-        if value.len() != 5 || !value.keys().all(|key| matches!(key.as_str(), "native_start_path" | "native_start_sha256" | "message_id" | "status" | "processes")) {
+        if value.len() != 5
+            || !value.keys().all(|key| {
+                matches!(
+                    key.as_str(),
+                    "native_start_path"
+                        | "native_start_sha256"
+                        | "message_id"
+                        | "status"
+                        | "processes"
+                )
+            })
+        {
             return Err(invalid());
         }
-        let path = row["native_start_path"].as_str().filter(|path| Path::new(path).is_absolute()).ok_or_else(invalid)?;
-        if !row["message_id"].as_str().is_some_and(|id| !id.is_empty()) || inspected.insert(path, row).is_some() { return Err(invalid()); }
+        let path = row["native_start_path"]
+            .as_str()
+            .filter(|path| Path::new(path).is_absolute())
+            .ok_or_else(invalid)?;
+        if !row["message_id"].as_str().is_some_and(|id| !id.is_empty())
+            || inspected.insert(path, row).is_some()
+        {
+            return Err(invalid());
+        }
         match row["status"].as_str() {
-            Some("STAGED_NOT_STARTED") if row["native_start_sha256"].is_null() && !Path::new(path).exists() => {},
+            Some("STAGED_NOT_STARTED")
+                if row["native_start_sha256"].is_null() && !Path::new(path).exists() => {}
             Some("STOPPED" | "COORDINATING") => {
-                let hash = row["native_start_sha256"].as_str().filter(|hash| is_lower_sha256(hash)).ok_or_else(invalid)?;
-                if sha256_hex(&fs::read(path)?) != hash { return Err(invalid()); }
+                let hash = row["native_start_sha256"]
+                    .as_str()
+                    .filter(|hash| is_lower_sha256(hash))
+                    .ok_or_else(invalid)?;
+                if sha256_hex(&fs::read(path)?) != hash {
+                    return Err(invalid());
+                }
                 let start: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
-                if start["run_id"] != run_id || start["message_id"] != row["message_id"] { return Err(invalid()); }
+                if start["run_id"] != run_id || start["message_id"] != row["message_id"] {
+                    return Err(invalid());
+                }
                 if row["status"] == "COORDINATING" {
                     coordinators += 1;
-                    if coordinators > 1 || !matches!(start["native_task"]["kind"].as_str(), Some("codex-desktop-turn" | "codex-turn")) { return Err(invalid()); }
+                    if coordinators > 1
+                        || !matches!(
+                            start["native_task"]["kind"].as_str(),
+                            Some("codex-desktop-turn" | "codex-turn")
+                        )
+                    {
+                        return Err(invalid());
+                    }
                 }
-            },
+            }
             _ => return Err(invalid()),
         }
         let processes = row["processes"].as_array().ok_or_else(invalid)?;
-        if processes.iter().any(|process| process["exists"].as_bool().is_none() || process["identity_matches"].as_bool().is_none()
-            || process["exists"] == true && process["identity_matches"] == true) { return Err(invalid()); }
+        if processes.iter().any(|process| {
+            process["exists"].as_bool().is_none()
+                || process["identity_matches"].as_bool().is_none()
+                || process["exists"] == true && process["identity_matches"] == true
+        }) {
+            return Err(invalid());
+        }
     }
     let mut statement = connection.prepare("SELECT message_id, evidence_path, evidence_sha256 FROM transport_start_receipts WHERE run_id=?1")?;
-    let receipts = statement.query_map([run_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))?;
+    let receipts = statement.query_map([run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
     for receipt in receipts {
         let (message, path, hash) = receipt?;
-        let row = inspected.iter().find(|(inspected_path, _)| Path::new(inspected_path) == Path::new(&path))
-            .map(|(_, row)| row).ok_or_else(invalid)?;
-        if row["message_id"] != message || row["native_start_sha256"] != hash { return Err(invalid()); }
+        let row = inspected
+            .iter()
+            .find(|(inspected_path, _)| Path::new(inspected_path) == Path::new(&path))
+            .map(|(_, row)| row)
+            .ok_or_else(invalid)?;
+        if row["message_id"] != message || row["native_start_sha256"] != hash {
+            return Err(invalid());
+        }
     }
     Ok(())
 }
 
-fn validate_run_close_proof(connection: &Connection, request: &WriteRequest) -> Result<(), StateError> {
-    let invalid = || StateError::WorkEventInvalid("Run close requires D2 PASS, its terminal snapshot, closed OW and all original native writers stopped".into());
+fn validate_run_close_proof(
+    connection: &Connection,
+    request: &WriteRequest,
+) -> Result<(), StateError> {
+    let invalid = || {
+        StateError::WorkEventInvalid("Run close requires D2 PASS, its terminal snapshot, closed OW and all original native writers stopped".into())
+    };
     let d2: String = connection.query_row("SELECT event_id FROM work_events WHERE run_id=?1 AND event_type='D2_PASSED' ORDER BY rowid DESC LIMIT 1",
         [&request.run_id], |row| row.get(0)).optional()?.ok_or_else(invalid)?;
     let active_ow: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM overwatcher_bindings WHERE run_id=?1 AND lifecycle_state='active')",
         [&request.run_id], |row| row.get(0))?;
-    if active_ow { return Err(invalid()); }
+    if active_ow {
+        return Err(invalid());
+    }
     let evidence = |field: &str| -> Result<serde_json::Value, StateError> {
-        let path = request.details[format!("{field}_path")].as_str().filter(|path| Path::new(path).is_absolute()).ok_or_else(invalid)?;
-        let hash = request.details[format!("{field}_sha256")].as_str().filter(|hash| is_lower_sha256(hash)).ok_or_else(invalid)?;
+        let path = request.details[format!("{field}_path")]
+            .as_str()
+            .filter(|path| Path::new(path).is_absolute())
+            .ok_or_else(invalid)?;
+        let hash = request.details[format!("{field}_sha256")]
+            .as_str()
+            .filter(|hash| is_lower_sha256(hash))
+            .ok_or_else(invalid)?;
         let bytes = fs::read(path)?;
-        if sha256_hex(&bytes) != hash { return Err(invalid()); }
+        if sha256_hex(&bytes) != hash {
+            return Err(invalid());
+        }
         Ok(serde_json::from_slice(&bytes)?)
     };
     let terminal = evidence("terminal_snapshot")?;
@@ -5331,13 +5567,28 @@ fn validate_run_close_proof(connection: &Connection, request: &WriteRequest) -> 
     let historical: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM run_runtime_snapshots WHERE run_id=?1 AND runtime_revision=?2
         AND latest_event_id=?3 AND token_sequence=?4 AND token_holder_role_instance_id=?5 AND plan_revision=?6)",
         params![request.run_id, snapshot.runtime_revision, d2, snapshot.token_sequence, snapshot.token_holder_role_instance_id, snapshot.plan_revision], |row| row.get(0))?;
-    if !historical || snapshot.run_id != request.run_id || snapshot.latest_event_id != d2 { return Err(invalid()); }
+    if !historical || snapshot.run_id != request.run_id || snapshot.latest_event_id != d2 {
+        return Err(invalid());
+    }
     let proof = evidence("quiescence")?;
-    if proof["schema_version"] != "slk.run-quiescence/v1" || proof["run_id"] != request.run_id || proof["status"] != "QUIESCENT"
-        || proof["runtime_revision"].as_u64() != Some(current_runtime_revision(connection, &request.run_id)?) { return Err(invalid()); }
+    if proof["schema_version"] != "slk.run-quiescence/v1"
+        || proof["run_id"] != request.run_id
+        || proof["status"] != "QUIESCENT"
+        || proof["runtime_revision"].as_u64()
+            != Some(current_runtime_revision(connection, &request.run_id)?)
+    {
+        return Err(invalid());
+    }
     validate_quiescence_census(connection, &request.run_id, &request.occurred_at, &proof)?;
-    if !request.details["close_binding_path"].as_str().is_some_and(|path| Path::new(path).is_absolute())
-        || !request.details["close_binding_sha256"].as_str().is_some_and(is_lower_sha256) { return Err(invalid()); }
+    if !request.details["close_binding_path"]
+        .as_str()
+        .is_some_and(|path| Path::new(path).is_absolute())
+        || !request.details["close_binding_sha256"]
+            .as_str()
+            .is_some_and(is_lower_sha256)
+    {
+        return Err(invalid());
+    }
     Ok(())
 }
 
@@ -5507,49 +5758,111 @@ fn validate_reconciliation_request(
     Ok(())
 }
 
-fn validate_d2_event(connection: &Connection, request: &WriteRequest, token_sequence: u64) -> Result<(), StateError> {
-    let invalid = || StateError::InvalidPlan("D2 requires its exact delivered D2_READY and real original start".into());
+fn validate_d2_event(
+    connection: &Connection,
+    request: &WriteRequest,
+    token_sequence: u64,
+) -> Result<(), StateError> {
+    let invalid = || {
+        StateError::InvalidPlan(
+            "D2 requires its exact delivered D2_READY and real original start".into(),
+        )
+    };
     let timestamp = |text: &str| OffsetDateTime::parse(text, &Rfc3339).map_err(|_| invalid());
-    let message = request.details.get("source_message_id").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
-    let receipt: Option<(String, String, String)> = connection.query_row(
-        "SELECT evidence_path, evidence_sha256, occurred_at FROM transport_start_receipts
+    let message = request
+        .details
+        .get("source_message_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(invalid)?;
+    let receipt: Option<(String, String, String)> = connection
+        .query_row(
+            "SELECT evidence_path, evidence_sha256, occurred_at FROM transport_start_receipts
          WHERE run_id=?1 AND message_id=?2 AND token_sequence=?3 AND to_role_instance_id=?4
            AND payload_type='D2_READY' AND plan_revision=?5",
-        params![request.run_id, message, token_sequence, request.role_instance_id, request.plan_revision],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
-    let Some((path, digest, delivered_at)) = receipt else { return Err(invalid()); };
+            params![
+                request.run_id,
+                message,
+                token_sequence,
+                request.role_instance_id,
+                request.plan_revision
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((path, digest, delivered_at)) = receipt else {
+        return Err(invalid());
+    };
     let latest_message: Option<String> = connection.query_row(
         "SELECT message_id FROM token_events WHERE run_id=?1 ORDER BY token_sequence DESC LIMIT 1",
-        [&request.run_id], |row| row.get(0))?;
-    if latest_message.as_deref() != Some(message) || request.go_id.is_some() || request.cell_id.is_some()
-        || request.attempt.is_some() || request.corrects_event_id.is_some() {
+        [&request.run_id],
+        |row| row.get(0),
+    )?;
+    if latest_message.as_deref() != Some(message)
+        || request.go_id.is_some()
+        || request.cell_id.is_some()
+        || request.attempt.is_some()
+        || request.corrects_event_id.is_some()
+    {
         return Err(invalid());
     }
     if request.event_type == EventType::D2Started {
         let count: i64 = connection.query_row(
             "SELECT COUNT(*) FROM work_events WHERE run_id=?1 AND event_type='D2_STARTED'
              AND json_extract(details_json, '$.source_message_id')=?2",
-            params![request.run_id, message], |row| row.get(0))?;
-        if count != 0 || request.details.get("token_sequence").and_then(serde_json::Value::as_u64) != Some(token_sequence)
-            || request.details.get("native_start_path").and_then(serde_json::Value::as_str) != Some(path.as_str())
-            || request.details.get("native_start_sha256").and_then(serde_json::Value::as_str) != Some(digest.as_str())
-            || timestamp(&request.occurred_at)? < timestamp(&delivered_at)? {
+            params![request.run_id, message],
+            |row| row.get(0),
+        )?;
+        if count != 0
+            || request
+                .details
+                .get("token_sequence")
+                .and_then(serde_json::Value::as_u64)
+                != Some(token_sequence)
+            || request
+                .details
+                .get("native_start_path")
+                .and_then(serde_json::Value::as_str)
+                != Some(path.as_str())
+            || request
+                .details
+                .get("native_start_sha256")
+                .and_then(serde_json::Value::as_str)
+                != Some(digest.as_str())
+            || timestamp(&request.occurred_at)? < timestamp(&delivered_at)?
+        {
             return Err(invalid());
         }
-        validate_evidence_reference(&EvidenceReference { path: path.clone(), sha256: digest })?;
+        validate_evidence_reference(&EvidenceReference {
+            path: path.clone(),
+            sha256: digest,
+        })?;
         let native: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
         let session: String = connection.query_row(
             "SELECT session_id FROM role_instances WHERE run_id=?1 AND role_instance_id=?2",
-            params![request.run_id, request.role_instance_id], |row| row.get(0))?;
-        let task = native.pointer("/native_task/id").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
+            params![request.run_id, request.role_instance_id],
+            |row| row.get(0),
+        )?;
+        let task = native
+            .pointer("/native_task/id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(invalid)?;
         if native.get("run_id").and_then(serde_json::Value::as_str) != Some(request.run_id.as_str())
             || native.get("message_id").and_then(serde_json::Value::as_str) != Some(message)
             || !task.starts_with(&format!("{session}:"))
-            || request.details.get("native_task_id").and_then(serde_json::Value::as_str) != Some(task) {
+            || request
+                .details
+                .get("native_task_id")
+                .and_then(serde_json::Value::as_str)
+                != Some(task)
+        {
             return Err(invalid());
         }
     } else {
-        let started = request.details.get("d2_started_event_id").and_then(serde_json::Value::as_str).ok_or_else(invalid)?;
+        let started = request
+            .details
+            .get("d2_started_event_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(invalid)?;
         let start_time: Option<String> = connection.query_row(
             "SELECT occurred_at FROM work_events WHERE event_id=?1 AND run_id=?2 AND event_type='D2_STARTED'
                AND plan_revision=?3 AND author_role_instance_id=?4
@@ -5557,7 +5870,9 @@ fn validate_d2_event(connection: &Connection, request: &WriteRequest, token_sequ
                AND json_extract(details_json, '$.token_sequence')=?6",
             params![started, request.run_id, request.plan_revision, request.role_instance_id, message, token_sequence],
             |row| row.get(0)).optional()?;
-        let Some(start_time) = start_time else { return Err(invalid()); };
+        let Some(start_time) = start_time else {
+            return Err(invalid());
+        };
         if timestamp(&request.occurred_at)? < timestamp(&start_time)? {
             return Err(invalid());
         }
@@ -5623,7 +5938,8 @@ fn validate_method_adoption_request(
             || (request.from_version == "4.3.5" && request.to_version == "4.3.6")
             || (request.from_version == "4.3.6" && request.to_version == "4.4.0")
             || (request.from_version == "4.4.0" && request.to_version == "4.4.1")
-            || (request.from_version == "4.4.1" && request.to_version == "4.4.2");
+            || (request.from_version == "4.4.1" && request.to_version == "4.4.2")
+            || (request.from_version == "4.4.2" && request.to_version == "4.4.3");
     if !valid_identifier(&request.receipt_id)
         || !valid_identifier(&request.run_id)
         || request.expected_snapshot.run_id != request.run_id
@@ -5828,7 +6144,6 @@ pub(crate) fn run_state_snapshot_from(
 
 pub(crate) fn valid_identifier(value: &str) -> bool {
     !value.is_empty()
-        && value.len() <= 128
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))

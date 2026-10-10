@@ -91,8 +91,10 @@ def lifecycle_host(tmp_path, monkeypatch):
     return host, op, projection
 
 
-def test_original_lifecycle_request_retries_partial_central_and_temporal_without_new_events(tmp_path, monkeypatch):
+@pytest.mark.parametrize("pause_id", ["pause-1", "pause-" + "a" * 512])
+def test_original_lifecycle_request_retries_partial_central_and_temporal_without_new_events(tmp_path, monkeypatch, pause_id):
     host, op, projection = lifecycle_host(tmp_path, monkeypatch)
+    op["pause_id"] = pause_id
     calls = []
     fail = ["REQUESTED", "RESUMED"]
     def temporal(_command, arguments, **_k):

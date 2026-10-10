@@ -110,7 +110,7 @@ def test_only_the_six_plus_active_run_viewport_can_scroll_vertically() -> None:
     app = (ROOT / "apps/slk-bi/src/styles/app.css").read_text(encoding="utf-8")
 
     assert re.search(r"html,\s*body,\s*#root\s*\{[^}]*overflow:\s*hidden", tokens, re.DOTALL)
-    scrollable = re.search(r"\.active-run-strips\.is-scrollable\s*\{([^}]*)\}", app, re.DOTALL)
+    scrollable = re.search(r"\.runs-surface\s*\{([^}]*)\}", app, re.DOTALL)
     assert scrollable and "overflow-y: auto" in scrollable.group(1)
 
 

@@ -7,7 +7,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 ## 方法身份
 
-SLK 4.4.2 是 Loop Engineering 的线性形态；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径，适合中小工程或大型工程独立范围。
+SLK 4.4.3 是 Loop Engineering 的线性形态；一个 SLK 对应一个 Run，Run 直接包含线性 CELL 路径，适合中小工程或大型工程独立范围。
 
 CELL Loop 重复派发、施工与 D0、候选交付、隔离 D1，明确怎样继续：D1 FAIL 同一 CELL 返工，PASS 前进，全部处理后 D2 闭合 Run。进入施工后的一个 Run 同时只有一个当前有效的 `SLK TOKEN`；同一 Run 最大且身份匹配的成功令牌才是当前事实。令牌不是新文件、角色、审批或外部状态系统，只在既有 Loop 节点边界流转，携带令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；中央 SQLite 保存状态并导出 `SLK-RUN-<RUN-ID>.md`，`slk-state` 供三个角色按职责写入，`slk-bi-query` 供 Owner、其他 Agent 与 BI 只读查询。
 
@@ -45,6 +45,7 @@ Supervisor 通过结构化角色 Eval 初始化同一 Run、根记录及密封�
 - 建立、恢复、更换或归档成员：`$slk-manage-team`
 - Overwatcher 的真实性核查、记录和异常报告：`$slk-overwatch-run`
 - 共享 Temporal 服务和每 Run 工作流：`$slk-manage-temporal`
+- Supervisor 授权暂停、停稳核验及保留原身份恢复：`$slk-pause-run`
 - Checker 派发前校准并交付既定 CELL：`$slk-dispatch-cell`
 - Worker 施工与最低 D0：`$slk-execute-cell`
 - Checker 隔离执行 D1：`$slk-check-cell`
@@ -68,5 +69,5 @@ Supervisor 通过结构化角色 Eval 初始化同一 Run、根记录及密封�
 - 不要因协作问题加状态机。上下文压缩或续作后按中央状态、当前 Run 记录、计划和当前 TOKEN 重验 `run_id`、CELL/attempt、下一动作；摘要、旧话题或对话记忆冲突时停止串题。
 - 不要让 Temporal 裁决工程、切换模型、写 BI/TOKEN 或重复副作用；服务或 OW 保障失效时不要继续派下一 CELL。
 - 不要反向把跨 Agent 通讯、身份校验、TOKEN 原子流转、中央记录或 BI 一致性退回自由文本约定；这些共享事实与传输边界应继续由小而明确的代码合同保证。
-- 不要在 Run readiness 不是 `READY`、四角色/BI/Temporal/必要通讯腿未验证、任一角色被提示词替代、任务超过该角色容量，或 Ponytail/RTK/Probe CLI 任一可选项未明确时开始施工；未登记功能不能靠任意 ON/OFF 字段进入能力清单；不要把可选工具缺失误写为工程角色不兼容。
+- 不要在 Run readiness 不是 `READY`、四角色/BI/Temporal/必要通讯腿未验证、任一角色被提示词替代、有事实证明角色无法完成当前范围，或 Ponytail/RTK/Probe CLI 任一可选项未明确时开始施工；容量估计不作统一定额，未登记功能不能靠任意 ON/OFF 字段进入能力清单；不要把可选工具缺失误写为工程角色不兼容。
 - 不要新增仅作者会运行的一次性脚本或隐藏代码路径；长期复用的确定性能力应有文档化标准 Tool 入口，无法轻量稳定时停止堆代码。
