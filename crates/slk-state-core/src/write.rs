@@ -755,7 +755,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4")
+            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -1171,15 +1171,17 @@ impl StateStore {
             }
             let native_start = if matches!(
                 method_version.as_str(),
-                "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4"
+                "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
             ) {
                 Some(
-                    if matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
-                        && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
-                            .ok()
-                            .is_some_and(|v| {
-                                v["schema_version"] == "slk.desktop-current-turn-start-evidence/v1"
-                            })
+                    if matches!(
+                        method_version.as_str(),
+                        "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
+                    ) && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
+                        .ok()
+                        .is_some_and(|v| {
+                            v["schema_version"] == "slk.desktop-current-turn-start-evidence/v1"
+                        })
                     {
                         recovery_start::validate(&evidence_bytes, &request)?
                     } else {
@@ -1278,8 +1280,10 @@ impl StateStore {
                 payload_location: Some(request.start_evidence.stored_path.clone()),
                 occurred_at: request.occurred_at.clone(),
             };
-            let recovered_history = matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
-                && actor.role == Role::Checker
+            let recovered_history = matches!(
+                method_version.as_str(),
+                "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
+            ) && actor.role == Role::Checker
                 && target_role == Role::Supervisor
                 && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
                     .ok()
@@ -1294,12 +1298,14 @@ impl StateStore {
                     &request,
                     native_start.as_ref().unwrap(),
                 )?;
-            if matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
-                && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
-                    .ok()
-                    .is_some_and(|v| {
-                        v["schema_version"] == "slk.desktop-current-turn-start-evidence/v1"
-                    })
+            if matches!(
+                method_version.as_str(),
+                "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
+            ) && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
+                .ok()
+                .is_some_and(|v| {
+                    v["schema_version"] == "slk.desktop-current-turn-start-evidence/v1"
+                })
                 && !recovery_start::target_matches(transaction, &request)?
             {
                 return Err(StateError::EndpointNotCurrent);
@@ -2185,6 +2191,7 @@ impl StateStore {
                     | "4.4.2"
                     | "4.4.3"
                     | "4.4.4"
+                    | "4.4.5"
             ) || matches!(
                 request.event_type,
                 EventType::RunPauseRequested | EventType::RunPaused | EventType::RunResumed
@@ -2305,7 +2312,7 @@ impl StateStore {
             if request.event_type == EventType::ReworkRequested {
                 validate_rework_requested(transaction, &request)?;
             }
-            if (method_version == "4.4.3" || method_version == "4.4.4")
+            if (method_version == "4.4.3" || method_version == "4.4.4" || method_version == "4.4.5")
                 && matches!(
                     request.event_type,
                     EventType::D2Started | EventType::D2Passed | EventType::D2Failed
@@ -2313,7 +2320,7 @@ impl StateStore {
             {
                 validate_d2_event(transaction, &request, token.sequence)?;
             }
-            if (method_version == "4.4.3" || method_version == "4.4.4")
+            if (method_version == "4.4.3" || method_version == "4.4.4" || method_version == "4.4.5")
                 && request.event_type == EventType::RunClosed
             {
                 validate_run_close_proof(transaction, &request)?;
@@ -2642,9 +2649,9 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                let original_available = (method_version != "4.4.3" && method_version != "4.4.4")
+                let original_available = (method_version != "4.4.3" && method_version != "4.4.4" && method_version != "4.4.5")
                     || validate_current_scope_query(transaction, &request, &runtime_snapshot)?;
-                if original_available && matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4") {
+                if original_available && matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2831,7 +2838,7 @@ impl StateStore {
                 let preclose_terminal = closure_state == "open"
                     && matches!(
                         method_version.as_str(),
-                        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4"
+                        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
                     );
                 if closure_state == "open" && !preclose_terminal {
                     return Err(StateError::OverwatcherObservationInvalid(
@@ -3330,6 +3337,7 @@ impl StateStore {
                     | "4.4.2"
                     | "4.4.3"
                     | "4.4.4"
+                    | "4.4.5"
             ) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "credential rotation requires effective SLK 4.2.7 or later".into(),
@@ -3612,13 +3620,13 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4") {
+            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4")
+                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
@@ -4146,7 +4154,7 @@ fn validate_worker_completion_cycle(
         ));
     }
     let inspection = &inspections[0];
-    if method_version == "4.4.3" || method_version == "4.4.4" {
+    if method_version == "4.4.3" || method_version == "4.4.4" || method_version == "4.4.5" {
         let invalid = || {
             StateError::OverwatcherCycleInvalid(
                 "Worker completion sample exceeds the bound cadence or cycle window".into(),
@@ -4442,7 +4450,7 @@ fn apply_cell_split(
         [run_id],
         |row| row.get(0),
     )?;
-    if !matches!(version.as_str(), "4.4.2" | "4.4.3" | "4.4.4") {
+    if !matches!(version.as_str(), "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
         return Err(StateError::InvalidPlan(
             "second-failure CELL split is owned by the SLK 4.4.2 contract".into(),
         ));
@@ -5032,7 +5040,7 @@ fn validate_rework_requested(
     ];
     if matches!(
         method_version.as_str(),
-        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4"
+        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
     ) {
         required.push("investigation_mode");
     }
@@ -5063,11 +5071,13 @@ fn validate_rework_requested(
         .as_u64()
         .filter(|value| *value > 0)
         .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
-    if matches!(method_version.as_str(), "4.4.2" | "4.4.3" | "4.4.4")
-        && details["investigation_mode"]
-            .as_str()
-            .filter(|value| !value.trim().is_empty())
-            .is_none()
+    if matches!(
+        method_version.as_str(),
+        "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
+    ) && details["investigation_mode"]
+        .as_str()
+        .filter(|value| !value.trim().is_empty())
+        .is_none()
     {
         return Err(StateError::WorkEventInvalid(
             "Supervisor investigation mode must be explicit".into(),
@@ -5904,11 +5914,15 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
             | "4.4.2"
             | "4.4.3"
             | "4.4.4"
+            | "4.4.5"
     )
 }
 
 fn valid_overwatcher_cadence(version: &str, cadence_seconds: u32) -> bool {
-    if matches!(version, "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4") {
+    if matches!(
+        version,
+        "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
+    ) {
         cadence_seconds == 600
     } else {
         (180..=300).contains(&cadence_seconds)

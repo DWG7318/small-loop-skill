@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "status", "run_id", "cell_id", "attempt", "candidate_message_id", "checker_role_instance_id", "checker_endpoint_version", "checker_authenticated", "authorized_existing_terminal", "recovery_invocation_id", "request_sha256", "runtime_revision", "token_sequence", "native_attempt_path", "d1_verdict", "d1_event_type", "native_result_path"],
   "properties": {
     "schema_version": {"const": "slk.ocrv-committed-terminal-result/v1"},
-    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4", "4.4.5"]},
     "status": {"const": "CHECKER_D1_RECORDED"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "cell_id": {"$ref": "#/$defs/identifier"},

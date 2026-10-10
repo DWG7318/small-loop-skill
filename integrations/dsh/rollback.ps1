@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $DshRoot).Path
 $backup = (Resolve-Path -LiteralPath $BackupRoot).Path
 $receipt = Get-Content -Raw -LiteralPath (Join-Path $backup 'receipt.json') | ConvertFrom-Json
-if ($receipt.dsh_root -ne $root -or $receipt.version -notin @('4.4.2', '4.4.3', '4.4.4')) { throw 'DSH rollback identity mismatch' }
+if ($receipt.dsh_root -ne $root -or $receipt.version -notin @('4.4.2', '4.4.3', '4.4.4', '4.4.5')) { throw 'DSH rollback identity mismatch' }
 foreach ($property in $receipt.original.PSObject.Properties) {
     $name = $property.Name
     $target = Join-Path $root $name

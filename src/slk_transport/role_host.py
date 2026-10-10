@@ -1197,7 +1197,7 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
-        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4"}
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5"}
             or any(event.get("event_type") == "D2_STARTED"
                    and wc._event_details(event).get("source_message_id") == envelope.message_id
                    and any(key in wc._event_details(event) for key in (

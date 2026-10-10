@@ -494,7 +494,7 @@ def consume_desktop_readback(
     client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "slk_transport_desktop_readback", "version": "4.4.4"}}, timeout)
+            "clientInfo": {"name": "slk_transport_desktop_readback", "version": "4.4.5"}}, timeout)
         client.notify("notifications/initialized", {})
         catalog = client.request(2, "tools/list", {}, timeout)
         if "read_thread" not in {t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}:
@@ -527,7 +527,7 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
     client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.4"}}, timeout)
+            "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.5"}}, timeout)
         client.notify("notifications/initialized", {})
         catalog = client.request(2, "tools/list", {}, timeout)
         if not {"read_thread", "send_message_to_thread"}.issubset({t.get("name") for t in catalog.get("tools", []) if isinstance(t, Mapping)}):

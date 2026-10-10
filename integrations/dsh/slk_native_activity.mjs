@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 
 export const name = "slk-native-activity";
+export const inject = ["agents"];
 
 function context() {
   const output = process.env.SLK_NATIVE_ACTIVITY_PATH;
@@ -86,7 +87,7 @@ export function apply(ctx) {
       const agent = ctx.agents.get(nativeTaskId);
       if (!agent) return fail("DSH_AGENT_NOT_REGISTERED");
       if (String(agent.session.id) !== nativeTaskId) return fail("DSH_SESSION_IDENTITY_MISMATCH");
-      if (ctx.workspaceRegistry?.archivedSessionIds?.includes(nativeTaskId)) {
+      if (ctx.get("workspaceRegistry")?.archivedSessionIds?.includes(nativeTaskId)) {
         return fail("DSH_SESSION_ARCHIVED");
       }
       status = String(agent.status).toUpperCase();

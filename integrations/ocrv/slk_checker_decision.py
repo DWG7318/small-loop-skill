@@ -172,7 +172,7 @@ def respond(message: dict, action=record) -> dict | None:
         response["result"] = {"protocolVersion": requested if requested in {
             "2024-11-05", "2025-03-26", "2025-06-18"} else "2025-03-26",
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "slk-original-checker-decision", "version": "4.4.4"}}
+            "serverInfo": {"name": "slk-original-checker-decision", "version": "4.4.5"}}
     elif method == "ping":
         response["result"] = {}
     elif method == "tools/list":

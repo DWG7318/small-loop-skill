@@ -52,7 +52,7 @@ def prepare_host(monkeypatch: pytest.MonkeyPatch, mode: str = "active") -> None:
     monkeypatch.setenv("FAKE_OW_DESKTOP_MODE", mode)
 
 
-@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4"])
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4", "4.4.5"])
 def test_attests_existing_ow_turn_without_send_or_model_call(tmp_path: Path, monkeypatch, method_version) -> None:
     prepare_host(monkeypatch)
     request, digest = write_request(tmp_path, method_version)

@@ -1,4 +1,17 @@
-# Validation Report — SLK 4.4.4 preparation correction candidate
+# Validation Report — SLK 4.4.5 OPEN maintenance
+
+## 2026-10-10 DSH probe correction — batch source verification passed, not release/deployment
+
+Baseline `0ed21915ad22bb189a2dc5f0233cb5e81343ffbf`; source4.4.5 / BI1.1.1. The Owner keeps4.4.5 OPEN for additional repairs. This batch does not overwrite the active4.4.4 installation or immutable package, mutate live Run/Session/TOKEN/SQLite/Temporal, or claim the genuine seven-leg preparation sample passed.
+
+- Confirmed root cause: `ctx.agents` was accessed without `inject`; making headless-absent `workspaceRegistry` required also prevents plugin activation. The source correction adds only `export const inject = ["agents"]` and uses `ctx.get("workspaceRegistry")` for optional archive lookup.
+- Genuine pre-fix probe RED:3 failed/8 deselected; GREEN after the two-line production correction:11 passed/3.60s. Actual installed Cordis4.0.2 mounts the repository module with only its required service, samples the exact fake Session, and separately verifies archive rejection. These are headless/no-model framework tests, not real Agent execution or global collector acceptance. The weak live `dsh --dump-config` test was removed because it checked text rather than successful mounting and could write live profile configuration.
+- Version RED before compatibility changes:4 failed/1 SDK module skipped/100 deselected. Current producers and compatible readers now include4.4.5 without relabeling old4.4.4 evidence. GREEN: full Python1470 passed/3 skipped/405.46s, exit0; Rust non-BI workspace147 passed, exit0; `cargo fmt --all --check`, CLI4.4.5 and `git diff --check` PASS. Existing SDK/cached official test server are used only for isolated tests, without dependency installation or shared-service changes. Full Python command/environment follow the historical offline-server setup below; logs `.codex/.tmp/maintenance-445/full-python.log` SHA256 `e1725d82749e046133a5077926e423eb6a70e31020018e3fca8e24484d0206a6` and `rust-nonbi.log` SHA256 `e240f7f7728aa7011245648d2f9d1d4b7dd52ffcda76ee93850df4b04848d1d7`.
+- Repository probe SHA256 `ad1dd20ef3dd982c4f87fae11222949711cfcb6344fc8224002f2fc463e49800` exactly matches the Supervisor's already-tested live hotfix; Root does not rewrite it. Isolated install/rollback compares all four DSH managed files byte-for-byte, including this module. Package/install fixture regressions pass inside full Python; their fake binary fixtures do not constitute a built/deployed4.4.5 release package.
+- Final documentation/Manifest/package/install/Eval recheck:293 passed/42.13s, exit0. Probe production diff is+2/-1;48 version/compatibility pairing files+123/-109 include14 Rust formatting lines, and11 test files+93/-42. Remaining changes are audit/docs/Manifest; this is not a slimming claim or new runtime layer. The next source batch has its own scope/commit and must not inherit this batch's PASS.
+- The original exact-retry exhaustion/continuation gap and existing BI Windows10035 test-fixture instability remain open. Supervisor additionally confirms sample02's authenticated candidate metadata is wider than OCRV's narrow request contract, and its real `OCRV_NATIVE_START_UNPROVED` parameter rejection has no applicable4.4.4 abandonment/continuation entry. These are not fixed by the probe batch; a separate minimal source candidate is now requested, with old sample evidence/T003/candidate preserved and no deployment permission. Native seven-leg acceptance remains Supervisor-owned. No merge/push/GitHub release or deployment is part of this batch.
+
+## Historical 4.4.4 preparation correction evidence (unchanged below)
 
 ## 2026-10-10 preparation correction — source freeze and final verification
 

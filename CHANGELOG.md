@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.4.5 — OPEN maintenance (unreleased, not deployed)
+
+- Correct the existing DSH activity plugin's native dependency declaration: require only `agents` and read optional `workspaceRegistry` through Cordis `ctx.get`, so headless startup does not require the workspace service. Replace config-text composition checks with real framework mounting/sampling regressions, without calling a model or mutating live DSH configuration.
+- Pair current source/package metadata with 4.4.5 and append reader compatibility while preserving existing versions, workflow markers and BI/WebBI 1.1.1. Keep the live 4.4.4 installation, immutable package and original failure evidence unchanged. This batch adds no recovery protocol; 4.4.5 remains open for further repairs.
+
 ## 4.4.3 — original material, explicit actions and authorized pause (local candidate)
 
 - Preserve full original Worker/Checker reports and hash-bound Git-external material; original role actions alone authorize D0/D1 and formal handoff. Capacity facts are advisory, not universal quotas; repeated product FAIL follows Supervisor investigation and versioned split.

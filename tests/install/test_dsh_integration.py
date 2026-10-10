@@ -66,7 +66,7 @@ const cleanups = [];
 const archived = [];
 apply({ on: (name, callback) => callbacks.set(name, callback), effect: (body) => cleanups.push(body()),
   agents: { get: (id) => { if (unavailable) throw Error("registry unavailable"); return id === "exact-session" ? agent : undefined; } },
-  workspaceRegistry: { archivedSessionIds: archived } });
+  get: (name) => name === "workspaceRegistry" ? { archivedSessionIds: archived } : undefined });
 callbacks.get("agent/status")({ agent, status: "running" });
 callbacks.get("session/event")({ id: "exact-session" }, { type: "tool/completed" });
 const read = () => JSON.parse(readFileSync(process.env.SLK_NATIVE_ACTIVITY_PATH, "utf8"));
@@ -107,32 +107,83 @@ console.log(JSON.stringify({ before, after, eventOnly, wrong, hidden, mismatch, 
     assert result["disposed"] is True
 
 
-def test_installed_dsh_can_compose_the_activity_patch_without_a_model_call() -> None:
-    dsh = Path(r"D:\DSH\node_modules\.bin\dsh.cmd")
-    if not dsh.is_file():
-        pytest.skip("local DSH is unavailable")
-
+def test_dsh_probe_declares_only_its_required_native_service() -> None:
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js unavailable")
+    environment = os.environ.copy()
+    environment["SLK_ACTIVITY_PLUGIN_URI"] = (INTEGRATION / "slk_native_activity.mjs").as_uri()
     completed = subprocess.run(
-        [
-            str(dsh),
-            "--profile",
-            "headless",
-            "--patch",
-            str(INTEGRATION / "slk-native-activity.patch.yml"),
-            "--dump-config",
-        ],
-        cwd=Path(r"D:\DSH"),
+        [node, "--input-type=module", "-e",
+         'const plugin = await import(process.env.SLK_ACTIVITY_PLUGIN_URI); '
+         'console.log(JSON.stringify(plugin.inject ?? null));'],
+        env=environment, capture_output=True, text=True, check=False,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == ["agents"]
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_dsh_probe_mounts_in_real_cordis_without_a_model_call(
+    tmp_path: Path, archived: bool,
+) -> None:
+    node = shutil.which("node")
+    cordis = Path(os.environ.get("SLK_DSH_TEST_ROOT", r"D:\DSH")) / "node_modules/@deepseek-ai/cordis/lib/index.js"
+    if not node or not cordis.is_file():
+        pytest.skip("installed DSH Cordis runtime unavailable")
+    environment = os.environ.copy()
+    environment.update(
+        SLK_CORDIS_URI=cordis.as_uri(),
+        SLK_ACTIVITY_PLUGIN_URI=(INTEGRATION / "slk_native_activity.mjs").as_uri(),
+        SLK_NATIVE_ACTIVITY_PATH=str(tmp_path / "activity.json"),
+        SLK_NATIVE_ACTIVITY_CONTEXT=json.dumps({"adapter": "dsh-worker", "run_id": "RUN-LOAD",
+            "cell_id": "CELL-001", "message_id": "message-load"}),
+        SLK_TEST_ARCHIVED=str(int(archived)),
+    )
+    script = r'''
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const { Context } = await import(process.env.SLK_CORDIS_URI);
+const plugin = await import(process.env.SLK_ACTIVITY_PLUGIN_URI);
+const agent = { session: { id: "exact-session" }, status: "running" };
+const ctx = new Context();
+const services = ctx.plugin({ name: "native-test-services", apply(serviceContext) {
+  serviceContext.provide("agents", { get: () => agent });
+  if (process.env.SLK_TEST_ARCHIVED === "1") {
+    serviceContext.provide("workspaceRegistry", { archivedSessionIds: [agent.session.id] });
+  }
+} });
+await services.await();
+const fiber = ctx.plugin(plugin);
+try {
+  await new Promise(setImmediate);
+  assert.equal(fiber.state, 2, "probe must activate with headless native services");
+  ctx.emit("agent/status", { agent, status: "running" });
+  console.log(readFileSync(process.env.SLK_NATIVE_ACTIVITY_PATH, "utf8"));
+} finally {
+  await fiber.dispose();
+  await services.dispose();
+}
+'''
+    completed = subprocess.run(
+        [node, "--input-type=module", "-e", script],
+        cwd=tmp_path,
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         check=False,
+        env=environment,
         creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
     )
-
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "slk-native-activity" in completed.stdout
+    activity = json.loads(completed.stdout)
+    assert activity["native_task_id"] == "exact-session"
+    assert activity["sample"]["source"] == "DSH_LIVE_AGENT_REGISTRY"
+    assert activity["status"] == ("UNKNOWN" if archived else "RUNNING")
+    assert activity.get("error") == ("DSH_SESSION_ARCHIVED" if archived else None)
 
 
 def test_installed_dsh_event_signatures_match_the_activity_plugin() -> None:
@@ -372,7 +423,7 @@ def test_dsh_integration_installs_and_rolls_back_managed_files(tmp_path: Path) -
 
     assert installed.returncode == 0, installed.stdout + installed.stderr
     receipt = json.loads(installed.stdout.strip())
-    assert receipt["version"] == "4.4.4"
+    assert receipt["version"] == "4.4.5"
     for name in (
         "dsh-slk.ps1",
         "slk-native-activity.patch.yml",

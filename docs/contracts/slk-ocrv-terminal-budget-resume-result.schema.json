@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema_version": {"const": "slk.ocrv-terminal-budget-resume-result/v1"},
-    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4", "4.4.5"]},
     "status": {"enum": ["CHECKER_D1_RECORDED", "CHECKER_D1_STILL_INCOMPLETE"]},
     "run_id": {"$ref": "#/$defs/identifier"},
     "cell_id": {"$ref": "#/$defs/identifier"},

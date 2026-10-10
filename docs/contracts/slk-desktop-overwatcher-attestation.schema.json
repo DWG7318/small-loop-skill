@@ -7,7 +7,7 @@
   "required": ["schema_version", "method_version", "attestation_id", "run_id", "role_instance_id", "endpoint_ref", "thread_id", "host_id", "cwd", "turn_id", "platform_input_item_id", "platform_input_sha256", "request_sha256", "plugin_sha256", "observed_at", "thread_status", "turn_status", "native_task_id", "started_sha256"],
   "properties": {
     "schema_version": {"const": "slk.desktop-overwatcher-attestation/v1"},
-    "method_version": {"enum": ["4.4.2", "4.4.3", "4.4.4"]},
+    "method_version": {"enum": ["4.4.2", "4.4.3", "4.4.4", "4.4.5"]},
     "attestation_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/text"},
     "role_instance_id": {"$ref": "#/$defs/text"},

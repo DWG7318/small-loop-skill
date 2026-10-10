@@ -84,8 +84,8 @@ fn current_release_can_admit_its_registered_overwatcher_without_relabeling_histo
         .bind_overwatcher(&initialized.supervisor_credential, binding)
         .unwrap();
     let current = store.query_run("run-a").unwrap();
-    assert_eq!(current.summary.slk_version, "4.4.4");
-    assert_eq!(current.summary.origin_slk_version, "4.4.4");
+    assert_eq!(current.summary.slk_version, "4.4.5");
+    assert_eq!(current.summary.origin_slk_version, "4.4.5");
 
     let second = store
         .init_run(init_request("run-b", "supervisor-b"))
@@ -3501,7 +3501,7 @@ fn overwatch_cycle_attempt_must_match_current_engineering_cell() {
 
 #[test]
 fn current_nonworker_cycle_requires_real_query_window_but_can_report_no_task_unknown() {
-    for method_version in ["4.4.3", "4.4.4"] {
+    for method_version in ["4.4.3", "4.4.4", "4.4.5"] {
         nonworker_query_window_for_method(method_version);
     }
 }
@@ -3581,7 +3581,7 @@ fn nonworker_query_window_for_method(method_version: &str) {
 
 #[test]
 fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window() {
-    for method_version in ["4.4.3", "4.4.4"] {
+    for method_version in ["4.4.3", "4.4.4", "4.4.5"] {
         worker_query_window_for_method(method_version);
     }
 }
@@ -3698,7 +3698,7 @@ fn worker_query_window_for_method(method_version: &str) {
 
 #[test]
 fn paused_idle_cycle_needs_fresh_complete_census_not_a_fabricated_native_source() {
-    for method_version in ["4.4.3", "4.4.4"] {
+    for method_version in ["4.4.3", "4.4.4", "4.4.5"] {
         paused_idle_census_for_method(method_version);
     }
 }

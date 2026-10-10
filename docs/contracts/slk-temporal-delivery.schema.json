@@ -17,7 +17,7 @@
     "readiness": {"type": "object", "additionalProperties": false,
       "required": ["schema_version", "method_version", "run_id", "status", "service_mode", "workflow_templates", "client_command", "workflow_identity", "attempt_root", "evidence_sha256"],
       "properties": {
-        "schema_version": {"const": "slk.temporal-readiness/v2"}, "method_version": {"enum": ["4.4.2", "4.4.3", "4.4.4"]},
+        "schema_version": {"const": "slk.temporal-readiness/v2"}, "method_version": {"enum": ["4.4.2", "4.4.3", "4.4.4", "4.4.5"]},
         "run_id": {"$ref": "#/$defs/id"}, "status": {"const": "READY"}, "service_mode": {"const": "SHARED_LOCAL"},
         "workflow_templates": {"const": ["SLK.Start", "SLK.Run"]},
         "client_command": {"type": "array", "minItems": 3, "maxItems": 3,

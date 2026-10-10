@@ -101,7 +101,7 @@ def _request(tmp_path: Path, *, legacy_echo=False, run_id="RUN-READINESS-A", met
             "schema_version": "slk.bi-open-readiness/v1",
             "method_version": method_version,
             "run_id": run_id,
-            "bi_version": "1.1.1" if method_version in {"4.4.3", "4.4.4"} else "1.1.0",
+            "bi_version": "1.1.1" if method_version in {"4.4.3", "4.4.4", "4.4.5"} else "1.1.0",
             "device_id": "device-a",
             "visible": True,
             "evidence_sha256": "a" * 64,
@@ -307,7 +307,7 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
 
 
-@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4"])
+@pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4", "4.4.5"])
 def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundary(tmp_path, method_version):
     source_root, current_root = tmp_path / "source", tmp_path / "current"
     source_root.mkdir()
@@ -950,7 +950,7 @@ def test_context_unknown_does_not_accept_false_numeric_facts(tmp_path, field, in
         evaluate_run_readiness(request)
 
 
-@pytest.mark.parametrize("method_version", ["4.4.3", "4.4.4"])
+@pytest.mark.parametrize("method_version", ["4.4.3", "4.4.4", "4.4.5"])
 @pytest.mark.parametrize("receipt_method", ["4.4.2", "4.4.3"])
 def test_current_readiness_requires_actual_bi_111_even_with_legacy_receipt_label(tmp_path, receipt_method, method_version):
     request = _request(tmp_path, method_version=method_version)

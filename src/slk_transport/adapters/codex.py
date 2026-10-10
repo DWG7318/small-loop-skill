@@ -312,7 +312,7 @@ class CodexAdapter:
                         "clientInfo": {
                             "name": "slk_transport",
                             "title": "SLK Transport",
-                            "version": "4.4.4",
+                            "version": "4.4.5",
                         }
                     },
                     startup_timeout,

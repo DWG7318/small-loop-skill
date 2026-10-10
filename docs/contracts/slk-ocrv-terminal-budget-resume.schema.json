@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {"const": "slk.ocrv-terminal-budget-resume-request/v1"},
-    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4"]},
+    "method_version": {"enum": ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4", "4.4.5"]},
     "recovery_invocation_id": {"type": "string", "format": "uuid"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "go_id": {"$ref": "#/$defs/identifier"},
