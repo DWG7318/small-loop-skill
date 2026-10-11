@@ -69,6 +69,7 @@ export interface RoleProjection {
   model: string;
   reasoning: string;
   session_id: string;
+  foreground_turn_id?: string;
   lifecycle: string;
   predecessor_role_instance_id: string | null;
   successor_role_instance_id: string | null;

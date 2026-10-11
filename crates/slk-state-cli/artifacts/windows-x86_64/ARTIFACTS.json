@@ -1,0 +1,91 @@
+{
+  "archive": {
+    "parts": [
+      {
+        "path": "payload.zip",
+        "sha256": "e3df66a160852c423bd9a74e0ebcea4c93e7d36857c93825a559763108065e44",
+        "size": 1935568
+      }
+    ],
+    "sha256": "e3df66a160852c423bd9a74e0ebcea4c93e7d36857c93825a559763108065e44",
+    "size": 1935568
+  },
+  "build": {
+    "commands": [
+      "cargo test --offline --locked",
+      "cargo build --release --offline --locked"
+    ],
+    "core_dependency": {
+      "extraction_tag": "1.0.0",
+      "product_version": "4.5.0",
+      "rev": "7ea54ec866191a22432e12b6553301d9408a033f",
+      "source_sha256": {
+        "Cargo.lock": "e67c0eaa97f3a23cade52e7752c86ba4bc922b5c69f806f875e22db20e543e14",
+        "Cargo.toml": "4cc3dcaf624fb71c1b8dad55a5490f47605be335e681701352a8c19049b1128d",
+        "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
+        "README.md": "a7cbb32a0d52a5cb8b79e28d0012b4ca5577c00d5f9de8eaf0f224c2deed7077",
+        "migrations/0001.sql": "60a609c3f64c0ef4bf11c1f2d98316ff432b16508d551eb649d05acd25adf087",
+        "migrations/0002.sql": "fb4e71288c27444e3162f078cf9551446487be9c3a8edfe3725519eb5285f5ed",
+        "migrations/0003.sql": "1255e8216d332ce0c5ef8f2bae0877343fbd2853e5ed44151f63aeffcbbceac1",
+        "migrations/0004.sql": "e0da513e2d948fa6bbed5e0c88b8e4164ca9109da586a1c61b4b5bb9213f96b8",
+        "migrations/0005.sql": "6912e7cd5b2dc665e723596424dbd3ca4fa7f39951c7d98193ccf5025810315c",
+        "migrations/0006.sql": "2947b67e4085e028832f0fcedb8d997bb850aa8d1cb1cea7b3ac772949ad5d08",
+        "migrations/0007.sql": "6791a08ec56a9c4d0510e443999fce375d081d8a901a1cd95d565ab936ffd008",
+        "migrations/0008.sql": "641d12404643f674403178a1460e05463a38f8ad7aeb9734e987d68f5e540b6f",
+        "migrations/0009.sql": "8a735faa002753720571e3fa59a7b3b976c56be95eea7282d7445a51a77fab94",
+        "src/auth.rs": "faf534899f7fe31cf45e2426944f2d672162c65d6a7c9f5e3e9e645453f854c9",
+        "src/config.rs": "e91e631442a862f206c74ce3f8f888f081502269a300128cd8b9b5c8a7c1974b",
+        "src/evidence.rs": "e11901b7bd8663c31bae0fe9363f6ad2eda9efde9526395cef07d6d29b1a0d72",
+        "src/export.rs": "52d691f11936c0515a41dbfed767acfce1ae266e2535da5768d46f862d89d753",
+        "src/lib.rs": "79c85c8a51044aa2b0e00640034dfe4aeeb37cbf0798ec56d74d0dfcb6531a5d",
+        "src/model.rs": "660acdd609baa7844194675957eaafed38b1f8f5c1a2841bf814a3f428f3ac5a",
+        "src/query.rs": "c94ba1110b4dac5177cff6f73d6dade87535110831172c098dba4cf074d2a952",
+        "src/recovery_start.rs": "ff5a2dca70765eab5d6da287a53425ff2a4720f373a2dd88783b1047102d4c04",
+        "src/schema.rs": "f909f4d531e563ef59c97a9c2ff2d243050b73b09bffe3aa7dfe3b092e2e4f1a",
+        "src/write.rs": "0735541c0b3a82dfacf6a00bd54e5a8117aab8634c10c63994ce743fefaa3728",
+        "tests/auth.rs": "9dffe83e3dbeb6cab98a761f11a543cfe22e7db29cb423997b5f55f334d5c3f6",
+        "tests/concurrency.rs": "005b059b6269f3bd4b0fb5f34399c9ee3e5434eb4ddb46fddb59eb11ea09e268",
+        "tests/config.rs": "898492a826d84ae75000c93ad17ba796573f91dfdae0789906fa6f421a21b14e",
+        "tests/evidence.rs": "99fdb9b476039bc0261129052c09b749ff81c2c4e48de4a69b3c04105c2d2b2e",
+        "tests/export.rs": "8f4f9c4cd669c2f32edb166e12f0bc298e2ba870fb59c7eea2491089aef442c0",
+        "tests/overwatch_continuity.rs": "73ad9349625aea4952a09f7fe2c6f3285565d465d0269082e5863698f41fa11e",
+        "tests/overwatcher.rs": "2acc60889e020d8eac8b43fe97f1dbea7967cffe014f2610a98995c7313b6120",
+        "tests/query.rs": "af1a647145800fa4991ace3f687a3572af5ad804b8b6c5f7371966085ff89664",
+        "tests/run_admin.rs": "1ec422ae97417d9343ae4162f445a7ac6f944ecae8f620deda5ec92c4654316d",
+        "tests/runtime_snapshot.rs": "87b14301eb0f01a60931262da21536c000a548382d13743cf22f6210dc7079d6",
+        "tests/schema.rs": "dadad86969dfc7d1a936f387a07fc88ca83537570b9cbc42a4c215835ddd87ba",
+        "tests/write_flow.rs": "fb3c5f224f3118a75e27e979e1894b155c5eac5961d2a348b489efad584f2efc"
+      },
+      "url": "https://github.com/DWG7318/slk-state-core.git"
+    },
+    "independent_external_checkout": true,
+    "lock_sha256": {
+      "Cargo.lock": "650a7c610a5d127fd55c55714b391d83cb7c1bbbd6ce705d831f0cc5d2e81738"
+    },
+    "source_hash_mode": "sha256-raw",
+    "target_triple": "x86_64-pc-windows-msvc",
+    "toolchain": {
+      "cargo": "1.94.0 (85eff7c80 2026-01-15)",
+      "rustc": "1.94.0 (4a4ef493e 2026-03-02)"
+    }
+  },
+  "payload": [
+    {
+      "path": "bin/slk-state.exe",
+      "sha256": "80c47315dcbe10fd33a25a657c30e70a89e70072f987258fd3de5cf6d9c72342",
+      "size": 4692992
+    }
+  ],
+  "product_version": "4.5.0",
+  "schema_version": "slk.tool-artifacts/v1",
+  "source_sha256": {
+    "Cargo.lock": "650a7c610a5d127fd55c55714b391d83cb7c1bbbd6ce705d831f0cc5d2e81738",
+    "Cargo.toml": "4619c850ebbe9780772838d5ea4d7879a880596a80db7cb61fafc97c6958f8de",
+    "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
+    "README.md": "9147a3fc466ccbc6152d804a1220e64e0b0cb753132098d60573c6451bf9e917",
+    "src/main.rs": "c9aa56698a126f866037895ed457a292e3f7458f3482aedd13672fdddd743f16",
+    "tests/cli_contract.rs": "312de3a6d9e1fe70fde70d7231845e35d703313d95e77cdaf23f09ba7c875c19"
+  },
+  "target": "windows-x86_64",
+  "tool": "slk-state"
+}
