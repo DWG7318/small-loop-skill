@@ -74,7 +74,8 @@ def main(argv=None) -> int:
     manifest = {"schema_version": "slk.tool-build-inputs/v1", "product": "slk-overwatch-tools", "version": VERSION,
                 "source_sha256": {relative: hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() for relative in inputs},
                 "artifact": name, "artifact_sha256": hashlib.sha256((args.output / name).read_bytes()).hexdigest()}
-    (args.output / "BUILD_INPUTS.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    (args.output / "BUILD_INPUTS.json").write_text(
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(args.output / name)
     return 0
 

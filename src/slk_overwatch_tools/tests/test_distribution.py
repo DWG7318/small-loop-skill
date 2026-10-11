@@ -71,6 +71,14 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(manifest["artifact_sha256"], hashlib.sha256(
                 (Path(directory) / manifest["artifact"]).read_bytes()).hexdigest())
 
+    def test_build_input_manifest_uses_canonical_lf_bytes(self):
+        builder = self.builder()
+        with tempfile.TemporaryDirectory() as directory:
+            builder.main(["--output", directory])
+            content = (Path(directory) / "BUILD_INPUTS.json").read_bytes()
+            self.assertTrue(content.endswith(b"\n"))
+            self.assertNotIn(b"\r", content, "Git text normalization must not change the indexed build manifest")
+
 
 if __name__ == "__main__":
     unittest.main()
