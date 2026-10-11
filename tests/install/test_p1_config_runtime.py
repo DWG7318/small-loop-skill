@@ -74,6 +74,7 @@ def test_git_fallback_only_changes_native_child_path(tmp_path, monkeypatch, host
     assert environment["PATH"] == ("EXACT-HOST-PATH" if host_available else str(slk / "runtime/git/cmd") + os.pathsep + "EXACT-HOST-PATH")
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows packaged CMD ingress conversion")
 @pytest.mark.parametrize("launcher", ("bin/slk-checker.cmd", "runtime/ocrv/slk-checker.cmd"))
 def test_packaged_checker_automatic_ingress_is_direct_and_lossless(tmp_path, launcher):
     slk = layout(tmp_path / "中文 %P1_EXPANSION% ^space")

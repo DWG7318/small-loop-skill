@@ -2200,7 +2200,7 @@
     },
     {
       "path": "tests/install/test_local_install.py",
-      "sha256": "a1549c40c8308a34b66de464522276edb6414345f5756ddd5b0e8c2206e3887d"
+      "sha256": "446b1175309875a02220cadbfc19b42c1de780c534e674dd168a1001cdc704d2"
     },
     {
       "path": "tests/install/test_ocrv_classification.py",
@@ -2232,7 +2232,7 @@
     },
     {
       "path": "tests/install/test_p1_config_runtime.py",
-      "sha256": "47e88ab9795c152f98227d4902744a7e0a605e3f05dbf55d4c6b4624ff489d52"
+      "sha256": "65d752e934075a8cc49f057a664cf0e6c92294e74d6d51a501d2c6533c1f7af0"
     },
     {
       "path": "tests/install/test_probe_package.py",
@@ -2240,7 +2240,7 @@
     },
     {
       "path": "tests/install/test_runtime_closure.py",
-      "sha256": "4211fe0c4816611e40f54974b5a7419393ce4e99ed3133efc2323e40ad9a04b9"
+      "sha256": "9c98f288873a9f0a1a2e2527d3bef03976ed153da8b1f13a5576ec1fb92c0928"
     },
     {
       "path": "tests/install/test_standalone_python_modules.py",
@@ -2412,11 +2412,11 @@
     },
     {
       "path": "tests/transport/test_cli.py",
-      "sha256": "c23a23c5cfdaf7ee62fe3a6b3981bd80bb3e08ba60f961abc133300413e9c46b"
+      "sha256": "996b1c2b085ebd84ec8810ac38fa3b9633163597b25d7273f7885e5d41cce053"
     },
     {
       "path": "tests/transport/test_codex_adapter.py",
-      "sha256": "b48e5e061aa59095740c69c2d6ca2e880325a0e2421e167c1c2f2637775e19b5"
+      "sha256": "61294248fb455c256cffd2e9ca6fb058ae9f5d487f824cb61ffd571c7a262af9"
     },
     {
       "path": "tests/transport/test_codex_desktop.py",
@@ -2480,7 +2480,7 @@
     },
     {
       "path": "tests/transport/test_overwatcher_admin.py",
-      "sha256": "8e9c0f4f547f3ac007ca3c283150073543a3b33d95f11a459bfde03d503c22b0"
+      "sha256": "ab830261949563da08575b1fe06bf95ebd330c8a54317f1080de476d192db936"
     },
     {
       "path": "tests/transport/test_overwatcher_continuity.py",
@@ -2532,7 +2532,7 @@
     },
     {
       "path": "tests/transport/test_subprocess_watch.py",
-      "sha256": "894eb188cc7b133c995b97e153c1bef7a230e2350b855073ae1b2f2f9bc84ca8"
+      "sha256": "22e6a8c4391ba1cf5ba1e2f389bba7e9f3970505bd7df776e3cf46673c79820b"
     },
     {
       "path": "tests/transport/test_supervisor_admin.py",

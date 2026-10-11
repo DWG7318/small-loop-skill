@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import timedelta
+from itertools import count
 from pathlib import Path
 
 import pytest
@@ -188,6 +189,7 @@ def test_ow_cli_rechecks_only_original_confirmed_pause_coordinator(tmp_path, mon
     coordinator = source / "started.json"
     pause_id = "pause-1"
     original = json.loads(original_path.read_text())
+    original_sha256 = admin.wc._sha256(original_path)
     if damage == "requested": projection["summary"]["state"] = "pause_requested"
     if damage == "resumed": projection["events"].append({"event_type": "RUN_RESUMED", "details_json": "{}"})
     if damage == "wrong-coordinator":
@@ -209,8 +211,12 @@ def test_ow_cli_rechecks_only_original_confirmed_pause_coordinator(tmp_path, mon
     if damage == "wrong-pause": pause_id = "different-pause"
     if damage == "wrong-run": original["run_id"] = "RUN-OTHER"
     if damage in {"wrong-native-hash", "wrong-run", "changed-original"}:
-        if damage == "changed-original": original["observed_at"] = native.utc_now()
+        if damage == "changed-original":
+            # utc_now() may still be the original tick on Windows: guarantee tampering.
+            original["observed_at"] = (admin.wc._timestamp(original["observed_at"]) + timedelta(microseconds=1)).isoformat()
         write_json(original_path, original)
+        if damage == "changed-original":
+            assert admin.wc._sha256(original_path) != original_sha256
         if damage != "changed-original":
             details = json.loads(projection["events"][0]["details_json"])
             details["quiescence_sha256"] = admin.wc._sha256(original_path)
@@ -542,7 +548,14 @@ def test_nonworker_real_requery_accepts_historical_report_but_binds_original_sta
 
 @pytest.mark.parametrize("unavailable", ["no-message", "native-source", "central-query"])
 def test_real_unknown_query_is_recordable_without_inventing_native_proof(tmp_path, monkeypatch, unavailable):
-    from slk_transport.native_activity import collect_overwatch_scope
+    from slk_transport import native_activity as native
+    # This test covers UNKNOWN evidence, not the host clock's tick resolution.
+    base = admin.wc._timestamp(native.utc_now())
+    ticks = count()
+    def sample_time():
+        return (base + timedelta(milliseconds=next(ticks))).isoformat()
+    monkeypatch.setattr(native, "utc_now", sample_time)
+    monkeypatch.setattr(admin, "utc_now", sample_time)
     request = request_fixture(tmp_path)
     cycle = json.loads(Path(json.loads(request.read_text())["operation_request_path"]).read_text())
     projection = json.loads((tmp_path / "runtime.json").read_text())
@@ -554,7 +567,7 @@ def test_real_unknown_query_is_recordable_without_inventing_native_proof(tmp_pat
     with monkeypatch.context() as patch:
         if unavailable == "central-query":
             patch.setattr(admin.wc, "_default_load_current_projection", lambda *_a, **_k: (_ for _ in ()).throw(ValueError("query offline")))
-        query = collect_overwatch_scope(None, run_id="RUN-A", state_command=["slk-state"])
+        query = native.collect_overwatch_scope(None, run_id="RUN-A", state_command=["slk-state"])
     query_path = write_json(tmp_path / "scope-query.json", query)
     cycle.update(started_at=query["query_started_at"], completed_at=query["query_completed_at"],
         checklist={"active_session": "CLEAR", "bi_projection": "ANOMALY"}, anomaly_codes=["ACTIVITY_UNPROVEN"],

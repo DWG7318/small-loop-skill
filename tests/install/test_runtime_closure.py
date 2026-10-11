@@ -173,6 +173,7 @@ def test_bundled_dsh_missing_product_has_no_legacy_fallback(wrapper_fixture: Pat
         missing.rename(original)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell 5.1 and CMD legacy dispatch")
 def test_legacy_dsh_with_public_cli_keeps_legacy_dispatch(tmp_path: Path) -> None:
     directory = tmp_path / "tools/slk/runtime/dsh"
     (directory / "node_modules/@deepseek-ai/dsh/lib").mkdir(parents=True)

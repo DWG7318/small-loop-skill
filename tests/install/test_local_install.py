@@ -115,6 +115,9 @@ def unpack_simulated_package(tmp_path: Path) -> Path:
     archive = shutil.make_archive(str(tmp_path / "delivery"), "zip", built)
     package = tmp_path / "unpacked"
     shutil.unpack_archive(archive, package)
+    # ZIP extraction drops POSIX execution bits needed by the real Node fixture.
+    node = Path("tools/slk/runtime/node/node.exe")
+    shutil.copymode(built / node, package / node)
     shutil.rmtree(built)
     return package
 

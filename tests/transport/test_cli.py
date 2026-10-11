@@ -123,6 +123,7 @@ def test_nested_windows_send_retries_access_denied_without_breakaway(
     monkeypatch,
 ) -> None:
     breakaway = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
+    monkeypatch.setattr(transport_cli.subprocess, "CREATE_BREAKAWAY_FROM_JOB", breakaway, raising=False)
     no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     calls: list[int] = []
 

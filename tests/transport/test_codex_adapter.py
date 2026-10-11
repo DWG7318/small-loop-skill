@@ -266,7 +266,7 @@ def test_stale_codex_executable_is_rebound_without_changing_endpoint_identity(
     assert result.status == "completed"
     evidence = json.loads((attempt.root / "command-rebind.json").read_text(encoding="utf-8"))
     assert evidence["requested_executable"].endswith("codex.exe")
-    assert evidence["resolved_executable"] == sys.executable
+    assert evidence["resolved_executable"] == str(Path(sys.executable).resolve())
     assert evidence["thread_id"] == stale.address["thread_id"]
 
 

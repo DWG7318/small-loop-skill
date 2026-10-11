@@ -48,6 +48,7 @@ def test_windows_timeout_terminates_the_entire_process_tree(
     process = TimedOutProcess()
     commands: list[list[str]] = []
     monkeypatch.setattr(watch.os, "name", "nt")
+    monkeypatch.setattr(watch, "windows_no_window_kwargs", lambda: {})
     monkeypatch.setattr(
         watch.subprocess,
         "run",
