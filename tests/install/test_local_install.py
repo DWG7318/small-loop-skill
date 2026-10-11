@@ -393,7 +393,7 @@ $text = [IO.File]::ReadAllText('__INSTALLER__')
 $tokens = $null; $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseInput($text, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw 'source parse failed' }
-foreach ($name in @('Get-FullPath', 'Assert-Within', 'Get-ManagedState')) {
+foreach ($name in @('Get-FullPath', 'Get-Sha256', 'Assert-Within', 'Get-ManagedState')) {
     $definition = $ast.Find({ param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
     }, $true)
@@ -468,12 +468,68 @@ def _ps51():
     return path
 
 
+def _ps51_module_path(mode):
+    native = str(_ps51().parent / "Modules")
+    if mode == "native":
+        return native
+    pwsh = shutil.which("pwsh")
+    if not pwsh or not (Path(pwsh).parent / "Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1").is_file():
+        pytest.skip("PowerShell7 modules required for the actual mixed-module regression")
+    return str(Path(pwsh).parent / "Modules") + os.pathsep + native
+
+
+def test_ps51_mixed_module_path_hashes_managed_files_without_module_autoload(tmp_path):
+    root = tmp_path / "state 中文 %ENC_LITERAL% ^home"
+    files = {"direct.bin": b"\x00binary\xff\n", "nested/empty.bin": b"",
+             "nested/中文 %ENC_LITERAL% ^bytes.bin": bytes(range(256)) * 4097}
+    for relative, data in files.items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    before = {relative: (root / relative).stat().st_mtime_ns for relative in files}
+    harness = tmp_path / "mixed modules.ps1"
+    script = r'''
+$beforeModulePath = $env:PSModulePath
+$text = [IO.File]::ReadAllText('__INSTALLER__')
+$start = $text.IndexOf('$ErrorActionPreference =', [StringComparison]::Ordinal)
+$end = $text.IndexOf('$package = Get-FullPath $PackageRoot', [StringComparison]::Ordinal)
+. ([scriptblock]::Create($text.Substring($start, $end - $start)))
+$hashCommandAvailable = $false
+try { $hashCommandAvailable = $null -ne (Get-Command Get-FileHash -ErrorAction Stop) } catch { }
+$state = Get-ManagedState '__ROOT__' @('direct.bin', 'nested')
+[ordered]@{state=($state | ConvertFrom-Json); module_path=$env:PSModulePath; before_module_path=$beforeModulePath; hash_command_available=$hashCommandAvailable} | ConvertTo-Json -Compress
+'''
+    harness.write_text(script.replace("__INSTALLER__", str(INSTALLER).replace("'", "''"))
+        .replace("__ROOT__", str(root).replace("'", "''")), encoding="utf-8-sig")
+    environment = os.environ.copy()
+    environment["PSModulePath"] = _ps51_module_path("mixed")
+    environment["ENC_LITERAL"] = "WRONG_EXPANSION"
+    completed = subprocess.run([str(_ps51()), "-NoProfile", "-NonInteractive", "-File", str(harness)],
+        env=environment, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout.decode("utf-8", errors="strict"))
+    # PS5.1 startup itself may add the shared WindowsPowerShell Modules directory.
+    # Require the incompatible PS7 prefix to remain and the installer not to sanitize it.
+    assert result["module_path"] == result["before_module_path"]
+    assert result["module_path"].split(os.pathsep)[0] == environment["PSModulePath"].split(os.pathsep)[0]
+    assert str(_ps51().parent / "Modules") in result["module_path"].split(os.pathsep)
+    assert result["hash_command_available"] is False
+    assert {name.replace("\\", "/"): value for name, value in result["state"].items()} == {
+        relative: hashlib.sha256(data).hexdigest() for relative, data in files.items()}
+    assert completed.stderr == b""
+    assert all((root / relative).read_bytes() == data and (root / relative).stat().st_mtime_ns == before[relative]
+               for relative, data in files.items())
+
+
 @pytest.mark.parametrize("opt_in", (False, True))
-def test_ps51_headless_install_receipt_is_strict_utf8_and_reachable(tmp_path, opt_in):
+@pytest.mark.parametrize("module_path", ("native", "mixed"), ids=("native_modules", "mixed_module_path"))
+def test_ps51_headless_install_receipt_is_strict_utf8_and_reachable(tmp_path, opt_in, module_path):
     package = _encoding_package(tmp_path)
     codex = tmp_path / "installed 中文 %ENC_LITERAL% ^home"
+    if module_path == "mixed":
+        seed_old_install(codex)  # Real upgrade hashes both existing files and directory contents.
     environment = os.environ.copy()
-    environment["PSModulePath"] = str(_ps51().parent / "Modules")
+    environment["PSModulePath"] = _ps51_module_path(module_path)
     environment["ENC_LITERAL"] = "WRONG_EXPANSION"
     command = [str(_ps51()), "-NoProfile", "-NonInteractive", "-File", str(INSTALLER),
         "-PackageRoot", str(package), "-CodexHome", str(codex), "-PythonExecutable", sys.executable,
@@ -507,7 +563,8 @@ def test_ps51_headless_install_receipt_is_strict_utf8_and_reachable(tmp_path, op
         assert config.read_bytes() == original
 
 
-def test_ps51_headless_config_failure_keeps_utf8_error_and_rolls_back(tmp_path):
+@pytest.mark.parametrize("module_path", ("native", "mixed"), ids=("native_modules", "mixed_module_path"))
+def test_ps51_headless_config_failure_keeps_utf8_error_and_rolls_back(tmp_path, module_path):
     package = _encoding_package(tmp_path)
     codex = tmp_path / "previous 中文 %ENC_LITERAL% ^home"
     previous = seed_old_install(codex)
@@ -516,7 +573,7 @@ def test_ps51_headless_config_failure_keeps_utf8_error_and_rolls_back(tmp_path):
     config.parent.mkdir(parents=True)
     config.write_bytes(b"invalid JSON original")
     environment = os.environ.copy()
-    environment["PSModulePath"] = str(_ps51().parent / "Modules")
+    environment["PSModulePath"] = _ps51_module_path(module_path)
     completed = subprocess.run([str(_ps51()), "-NoProfile", "-NonInteractive", "-File", str(INSTALLER),
         "-PackageRoot", str(package), "-CodexHome", str(codex), "-PythonExecutable", sys.executable,
         "-DshUserHome", str(tmp_path / "DSH 中文 %ENC_LITERAL% ^home"),

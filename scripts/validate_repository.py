@@ -65,6 +65,7 @@ def release_files(root: Path) -> list[Path]:
                 relative
                 for relative in values
                 if relative.as_posix() not in EXCLUDED_FILES
+                and not any(part.endswith(".egg-info") for part in relative.parts[:-1])
                 and (root / relative).is_file()
             ),
             key=lambda item: item.as_posix(),
@@ -75,7 +76,9 @@ def release_files(root: Path) -> list[Path]:
         if not path.is_file():
             continue
         relative = path.relative_to(root)
-        if any(part in EXCLUDED_DIRS for part in relative.parts):
+        if any(part in EXCLUDED_DIRS for part in relative.parts) or any(
+            part.endswith(".egg-info") for part in relative.parts[:-1]
+        ):
             continue
         if (
             relative.as_posix() in EXCLUDED_FILES

@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "813e990cfa6ae6da77e7bb9245856b7943597234d31c8a4a4d05abaabff4a2ee"
+      "sha256": "44b105c14f581012afb579614f97ad09c64ed0fffd01e7d150c416e517b3f173"
     },
     {
       "path": "VERSION",
@@ -1704,7 +1704,7 @@
     },
     {
       "path": "scripts/install_local.ps1",
-      "sha256": "e66f7aee6173bb7da3a2bc7a11ac411c53e939384f7236cff6b7ea2844569e04"
+      "sha256": "939810220e96dc82ce10a75cda4994ffd2785ce7e404b4a81b878e257dd78b37"
     },
     {
       "path": "scripts/local_package_metadata.py",
@@ -1760,7 +1760,7 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "1086847ef500b99090f545bb415805d36cbe7ffa43e49eefcb45f9a39fe84c30"
+      "sha256": "3e0415f86f535b9640e9c5a4802133dd52a034ba39245f514615203ffdfb0ee8"
     },
     {
       "path": "scripts/validate_role_eval.py",
@@ -2200,7 +2200,7 @@
     },
     {
       "path": "tests/install/test_local_install.py",
-      "sha256": "f84599e5a08bcbd5a948dd8bfe71fe54648b3528164f48bed66e8a58c995fdf7"
+      "sha256": "a1549c40c8308a34b66de464522276edb6414345f5756ddd5b0e8c2206e3887d"
     },
     {
       "path": "tests/install/test_ocrv_classification.py",
@@ -2333,6 +2333,10 @@
     {
       "path": "tests/test_repository_300.py",
       "sha256": "ac174e69a28fb08f76bda50d8894eb5940dc860b719edda983f176a7877e79ea"
+    },
+    {
+      "path": "tests/test_repository_build_metadata.py",
+      "sha256": "4727d7d5b5515965e3cbabde783fedd3e08297a3ca8d8eb2e96fcdac0bec07ed"
     },
     {
       "path": "tests/test_skill_collection_300.py",

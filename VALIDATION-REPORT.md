@@ -2,6 +2,26 @@
 
 ## 2026-10-11 — OW → P → S → M source acceptance
 
+Final publication/install compatibility correction: hosted CI's editable Python
+installation generated six `*.egg-info` metadata files that the source inventory
+mistakenly treated as new source. Both Git and filesystem discovery now exclude
+only metadata parent directories; ordinary similarly named files and genuine
+source inventory/SHA256 checks remain enforced. Six regressions went RED then
+GREEN, and an actual isolated setuptools editable requirements hook reproduced
+and verified the six generated files. No runtime or admission rule changed.
+
+The first real local deployment attempt stopped before mutation (`UNCHANGED`):
+hidden PS5.1 inherited PS7's module path and could not autoload `Get-FileHash`.
+Two managed-state hash calls now use .NET streaming SHA256 with deterministic
+resource disposal, without changing module paths or install/rollback semantics.
+Four mixed-module cases reproduced RED; the final related subset passed 13/13,
+including existing-install upgrades, original-byte rollback and partial moves.
+An independent reviewer approved both narrow repairs with a separate 12-case
+run. Original failed and intermediate test-driver evidence is retained. Earlier
+large-suite/package results below remain their actual snapshots, not claims that
+these later corrections had already been included. Actual final deployment and
+Supervisor acceptance are recorded separately after they occur.
+
 Post-merge checkout correction: the OW developer builder wrote `BUILD_INPUTS.json`
 using Windows-default CRLF while Git stored LF. Its outer MANIFEST/module-map hash
 therefore described pre-normalization bytes. A raw-byte regression reproduced

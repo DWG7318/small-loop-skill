@@ -18,6 +18,17 @@ function Get-FullPath([string]$Path) {
     return [System.IO.Path]::GetFullPath($Path)
 }
 
+function Get-Sha256([string]$Path) {
+    # PS5.1 can inherit PS7's incompatible Utility module; hashing needs no module.
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return [System.BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+        } finally { $algorithm.Dispose() }
+    } finally { $stream.Dispose() }
+}
+
 function Assert-Within([string]$Root, [string]$Path) {
     $rootFull = (Get-FullPath $Root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
     $pathFull = Get-FullPath $Path
@@ -128,12 +139,12 @@ function Get-ManagedState([string]$Root, [string[]]$ManagedRoots) {
     foreach ($relative in $ManagedRoots) {
         $target = Assert-Within $Root (Join-Path $Root $relative)
         if (Test-Path -LiteralPath $target -PathType Leaf) {
-            $state[$relative] = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+            $state[$relative] = Get-Sha256 $target
         } elseif (Test-Path -LiteralPath $target -PathType Container) {
             foreach ($file in Get-ChildItem -LiteralPath $target -File -Recurse | Sort-Object FullName) {
                 $rootPrefix = (Get-FullPath $Root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
                 $key = (Assert-Within $Root $file.FullName).Substring($rootPrefix.Length).Replace('\', '/')
-                $state[$key] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                $state[$key] = Get-Sha256 $file.FullName
             }
         }
     }
