@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "c6e5edf83c0fb4d69ef2443f0056cd764610ab498afbf442c936af00c5a69898"
+      "sha256": "90f730c892129b21dd42db6a2152b68b966caca5d8959837c8986eeadcb2ef7a"
     },
     {
       "path": "VERSION",
@@ -1043,6 +1043,14 @@
       "sha256": "6ad67b037677af48d9e9b6933dee982e386f3b41237af11350188c9eaf5e4d86"
     },
     {
+      "path": "docs/runtime/SLK-TOOL-MODULES.json",
+      "sha256": "5a6703de4cd1cb38e9dbbfb1bca29c0f006c09955a5d90811cea8359ca277e16"
+    },
+    {
+      "path": "docs/runtime/SLK-TOOL-MODULES.md",
+      "sha256": "111baefa789266e135dbc88e2fcd8d6d3495c38ac885dff1082e1666db10addb"
+    },
+    {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
       "sha256": "887bdee526fa002a32381251f8daafca4edf881a91b3629ccab241bbf15afc4c"
     },
@@ -1204,7 +1212,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-10-11-slk-4.5.0-preflight-skills-plan.md",
-      "sha256": "65ed238db5719cee3630fe9e35545ae33ae2603c8e968b76a1b98541867800d0"
+      "sha256": "dd168bab8b187bcaef97832b5c8fc922436266fd7f321cc5026f84a7f1c6952e"
     },
     {
       "path": "docs/superpowers/plans/2026-10-11-slk-4.5.0-s-results.md",
@@ -1363,6 +1371,22 @@
       "sha256": "105770d52da0a9fbdbd24b0bfdc4cb3ef82307e323c76f94ab36d4378329342d"
     },
     {
+      "path": "integrations/dsh/artifacts/windows-x86_64/ARTIFACTS.json",
+      "sha256": "fa648dcbda88a95f164f6215428ed5c4ec11cf26c0eb189d7769621f670f4a1b"
+    },
+    {
+      "path": "integrations/dsh/artifacts/windows-x86_64/payload.zip.part001",
+      "sha256": "e60015c5981dfa5039d09aa3ff5762b05045b2062607057c3bd4ac8b864d9755"
+    },
+    {
+      "path": "integrations/dsh/artifacts/windows-x86_64/payload.zip.part002",
+      "sha256": "23d59b8d24554c05f85bf266c60e118f5d36ab99acb45e4375ee7a309b620045"
+    },
+    {
+      "path": "integrations/dsh/artifacts/windows-x86_64/payload.zip.part003",
+      "sha256": "c3cb944453f6fb0d7d713869b4ec2c36708603ab4fbcf2e66d818105f0c0dd4a"
+    },
+    {
       "path": "integrations/dsh/dsh-slk.cmd",
       "sha256": "79ad607c7c8f0abc56b5a3dec7283fd24d9ff4f5428be28b5fd7c4ecd08487d6"
     },
@@ -1389,6 +1413,14 @@
     {
       "path": "integrations/dsh/slk_native_activity.mjs",
       "sha256": "8fb93668a5ef1964cc2909af5a0a13eb6318d1d5434ab0ef2c7a65aaf9592581"
+    },
+    {
+      "path": "integrations/dsh/upstream/README.md",
+      "sha256": "fcdd8f94d02804d230fc2dc2075721106640d118a42abd1e2dac501a07c1b440"
+    },
+    {
+      "path": "integrations/dsh/upstream/deepseek-harness-639ed015397290b3745d163aafe02ffee4aa3f84.zip",
+      "sha256": "ee17162f19fbed3161a5ec04985a86c5aa2050262ea3dcf019f03579441c8b90"
     },
     {
       "path": "integrations/native-probe/.gitignore",
