@@ -10,6 +10,19 @@
     "sha256": "12cab477537c76b085b2bfe58658162dc58e70551048b085513970fb1cfe49d0",
     "size": 3082299
   },
+  "build": {
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "-p",
+      "slk-state-core"
+    ],
+    "source_hash_mode": "sha256-raw",
+    "toolchain": "rustc 1.94.0 (4a4ef493e 2026-03-02); cargo 1.94.0 (85eff7c80 2026-01-15)",
+    "working_directory": "parent SLK workspace; library sources and own lock preserved in this prefix"
+  },
   "payload": [
     {
       "path": "lib/slk_state_core.rlib",
