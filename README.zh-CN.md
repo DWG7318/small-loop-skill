@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前源码版本：**4.4.5 — 源码维修已验收；本批未发布、未部署**。见[验证记录](VALIDATION-REPORT.md)。预检精简与预制部署改造属于后续 4.5.0，不混入本次维修。
+当前源码版本：**4.5.0 — 候选版集成验证中，尚未发布、部署**。进展见[450计划](docs/superpowers/plans/2026-10-11-slk-4.5.0-scope.md)；[原验证记录](VALIDATION-REPORT.md)保留此前维修证据。
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小工程 Run，或大型工程中相对独立的范围。一个 SLK 就是一个 Run，只含一条串行 CELL 路径。
 
@@ -11,15 +11,15 @@ Supervisor → Checker → Worker → Checker
                        FAIL → Supervisor → 同一 Worker → Checker
                  最终 PASS → Supervisor D2
 
-Overwatcher：必需、非权威，只核实真假并向 Supervisor 报告
+Overwatcher：Supervisor 必需的直属 subagent，只观察并向所属 Supervisor 报告
 Temporal：必需的连续性与计时保障，不拥有工程权威
 ```
 
-任何 CELL 开工前，Supervisor 必须打开 BI 1.1.1，建立四角色 `RUN_TEAM_REGISTRY`，证明工具/能力和设备 readiness，并绑定由七条准确通讯演练产生的真实隔离来源。第一份来源只能由一次性单 CELL Run 通过 `preflight-conformance-sample` 产生：运行证据位于 `slk-conformance/<SLK-CONFORMANCE-…>`，Worker 工作区是与其分离、clean、固定 HEAD 且无 remote 的样本 Git，其他角色保留真实原生 cwd，绝不能派产品工作。Temporal 使用内置两阶段标准适配器：中央 bootstrap 只创建一次真实工作流对，得到真实 identity/Host/OW 证据后再按显式样本或产品模式准入；产品 Run 永远以 `preflight-new-run` 绑定另一 Run 的密封来源，不重放假 FAIL/返工/D2。证据缺失、过期、猜测、循环依赖或不可查询时禁止派工。
+任何 CELL 开工前，Supervisor 打开预编译 BI 1.1.1，通过 `preflight-basic` 确认已安装 SLK、DSH/OCRV、Skill、工具、状态、共用 Temporal，以及准确的角色身份/端点。成员接受简短角色说明和角色 eval；检查必需的正常直连通讯，不模拟一整轮工程。严格通讯演练保留为开发/回归工具，不再成为普通开工依赖。缺项采用预制配置和排障建议，未知问题由 Supervisor 决定。十分钟检查、二十分钟准备只是效率建议，不是截止、失败或停止门槛。使用者调用成品，不在每次开工编译或重建依赖。
 
-Codex 担任 Supervisor，固定 canonical `gpt-6.1-sol`，每个 Run 由 Owner 选择 `high` 或 `xhigh`；OCRV 担任 Checker（Qwen3.8-Max）；DSH 担任 Worker（DeepSeek V4 Flash）。runtime、model、reasoning、Session、adapter、endpoint 与原生活动都由工具验证，不从提示词推断。Supervisor 还要按 DSH 实际能力给冻结方案定 CELL：大工作在派工前拆成可独立 D0/D1 的中小 CELL，不降低验收。目标是绝大部分 CELL 首轮 D1 PASS；同一 CELL 第二次连续正式 D1 FAIL 后停止普通返工，版本化拆分未接受范围，D1 权威仍属于 Checker。
+Codex 担任 Supervisor，固定 canonical `gpt-6.1-sol`，每个 Run 由 Owner 选择 `high` 或 `xhigh`；OCRV 担任 Checker（Qwen3.8-Max）；DSH 担任 Worker（DeepSeek V4 Flash）。runtime、model、reasoning、Session、adapter、endpoint 与原生活动都由工具验证，不从提示词推断。Supervisor 还要按 DSH 实际能力给冻结方案定 CELL：大工作在派工前拆成可独立 D0/D1 的中小 CELL，不降低验收。目标是绝大部分 CELL 首轮 D1 PASS；第二次连续正式 D1 FAIL 后加强调查并考虑版本化拆分未接受范围，这是施工指引而非输出否决器，D1 权威仍属于 Checker。
 
-Overwatcher 为必选，每 600 秒以交叉证据核验真实情况。它不转发正常工作、不重试投递、不修改 BI/TOKEN、不判断 D0/D1/D2，也不修复成员；只把 `ANOMALY` 或 `UNKNOWN` 报给准确登记的 Supervisor，并继续观察。一个 Run 只有一个独立 OW 角色绑定；只有 agent/model/endpoint/cadence 等事实完全一致时，同一个 active Session 才能同时服务多个 Run，而且每个 Run 必须独立定界。只有 Supervisor 可叫停 OW；任何退出都必须触发 Supervisor 二次确认的 runtime guard，未解除前不得派发下一 CELL。
+Overwatcher 为必选：每个 Supervisor 只有一个原生直属 subagent，在该 Supervisor 的每个 Run 中登记。推荐高效低推理模型，不硬绑定具体型号。它每 600 秒交叉核验事实，只向所属 Supervisor 报告 `ANOMALY` 或 `UNKNOWN`；不转发正常工作、不重试投递、不修改 BI/TOKEN、不判断 D0/D1/D2，也不修复成员。解除一个 Run 不停止其他 Run 的巡查。只有所属 Supervisor 可叫停，任何退出仍须其确认；由真实父子身份和当前原生执行证明激活，不能把工具接受请求当作已运行。
 
 Temporal 是多个 Run 共用的一套 headless 本地服务。每个 Run 拥有独立 `SLK.Start` 与 `SLK.Run`，保存准确原生启动确认、原发送者恢复、成员停留 30 分钟的 Supervisor 通知、每 20 分钟 OW 审计和独立关闭。它不裁决工程状态，也不替代成员直连通讯。SLK 不安装 Docker；必需连续性不可用或失败时，由 Supervisor 修复后才可继续。
 
@@ -33,7 +33,7 @@ SLK 使用版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导�
 
 ## Skill 集合
 
-把 [`skills/`](skills/) 下 17 个同级目录作为完整包安装：[主 Skill](skills/small-loop-skill/SKILL.md) 加 16 个情境子 Skill，覆盖计划、容量、模型、角色 Eval/团队准备、Temporal、OW 观察、CELL 施工/检查/返工、记录、调整、恢复和收尾。它们属于同一方法，不是独立方法，不能脱离 SLK Run 单独使用。
+把 [`skills/`](skills/) 下同级目录按交付清单完整安装，不固定 Skill 数量。[主 Skill](skills/small-loop-skill/SKILL.md) 路由到规划、角色理解/团队准备、成员更换/归档、Temporal、OW、暂停/恢复、CELL 工作、记录、通讯恢复和收尾等短指引。准备排障与施工排障是分开的可选入口，不是新增必经阶段。它们属于同一方法，不能脱离 SLK Run 单独使用。
 
 ## 验证
 

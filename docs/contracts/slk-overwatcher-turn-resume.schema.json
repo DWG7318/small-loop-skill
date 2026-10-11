@@ -13,7 +13,7 @@
     "event_id": {"$ref": "#/$defs/identifier"},
     "run_id": {"$ref": "#/$defs/identifier"},
     "role_instance_id": {"$ref": "#/$defs/identifier"},
-    "session_id": {"$ref": "#/$defs/identifier"},
+    "session_id": {"type": "string", "minLength": 1},
     "binding_revision": {"type": "integer", "minimum": 1},
     "expected_runtime_revision": {"type": "integer", "minimum": 1},
     "previous_foreground_turn_id": {"$ref": "#/$defs/identifier"},

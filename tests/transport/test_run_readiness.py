@@ -21,6 +21,7 @@ from slk_transport.run_readiness import (
 from slk_transport.contracts import canonical_json_sha256
 from slk_transport.native_activity import make_native_start
 from slk_transport import worker_completion as wc
+from slk_transport import run_readiness as readiness
 from test_contracts import endpoint_value, envelope_value
 
 
@@ -307,8 +308,212 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
 
 
+def _ordinary_450_admission(tmp_path, monkeypatch):
+    """Current component registration only: no historical engineering originals."""
+    current = _request(tmp_path, legacy_echo=True, method_version="4.5.0")
+    run_id = current["run_id"]
+    Path(current["communication_rehearsal"]).unlink()
+    bi = Path(current["bi_open_receipt"])
+    write_json(bi, {**json.loads(bi.read_text()), "bi_version": "1.1.1"})
+    def proof(name, value):
+        path = write_json(tmp_path / f"{name}.json", value)
+        return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    host_roles, consumers = {}, {}
+    projected_roles = []
+    for row in current["roles"]:
+        role = row["role"]
+        if role == "overwatcher":
+            row["actual_runtime"] = row["expected_runtime"] = "codex"
+            row["actual_model"] = row["expected_model"] = "gpt-6.1-sol"
+            row["native_activity_capability"] = proof("codex-native", {
+                "schema_version": "slk.native-activity-capability/v1", "method_version": "4.5.0",
+                "runtime": "codex", "read_only_observation": True, "model_call_required": False,
+                "native_events": ["collaboration/list_agents"],
+            })["path"]
+        sealed = tmp_path / f"{role}.dpapi"
+        sealed.write_bytes(b"isolated credential")
+        consumers[role] = proof(f"consumer-{role}", {"status": "SEALED_ROLE_VERIFIED", "run_id": run_id,
+            "role": role, "role_instance_id": row["role_instance_id"], "sealed_path": str(sealed),
+            "sealed_sha256": hashlib.sha256(sealed.read_bytes()).hexdigest(), "runtime_revision": 7})
+        if role != "overwatcher":
+            endpoint = endpoint_value(role=role, run_id=run_id, version=1)
+            endpoint["role_instance_id"] = row["role_instance_id"]
+            ref = proof(f"endpoint-{role}", endpoint)
+            row["endpoint_path"] = ref["path"]
+            host_roles[role] = {"endpoint_path": ref["path"], "endpoint_sha256": ref["sha256"],
+                                "credential_path": str(sealed)}
+        projected_roles.append({"role": role, "role_instance_id": row["role_instance_id"],
+                                "agent_runtime": row["actual_runtime"], "lifecycle": "active"})
+    temporal = json.loads(Path(current["temporal_readiness_receipt"]).read_text())
+    state = tmp_path / "slk-state.exe"
+    state.write_bytes(b"isolated state fixture")
+    (tmp_path / "slk-bi-query.exe").write_bytes(b"isolated query fixture")
+    binding = proof("current-host", {"schema_version": "slk.role-host/v2", "run_id": run_id,
+        "plan_revision": 1, "state_command": [str(state)], "transport_command": ["isolated-transport"],
+        "roles": host_roles, "cells": [{"go_id": "GO-001", "cell_id": "CELL-001", "payload": {
+            "cell_goal": "bounded task", "d1_criteria": ["focused check passes"]}}], "d2_criteria": ["accepted"],
+        "temporal": {"client_command": temporal["client_command"],
+            "workflow_identity_path": temporal["workflow_identity"]["path"],
+            "workflow_identity_sha256": temporal["workflow_identity"]["sha256"], "attempt_root": temporal["attempt_root"]}})
+    projection = {"schema_version": "slk.bi.run/v1", "run_id": run_id,
+        "summary": {"run_id": run_id, "slk_version": "4.5.0", "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": run_id, "method_version": "4.5.0", "plan_revision": 1,
+            "runtime_revision": 7, "token_sequence": 1,
+            "token_holder_role_instance_id": f"{run_id}-supervisor", "latest_message_id": None},
+        "roles": projected_roles, "token_history": [{"event_type": "TOKEN_CREATED", "token_sequence": 1,
+            "to_role_instance_id": f"{run_id}-supervisor", "from_role_instance_id": None,
+            "message_id": None, "go_id": None, "cell_id": None}], "events": [],
+        "_slk_command": {"process_exit": 0}}
+    calls = []
+    def current_command(command, args, **kwargs):
+        calls.append(args)
+        assert args[0] in {"run", "authenticate-role"}, "preflight must not review/send/build"
+        assert args[2] == run_id, "historical authentication/query is forbidden"
+        if args[0] == "run":
+            return copy.deepcopy(projection)
+        return {"status": "authenticated", "run_id": run_id, "role_instance_id": args[4],
+                "role": args[4].rsplit("-", 1)[1], "runtime_revision": 7}
+    monkeypatch.setattr(wc, "_run_json_command", current_command)
+    def no_history(*_args, **_kwargs):
+        pytest.fail("ordinary 450 must not read or authenticate historical conformance")
+    monkeypatch.setattr(readiness, "_normal_chain_conformance", no_history)
+    monkeypatch.setattr(subprocess, "run", no_history)
+    admission = {"schema_version": "slk.run-admission-request/v1", "run_id": run_id,
+        "plan_revision": 1, "roles": current["roles"], "optional_features": [],
+        "bi_open_receipt": current["bi_open_receipt"], "temporal_readiness_receipt": current["temporal_readiness_receipt"],
+        "current_host_binding": binding, "sealed_role_receipts": consumers}
+    return admission, projection, calls
+
+
+@pytest.mark.parametrize("history", ["absent", "inaccessible"])
+@pytest.mark.parametrize("evaluate", [evaluate_new_run_admission, evaluate_run_admission])
+def test_450_ordinary_preflight_never_opens_history_and_reuses_current_authority(tmp_path, monkeypatch, history, evaluate):
+    from jsonschema import Draft202012Validator
+    from slk_transport import role_host
+    admission, _projection, calls = _ordinary_450_admission(tmp_path, monkeypatch)
+    original_host, hosts = role_host.RoleHost, []
+    def current_host(*args, **kwargs):
+        hosts.append(True)
+        return original_host(*args, **kwargs)
+    monkeypatch.setattr(role_host, "RoleHost", current_host)
+    if history == "inaccessible":
+        admission["normal_chain_conformance"] = str(tmp_path / "unavailable-source.json")
+    admission["roles"][1]["tool_update_status"] = "UPDATE_REQUIRED"
+    admission["roles"][2]["tool_update_status"] = "UNPROVEN"
+    admission["optional_features"] = [
+        {"name": "RTK", "decision": "ON", "owner_evidence_ref": ""},
+        {"name": "Ponytail", "decision": "UNCONFIRMED", "owner_evidence_ref": ""}]
+    result = evaluate(admission)
+    assert result["status"] == "READY"
+    assert result["conformance_run_id"] is None
+    assert "TOOL_UPDATE_REQUIRED" in result["roles"][1]["advisory_codes"]
+    assert "TOOL_UPDATE_UNPROVEN" in result["roles"][2]["advisory_codes"]
+    assert "OPTION_UNAVAILABLE_FALLBACK:RTK" in result["roles"][1]["advisory_codes"]
+    assert sum(args[0] == "run" for args in calls) == 1
+    assert sum(args[0] == "authenticate-role" for args in calls) == 4
+    assert len(hosts) == 1
+    schema = Path(__file__).resolve().parents[2] / "docs/contracts/slk-run-readiness.schema.json"
+    validator = Draft202012Validator(json.loads(schema.read_text()))
+    validator.validate(admission)
+    validator.validate(result)
+
+
+@pytest.mark.parametrize("damage,code", [
+    ("bi", "BI_OPEN_RECEIPT_INVALID"), ("bi-method", "BI_OPEN_RECEIPT_INVALID"),
+    ("bi-version", "BI_OPEN_RECEIPT_INVALID"), ("temporal", "TEMPORAL_READINESS_INVALID"),
+    ("temporal-method", "TEMPORAL_READINESS_INVALID"), ("credential", "CURRENT_ROLE_REGISTRATION_INVALID"),
+    ("endpoint", "CURRENT_ROLE_REGISTRATION_INVALID"), ("role", "CURRENT_ROLE_REGISTRATION_INVALID"),
+    ("token", "CURRENT_TOKEN_BOUNDARY_INVALID"), ("authority", "CURRENT_TOKEN_BOUNDARY_INVALID"),
+    ("projection-shape", "CURRENT_TOKEN_BOUNDARY_INVALID"),
+    ("ow", "CURRENT_ROLE_REGISTRATION_INVALID"), ("required-tool", "REQUIRED_TOOL_MISSING"),
+    ("capability", "NATIVE_ACTIVITY_CAPABILITY_MISSING"), ("model", "MODEL_MISMATCH"),
+])
+def test_450_light_preflight_keeps_actual_current_repairs(tmp_path, monkeypatch, damage, code):
+    admission, projection, _calls = _ordinary_450_admission(tmp_path, monkeypatch)
+    if damage in {"bi", "temporal"}:
+        Path(admission[f"{damage}_open_receipt" if damage == "bi" else "temporal_readiness_receipt"]).unlink()
+    elif damage in {"bi-method", "bi-version", "temporal-method"}:
+        key = "bi_open_receipt" if damage.startswith("bi") else "temporal_readiness_receipt"
+        path = Path(admission[key])
+        receipt = json.loads(path.read_text())
+        receipt["bi_version" if damage == "bi-version" else "method_version"] = "1.1.0" if damage == "bi-version" else "4.4.5"
+        write_json(path, receipt)
+    elif damage == "credential":
+        consumer = json.loads(Path(admission["sealed_role_receipts"]["checker"]["path"]).read_text())
+        Path(consumer["sealed_path"]).write_bytes(b"changed")
+    elif damage == "endpoint":
+        alternate = write_json(tmp_path / "wrong-endpoint.json", {})
+        admission["roles"][1]["endpoint_path"] = str(alternate)
+    elif damage == "role":
+        admission["roles"][1]["role_instance_id"] = "different-worker"
+    elif damage == "ow":
+        admission["sealed_role_receipts"].pop("overwatcher")
+    elif damage == "token":
+        projection["runtime_snapshot"]["token_holder_role_instance_id"] = "other-supervisor"
+    elif damage == "authority":
+        projection["summary"]["slk_version"] = "4.4.5"
+    elif damage == "projection-shape":
+        projection["runtime_snapshot"] = None
+    elif damage == "required-tool":
+        admission["roles"][1]["required_tools"].append(str(tmp_path / "missing-rtk.exe"))
+    elif damage == "capability":
+        admission["roles"][2]["native_activity_capability"] = None
+    else:
+        admission["roles"][2]["actual_model"] = "wrong-model"
+    result = evaluate_new_run_admission(admission)
+    assert result["status"] != "READY"
+    assert code in result["reason_codes"]
+
+
+def test_input_450_cannot_select_light_policy_on_current_445(tmp_path, monkeypatch):
+    admission, projection, _calls = _ordinary_450_admission(tmp_path, monkeypatch)
+    projection["summary"]["slk_version"] = "4.4.5"
+    projection["runtime_snapshot"]["method_version"] = "4.4.5"
+    history = []
+    monkeypatch.setattr(readiness, "_normal_chain_conformance", lambda *_args: history.append(True))
+    admission["roles"][1]["tool_update_status"] = "UPDATE_REQUIRED"
+    result = evaluate_new_run_admission(admission)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert history == [True]
+    assert {"NORMAL_CHAIN_CONFORMANCE_INVALID", "TOOL_UPDATE_REQUIRED", "REQUIRED_OPTION_MISSING",
+            "BI_OPEN_RECEIPT_INVALID", "TEMPORAL_READINESS_INVALID"} <= set(result["reason_codes"])
+
+
+@pytest.mark.parametrize("failure,code", [("query", "CURRENT_TOKEN_BOUNDARY_INVALID"),
+                                          ("authenticate-role", "CURRENT_ROLE_REGISTRATION_INVALID")])
+def test_unavailable_current_authority_or_authentication_never_falls_back_to_receipts(tmp_path, monkeypatch, failure, code):
+    admission, _projection, _calls = _ordinary_450_admission(tmp_path, monkeypatch)
+    current_command = wc._run_json_command
+    def unavailable(command, args, **kwargs):
+        if args[0] == ("run" if failure == "query" else failure):
+            raise wc.CompletionError("ISOLATED_CURRENT_FAILURE", "isolated current failure")
+        return current_command(command, args, **kwargs)
+    monkeypatch.setattr(wc, "_run_json_command", unavailable)
+    result = evaluate_new_run_admission(admission)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert code in result["reason_codes"]
+
+
+def test_450_receipt_labels_do_not_relax_developer_conformance(tmp_path):
+    request = _request(tmp_path, method_version="4.5.0")
+    request["roles"][1]["tool_update_status"] = "UPDATE_REQUIRED"
+    request["optional_features"] = []
+    result = evaluate_run_readiness(request)
+    assert result["status"] == "REPAIR_NEEDED"
+    assert {"TOOL_UPDATE_REQUIRED", "REQUIRED_OPTION_MISSING", "COMMUNICATION_REHEARSAL_INVALID"} <= set(result["reason_codes"])
+
+
 @pytest.mark.parametrize("method_version", ["4.4.2", "4.4.3", "4.4.4", "4.4.5"])
-def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundary(tmp_path, method_version):
+def test_new_run_uses_a_sealed_isolated_normal_chain_and_initial_product_boundary(tmp_path, monkeypatch, method_version):
+    # This parameterized Run really has this central version, not the default442 fixture.
+    isolated_command = wc._run_json_command
+    def current_version(command, args, **kwargs):
+        value = isolated_command(command, args, **kwargs)
+        if args[0] == "run":
+            value["summary"]["slk_version"] = method_version
+            value["runtime_snapshot"]["method_version"] = method_version
+        return value
+    monkeypatch.setattr(wc, "_run_json_command", current_version)
     source_root, current_root = tmp_path / "source", tmp_path / "current"
     source_root.mkdir()
     current_root.mkdir()

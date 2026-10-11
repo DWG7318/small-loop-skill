@@ -127,7 +127,8 @@ async def _environment(tmp_path: Path) -> WorkflowEnvironment:
         return WorkflowEnvironment.from_client(await Client.connect(address))
     destination = tmp_path / "temporal-test-server"
     destination.mkdir()
-    return await WorkflowEnvironment.start_time_skipping(download_dest_dir=str(destination))
+    return await WorkflowEnvironment.start_time_skipping(download_dest_dir=str(destination),
+        test_server_existing_path=os.environ.get("SLK_TEMPORAL_TEST_SERVER_PATH"))
 
 
 def _unique_start(*, label: str) -> dict[str, Any]:

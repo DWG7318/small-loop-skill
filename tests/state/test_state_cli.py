@@ -509,7 +509,15 @@ def overwatcher_binding():
             "transport_adapter": "codex-app-server",
             "host_identity": "host-a",
             "session_id": "thread-overwatcher-a",
-            "native_address": {"thread_id": "thread-overwatcher-a"},
+            "native_address": {
+                "kind": "supervisor_subagent",
+                "parent": {
+                    "agent_runtime": "codex",
+                    "host_identity": "host-a",
+                    "session_id": "thread-a",
+                },
+                "agent_id": "thread-overwatcher-a",
+            },
         },
         "observation_mode": "FOREGROUND_ACTIVE_TURN",
         "cadence_seconds": 600,

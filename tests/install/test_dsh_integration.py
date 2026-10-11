@@ -11,6 +11,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 INTEGRATION = ROOT / "integrations" / "dsh"
+NATIVE_ACTIVITY = ROOT / "integrations/native-probe/dsh/activity.mjs"
 
 
 def _powershell() -> str:
@@ -35,13 +36,16 @@ def _run(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_dsh_activity_plugin_uses_native_status_and_session_events() -> None:
-    source = (INTEGRATION / "slk_native_activity.mjs").read_text(encoding="utf-8")
+    source = NATIVE_ACTIVITY.read_text(encoding="utf-8")
+    compatibility = (INTEGRATION / "slk_native_activity.mjs").read_text(encoding="utf-8")
     wrapper = (INTEGRATION / "dsh-slk.ps1").read_text(encoding="utf-8")
 
     assert 'ctx.on("agent/status"' in source
     assert 'ctx.on("session/event"' in source
     assert "SLK_NATIVE_ACTIVITY_CONTEXT" in source
-    assert "--patch" in wrapper
+    assert 'export * from "../native-probe/dsh/activity.mjs"' in compatibility
+    assert "register.mjs" in wrapper and "CreateNoWindow = $true" in wrapper
+    assert "$DshArgs = @('--patch'" not in wrapper
     assert "Start-Process" not in wrapper
 
 
@@ -66,7 +70,8 @@ const cleanups = [];
 const archived = [];
 apply({ on: (name, callback) => callbacks.set(name, callback), effect: (body) => cleanups.push(body()),
   agents: { get: (id) => { if (unavailable) throw Error("registry unavailable"); return id === "exact-session" ? agent : undefined; } },
-  get: (name) => name === "workspaceRegistry" ? { archivedSessionIds: archived } : undefined });
+  get: (name) => name === "workspaceRegistry" ? { archivedSessionIds: archived }
+    : name === "agents" ? { get: (id) => { if (unavailable) throw Error("registry unavailable"); return id === "exact-session" ? agent : undefined; } } : undefined });
 callbacks.get("agent/status")({ agent, status: "running" });
 callbacks.get("session/event")({ id: "exact-session" }, { type: "tool/completed" });
 const read = () => JSON.parse(readFileSync(process.env.SLK_NATIVE_ACTIVITY_PATH, "utf8"));
@@ -107,7 +112,7 @@ console.log(JSON.stringify({ before, after, eventOnly, wrong, hidden, mismatch, 
     assert result["disposed"] is True
 
 
-def test_dsh_probe_declares_only_its_required_native_service() -> None:
+def test_dsh_probe_can_load_without_optional_native_services() -> None:
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js unavailable")
@@ -121,7 +126,9 @@ def test_dsh_probe_declares_only_its_required_native_service() -> None:
         creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
     )
     assert completed.returncode == 0, completed.stderr
-    assert json.loads(completed.stdout) == ["agents"]
+    # The global metadata probe must load even when a native service is absent;
+    # it reports UNKNOWN rather than preventing headless DSH from starting.
+    assert json.loads(completed.stdout) is None
 
 
 @pytest.mark.parametrize("archived", [False, True])
@@ -192,7 +199,7 @@ def test_installed_dsh_event_signatures_match_the_activity_plugin() -> None:
         pytest.skip("local DSH Cordis package is unavailable")
 
     installed = cordis.read_text(encoding="utf-8")
-    plugin = (INTEGRATION / "slk_native_activity.mjs").read_text(encoding="utf-8")
+    plugin = NATIVE_ACTIVITY.read_text(encoding="utf-8")
 
     assert "payload: { agent: Agent; status: AgentStatus }" in installed
     assert "session: Session, event: SessionEvent" in installed
@@ -413,7 +420,7 @@ console.log(readFileSync(process.env.SLK_NATIVE_ACTIVITY_PATH, "utf8"));
     assert "SECRET" not in completed.stdout
 
 
-def test_dsh_integration_installs_and_rolls_back_managed_files(tmp_path: Path) -> None:
+def test_legacy_dsh_installer_redirects_without_partial_install(tmp_path: Path) -> None:
     dsh = tmp_path / "dsh"
     dsh.mkdir()
     original = b"# original wrapper\n"
@@ -421,24 +428,8 @@ def test_dsh_integration_installs_and_rolls_back_managed_files(tmp_path: Path) -
 
     installed = _run(INTEGRATION / "install.ps1", "-DshRoot", str(dsh))
 
-    assert installed.returncode == 0, installed.stdout + installed.stderr
-    receipt = json.loads(installed.stdout.strip())
-    assert receipt["version"] == "4.4.5"
-    for name in (
-        "dsh-slk.ps1",
-        "slk-native-activity.patch.yml",
-        "slk_native_activity.mjs",
-        "slk-worker-capabilities.json",
-    ):
-        assert (dsh / name).read_bytes() == (INTEGRATION / name).read_bytes()
-
-    rolled_back = _run(
-        INTEGRATION / "rollback.ps1",
-        "-DshRoot",
-        str(dsh),
-        "-BackupRoot",
-        receipt["backup_root"],
-    )
-    assert rolled_back.returncode == 0, rolled_back.stdout + rolled_back.stderr
+    assert installed.returncode != 0
+    assert "SLK_DSH_USE_BUNDLED_INSTALLER" in installed.stdout + installed.stderr
+    assert "install_local.ps1" in installed.stdout + installed.stderr
     assert (dsh / "dsh-slk.ps1").read_bytes() == original
-    assert not (dsh / "slk_native_activity.mjs").exists()
+    assert {item.name for item in dsh.iterdir()} == {"dsh-slk.ps1"}

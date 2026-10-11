@@ -25,14 +25,14 @@ def test_repository_validator_passes_for_the_current_collection() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: SLK 4.4.5 skill collection" in result.stdout
+    assert "PASS: SLK " + validate_repository.VERSION + " skill collection" in result.stdout
 
 
 def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "4.4.5"
+    assert manifest["version"] == validate_repository.VERSION
     assert manifest["skill_count"] == len(validate_repository.EXPECTED_SKILLS)
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
@@ -364,19 +364,28 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "4.4.5" in text
-        assert "17" in text
+        assert validate_repository.VERSION in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text
-    assert "seven exact communication rehearsals" in english
+    assert "preflight-basic" in english
+    assert "Supervisor subagent" in english
     assert "BI 1.1.1" in english
-    assert "七条准确通讯演练" in chinese
+    assert "preflight-basic" in chinese
+    assert "直属 subagent" in chinese
     assert "BI 1.1.1" in chinese
     assert "not standalone methods" in english
-    assert "不是独立方法" in chinese
+    assert "不能脱离 SLK Run 单独使用" in chinese
     for marker in ("RTK", "Probe CLI", "Ponytail"):
         assert marker in english and marker in chinese
+
+
+def test_current_checker_handoff_schemas_cover_runtime_method_versions() -> None:
+    from slk_transport import SUPPORTED_METHOD_VERSIONS
+
+    for name in ("post-d1", "management", "completion"):
+        schema = json.loads(read(f"docs/contracts/slk-checker-{name}.schema.json"))
+        assert set(schema["properties"]["method_version"]["enum"]) == set(SUPPORTED_METHOD_VERSIONS)
 
 
 def test_migration_and_changelog_state_the_major_boundary() -> None:
@@ -446,9 +455,26 @@ def test_431_consistency_audit_is_complete_and_packaged() -> None:
     audit = (ROOT / "docs/maintenance/2026-09-28-slk-4.3.1-consistency-audit.md").read_text(
         encoding="utf-8"
     )
-    for skill in validate_repository.EXPECTED_SKILLS:
-        if skill in {"slk-manage-temporal", "slk-pause-run"}:
-            continue
+    # This immutable historical audit covers the 15 Skills shipped in 4.3.1,
+    # not Skills introduced by later collections (validated separately above).
+    audited_skills = (
+        "small-loop-skill",
+        "slk-plan-run",
+        "slk-guard-resources",
+        "slk-select-models",
+        "slk-grill-supervisor",
+        "slk-manage-team",
+        "slk-overwatch-run",
+        "slk-dispatch-cell",
+        "slk-execute-cell",
+        "slk-check-cell",
+        "slk-record-run",
+        "slk-rework-cell",
+        "slk-adjust-run",
+        "slk-recover-communication",
+        "slk-close-run",
+    )
+    for skill in audited_skills:
         assert f"`{skill}`" in audit
     for marker in (
         "Skill / contract / producer / consumer matrix",

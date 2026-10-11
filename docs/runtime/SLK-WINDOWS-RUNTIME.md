@@ -1,4 +1,22 @@
-# SLK 4.4.4 Windows 运行环境配置指引
+# SLK 4.5.0 Windows 成品使用指引
+
+## 当前普通路径：安装成品，不在开工时构建
+
+使用统一离线包中的 `tools/slk/scripts/install_local.ps1`，把完整受管理集合安装到所选 CodexHome；安装器默认用同包 Python，不依赖电脑已安装 Python、Node/npm、Rust/Cargo 或 Git。包内保留依赖许可和准确清单。升级只替换静态程序/Skill，原配置、Session、Run、证据与状态数据保留；不安装 Docker，不改全局 PATH。
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <解压目录>\tools\slk\scripts\install_local.ps1 -PackageRoot <解压目录> -CodexHome <实际CodexHome>
+```
+
+准备阶段由 Supervisor 打开同包 `tools/slk/bin/slk-bi-desktop.exe`，登记准确团队（OW 为所属 Supervisor 唯一直属 child），给成员简短职责/Eval，核对必要组件与正常通讯。`preflight-new-run`/`preflight-admission` 在 4.5.0 使用 `preflight-basic` 合同，不要求历史 conformance、七腿全工程演练、首次施工或一个完整巡查周期。共享 Temporal/本 Run pair 及一次真实 OW ACTIVE 核验仍保留；不是只看文件存在就算全部就绪。
+
+十分钟基本检查、二十分钟准备均只是效率建议，不是截止、失败或强停门槛。发现缺项采用预制修复建议；未知问题由 Supervisor 决定，不为凑时间伪造通过。复杂依赖准备、编译、原生探针接入和工具开发验收都在 SLK 开发阶段完成。
+
+DSH/OCRV 原生探针每 60 秒 headless 采集实际宿主/Session 元数据，每工具共同 10MiB，不复制对话或截断原件；没有 Run 开关。安装注册只表示待新宿主加载，不能宣称旧在途进程已启用。一个 Run 结束不停止其他 Run 的 OW child 或共用 Temporal。
+
+以下保留 **4.4.4 历史源码部署/开发验收参考**，不是 4.5.0 普通使用者的安装或开工清单；不要把其中 npm/pip/编译、固定 17 项或七腿演练带回当前准备。
+
+## 历史源码部署参考（4.4.4）
 
 本指引用于在一台新 Windows 电脑上建立可运行 SLK 4.4.4 的机器环境。它不改变 SLK 方法，也不替代项目内的 17 个 Skill。
 
@@ -95,6 +113,8 @@ D:\DSH\dsh-slk.cmd runtime-check --profile headless "只回复 DSH_RUNTIME_OK"
 
 `dsh-slk.cmd` 应为每个并行 Worker 接受唯一的 `instance-id`，并把可变状态隔离到 `F:\DSH\runs\<instance-id>`。多个 Worker 可以并行；首次使用相同冷前缀时可以错开第一条请求，以提高 DeepSeek 缓存命中，后续无需人为串行化。
 
+新离线包的 `tools\slk\bin\dsh-slk.cmd` 和 `tools\slk\runtime\dsh\dsh-slk.cmd` 只保留人工 help/受限诊断入口，不能作为任意任务文本的保真通道：CMD 会解释换行、`%NAME%`、`^`。当端点 command 是这两个精确绝对路径之一的单元素数组，且同包存在已交付 `tools\slk\scripts\local_package_metadata.py` 时，`DshAdapter` 直接用系统 PowerShell 5.1 `-File` 启动同包既有 `dsh-slk.ps1`，绕开 CMD 并原样传递任务/描述符路径。布局文件不是权限或存活证明；显式多元素 command、同名但非包路径和真正旧版端点仍按原配置执行。
+
 如需 RTK、Probe CLI 或 Ponytail，把经 Owner 选择的工具配置到 DSH 的共享 Skill 目录即可；它们不是 DSH 或 SLK 的启动前提。
 
 准备 Eval/报告通过既有已授权原生准备请求，让原 Worker 在 `workspace-write` 允许的工作区内输出完整原件；可信准备宿主只原字节保存到 Git 外证据目录、核hash并执行 `validate-role-eval --response <原件路径>`。准备不借Checker权限、不伪造正式WORKER_TASK，也不算正常通讯腿；不得直写未授权外部目录、依赖易消失TEMP或从stdout代码块另造答卷。正式任务才沿现有标准描述符的工作区 `result_path`（`.slk-transport/<message_id>/worker-result.json`），由可信适配器原样保存到Git外attempt根后清理drop。接收者必须实际回读原件并核hash；路径已发、宿主可读或unit tests都不代表成员回读通过，失败如实保留，不扩大沙箱。
@@ -162,13 +182,16 @@ pwsh -NoProfile -NonInteractive -File scripts\build_release_artifacts.ps1 `
 该脚本只在当前 headless 控制台运行 `tauri build --no-bundle`，并用 release fingerprint 与开发资源标记检查 `slk-bi-desktop.exe`。`build_local_package.py` 会再次拒绝仍含 Vite 开发入口的 BI。正式本机替换随后执行：
 
 ```powershell
-python scripts\build_local_package.py --repo . --artifacts <artifact-root> --output <package-root>
+python scripts\build_local_package.py --repo . --artifacts <artifact-root> --output <package-root> `
+  --python-runtime <prepared-python> --node-runtime <prepared-node> --dsh-runtime <prepared-dsh> `
+  --ocrv-runtime <prepared-ocrv> --temporal-runtime <prepared-temporal> --git-runtime <prepared-mingit>
 python scripts\verify_local_install.py --root <package-root> --package-mode
-pwsh -NoProfile -NonInteractive -File scripts\install_local.ps1 -PackageRoot <package-root> -CodexHome $env:USERPROFILE\.codex
+pwsh -NoProfile -NonInteractive -File scripts\install_local.ps1 -PackageRoot <package-root> `
+  -CodexHome <selected-codex-home> -OcrvUserHome <selected-native-ocrv-user-home>
 python scripts\verify_local_install.py --root $env:USERPROFILE\.codex
 ```
 
-安装器只交换 manifest 声明的 17 个 Skill、`tools\slk\bin`、共享文档/Schema 和安装 manifest；旧集合保存到 `tools\slk\backups`。任一暂存、哈希或安装后核验失败都会恢复完整旧集合，并在 `.codex\.tmp` 写失败报告。安装器不会运行 `slk-state configure`，数据库迁移仍需对明确选择的数据根单独执行。
+安装器只交换 manifest 声明的 17 个 Skill、`tools\slk\bin`、scripts、静态 runtime、共享文档/Schema 和安装 manifest；旧集合保存到 `tools\slk\backups`。完整官方 MinGit 及 licenses 位于 `runtime/git`，OCRV/DSH 优先继承现存 Git，缺失时只给子进程 PATH 前置同包 `git/cmd`，不改全局 PATH。任一暂存、哈希、安装后核验或显式 OCRV 配置失败都会恢复完整旧代码集合，并在 `.codex\.tmp` 写失败报告。`-OcrvUserHome` 是可选显式配置 opt-in；不传仍为 code-only，不触碰 native 配置。该参数只合并 canonical MCP entry 的 owned4fields，保留其他 JSON、原字节备份、坏 JSON 不覆盖；rollback 不覆盖外部后续修改。native 配置/Session 使用实际 child USERPROFILE，账号/模型不复制，mutable `data/ocrv` 不属于静态 managed roots。安装器不会运行 `slk-state configure`，数据库迁移仍需对明确选择的数据根单独执行。
 
 LE BI 发布验收时先确认本机没有 1430 listener，再从已安装路径冷启动；进程应保持运行、无 localhost:1430 连接，WebView2 新证据不得出现 `ERR_CONNECTION_REFUSED`，并应能从现有全域只读数据根显示项目/Run。正常 UI 使用单实例 mutex；`--help`、`-h`、`--version`、`-V` 仅作无窗口探测并在创建 Tauri 窗口前退出。Node、pnpm 与 Vite 只参与构建，不属于新机器运行依赖。
 

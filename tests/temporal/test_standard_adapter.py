@@ -171,6 +171,51 @@ def test_standard_adapter_prepares_from_new_run_admission_and_live_revision(tmp_
     assert Path(config["admission_path"]).resolve().as_posix() in " ".join(calls[0]).replace("\\", "/")
 
 
+@pytest.mark.parametrize("native_status,native_error", [
+    ("ACTIVE", None), ("IDLE", None), ("PENDING", None),
+    ("COMPLETED_WITHOUT_TERMINAL", None), ("UNKNOWN", "NATIVE_ACTIVITY_STALE"),
+    ("ACTIVE", "NATIVE_QUERY_FAILED"),
+])
+def test_450_product_start_requires_one_native_active_read_after_current_join(tmp_path, monkeypatch, native_status, native_error):
+    root, config = config_root(tmp_path, "4.5.0")
+    ow = config["overwatcher_activity"]
+    proof = write_json(tmp_path / "ow" / "subagent-overwatcher-proof.json", {
+        "schema_version": "slk.subagent-overwatcher-proof/v1", "method_version": "4.5.0",
+        "run_id": RUN_ID, "role_instance_id": ow["role_instance_id"], "endpoint_ref": ow["endpoint_ref"],
+        "started_sha256": hashlib.sha256(Path(ow["started_path"]).read_bytes()).hexdigest(),
+    })
+    config["schema_version"] = "slk.temporal-standard-adapter/v2"
+    ow.update(attestation_path=str(proof), attestation_sha256=hashlib.sha256(proof.read_bytes()).hexdigest())
+    write_json(root / f"{RUN_ID}.json", config)
+    standard_adapter.configure(root)
+    request = {"run_id": RUN_ID, "method_version": "4.5.0", "runtime_revision": 9,
+        "task_queue": "slk-local", "ack_timeout_seconds": 30, "startup_idempotency_key": "start-a",
+        "roles": [{"role": role, "role_instance_id": f"{role.lower()}-a", "endpoint_ref": f"{role.lower()}-endpoint"}
+                  for role in ("SUPERVISOR", "CHECKER", "WORKER", "OVERWATCHER")]}
+    projection = {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"method_version": "4.5.0", "runtime_revision": 9}}
+    calls = []
+    def run(command, arguments, **_kwargs):
+        calls.append(arguments)
+        if arguments[0] == "preflight-new-run":
+            return {"status": "READY", "run_id": RUN_ID}
+        if arguments[0] == "run":
+            return projection
+        assert arguments[0] == "inspect-native-activity", "startup must not audit cadence or send"
+        assert arguments[1:7] == ["--started", ow["started_path"], "--subagent-overwatcher-proof", str(proof),
+                                    "--subagent-overwatcher-proof-sha256", ow["attestation_sha256"]]
+        assert arguments[7] == "--runtime-projection"
+        assert json.loads(Path(arguments[8]).read_text()) == projection
+        return {"status": native_status, "error": native_error}
+    monkeypatch.setattr(standard_adapter, "_run_json", run)
+    value = {"request": request, "startup_fingerprint": "a" * 64}
+    if native_status == "ACTIVE" and native_error is None:
+        assert asyncio.run(standard_adapter.prepare_run(value))["status"] == "READY"
+    else:
+        with pytest.raises(ValueError, match="ACTIVE"):
+            asyncio.run(standard_adapter.prepare_run(value))
+    assert [args[0] for args in calls] == ["preflight-new-run", "run", "inspect-native-activity"]
+
+
 def test_standard_adapter_uses_only_the_explicit_isolated_conformance_entry(tmp_path, monkeypatch):
     root, config = config_root(tmp_path)
     config["admission_kind"] = "ISOLATED_CONFORMANCE_SAMPLE"

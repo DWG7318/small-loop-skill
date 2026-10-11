@@ -8,30 +8,16 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from .local_package_metadata import EXPECTED_SKILLS, read_version
+except ImportError:  # direct script execution
+    from local_package_metadata import EXPECTED_SKILLS, read_version
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+VERSION = read_version()
 COLLECTION_NAME = "Small Loop Skill Collection"
-EXPECTED_SKILLS = (
-    "small-loop-skill",
-    "slk-plan-run",
-    "slk-guard-resources",
-    "slk-select-models",
-    "slk-grill-supervisor",
-    "slk-manage-team",
-    "slk-overwatch-run",
-    "slk-manage-temporal",
-    "slk-pause-run",
-    "slk-dispatch-cell",
-    "slk-execute-cell",
-    "slk-check-cell",
-    "slk-record-run",
-    "slk-rework-cell",
-    "slk-adjust-run",
-    "slk-recover-communication",
-    "slk-close-run",
-)
 EXCLUDED_DIRS = {
     ".git",
     ".codex",
@@ -234,10 +220,13 @@ def validate(root: Path) -> list[str]:
         "context compaction",
     ):
         check(marker in audit, "SLK_REPO_AUDIT_MATRIX", marker, errors)
+    # A historical 4.3.1 audit is evidence of that version, not the inventory
+    # authority for later Skills. Check current coverage against its own review.
+    review_path = root / "docs/superpowers/plans/2026-10-11-slk-4.5.0-skill-review-ledger.md"
+    check(review_path.is_file(), "SLK_REPO_SKILL_REVIEW", str(review_path), errors)
+    review = utf8_text(review_path, errors) if review_path.is_file() else ""
     for name in EXPECTED_SKILLS:
-        if name in {"slk-manage-temporal", "slk-pause-run"}:
-            continue
-        check(f"`{name}`" in audit, "SLK_REPO_AUDIT_SKILL", name, errors)
+        check(name in review, "SLK_REPO_AUDIT_SKILL", name, errors)
 
     main = utf8_text(SKILLS_ROOT / "small-loop-skill" / "SKILL.md", errors)
     for name in EXPECTED_SKILLS[1:]:

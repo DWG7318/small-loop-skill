@@ -11,7 +11,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "4.4.5"
+version = "4.5.0"
 
 [workspace.dependencies]
 directories = "6.0.0"
@@ -22,3 +22,6 @@ sha2 = "0.10.9"
 thiserror = "2.0.19"
 time = { version = "0.3.54", features = ["formatting", "parsing"] }
 uuid = { version = "1.24.0", features = ["v4"] }
+
+[patch."https://github.com/DWG7318/slk-state-core.git"]
+slk-state-core = { path = "crates/slk-state-core" }

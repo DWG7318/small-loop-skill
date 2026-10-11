@@ -1,52 +1,25 @@
 #!/usr/bin/env python3
-"""Build the dependency-free SLK transport artifact reproducibly."""
+"""Source-tree convenience entry for the independent transport builder."""
 
 from __future__ import annotations
 
 import argparse
-import zipfile
+import importlib.util
 from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
-PACKAGE_ROOT = REPOSITORY_ROOT / "src" / "slk_transport"
-MAIN = (
-    "import os\n"
-    "import sys\n"
-    "os.environ['PYTHONDONTWRITEBYTECODE'] = '1'\n"
-    "sys.dont_write_bytecode = True\n"
-    "from slk_transport.cli import main\n"
-    "raise SystemExit(main())\n"
-).encode("utf-8")
-
-
-def _info(name: str) -> zipfile.ZipInfo:
-    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-    info.compress_type = zipfile.ZIP_DEFLATED
-    info.create_system = 3
-    info.external_attr = 0o100644 << 16
-    return info
+PACKAGE_ROOT = REPOSITORY_ROOT / "src/slk_transport"
 
 
 def build_zipapp(output: Path | str) -> Path:
-    destination = Path(output).resolve()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    entries: dict[str, bytes] = {"__main__.py": MAIN}
-    for path in PACKAGE_ROOT.rglob("*.py"):
-        if "__pycache__" in path.parts:
-            continue
-        relative = path.relative_to(PACKAGE_ROOT).as_posix()
-        entries[f"slk_transport/{relative}"] = path.read_bytes()
-    temporary = destination.with_name(destination.name + ".tmp")
-    temporary.unlink(missing_ok=True)
-    try:
-        with zipfile.ZipFile(temporary, "w") as archive:
-            for name in sorted(entries):
-                archive.writestr(_info(name), entries[name])
-        temporary.replace(destination)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return destination
+    specification = importlib.util.spec_from_file_location(
+        "slk_transport_builder", PACKAGE_ROOT / "build_zipapp.py",
+    )
+    assert specification is not None and specification.loader is not None
+    builder = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(builder)
+    return builder.build_zipapp(output, overwatch_tools=REPOSITORY_ROOT / "src/slk_overwatch_tools")
 
 
 def main() -> int:

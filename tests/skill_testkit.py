@@ -3,29 +3,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.local_package_metadata import EXPECTED_SKILLS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / "skills"
 MAIN_SKILL = "small-loop-skill"
-EXPECTED_CHILDREN = (
-    "slk-plan-run",
-    "slk-guard-resources",
-    "slk-select-models",
-    "slk-grill-supervisor",
-    "slk-manage-team",
-    "slk-overwatch-run",
-    "slk-manage-temporal",
-    "slk-pause-run",
-    "slk-dispatch-cell",
-    "slk-execute-cell",
-    "slk-check-cell",
-    "slk-record-run",
-    "slk-rework-cell",
-    "slk-adjust-run",
-    "slk-recover-communication",
-    "slk-close-run",
-)
-EXPECTED_SKILLS = (MAIN_SKILL, *EXPECTED_CHILDREN)
+EXPECTED_CHILDREN = EXPECTED_SKILLS[1:]
 
 ADVISORY_REVIEW_TERMS = (
     "必须",

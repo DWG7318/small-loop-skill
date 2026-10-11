@@ -1,4 +1,6 @@
-# Required Temporal continuity for SLK 4.4.3
+# Required Temporal continuity for SLK
+
+The 4.4.3+ lifecycle and exact-operation contracts below remain applicable in 4.5.0. In 4.5.0 the required OW is the Supervisor's unique direct subagent: use the current native parent/child/activation proof described in [slk-manage-temporal](../../skills/slk-manage-temporal/SKILL.md). Historical Desktop attestation sections describe their explicit older contracts, not an additional 4.5.0 admission requirement. Ordinary 4.5.0 preparation checks current readiness without rerunning development conformance.
 
 ## Authorized pause and exact close
 

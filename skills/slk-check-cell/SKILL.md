@@ -5,32 +5,30 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 # Check a CELL at D1
 
-> **使用边界：** 本 Skill 是 Small Loop Skill（SLK）的子 Skill，不可脱离 SLK Run 单独使用。
-> 适用前提是当前 Run 已选择 `$small-loop-skill`，并由 SLK 主 Skill 或同集合流程路由到本情境。
+仅用于已选择 `$small-loop-skill` 的当前 Run。原 OCRV Checker 在与 Worker 隔离的对话中，对同一完整候选执行一次正式 D1；Tool、Supervisor、OW 和宿主都不代判。
 
-## 当前目标
+## 先独立检查
 
-Checker 在与 Worker 隔离的对话中，对当前候选和验收目标执行 D1，并给出可行动的结果。
+1. 本地轻量预检核对当前 Run/CELL/候选消息/attempt、冻结目标及 D1 条件、候选元数据、changed paths、登记端点、模型与工具能力；必要时用原生 preview 定位完整候选。行数、文件数、上下文/容量只作提示，不加硬门槛、不自动切段。正常 aggregate budget/timeout 为原生 `0`，tool rounds 用已核实模板默认；Owner 冻结的有限预算不静默改写。
+2. 先读原 CELL、全部目标、完整候选和必要客观事实，延后读 Worker 分区的 D0 结果、判断过程和建议关注点。优先复用仍有效的工程证据，覆盖相关回归和副作用，只为未覆盖风险补证；形成独立初步判断后再核对 Worker 客观原件。隔离不要求每个 CELL 新建环境，排除污染时按实际风险选择独立环境。
+3. Git 外材料用绑定的 `slk_read_evidence(index, offset?, limit?)` 读取并核验原件身份/哈希。默认完整剩余原文，无工具长度上限；范围由 Checker 自选，路径已发不等于已读。Probe CLI/RTK 仅在 Owner 启用时降噪，不替代核心 diff、错误原文或验收证据。资源冲突时才读 [资源恢复](../slk-execute-cell/references/resource-contention.md)。
 
-## 隔离与输入
+单文件、单组结束、同 native review ID 或 concurrency=1 都不证明冻结候选已全审；须跨文件核对全部 CELL 目标。不能证明全部目标就不能声称整个 CELL PASS，也不按组多次提交 D1。
 
-Checker 先读取原始 CELL 与 D1 目标、候选身份和客观工程事实。在形成独立 D1 判断前，延后读取 Worker 分区中的 D0 结果、判断过程和建议关注点。隔离不等于每个 CELL 都新建验证环境或检查体系；需要排除污染时，再按风险选择干净或独立环境。
+## 原 Checker 显式决定一次
 
-## 检查与交付
+| 决定 | 本轮含义与去向 |
+| --- | --- |
+| PASS | 全部验收目标已有证明；原 Checker 按 `$slk-dispatch-cell` 交当前计划精确下一 Required CELL，末项交 `D2_READY`。 |
+| FAIL | 实质产品缺陷；Checker → Supervisor，按 `$slk-rework-cell` 再交同一 Worker。 |
+| INCOMPLETE | 关键证明不足或工具/环境故障导致未完成；用 `D1_INCOMPLETE_ESCALATION` 交 Supervisor 处理后回原 Checker，不触发返工，不写 `D1_PASSED/D1_FAILED`。 |
 
-1. 本地轻量预检核对当前 Run/CELL/attempt、候选元数据、changed paths、验收条件、模型与工具能力及已登记endpoint；必要时用原生 preview 定位完整候选。行数、文件数、上下文与容量事实只作提示，不增加额外检查、不自动切段或判结论，仍只形成一个正式 D1；正常 aggregate budget/timeout 为原生0，tool rounds采用已核实模板默认。独占资源按需读 [资源指引](../slk-execute-cell/references/resource-contention.md)。
-2. 优先用现有工程证据直接检查候选、全部 CELL 目标、相关回归及副作用，只对真实未覆盖风险补证；先不读 Worker 的 D0 结论，形成初步判断后再核对其客观证据。Git 外材料用已绑定的 `slk_read_evidence(index, offset?, limit?)` 读取原件并核验身份/哈希：默认完整剩余原文，范围由 Checker 自选，无工具长度上限；路径已发不等于已读。Owner启用的 Probe CLI/RTK可压缩噪声，不替代核心 diff、错误原文和验收证据；疑义时读原文或回退原生命令。
-3. 原 OCRV Checker 自己决定：实质产品缺陷为D1 FAIL，缺少关键证明或检查工具或环境故障导致未完成为D1 INCOMPLETE，未证明项不写为 PASS；INCOMPLETE不触发返工，不写 `D1_PASSED` 或 `D1_FAILED`，管理消息 attempt 与原候选 attempt 不能等同。只有 PASS 或 FAIL 闭合 D1；零 finding、低严重性观察、process exit、JSON parse 或 business status 不能机械判为 FAIL/PASS。
-4. 有绑定的 `slk_checker_decide(verdict, message?)` MCP工具时，原Checker显式调用一次自己的D1决定，并按 `$slk-record-run` 保留自己的事实；工具内部验证确切Run/候选消息/原生调用及密封权限。没有该工具、调用失败或未明确决定时，原始报告仍交出，披露缺口，不让 Codex/宿主代判。工具发现和离线模拟不证明真实模型会正确调用。
-5. 原始报告、partial、长输出、非JSON及非零退出事实均保存并独立投递；保存不等于接收。只传必要客观材料及原件路径/字节/SHA-256，Worker D0不进入初始独立判断。不为SLK格式补交重跑检查。
-6. 本轮业务结束、原始报告与证据保存后，将上述明确工具调用作为最后交接：FAIL沿 `$slk-rework-cell`、INCOMPLETE沿 `D1_INCOMPLETE_ESCALATION` 把 TOKEN 交给 Supervisor；PASS沿 `$slk-dispatch-cell` 交精确下一CELL或最终`D2_READY`。OCRV不需要Shell或第二次后缀调用；响应刷出后结束本次原生调用，不再开审查组或继续施工。可附原Checker自己的发现/未完成原因，不补造finding、复现步骤或预期结果。身份、同一 candidate 与 D1 attempt、TOKEN原子提交和真实接手分别核实；动作或TRANSPORT_FAILED如实报告，不交一次性 DSH/Worker 进程托管长审查，原始报告仍独立交出。
+只有 PASS/FAIL 闭合 D1。管理消息 attempt 不是原候选 attempt。零 finding、低严重性观察、D0、process exit、JSON parse、business status 或 transport 成功都不自动生成结论；不编造 finding、复现或预期，不把故障算产品 FAIL，未实测目标环境不冒称实测。全部 Required CELL 有 D1 PASS 或 Supervisor 豁免后才进 D2。
 
-## 后继
+先保存本人的事实、证据和完整原始报告（按需用 `$slk-record-run`）；索引用原件绝对路径/字节数/SHA-256。partial、长输出、非 JSON 和非零退出原样独立投递，不为 SLK 格式补交重跑。保存不等于接收，ACK/TOKEN/Temporal 失败不扣留报告。
 
-正常链仍为 Checker → Worker → Checker；正式FAIL才由 Checker → Supervisor → 同一Worker → Checker，全部Required CELL有D1 PASS或 Supervisor 豁免后才交D2。
+业务与证据完成后，原 Checker 调用绑定的 `slk_checker_decide(verdict, message?)` **一次，作为最后任务交接动作**。工具在所属可信入口内用本人的密封凭据核对当前 Run、候选消息、candidate/D1 attempt 和原生调用，按上述原正常边推进。PASS 内用标准完成后缀，不要求 Shell、第二次后缀或另一审查组。工具缺失、失败或未明确决定时仍交原报告并披露缺口，不让 Codex/宿主代判；工具发现或离线模拟不证明真实模型已调用。
 
-## 负面提示词
+同一标准入口核实后继真实 `slk.native-start/v2`，再原子提交 TOKEN 与唯一 `runtime_revision`；受理或终态不反推启动，不混候选/attempt/revision，不分步 handoff，不交一次性 Worker 进程托管长审查。返回并刷出响应后结束本次原生调用，不等待/轮询后继、不继续施工，也不留 post-turn/background 动作。真实 transport 失败按 `$slk-recover-communication` 处理原投递，不重新审查或改变历史 FAIL。
 
-- 不要把当前文件/原生group完成、同native review ID或concurrency=1当成整个冻结候选已审；先用跨文件工具核对全部CELL目标，不能证明全目标就不要声称全CELL PASS，不逐组或重复提交决定；不要让工具按正文/coverage/severity合成或纠正D1；不再使用旧partial/context/terminal自动消费或补交恢复路径，历史报告和FAIL只读保留。
-- 不要让 Supervisor、OW、传输成功、原生终态、零 finding或D0代替D1或自动 PASS；不要复用失效证据、伪造真实目标环境验证、把工具故障计入产品返工，或把单段结果冒充完整候选。
-- 不要跳过角色授权、当前Run/CELL/候选绑定、真实接收启动或TOKEN原子提交；REQUESTED/PAUSED 不开新审查/派工，保留原明确决定和待续 operation，不借恢复重审；原报告/管理回传按暂停边界交出，送达不授权下一CELL或工程PASS。
+REQUESTED/PAUSED 不开新审查/派工，只按原暂停边界交出报告、管理回传及精确在途闭合，保留原决定和待续 operation。OW 只观察/报告 Supervisor，不代送、重试、写 Checker 事实或提交 TOKEN；guard 只阻断下一 CELL。

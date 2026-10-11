@@ -16,6 +16,9 @@ ROOT = Path(__file__).parents[2]
 PACK = ROOT / "skills" / "small-loop-skill" / "assets" / "SLK-ROLE-EVAL.v1.json"
 
 
+# Guidance ownership/reachability is tested in test_skill_collection_300.py.
+# This module exercises the exact Eval asset and runtime validator behavior.
+
 def valid_response(role: str = "checker") -> dict[str, object]:
     pack = load_pack(PACK)
     cases = [case for case in pack["cases"] if case["role"] == role and case["runtime_critical"]]
@@ -36,7 +39,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.4.5"
+    assert pack["method_version"] == "4.5.0"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -211,6 +214,70 @@ def test_pack_covers_preparation_goal_only_without_growing_runtime_subset() -> N
                      "SUP-PREP-GOAL-OWNER-STOP", "SUP-PREP-GOAL-CONFLICT"):
         assert cases[identity]["role"] == "supervisor"
         assert cases[identity]["runtime_critical"] is False
+
+
+def test_450_preparation_can_end_before_first_cell_and_goal_is_optional() -> None:
+    cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
+    expected = {
+        "SUP-PREP-GOAL-NATIVE": "COMPLETE_PREPARATION_FROM_CURRENT_READINESS",
+        "SUP-PREP-GOAL-CLOSE": "COMPLETE_OPTIONAL_PREPARATION_GOAL",
+        "SUP-PREP-GOAL-UNAVAILABLE": "CONTINUE_PREPARATION_WITHOUT_GOAL",
+    }
+    for identity, choice in expected.items():
+        assert cases[identity]["correct_choice"] == choice
+        assert choice in cases[identity]["choices"]
+        assert cases[identity]["runtime_critical"] is False
+    native = cases["SUP-PREP-GOAL-NATIVE"]
+    assert "首 CELL" in native["scenario"]
+    assert "无首轮 cycle" in native["scenario"]
+    assert "不以首 CELL" in native["rule"]
+
+
+def test_450_current_readiness_does_not_require_historical_conformance() -> None:
+    cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
+    fixed = cases["SUP-FIXED-RUNTIMES"]
+    assert fixed["correct_choice"] == "REQUIRE_PREFLIGHT_READY"
+    assert "当前" in fixed["rule"]
+    assert "七条必要通讯腿都" not in fixed["rule"]
+    assert "历史 conformance" in fixed["rule"]
+    assert "可选" in fixed["rule"]
+    normal = cases["SUP-NORMAL-NOT-RECOVERY"]
+    assert normal["correct_choice"] == "VERIFY_ORIGINAL_NORMAL_LEG"
+    assert "不作普通新 Run 开工前演练门槛" in normal["rule"]
+
+
+def test_450_one_direct_overwatcher_child_is_not_shared_across_supervisors() -> None:
+    cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
+    shared = cases["SUP-SHARED-EXACT-WATCHER-SESSION"]
+    assert shared["runtime_critical"] is True
+    assert shared["correct_choice"] == "ALLOW_ONLY_SAME_SUPERVISOR_RUNS"
+    assert "ALLOW_CROSS_SUPERVISOR_REUSE" in shared["choices"]
+    assert "直属" in shared["rule"]
+    assert "不跨 Supervisor" in shared["rule"]
+    response = valid_response("supervisor")
+    answer = next(item for item in response["answers"] if item["case_id"] == shared["case_id"])
+    answer["choice"] = "ALLOW_CROSS_SUPERVISOR_REUSE"
+    with pytest.raises(EvalError):
+        validate_response(
+            PACK, response, expected_run_id="RUN-A", expected_project_id="project-a",
+            expected_plan_revision=3, expected_role="supervisor",
+        )
+
+
+def test_450_overwatcher_native_parent_report_is_not_engineering_handoff() -> None:
+    cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
+    report = cases["OVW-ANOMALY-REPORT-AND-CONTINUE"]
+    assert report["correct_choice"] == "KEEP_OBSERVING_WITHOUT_DUPLICATE_ALERT"
+    assert "父子消息" in report["scenario"]
+    assert "工程 ACK/TOKEN" in report["rule"]
+    assert "已读" in report["rule"]
+    unknown = cases["OVW-PROJECTED-ACTIVE-IS-UNKNOWN"]
+    assert unknown["correct_choice"] == "REPORT_UNKNOWN_TO_SUPERVISOR"
+    assert "UNKNOWN 不是退出" in unknown["rule"]
+    assert "不必强制重启" in unknown["rule"]
+    lifecycle = cases["OVW-DEDICATED-LIFECYCLE"]
+    assert "所属 Supervisor" in lifecycle["rule"]
+    assert "二次确认" in lifecycle["rule"]
 
 
 def test_pack_covers_423_runtime_consistency_failures() -> None:

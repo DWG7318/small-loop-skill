@@ -3,36 +3,22 @@ name: slk-grill-supervisor
 description: Use when an active Small Loop Skill (SLK) Run has a newly assigned Supervisor who needs to demonstrate practical understanding before engineering begins.
 ---
 
-# Grill the SLK Supervisor
+# Confirm Supervisor understanding
 
-> **使用边界：** 本 Skill 是 Small Loop Skill（SLK）的子 Skill，不可脱离 SLK Run 单独使用。
-> 适用前提是当前 Run 已选择 `$small-loop-skill`，并由 SLK 主 Skill 或同集合流程路由到本情境。
+仅用于已启用 SLK 的 Run。由已确认 Supervisor 完成简明角色定位与现有 Eval；误解只纠正受影响内容，不全文背诵、重复考试或施工演练。
 
-## 当前目标
+## 理解哪些边界
 
-用版本化封闭 Eval 确认 Supervisor 对当前 SLK 语义的理解，避免仅凭自由文本、自称理解或不同项目里的临场解释进入施工。
+- 日常链 Supervisor → Checker → Worker → Checker；正式 FAIL 才由 Checker → Supervisor → 同一 Worker，第二连续 FAIL 调查并拆分。原 Checker 独立 D1、Worker 最低 D0、Supervisor 组合 D2，INCOMPLETE/工具故障不是产品 FAIL。
+- 方案按 DSH 能力和依赖细分，检查不列施工 CELL；复用有效事实，不重复检验体系。资源、权限与 Owner 决定保持。
+- 自己的唯一 OW 直属 child 覆盖自己的全部 Run，不跨 Supervisor；600秒主动核验，只写自身观察/向父级报告，报告后继续，不干预工程。accepted 不等于接管，UNKNOWN 不等于退出，停止需父级二次确认。
+- 原件位置/hash、原生真实启动、原角色显式认证动作和 TOKEN 提交各自留证；交接是最后任务动作，不 post-turn 自唤醒/盯下一角色。关键失败/决定及时追加，已有报告不被维护故障扣住。
+- Temporal 共享服务/每 Run 工作流负责通讯保障、1200秒 OW 核验与1800秒责任提醒，不代替工程判断。自己按需介入异常、规划、FAIL/豁免及最终 D2，不逐 CELL 盯工。
 
-## Eval 方式
+## 轻量 Eval
 
-- 使用 `small-loop-skill/assets/SLK-ROLE-EVAL.v1.json` 中 Supervisor 的 8 个 runtime-critical 场景；响应要绑定当前 Run、project、plan revision、角色与 case-pack SHA-256，并通过 `scripts/validate_role_eval.py`。
-- 缺题、多题、重复题、错角色、错答案、错 schema/hash、大小写或首尾空白变体、旧 plan revision 都失败关闭；“我理解了”不替代结构化答案。
-- 失败时只解释对应易错规则，再生成同一版本 Eval 的新响应；不新增 Agent、不扩成开放式长问答。完整 case pack 是版本发布门禁，运行时只付 8 题成本。
+按 `$slk-manage-team` 先建立准确 Run/project/plan revision，然后使用主 Skill 的 [现有案例包](../small-loop-skill/assets/SLK-ROLE-EVAL.v1.json)，只取 Supervisor 的8个 runtime-critical 场景，沿 `scripts/validate_role_eval.py` 校验当前身份/revision/case-pack SHA-256 和完整结构化回应。缺/多/重复题、错角色/答案/schema/hash/revision 或答案变体不冒充通过。
 
-## 建议覆盖
+失败只解释错点并更新本版本回应。变化只重新确认受影响理解；未变理解及答案可复用，在准备记录说明来源，但完整回应仍绑定当前 revision，不能把旧 artifact 改头冒充新实测。完整案例包是开发/发布验证，不是运行时额外考试。
 
-1. SLK 的适用范围，以及一个 Run 直接包含线性 CELL 的含义。
-2. Codex Supervisor、OCRV Checker、DSH Worker 的固定绑定、正常直连、D1 FAIL 返工例外，以及必需 Overwatcher 的只核实/报告边界。
-3. D0、D1、D2分别解决什么问题，怎样优先复用现有入口和有效客观证据、减少重复，以及检查工具故障为什么不等于产品缺陷。
-4. CELL 大小怎样参考模型、电脑、累积工程量和余量；本 Run 涉及 Cargo 或其他明显独占资源时采用什么隔离、恢复与清理安排。
-5. Worker 与 Checker 的隔离、通讯和返工关系。
-6. 通讯异常、成员异常、连续返工和 D2 发现组合问题时如何恢复施工。
-7. 根 Run 记录由谁创建，各成员怎样记录和传输。
-8. Supervisor 在哪些边界按需激活，以及 Overwatcher 如何用原生证据判断 CLEAR/ANOMALY/UNKNOWN、只向对应 Supervisor 报告并继续观察。
-9. 日常 CELL 为什么由 Checker 与 Worker 直接推进；三工程角色为什么不使用正时长 `wait_threads`，关键交接为什么不能依赖 post-turn 延迟脚本、后台自唤醒或固定秒数承诺，绑定的 Overwatcher 为什么保持自己的前台 active turn，旧 running/TOKEN/heartbeat 为什么不证明活跃。
-10. 收到 D2 交接后，怎样先检查 Run 目标、各 CELL 结果、最终候选和端到端结果，再核对详细施工历史。
-11. 面对允许误差或豁免时，怎样说明影响与剩余问题、安排补偿或后续 CELL；豁免不等于 D1 通过。
-12. 什么情况可以由 Supervisor 在一次激活中解决后交还 Checker；确实需要 Owner 掌握的资源或业务权限时，怎样先形成推荐方案和最低必要授权请求，而不是把问题原样交回 Owner。
-
-## 完成后
-
-Eval 对当前 Run 与 plan revision PASS 后，先使用 `$slk-record-run` 初始化共享记录，再使用 `$slk-manage-team`：Supervisor 创建 Checker，Checker 创建 Worker；角色或 plan revision 变化后重新绑定并复测，不静默沿用旧结果。
+确认后回团队准备只补缺项，不重复 init-run 或创建成员；自由文本“理解了”不替代现有证据。OCRV 没有聊天入口不假造回答，其原生等价能力处理见团队指引。

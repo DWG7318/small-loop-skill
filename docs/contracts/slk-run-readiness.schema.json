@@ -131,12 +131,12 @@
     },
     "admissionRequest": {
       "type": "object", "additionalProperties": false,
-      "required": ["schema_version", "run_id", "plan_revision", "roles", "optional_features", "bi_open_receipt", "temporal_readiness_receipt", "normal_chain_conformance", "current_host_binding", "sealed_role_receipts"],
+      "required": ["schema_version", "run_id", "plan_revision", "roles", "optional_features", "bi_open_receipt", "temporal_readiness_receipt", "current_host_binding", "sealed_role_receipts"],
       "properties": {
         "schema_version": {"const": "slk.run-admission-request/v1"},
         "run_id": {"type": "string", "minLength": 1}, "plan_revision": {"type": "integer", "minimum": 1},
         "roles": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/roleRequest"}},
-        "optional_features": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/option"}},
+        "optional_features": {"type": "array", "items": {"$ref": "#/$defs/option"}},
         "bi_open_receipt": {"type": "string", "minLength": 1}, "temporal_readiness_receipt": {"type": "string", "minLength": 1},
         "normal_chain_conformance": {"type": "string", "minLength": 1}, "current_host_binding": {"$ref": "#/$defs/proof"},
         "sealed_role_receipts": {"type": "object", "additionalProperties": false, "required": ["supervisor", "checker", "worker", "overwatcher"],

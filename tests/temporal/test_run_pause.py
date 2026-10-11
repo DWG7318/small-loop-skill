@@ -1,6 +1,7 @@
 """Pause is an execution gate, not a new engineering state machine."""
 
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -185,7 +186,8 @@ def test_real_sdk_resume_partial_commit_keeps_original_queued_operation_and_repl
         async def notify(value):
             notices.append(value)
             return {"status": "NOTIFIED", "event_id": value["event_id"], "receipt_sha256": "e" * 64}
-        async with await WorkflowEnvironment.start_time_skipping() as env:
+        async with await WorkflowEnvironment.start_time_skipping(
+            test_server_existing_path=os.environ.get("SLK_TEMPORAL_TEST_SERVER_PATH")) as env:
             queue = "pause-test-" + uuid.uuid4().hex
             async with Worker(env.client, task_queue=queue, workflows=[workflows.RunSlkWorkflow],
                               activities=[prepare, deliver, recover, audit, notify]):

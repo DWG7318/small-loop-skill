@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run the focused disposable acceptance drill for current SLK 4.4.5."""
+"""Run fixture-backed disposable regression tests for the current SLK source.
+
+The historical filename is retained for callers. This is not a live Agent Run
+or an ordinary preparation requirement.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ from typing import Any, Sequence
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
+VERSION = (REPOSITORY / "VERSION").read_text(encoding="utf-8").strip()
 
 
 def _run(
@@ -69,8 +74,12 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         }
     )
     version = _run("state-version", [state_cli, "--version"], root, environment).strip()
-    if "4.4.5" not in version:
-        raise RuntimeError(f"sandbox requires slk-state 4.4.5, got {version!r}")
+    try:
+        version_reply = json.loads(version)
+    except json.JSONDecodeError:
+        version_reply = None
+    if version_reply != {"status": "ok", "version": VERSION}:
+        raise RuntimeError(f"sandbox requires slk-state {VERSION}, got {version!r}")
 
     pytest_root = root / "pytest"
     _run(
@@ -102,7 +111,7 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
         candidate = Path.home() / ".cargo" / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")
         cargo = str(candidate) if candidate.is_file() else None
     if cargo is None:
-        raise FileNotFoundError("cargo is required for the 4.4.5 state sandbox")
+        raise FileNotFoundError("cargo is required for the developer state sandbox")
     _run(
         "atomic-delivery-start",
         [
@@ -207,11 +216,12 @@ def run_sandbox_drill(output: Path | str, state_binary: Path | str) -> dict[str,
     }
     report = {
         "schema_version": "slk.sandbox-drill-report/v1",
-        "method_version": "4.4.5",
+        "method_version": VERSION,
+        "evidence_scope": "fixture-backed automated regression, not a live Agent Run",
         "run_id": "RUN-425-SANDBOX",
         "status": "PASS",
         "proofs": proofs,
-        "counts": {
+        "fixture_expectations": {
             "overwatcher_bindings": 1,
             "overwatch_cycles": 3,
             "transport_start_receipts": 1,

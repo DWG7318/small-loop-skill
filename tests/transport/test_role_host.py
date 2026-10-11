@@ -213,6 +213,36 @@ def test_recovery_preflight_checks_all_engineering_endpoints_not_only_supervisor
     assert set(calls) == {"supervisor", "checker", "worker"}
 
 
+@pytest.mark.parametrize("native,cadence", [("ACTIVE", "CURRENT"), ("UNKNOWN", "CURRENT"), ("ACTIVE", "CONTINUITY_UNPROVEN")])
+def test_450_resume_uses_native_proof_and_same_projection_without_terminal_shortcut(tmp_path, monkeypatch, native, cadence):
+    host, _, _ = prepared_host(tmp_path)
+    current = {"summary": {"run_id": host.binding["run_id"]},
+        "runtime_snapshot": {"method_version": "4.5.0", "plan_revision": host.binding["plan_revision"]},
+        "roles": [{"role": role, "role_instance_id": host.endpoint(role)["role_instance_id"], "lifecycle": "active",
+            "endpoints": [{"state": "active", "endpoint_version": host.endpoint(role)["endpoint_version"],
+                "transport_adapter": host.endpoint(role)["adapter"]}]} for role in ("supervisor", "checker", "worker")]}
+    config = write_json(tmp_path / "adapter.json", {"schema_version": "slk.temporal-standard-adapter/v2",
+        "method_version": "4.5.0", "run_id": host.binding["run_id"], "overwatcher_activity": {
+            "role_instance_id": "ow-a", "endpoint_ref": "ow-endpoint", "started_path": str(tmp_path / "started.json"),
+            "completed_path": "must-not-substitute-native", "failed_path": "must-not-substitute-native",
+            "attestation_path": "original-native-proof", "attestation_sha256": "a" * 64}})
+    monkeypatch.setattr(cli, "_preflight_recovery_endpoints", lambda _h: None)
+    monkeypatch.setattr(host, "projection", lambda: current)
+    def run(_command, arguments):
+        projection = Path(arguments[arguments.index("--runtime-projection") + 1])
+        assert json.loads(projection.read_text()) == current
+        if arguments[0] == "inspect-native-activity":
+            assert "--subagent-overwatcher-proof" in arguments
+            assert not {"--desktop-overwatcher-attestation", "--completed", "--failed"} & set(arguments)
+            return {"status": native}
+        return {"status": cadence, "run_id": host.binding["run_id"], "overwatcher_role_instance_id": "ow-a"}
+    monkeypatch.setattr(wc, "_run_json_command", run)
+    if native == "ACTIVE" and cadence == "CURRENT":
+        host._resume_preflight(config, tmp_path)
+    else:
+        with pytest.raises(ValueError, match="live native"): host._resume_preflight(config, tmp_path)
+
+
 def run06_historical_null_boundary(envelope):
     message_id = "c13ee3db-524e-4011-a7f3-ba02386e5599"
     projection = {
@@ -485,9 +515,12 @@ def supervisor_result_fixture(tmp_path, *, d2=False):
     return host, source, incoming, result, projection
 
 
-def current_d2_fixture(tmp_path, monkeypatch):
+CURRENT_D2_VERSIONS = ["4.4.3", "4.4.4", "4.4.5", "4.5.0"]
+
+
+def current_d2_fixture(tmp_path, monkeypatch, *, method_version="4.4.3"):
     host, source, incoming, result, projection = supervisor_result_fixture(tmp_path, d2=True)
-    projection["summary"]["slk_version"] = projection["runtime_snapshot"]["method_version"] = "4.4.3"
+    projection["summary"]["slk_version"] = projection["runtime_snapshot"]["method_version"] = method_version
     event = projection["events"][0]
     event.update(plan_revision=1, go_id=incoming.go_id, author_role_instance_id=incoming.sender_role_instance_id)
     event["details_json"] = json.dumps({"message_id": incoming.message_id,
@@ -512,28 +545,51 @@ def current_d2_fixture(tmp_path, monkeypatch):
     return host, source, incoming, result, projection, seen
 
 
-def test_d2_start_is_queryable_before_final_result_and_replay_keeps_original_time(tmp_path, monkeypatch):
-    host, source, incoming, result, projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+@pytest.mark.parametrize("method_version", CURRENT_D2_VERSIONS)
+@pytest.mark.parametrize("verdict", ["PASS", "FAIL"])
+def test_d2_start_is_queryable_before_final_result_and_replay_keeps_original_time(tmp_path, monkeypatch, method_version, verdict):
+    host, source, incoming, result, projection, seen = current_d2_fixture(
+        tmp_path, monkeypatch, method_version=method_version)
+    result["decision"]["verdict"] = verdict
     (source / "supervisor-result.json").unlink()
     started = host.start_d2(source)
+    start_path = source / "role-host" / "d2_started.json"
+    start_bytes = start_path.read_bytes()
     assert [e["event_type"] for e in projection["events"]] == ["TRANSPORT_STARTED", "D2_STARTED"]
     assert not (source / "role-host" / "result.json").exists()
     assert host.start_d2(source) == started
+    assert start_path.read_bytes() == start_bytes
     assert len(seen) == 1
+    assert (started["event_id"], started["occurred_at"]) == (seen[0]["event_id"], seen[0]["occurred_at"])
     write_json(source / "supervisor-result.json", result)
     final = host.submit_supervisor_decision(source)
     assert final["status"] == "SUPERVISOR_D2_RECORDED"
-    assert [e["event_type"] for e in seen] == ["D2_STARTED", "D2_PASSED"]
+    assert final["verdict"] == verdict
+    assert [e["event_type"] for e in seen] == ["D2_STARTED", "D2_PASSED" if verdict == "PASS" else "D2_FAILED"]
     assert seen[1]["details"]["d2_started_event_id"] == seen[0]["event_id"]
     assert seen[1]["occurred_at"] >= seen[0]["occurred_at"]
+    result_path = source / "role-host" / "result.json"
+    result_bytes = result_path.read_bytes()
+    assert host.submit_supervisor_decision(source) == final
+    assert start_path.read_bytes() == start_bytes
+    assert result_path.read_bytes() == result_bytes
+    assert len(seen) == 2
 
 
-def test_current_d2_final_verdict_cannot_invent_start(tmp_path, monkeypatch):
-    host, source, _incoming, _result, _projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+@pytest.mark.parametrize("method_version", CURRENT_D2_VERSIONS)
+@pytest.mark.parametrize("verdict", ["PASS", "FAIL", "INCOMPLETE"])
+def test_current_d2_final_verdict_cannot_invent_start(tmp_path, monkeypatch, method_version, verdict):
+    host, source, _incoming, result, _projection, seen = current_d2_fixture(
+        tmp_path, monkeypatch, method_version=method_version)
+    result["decision"]["verdict"] = verdict
+    write_json(source / "supervisor-result.json", result)
     monkeypatch.setattr(host, "_boundary", lambda _envelope: _projection)
-    with pytest.raises(wc.CompletionError, match="D2.*start"):
+    with pytest.raises(wc.CompletionError) as rejected:
         host.submit_supervisor_decision(source)
+    assert rejected.value.error_code == "D2_START_REQUIRED"
     assert seen == []
+    assert not (source / "role-host" / "supervisor-decision.json").exists()
+    assert not (source / "role-host" / "result.json").exists()
 
 
 def test_legacy_d2_partial_commit_retries_with_its_original_start_shape(tmp_path, monkeypatch):
@@ -572,9 +628,11 @@ def test_legacy_d2_partial_commit_retries_with_its_original_start_shape(tmp_path
     assert host.submit_supervisor_decision(source) == receipt
 
 
+@pytest.mark.parametrize("method_version", CURRENT_D2_VERSIONS)
 @pytest.mark.parametrize("damaged_proof", ["legacy-shape", "wrong-native-hash"])
-def test_current_d2_final_cannot_use_legacy_or_changed_start_proof(tmp_path, monkeypatch, damaged_proof):
-    host, source, _incoming, result, projection, seen = current_d2_fixture(tmp_path, monkeypatch)
+def test_current_d2_final_cannot_use_legacy_or_changed_start_proof(tmp_path, monkeypatch, damaged_proof, method_version):
+    host, source, _incoming, result, projection, seen = current_d2_fixture(
+        tmp_path, monkeypatch, method_version=method_version)
     host.start_d2(source)
     write_json(source / "supervisor-result.json", result)
     start = projection["events"][-1]

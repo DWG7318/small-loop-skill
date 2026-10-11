@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current source version: **4.4.5 — source repairs verified; not released or deployed by this maintenance**. See the [verification record](VALIDATION-REPORT.md). Preparation simplification and prebuilt deployment redesign belong to 4.5.0, not this repair.
+Current source version: **4.5.0 — candidate under integration verification; not yet released or deployed**. See the [450 plan](docs/superpowers/plans/2026-10-11-slk-4.5.0-scope.md) for current progress; [VALIDATION-REPORT.md](VALIDATION-REPORT.md) preserves prior maintenance evidence.
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 
@@ -11,15 +11,15 @@ Supervisor → Checker → Worker → Checker
                        FAIL → Supervisor → same Worker → Checker
                  final PASS → Supervisor D2
 
-Overwatcher: required, non-authoritative truth observation → Supervisor only
+Overwatcher: required Supervisor subagent, truth observation → its parent only
 Temporal: required continuity/timing guard; never engineering authority
 ```
 
-Before any CELL, Supervisor opens BI 1.1.1, establishes the four-role `RUN_TEAM_REGISTRY`, proves current tools/capabilities and device readiness, and binds a real isolated source produced by seven exact communication rehearsals. To create the first source, only a disposable one-CELL Run with a `slk-conformance/<SLK-CONFORMANCE-…>` evidence root and a separate clean, fixed-HEAD, no-remote sample Git may use `preflight-conformance-sample`; it can never dispatch product work. Temporal then uses the built-in two-stage standard adapter: central bootstrap creates the deterministic pair once, and explicit sample or product admission—after its real identity/Host/OW evidence exists—opens delivery. Product Runs always use `preflight-new-run` with a distinct sealed source. Missing, stale, guessed, circular or unqueryable evidence blocks dispatch.
+Before any CELL, Supervisor opens the prebuilt BI 1.1.1 and uses `preflight-basic` to confirm the installed SLK, DSH/OCRV, Skills, tools, state, shared Temporal and exact role identities/endpoints. Each member receives a short role brief and role eval; required direct communication is checked without simulating a full engineering Run. Existing strict conformance drills remain developer/regression tools, not an ordinary startup dependency. Missing components use prepared installation/repair recipes, with unfamiliar problems decided by Supervisor. Ten-minute checks and twenty-minute preparation are efficiency aims, never deadlines or failure gates. Ordinary users call prepared products rather than compiling or rebuilding dependencies.
 
 Codex is Supervisor using canonical `gpt-6.1-sol`; Owner freezes `high` or `xhigh` per Run. OCRV is Checker (Qwen3.8-Max); DSH is Worker (DeepSeek V4 Flash). Runtime, model, reasoning, Session, adapter, endpoint and native activity are validated rather than inferred from prompts. Supervisor sizes the frozen engineering solution for DSH: oversized work is pre-split into independently D0/D1-checkable small or medium CELLs without changing acceptance. Most CELLs should pass D1 first try; a second consecutive formal D1 failure requires more serious Supervisor investigation and consideration of smaller versioned successor CELLs (Skill guidance, not an output veto), while Checker retains D1 authority.
 
-Overwatcher is mandatory and observes actual cross-evidence facts every 600 seconds. It never relays normal work, retries delivery, edits BI/TOKEN, judges D0/D1/D2, or repairs a member. It reports `ANOMALY` or `UNKNOWN` only to the exact registered Supervisor and continues observing. One Run has one distinct Overwatcher role binding; one exact active Session may serve multiple Runs only when all native identity/model/endpoint/cadence facts match and every Run remains separately scoped. Only Supervisor may stop it, and every exit triggers a Supervisor-confirmed runtime guard before another CELL may dispatch.
+Overwatcher is mandatory: each Supervisor owns one native child subagent, registered for every Run that Supervisor manages. A fast, lower-reasoning model is recommended, not hard-coded. It observes actual cross-evidence facts every 600 seconds and reports `ANOMALY` or `UNKNOWN` only to its parent. It never relays normal work, retries delivery, edits BI/TOKEN, judges D0/D1/D2, or repairs a member. Removing one Run does not stop observation of the others. Only its Supervisor may stop it; every exit still requires Supervisor confirmation. Native parent/child identity and an actual current execution—not a tool's acceptance alone—prove activation.
 
 Temporal is one shared headless local service for multiple Runs. Each Run has an independent `SLK.Start` and `SLK.Run`: exact native-start acknowledgement, original-sender recovery, a 30-minute member-residency notice to Supervisor, a 20-minute Overwatcher audit, and a per-Run closure. It never decides engineering state or replaces direct role communication. SLK does not install Docker; unavailable or failed required continuity remains blocked until Supervisor repairs it.
 
@@ -33,7 +33,7 @@ SLK uses a versioned SQLite authority, durable evidence, deterministic Markdown 
 
 ## Skill collection
 
-Install all 17 sibling directories under [`skills/`](skills/): [`skills/small-loop-skill/SKILL.md`](skills/small-loop-skill/SKILL.md) is the main router and 16 focused companion Skills cover planning, capacity, models, role Eval/team readiness, Temporal, authorized pause/resume, Overwatcher observation, CELL execution/checking/rework, records, adjustment, recovery and closure. They are one method collection, not standalone methods.
+Install the complete sibling collection under [`skills/`](skills/), using the package inventory rather than a fixed Skill count. The [main Skill](skills/small-loop-skill/SKILL.md) routes to focused guides for planning, role understanding/team preparation, member replacement/archive, Temporal, OW, pause/resume, CELL work, records, recovery and closure. Preparation troubleshooting and construction troubleshooting are separate optional entrances, not new mandatory stages. These guides form one method and are not standalone methods.
 
 ## Validation
 

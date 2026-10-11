@@ -77,7 +77,7 @@
 
 ## Overwatcher 运行观察
 
-- role instance/Session/foreground turn/600 秒间隔：
+- 本Run role instance、所属Supervisor/child、当前原生激活/600秒间隔：
 - 最近cycle序号、完成时间、下次时间：
 - Run/CELL/attempt/TOKEN/最近事件：
 - CLEAR/ANOMALY/UNKNOWN 与不可变证据：
@@ -106,7 +106,7 @@
 
 - Worker归档状态：
 - Checker归档状态：
-- Overwatcher归档状态（若启用）：
+- Overwatcher本Run绑定关闭状态（其他Run仍需观察则保留child）：
 - Supervisor保留状态：
 
 ## Owner 简报

@@ -33,7 +33,7 @@ def test_transport_zipapp_is_reproducible_and_runnable(tmp_path: Path) -> None:
     assert result.stdout.strip() == f"slk-transport {version}"
 
 
-def test_transport_zipapp_contains_only_transport_source(tmp_path: Path) -> None:
+def test_transport_zipapp_contains_only_transport_and_explicit_ow_source(tmp_path: Path) -> None:
     artifact = build_zipapp(tmp_path / "transport.pyz")
 
     with zipfile.ZipFile(artifact) as archive:
@@ -41,8 +41,9 @@ def test_transport_zipapp_contains_only_transport_source(tmp_path: Path) -> None
     assert names == sorted(names)
     assert "__main__.py" in names
     assert "slk_transport/cli.py" in names
+    assert "slk_overwatch_tools/__init__.py" in names
     assert all(
-        name == "__main__.py" or name.startswith("slk_transport/")
+        name == "__main__.py" or name.startswith(("slk_transport/", "slk_overwatch_tools/"))
         for name in names
     )
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)

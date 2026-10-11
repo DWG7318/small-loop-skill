@@ -5,27 +5,24 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 
 # Rework a CELL
 
-> **使用边界：** 本 Skill 是 Small Loop Skill（SLK）的子 Skill，不可脱离 SLK Run 单独使用。
-> 适用前提是当前 Run 已选择 `$small-loop-skill`，并由 SLK 主 Skill 或同集合流程路由到本情境。
+仅用于已选择 `$small-loop-skill` 的当前 Run。正式 FAIL 链为 **原 Checker → Supervisor → 同一 Worker → 原 Checker**；Supervisor 指引修复，不重做 D1、不改代码或替 Worker 施工。
 
-## 当前目标
+质量目标是绝大部分 CELL 首轮 D1 PASS，单 CELL 原则上最多一次常规 D1 FAIL；靠合理拆分及改进实现，不是通过率配额，不影响 Checker 的真实判断。
 
-由 OCRV Checker、Codex Supervisor 与同一 DSH Worker 根据正式 D1 FAIL 修复当前 CELL，并保持原验收目标和清楚的返工历史；Worker 在交付前的 D0 草稿自修单独记录为本地尝试。
+## 第一次正式 FAIL
 
-## 建议做法
+1. 原 OCRV Checker 用绑定的 `slk_checker_decide(FAIL, message?)` 显式产生 `D1_FAILED`；同一标准工具调用发 `D1_FAILURE_ESCALATION` 与 TOKEN 给登记 Supervisor。绑定原失败事件、候选、D1 attempt、CELL 目标与验收条件，附真实发现/证据，不凑字段；不解析报告代判，不用旧 `--slk-post-d1`。
+2. Supervisor 只根据冻结 CELL 和当前 `D1_FAILED` 追加 `REWORK_REQUESTED`，精确绑定 Run/CELL/attempt、失败事件 ID、candidate SHA-256 和下一合法 round。形成 `D1_REWORK_DIRECTIVE`：一个根因假设、一个最小实验、最小修复边界和回归目标；不改变验收目标或强度。旧失败、跨 CELL/attempt、错误候选、重复 round 或 Checker 自写指引均不能授权返工。
+3. 保存本人的事实、原报告与证据后，以标准入口把指引/TOKEN **直接交同一 Worker，作为本次最后任务动作**。这是 Supervisor → Worker 唯一合法例外，不是普通派工路。仅所属可信入口消费本人的密封权限；核实精确消息/payload 哈希、真实 `slk.native-start/v2`，原子提交 TOKEN 与唯一 `runtime_revision` 后结束，不等 Worker、不轮询或留 post-turn/background 动作。
 
-1. 原 OCRV Checker 通过绑定的 `slk_checker_decide(FAIL, message?)` 明确记录自己的 `D1_FAILED`；同一次标准工具调用内部发送 `D1_FAILURE_ESCALATION` 与 TOKEN 给 Supervisor，不再使用 `--slk-post-d1` 或由宿主解析报告代判。绑定失败事件、候选哈希、返工轮次、CELL 目标和验收条件，附带原有发现/证据而不凑字段。空闲 Supervisor 走正常直达；仅当普通发送与一次 exact retry 都因 active Desktop writer 未解析而失败、返回 `DESKTOP_BRIDGE_REQUIRED` 时，Desktop 宿主才原样投递并保留真实 host receipt。密封 Checker 凭据只在所属可信 Tool 内部解封；匹配当前 D1/candidate/attempt 和真实 Supervisor start 后原子提交 TOKEN，不重跑或重判 D1。正常成功与补救成功分开记录，已有报告不因行动失败而扣留。调用合同见 [`docs/transport/SLK-TRANSPORT.md`](../../docs/transport/SLK-TRANSPORT.md)。
-2. Supervisor 不重做或接管 D1、不改变验收目标；第一次正式 FAIL 只基于冻结 CELL 与 OCRV 当前 `D1_FAILED` state event 写入 `REWORK_REQUESTED`，逐字绑定同一 Run/CELL/attempt、失败事件 ID、候选 SHA-256 与下一合法 round，再形成 `D1_REWORK_DIRECTIVE` transport payload，给出一个根因假设、一个最小实验、最小修复边界和回归目标。旧失败、跨 CELL/attempt、错误 candidate、重复 round 或 Checker 自写均失败关闭。
-3. Supervisor 把 `D1_REWORK_DIRECTIVE` 与 TOKEN 直接交给同一 DSH Worker 后结束本轮；这是 `Supervisor → Worker` 唯一合法情形，不构成一般派工通路。
-4. Worker 继续处理同一 `CELL n/N`，自行判断和施工；原因仍不清楚时可调用 Debug Skill，例如 `$superpowers:systematic-debugging`。同一 CELL 第二次连续 D1 FAIL 时应停止普通返工：Supervisor 对照两轮事实调查后，用 `$slk-adjust-run` 把尚未接受的工作进一步拆分为依赖明确、可独立 D0、独立 D1 的多个中小后继 CELL，再经 Checker 使用 `$slk-dispatch-cell` 派发；不改变原目标和验收强度，不清除两次失败，不自动替换 Worker。若无法继续合理拆分则保持阻断并决定其他路线，不发起第三次普通重试。
-5. Worker 完成修改和最低 D0 后，使用 `$slk-execute-cell` 的记录与交付方式重新提交。
-6. OCRV Checker 使用 `$slk-check-cell` 针对修复目标、受影响范围和相关回归重新执行 D1，保留未受影响且仍有效的已完成工作与客观证据，不复用通过结论；本轮事实通过 `slk-state` 追加，不覆盖前轮记录，不重复施工未受影响且仍有效的已完成工作。
+原报告独立保存/投递，不因 ACK/TOKEN/动作失败而扣留；受理、后台文字或终态不是启动/接手证明。明确投递故障才按 `$slk-recover-communication` 恢复原消息，不重判 D1；正常直达无需排障或 Desktop 桥接。
 
-## 收敛目标
+Worker 自主处理同一 `CELL n/N`，原因不明时按需使用 Debug Skill；依 `$slk-execute-cell` 完成修复、最低 D0 和候选交付。原 Checker 依 `$slk-check-cell` 重新执行隔离 D1，覆盖修复目标、受影响范围和相关回归。未受影响且仍有效的完成工作/客观证据保留，不重复施工，也不复用旧通过结论。所有事实追加，不覆盖失败历史。
 
-规划目标是绝大部分 CELL 首轮 D1 PASS，单个 CELL 原则上最多一次常规 D1 FAIL；这不是篡改 Checker 结论，而是要求 Supervisor 在第二次连续 D1 FAIL 后修正颗粒度。工具错误、D1 INCOMPLETE、重复回执和非产品失败不计入连续次数。
+## 第二次连续正式 FAIL
 
-## 负面提示词
+停止普通返工。Supervisor 对照两轮事实调查，再用 `$slk-adjust-run` 将尚未接受工作拆为依赖明确、可独立 D0/D1 的中小后继 CELL，经 Checker 用 `$slk-dispatch-cell` 派发；不削弱原目标，不清除两次失败、不用新 ordinal/revision 隐藏失败、不自动替换 Worker，也不让 Worker 私拆。不能合理拆分时保留阻断并决定其他路线，**不发第三次普通重试**。
 
-- 不要把 D0 草稿自修或 Checker 自建检查器故障计入 Worker 的 D1 返工次数；不要在初始施工、D1 PASS、D1 INCOMPLETE 或工具故障时创建 `D1_REWORK_DIRECTIVE`，不要把 `Supervisor → Worker` 扩成普通派工，也不要让 Supervisor 重判 D1、直接改代码或替 Worker 施工。
-- 不要让 Overwatcher 提出修复假设、执行返工或判定回归；它只观察与报告。REQUESTED/PAUSED 不派新返工，恢复保留原失败/候选/operation；第二次连续 D1 FAIL 不重复普通返工、不让 Worker 私拆，也不用新 ordinal/revision 隐藏原失败。
+D0 草稿自修、工具/检查器故障、重复回执和 D1 INCOMPLETE 不计连续产品 FAIL。初始施工、PASS、INCOMPLETE 或工具故障都不创建 `D1_REWORK_DIRECTIVE`；INCOMPLETE 走管理返回原 Checker，不冒充返工。
+
+REQUESTED/PAUSED 不派新返工，只依原暂停边界闭合精确在途动作，保留失败/候选/operation。OW 只观察并报告 Supervisor，不提修复假设、不执行返工/回归、不代投递、重试或写 TOKEN；runtime guard 仅阻断下一 CELL，不停止当前 CELL 或扣留已有报告。

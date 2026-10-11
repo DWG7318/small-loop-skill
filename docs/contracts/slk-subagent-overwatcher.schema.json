@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "slk-subagent-overwatcher.schema.json",
+  "title": "SLK 4.5.0 read-only native subagent request and original-record proof",
+  "$comment": "Current Codex private JSONL adapter, not a stable universal API or cryptographic host attestation. native_execution_id locates a real parent spawn/followup call, not a child turn UUID; legacy foreground_turn_id stores this explicitly kinded execution locator. Parent host identity is declared registration data, not independently proved by rollout. Followup requires the exact previous activation, a fresh completed pre-sample, empty tool return, and a new running query after that return; an accepted request alone is not activation. Freeze only original spawn, previous/current activation and pre/post sample records, never recursive history or the growing file hash. canonical_task_id remains original spawn while current native task/message/hash follows activation. This proves no child tool activity, authority, isolation, future liveness or autonomous cadence. Reader PID is not child PID. Test roots are simulations.",
+  "oneOf": [{"$ref": "#/$defs/request"}, {"$ref": "#/$defs/proof"}],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "^\\S(?:[\\s\\S]*\\S)?$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "callId": {"type": "string", "pattern": "^call_[A-Za-z0-9_]+$"},
+    "nativeAddress": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "parent", "agent_id"],
+      "properties": {
+        "kind": {"const": "supervisor_subagent"},
+        "parent": {
+          "type": "object", "additionalProperties": false,
+          "required": ["agent_runtime", "host_identity", "session_id"],
+          "properties": {"agent_runtime": {"const": "codex"}, "host_identity": {"$ref": "#/$defs/text"}, "session_id": {"$ref": "#/$defs/text"}}
+        },
+        "agent_id": {"type": "string", "pattern": "^/root(?:/[a-z0-9_]+)+$"}
+      }
+    },
+    "identity": {
+      "type": "object",
+      "allOf": [{"if": {"properties": {"native_execution_id": {"pattern": "^codex-subagent-followup:"}}}, "then": {"$ref": "#/$defs/followupIdentity"}}],
+      "required": ["method_version", "run_id", "role_instance_id", "endpoint_ref", "native_address", "native_execution_id", "native_source_path"],
+      "properties": {
+        "method_version": {"const": "4.5.0"},
+        "run_id": {"$ref": "#/$defs/text"}, "role_instance_id": {"$ref": "#/$defs/text"}, "endpoint_ref": {"$ref": "#/$defs/text"},
+        "native_address": {"$ref": "#/$defs/nativeAddress"},
+        "native_execution_id": {"type": "string", "pattern": "^codex-subagent-(spawn|followup):call_[A-Za-z0-9_]+$"},
+        "native_source_path": {"$ref": "#/$defs/text"}
+      }
+    },
+    "followupIdentity": {
+      "required": ["spawn_call_id", "previous_native_execution_id", "pre_activation_sample_call_id"],
+      "properties": {
+        "spawn_call_id": {"$ref": "#/$defs/callId"},
+        "previous_native_execution_id": {"type": "string", "pattern": "^codex-subagent-(spawn|followup):call_[A-Za-z0-9_]+$"},
+        "pre_activation_sample_call_id": {"$ref": "#/$defs/callId"}
+      }
+    },
+    "followupProof": {
+      "required": ["activation_call_sha256", "activation_output_sha256", "activation_query_timestamp", "activation_output_timestamp", "previous_activation_call_sha256", "previous_activation_output_sha256", "previous_activation_query_timestamp", "previous_activation_output_timestamp", "pre_activation_sample_call_sha256", "pre_activation_sample_output_sha256", "pre_activation_sample_query_timestamp", "pre_activation_sample_output_timestamp"],
+      "properties": {
+        "activation_call_sha256": {"$ref": "#/$defs/sha256"}, "activation_output_sha256": {"$ref": "#/$defs/sha256"},
+        "activation_query_timestamp": {"$ref": "#/$defs/timestamp"}, "activation_output_timestamp": {"$ref": "#/$defs/timestamp"},
+        "previous_activation_call_sha256": {"$ref": "#/$defs/sha256"}, "previous_activation_output_sha256": {"$ref": "#/$defs/sha256"},
+        "previous_activation_query_timestamp": {"$ref": "#/$defs/timestamp"}, "previous_activation_output_timestamp": {"$ref": "#/$defs/timestamp"},
+        "pre_activation_sample_call_sha256": {"$ref": "#/$defs/sha256"}, "pre_activation_sample_output_sha256": {"$ref": "#/$defs/sha256"},
+        "pre_activation_sample_query_timestamp": {"$ref": "#/$defs/timestamp"}, "pre_activation_sample_output_timestamp": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "request": {
+      "allOf": [{"$ref": "#/$defs/identity"}],
+      "type": "object", "unevaluatedProperties": false, "required": ["schema_version"],
+      "properties": {"schema_version": {"const": "slk.subagent-overwatcher-request/v1"}}
+    },
+    "proof": {
+      "allOf": [{"$ref": "#/$defs/identity"}, {"if": {"properties": {"native_execution_id": {"pattern": "^codex-subagent-followup:"}}}, "then": {"$ref": "#/$defs/followupProof"}}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["schema_version", "request_sha256", "canonical_task_id", "native_task_id", "spawn_call_id", "spawn_call_sha256", "spawn_output_sha256", "spawn_query_timestamp", "spawn_output_timestamp", "sample_call_id", "sample_call_sha256", "sample_output_sha256", "sample_query_timestamp", "sample_output_timestamp", "agent_status", "checked_at", "started_sha256"],
+      "properties": {
+        "schema_version": {"const": "slk.subagent-overwatcher-proof/v1"},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "canonical_task_id": {"type": "string", "pattern": "^codex-subagent-spawn-call_[A-Za-z0-9_]+$"},
+        "native_task_id": {"type": "string", "pattern": "^codex-subagent:.+:call_[A-Za-z0-9_]+:/root(?:/[a-z0-9_]+)+$"},
+        "spawn_call_id": {"$ref": "#/$defs/callId"}, "spawn_call_sha256": {"$ref": "#/$defs/sha256"}, "spawn_output_sha256": {"$ref": "#/$defs/sha256"},
+        "spawn_query_timestamp": {"$ref": "#/$defs/timestamp"}, "spawn_output_timestamp": {"$ref": "#/$defs/timestamp"},
+        "sample_call_id": {"$ref": "#/$defs/callId"}, "sample_call_sha256": {"$ref": "#/$defs/sha256"}, "sample_output_sha256": {"$ref": "#/$defs/sha256"},
+        "sample_query_timestamp": {"$ref": "#/$defs/timestamp"}, "sample_output_timestamp": {"$ref": "#/$defs/timestamp"},
+        "agent_status": {"const": "RUNNING"}, "checked_at": {"$ref": "#/$defs/timestamp"}, "started_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

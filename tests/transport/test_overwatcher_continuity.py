@@ -91,3 +91,21 @@ def test_443_shared_session_keeps_each_runs_cadence_separate():
     assert inspect_overwatcher_cadence(b, observed_at="2026-09-23T00:25:00Z")["status"] == "CURRENT"
     a["roles"][0]["lifecycle"] = "closed"
     assert inspect_overwatcher_cadence(b, observed_at="2026-09-23T00:25:00Z")["status"] == "CURRENT"
+
+
+@pytest.mark.parametrize("fault", [None, "session", "execution", "run"])
+def test_450_cadence_only_joins_current_child_and_execution(fault):
+    value = projection()
+    value["summary"]["slk_version"] = "4.5.0"
+    value["roles"][0].update(session_id="/root/ow", foreground_turn_id="codex-subagent-followup:call_new")
+    value["overwatch_cycles"][0].update(run_id="RUN-A", session_id="/root/ow",
+        foreground_turn_id="codex-subagent-followup:call_new", cadence_seconds=600,
+        next_cycle_at="2026-09-23T00:10:00Z")
+    if fault == "session": value["overwatch_cycles"][0]["session_id"] = "/root/old"
+    elif fault == "execution": value["overwatch_cycles"][0]["foreground_turn_id"] = "codex-subagent-spawn:call_old"
+    elif fault == "run": value["overwatch_cycles"][0]["run_id"] = "RUN-B"
+    result = inspect_overwatcher_cadence(value, observed_at="2026-09-23T00:05:00Z")
+    assert result["status"] == ("CONTINUITY_UNPROVEN" if fault else "CURRENT")
+    if not fault:
+        late = inspect_overwatcher_cadence(value, observed_at="2026-09-23T00:11:00Z")
+        assert late["status"] == "LATE" and late["action"] == "SUPERVISOR_RECOVERY_REVIEW"

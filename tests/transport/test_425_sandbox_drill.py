@@ -30,6 +30,7 @@ def test_426_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: 
     version = (Path(__file__).parents[2] / 'VERSION').read_text(encoding='utf-8').strip()
     assert report["method_version"] == version
     assert report["status"] == "PASS"
+    assert report["evidence_scope"] == "fixture-backed automated regression, not a live Agent Run"
     assert report["proofs"] == {
         "active_writer_new_message_recovery": True,
         "atomic_delivery_start_revision": True,
@@ -48,11 +49,11 @@ def test_426_sandbox_proves_runtime_consistency_without_product_paths(tmp_path: 
         "projected_active_not_cycle_proof": True,
         "public_direct_resume_removed": True,
     }
-    assert report["counts"]["overwatcher_bindings"] == 1
-    assert report["counts"]["overwatch_cycles"] == 3
-    assert report["counts"]["transport_start_receipts"] == 1
-    assert report["counts"]["worker_completion_guard_checks"] == 3
-    assert report["counts"]["model_change_events"] == 0
+    assert report["fixture_expectations"]["overwatcher_bindings"] == 1
+    assert report["fixture_expectations"]["overwatch_cycles"] == 3
+    assert report["fixture_expectations"]["transport_start_receipts"] == 1
+    assert report["fixture_expectations"]["worker_completion_guard_checks"] == 3
+    assert report["fixture_expectations"]["model_change_events"] == 0
 
     output_root = output.resolve()
     for root in report["disposable_roots"]:

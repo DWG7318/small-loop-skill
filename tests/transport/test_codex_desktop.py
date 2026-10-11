@@ -22,7 +22,9 @@ SERVER = Path(__file__).with_name("fake_desktop_mcp.py")
 def prepared(tmp_path, monkeypatch, mode="normal"):
     raw = asdict(codex_endpoint(tmp_path))
     raw["address"]["command"] = [sys.executable, str(SERVER)]
-    raw["address"]["startup_timeout_seconds"] = 1
+    # Exercise native evidence, not one-second Python child startup under a
+    # loaded Windows test/build host. This changes only the test RPC fixture.
+    raw["address"]["startup_timeout_seconds"] = 10
     raw["address"]["desktop"] = {"caller_thread_id": "caller-exact", "model": "gpt-6.1-sol", "reasoning_effort": "xhigh", "plugin_sha256": hashlib.sha256(SERVER.read_bytes()).hexdigest()}
     monkeypatch.setenv("CODEX_THREAD_ID", "caller-exact")
     monkeypatch.setenv("CODEX_APP_TOOLS_PIPE_PATH", "inherited-native-pipe")
@@ -182,9 +184,6 @@ def test_desktop_polling_does_not_retain_whole_repeated_thread_history(monkeypat
 ])
 def test_desktop_does_not_turn_accepted_or_wrong_evidence_into_start(tmp_path, monkeypatch, mode, code):
     endpoint = prepared(tmp_path, monkeypatch, mode)
-    if mode == "duplicate":
-        # Validate ambiguous evidence, not one-second child startup under suite load.
-        endpoint = replace(endpoint, address={**endpoint.address, "startup_timeout_seconds": 10})
     envelope = supervisor_envelope()
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
     with pytest.raises(AdapterError) as error:
