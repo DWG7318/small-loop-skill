@@ -1,0 +1,13 @@
+[build-system]
+requires = []
+build-backend = "build_wheel"
+backend-path = ["."]
+
+[project]
+name = "slk-overwatch-tools"
+version = "1.0.0"
+description = "Deterministic read-only Overwatcher helpers"
+requires-python = ">=3.10"
+dependencies = []
+license = "MIT"
+readme = "README.md"
