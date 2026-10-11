@@ -1,19 +1,21 @@
 [package]
 name = "slk-state-core"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "4.5.0"
+edition = "2021"
+license = "MIT"
+description = "Canonical state, transaction, and read-model library for Small Loop Skill"
+repository = "https://github.com/DWG7318/slk-state-core"
 
 [dependencies]
 quick-xml = { version = "0.41.0", features = ["serialize"] }
-directories.workspace = true
-rusqlite.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sha2.workspace = true
-thiserror.workspace = true
-time.workspace = true
-uuid.workspace = true
+directories = "6.0.0"
+rusqlite = { version = "0.37.0", features = ["backup", "bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.10.9"
+thiserror = "2.0.19"
+time = { version = "0.3.54", features = ["formatting", "parsing"] }
+uuid = { version = "1.24.0", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

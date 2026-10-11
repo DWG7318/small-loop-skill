@@ -74,7 +74,7 @@ fn current_release_can_admit_its_registered_overwatcher_without_relabeling_histo
             register_role("run-a", "worker-a", Role::Worker),
         )
         .unwrap();
-    let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    let mut binding = subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a");
     binding.cadence_seconds = 300;
     assert!(store
         .bind_overwatcher(&initialized.supervisor_credential, binding.clone())
@@ -84,20 +84,23 @@ fn current_release_can_admit_its_registered_overwatcher_without_relabeling_histo
         .bind_overwatcher(&initialized.supervisor_credential, binding)
         .unwrap();
     let current = store.query_run("run-a").unwrap();
-    assert_eq!(current.summary.slk_version, "4.4.5");
-    assert_eq!(current.summary.origin_slk_version, "4.4.5");
+    assert_eq!(current.summary.slk_version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(current.summary.origin_slk_version, env!("CARGO_PKG_VERSION"));
 
     let second = store
         .init_run(init_request("run-b", "supervisor-b"))
         .unwrap();
-    let mut shared = overwatcher_binding("run-b", "overwatcher-b", "session-overwatcher-a");
+    let mut shared = subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a");
+    shared.endpoint.native_address =
+        subagent_address("session-supervisor-b", "session-overwatcher-a");
     shared.cadence_seconds = 600;
     shared.native_active_session_evidence_ref = "run-b/independent-native-proof.json".into();
     let mut wrong_host = shared.clone();
     wrong_host.endpoint.host_identity = "different-real-host".into();
+    wrong_host.endpoint.native_address["parent"]["host_identity"] = json!("different-real-host");
     assert!(matches!(
         store.bind_overwatcher(&second.supervisor_credential, wrong_host),
-        Err(StateError::OverwatcherSessionReused)
+        Err(StateError::OverwatcherBindingInvalid(_))
     ));
     store
         .bind_overwatcher(&second.supervisor_credential, shared)
@@ -2553,6 +2556,438 @@ fn owner_selected_overwatcher_luna_family_is_not_fixed_to_one_generation() {
 }
 
 #[test]
+fn slk_450_binds_a_declared_supervisor_subagent_without_a_model_allowlist() {
+    for (model, reasoning) in [
+        ("gpt-6-luna", "high"),
+        ("gpt-6.1-sol", "low"),
+        ("owner-selected-efficient-model", "provider-default"),
+    ] {
+        let fixture = Fixture::new_450();
+        let before_revision = fixture.runtime_revision();
+        let mut binding = subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+        binding.identity.model = model.into();
+        binding.identity.reasoning = reasoning.into();
+        fixture
+            .store
+            .bind_overwatcher(&fixture.supervisor, binding)
+            .unwrap();
+        let current = fixture.store.query_run("run-a").unwrap();
+        let watcher = current.role("overwatcher").unwrap();
+        assert_eq!(watcher.model, model);
+        assert_eq!(watcher.reasoning, reasoning);
+        assert_eq!(current.summary.slk_version, "4.5.0");
+        assert_eq!(current.summary.origin_slk_version, "4.4.5");
+        assert_eq!(fixture.store.current_token("run-a").unwrap().sequence, 1);
+        assert_eq!(current.runtime_snapshot.unwrap().runtime_revision, before_revision + 1);
+    }
+}
+
+#[test]
+fn slk_450_compares_the_declared_parent_and_child_with_registered_identities() {
+    let invalid_addresses = [
+        json!({"session_id":"session-overwatcher-a"}),
+        json!({"kind":"independent_agent", "parent":{
+            "agent_runtime":"codex", "host_identity":"host-a", "session_id":"session-supervisor-a"
+        }, "agent_id":"session-overwatcher-a"}),
+        subagent_address("different-supervisor", "session-overwatcher-a"),
+        subagent_address("session-supervisor-a", "different-child"),
+        json!({"kind":"supervisor_subagent", "parent":{
+            "agent_runtime":"different-runtime", "host_identity":"host-a", "session_id":"session-supervisor-a"
+        }, "agent_id":"session-overwatcher-a"}),
+        json!({"kind":"supervisor_subagent", "parent":{
+            "agent_runtime":"codex", "host_identity":"different-host", "session_id":"session-supervisor-a"
+        }, "agent_id":"session-overwatcher-a"}),
+    ];
+    for address in invalid_addresses {
+        let fixture = Fixture::new_450();
+        let mut binding = subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+        binding.endpoint.native_address = address;
+        assert!(matches!(
+            fixture.store.bind_overwatcher(&fixture.supervisor, binding),
+            Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("registered Supervisor parent and child")
+        ));
+    }
+
+    let fixture = Fixture::new_450();
+    let mut child = subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    child.identity.agent_runtime = "native-child-runtime".into();
+    child.endpoint.host_identity = "native-child-host".into();
+    fixture.store.bind_overwatcher(&fixture.supervisor, child).unwrap();
+}
+
+#[test]
+fn slk_450_one_supervisor_reuses_its_child_across_runs_but_cannot_bind_a_second_child() {
+    let fixture = Fixture::new_450();
+    fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let second = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-a");
+    fixture.store.bind_overwatcher(&second,
+        subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a")).unwrap();
+    let third = fixture.add_450_run("run-c", "supervisor-c", "session-supervisor-a");
+    assert!(matches!(fixture.store.bind_overwatcher(&third,
+        subagent_binding("run-c", "overwatcher-c", "session-overwatcher-c")),
+        Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("one active Overwatcher")
+    ));
+    assert_eq!(fixture.store.query_run("run-b").unwrap().role("overwatcher").unwrap().session_id,
+        "session-overwatcher-a");
+}
+
+#[test]
+fn slk_450_resume_requires_positive_completed_not_missing_or_mismatched() {
+    for liveness in [NativeLiveness::Missing, NativeLiveness::Mismatched] {
+        let fixture = Fixture::new_450();
+        let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
+            subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+        fixture.store.record_overwatcher_status(&issued.credential, RecordOverwatcherStatusRequest {
+            status_id: "unknown-old-execution".into(), run_id: "run-a".into(), binding_revision: 1,
+            role_instance_id: "overwatcher-a".into(), session_id: "session-overwatcher-a".into(),
+            foreground_turn_id: "foreground-turn-a".into(), native_liveness: liveness,
+            evidence: fixture.evidence_ref("unknown-old-execution.json", b"unknown is not completed"),
+            observed_at: "2026-09-24T01:00:00Z".into(),
+        }).unwrap();
+        assert!(matches!(fixture.store.resume_overwatcher_turn(&fixture.supervisor,
+            native_status_resume_request(&fixture, "unknown-old-execution", "reject-unproved-resume")),
+            Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("COMPLETED")));
+    }
+}
+
+#[test]
+fn slk_450_anomaly_cycle_cannot_prove_the_old_execution_has_completed() {
+    let (fixture, _) = fixture_426_with_anomaly();
+    let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    database.execute("UPDATE runs SET slk_version='4.5.0' WHERE run_id='run-a'", []).unwrap();
+    database.execute("UPDATE overwatcher_bindings SET native_address_json=?1 WHERE run_id='run-a'",
+        [subagent_address("session-supervisor-a", "session-overwatcher-a").to_string()]).unwrap();
+    let mut request = native_status_resume_request(&fixture, "unused", "reject-anomaly-resume");
+    request.last_native_status_id = None;
+    request.last_anomaly_cycle_id = Some("cycle-2".into());
+    assert!(matches!(fixture.store.resume_overwatcher_turn(&fixture.supervisor, request),
+        Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("COMPLETED")));
+}
+
+#[test]
+fn slk_450_current_execution_projection_tracks_each_run_without_changing_other_role_shapes() {
+    let fixture = Fixture::new_450();
+    let first = fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let second_supervisor = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-a");
+    let second = fixture.store.bind_overwatcher(&second_supervisor,
+        subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a")).unwrap();
+    for run_id in ["run-a", "run-b"] {
+        let run = fixture.store.query_run(run_id).unwrap();
+        assert_eq!(serde_json::to_value(run.role("overwatcher").unwrap()).unwrap()["foreground_turn_id"],
+            "foreground-turn-a");
+        assert!(serde_json::to_value(run.role("supervisor").unwrap()).unwrap().get("foreground_turn_id").is_none());
+    }
+    for (run_id, role_id, credential, supervisor) in [
+        ("run-a", "overwatcher-a", &first.credential, &fixture.supervisor),
+        ("run-b", "overwatcher-b", &second.credential, &second_supervisor),
+    ] {
+        fixture.store.record_overwatcher_status(credential, RecordOverwatcherStatusRequest {
+            status_id: format!("completed-{run_id}"), run_id: run_id.into(), binding_revision: 1,
+            role_instance_id: role_id.into(), session_id: "session-overwatcher-a".into(),
+            foreground_turn_id: "foreground-turn-a".into(), native_liveness: NativeLiveness::Completed,
+            evidence: fixture.evidence_ref(&format!("completed-{run_id}.json"), b"native completed"),
+            observed_at: "2026-09-24T01:00:00Z".into(),
+        }).unwrap();
+        let mut request = native_status_resume_request(&fixture, &format!("completed-{run_id}"), &format!("resume-{run_id}"));
+        request.run_id = run_id.into();
+        request.role_instance_id = role_id.into();
+        request.expected_runtime_revision = fixture.store.query_run(run_id).unwrap().runtime_snapshot.unwrap().runtime_revision;
+        fixture.store.resume_overwatcher_turn(supervisor, request).unwrap();
+        let run = fixture.store.query_run(run_id).unwrap();
+        assert_eq!(serde_json::to_value(run.role("overwatcher").unwrap()).unwrap()["foreground_turn_id"],
+            "foreground-turn-b");
+        if run_id == "run-a" {
+            assert_eq!(serde_json::to_value(fixture.store.query_run("run-b").unwrap().role("overwatcher").unwrap()).unwrap()["foreground_turn_id"],
+                "foreground-turn-a");
+        }
+    }
+}
+
+#[test]
+fn slk_450_shared_active_child_requires_consistent_identity_but_not_endpoint_version() {
+    for field in ["provider", "model", "reasoning"] {
+        let fixture = Fixture::new_450();
+        fixture.store.bind_overwatcher(&fixture.supervisor,
+            subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+        let second = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-a");
+        let mut conflicting = subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a");
+        match field {
+            "provider" => conflicting.identity.provider = "different-provider".into(),
+            "model" => conflicting.identity.model = "different-owner-selected-model".into(),
+            "reasoning" => conflicting.identity.reasoning = "low".into(),
+            _ => unreachable!(),
+        }
+        assert!(matches!(fixture.store.bind_overwatcher(&second, conflicting),
+            Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("same active Overwatcher identity")),
+            "accepted conflicting {field}");
+        let mut consistent = subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a");
+        consistent.endpoint.endpoint_version = 2;
+        consistent.endpoint.native_address["caller_pipe"] = json!("run-b-transport-route");
+        fixture.store.bind_overwatcher(&second, consistent).unwrap();
+    }
+}
+
+#[test]
+fn slk_450_rejects_another_supervisors_declared_parent() {
+    let fixture = Fixture::new_450();
+    fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let second = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-b");
+    let shared = subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a");
+    assert!(matches!(fixture.store.bind_overwatcher(&second, shared),
+        Err(StateError::OverwatcherBindingInvalid(_))));
+}
+
+#[test]
+fn slk_450_distinct_supervisors_can_each_have_the_same_parent_scoped_child_path() {
+    let fixture = Fixture::new_450();
+    fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "/root/ow")).unwrap();
+    let second = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-b");
+    let mut child = subagent_binding("run-b", "overwatcher-b", "/root/ow");
+    child.endpoint.native_address = subagent_address("session-supervisor-b", "/root/ow");
+    fixture.store.bind_overwatcher(&second, child).unwrap();
+    assert_eq!(fixture.store.query_run("run-a").unwrap().role("overwatcher").unwrap().session_id,
+        fixture.store.query_run("run-b").unwrap().role("overwatcher").unwrap().session_id);
+}
+
+#[test]
+fn slk_450_rebind_cannot_change_the_child_parent_or_drift_the_supervisor_owner() {
+    let fixture = Fixture::new_450();
+    fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let mut rebound = endpoint("session-overwatcher-a");
+    rebound.endpoint_version = 2;
+    rebound.native_address = subagent_address("different-supervisor", "session-overwatcher-a");
+    assert!(matches!(fixture.store.rebind_session(&fixture.supervisor, RebindSessionRequest {
+        event_id: "wrong-subagent-parent".into(), run_id: "run-a".into(),
+        role_instance_id: "overwatcher-a".into(), endpoint: rebound.clone(),
+        reason: "cannot change the registered parent".into(),
+        occurred_at: "2026-09-22T00:01:00Z".into(),
+    }), Err(StateError::OverwatcherBindingInvalid(_))));
+
+    assert!(matches!(fixture.store.rebind_session(&fixture.supervisor, RebindSessionRequest {
+        event_id: "drift-supervisor-owner".into(), run_id: "run-a".into(),
+        role_instance_id: "supervisor-a".into(), endpoint: EndpointIdentity {
+            endpoint_version: 2, ..endpoint("different-supervisor")
+        },
+        reason: "must not detach an active child from its owner".into(),
+        occurred_at: "2026-09-22T00:01:00Z".into(),
+    }), Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("active Overwatcher")));
+
+    rebound.native_address = subagent_address("session-supervisor-a", "session-overwatcher-a");
+    rebound.native_address["caller_pipe"] = json!("app-tools");
+    fixture.store.rebind_session(&fixture.supervisor, RebindSessionRequest {
+        event_id: "correct-subagent-endpoint".into(), run_id: "run-a".into(),
+        role_instance_id: "overwatcher-a".into(), endpoint: rebound,
+        reason: "correct transport metadata while retaining parent and child".into(),
+        occurred_at: "2026-09-22T00:01:00Z".into(),
+    }).unwrap();
+    assert_eq!(fixture.store.query_run("run-a").unwrap().role("overwatcher").unwrap()
+        .endpoints[0].endpoint_version, 2);
+}
+
+#[test]
+fn slk_450_inherits_445_d2_and_run_close_protections() {
+    let fixture = Fixture::new_450();
+    assert!(matches!(fixture.store.write_event(&fixture.supervisor,
+        event("d2-without-ready", EventType::D2Started, "supervisor-a")),
+        Err(StateError::InvalidPlan(_))));
+    assert!(matches!(fixture.store.write_event(&fixture.supervisor,
+        event("close-without-d2", EventType::RunClosed, "supervisor-a")),
+        Err(StateError::WorkEventInvalid(_))));
+    assert_eq!(fixture.store.query_run("run-a").unwrap().summary.closure_state, "open");
+}
+
+#[test]
+fn slk_450_replacement_validates_parent_and_does_not_split_a_shared_owner() {
+    let fixture = Fixture::new_450();
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    fixture.store.record_overwatcher_status(&issued.credential, RecordOverwatcherStatusRequest {
+        status_id: "stopped-before-450-replace".into(), run_id: "run-a".into(),
+        binding_revision: 1, role_instance_id: "overwatcher-a".into(),
+        session_id: "session-overwatcher-a".into(), foreground_turn_id: "foreground-turn-a".into(),
+        native_liveness: NativeLiveness::Completed,
+        evidence: fixture.evidence_ref("stopped-450.json", b"native completed"),
+        observed_at: "2026-09-22T00:05:00Z".into(),
+    }).unwrap();
+    let mut replacement = replacement_request(&fixture, OverwatcherReplacementMode::ContinuityRecovery,
+        None, Some(fixture.evidence_ref("450-recovery-approved.json", b"approved")));
+    replacement.cadence_seconds = 600;
+    replacement.replacement.model = "owner-selected-efficient-model".into();
+    replacement.replacement.reasoning = "low".into();
+    let mut invalid = replacement.clone();
+    invalid.endpoint.native_address = subagent_address("different-supervisor", "session-overwatcher-b");
+    assert!(matches!(fixture.store.replace_overwatcher(&fixture.supervisor, invalid),
+        Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("registered Supervisor parent and child")));
+
+    let second = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-a");
+    let second_issued = fixture.store.bind_overwatcher(&second,
+        subagent_binding("run-b", "overwatcher-b-other-run", "session-overwatcher-a")).unwrap();
+    replacement.endpoint.native_address = subagent_address("session-supervisor-a", "session-overwatcher-b");
+    assert!(matches!(fixture.store.replace_overwatcher(&fixture.supervisor, replacement),
+        Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("one active Overwatcher")));
+    assert_eq!(fixture.store.query_run("run-a").unwrap().role("overwatcher").unwrap().session_id,
+        "session-overwatcher-a");
+    fixture.store.authenticate_active_role("run-b", &second_issued.credential).unwrap();
+}
+
+#[test]
+fn slk_450_shared_violation_recovers_both_runs_without_reviving_the_old_child() {
+    let fixture = Fixture::new_450();
+    let first = fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let second_supervisor = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-a");
+    let second = fixture.store.bind_overwatcher(&second_supervisor,
+        subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a")).unwrap();
+    for (run_id, role_id, credential, status_id) in [
+        ("run-a", "overwatcher-a", &first.credential, "completed-run-a"),
+        ("run-b", "overwatcher-b", &second.credential, "completed-run-b"),
+    ] {
+        fixture.store.record_overwatcher_status(credential, RecordOverwatcherStatusRequest {
+            status_id: status_id.into(), run_id: run_id.into(), binding_revision: 1,
+            role_instance_id: role_id.into(), session_id: "session-overwatcher-a".into(),
+            foreground_turn_id: "foreground-turn-a".into(), native_liveness: NativeLiveness::Completed,
+            evidence: fixture.evidence_ref(&format!("{status_id}.json"), b"native completed"),
+            observed_at: "2026-09-22T00:05:00Z".into(),
+        }).unwrap();
+    }
+    let mut replace_first = replacement_request(&fixture, OverwatcherReplacementMode::ContinuityRecovery,
+        None, Some(fixture.evidence_ref("shared-recovery-approved.json", b"approved")));
+    replace_first.event_id = "recover-shared-run-a".into();
+    replace_first.cadence_seconds = 600;
+    replace_first.replacement = role("overwatcher-new-a", Role::Overwatcher, "session-overwatcher-new");
+    replace_first.endpoint = endpoint("session-overwatcher-new");
+    replace_first.endpoint.native_address = subagent_address("session-supervisor-a", "session-overwatcher-new");
+    let new_first = fixture.store.replace_overwatcher(&fixture.supervisor, replace_first.clone()).unwrap();
+
+    let old_resume = ResumeOverwatcherTurnRequest {
+        event_id: "revive-old-shared-child".into(), run_id: "run-b".into(),
+        role_instance_id: "overwatcher-b".into(), session_id: "session-overwatcher-a".into(),
+        binding_revision: 1,
+        expected_runtime_revision: fixture.store.query_run("run-b").unwrap().runtime_snapshot.unwrap().runtime_revision,
+        previous_foreground_turn_id: "foreground-turn-a".into(), foreground_turn_id: "revived-old-turn".into(),
+        last_anomaly_cycle_id: None, last_native_status_id: Some("completed-run-b".into()),
+        native_active_session_evidence: fixture.evidence_ref("old-child-resume.json", b"claimed active"),
+        reason: "must not revive a second child after recovery".into(),
+        occurred_at: "2026-09-22T00:05:02Z".into(),
+    };
+    assert!(matches!(fixture.store.resume_overwatcher_turn(&second_supervisor, old_resume),
+        Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("one active Overwatcher")));
+    let mut replace_second = replace_first;
+    replace_second.event_id = "recover-shared-run-b".into();
+    replace_second.run_id = "run-b".into();
+    replace_second.replacement.role_instance_id = "overwatcher-new-b".into();
+    replace_second.expected_runtime_revision = fixture.store.query_run("run-b").unwrap()
+        .runtime_snapshot.unwrap().runtime_revision;
+    replace_second.endpoint.endpoint_version = 2;
+    let new_second = fixture.store.replace_overwatcher(&second_supervisor, replace_second).unwrap();
+    for (run_id, credential) in [("run-a", &new_first.credential), ("run-b", &new_second.credential)] {
+        fixture.store.authenticate_active_role(run_id, credential).unwrap();
+        let run = fixture.store.query_run(run_id).unwrap();
+        assert_eq!(run.role("overwatcher").unwrap().session_id, "session-overwatcher-new");
+        assert_eq!(run.summary.closure_state, "open");
+    }
+    assert!(fixture.store.authenticate_active_role("run-a", &first.credential).is_err());
+    assert!(fixture.store.authenticate_active_role("run-b", &second.credential).is_err());
+}
+
+#[test]
+fn slk_450_isolated_recovery_uses_the_same_complete_model_identity_policy_as_initial_bind() {
+    let fixture = Fixture::new_450();
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    fixture.store.record_overwatcher_status(&issued.credential, RecordOverwatcherStatusRequest {
+        status_id: "stopped-before-recovery".into(), run_id: "run-a".into(),
+        binding_revision: 1, role_instance_id: "overwatcher-a".into(),
+        session_id: "session-overwatcher-a".into(), foreground_turn_id: "foreground-turn-a".into(),
+        native_liveness: NativeLiveness::Completed,
+        evidence: fixture.evidence_ref("stopped-for-recovery.json", b"native completed"),
+        observed_at: "2026-09-22T00:05:00Z".into(),
+    }).unwrap();
+    let mut replacement = replacement_request(&fixture, OverwatcherReplacementMode::ContinuityRecovery,
+        None, Some(fixture.evidence_ref("recovery-approved.json", b"approved")));
+    replacement.cadence_seconds = 600;
+    replacement.endpoint.native_address = subagent_address("session-supervisor-a", "session-overwatcher-b");
+    replacement.replacement.model = "owner-selected-efficient-model".into();
+    replacement.replacement.reasoning = "low".into();
+    let mut incomplete = replacement.clone();
+    incomplete.replacement.session_id.clear();
+    incomplete.endpoint.session_id.clear();
+    incomplete.endpoint.native_address["agent_id"] = json!("");
+    assert!(matches!(fixture.store.replace_overwatcher(&fixture.supervisor, incomplete),
+        Err(StateError::OverwatcherBindingInvalid(_))));
+    fixture.store.replace_overwatcher(&fixture.supervisor, replacement).unwrap();
+    let current = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(current.role("overwatcher").unwrap().model, "owner-selected-efficient-model");
+    assert_eq!(current.role("overwatcher").unwrap().reasoning, "low");
+    assert_eq!(current.role("overwatcher").unwrap().session_id, "session-overwatcher-b");
+    assert!(fixture.store.authenticate_active_role("run-a", &issued.credential).is_err());
+}
+
+#[test]
+fn slk_450_closing_one_run_binding_preserves_the_other_run_and_archived_bindings_allow_rebuild() {
+    let fixture = Fixture::new_450();
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let second = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-a");
+    let second_issued = fixture.store.bind_overwatcher(&second,
+        subagent_binding("run-b", "overwatcher-b", "session-overwatcher-a")).unwrap();
+    fixture.store.write_event(&fixture.supervisor, WriteRequest {
+        event_id: "abandon-run-a".into(), go_id: None, cell_id: None, attempt: None,
+        ..event("abandon-run-a", EventType::RunAbandoned, "supervisor-a")
+    }).unwrap();
+    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
+        "source_message_id":null, "runtime_snapshot":snapshot, "runtime_projection_sha256":"a".repeat(64),
+        "native_start_path":null, "native_start_sha256":null, "query_error":null,
+        "query_started_at":"2026-09-22T00:03:59Z", "query_completed_at":"2026-09-22T00:04:00Z",
+        "native_activity":{"status":"UNKNOWN", "observed_at":"2026-09-22T00:03:59Z",
+            "error":"NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}});
+    let evidence = fixture.evidence_ref("450-final-scope.json", &serde_json::to_vec(&query).unwrap());
+    let mut final_cycle = overwatch_cycle(1);
+    final_cycle.go_id = None;
+    final_cycle.cell_id = None;
+    final_cycle.attempt = None;
+    final_cycle.cadence_seconds = 600;
+    final_cycle.next_cycle_at = "2026-09-22T00:14:00Z".into();
+    final_cycle.runtime_revision = snapshot.runtime_revision;
+    final_cycle.latest_event_id = snapshot.latest_event_id;
+    final_cycle.checklist.bi_projection = OverwatchCheckResult::Anomaly;
+    final_cycle.anomaly_codes = vec![OverwatchAnomalyCode::ActivityUnproven];
+    final_cycle.native_active_session_evidence_ref = evidence.path.clone();
+    final_cycle.evidence_refs = vec![evidence];
+    fixture.store.record_overwatch_cycle(&issued.credential, final_cycle).unwrap();
+    fixture.store.close_overwatcher(&issued.credential, CloseOverwatcherRequest {
+        event_id: "close-only-run-a-binding".into(), run_id: "run-a".into(),
+        archive_evidence_ref: "run-a-binding-archive-not-native-child-stop".into(),
+        final_cycle_id: Some("cycle-1".into()), runtime_revision: Some(snapshot.runtime_revision),
+        occurred_at: "2026-09-22T00:04:01Z".into(),
+    }).unwrap();
+    fixture.store.authenticate_active_role("run-b", &second_issued.credential).unwrap();
+    assert!(fixture.store.query_run("run-b").unwrap().role("overwatcher").is_some());
+    let third = fixture.add_450_run("run-c", "supervisor-c", "session-supervisor-a");
+    assert!(matches!(fixture.store.bind_overwatcher(&third,
+        subagent_binding("run-c", "overwatcher-c", "new-child")),
+        Err(StateError::OverwatcherBindingInvalid(_))));
+
+    // The isolated fixture models already-archived history, not a native stop.
+    let archived = Fixture::new_450();
+    archived.store.bind_overwatcher(&archived.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    slk_state_core::schema::open_database(archived._root.path()).unwrap().execute(
+        "UPDATE overwatcher_bindings SET lifecycle_state='archived', credential_state='revoked', continuity_state='ARCHIVED'",
+        [],
+    ).unwrap();
+    let rebuilt = archived.add_450_run("run-new", "supervisor-new", "session-supervisor-a");
+    archived.store.bind_overwatcher(&rebuilt,
+        subagent_binding("run-new", "overwatcher-new", "new-child")).unwrap();
+}
+
+#[test]
 fn binding_rejects_incomplete_identity_endpoint_and_event_fields() {
     let fixture = Fixture::new();
     let mut missing_event = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
@@ -2944,6 +3379,32 @@ impl Fixture {
             .unwrap();
         drop(database);
         fixture
+    }
+
+    fn new_450() -> Self {
+        let fixture = Self::new();
+        let database = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        // These scenarios preserve an upgraded Run's 4.4.5 origin. The
+        // current_release test above covers a fresh current-product Run.
+        database
+            .execute(
+                "UPDATE runs SET slk_version='4.5.0', origin_slk_version='4.4.5' WHERE run_id='run-a'",
+                [],
+            )
+            .unwrap();
+        fixture
+    }
+
+    fn add_450_run(&self, run_id: &str, supervisor_id: &str, supervisor_session: &str)
+        -> slk_state_core::auth::Credential
+    {
+        let mut request = init_request(run_id, supervisor_id);
+        request.supervisor.session_id = supervisor_session.into();
+        request.supervisor_endpoint = endpoint(supervisor_session);
+        let initialized = self.store.init_run(request).unwrap();
+        slk_state_core::schema::open_database(self._root.path()).unwrap()
+            .execute("UPDATE runs SET slk_version='4.5.0' WHERE run_id=?1", [run_id]).unwrap();
+        initialized.supervisor_credential
     }
 
     fn new_427() -> Self {
@@ -3390,6 +3851,30 @@ fn overwatcher_binding(
         reason: "Supervisor selected one dedicated observation Session".into(),
         occurred_at: "2026-09-22T00:00:01Z".into(),
     }
+}
+
+fn subagent_binding(
+    run_id: &str,
+    role_instance_id: &str,
+    session_id: &str,
+) -> BindOverwatcherRequest {
+    let mut binding = overwatcher_binding(run_id, role_instance_id, session_id);
+    binding.cadence_seconds = 600;
+    binding.canonical_task_id = "native-supervisor-child".into();
+    binding.endpoint.native_address = subagent_address("session-supervisor-a", session_id);
+    binding
+}
+
+fn subagent_address(parent_session_id: &str, child_session_id: &str) -> serde_json::Value {
+    json!({
+        "kind": "supervisor_subagent",
+        "parent": {
+            "agent_runtime": "codex",
+            "host_identity": "host-a",
+            "session_id": parent_session_id,
+        },
+        "agent_id": child_session_id,
+    })
 }
 
 fn adoption_request(store: &StateStore, from_version: &str) -> AdoptMethodContractRequest {

@@ -728,9 +728,7 @@ impl StateStore {
             || request.identity.agent_runtime.trim().is_empty()
             || request.identity.provider.trim().is_empty()
             || request.identity.model.trim().is_empty()
-            || !is_gpt_capability_family(&request.identity.model, "luna")
             || request.identity.reasoning.trim().is_empty()
-            || request.identity.reasoning != "xhigh"
             || request.identity.session_id.trim().is_empty()
             || request.identity.session_id != request.endpoint.session_id
             || request.endpoint.host_identity.trim().is_empty()
@@ -755,7 +753,7 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            if !matches!(run_contract.0.as_str(), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5")
+            if !matches!(runtime_guard_version(&run_contract.0), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
                 || run_contract.3.is_some()
@@ -763,6 +761,14 @@ impl StateStore {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "active Overwatcher requires an open Run with a supported effective SLK contract"
                         .into(),
+                ));
+            }
+            if run_contract.0 != "4.5.0"
+                && (!is_gpt_capability_family(&request.identity.model, "luna")
+                    || request.identity.reasoning != "xhigh")
+            {
+                return Err(StateError::OverwatcherBindingInvalid(
+                    "historical Overwatcher bindings require a Luna model with xhigh reasoning".into(),
                 ));
             }
             if !valid_overwatcher_cadence(&run_contract.0, request.cadence_seconds) {
@@ -797,6 +803,16 @@ impl StateStore {
             if already_bound.is_some() {
                 return Err(StateError::OverwatcherAlreadyBound);
             }
+            if run_contract.0 == "4.5.0" {
+                validate_supervisor_subagent_binding(
+                    transaction,
+                    &request.run_id,
+                    &actor.role_instance_id,
+                    &request.identity,
+                    &request.endpoint,
+                    None,
+                )?;
+            }
             let shared_session: Option<(
                 String, String, String, String, u32, String, String, String, String, i64,
                 String, String,
@@ -816,7 +832,7 @@ impl StateStore {
                     },
                 )
                 .optional()?;
-            if let Some(existing) = shared_session {
+            if let Some(existing) = shared_session.filter(|_| run_contract.0 != "4.5.0") {
                 let native_address = serde_json::to_string(&request.endpoint.native_address)?;
                 if existing.0 != request.identity.agent_runtime
                     || existing.1 != request.identity.provider
@@ -1170,12 +1186,12 @@ impl StateStore {
                 ));
             }
             let native_start = if matches!(
-                method_version.as_str(),
+                runtime_guard_version(&method_version),
                 "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
             ) {
                 Some(
                     if matches!(
-                        method_version.as_str(),
+                        runtime_guard_version(&method_version),
                         "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
                     ) && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
                         .ok()
@@ -1281,7 +1297,7 @@ impl StateStore {
                 occurred_at: request.occurred_at.clone(),
             };
             let recovered_history = matches!(
-                method_version.as_str(),
+                runtime_guard_version(&method_version),
                 "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
             ) && actor.role == Role::Checker
                 && target_role == Role::Supervisor
@@ -1299,7 +1315,7 @@ impl StateStore {
                     native_start.as_ref().unwrap(),
                 )?;
             if matches!(
-                method_version.as_str(),
+                runtime_guard_version(&method_version),
                 "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
             ) && serde_json::from_slice::<serde_json::Value>(&evidence_bytes)
                 .ok()
@@ -1943,6 +1959,11 @@ impl StateStore {
             }
             let target_role = Role::parse(&target_role_text)
                 .ok_or_else(|| StateError::StoredRoleInvalid(target_role_text.clone()))?;
+            let method_version: String = transaction.query_row(
+                "SELECT slk_version FROM runs WHERE run_id=?1",
+                [&request.run_id],
+                |row| row.get(0),
+            )?;
             if target_role != Role::Overwatcher { validate_run_parameter_change(transaction, &request.run_id)?; }
             let authorized = matches!(
                 (actor.role, target_role),
@@ -1956,6 +1977,23 @@ impl StateStore {
                     actor: actor.role,
                     target: target_role,
                 });
+            }
+            if method_version == "4.5.0" && target_role == Role::Overwatcher {
+                let (child_identity, _) =
+                    bound_overwatcher_identity_endpoint(transaction, &request.run_id)?;
+                validate_supervisor_subagent_binding(
+                    transaction,
+                    &request.run_id,
+                    &actor.role_instance_id,
+                    &child_identity,
+                    &request.endpoint,
+                    Some(&request.run_id),
+                )?;
+            }
+            if method_version == "4.5.0" && target_role == Role::Supervisor {
+                validate_supervisor_owner_rebind(
+                    transaction, &request.run_id, &actor.role_instance_id, &request.endpoint,
+                )?;
             }
             let (current_version, current_adapter, current_host, current_session, current_address) =
                 if let Some(binding) = overwatcher {
@@ -2170,7 +2208,7 @@ impl StateStore {
                 |row| row.get(0),
             )?;
             if matches!(
-                method_version.as_str(),
+                runtime_guard_version(&method_version),
                 "4.2.4"
                     | "4.2.5"
                     | "4.2.6"
@@ -2312,7 +2350,7 @@ impl StateStore {
             if request.event_type == EventType::ReworkRequested {
                 validate_rework_requested(transaction, &request)?;
             }
-            if (method_version == "4.4.3" || method_version == "4.4.4" || method_version == "4.4.5")
+            if matches!(runtime_guard_version(&method_version), "4.4.3" | "4.4.4" | "4.4.5")
                 && matches!(
                     request.event_type,
                     EventType::D2Started | EventType::D2Passed | EventType::D2Failed
@@ -2320,7 +2358,7 @@ impl StateStore {
             {
                 validate_d2_event(transaction, &request, token.sequence)?;
             }
-            if (method_version == "4.4.3" || method_version == "4.4.4" || method_version == "4.4.5")
+            if matches!(runtime_guard_version(&method_version), "4.4.3" | "4.4.4" | "4.4.5")
                 && request.event_type == EventType::RunClosed
             {
                 validate_run_close_proof(transaction, &request)?;
@@ -2649,9 +2687,9 @@ impl StateStore {
                         "native activity reference must name one verified cycle evidence file".into(),
                     ));
                 }
-                let original_available = (method_version != "4.4.3" && method_version != "4.4.4" && method_version != "4.4.5")
+                let original_available = !matches!(runtime_guard_version(&method_version), "4.4.3" | "4.4.4" | "4.4.5")
                     || validate_current_scope_query(transaction, &request, &runtime_snapshot)?;
-                if original_available && matches!(method_version.as_str(), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
+                if original_available && matches!(runtime_guard_version(&method_version), "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
                     validate_worker_completion_cycle(
                         transaction,
                         &request,
@@ -2837,7 +2875,7 @@ impl StateStore {
             if uses_revisioned_runtime_contract(&method_version) {
                 let preclose_terminal = closure_state == "open"
                     && matches!(
-                        method_version.as_str(),
+                        runtime_guard_version(&method_version),
                         "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
                     );
                 if closure_state == "open" && !preclose_terminal {
@@ -3037,6 +3075,16 @@ impl StateStore {
                     "SLK 4.4.x requires the fixed 600-second Overwatcher cadence".into(),
                 ));
             }
+            if method_version == "4.5.0" {
+                validate_supervisor_subagent_binding(
+                    transaction,
+                    &request.run_id,
+                    &actor.role_instance_id,
+                    &request.replacement,
+                    &request.endpoint,
+                    Some(&request.run_id),
+                )?;
+            }
             let snapshot = runtime_snapshot_from(transaction, &request.run_id)?;
             if snapshot.runtime_revision != request.expected_runtime_revision {
                 return Err(StateError::OverwatcherBindingInvalid(
@@ -3089,7 +3137,7 @@ impl StateStore {
             if identity_collision.is_some() {
                 return Err(StateError::OverwatcherSessionReused);
             }
-            if let Some(existing) = shared_session {
+            if let Some(existing) = shared_session.filter(|_| method_version != "4.5.0") {
                 let native_address = serde_json::to_string(&request.endpoint.native_address)?;
                 if existing.0 != request.replacement.agent_runtime
                     || existing.1 != request.replacement.provider
@@ -3319,7 +3367,7 @@ impl StateStore {
                 |row| row.get(0),
             )?;
             if !matches!(
-                method_version.as_str(),
+                runtime_guard_version(&method_version),
                 "4.2.7"
                     | "4.2.8"
                     | "4.2.9"
@@ -3620,16 +3668,21 @@ impl StateStore {
                 )
                 .optional()?
                 .ok_or_else(|| StateError::RunNotFound(request.run_id.clone()))?;
-            if !matches!(method_version.as_str(), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
+            if !matches!(runtime_guard_version(&method_version), "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "same-Session Overwatcher turn resume requires SLK 4.2.6 or later".into(),
                 ));
             }
             if request.last_native_status_id.is_some()
-                && !matches!(method_version.as_str(), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5")
+                && !matches!(runtime_guard_version(&method_version), "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5")
             {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
+                ));
+            }
+            if method_version == "4.5.0" && request.last_native_status_id.is_none() {
+                return Err(StateError::OverwatcherCycleInvalid(
+                    "native subagent resume requires the exact latest COMPLETED status of the previous execution".into(),
                 ));
             }
             let binding: (String, String, String, u64, String, String) = transaction
@@ -3748,8 +3801,25 @@ impl StateStore {
                                 .into(),
                         ));
                     }
+                    if method_version == "4.5.0" && latest_status.5 != NativeLiveness::Completed.as_str() {
+                        return Err(StateError::OverwatcherCycleInvalid(
+                            "native subagent resume requires the exact latest COMPLETED status of the previous execution".into(),
+                        ));
+                    }
                     ("VIOLATION", "NATIVE_STATUS")
                 };
+            if method_version == "4.5.0" {
+                let (child_identity, endpoint) =
+                    bound_overwatcher_identity_endpoint(transaction, &request.run_id)?;
+                validate_supervisor_subagent_binding(
+                    transaction,
+                    &request.run_id,
+                    &actor.role_instance_id,
+                    &child_identity,
+                    &endpoint,
+                    Some(&request.run_id),
+                )?;
+            }
             let changed = transaction.execute(
                 "UPDATE overwatcher_bindings
                  SET foreground_turn_id=?2, native_active_session_evidence_ref=?3,
@@ -4154,7 +4224,7 @@ fn validate_worker_completion_cycle(
         ));
     }
     let inspection = &inspections[0];
-    if method_version == "4.4.3" || method_version == "4.4.4" || method_version == "4.4.5" {
+    if matches!(runtime_guard_version(method_version), "4.4.3" | "4.4.4" | "4.4.5") {
         let invalid = || {
             StateError::OverwatcherCycleInvalid(
                 "Worker completion sample exceeds the bound cadence or cycle window".into(),
@@ -4450,7 +4520,7 @@ fn apply_cell_split(
         [run_id],
         |row| row.get(0),
     )?;
-    if !matches!(version.as_str(), "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
+    if !matches!(runtime_guard_version(&version), "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5") {
         return Err(StateError::InvalidPlan(
             "second-failure CELL split is owned by the SLK 4.4.2 contract".into(),
         ));
@@ -5039,7 +5109,7 @@ fn validate_rework_requested(
         "rework_round",
     ];
     if matches!(
-        method_version.as_str(),
+        runtime_guard_version(&method_version),
         "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
     ) {
         required.push("investigation_mode");
@@ -5072,7 +5142,7 @@ fn validate_rework_requested(
         .filter(|value| *value > 0)
         .ok_or_else(|| StateError::WorkEventInvalid("rework round must be positive".into()))?;
     if matches!(
-        method_version.as_str(),
+        runtime_guard_version(&method_version),
         "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
     ) && details["investigation_mode"]
         .as_str()
@@ -5083,7 +5153,7 @@ fn validate_rework_requested(
             "Supervisor investigation mode must be explicit".into(),
         ));
     }
-    if matches!(method_version.as_str(), "4.4.0" | "4.4.1") {
+    if matches!(runtime_guard_version(&method_version), "4.4.0" | "4.4.1") {
         let expected_mode = if rework_round == 1 {
             "STANDARD"
         } else {
@@ -5890,9 +5960,195 @@ fn validate_d2_event(
     Ok(())
 }
 
+// 4.5.0 changes OW ownership, not the existing engineering/runtime protections.
+// Keep the stored and projected version intact; inherit guards from 4.4.5 only.
+fn runtime_guard_version(version: &str) -> &str {
+    if version == "4.5.0" {
+        "4.4.5"
+    } else {
+        version
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+struct SupervisorOwner {
+    agent_runtime: String,
+    host_identity: String,
+    session_id: String,
+}
+
+fn registered_supervisor_owner(
+    connection: &Connection,
+    run_id: &str,
+    role_instance_id: &str,
+) -> Result<SupervisorOwner, StateError> {
+    connection.query_row(
+        "SELECT r.agent_runtime, e.host_identity, e.session_id
+         FROM role_instances r JOIN role_endpoints e
+           ON e.run_id=r.run_id AND e.role_instance_id=r.role_instance_id
+         WHERE r.run_id=?1 AND r.role_instance_id=?2 AND r.role='supervisor'
+           AND r.lifecycle='active' AND e.state='active' AND r.session_id=e.session_id",
+        params![run_id, role_instance_id],
+        |row| {
+            Ok(SupervisorOwner {
+                agent_runtime: row.get(0)?,
+                host_identity: row.get(1)?,
+                session_id: row.get(2)?,
+            })
+        },
+    )
+    .optional()?
+    .ok_or_else(|| StateError::OverwatcherBindingInvalid(
+        "registered Supervisor parent and child identities are required".into(),
+    ))
+}
+
+// These are declared native locators, not native-platform parentage attestation.
+fn declared_subagent_parent(
+    address: &serde_json::Value,
+    child_session_id: &str,
+) -> Option<SupervisorOwner> {
+    if address.get("kind")?.as_str()? != "supervisor_subagent"
+        || address.get("agent_id")?.as_str()? != child_session_id
+    {
+        return None;
+    }
+    let parent: SupervisorOwner = serde_json::from_value(address.get("parent")?.clone()).ok()?;
+    if parent.agent_runtime.trim().is_empty()
+        || parent.host_identity.trim().is_empty()
+        || parent.session_id.trim().is_empty()
+    {
+        return None;
+    }
+    Some(parent)
+}
+
+fn bound_overwatcher_identity_endpoint(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<(crate::model::RoleIdentity, crate::model::EndpointIdentity), StateError> {
+    let (identity, version, adapter, host, address) = connection.query_row(
+        "SELECT role_instance_id, agent_runtime, provider, model, reasoning, session_id,
+                endpoint_version, transport_adapter, host_identity, native_address_json
+         FROM overwatcher_bindings WHERE run_id=?1",
+        [run_id],
+        |row| {
+            Ok((crate::model::RoleIdentity {
+                role_instance_id: row.get(0)?,
+                role: Role::Overwatcher,
+                agent_runtime: row.get(1)?,
+                provider: row.get(2)?,
+                model: row.get(3)?,
+                reasoning: row.get(4)?,
+                session_id: row.get(5)?,
+            },
+                row.get::<_, u32>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+            ))
+        },
+    )?;
+    let endpoint = crate::model::EndpointIdentity {
+        endpoint_version: version,
+        transport_adapter: adapter,
+        host_identity: host,
+        session_id: identity.session_id.clone(),
+        native_address: serde_json::from_str(&address)?,
+    };
+    Ok((identity, endpoint))
+}
+
+fn validate_supervisor_subagent_binding(
+    connection: &Connection,
+    run_id: &str,
+    supervisor_role_instance_id: &str,
+    child: &crate::model::RoleIdentity,
+    endpoint: &crate::model::EndpointIdentity,
+    excluded_run_id: Option<&str>,
+) -> Result<(), StateError> {
+    let owner = registered_supervisor_owner(connection, run_id, supervisor_role_instance_id)?;
+    if endpoint.session_id.trim().is_empty()
+        || declared_subagent_parent(&endpoint.native_address, &endpoint.session_id).as_ref() != Some(&owner)
+    {
+        return Err(StateError::OverwatcherBindingInvalid(
+            "native locators must match the registered Supervisor parent and child identities".into(),
+        ));
+    }
+    let mut statement = connection.prepare(
+        "SELECT agent_runtime, host_identity, session_id, native_address_json, provider, model, reasoning
+         FROM overwatcher_bindings WHERE lifecycle_state='active' AND continuity_state='ACTIVE'
+           AND (?1 IS NULL OR run_id<>?1)",
+    )?;
+    let rows = statement.query_map([excluded_run_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+        ))
+    })?;
+    for row in rows {
+        let (runtime, host, session, address, provider, model, reasoning) = row?;
+        let same_child = runtime == child.agent_runtime
+            && host == endpoint.host_identity
+            && session == endpoint.session_id;
+        let address: serde_json::Value = serde_json::from_str(&address)?;
+        let existing_owner = declared_subagent_parent(&address, &session);
+        // A native child path can be local to its parent Session. The parent
+        // tuple is part of the locator; equal paths under other parents do not
+        // prove reuse of one real native child (that requires attestation).
+        if existing_owner.as_ref() == Some(&owner) && !same_child {
+            return Err(StateError::OverwatcherBindingInvalid(
+                "one Supervisor may have only one active Overwatcher across its Runs".into(),
+            ));
+        }
+        if existing_owner.as_ref() == Some(&owner)
+            && same_child
+            && (provider != child.provider || model != child.model || reasoning != child.reasoning)
+        {
+            return Err(StateError::OverwatcherBindingInvalid(
+                "shared Runs must register the same active Overwatcher identity, provider, model, and reasoning".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_supervisor_owner_rebind(
+    connection: &Connection,
+    run_id: &str,
+    role_instance_id: &str,
+    endpoint: &crate::model::EndpointIdentity,
+) -> Result<(), StateError> {
+    let owner = registered_supervisor_owner(connection, run_id, role_instance_id)?;
+    if owner.host_identity == endpoint.host_identity && owner.session_id == endpoint.session_id {
+        return Ok(());
+    }
+    let mut statement = connection.prepare(
+        "SELECT session_id, native_address_json FROM overwatcher_bindings WHERE lifecycle_state='active'",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    for row in rows {
+        let (session, address) = row?;
+        let address: serde_json::Value = serde_json::from_str(&address)?;
+        if declared_subagent_parent(&address, &session).as_ref() == Some(&owner) {
+            return Err(StateError::OverwatcherBindingInvalid(
+                "Supervisor owner cannot change while its active Overwatcher remains bound".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn uses_revisioned_runtime_contract(version: &str) -> bool {
     matches!(
-        version,
+        runtime_guard_version(version),
         "4.2.3"
             | "4.2.4"
             | "4.2.5"
@@ -5920,7 +6176,7 @@ fn uses_revisioned_runtime_contract(version: &str) -> bool {
 
 fn valid_overwatcher_cadence(version: &str, cadence_seconds: u32) -> bool {
     if matches!(
-        version,
+        runtime_guard_version(version),
         "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5"
     ) {
         cadence_seconds == 600

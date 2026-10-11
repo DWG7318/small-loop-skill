@@ -78,6 +78,8 @@ pub struct RoleProjection {
     pub model: String,
     pub reasoning: String,
     pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foreground_turn_id: Option<String>,
     pub lifecycle: String,
     pub predecessor_role_instance_id: Option<String>,
     pub successor_role_instance_id: Option<String>,
@@ -259,6 +261,7 @@ struct OverwatcherBindingRow {
     lifecycle_state: String,
     bound_at: String,
     closed_at: Option<String>,
+    foreground_turn_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -955,6 +958,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
             exited_at: row.get(14)?,
             endpoints,
             binding_mode: None,
+            foreground_turn_id: None,
         })
     })?;
     let mut output = rows.collect::<Result<Vec<_>, _>>()?;
@@ -962,7 +966,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
         .query_row(
             "SELECT role_instance_id, agent_runtime, provider, model, reasoning, session_id,
                     endpoint_version, transport_adapter, host_identity, lifecycle_state,
-                    bound_at, closed_at
+                    bound_at, closed_at, foreground_turn_id
              FROM overwatcher_bindings WHERE run_id=?1",
             [run_id],
             |row| {
@@ -979,6 +983,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
                     lifecycle_state: row.get(9)?,
                     bound_at: row.get(10)?,
                     closed_at: row.get(11)?,
+                    foreground_turn_id: row.get(12)?,
                 })
             },
         )
@@ -993,6 +998,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
             model: overwatcher.model,
             reasoning: overwatcher.reasoning,
             session_id: overwatcher.session_id.clone(),
+            foreground_turn_id: overwatcher.foreground_turn_id,
             lifecycle: if active {
                 "active".into()
             } else {

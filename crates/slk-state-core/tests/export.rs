@@ -32,7 +32,15 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
                     transport_adapter: "codex-app-server".into(),
                     host_identity: "host-a".into(),
                     session_id: "thread-overwatcher-a".into(),
-                    native_address: json!({"thread_id":"thread-overwatcher-a"}),
+                    native_address: json!({
+                        "kind":"supervisor_subagent",
+                        "parent":{
+                            "agent_runtime":"codex",
+                            "host_identity":"host-a",
+                            "session_id":"thread-a"
+                        },
+                        "agent_id":"thread-overwatcher-a"
+                    }),
                 },
                 observation_mode: ObservationMode::ForegroundActiveTurn,
                 cadence_seconds: 600,
@@ -40,7 +48,7 @@ fn markdown_export_is_byte_deterministic_and_has_complete_sections() {
                 native_active_session_evidence_ref: "codex:thread-active:overwatcher-a".into(),
                 binding_revision: 1,
                 canonical_task_id: "task-overwatcher-a".into(),
-                reason: "one dedicated optional observer".into(),
+                reason: "Supervisor child observes this Run".into(),
                 occurred_at: "2026-09-22T00:00:01Z".into(),
             },
         )
