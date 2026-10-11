@@ -55,7 +55,7 @@ ACTIVITY_FIELDS = frozenset(
 )
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 NATIVE_START_STATUSES = frozenset({"RUNNING", "PENDING", "IDLE"})
-PLATFORM_ACTIVITY_TASK_KINDS = frozenset({"codex-desktop-turn"})
+PLATFORM_ACTIVITY_TASK_KINDS = frozenset({"codex-desktop-turn", "codex-subagent"})
 
 
 class NativeActivityError(ValueError):
@@ -254,6 +254,8 @@ def validate_native_start(
 
 
 def _file_native_probe(started_path: Path, start: Mapping[str, Any]) -> Mapping[str, Any]:
+    if start["native_task"]["kind"] == "codex-subagent":
+        return {"status": "UNKNOWN", "error": "NATIVE_SUBAGENT_PROOF_REQUIRED"}
     if start["adapter"] == "ocrv-checker" and start["native_task"]["kind"] in {"ocrv-review", "ocrv-invocation"}:
         from .native_ocrv import inspect_ocrv_session
         return inspect_ocrv_session(started_path, start)
@@ -418,6 +420,16 @@ def _inspect_native_projection(
             observed_at=validation_observed,
             max_activity_age_seconds=max_activity_age_seconds,
         )
+        if start["native_task"]["kind"] == "codex-subagent":
+            # Both original query and output times must obey the same age
+            # policy; the reader's current check time is not a native sample.
+            validate_native_task_activity(
+                {**native, "observed_at": native["last_event"].get("observed_at")},
+                adapter=str(start["adapter"]), run_id=str(start["run_id"]),
+                cell_id=str(start["cell_id"]), message_id=str(start["message_id"]),
+                native_task_id=str(start["native_task"]["id"]), observed_at=validation_observed,
+                max_activity_age_seconds=max_activity_age_seconds,
+            )
         if native_error is not None:
             return native, "UNKNOWN", native_error, validation_observed
         if start["adapter"] == "dsh-worker" and native.get("sample") is None:

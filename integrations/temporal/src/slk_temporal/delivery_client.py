@@ -11,7 +11,10 @@ from typing import Any, Mapping
 
 from temporalio.client import Client
 
-from .contracts import DeliveryRequest, NativeStartAck, PreStartRejection
+from .contracts import (
+    DeliveryRequest, NativeStartAck, PreStartRejection, OverwatcherExitNotice,
+    RuntimeGuardResolution, StartSlkRequest,
+)
 from .inspector import inspect_pair
 from .workflows import RunSlkWorkflow
 
@@ -24,6 +27,16 @@ RESULT_FIELDS = {
     "schema_version", "status", "operation", "run_id", "operation_id", "message_id",
 }
 RPC_TIMEOUT_SECONDS = 30.0
+GUARD_OPERATIONS = {"overwatcher-exited": "SUPERVISOR_CONFIRMATION_REQUIRED",
+                    "resolve-runtime-guard": "RUNTIME_GUARD_REPAIRED"}
+
+
+def _guard_request(operation: str, request: Mapping[str, Any], run_id: str) -> dict[str, Any]:
+    parsed = (OverwatcherExitNotice.from_dict(request) if operation == "overwatcher-exited"
+              else RuntimeGuardResolution.from_dict(request))
+    if parsed.run_id != run_id:
+        raise ValueError("runtime guard request changed the existing Run")
+    return parsed.__dict__.copy()
 
 
 def _load_hashed(path: Path, expected_sha256: str, label: str) -> dict[str, Any]:
@@ -79,6 +92,20 @@ async def _submit_once(*, operation: str, identity: Mapping[str, str], request: 
     await inspect_pair(**{field: identity[field] for field in IDENTITY_FIELDS - {"schema_version"}})
     client = await Client.connect(identity["address"])
     handle = client.get_workflow_handle(identity["run_workflow_id"], run_id=identity["run_run_id"])
+    if operation in GUARD_OPERATIONS:
+        request = _guard_request(operation, request, identity["run_id"])
+        checkpoint = await handle.query(RunSlkWorkflow.recovery_checkpoint)
+        startup = StartSlkRequest.from_dict(checkpoint["startup"])
+        supervisor_field = "requested_by_role_instance_id" if operation == "overwatcher-exited" else "supervisor_role_instance_id"
+        if (startup.run_id != identity["run_id"] or startup.startup_fingerprint != identity["startup_fingerprint"]
+            or request[supervisor_field] != startup.supervisor.role_instance_id
+            or (operation == "overwatcher-exited" and (startup.overwatcher is None
+                or request["overwatcher_role_instance_id"] != startup.overwatcher.role_instance_id))):
+            raise ValueError("runtime guard request changed the frozen Supervisor/OW authority")
+        update = RunSlkWorkflow.overwatcher_exited if operation == "overwatcher-exited" else RunSlkWorkflow.resolve_runtime_guard
+        status = await handle.execute_update(update, request)
+        return {"schema_version": "slk.temporal-runtime-guard-update-result/v1", "status": status,
+                "operation": operation.replace("-", "_"), "run_id": identity["run_id"], "event_id": request["event_id"]}
     if operation == "set-run-pause":
         status = await handle.execute_update(RunSlkWorkflow.set_run_pause, dict(request))
         return {"schema_version": "slk.temporal-lifecycle-update-result/v1", "status": status,
@@ -135,6 +162,13 @@ def run_update(*, operation: str, identity_path: Path, identity_sha256: str,
                request_path: Path, request_sha256: str) -> dict[str, Any]:
     identity = _identity(_load_hashed(identity_path, identity_sha256, "identity"))
     request = _load_hashed(request_path, request_sha256, "request")
+    if operation in GUARD_OPERATIONS:
+        request = _guard_request(operation, request, identity["run_id"])
+        result = submit(operation=operation, identity=identity, request=request)
+        if result != {"schema_version": "slk.temporal-runtime-guard-update-result/v1", "status": GUARD_OPERATIONS[operation],
+                      "operation": operation.replace("-", "_"), "run_id": identity["run_id"], "event_id": request["event_id"]}:
+            raise ValueError("Temporal runtime guard result identity is invalid")
+        return dict(result)
     if operation == "close-run":
         if set(request) != {"run_id", "event_id"} or request.get("run_id") != identity["run_id"]:
             raise ValueError("close request changed the exact existing Run")
@@ -190,7 +224,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "operation",
-        choices=("request-delivery", "native-started", "abandon-pre-start-rejection", "set-run-pause", "close-run"),
+        choices=("request-delivery", "native-started", "abandon-pre-start-rejection", "set-run-pause", "close-run",
+                 "overwatcher-exited", "resolve-runtime-guard"),
     )
     parser.add_argument("--identity", required=True, type=Path)
     parser.add_argument("--identity-sha256", required=True)

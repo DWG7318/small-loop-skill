@@ -1,0 +1,45 @@
+diff --git a/cmd/opencodereview/main.go b/cmd/opencodereview/main.go
+index 3db3936..e9f865b 100644
+--- a/cmd/opencodereview/main.go
++++ b/cmd/opencodereview/main.go
+@@ -9,6 +9,8 @@ import (
+ 	"os"
+ 	"time"
+ 
++	nativeprobe "github.com/DWG7318/slk-native-probe"
++
+ 	"github.com/alibaba/open-code-review/internal/llm"
+ 	"github.com/alibaba/open-code-review/internal/telemetry"
+ )
+@@ -19,6 +21,9 @@ func main() {
+ }
+ 
+ func run() int {
++	// SLK modification: native metadata probe lifecycle; no review authority.
++	stopNativeProbe := nativeprobe.StartOCRV()
++	defer stopNativeProbe()
+ 	ctx := context.Background()
+ 	if telemetry.Init(ctx) {
+ 		defer telemetry.ShutdownWithTimeout(ctx, 5*time.Second)
+diff --git a/internal/session/persist.go b/internal/session/persist.go
+index 3a76da5..94b08d0 100644
+--- a/internal/session/persist.go
++++ b/internal/session/persist.go
+@@ -15,6 +15,8 @@ import (
+ 	"sync"
+ 	"time"
+ 
++	nativeprobe "github.com/DWG7318/slk-native-probe"
++
+ 	"github.com/alibaba/open-code-review/internal/model"
+ )
+ 
+@@ -121,6 +123,8 @@ func (jw *jsonlWriter) open() error {
+ 
+ 	jw.file = f
+ 	jw.writer = bufio.NewWriter(f)
++	// SLK modification: bind this successfully opened native writer, not content.
++	nativeprobe.RegisterOCRVSession(jw.sessionID, filename)
+ 	return nil
+ }
+ 

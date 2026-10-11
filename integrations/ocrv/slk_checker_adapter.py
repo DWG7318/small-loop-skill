@@ -349,7 +349,42 @@ def _ocr_command() -> list[str]:
             raise RequestError("OCRV_SLK_COMMAND_JSON must be a non-empty string array")
         return value
     script = Path(__file__).resolve().with_name("ocr-slk.ps1")
+    bundled = Path(__file__).resolve().parent / "bin/opencodereview.exe"
+    if bundled.is_file():
+        return [str(bundled)]
     return ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+
+
+def _packaged_root() -> Path | None:
+    root = Path(__file__).resolve().parents[2]
+    return root if (root.name.lower() == "slk" and root.parent.name.lower() == "tools"
+                    and (root / "scripts/local_package_metadata.py").is_file()) else None
+
+
+def _child_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    root = _packaged_root()
+    if root is not None and not shutil.which("git", path=environment.get("PATH", "")):
+        git = root / "runtime/git/cmd"
+        if (git / "git.exe").is_file():
+            environment["PATH"] = str(git) + os.pathsep + environment.get("PATH", "")
+    return environment
+
+
+def _session_directory(repository: Path, environment: dict[str, str]) -> Path:
+    if not os.environ.get("OCRV_SLK_COMMAND_JSON") and (Path(__file__).resolve().parent / "bin/opencodereview.exe").is_file():
+        # Go's Windows os.UserHomeDir uses the actual child's USERPROFILE.
+        user = environment.get("USERPROFILE")
+        if not user:
+            raise RequestError("native OCRV child USERPROFILE is unavailable")
+        native_home = Path(user)
+    else:
+        # Authoritative arbitrary wrappers may select their own home internally.
+        # Keep the established legacy contract rather than guessing that change.
+        native_home = Path(environment.get("OCRV_RUNTIME_ROOT", r"F:\OCRV")) / "home"
+    repository = repository.resolve()
+    encoded = repository.drive.replace(":", "_") + str(repository)[len(repository.drive):].lstrip("/\\").replace("\\", "-").replace("/", "-")
+    return native_home / ".opencodereview/sessions" / encoded
 
 
 def _candidate_args(candidate: dict[str, Any]) -> list[str]:
@@ -377,7 +412,9 @@ def _review_args(request: dict[str, Any], background_path: Path, output_path: Pa
 
 def _artifact_root(request: dict[str, Any]) -> tuple[str, Path]:
     invocation = str(uuid.uuid4())
-    runtime = Path(os.environ.get("OCRV_SLK_RUNTIME_ROOT", r"F:\OCRV\slk-checker")).resolve()
+    packaged = _packaged_root()
+    default = packaged / "data/ocrv" if packaged is not None else Path(r"F:\OCRV\slk-checker")
+    runtime = Path(os.environ.get("OCRV_SLK_RUNTIME_ROOT", str(default))).resolve()
     root = runtime / request["run_id"] / request["cell_id"] / invocation
     root.mkdir(parents=True, exist_ok=True)
     return invocation, root
@@ -600,9 +637,10 @@ def preflight(request_path: Path, output_path: Path) -> int:
     stdout = ""
     stderr = ""
     command = _review_args(request, background_path, preview_path) + ["--preview"]
+    environment = _child_environment()
     completed = subprocess.run(
         command, cwd=request["repository"], stdin=subprocess.DEVNULL, capture_output=True,
-        text=True, encoding="utf-8", errors="replace", check=False, **_no_window_kwargs(),
+        env=environment, text=True, encoding="utf-8", errors="replace", check=False, **_no_window_kwargs(),
     )
     exit_code, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
     source = preview_path.read_text(encoding="utf-8-sig") if preview_path.is_file() else stdout
@@ -659,6 +697,7 @@ def run(
     result_request_path: Path | None = None,
 ) -> int:
     request = _validate_request(_read_json(request_path))
+    environment = _child_environment()
     invocation, root = (invocation_override, output_path.resolve().parent) if invocation_override else _artifact_root(request)
     native = _native_context()
     background_path = background_override or root / "d1-background.md"
@@ -674,8 +713,7 @@ def run(
             original_background = background_path.read_text(encoding="utf-8")
         background_path.write_text(marker + "\n" + original_background, encoding="utf-8", newline="\n")
         repo = Path(request["repository"]).resolve()
-        encoded_repo = repo.drive.replace(":", "_") + str(repo)[len(repo.drive):].lstrip("/\\").replace("\\", "-").replace("/", "-")
-        sessions = Path(os.environ.get("OCRV_RUNTIME_ROOT", r"F:\OCRV")) / "home" / ".opencodereview" / "sessions" / encoded_repo
+        sessions = _session_directory(repo, environment)
         source = {"schema_version": "slk.ocrv-native-source/v1",
             **{key: native[1][key] for key in ("run_id", "cell_id", "message_id")},
             "invocation_id": invocation, "request_path": str(request_path.resolve()),
@@ -691,7 +729,6 @@ def run(
         **(native[1] if native is not None else {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
         "native_task_id": invocation, "evidence": request["evidence"],
     })
-    environment = os.environ.copy()
     environment["SLK_CHECKER_EVIDENCE_INDEX"] = str(index_path)
     environment["SLK_CHECKER_EVIDENCE_INDEX_SHA256"] = _sha256(index_path)
     process = subprocess.Popen(

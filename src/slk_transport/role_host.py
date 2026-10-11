@@ -181,15 +181,22 @@ class RoleHost:
                     and row.get("transport_adapter") == endpoint["adapter"] for row in registered.get("endpoints", []))):
                 raise ValueError("resume Host differs from the registered original role/endpoint")
         config = wc._read_object(config_path, "resume original adapter config")
+        native_subagent = current["runtime_snapshot"].get("method_version") == "4.5.0"
+        if native_subagent and (config.get("method_version") != "4.5.0"
+            or config.get("run_id") != self.binding["run_id"]
+            or config.get("schema_version") != "slk.temporal-standard-adapter/v2"):
+            raise ValueError("native OW resume requires the same 450 Run's v2 proof config")
         ow = config["overwatcher_activity"]
         arguments = ["inspect-native-activity", "--started", ow["started_path"]]
         if config["schema_version"] == "slk.temporal-standard-adapter/v2":
-            arguments += ["--desktop-overwatcher-attestation", ow["attestation_path"],
-                          "--desktop-overwatcher-attestation-sha256", ow["attestation_sha256"]]
+            proof_flag = "--subagent-overwatcher-proof" if native_subagent else "--desktop-overwatcher-attestation"
+            arguments += [proof_flag, ow["attestation_path"], proof_flag + "-sha256", ow["attestation_sha256"]]
         for option, field in (("--completed", "completed_path"), ("--failed", "failed_path")):
-            if ow[field] is not None: arguments += [option, ow[field]]
-        observation = wc._run_json_command(self.transport, arguments)
+            if not native_subagent and ow[field] is not None: arguments += [option, ow[field]]
         path = wc._write_or_reuse_stable_request(root / ("resume-projection-" + str(time.time_ns()) + ".json"), current)
+        if native_subagent:
+            arguments += ["--runtime-projection", str(path)]
+        observation = wc._run_json_command(self.transport, arguments)
         cadence = wc._run_json_command(self.transport, ["inspect-overwatcher-cadence", "--runtime-projection", str(path),
             "--observed-at", datetime.now(timezone.utc).isoformat()])
         if (observation.get("status") not in {"ACTIVE", "IDLE", "PENDING"}
@@ -1205,7 +1212,7 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
-        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5"}
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0"}
             or any(event.get("event_type") == "D2_STARTED"
                    and wc._event_details(event).get("source_message_id") == envelope.message_id
                    and any(key in wc._event_details(event) for key in (

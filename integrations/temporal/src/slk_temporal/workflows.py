@@ -493,7 +493,7 @@ class RunSlkWorkflow:
                     "status", "run_id", "overwatcher_role_instance_id", "audit_cycle",
                     "evidence_sha256", "receipt_sha256",
                 },
-                status={"CLEAR", "ANOMALY"},
+                status={"CLEAR", "ANOMALY", "EXITED"} if self._startup.method_version == "4.5.0" else {"CLEAR", "ANOMALY"},
             )
             if (
                 receipt.get("run_id") != self._startup.run_id
@@ -514,10 +514,10 @@ class RunSlkWorkflow:
             )
             await self._notify_supervisor(blocker)
             return
-        if receipt["status"] == "ANOMALY":
+        if receipt["status"] in {"ANOMALY", "EXITED"}:
             blocker = self._set_runtime_guard(
                 event_id=f"{self._startup.run_id}-overwatcher-audit-{self._overwatcher_audit_cycle}",
-                kind="OVERWATCHER_ACTIVITY_ANOMALY",
+                kind="OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION" if receipt["status"] == "EXITED" else "OVERWATCHER_ACTIVITY_ANOMALY",
                 role_instance_id=overwatcher.role_instance_id,
             )
             await self._notify_supervisor(blocker)
@@ -673,9 +673,19 @@ class RunSlkWorkflow:
             raise ApplicationError("SLK Run has not initialized", non_retryable=True)
         if not self._admitted:
             raise ApplicationError("full new-Run admission must pass before delivery", non_retryable=True)
-        if self._runtime_guard_blocker is not None:
+        if self._runtime_guard_blocker is not None and self._startup.method_version != "4.5.0":
             raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
         request = self._update_value(DeliveryRequest.from_dict, value)
+        if self._runtime_guard_blocker is not None:
+            # 450's safeguard blocks the next CELL, not completion of work that
+            # was already running. Reuse durable communication responsibility;
+            # do not pause the Run or infer engineering completion from a notice.
+            current = next((row for row in self._continuity.checkpoint()["seen"]
+                if row["operation_id"] == self._responsibility_operation_id), None)
+            if not (
+                self._continuity.knows_delivery(request.operation_id)
+                or current is not None and current["cell_id"] == request.cell_id):
+                raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
         if (self._run_pause is not None and self._run_pause["phase"] != "RESUMED"
             and not self._continuity.knows_delivery(request.operation_id)):
             sender = next((role.role for role in self._startup.roles if role.role_instance_id == request.sender_role_instance_id), None)
@@ -731,6 +741,8 @@ class RunSlkWorkflow:
             overwatcher is None
             or notice.run_id != self._startup.run_id
             or notice.overwatcher_role_instance_id != overwatcher.role_instance_id
+            or (self._startup.method_version == "4.5.0"
+                and notice.requested_by_role_instance_id != self._startup.supervisor.role_instance_id)
         ):
             raise ApplicationError("Overwatcher exit notice changed the frozen Run identity", non_retryable=True)
         blocker = self._set_runtime_guard(

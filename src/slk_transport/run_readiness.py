@@ -132,7 +132,8 @@ def _receipt(path_value: Any) -> Mapping[str, Any] | None:
     return value if isinstance(value, Mapping) else None
 
 
-def _valid_bi_receipt(path_value: Any, run_id: str, *, method_version: Any) -> bool:
+def _valid_bi_receipt(path_value: Any, run_id: str, *, method_version: Any,
+                      match_method: bool = False) -> bool:
     value = _receipt(path_value)
     return bool(
         value is not None
@@ -143,9 +144,10 @@ def _valid_bi_receipt(path_value: Any, run_id: str, *, method_version: Any) -> b
         }
         and value.get("schema_version") == "slk.bi-open-readiness/v1"
         and value.get("method_version") in SUPPORTED_METHOD_VERSIONS
+        and (not match_method or value.get("method_version") == method_version)
         and value.get("run_id") == run_id
         and value.get("bi_version") in (
-            {"1.1.1"} if method_version in ("4.4.3", "4.4.4", "4.4.5") or value.get("method_version") in ("4.4.3", "4.4.4", "4.4.5")
+            {"1.1.1"} if method_version in ("4.4.3", "4.4.4", "4.4.5", "4.5.0") or value.get("method_version") in ("4.4.3", "4.4.4", "4.4.5", "4.5.0")
             else {"1.1.0", "1.1.1"})
         and isinstance(value.get("device_id"), str)
         and bool(str(value.get("device_id")).strip())
@@ -154,7 +156,8 @@ def _valid_bi_receipt(path_value: Any, run_id: str, *, method_version: Any) -> b
     )
 
 
-def _temporal_binding_from_receipt(path_value: Any, run_id: str) -> dict[str, Any] | None:
+def _temporal_binding_from_receipt(path_value: Any, run_id: str, *,
+                                   method_version: Any = None) -> dict[str, Any] | None:
     value = _receipt(path_value)
     try:
         if (value is None or set(value) != {
@@ -162,7 +165,8 @@ def _temporal_binding_from_receipt(path_value: Any, run_id: str) -> dict[str, An
                 "workflow_templates", "client_command", "workflow_identity", "attempt_root",
                 "evidence_sha256",
             } or value.get("schema_version") != "slk.temporal-readiness/v2"
-            or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5"} or value.get("run_id") != run_id
+            or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0"} or value.get("run_id") != run_id
+            or (method_version is not None and value.get("method_version") != method_version)
             or value.get("status") != "READY" or value.get("service_mode") != "SHARED_LOCAL"
             or value.get("workflow_templates") != ["SLK.Start", "SLK.Run"]
             or not _sha256(value.get("evidence_sha256"))):
@@ -466,18 +470,15 @@ def _valid_communication_rehearsal(path_value: Any, run_id: str, revision: int,
         return False
 
 
-def _valid_current_registration(host_reference: Any, consumers: Any, run_id: str, revision: int,
+def _valid_current_registration(host: Any, consumers: Any, run_id: str, revision: int,
                                 roles: list[Mapping[str, Any]]) -> bool:
     """Join current Run identity and permission without manufacturing engineering events."""
     from . import worker_completion as wc
-    from .role_host import RoleHost
     try:
         registered = {row["role"]: row for row in roles}
         if set(registered) != set(REQUIRED_ROLES) or len({row["role_instance_id"] for row in roles}) != 4:
             raise ValueError("current roles are incomplete or aliased")
-        binding = _proof(host_reference)
-        host = RoleHost(binding, host_reference["sha256"])
-        if binding["run_id"] != run_id or binding["plan_revision"] != revision:
+        if host is None or host.binding["run_id"] != run_id or host.binding["plan_revision"] != revision:
             raise ValueError("current host scope changed")
         if not isinstance(consumers, Mapping) or set(consumers) != set(REQUIRED_ROLES):
             raise ValueError("each current role needs one saved consumer")
@@ -510,19 +511,15 @@ def _valid_current_registration(host_reference: Any, consumers: Any, run_id: str
                 or authenticated["runtime_revision"] < consumer["runtime_revision"]):
                 raise ValueError("current saved consumer is no longer authorized")
         return True
-    except (OSError, TypeError, ValueError, KeyError):
+    except (OSError, TypeError, ValueError, KeyError, wc.CompletionError):
         return False
 
 
-def _current_token_boundary(host_reference: Any, run_id: str, revision: int,
+def _current_token_boundary(projection: Mapping[str, Any], run_id: str, revision: int,
                             roles: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
     """Prove that the admitted host can resolve the same current boundary it will consume."""
     from . import worker_completion as wc
-    from .role_host import RoleHost
     try:
-        binding = _proof(host_reference)
-        host = RoleHost(binding, host_reference["sha256"])
-        projection = host.projection()
         boundary = wc.resolve_authoritative_token_boundary(
             projection, run_id=run_id, plan_revision=revision)
         supervisor = next(row for row in roles if row["role"] == "supervisor")
@@ -530,13 +527,8 @@ def _current_token_boundary(host_reference: Any, run_id: str, revision: int,
             and boundary["holder_role_instance_id"] != supervisor["role_instance_id"]):
             return None
         return boundary
-    except (OSError, TypeError, ValueError, KeyError, StopIteration):
+    except (OSError, TypeError, ValueError, KeyError, StopIteration, wc.CompletionError):
         return None
-
-
-def _valid_current_token_boundary(host_reference: Any, run_id: str, revision: int,
-                                  roles: list[Mapping[str, Any]]) -> bool:
-    return _current_token_boundary(host_reference, run_id, revision, roles) is not None
 
 
 def _normal_chain_conformance(path_value: Any, current_run_id: str) -> str | None:
@@ -795,7 +787,7 @@ def _native_activity_capability(path_value: Any, runtime: str) -> str | None:
     return None
 
 
-def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
+def _role_result(raw: Mapping[str, Any], *, lightweight: bool = False) -> dict[str, Any]:
     _closed({"context_capacity": None, "task_context_estimate": None, **raw}, ROLE_FIELDS, "role")
     role = _nonempty(raw["role"], "role")
     _nonempty(raw["role_instance_id"], "role_instance_id")
@@ -839,9 +831,9 @@ def _role_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     if any(not _tool_exists(item) for item in tools):
         repair.append("REQUIRED_TOOL_MISSING")
     if tool_update_status == "UPDATE_REQUIRED":
-        repair.append("TOOL_UPDATE_REQUIRED")
+        (advisory if lightweight else repair).append("TOOL_UPDATE_REQUIRED")
     elif tool_update_status != "CURRENT":
-        repair.append("TOOL_UPDATE_UNPROVEN")
+        (advisory if lightweight else repair).append("TOOL_UPDATE_UNPROVEN")
     if role == "supervisor":
         if native_capability is not None:
             repair.append("NATIVE_ACTIVITY_CAPABILITY_INVALID")
@@ -1021,13 +1013,14 @@ def seal_normal_chain_source(readiness_request_path: Path, state_config_path: Pa
 def _evaluate_run_admission(request: Mapping[str, Any], *,
                             require_initial_boundary: bool,
                             conformance_sample: bool = False) -> dict[str, Any]:
-    """Admit a Run without replaying a synthetic product failure or D2."""
+    """Assess current components; formal startup separately confirms native OW ACTIVE."""
     if not isinstance(request, Mapping):
         raise ValueError("request must be an object")
     fields = CONFORMANCE_SAMPLE_ADMISSION_FIELDS if conformance_sample else ADMISSION_FIELDS
     schema = ("slk.conformance-sample-admission-request/v1" if conformance_sample
               else "slk.run-admission-request/v1")
-    _closed(request, fields, "admission request")
+    _closed(request if conformance_sample else {"normal_chain_conformance": None, **request},
+            fields, "admission request")
     if request["schema_version"] != schema:
         raise ValueError("Run admission schema mismatch")
     run_id = _nonempty(request["run_id"], "run_id")
@@ -1035,7 +1028,23 @@ def _evaluate_run_admission(request: Mapping[str, Any], *,
     raw_roles = request["roles"]
     if not isinstance(raw_roles, list):
         raise ValueError("roles must be an array")
-    roles = [_role_result(item) for item in raw_roles if isinstance(item, Mapping)]
+    from . import worker_completion as wc
+    from .role_host import RoleHost
+    host, projection = None, {}
+    try:
+        reference = request["current_host_binding"]
+        binding = _proof(reference)
+        host = RoleHost(binding, reference["sha256"])
+        if binding["run_id"] != run_id or binding["plan_revision"] != revision:
+            raise ValueError("current host scope changed")
+        projection = host.projection()
+    except (OSError, TypeError, ValueError, KeyError, wc.CompletionError):
+        # No fallback to a version claimed by input or a readiness receipt.
+        projection = {}
+    snapshot = projection.get("runtime_snapshot")
+    method_version = snapshot.get("method_version") if isinstance(snapshot, Mapping) else None
+    lightweight = not conformance_sample and method_version == "4.5.0"
+    roles = [_role_result(item, lightweight=lightweight) for item in raw_roles if isinstance(item, Mapping)]
     if len(roles) != len(raw_roles) or sorted(item["role"] for item in roles) != sorted(REQUIRED_ROLES):
         raise ValueError("roles must contain exactly one supervisor, worker, checker, and overwatcher")
     raw_options = request["optional_features"]
@@ -1063,10 +1072,12 @@ def _evaluate_run_admission(request: Mapping[str, Any], *,
                 reason_codes.append(code)
     if unsupported:
         reason_codes.append("OPTION_UNSUPPORTED")
-    method_version = (_receipt(request["temporal_readiness_receipt"]) or {}).get("method_version")
-    if not _valid_bi_receipt(request["bi_open_receipt"], run_id, method_version=method_version):
+    if not _valid_bi_receipt(request["bi_open_receipt"], run_id, method_version=method_version,
+                             match_method=not conformance_sample):
         reason_codes.append("BI_OPEN_RECEIPT_INVALID")
-    temporal_binding = _temporal_binding_from_receipt(request["temporal_readiness_receipt"], run_id)
+    temporal_binding = _temporal_binding_from_receipt(
+        request["temporal_readiness_receipt"], run_id,
+        method_version=method_version if not conformance_sample else None)
     if temporal_binding is None:
         reason_codes.append("TEMPORAL_READINESS_INVALID")
     conformance_run_id = None
@@ -1074,33 +1085,45 @@ def _evaluate_run_admission(request: Mapping[str, Any], *,
         if not _valid_conformance_sample_isolation(
                 request["isolation_contract"], request, raw_roles):
             reason_codes.append("CONFORMANCE_SAMPLE_ISOLATION_INVALID")
-    else:
-        conformance_run_id = _normal_chain_conformance(request["normal_chain_conformance"], run_id)
+    elif not lightweight:
+        if method_version in SUPPORTED_METHOD_VERSIONS:
+            conformance_run_id = _normal_chain_conformance(request.get("normal_chain_conformance"), run_id)
         if conformance_run_id is None:
             reason_codes.append("NORMAL_CHAIN_CONFORMANCE_INVALID")
     registration_valid = _valid_current_registration(
-        request["current_host_binding"], request["sealed_role_receipts"], run_id, revision, raw_roles)
+        host, request["sealed_role_receipts"], run_id, revision, raw_roles)
     if not registration_valid:
         reason_codes.append("CURRENT_ROLE_REGISTRATION_INVALID")
-    elif temporal_binding is not None and not _host_has_temporal_binding(
-            request["current_host_binding"], temporal_binding, run_id, revision):
+    elif temporal_binding is not None and host.binding.get("temporal") != temporal_binding:
         reason_codes.append("TEMPORAL_BINDING_INVALID")
     if registration_valid:
         boundary = _current_token_boundary(
-            request["current_host_binding"], run_id, revision, raw_roles)
+            projection, run_id, revision, raw_roles)
         if boundary is None:
             reason_codes.append("CURRENT_TOKEN_BOUNDARY_INVALID")
         elif require_initial_boundary and boundary["source"] != "TOKEN_CREATED":
             reason_codes.append("NEW_RUN_INITIAL_TOKEN_REQUIRED")
-    if any(name not in options_by_name for name in REQUIRED_OPTIONS):
-        reason_codes.append("REQUIRED_OPTION_MISSING")
+    option_advisories = []
+    missing_options = [name for name in REQUIRED_OPTIONS if name not in options_by_name]
+    if missing_options:
+        if lightweight:
+            option_advisories.extend(f"OPTION_NOT_SELECTED:{name}" for name in missing_options)
+        else:
+            reason_codes.append("REQUIRED_OPTION_MISSING")
     for option in options_by_name.values():
         if option["decision"] == "ON" and not _enabled_option_entry(option["name"], raw_roles):
-            if "ENABLED_OPTION_ENTRY_MISSING" not in reason_codes:
+            if lightweight:
+                option_advisories.append(f"OPTION_UNAVAILABLE_FALLBACK:{option['name']}")
+            elif "ENABLED_OPTION_ENTRY_MISSING" not in reason_codes:
                 reason_codes.append("ENABLED_OPTION_ENTRY_MISSING")
         if option["decision"] == "UNCONFIRMED" or not option["owner_evidence_ref"].strip():
-            if "OPTION_DECISION_REQUIRED" not in reason_codes:
+            if lightweight:
+                option_advisories.append(f"OPTION_DECISION_UNCONFIRMED:{option['name']}")
+            elif "OPTION_DECISION_REQUIRED" not in reason_codes:
                 reason_codes.append("OPTION_DECISION_REQUIRED")
+    for role in roles:
+        if role["role"] in {"worker", "checker"}:
+            role["advisory_codes"].extend(option_advisories)
     status = "INCOMPATIBLE" if any(item["status"] == "INCOMPATIBLE" for item in roles) else (
         "REPAIR_NEEDED" if reason_codes else "READY")
     canonical = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -1113,7 +1136,7 @@ def _evaluate_run_admission(request: Mapping[str, Any], *,
 
 
 def evaluate_run_admission(request: Mapping[str, Any]) -> dict[str, Any]:
-    """Admit an in-flight Run against reusable normal-chain conformance."""
+    """Assess an in-flight Run; legacy methods retain normal-chain conformance."""
     return _evaluate_run_admission(request, require_initial_boundary=False)
 
 

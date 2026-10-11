@@ -208,6 +208,23 @@ class DshAdapter:
         self.validate_address(endpoint)
         address = endpoint.address
         command = _string_array(address["command"], "command")
+        if os.name == "nt" and len(command) == 1:
+            launcher = Path(command[0])
+            bundle: Path | None = None
+            if launcher.is_absolute() and launcher.name.casefold() == "dsh-slk.cmd":
+                if launcher.parent.name.casefold() == "bin":
+                    bundle = launcher.parent.parent
+                elif (launcher.parent.name.casefold() == "dsh"
+                      and launcher.parent.parent.name.casefold() == "runtime"):
+                    bundle = launcher.parents[2]
+            if (bundle is not None and bundle.name.casefold() == "slk"
+                and bundle.parent.name.casefold() == "tools"
+                and (bundle / "scripts/local_package_metadata.py").is_file()):
+                # Layout identity only, not authorization/liveness. Keep task
+                # data out of CMD expansion/CALL; explicit and legacy commands stay unchanged.
+                powershell = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+                command = [str(powershell), "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                           "-File", str(bundle / "runtime/dsh/dsh-slk.ps1")]
         command.extend([str(address["instance_id"]), "--profile", "headless"])
         if address["session_id"] is not None:
             command.extend(["--resume", str(address["session_id"])])

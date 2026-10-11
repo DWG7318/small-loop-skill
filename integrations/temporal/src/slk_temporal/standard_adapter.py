@@ -96,7 +96,18 @@ def _validate_ow_attestation(
 ) -> None:
     if not SHA256.fullmatch(expected_sha256) or _sha256(path) != expected_sha256:
         raise ValueError("Overwatcher attestation hash changed")
-    value = _object(path, "Overwatcher Desktop attestation")
+    value = _object(path, "Overwatcher attestation")
+    if method_version == "4.5.0":
+        # Static reference correlation only. Ordinary delivery must not require
+        # a live native list sample; audit/resume invoke the original transport
+        # proof reader and current central binding check, not a copied validator.
+        if any(value.get(field) != expected for field, expected in {
+            "schema_version": "slk.subagent-overwatcher-proof/v1", "method_version": method_version,
+            "run_id": run_id, "role_instance_id": role_instance_id, "endpoint_ref": endpoint_ref,
+            "started_sha256": _sha256(started_path),
+        }.items()):
+            raise ValueError("native Overwatcher proof does not match the frozen binding")
+        return
     if (set(value) != OW_ATTESTATION_FIELDS
         or value.get("schema_version") != "slk.desktop-overwatcher-attestation/v1"
         or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5"}):
@@ -157,7 +168,8 @@ def _load_config(run_id: str) -> dict[str, Any]:
     schema_version = value.get("schema_version")
     if (set(value) != CONFIG_FIELDS or schema_version not in {
             "slk.temporal-standard-adapter/v1", "slk.temporal-standard-adapter/v2"}
-        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5"} or value.get("run_id") != run_id):
+        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0"} or value.get("run_id") != run_id
+        or (value.get("method_version") == "4.5.0" and schema_version != "slk.temporal-standard-adapter/v2")):
         raise ValueError("standard adapter Run config is not closed")
     value["transport_command"] = _command(value["transport_command"], "transport command")
     value["query_command"] = _command(value["query_command"], "query command")
@@ -187,7 +199,7 @@ def _load_config(run_id: str) -> dict[str, Any]:
         "failed_path": str(path) if (path := _optional_path(ow["failed_path"], "Overwatcher failed evidence")) else None,
     }
     if schema_version == "slk.temporal-standard-adapter/v2":
-        attestation_path = _existing_path(ow["attestation_path"], "Overwatcher Desktop attestation")
+        attestation_path = _existing_path(ow["attestation_path"], "Overwatcher attestation")
         _validate_ow_attestation(
             attestation_path,
             expected_sha256=str(ow["attestation_sha256"]),
@@ -208,7 +220,7 @@ def _load_bootstrap_config(run_id: str) -> dict[str, Any]:
     value = _object(_CONFIG_ROOT / f"{run_id}.bootstrap.json", "standard adapter bootstrap config")
     if (set(value) != BOOTSTRAP_FIELDS
         or value.get("schema_version") != "slk.temporal-standard-bootstrap/v1"
-        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5"} or value.get("run_id") != run_id):
+        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0"} or value.get("run_id") != run_id):
         raise ValueError("standard adapter bootstrap config is not closed")
     value["query_command"] = _command(value["query_command"], "query command")
     value["state_config_path"] = str(_existing_path(value["state_config_path"], "state config"))
@@ -320,6 +332,21 @@ async def prepare_run(value: dict[str, Any]) -> dict[str, Any]:
             or projection.get("runtime_snapshot", {}).get("runtime_revision") != request.runtime_revision
             or projection.get("runtime_snapshot", {}).get("method_version") != request.method_version):
             raise ValueError("new Run admission or live runtime revision does not match startup")
+        if config["admission_kind"] == "PRODUCT" and projection["runtime_snapshot"]["method_version"] == "4.5.0":
+            # Basic preflight proves registration, not native child liveness.
+            # Reuse the frozen proof and this current projection, without the audit's cadence gate.
+            ow = config["overwatcher_activity"]
+            with tempfile.TemporaryDirectory(prefix="slk-ow-startup-", dir=config["notification_attempt_root"]) as temporary:
+                projection_path = Path(temporary) / "projection.json"
+                _write_once(projection_path, projection)
+                observation = _run_json(list(config["transport_command"]), [
+                    "inspect-native-activity", "--started", ow["started_path"],
+                    "--subagent-overwatcher-proof", ow["attestation_path"],
+                    "--subagent-overwatcher-proof-sha256", ow["attestation_sha256"],
+                    "--runtime-projection", str(projection_path),
+                ])
+            if observation.get("status") != "ACTIVE" or observation.get("error") is not None:
+                raise ValueError("native Overwatcher must be ACTIVE at product startup")
         core = {"status": "READY", "run_id": request.run_id,
                 "runtime_revision": request.runtime_revision,
                 "startup_fingerprint": fingerprint}
@@ -442,24 +469,36 @@ async def inspect_overwatcher(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Overwatcher audit changed the frozen identity")
 
     def perform() -> dict[str, Any]:
+        native_subagent = config["method_version"] == "4.5.0"
         arguments = ["inspect-native-activity", "--started", ow["started_path"]]
         if config["schema_version"] == "slk.temporal-standard-adapter/v2":
+            proof_flag = "--subagent-overwatcher-proof" if native_subagent else "--desktop-overwatcher-attestation"
             arguments.extend((
-                "--desktop-overwatcher-attestation", ow["attestation_path"],
-                "--desktop-overwatcher-attestation-sha256", ow["attestation_sha256"],
+                proof_flag, ow["attestation_path"], proof_flag + "-sha256", ow["attestation_sha256"],
             ))
         for option, field in (("--completed", "completed_path"), ("--failed", "failed_path")):
-            if ow[field] is not None:
+            if not native_subagent and ow[field] is not None:
                 arguments.extend((option, ow[field]))
-        observation = _run_json(list(config["transport_command"]), arguments)
+        if not native_subagent:
+            observation = _run_json(list(config["transport_command"]), arguments)
         # Being online does not prove that the bound Run received its due observation cycle.
         with tempfile.TemporaryDirectory(prefix="slk-ow-audit-", dir=config["notification_attempt_root"]) as temporary:
             projection_path = Path(temporary) / "projection.json"
             _write_once(projection_path, _query(config))
-            cadence = _run_json(list(config["transport_command"]), [
-                "inspect-overwatcher-cadence", "--runtime-projection", str(projection_path),
-                "--observed-at", datetime.now(timezone.utc).isoformat(),
-            ])
+            if native_subagent:
+                observation = _run_json(list(config["transport_command"]), [*arguments, "--runtime-projection", str(projection_path)])
+            exited = native_subagent and observation.get("status") in {
+                "COMPLETED_WITHOUT_TERMINAL", "FAILED_WITHOUT_TERMINAL",
+            } and observation.get("error") is None
+            try:
+                cadence = _run_json(list(config["transport_command"]), [
+                    "inspect-overwatcher-cadence", "--runtime-projection", str(projection_path),
+                    "--observed-at", datetime.now(timezone.utc).isoformat(),
+                ])
+            except (CommandFailure, ValueError):
+                if not exited:
+                    raise
+                cadence = {"status": "UNAVAILABLE", "error": "CADENCE_QUERY_FAILED"}
         age = cadence.get("elapsed_seconds")
         current_cycle = (
             cadence.get("schema_version") == "slk.overwatcher-cadence-inspection/v1"
@@ -468,8 +507,13 @@ async def inspect_overwatcher(value: dict[str, Any]) -> dict[str, Any]:
             and isinstance(cadence.get("latest_cycle_id"), str) and bool(cadence["latest_cycle_id"])
             and cadence.get("cadence_seconds") == 600 and type(age) is int and 0 <= age <= 600
         )
-        evidence_sha256 = _receipt({"native": observation, "cadence": cadence})
-        core = {"status": "CLEAR" if current_cycle and observation.get("status") in {"ACTIVE", "IDLE", "PENDING"} else "ANOMALY",
+        evidence = {"native": observation, "cadence": cadence}
+        evidence_sha256 = _receipt(evidence)
+        if native_subagent:
+            evidence_root = Path(config["notification_attempt_root"]) / value["run_id"] / "overwatcher-audits"
+            evidence_root.mkdir(parents=True, exist_ok=True)
+            _write_once(evidence_root / (evidence_sha256 + ".json"), evidence)
+        core = {"status": "EXITED" if exited else "CLEAR" if current_cycle and observation.get("status") in {"ACTIVE", "IDLE", "PENDING"} else "ANOMALY",
                 "run_id": value["run_id"], "overwatcher_role_instance_id": value["overwatcher_role_instance_id"],
                 "audit_cycle": value["audit_cycle"], "evidence_sha256": evidence_sha256}
         return {**core, "receipt_sha256": _receipt(core)}

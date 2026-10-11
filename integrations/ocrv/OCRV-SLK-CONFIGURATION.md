@@ -6,26 +6,21 @@ Save and deliver every existing report/log, even partial, non-JSON or nonzero-ex
 
 OCRV 1.12.12/1.12.13 is a stateless review harness. Its built-ins cannot call arbitrary shell commands, and commit/range `file_read` reads Git objects, not uncommitted runtime originals. Reuse its existing stdio MCP bridge for `slk_checker_decide(verdict, message?)` and `slk_read_evidence(index, offset?, limit?)`; no arbitrary path, identity, credentials, shell or general executor is accepted from the model. Identity comes from the prepared host and native invocation receipt. Without a deliberate decision call no D1 is recorded. An action error is not PASS/FAIL and cannot prevent report delivery.
 
-After deployment is independently authorized, generate this entry using the selected installed OCRV root and canonical installed transport. This function only emits configuration; merge its output into existing `mcp_servers`, preserving other settings. It does not edit global config or install a framework.
+After deployment is independently authorized, the unified offline installer accepts explicit `-OcrvUserHome <native-user-home>`. It merges only the four SLK-owned fields of `mcp_servers.slk_checker_decision` into `<native-user-home>/.opencodereview/config.json`. Omitting that parameter retains the existing code-only contract. The legacy standalone OCRV integration installer remains code-only.
 
 Deployment order (Supervisor only after acceptance): install the hash-bound method package and run its existing `integrations/ocrv/install.ps1 -OcrvRoot <selected OCRV root>`, then merge the MCP entry below. Before any real review, inspect the selected `ocr-slk.ps1` rule argument: Root confirmed this machine currently forces `D:/OCRV/slk/slk-d1-rule.json`, which references old `SLK-D1-REVIEW.md` prose claiming adapter classification. Keep the existing wrapper and rule JSON path. Retain the original config in the existing deployment backup, remove ONLY the `rules` entry referencing that legacy SLK Markdown, and preserve `include` byte-for-byte in meaning (including test files), `exclude` and unrelated configuration. Leave the old Markdown as history, not a loaded override; do not add a second SLK rule file or another wrapper. The generated background is the sole SLK responsibility prose loaded by the native review, with the bound tool description. A source/Skill update alone does not perform this deployment.
 
 After that exact edit, compare before/after config: unchanged inclusion/exclusion and unrelated entries, no remaining legacy SLK prose override. Read back actual wrapper/config paths and installed hashes; run the normal native `--preview` for the unchanged candidate/scope and MCP tool discovery, checking test-file inclusion and the whole-candidate tool description. Preview/discovery is not a paid review or D1 proof. Missing/conflicting rules or tools keep product readiness blocked. Root performs this real-runtime edit and evidence collection after independent acceptance; this maintenance candidate did not inspect, change or dispatch the actual runtime.
 
 ```powershell
-function Get-SlkCheckerMcpConfiguration([string]$OcrvRoot) {
-    $python = (Get-Command python.exe -ErrorAction Stop).Source
-    $launcher = (Get-Command slk-transport.cmd -ErrorAction Stop).Source
-    $package = Join-Path (Split-Path $launcher) 'slk-transport.pyz'
-    $bridge = Join-Path ([IO.Path]::GetFullPath($OcrvRoot)) 'slk_checker_decision.py'
-    foreach ($path in @($package, $bridge)) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing installed file: $path" }
-    }
-    @{slk_checker_decision=@{type='stdio'; command=$python;
-        args=@('-B', $bridge, '--transport', $package); tools=@('slk_checker_decide','slk_read_evidence')}} |
-        ConvertTo-Json -Depth 5
-}
+# Both roots are selected at authorized deployment, never from maintainer PATH.
+pwsh -NoProfile -NonInteractive -File <package>/tools/slk/scripts/install_local.ps1 `
+    -PackageRoot <package> -CodexHome <selected-codex-home> -OcrvUserHome <selected-native-user-home>
 ```
+
+The resulting stdio command is `<selected-codex-home>/tools/slk/runtime/python/python.exe`; args are `-B`, its sibling `runtime/ocrv/slk_checker_decision.py`, `--transport`, and `bin/slk-transport.pyz`. Allowed tools are exactly `slk_checker_decide` and `slk_read_evidence`. The non-resident `scripts/configure_ocrv.py` helper preserves every non-owned JSON value, including false/empty arrays and unknown SLK-entry fields. Bad JSON is not overwritten, unchanged configuration is not rewritten, and original bytes are retained in the existing install backup. Failed installation restores only the configuration version it wrote; intervening external edits are retained and reported as a rollback conflict. No accounts or provider/model choices are copied or changed.
+
+Packaged native OCRV uses the actual child's Windows `USERPROFILE` for configuration and Sessions. The same child environment is used for preview/review/Session lookup; legacy wrapper and authoritative explicit command conventions remain unchanged. SLK artifacts default to mutable `tools/slk/data/ocrv`; `OCRV_SLK_RUNTIME_ROOT` remains authoritative. Exact packaged automatic Checker endpoints bypass CMD using embedded Python and the existing adapter script. The public CMD is a limited human convenience, not an arbitrary request/output-path channel.
 
 The exact `--transport` package is placed first on the MCP subprocess import path; a source checkout/PYTHONPATH is not assumed. Stdio uses UTF-8 independently of Windows locale. Optional `message` carries original Checker findings/reasons without a report template. The one deliberate tool call records D1 and runs the existing standard successor; OCRV needs no shell or second suffix invocation.
 

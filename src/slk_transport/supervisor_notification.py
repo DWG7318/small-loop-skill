@@ -118,11 +118,37 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
 
 
 def observe_overwatcher_exit(started_path: Path, *, run_id: str, role_instance_id: str,
-                             native_task_id: str, requested_by_role_instance_id: str) -> dict[str, Any] | None:
-    """Called by the existing owning host's exit hook or Temporal audit, not OW."""
+                             native_task_id: str, requested_by_role_instance_id: str,
+                             subagent_proof_path: Path | None = None, subagent_proof_sha256: str | None = None,
+                             runtime_projection: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+    """Supervisor's read-only exit verification, also exposed by the transport CLI.
+
+    A native host completion callback is a trigger, not proof. No automatic
+    callback registration or ability to wake an idle parent is claimed here.
+    """
     start = validate_native_start(started_path, run_id=run_id)
     if start["native_task"]["id"] != native_task_id:
         raise ValueError("exit observation changed the registered native OW Session")
+    native_probe = None
+    native_subagent = start["native_task"]["kind"] == "codex-subagent"
+    if native_subagent:
+        from .overwatcher_subagent import validate_subagent_overwatcher_binding, subagent_overwatcher_probe
+        if subagent_proof_path is None or subagent_proof_sha256 is None or runtime_projection is None:
+            raise ValueError("native OW exit requires original proof and current registration")
+        proof = validate_subagent_overwatcher_binding(subagent_proof_path, proof_sha256=subagent_proof_sha256,
+            started_path=started_path, projection=runtime_projection)
+        supervisor = next(row for row in runtime_projection["roles"] if row.get("role") == "supervisor" and row.get("lifecycle") == "active")
+        if proof["role_instance_id"] != role_instance_id or requested_by_role_instance_id != supervisor["role_instance_id"]:
+            raise ValueError("native OW exit requires the current parent Supervisor")
+        native_probe = lambda value: subagent_overwatcher_probe(subagent_proof_path,
+            proof_sha256=subagent_proof_sha256, started_path=started_path, start=value)
+        # Always re-query, including a retry: saved exits do not prove a new
+        # activation or an old cached status still belongs to current execution.
+        observation = inspect_native_activity(started_path, native_probe=native_probe)
+        if observation["status"] in {"ACTIVE", "PENDING", "IDLE"}:
+            return None
+        if observation["status"] not in {"COMPLETED_WITHOUT_TERMINAL", "FAILED_WITHOUT_TERMINAL"} or observation.get("error") is not None:
+            raise ValueError("OW exit is unproved; Supervisor must obtain a fresh native list sample")
     event_id = wc._stable_id(str(started_path.resolve()), "ow-exit-" + wc._sha256(started_path))
     path = started_path.parent / "exit-hook" / (event_id + ".json")
     if path.is_file():
@@ -134,7 +160,8 @@ def observe_overwatcher_exit(started_path: Path, *, run_id: str, role_instance_i
         digest = canonical_json_sha256(saved)
         return {"event_id": event_id, "run_id": run_id, "overwatcher_role_instance_id": role_instance_id,
                 "requested_by_role_instance_id": requested_by_role_instance_id, "evidence_sha256": digest}
-    observation = inspect_native_activity(started_path)
+    if not native_subagent:
+        observation = inspect_native_activity(started_path)
     if observation["status"] in {"ACTIVE", "PENDING", "IDLE"}:
         return None
     if observation["status"] not in {"DEAD_WITHOUT_TERMINAL", "COMPLETED_WITHOUT_TERMINAL", "FAILED_WITHOUT_TERMINAL"}:

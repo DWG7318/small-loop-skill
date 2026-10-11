@@ -440,7 +440,7 @@ class OcrvAdapter:
         child_start_path = attempt.root / "native-start.received.json"
         digest = hashlib.sha256(request_path.read_bytes()).hexdigest()
         _arm_child_start(environment, child_start_path, endpoint, envelope, digest)
-        command = _string_array(endpoint.address["command"], "command")
+        command = self.command(endpoint)
         command.extend(["--request", str(request_path), "--output", str(result_path)])
         process = spawn(command, cwd=str(request["repository"]), env=environment,
                         process_kwargs=_checker_process_kwargs())
@@ -474,6 +474,26 @@ class OcrvAdapter:
             start_error or (None if completed.returncode == 0 else "OCRV_EXIT_NONZERO"),
             tuple(name for name in ("started.json", "ocrv-request.json", "ocrv-result.json",
                 "ocrv-review.json", "native.stdout.txt", "native.stderr.txt") if (attempt.root / name).is_file()))
+
+    @staticmethod
+    def command(endpoint: Endpoint) -> list[str]:
+        command = _string_array(endpoint.address["command"], "command")
+        if os.name != "nt" or len(command) != 1:
+            return command
+        entry = Path(command[0])
+        if not entry.is_absolute() or entry.name.lower() != "slk-checker.cmd":
+            return command
+        if entry.parent.name.lower() == "bin":
+            root = entry.parent.parent
+        elif entry.parent.name.lower() == "ocrv" and entry.parent.parent.name.lower() == "runtime":
+            root = entry.parent.parent.parent
+        else:
+            return command
+        if (root.name.lower() != "slk" or root.parent.name.lower() != "tools"
+                or not (root / "scripts/local_package_metadata.py").is_file()):
+            return command
+        # The public CMD is a human convenience, not an arbitrary path channel.
+        return [str(root / "runtime/python/python.exe"), "-B", str(root / "runtime/ocrv/slk_checker_adapter.py")]
 
     def deliver(self, endpoint: Endpoint, envelope: Envelope, attempt: Attempt) -> DeliveryResult:
         self.validate_address(endpoint)

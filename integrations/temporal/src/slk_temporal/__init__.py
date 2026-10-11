@@ -1,6 +1,6 @@
-"""Dependency-light public contracts for optional SLK Temporal templates."""
+"""Dependency-light public contracts for the shared SLK Temporal templates."""
 
-__version__ = "4.4.5"
+__version__ = "4.5.0"
 
 from .continuity import ContinuityError, RunContinuity
 from .contracts import ContractError, DeliveryRequest, NativeStartAck, RoleBinding, StartSlkRequest

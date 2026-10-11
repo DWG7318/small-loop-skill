@@ -30,6 +30,9 @@ from .drill_verify import DrillVerificationError, verify_drill
 from .evidence import Attempt
 from .native_activity import NativeActivityError, collect_overwatch_scope, inspect_native_activity, validate_native_start
 from .overwatcher_desktop import attest_desktop_overwatcher, desktop_overwatcher_probe
+from .overwatcher_subagent import (
+    attest_subagent_overwatcher, subagent_overwatcher_probe, validate_subagent_overwatcher_binding,
+)
 from .process import windows_no_window_kwargs
 from .recovery import inspect_delivery, retry_exact
 from .role_eval import load_pack, pack_sha256, validate_response
@@ -354,7 +357,7 @@ def _inspect_native_activity(args: argparse.Namespace) -> int:
     if getattr(args, "run_id", None) is not None or getattr(args, "state_command", None) is not None:
         if not args.run_id or not args.state_command:
             raise ValueError("scope query requires both the exact Run and state command")
-        if args.desktop_overwatcher_attestation is not None:
+        if args.desktop_overwatcher_attestation is not None or args.subagent_overwatcher_proof is not None:
             raise ValueError("engineering scope query cannot substitute an OW attestation")
         result = collect_overwatch_scope(args.started, run_id=args.run_id, state_command=args.state_command)
         _emit(result)
@@ -365,12 +368,28 @@ def _inspect_native_activity(args: argparse.Namespace) -> int:
     supplied = (args.desktop_overwatcher_attestation, args.desktop_overwatcher_attestation_sha256)
     if (supplied[0] is None) != (supplied[1] is None):
         raise ValueError("Desktop Overwatcher attestation path and hash must be supplied together")
+    subagent = (args.subagent_overwatcher_proof, args.subagent_overwatcher_proof_sha256)
+    if (subagent[0] is None) != (subagent[1] is None):
+        raise ValueError("Subagent Overwatcher proof path and hash must be supplied together")
+    if supplied[0] is not None and subagent[0] is not None:
+        raise ValueError("Desktop and Subagent Overwatcher proofs are mutually exclusive")
     native_probe = None
     if supplied[0] is not None:
         native_probe = lambda start: desktop_overwatcher_probe(
             supplied[0], attestation_sha256=supplied[1], started_path=args.started, start=start,
         )
-    result = inspect_native_activity(args.started, terminal_paths=terminals, native_probe=native_probe)
+    if subagent[0] is not None:
+        if args.runtime_projection is not None:
+            validate_subagent_overwatcher_binding(subagent[0], proof_sha256=subagent[1],
+                started_path=args.started, projection=_read_object(args.runtime_projection, "current Run projection"))
+        native_probe = lambda start: subagent_overwatcher_probe(
+            subagent[0], proof_sha256=subagent[1], started_path=args.started, start=start,
+        )
+    elif args.runtime_projection is not None:
+        raise ValueError("current native OW binding requires a subagent proof")
+    # A local terminal file must not skip this native reader's original records.
+    result = inspect_native_activity(args.started, terminal_paths=() if subagent[0] is not None else terminals,
+                                     native_probe=native_probe)
     _emit(result)
     return 0 if result["status"] in {"ACTIVE", "IDLE", "PENDING", "COMPLETED", "FAILED"} else 3
 
@@ -379,6 +398,26 @@ def _attest_desktop_overwatcher(args: argparse.Namespace) -> int:
     _emit(attest_desktop_overwatcher(
         args.request, request_sha256=args.sha256, evidence_root=args.evidence_root,
     ))
+    return 0
+
+
+def _attest_subagent_overwatcher(args: argparse.Namespace) -> int:
+    _emit(attest_subagent_overwatcher(
+        args.request, request_sha256=args.sha256, evidence_root=args.evidence_root,
+    ))
+    return 0
+
+
+def _observe_overwatcher_exit(args: argparse.Namespace) -> int:
+    from .supervisor_notification import observe_overwatcher_exit
+    projection = _read_object(args.runtime_projection, "current Run projection")
+    proof = validate_subagent_overwatcher_binding(args.subagent_overwatcher_proof,
+        proof_sha256=args.subagent_overwatcher_proof_sha256, started_path=args.started, projection=projection)
+    result = observe_overwatcher_exit(args.started, run_id=proof["run_id"], role_instance_id=proof["role_instance_id"],
+        native_task_id=proof["native_task_id"], requested_by_role_instance_id=args.requested_by_role_instance_id,
+        subagent_proof_path=args.subagent_overwatcher_proof,
+        subagent_proof_sha256=args.subagent_overwatcher_proof_sha256, runtime_projection=projection)
+    _emit(result if result is not None else {"status": "NO_CONFIRMED_EXIT"})
     return 0
 
 
@@ -734,6 +773,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     native_activity.add_argument("--state-command", nargs="+", help="exact current state/query command for --run-id")
     native_activity.add_argument("--desktop-overwatcher-attestation", type=Path)
     native_activity.add_argument("--desktop-overwatcher-attestation-sha256")
+    native_activity.add_argument("--subagent-overwatcher-proof", type=Path)
+    native_activity.add_argument("--subagent-overwatcher-proof-sha256")
+    native_activity.add_argument("--runtime-projection", type=Path, help="rejoin native OW proof to one fresh central projection")
+    ow_exit = subparsers.add_parser("observe-overwatcher-exit", help="verify native originals and emit the existing exit notice; never stop or restart OW")
+    ow_exit.add_argument("--started", required=True, type=Path)
+    ow_exit.add_argument("--subagent-overwatcher-proof", required=True, type=Path)
+    ow_exit.add_argument("--subagent-overwatcher-proof-sha256", required=True)
+    ow_exit.add_argument("--runtime-projection", required=True, type=Path)
+    ow_exit.add_argument("--requested-by-role-instance-id", required=True)
+    ow_subagent = subparsers.add_parser("attest-subagent-overwatcher")
+    ow_subagent.add_argument("--request", required=True, type=Path)
+    ow_subagent.add_argument("--sha256", required=True)
+    ow_subagent.add_argument("--evidence-root", required=True, type=Path)
     ow_desktop = subparsers.add_parser("attest-desktop-overwatcher")
     ow_desktop.add_argument("--request", required=True, type=Path)
     ow_desktop.add_argument("--sha256", required=True)
@@ -852,8 +904,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _inspect_overwatcher_cadence(args)
         if args.command == "inspect-native-activity":
             return _inspect_native_activity(args)
+        if args.command == "observe-overwatcher-exit":
+            return _observe_overwatcher_exit(args)
         if args.command == "attest-desktop-overwatcher":
             return _attest_desktop_overwatcher(args)
+        if args.command == "attest-subagent-overwatcher":
+            return _attest_subagent_overwatcher(args)
         if args.command == "notify-supervisor":
             return _notify_supervisor(args)
         if args.command == "preflight-run":
