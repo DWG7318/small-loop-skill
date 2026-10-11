@@ -9,6 +9,8 @@ copy or submodule checkout required for normal use.
 Every independent repository starts its extraction history at tag `1.0.0`.
 That tag does not downgrade existing products: SLK tools/templates are `4.5.0`,
 BI/WebBI are `1.1.1`, and the new OW helper/native probe products are `1.0.0`.
+OW's developer build-manifest newline correction uses repository repair tag
+`1.0.1`; the original `1.0.0` remains intact and its runtime wheel is unchanged.
 The shared state core remains the sole SQL/transaction authority. The OW helper
 and native probe acquire no engineering write, dispatch or repair authority.
 

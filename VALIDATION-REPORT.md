@@ -2,6 +2,19 @@
 
 ## 2026-10-11 — OW → P → S → M source acceptance
 
+Post-merge checkout correction: the OW developer builder wrote `BUILD_INPUTS.json`
+using Windows-default CRLF while Git stored LF. Its outer MANIFEST/module-map hash
+therefore described pre-normalization bytes. A raw-byte regression reproduced
+RED, then all four distribution tests passed after the single `newline="\n"`
+fix. The 9,410-byte OW wheel (SHA256
+`15b03bdd26588e6b7615386ffb27665fecd6b6431520128744be31879c87f5e0`)
+and all runtime modules remain byte-identical. Independent review confirmed the
+cause and missed outer-hash layer; the repaired OW repository uses new tag
+`1.0.1`, retaining `1.0.0`. Final source/mapping/package metadata are refreshed
+from canonical LF bytes. Counts below describe the earlier regression snapshot;
+this adds one focused build-metadata regression, not a new runtime requirement or
+another full installation/acceptance cycle.
+
 Baseline main: `acb310cf2531e2a95e59673a5b0811342e836a17` (4.4.5). Current method/tools: 4.5.0; BI/WebBI: 1.1.1. New independent OW helper/probe products and newly extracted repository tags start at 1.0.0; existing product versions do not go backwards. This section is source/developer verification, not a claim that deployment or run07 has begun. Historical evidence below retains its original versions.
 
 - Preparation checks present components, exact current identities/endpoints, essential role understanding/Eval, usable BI and Temporal. Ordinary Run startup no longer runs a development conformance suite, full seven-leg rehearsal, compiler or dependency assembly. Preparation time is an efficiency aspiration only: no 10/20-minute admission timeout, forced stop or failure gate was added. Fault repair rechecks affected conditions, not all preparation from zero.

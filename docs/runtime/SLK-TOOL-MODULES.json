@@ -90,14 +90,14 @@
       "tool": "slk-overwatch-tools",
       "prefix": "src/slk_overwatch_tools",
       "repository": "https://github.com/DWG7318/slk-overwatch-tools.git",
-      "commit": "3aac39089f8e0ea681bdf0c4435b4573f0e33f6c",
-      "repository_tag": "1.0.0",
+      "commit": "61a0eea936d609f5aa87efd4e4f6f6c271a33eec",
+      "repository_tag": "1.0.1",
       "product_version": "1.0.0",
       "dependencies": [],
       "artifact_indices": [
         {
           "path": "src/slk_overwatch_tools/artifacts/BUILD_INPUTS.json",
-          "sha256": "0c508920795d4347eb5242193079955faafd5bf16fecced5787de18181d84ce8"
+          "sha256": "a23fea9b2762dd07d8252c5f63bad6b93ef009f56ca8307a9ffd04e63811a76d"
         }
       ]
     },
