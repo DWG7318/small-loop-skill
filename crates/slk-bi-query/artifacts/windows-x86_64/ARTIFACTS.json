@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "b53f4fe08323d040d5aa3b8d75c1ae55cea6d15880a6711f4b28cafc8c0fcf94",
-        "size": 1247976
+        "sha256": "eb9a1b9496b7976526adf115446c1a8461c3a141f8fd6cc63bffb2b4a83296e0",
+        "size": 1248003
       }
     ],
-    "sha256": "b53f4fe08323d040d5aa3b8d75c1ae55cea6d15880a6711f4b28cafc8c0fcf94",
-    "size": 1247976
+    "sha256": "eb9a1b9496b7976526adf115446c1a8461c3a141f8fd6cc63bffb2b4a83296e0",
+    "size": 1248003
   },
   "build": {
     "commands": [
@@ -16,7 +16,7 @@
       "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
       "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
     ],
-    "release_batch_sha256": "74f79f3234ce520d1340afd97e2bd280d0ad4f528162bbf2beadbe67cd523d7b",
+    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
     "source_hash_mode": "sha256-raw",
     "toolchains": [
       "cargo 1.94.0 (85eff7c80 2026-01-15)",
@@ -27,15 +27,15 @@
   "payload": [
     {
       "path": "bin/slk-bi-query.exe",
-      "sha256": "fa6649789d68e55e7c41535b9502f966837975c167e67c2c6f51ddb724341819",
-      "size": 2473984
+      "sha256": "71a2d41bf78ce586d19b8342569e92defd237dfcd5db6e5aad1d8f37dfb55545",
+      "size": 2476544
     }
   ],
-  "product_version": "4.5.1",
+  "product_version": "4.5.2",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "882b94c72af9eb83645f07b7fcbd21abc6a4f46d8de74369510579fe12c96a90",
-    "Cargo.toml": "f05167e6cb957dded0019d2e440e2361add52fd5034df0276ae980cd90121fdb",
+    "Cargo.lock": "9ffc5b249aef1db4e1f775bbffa9ee33add28a0a6cc7fbc01d44690896be04f5",
+    "Cargo.toml": "6dfb407e999adcae77ab0ff810b8e7fb5221bc33b59ebd899467e6c37f4209db",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "882ff1ce8bb3a2465625ec674fbe217685194c9af186c97e54e1add3e5820445",
     "src/main.rs": "89a16f9a393658a7bf62ec772559ce8374167d4019ef6a7b142c073341ec5c7b",

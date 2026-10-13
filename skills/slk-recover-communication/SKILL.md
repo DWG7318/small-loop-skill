@@ -26,4 +26,4 @@ description: Use when an active Small Loop Skill (SLK) Run has an exact delivery
 
 报告原样保存/独立投递，不等 ACK/TOKEN/Temporal；维护失败另记，正文/格式/退出码不补造 D0/D1/D2、启动、接手或 TOKEN。旧格式/pre-D0/partial/context/terminal 自动消费退役，历史 FAIL/原件只读，不为模板重跑 Agent。
 
-恢复交接是本次最后任务动作；有界操作后结束，不用正时长 `wait_threads`、接收者轮询、无限 retry、daemon、自唤醒或 post-turn/background 脚本。REQUESTED/PAUSED 不开新工程，仅按原暂停边界闭合精确在途输出/ACK/commit-only。OW 只观察/报告 Supervisor，不 relay、exact retry、写 BI/工程事实或 TOKEN；runtime guard 只阻断下一 CELL，不停当前 CELL、不自动暂停 Run 或扣报告。
+恢复交接是本次最后工程动作；Worker/Checker 闭合后结束本次激活。Supervisor 完成现场补漏后仍 active，以有界原生等待接收结果/OW 报告；不用忙轮询、无限 retry、daemon、自唤醒或 post-turn/background 脚本。REQUESTED/PAUSED 不开新工程，仅按原暂停边界闭合精确在途输出/ACK/commit-only。OW 只观察/报告 Supervisor，不 relay、exact retry、写 BI/工程事实或 TOKEN；runtime guard 只阻断下一 CELL，不停当前 CELL、不自动暂停 Run 或扣报告。

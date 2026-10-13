@@ -118,7 +118,50 @@ def _executor(endpoint: Endpoint, envelope: Envelope) -> str:
     return str(caller)
 
 
-def validate_desktop_address(address: Mapping[str, Any], *, attempt: Attempt | None = None) -> list[str]:
+def _current_desktop_plugin() -> tuple[Path, dict[str, str]]:
+    """Use only the enabled configured bundled package, never search cache versions."""
+    try:
+        import tomllib
+        home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+        if not home.is_absolute():
+            raise ValueError("Codex home is not absolute")
+        config_path = home / "config.toml"
+        config = tomllib.loads(config_path.read_text(encoding="utf-8-sig"))
+        if config.get("plugins", {}).get("codex-app-tools@openai-bundled", {}).get("enabled") is not True:
+            raise ValueError("configured current Desktop plugin is not enabled")
+        source = config["marketplaces"]["openai-bundled"]["source"]
+        if not isinstance(source, str) or not Path(source).is_absolute():
+            raise ValueError("configured bundled marketplace is not absolute")
+        marketplace = Path(source).resolve(strict=True)
+
+        def inside(path: Path, root: Path) -> Path:
+            resolved = path.resolve(strict=True)
+            if not resolved.is_relative_to(root):
+                raise ValueError("current Desktop package escaped its configured source")
+            return resolved
+
+        catalog = _read_object(inside(marketplace / ".agents/plugins/marketplace.json", marketplace), "bundled marketplace")
+        plugins = [item for item in catalog.get("plugins", []) if isinstance(item, Mapping)
+                   and item.get("name") == "codex-app-tools"]
+        if catalog.get("name") != "openai-bundled" or len(plugins) != 1 or plugins[0]["source"]["source"] != "local":
+            raise ValueError("configured current Desktop plugin source is ambiguous")
+        relative = plugins[0]["source"]["path"]
+        if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+            raise ValueError("current Desktop package must be relative to its configured marketplace")
+        plugin = inside(marketplace / relative, marketplace)
+        metadata = _read_object(inside(plugin / ".codex-plugin/plugin.json", plugin), "current Desktop plugin")
+        if metadata.get("name") != "codex-app-tools" or metadata.get("mcpServers") != "./.mcp.json":
+            raise ValueError("current Desktop package identity changed")
+        server = inside(plugin / "server.mjs", plugin)
+        if not server.is_file():
+            raise ValueError("current Desktop server is unavailable")
+        return server, {"config_path": str(config_path), "marketplace": str(marketplace), "plugin": str(plugin)}
+    except (ImportError, OSError, ValueError, KeyError, TypeError, AttributeError, AdapterError) as exc:
+        raise AdapterError("CODEX_DESKTOP_RUNTIME_UNAVAILABLE", "trusted current Desktop runtime is unavailable: " + str(exc)) from exc
+
+
+def resolve_desktop_runtime(address: Mapping[str, Any], *, attempt: Attempt | None = None) -> tuple[list[str], dict[str, Any]]:
+    """Resolve execution separately from the immutable endpoint and delivery identity."""
     binding = address["desktop"]
     if (not isinstance(binding, Mapping)
         or set(binding) != {"caller_thread_id", "model", "reasoning_effort", "plugin_sha256"}
@@ -126,28 +169,49 @@ def validate_desktop_address(address: Mapping[str, Any], *, attempt: Attempt | N
         or binding["reasoning_effort"] not in {"high", "xhigh"}
         or not SHA256.fullmatch(binding["plugin_sha256"])):
         raise AdapterError("CODEX_ADDRESS_INVALID", "Desktop binding must be exact and versioned by plugin hash")
-    command = address["command"]
-    if len(command) != 2 or not all(Path(p).is_absolute() for p in command) or not Path(command[1]).is_file():
+    requested = address["command"]
+    if len(requested) != 2 or not all(Path(p).is_absolute() for p in requested):
         raise AdapterError("CODEX_ADDRESS_INVALID", "Desktop command must name installed runtime and plugin files")
-    if hashlib.sha256(Path(command[1]).read_bytes()).hexdigest() != binding["plugin_sha256"]:
-        raise AdapterError("CODEX_DESKTOP_PLUGIN_CHANGED", "prepared Desktop plugin changed; repeat readiness")
-    if Path(command[0]).is_file():
-        return list(command)
-    if Path(command[0]).exists() or Path(command[0]).name.lower() not in {'node', 'node.exe'}:
-        raise AdapterError('CODEX_DESKTOP_EXECUTABLE_MISSING', 'configured Desktop runtime is missing')
-    resolved = shutil.which('node.exe') or shutil.which('node')
-    if not resolved or not Path(resolved).is_file():
-        raise AdapterError('CODEX_DESKTOP_EXECUTABLE_MISSING', 'current Desktop Node runtime is unavailable')
-    rebound = [str(Path(resolved).resolve()), command[1]]
-    if attempt is not None:
+    command = list(requested)
+    configured_source = None
+    if Path(command[1]).is_file():
+        if hashlib.sha256(Path(command[1]).read_bytes()).hexdigest() != binding["plugin_sha256"]:
+            raise AdapterError("CODEX_DESKTOP_PLUGIN_CHANGED", "prepared Desktop plugin changed; repeat readiness")
+    elif Path(command[1]).exists() or Path(command[1]).is_symlink():
+        raise AdapterError("CODEX_ADDRESS_INVALID", "prepared Desktop plugin is not a regular file")
+    else:
+        plugin, configured_source = _current_desktop_plugin()
+        command[1] = str(plugin)
+    node_rebound = not Path(command[0]).is_file()
+    if node_rebound:
+        if Path(command[0]).exists() or Path(command[0]).name.lower() not in {'node', 'node.exe'}:
+            raise AdapterError('CODEX_DESKTOP_EXECUTABLE_MISSING', 'configured Desktop runtime is missing')
+        resolved = shutil.which('node.exe') or shutil.which('node')
+        if not resolved or not Path(resolved).is_file():
+            raise AdapterError('CODEX_DESKTOP_EXECUTABLE_MISSING', 'current Desktop Node runtime is unavailable')
+        command[0] = str(Path(resolved).resolve())
+    if os.name == "nt":
+        # Node's ESM entrypoint rejects extended paths; retain the same file.
+        command = ["\\\\" + part[8:] if part.startswith("\\\\?\\UNC\\") else
+                   part[4:] if part.startswith("\\\\?\\") else part for part in command]
+    provenance = {"command": command, "plugin_sha256": hashlib.sha256(Path(command[1]).read_bytes()).hexdigest(),
+                  "requested_command": list(requested), "requested_plugin_sha256": binding["plugin_sha256"],
+                  "address_sha256": canonical_json_sha256(address)}
+    if configured_source is not None:
+        provenance["configured_source"] = configured_source
+    if node_rebound and attempt is not None:
         _write_or_match(attempt, 'command-rebind.json', {
             'schema_version': 'slk.codex-desktop-command-rebind/v1',
             'reason': 'configured_desktop_node_missing', 'thread_id': address['thread_id'],
             'address_sha256': canonical_json_sha256(address), 'plugin_sha256': binding['plugin_sha256'],
-            'requested_command': list(command), 'resolved_command': rebound,
-            'resolved_executable_sha256': hashlib.sha256(Path(rebound[0]).read_bytes()).hexdigest(),
+            'requested_command': list(requested), 'resolved_command': command,
+            'resolved_executable_sha256': hashlib.sha256(Path(command[0]).read_bytes()).hexdigest(),
         })
-    return rebound
+    return command, provenance
+
+
+def validate_desktop_address(address: Mapping[str, Any], *, attempt: Attempt | None = None) -> list[str]:
+    return resolve_desktop_runtime(address, attempt=attempt)[0]
 
 
 class DesktopClient(JsonRpcProcess):
@@ -240,6 +304,7 @@ def _readback_result(
     item: Mapping[str, Any],
     prompt_sha256: str,
     caller: str,
+    native_reader: Mapping[str, Any] | None = None,
 ) -> DeliveryResult:
     if turn.get("status") not in {"completed", "inProgress", "active"}:
         raise AdapterError("CODEX_TURN_FAILED", "Desktop native turn did not complete successfully")
@@ -254,6 +319,8 @@ def _readback_result(
         "message_id": envelope.message_id,
         "platform_item": dict(item),
     }
+    if native_reader is not None:
+        proof["native_reader"] = dict(native_reader)
     _write_or_match(attempt, "desktop-readback.json", proof)
     started = make_native_start(
         adapter=endpoint.adapter,
@@ -381,7 +448,7 @@ def validate_late_desktop_start(
     proof = _read_object(proof_path, "Desktop readback proof")
     item = proof.get("platform_item")
     if (
-        set(proof) != {
+        set(proof) - {"native_reader"} != {
             "thread_id", "turn_id", "turn_status", "platform_item_id",
             "caller_thread_id", "message_id", "platform_item",
         }
@@ -393,6 +460,7 @@ def validate_late_desktop_start(
         or not isinstance(proof.get("platform_item_id"), str)
         or not isinstance(item, Mapping)
         or item.get("id") != proof.get("platform_item_id")
+        or ("native_reader" in proof and not isinstance(proof["native_reader"], Mapping))
     ):
         raise AdapterError(
             "CODEX_DESKTOP_LATE_START_INVALID", "late Desktop readback identity changed"
@@ -491,7 +559,10 @@ def consume_desktop_readback(
         )
     expected = _delegation(prompt, caller)
     timeout = float(address["startup_timeout_seconds"])
-    client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
+    # A late reader may use a later installed plugin. Do not overwrite the
+    # original send's command-rebind evidence or append files to its failure.
+    command, native_reader = resolve_desktop_runtime(address)
+    client = DesktopClient(command, Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
             "clientInfo": {"name": "slk_transport_desktop_readback", "version": "4.4.5"}}, timeout)
@@ -510,7 +581,8 @@ def consume_desktop_readback(
             raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "multiple native items claim this exact delivery")
         if not matches:
             raise AdapterError("CODEX_DESKTOP_READBACK_UNPROVED", "original accepted send still lacks exact native proof; do not resend")
-        return _readback_result(endpoint, envelope, attempt, *matches[0], prompt_sha256, str(caller))
+        return _readback_result(endpoint, envelope, attempt, *matches[0], prompt_sha256, str(caller),
+            native_reader if command != list(address["command"]) else None)
     except TimeoutError as error:
         raise AdapterError("CODEX_RPC_TIMEOUT", "Desktop native readback timed out; do not resend") from error
     finally:
@@ -524,7 +596,8 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
     prompt = _prepare_prompt(prompt, envelope, attempt, caller)
     expected = _delegation(prompt, caller)
     timeout = float(address["startup_timeout_seconds"])
-    client = DesktopClient(validate_desktop_address(address, attempt=attempt), Path(str(address["cwd"])))
+    command, native_runtime = resolve_desktop_runtime(address, attempt=attempt)
+    client = DesktopClient(command, Path(str(address["cwd"])))
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
             "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.5"}}, timeout)
@@ -570,7 +643,8 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
             "model": binding["model"], "thinking": binding["reasoning_effort"], "prompt": prompt}, caller, timeout)
         attempt.write_json_once("desktop-send.json", {"thread_id": target, "caller_thread_id": caller,
             "message_id": envelope.message_id, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
-            "requested_model": binding["model"], "requested_effort": binding["reasoning_effort"], "result": dict(sent)})
+            "requested_model": binding["model"], "requested_effort": binding["reasoning_effort"], "result": dict(sent),
+            **({"native_runtime": native_runtime} if command != list(address["command"]) else {})})
         if sent.get("threadId") != target:
             raise AdapterError("CODEX_THREAD_ID_MISMATCH", "Desktop acknowledged a different target")
         deadline, request_id, proven = time.monotonic() + timeout, 5, None

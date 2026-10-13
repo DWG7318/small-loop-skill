@@ -1,7 +1,7 @@
 """Read-only, current-Codex rollout adapter for one parent-owned native child.
 
 This private JSONL format is not a stable platform API or cryptographic proof.
-Only the registered file under this host's Codex sessions root is read. No child
+Only explicitly registered files under this host's Codex sessions root are read. No child
 tool activity, host identity, engineering authority or continued life is inferred.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any, Mapping
 from slk_overwatch_tools.native_records import (
     CALL_ID, OverwatcherSubagentError, native_text as _text, native_object as _object,
     native_timestamp as _timestamp, native_execution as _execution, spawn_call_id as _spawn_id,
-    read_codex_subagent_snapshot as _snapshot,
+    read_codex_subagent_snapshot as _snapshot, native_source_paths as _source_paths,
 )
 
 from .native_activity import (
@@ -49,6 +49,10 @@ CHILD_PATH = re.compile(r"^/root(?:/[a-z0-9_]+)+$")
 
 def _fields(value: Mapping[str, Any], *, proof: bool = False) -> frozenset[str]:
     base = PROOF_FIELDS if proof else REQUEST_FIELDS
+    if "native_source_paths" in value:
+        base = (base - {"native_source_path"}) | {"native_source_paths"}
+        if proof:
+            base |= {"source_metadata", "record_sources"}
     if "child_source_path" in value:
         base |= {"child_source_path"}
         if proof:
@@ -59,7 +63,7 @@ def _fields(value: Mapping[str, Any], *, proof: bool = False) -> frozenset[str]:
 
 
 def _identity(value: Mapping[str, Any]) -> None:
-    if value.get("method_version") not in {"4.5.0", "4.5.1"}:
+    if value.get("method_version") not in {"4.5.0", "4.5.1", "4.5.2"}:
         raise OverwatcherSubagentError("subagent OW method version is unsupported")
     for field in ("run_id", "role_instance_id", "endpoint_ref"):
         _text(value.get(field), field)
@@ -83,19 +87,18 @@ def _identity(value: Mapping[str, Any]) -> None:
         previous_kind, previous_id = _execution(value.get("previous_native_execution_id"))
         if previous_id == call_id or (previous_kind == "codex-subagent-spawn" and previous_id != value["spawn_call_id"]):
             raise OverwatcherSubagentError("followup previous activation does not match")
-    source = Path(_text(value.get("native_source_path"), "native_source_path"))
-    if not source.is_absolute():
-        raise OverwatcherSubagentError("native source must be absolute")
-    try:
-        relative = source.resolve(strict=True).relative_to(CODEX_SESSIONS_ROOT.resolve(strict=True))
-    except (OSError, ValueError) as exc:
-        raise OverwatcherSubagentError("native source is outside this host's Codex sessions root") from exc
-    # Current Codex layout, including the Desktop executor suffix if present.
-    if (len(relative.parts) != 4 or not re.fullmatch(r"\d{4}/\d{2}/\d{2}", "/".join(relative.parts[:3]))
-        or not re.fullmatch(r"rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-"
-                            + re.escape(parent["session_id"]) + r"(?:_[0-9a-f-]+)?\.jsonl", relative.name)
-        or source.is_symlink() or not source.is_file()):
-        raise OverwatcherSubagentError("native source is not this parent's exact Codex rollout")
+    for source_path in _source_paths(value):
+        source = Path(source_path)
+        try:
+            relative = source.resolve(strict=True).relative_to(CODEX_SESSIONS_ROOT.resolve(strict=True))
+        except (OSError, ValueError) as exc:
+            raise OverwatcherSubagentError("native source is outside this host's Codex sessions root") from exc
+        # Current Codex layout, including the Desktop executor suffix if present.
+        if (len(relative.parts) != 4 or not re.fullmatch(r"\d{4}/\d{2}/\d{2}", "/".join(relative.parts[:3]))
+            or not re.fullmatch(r"rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-"
+                                + re.escape(parent["session_id"]) + r"(?:_[0-9a-f-]+)?\.jsonl", relative.name)
+            or source.is_symlink() or not source.is_file()):
+            raise OverwatcherSubagentError("native source is not this parent's exact Codex rollout")
     if "child_source_path" in value:
         child_source = Path(_text(value["child_source_path"], "child_source_path"))
         try:
@@ -171,7 +174,7 @@ def _proof(path: Path, digest: str, started_path: Path) -> dict[str, Any]:
     if set(value) != _fields(value, proof=True) or value.get("schema_version") != PROOF_SCHEMA:
         raise OverwatcherSubagentError("subagent OW proof is not closed")
     _identity(value)
-    for field in _fields(value, proof=True) - _fields(value) - {"schema_version"}:
+    for field in _fields(value, proof=True) - _fields(value) - {"schema_version", "source_metadata", "record_sources"}:
         _text(value[field], field)
         if field.endswith("_sha256") and not SHA256.fullmatch(value[field]):
             raise OverwatcherSubagentError("subagent OW proof digest is invalid")
@@ -179,6 +182,25 @@ def _proof(path: Path, digest: str, started_path: Path) -> dict[str, Any]:
             raise OverwatcherSubagentError("subagent OW proof native call_id is invalid")
         if field.endswith("_timestamp") or field == "checked_at":
             _timestamp(value[field])
+    if "native_source_paths" in value:
+        expected = {"spawn_call", "spawn_output", "sample_call", "sample_output"}
+        if "previous_native_execution_id" in value:
+            expected |= {f"{prefix}_{part}" for prefix in ("activation", "previous_activation", "pre_activation_sample") for part in ("call", "output")}
+        if "child_source_path" in value:
+            expected.add("child_link")
+        sources, metadata = value["record_sources"], value["source_metadata"]
+        if (not isinstance(sources, dict) or set(sources) != expected or not isinstance(metadata, list)
+            or len(metadata) != len(value["native_source_paths"])):
+            raise OverwatcherSubagentError("native source provenance is not closed")
+        for location in [*sources.values(), *metadata]:
+            if (not isinstance(location, dict) or set(location) != {"path", "line", "sha256"}
+                or location.get("path") not in value["native_source_paths"] or type(location.get("line")) is not int
+                or location["line"] < 1 or not isinstance(location.get("sha256"), str)
+                or not SHA256.fullmatch(location["sha256"])):
+                raise OverwatcherSubagentError("native source record location is invalid")
+        if ([item["path"] for item in metadata] != value["native_source_paths"]
+            or any(location["sha256"] != value[key + "_sha256"] for key, location in sources.items())):
+            raise OverwatcherSubagentError("native source provenance differs from original record digests")
     if value["agent_status"] != "RUNNING" or sha256_file(started_path) != value["started_sha256"]:
         raise OverwatcherSubagentError("subagent OW proof does not match its running native start")
     return value
@@ -291,6 +313,10 @@ def subagent_overwatcher_probe(proof_path: Path, *, proof_sha256: str,
             or any(original[field] != proof[field] for field in fields if field.startswith("sample_"))
             or original["agent_status"] != proof["agent_status"]):
             raise OverwatcherSubagentError("original native records changed after attestation")
+        if "native_source_paths" in request:
+            original_sources = {**snapshot["record_sources"], **original["record_sources"]}
+            if snapshot["source_metadata"] != proof["source_metadata"] or original_sources != proof["record_sources"]:
+                raise OverwatcherSubagentError("original native source provenance changed after attestation")
         if "child_source_path" in request:
             linkage_fields = ("child_session_id", "child_link_sha256")
             if snapshot["agent_status"] == "RUNNING":

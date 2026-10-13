@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "ec9128446dcf17e480e9a13498c064f7b110c0240d97034537cca950cba57f2f",
-        "size": 1936499
+        "sha256": "8d45ae6e034b73740113b197259a0de2295275d5aa32093522fa6fdea8cba850",
+        "size": 1957648
       }
     ],
-    "sha256": "ec9128446dcf17e480e9a13498c064f7b110c0240d97034537cca950cba57f2f",
-    "size": 1936499
+    "sha256": "8d45ae6e034b73740113b197259a0de2295275d5aa32093522fa6fdea8cba850",
+    "size": 1957648
   },
   "build": {
     "commands": [
@@ -16,7 +16,7 @@
       "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
       "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
     ],
-    "release_batch_sha256": "74f79f3234ce520d1340afd97e2bd280d0ad4f528162bbf2beadbe67cd523d7b",
+    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
     "source_hash_mode": "sha256-raw",
     "toolchains": [
       "cargo 1.94.0 (85eff7c80 2026-01-15)",
@@ -27,18 +27,18 @@
   "payload": [
     {
       "path": "bin/slk-state.exe",
-      "sha256": "114983cacda4beb4c085632482b6b49668bb884b63beb4e060fba8c6510be82c",
-      "size": 4692992
+      "sha256": "cbdeff805b30c6a0e777823790204eaf760f8ff785357bc2d67a8cc86150beed",
+      "size": 4766208
     }
   ],
-  "product_version": "4.5.1",
+  "product_version": "4.5.2",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "1addac1b273bb593fbba58c1085e478c6af2c07a29d6733082a92351211163fb",
-    "Cargo.toml": "b1224c32c0b94f3a695a60861baf35dbdafc82cc200ceba863bf08fad2ec1772",
+    "Cargo.lock": "05002b443f02245f2c2bce7cf133ab54536cc37e9ce0947d252d493fe8aa0c35",
+    "Cargo.toml": "419684b8f49eb6cfd66ac79e843b400a984252e8f782fabbf064353882fc2537",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "9147a3fc466ccbc6152d804a1220e64e0b0cb753132098d60573c6451bf9e917",
-    "src/main.rs": "c9aa56698a126f866037895ed457a292e3f7458f3482aedd13672fdddd743f16",
+    "src/main.rs": "f1c499e14371bda108a805c27db034dc53f4c1ba0f3dcf399cbaa2a8b1434d9b",
     "tests/cli_contract.rs": "312de3a6d9e1fe70fde70d7231845e35d703313d95e77cdaf23f09ba7c875c19"
   },
   "target": "windows-x86_64",

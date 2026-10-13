@@ -22,7 +22,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 接收本轮先比较 TOKEN 编号/身份及 runtime revision；同号或旧号不改指针。发送者验证不可变 task file 和匹配 started.json 后，通过 commit-delivery-start 原子提交启动、TOKEN、事件和唯一 revision，不预写流转或以终态倒推启动。交接操作按当前角色子 Skill，不复制另一套流程。
 
-业务及记录先完成，已有原始报告保存并独立投递；记录/ACK/Temporal 错误不扣报告，工程交接另核实真实启动与 TOKEN 提交，作为最后任务动作，随后结束。不等/不盯下一角色，保存不等于送达，送达不等于 PASS。Markdown 导出失败只 warning，不改变工程事实。
+业务及记录先完成，已有原始报告保存并独立投递；记录/ACK/Temporal 错误不扣报告，工程交接另核实真实启动与 TOKEN 提交，作为最后工程动作。Worker/Checker 随后结束本次激活、不盯后继；Supervisor 仍 active，以有界原生等待接收结果/OW 报告。保存不等于送达，送达不等于 PASS。Markdown 导出失败只 warning，不改变工程事实。
 
 ## 身份与只读边界
 

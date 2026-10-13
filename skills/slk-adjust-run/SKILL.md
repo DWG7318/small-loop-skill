@@ -29,7 +29,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor de
 
 1. 写入原因、两轮调查或 INCOMPLETE 事实、选择、影响、CELL n/N 与未决风险。计划调整用密封 `supervisor-admin revise-plan`，冻结新 revision RoleHost，更新同一 Run 的 Temporal Host 路径/哈希，不覆盖旧历史。
 2. 需要暂停/参数变更时先用 `$slk-pause-run`：**REQUESTED 不等于 PAUSED**，已证实停稳才按原管理入口版本化；保留精确在途 operation/部分提交，从原节点恢复，不清故障 guard 或重做已完成工作。
-3. 调整及记录完成、相关工作停稳后，以 `Supervisor → Checker` 的 `SLK TOKEN` / `CELL_DISPATCH` 作本次激活最后的任务动作。沿 `$slk-dispatch-cell` 由 Checker 派首个后继 CELL；不得直接发 Worker。原宿主核验 native start 并原子提交 TOKEN，确认正确成员接手且本 Run OW 巡查/Temporal 保障已恢复；未闭合只恢复原交接并如实列下一动作。成功后结束本次激活，不在线守普通 CELL。
+3. 调整及记录完成、相关工作停稳后，以 `Supervisor → Checker` 的 `SLK TOKEN` / `CELL_DISPATCH` 作本次工程处置最后的任务动作。沿 `$slk-dispatch-cell` 由 Checker 派首个后继 CELL；不得直接发 Worker。原宿主核验 native start 并原子提交 TOKEN，确认正确成员接手且本 Run OW 巡查/Temporal 保障已恢复；未闭合只恢复原交接并如实列下一动作。成功后 Supervisor 保持 active，以有界原生等待接收结果，不接管普通 CELL。
 
 OW 只向所属 Supervisor 报告观察，不替主管恢复成员、选路线、改计划、TOKEN 或 BI。保障失效先修复再派下一 CELL。
 

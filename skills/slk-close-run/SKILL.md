@@ -30,7 +30,7 @@ description: Use when an active Small Loop Skill (SLK) Run has D1 PASS or Superv
 2. Supervisor 按 `$slk-archive-members` 的既有 `close-overwatcher` 操作解除**本 Run**绑定，绑定末轮 cycle 和匹配 revision。OW 是同一真实 Supervisor 的唯一直属 child，平时每 600 秒逐 Run 巡查；解除一个 Run 不停止 child，不影响其他 active/PAUSED Run。全部绑定结束后也只有所属 Supervisor 可决定停止，由退出 hook/二次确认完成；不关闭共享服务。
 3. OW close 改变 revision 后，重新取得当前 revision 的实际 `inspect-run-quiescence` proof，覆盖本 Run 全部 Worker/Checker/Supervisor 旧调用、非持令牌者和 OCRV 实际 executor；仅准确当前主管收尾调用可协调。活调用等原生安全停点/自然退出，UNKNOWN 不当作停止，不猜 PID 或用 archived/completed 标签假停。按[关闭操作](references/close-operations.md)密封原 `supervisor-admin close-run`，写唯一 `RUN_CLOSED`；再通过原客户端结束/核实该 Run **精确** `SLK.Run/SLK.Start` 的实际 COMPLETED 与 close time，最终成功收据才算此操作完成。保留共享 Temporal 服务/Worker、其他 Run pair 和 Supervisor 对话。
 4. 调用 `$slk-record-run` 导出最终 CELL 数、D0、D1 通过数、Supervisor 豁免数、限制与证据路径；Run 为 `CLOSED`，最后 TOKEN 仅保留历史持有人，不再派新工作，不伪造 `TOKEN_CLOSED` 事件。随后用 `$slk-archive-members` 按准确身份逐个 `close-role` Worker/Checker，核对当前及被替换成员的精确端点/归档收据，不对 Supervisor 执行 close-role。只有真实中央收据及投影 `lifecycle=exited`、`display_state=archived`、无 `active endpoint` 才称已归档；计划/命令已发/Session 退出均不够。
-5. 使用过 Cargo 隔离目录时，仅在相关命令全退出后 `slk-cargo cleanup` 此 Run 的精确 runtime；lease 情况按关闭操作参考核实。向 Owner 简报 D0/D1/D2、豁免、限制、完成与未完成收尾、根记录路径。保留 Supervisor 最终交接与证据供后查。
+5. 使用过 Cargo 隔离目录时，仅在相关命令全退出后 `slk-cargo cleanup` 此 Run 的精确 runtime；lease 情况按关闭操作参考核实。向 Owner 简报 D0/D1/D2、豁免、限制、完成与未完成收尾、根记录路径。仍有其他受管 Run 时用进度消息简报，Supervisor 保持 active，不能为关闭一个 Run 而 final 退出；仅所负责范围全部收尾且 OW 停止经确认后正常结束父级。保留最终交接与证据供后查。
 
 任何半提交/失败保留原请求、event ID、native identity、证据和成功部分，只续原操作的未完成后缀；不重做 D2/工程、不换 ID 重发、不因 RUN_CLOSED 已写谎报清理完成。凭据只由可信消费者密封使用，模型/shell 不见明文。
 

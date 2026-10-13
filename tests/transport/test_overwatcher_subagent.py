@@ -113,8 +113,10 @@ def simulated(tmp_path, monkeypatch):
     return reader, source, records, request, request_path, evidence, save, attest, inspect
 
 
-def test_native_running_attestation_is_closed_small_and_reused(simulated) -> None:
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2"])
+def test_native_running_attestation_is_closed_small_and_reused(simulated, method_version) -> None:
     reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    request["method_version"] = method_version
     result = attest()
     started = json.loads((evidence / "started.json").read_text())
     proof = json.loads((evidence / "subagent-overwatcher-proof.json").read_text())
@@ -408,6 +410,190 @@ def test_followup_proves_a_new_execution_but_keeps_original_canonical_task(simul
     validator = Draft202012Validator(schema)
     validator.validate(request)
     validator.validate(proof)
+
+
+def cross_rollouts(simulated, *, followup=True, split=3):
+    """Explicit synthetic files from one parent Session; never discover real logs."""
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    if followup:
+        followup_records(records, request)
+    current = source.with_name(f"rollout-2026-10-11T01-02-04-{PARENT}.jsonl")
+    current_records = [json.loads(json.dumps(records[0])), *records[split:]]
+    del records[split:]
+    request.pop("native_source_path")
+    request["native_source_paths"] = [str(source), str(current)]
+
+    def save_current():
+        current.write_text("".join(json.dumps(item) + "\n" for item in current_records), encoding="utf-8")
+
+    save_current()
+    return current, current_records, save_current
+
+
+@pytest.mark.parametrize("followup,split", [(False, 3), (True, 3), (True, 2), (True, 8)])
+def test_exact_cross_rollout_sources_keep_parent_child_and_original_record_locations(simulated, followup, split):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    current, current_records, save_current = cross_rollouts(simulated, followup=followup, split=split)
+    result = attest()
+    proof = json.loads((evidence / "subagent-overwatcher-proof.json").read_text())
+    assert inspect(result)["status"] == "ACTIVE"
+    assert proof["native_source_paths"] == [str(source), str(current)]
+    assert proof["record_sources"]["spawn_call"]["path"] == str(source)
+    assert proof["record_sources"]["sample_output"]["path"] == str(current)
+    assert [item["path"] for item in proof["source_metadata"]] == request["native_source_paths"]
+    for location in [*proof["record_sources"].values(), *proof["source_metadata"]]:
+        raw = Path(location["path"]).read_bytes().splitlines()[location["line"] - 1]
+        assert hashlib.sha256(raw).hexdigest() == location["sha256"]
+    assert SECRET not in json.dumps(proof)
+    schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-subagent-overwatcher.schema.json").read_text())
+    validator = Draft202012Validator(schema)
+    validator.validate(request)
+    validator.validate(proof)
+    assert list(validator.iter_errors({**request, "native_source_path": str(source)}))
+    assert list(validator.iter_errors({**request, "native_source_paths": []}))
+    current_records.extend(sample(stamp(), call_id="call_cross_fresh"))
+    save_current()
+    assert inspect(result)["status"] == "ACTIVE"
+    assert attest() == result
+
+
+@pytest.mark.parametrize("followup,split", [(False, 2), (True, 3), (True, 9)])
+def test_cross_rollout_with_linked_child_preserves_provenance_and_uses_fresh_child_sample(simulated, followup, split):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    child_records, link, save_child = linked_child(simulated)
+    current, current_records, save_current = cross_rollouts(simulated, followup=followup, split=split)
+    # The linked child's observation belongs to this activation, not the old spawn.
+    child_records[1:] = sample(stamp(), call_id="call_child_current_activation")
+    save_child()
+    result = attest()
+    proof_path = evidence / "subagent-overwatcher-proof.json"
+    proof = json.loads(proof_path.read_text())
+    location = proof["record_sources"]["child_link"]
+    link_source = source if link in records else current
+    link_records = records if link in records else current_records
+    assert location == {"path": str(link_source), "line": link_records.index(link) + 1,
+        "sha256": hashlib.sha256(json.dumps(link).encode()).hexdigest()}
+    assert proof["child_session_id"] == child_records[0]["payload"]["id"]
+    assert proof["child_meta_sha256"] == hashlib.sha256(json.dumps(child_records[0]).encode()).hexdigest()
+    schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-subagent-overwatcher.schema.json").read_text())
+    Draft202012Validator(schema).validate(proof)
+    frozen = {path: path.read_bytes() for path in (
+        source, current, proof_path, evidence / "started.json", evidence / "subagent-overwatcher-request.json")}
+    child_records.extend(sample(stamp(599), call_id="call_child_after_parent_stale"))
+    save_child()
+    actual = inspect(result, observed_at=stamp(601))
+    assert actual["status"] == "ACTIVE"
+    assert actual["last_event"]["observed_at"] == child_records[-1]["timestamp"]
+    assert actual["last_event"]["detail_sha256"] == hashlib.sha256(json.dumps(child_records[-1]).encode()).hexdigest()
+    assert SECRET not in json.dumps(proof) + json.dumps(actual)
+    assert all(path.read_bytes() == content for path, content in frozen.items())
+
+
+@pytest.mark.parametrize("damage", ["child-meta", "child-link", "child-source-missing", "proof-link-location"])
+def test_cross_rollout_with_linked_child_rejects_drift_despite_fresh_samples(simulated, damage):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    child_records, link, save_child = linked_child(simulated)
+    current, current_records, save_current = cross_rollouts(simulated, followup=True, split=3)
+    child_records[1:] = sample(stamp(), call_id="call_child_current_activation")
+    save_child()
+    result = attest()
+    proof_path = evidence / "subagent-overwatcher-proof.json"
+    if damage == "child-meta":
+        child_records[0]["payload"]["parent_thread_id"] = "another-parent"
+    elif damage == "child-link":
+        link["payload"]["item"]["agent_thread_id"] = "33333333-3333-4333-8333-333333333333"
+    elif damage == "proof-link-location":
+        proof = json.loads(proof_path.read_text())
+        proof["record_sources"]["child_link"]["path"] = str(source)
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+        result["proof_sha256"] = hashlib.sha256(proof_path.read_bytes()).hexdigest()
+    current_records.extend(sample(stamp(), call_id="call_parent_after_link_drift"))
+    child_records.extend(sample(stamp(), call_id="call_child_after_link_drift"))
+    save_current()
+    save_child()
+    if damage == "child-source-missing":
+        Path(request["child_source_path"]).unlink()
+    actual = inspect(result)
+    assert actual["status"] == "UNKNOWN"
+    assert SECRET not in json.dumps(actual)
+
+
+@pytest.mark.parametrize("fault", [
+    "wrong-parent", "missing-meta", "duplicate-meta", "duplicate-path", "both-forms", "reverse-order",
+    "wrong-child", "wrong-followup", "duplicate-call", "duplicate-output", "missing-output",
+    "replacement-child", "stale-post", "future-post", "outside-root", "relative-source",
+])
+def test_cross_rollout_sources_reject_unproved_or_conflicting_evidence(simulated, fault):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    current, current_records, save_current = cross_rollouts(simulated)
+    if fault == "wrong-parent": current_records[0]["payload"]["id"] = "another-parent"
+    elif fault == "missing-meta": current_records.pop(0)
+    elif fault == "duplicate-meta": current_records.append(current_records[0])
+    elif fault == "duplicate-path": request["native_source_paths"].append(str(current))
+    elif fault == "both-forms": request["native_source_path"] = str(source)
+    elif fault == "reverse-order": request["native_source_paths"].reverse()
+    elif fault == "wrong-child": records[2]["payload"]["output"] = json.dumps({"task_name": "/root/other"})
+    elif fault == "wrong-followup": current_records[5]["payload"]["arguments"] = json.dumps({"target": "/root/other"})
+    elif fault == "duplicate-call": current_records.append(records[1])
+    elif fault == "duplicate-output": current_records.append(records[2])
+    elif fault == "missing-output": current_records.pop()
+    elif fault == "replacement-child": current_records.extend([
+        record("function_call", stamp(), namespace="collaboration", name="spawn_agent", call_id="call_replace",
+               arguments=json.dumps({"task_name": "ow"})),
+        record("function_call_output", stamp(), call_id="call_replace", output=json.dumps({"task_name": CHILD})),
+        *sample(stamp(), call_id="call_replaced_list"),
+    ])
+    elif fault in {"stale-post", "future-post"}:
+        offset = -600 if fault == "stale-post" else 600
+        for item in [*records, *current_records]:
+            item["timestamp"] = (datetime.fromisoformat(item["timestamp"].replace("Z", "+00:00")) + timedelta(seconds=offset)).isoformat()
+    elif fault == "outside-root": request["native_source_paths"][1] = str(request_path)
+    elif fault == "relative-source": request["native_source_paths"][1] = current.name
+    save_current()
+    with pytest.raises(reader.OverwatcherSubagentError):
+        attest()
+    assert not (evidence / "subagent-overwatcher-proof.json").exists()
+
+
+@pytest.mark.parametrize("fault", ["metadata-drift", "record-relocated", "spawn-drift", "source-missing", "latest-missing-output", "new-activation", "proof-location"])
+def test_cross_rollout_frozen_sources_are_rechecked_not_refreshed(simulated, fault):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    current, current_records, save_current = cross_rollouts(simulated)
+    result = attest()
+    if fault == "metadata-drift": current_records[0]["payload"]["originator"] = "changed"
+    elif fault == "record-relocated":
+        current_records[1:1] = records[1:]
+        del records[1:]
+    elif fault == "spawn-drift": records[1]["payload"]["arguments"] = json.dumps({"task_name": "ow", "message": "changed"})
+    elif fault == "new-activation": current_records.extend([
+        record("function_call", stamp(), namespace="collaboration", name="followup_task", call_id="call_unbound", arguments=json.dumps({"target": CHILD})),
+        record("function_call_output", stamp(), call_id="call_unbound", output=""),
+    ])
+    current_records.extend(sample(stamp(), call_id="call_new_sample"))
+    if fault == "latest-missing-output": current_records.pop()
+    save_current(); save()
+    if fault == "source-missing": source.unlink()
+    if fault == "proof-location":
+        proof_path = evidence / "subagent-overwatcher-proof.json"
+        proof = json.loads(proof_path.read_text())
+        proof["record_sources"]["spawn_call"]["path"] = str(current)
+        proof_path.write_text(json.dumps(proof))
+        result["proof_sha256"] = hashlib.sha256(proof_path.read_bytes()).hexdigest()
+    assert inspect(result)["status"] == "UNKNOWN"
+
+
+@pytest.mark.parametrize("followup", [False, True])
+def test_cross_rollout_schema_requires_exact_activation_provenance(simulated, followup):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    cross_rollouts(simulated, followup=followup)
+    attest()
+    proof = json.loads((evidence / "subagent-overwatcher-proof.json").read_text())
+    if followup:
+        proof["record_sources"].pop("activation_call")
+    else:
+        proof["record_sources"]["activation_call"] = proof["record_sources"]["spawn_call"]
+    schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-subagent-overwatcher.schema.json").read_text())
+    assert list(Draft202012Validator(schema).iter_errors(proof))
 
 
 @pytest.mark.parametrize("fault", [

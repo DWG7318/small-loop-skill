@@ -167,9 +167,9 @@ def _compact_evidence(path: Path) -> dict[str, Any]:
 
 
 def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
-    if (set(value) - {"management_context"} != REQUEST_FIELDS
+    if (set(value) - {"management_context", "evidence_refs"} != REQUEST_FIELDS
         or value.get("schema_version") != REQUEST_SCHEMA):
-        raise RequestError("request must use the v2 field set with optional management_context")
+        raise RequestError("request must use the v2 field set with optional management_context and evidence_refs")
     repository = Path(_nonempty(value["repository"], "repository")).resolve()
     if not repository.is_dir():
         raise RequestError("repository must be an existing directory")
@@ -202,14 +202,48 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
     evidence_paths = value["evidence_files"]
     if not isinstance(evidence_paths, list):
         raise RequestError("evidence_files must be an array")
+    frozen_refs = value.get("evidence_refs", [])
+    if not isinstance(frozen_refs, list):
+        raise RequestError("evidence_refs must be an array")
+    frozen_paths = set()
+    for ref in frozen_refs:
+        if (not isinstance(ref, dict) or set(ref) - {"bytes"} != {"path", "sha256"}
+            or not isinstance(ref["path"], str) or not Path(ref["path"]).is_absolute()
+            or not isinstance(ref["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
+            or ("bytes" in ref and (type(ref["bytes"]) is not int or ref["bytes"] < 0))):
+            raise RequestError("frozen evidence requires an exact absolute path and sha256")
+        path = Path(ref["path"]).resolve()
+        if path in frozen_paths:
+            raise RequestError("duplicate frozen evidence path")
+        frozen_paths.add(path)
     evidence: list[dict[str, Any]] = []
+    private_names = {"native.stderr.txt", "ocrv.stderr.txt", "thinking.txt", "reasoning.txt"}
     for raw_path in evidence_paths:
         path = Path(_nonempty(raw_path, "evidence file")).resolve()
+        if path in frozen_paths:
+            continue  # An overlapping legacy locator never overrides a frozen hash.
         if not path.is_file():
             raise RequestError(f"evidence file does not exist: {path}")
-        if path.name.lower() in {"native.stderr.txt", "ocrv.stderr.txt", "thinking.txt", "reasoning.txt"}:
+        if path.name.lower() in private_names:
             continue  # private diagnostics remain archived, not engineering input
         evidence.append(_compact_evidence(path))
+    evidence_gaps = []
+    for ref in frozen_refs:
+        path = Path(ref["path"]).resolve()
+        if path.name.lower() in private_names:
+            evidence_gaps.append({**ref, "reason": "PRIVATE_DIAGNOSTIC"})
+            continue
+        try:
+            item = _compact_evidence(path)
+        except OSError:
+            evidence_gaps.append({**ref, "reason": "UNAVAILABLE"})
+            continue
+        if item["sha256"] != ref["sha256"] or ("bytes" in ref and item["bytes"] != ref["bytes"]):
+            evidence_gaps.append({**ref, "reason": "CHANGED", "observed_sha256": item["sha256"],
+                                  "observed_bytes": item["bytes"]})
+            continue
+        item["sha256"] = ref["sha256"]  # The reader is pinned to the original approval.
+        evidence.append(item)
     management = value.get("management_context")
     if "management_context" in value:
         fields = {"management_action", "management_summary", "management_evidence_refs"}
@@ -245,6 +279,9 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
     }
     if management is not None:
         normalized["management_context"] = management
+    if "evidence_refs" in value:
+        normalized["evidence_refs"] = [dict(ref) for ref in frozen_refs]
+        normalized["evidence_gaps"] = evidence_gaps
     return normalized
 
 
@@ -308,6 +345,10 @@ def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
             lines.append("  " + json.dumps(summary, ensure_ascii=False, sort_keys=True))
     else:
         lines.append("- None supplied; do not invent runtime evidence.")
+    if request.get("evidence_gaps"):
+        lines.extend(["", "## Frozen material gaps — these originals were not indexed or read", ""])
+        lines.extend("- " + json.dumps(gap, ensure_ascii=False, sort_keys=True) for gap in request["evidence_gaps"])
+        lines.append("Saved Worker output remains available. Gaps are not acceptance evidence; do not claim whole-CELL PASS without establishing every CELL criterion.")
     for invocation in capabilities["invocations"]:
         lines.append(f"- Optional {invocation['tool']} digest: `{invocation['stdout_sha256']}`")
     lines.extend(["", "Inspect the candidate against every D1 criterion and form your independent preliminary judgment",
@@ -805,6 +846,8 @@ def run(
     _write_json_atomic(index_path, {
         **(native[1] if native is not None else {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
         "native_task_id": invocation, "evidence": request["evidence"],
+        **({"evidence_refs": request["evidence_refs"], "evidence_gaps": request["evidence_gaps"]}
+           if "evidence_refs" in request else {}),
     })
     environment["SLK_CHECKER_EVIDENCE_INDEX"] = str(index_path)
     environment["SLK_CHECKER_EVIDENCE_INDEX_SHA256"] = _sha256(index_path)

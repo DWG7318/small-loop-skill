@@ -3,59 +3,59 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "3890557e4557cc79ed7ad756d13fdfbe47dc6655a965b63427dc1a0101ec5f95",
-        "size": 417934
+        "sha256": "cccfd6d070bc77a280153935d364ae00241f3132fe4516f9ea3c0b12332340da",
+        "size": 433889
       }
     ],
-    "sha256": "3890557e4557cc79ed7ad756d13fdfbe47dc6655a965b63427dc1a0101ec5f95",
-    "size": 417934
+    "sha256": "cccfd6d070bc77a280153935d364ae00241f3132fe4516f9ea3c0b12332340da",
+    "size": 433889
   },
   "build": {
-    "additional_command": "python -m pip wheel --no-deps --no-build-isolation src/slk_transport",
     "commands": [
       "C:\\Users\\DWG\\AppData\\Roaming\\npm\\pnpm.ps1 --dir D:\\SLK\\apps\\slk-bi tauri build --no-bundle",
       "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
       "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
     ],
-    "release_batch_sha256": "74f79f3234ce520d1340afd97e2bd280d0ad4f528162bbf2beadbe67cd523d7b",
+    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
     "source_hash_mode": "sha256-raw",
     "toolchains": [
       "cargo 1.94.0 (85eff7c80 2026-01-15)",
       "10.6.2",
       "Python 3.14.0"
-    ]
+    ],
+    "wheel_command": "python -m pip wheel --no-deps --no-build-isolation --no-index <exact staged source>"
   },
   "payload": [
     {
       "path": "bin/slk-transport.pyz",
-      "sha256": "f735b26156da786e5533ff0050861e2d1bfe6f0868e7e871dd9c83a428b18688",
-      "size": 214609
+      "sha256": "372ef97c3bf3cdcd1c0de90085685c0a0b4b60c02ecf8786e9bc7c060d7ba7be",
+      "size": 223047
     },
     {
-      "path": "wheels/slk_transport-4.5.1-py3-none-any.whl",
-      "sha256": "edc7ce1e88fa4991ef957b34e713655e24f233124079bad71fa97fb4aa70e60e",
-      "size": 211952
+      "path": "wheels/slk_transport-4.5.2-py3-none-any.whl",
+      "sha256": "8b1d07cef38679df2bb8589ea1ce6075ffa1995b4602f2e02bca2b274f83a779",
+      "size": 219723
     }
   ],
-  "product_version": "4.5.1",
+  "product_version": "4.5.2",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
     ".gitignore": "27b0d681f273f0d9ce0e8666005ec5dc2c621e1de4a868384291b7995479ade2",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
-    "README.md": "a914b27e31a54600a993e1007edde5d13811bb96d3abc2eb4939a3cd1b1e4466",
-    "__init__.py": "4801c1f021d1c88390f0772b4f057acea28d520d533222c9e3032dfffe99622b",
+    "README.md": "eac40c9426a6dad2aabad3adbeb32e78b9b3cba07023e47bc90e2c3a559595b2",
+    "__init__.py": "ae0d23f4fa9896ba4a07e591ff91ab7227ea5f9806938db5f2f415ae8f34d7d6",
     "active_writer.py": "1bd015d3aab31dcdd69a665041178faea269ca8044002c098124e2e8825419b7",
     "adapters/__init__.py": "fcfc80e34f8a0ba71be2512ae8b8696b47f4b7795c7865eb22804d0ec7ec86d1",
     "adapters/base.py": "9e0773330b15e7d261e8e47fb38fbe21a080a0cef9755fd39d6738e4bf0336f5",
     "adapters/codex.py": "2402386b95952af1cd3ba3e2e5b03292c04a786a492e484d5f27890a1c6d1148",
-    "adapters/codex_desktop.py": "71dd90716cfef87ab2badc124cd1e3a4ab2af423d0b6c3ad0f4fe12982ced2e9",
+    "adapters/codex_desktop.py": "e6ccfd217f1d1661df6f29d644b19b8de650852b919f893054268c13fb441d70",
     "adapters/dsh.py": "db10b5fc8a8727d7f05f4b8b3d414fb2ad3bc91e9d8d36c7ee08cd04615a4fb1",
-    "adapters/ocrv.py": "26b3fc89ba041375399cdceecb7fa5370e139f069030709db59926bc7c1c8f14",
+    "adapters/ocrv.py": "3bc8381245088550311f68c8df1030c7854c47be7e68afab0ef26377863085c2",
     "build_zipapp.py": "02004dd1cadb70103022c396351c7f922bf2b21302c92d17a6fda0722e78dff7",
     "checker_completion.py": "80d0fa6241f92770e6e036e69fd04c59640f03644006e3e0cdd45bb4d6f7769a",
     "checker_escalation.py": "572f861cd8a99d727933493c87982517c30c3e8947011353f95e1f1930aae001",
     "checker_management.py": "c4e67a48c31c61affb2f3d010591005cfe477fc637dad4bbe900043318575675",
-    "cli.py": "e723f62eabe1382c45a6459b1fbaaac0006329b5489f1c1368174ec6d61608b9",
+    "cli.py": "3ec4da044cc61809ae2564b96e21043836d2d0840236d02733afb920f1a5e0e9",
     "context_review.py": "c0c6b5d08bbcc9b8dd05d6ffc23057c246e8cf124014c9a16c36b700bbb657d4",
     "contracts.py": "ceead879574bd4bf608c916d256754bb4116d83f34a36f20054f908bc336a4dc",
     "desktop_current_turn.py": "1d17c34dd5b34815368c6d194191692745e5cfe46058eefcc66ba569a66442bf",
@@ -68,21 +68,21 @@
     "native_activity.py": "d8feecf2b5d9c4b7eedee51b5b711382798a55479a6a8c18f885dfd86731b577",
     "native_ocrv.py": "aaa055a0954b840e0bbe39c2431ec9a736a64a2920fb5cdcf8fa502b15f7e99e",
     "overwatcher_admin.py": "6f1732c1c1eccd795bab8809e485217932b385a47db89ce4c81e048741472794",
-    "overwatcher_continuity.py": "147b80a2784a682d4fcab98f7d9292db68d2d7cd3886207201b6743e7f40144d",
+    "overwatcher_continuity.py": "aa3ad284aff5a530f4f4f8c495a74d2aa4d1019f37525063c9b21153bb8b51a5",
     "overwatcher_desktop.py": "ad5f1c6be33eb248e0ca7aeb026f586ff5bea3f85ffa584d6ab8c5c2230cfc3c",
-    "overwatcher_subagent.py": "30612af23b2129a242db65217331e69cf59e1adb36ab26b5399f1d597223f842",
+    "overwatcher_subagent.py": "c3e5338e9d0c56f0fb55f6bec7991fa2635846d736510c044a45a1ccc417d0bc",
     "partial_review.py": "09573bc4a5d990e76523f3a1e3b05de53550e7de0f4db16c6e0aa785a343e419",
     "platform_records.py": "987cd07c7bfcc041f146dea608e7622b3272dfc42a338c36b0bcd6f2f2138c5c",
     "pre_start_rejection.py": "0c0fdb40d5c150aa47fdfd571d10ede3014a8c6d7ed2843841b77118cfd97edb",
     "process.py": "bd2f52a94e183b1eb33c59880821df7828112a92ce6463f524a78e567cd4e30f",
-    "pyproject.toml": "08570dcc208825cf3714492a5eacbfbf7cab0a2c7d7b48ff528d81276ff85d6a",
+    "pyproject.toml": "f0937cdcffe3b737a3aaa09cc8077a255ee8ee4e627d9ec6f8eaf2c6586bd610",
     "recovery.py": "7366ad1534b763ae3957d4bad576d5e008ab1d2b7a1f0d3cb2a10e065dae0470",
-    "role_eval.py": "2f8a07179e71b1423ca35092c525c34bf1a23b1d01968b31cbd359fcad982111",
-    "role_host.py": "a0974ce52a2712d0b1ce28d1dda5b2068f4440e738134e3526ef85a835cfe1ff",
-    "run_readiness.py": "650188adfac92960202d88c71ec2152c6347491f2fa80dcc5de6c866ccce86f1",
+    "role_eval.py": "c1a9686d0e68fdac85147ffbff3b1cf35d8fa3e03a11cc509a819727fdc96300",
+    "role_host.py": "146f26d95c6f0adfc7361e157619d900af1bc763f029aff87ad92e80a963dc3a",
+    "run_readiness.py": "aa7c031b497b6b746b5f73d6b92f91bfdd97c05017d20e1d3e00ee79eef8b1db",
     "runtime_binding_migration.py": "a83e7d56fb3ff97a08ddfab5f2be46fa43dfca54f6474ac35b8a7a8aba3eabb6",
     "subprocess_watch.py": "1ea11c75dabc955650f52e6e2510c408a81228b5a66d3602ece35a446fb221b9",
-    "supervisor_admin.py": "fe7cf1862d92e0c993c8aedc87302186decbaf45cfd64c2b7b7b2761ffc62a91",
+    "supervisor_admin.py": "56fbc46694b13aedbb4756b1e174e054730869dcda97772ebce444317a11da83",
     "supervisor_notification.py": "64f7404301bef70e6fdf092fb8f1ebf10a132ea200fe72a88989aaf6f043861a",
     "task_file.py": "8aaf5bd2c5ba4dc440938d92de34248f4d45496b543b308dbca8ac3829f2d8ef",
     "temporal_reload.py": "16216914186d3ae30a4bddbce9e9c30ca0ac18b7feba6e05aa9ac08fe261adde",

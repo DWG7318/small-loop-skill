@@ -33,12 +33,14 @@
     },
     "provisionRequest": {
       "type": "object", "additionalProperties": false,
+      "if": {"properties": {"operation": {"const": "replace-overwatcher"}}},
+      "then": {"properties": {"issued_role": {"const": "overwatcher"}}},
       "required": ["schema_version", "run_id", "supervisor_role_instance_id", "expected_runtime_revision", "sealed_credential_path", "state_command", "operation", "operation_request_path", "operation_request_sha256", "result_path", "issued_role", "issued_role_instance_id", "credential_destination_path"],
       "properties": {
         "schema_version": {"const": "slk.supervisor-admin/v1"}, "run_id": {"type": "string", "minLength": 1},
         "supervisor_role_instance_id": {"type": "string", "minLength": 1}, "expected_runtime_revision": {"type": "integer", "minimum": 1},
         "sealed_credential_path": {"type": "string", "minLength": 1}, "state_command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-        "operation": {"enum": ["register-role", "bind-overwatcher"]}, "operation_request_path": {"type": "string", "minLength": 1},
+        "operation": {"enum": ["register-role", "bind-overwatcher", "replace-overwatcher"]}, "operation_request_path": {"type": "string", "minLength": 1},
         "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "result_path": {"type": "string", "minLength": 1},
         "issued_role": {"enum": ["checker", "overwatcher"]}, "issued_role_instance_id": {"type": "string", "minLength": 1},
         "credential_destination_path": {"type": "string", "minLength": 1}
@@ -72,11 +74,13 @@
     },
     "provisionResult": {
       "type": "object", "additionalProperties": false,
+      "if": {"properties": {"operation": {"const": "replace-overwatcher"}}},
+      "then": {"properties": {"issued_role": {"const": "overwatcher"}, "sealed_credential": {"properties": {"role": {"const": "overwatcher"}}}}},
       "required": ["schema_version", "status", "run_id", "supervisor_role_instance_id", "operation", "request_sha256", "operation_request_sha256", "state_result", "issued_role", "issued_role_instance_id", "sealed_credential"],
       "properties": {
         "schema_version": {"const": "slk.supervisor-admin-result/v1"}, "status": {"const": "SUPERVISOR_ADMIN_COMPLETED"},
         "run_id": {"type": "string", "minLength": 1}, "supervisor_role_instance_id": {"type": "string", "minLength": 1},
-        "operation": {"enum": ["register-role", "bind-overwatcher"]}, "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "operation": {"enum": ["register-role", "bind-overwatcher", "replace-overwatcher"]}, "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "operation_request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "state_result": {"type": "object"},
         "issued_role": {"enum": ["checker", "worker", "overwatcher"]}, "issued_role_instance_id": {"type": "string", "minLength": 1},
         "sealed_credential": {

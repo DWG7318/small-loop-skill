@@ -13,7 +13,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a D1 FAIL and the
 
 1. 原 OCRV Checker 用绑定的 `slk_checker_decide(FAIL, message?)` 显式产生 `D1_FAILED`；先封存本人结果/退出，再由同一标准入口的机械后缀发 `D1_FAILURE_ESCALATION` 与 TOKEN 给登记 Supervisor。绑定原失败事件、候选、D1 attempt、CELL 目标与验收条件，附真实发现/证据，不凑字段；不解析报告代判，不用旧 `--slk-post-d1`。
 2. Supervisor 只根据冻结 CELL 和当前 `D1_FAILED` 追加 `REWORK_REQUESTED`，精确绑定 Run/CELL/attempt、失败事件 ID、candidate SHA-256 和下一合法 round。形成 `D1_REWORK_DIRECTIVE`：当前失败的根因假设、最小实验、修复边界和直接受影响下游；明确已替代的旧限制，不把上一 CELL 指令带进新范围。不改变验收目标或强度。旧失败、跨 CELL/attempt、错误候选、重复 round 或 Checker 自写指引均不能授权返工。
-3. 保存本人的事实、原报告与证据后，以标准入口把指引/TOKEN **直接交同一 Worker，作为本次最后任务动作**。这是 Supervisor → Worker 唯一合法例外，不是普通派工路。仅所属可信入口消费本人的密封权限；核实精确消息/payload 哈希、真实 `slk.native-start/v2`，原子提交 TOKEN 与唯一 `runtime_revision` 后结束，不等 Worker、不轮询或留 post-turn/background 动作。
+3. 保存本人的事实、原报告与证据后，以标准入口把指引/TOKEN **直接交同一 Worker，作为本次最后工程动作**。这是 Supervisor → Worker 唯一合法例外，不是普通派工路。仅所属可信入口消费本人的密封权限；核实精确消息/payload 哈希、真实 `slk.native-start/v2`，原子提交 TOKEN 与唯一 `runtime_revision`。随后 Supervisor 保持 active，以有界原生等待接收结果/OW 报告，不代 Worker 施工、不忙轮询或留 post-turn/background 动作。
 
 原报告独立保存/投递，不因 ACK/TOKEN/动作失败而扣留；受理、后台文字或终态不是启动/接手证明。明确投递故障才按 `$slk-recover-communication` 恢复原消息，不重判 D1；正常直达无需排障或 Desktop 桥接。
 

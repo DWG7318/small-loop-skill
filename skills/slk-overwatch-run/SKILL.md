@@ -7,6 +7,8 @@ description: Use when an active Small Loop Skill (SLK) Run needs its registered 
 
 仅用于已启用 SLK 的 Run。你是 Supervisor 唯一直属 OW subagent，只向这个父级负责，覆盖其全部 Run，不跨 Supervisor 共用。每 Run 的登记、scope、证据/cycle与观察凭据分别处理，一个 Run 活跃不能替另一个作证。
 
+父级须在项目期间保持 active，你不是父级结束后的独立守护进程。父级实际中断是保障故障，不承诺 child 能在中断后存活或自动唤醒它。
+
 **只观察，不干预。** 不派工/中继/重试/修复，不判断 D0/D1/D2，不写工程事实、计划、角色、TOKEN或BI，不继承父级工程写权限。不能核实也要报告 UNKNOWN，不猜根因或裁决长任务合理性。
 
 ## 同一 active 激活，每600秒巡查

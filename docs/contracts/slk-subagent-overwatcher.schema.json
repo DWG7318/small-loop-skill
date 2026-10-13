@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "slk-subagent-overwatcher.schema.json",
-  "title": "SLK 4.5.1 read-only native subagent request and original-record proof",
+  "title": "SLK 4.5.2 read-only native subagent request and original-record proof",
   "$comment": "Current Codex private JSONL adapter, not a stable universal API or cryptographic host attestation. native_execution_id locates a real parent spawn/followup call, not a child turn UUID; legacy foreground_turn_id stores this explicitly kinded execution locator. Parent host identity is declared registration data, not independently proved by rollout. Followup requires the exact previous activation, a fresh completed pre-sample, empty tool return, and a new running query after that return; an accepted request alone is not activation. Freeze only original spawn, previous/current activation and pre/post sample records, never recursive history or the growing file hash. canonical_task_id remains original spawn while current native task/message/hash follows activation. Optional exact linked child metadata allows its own original list_agents sample; parent-only proofs do not prove child tool activity. Neither proves authority, isolation, future liveness or autonomous cadence. Reader PID is not child PID. Test roots are simulations.",
   "oneOf": [{"$ref": "#/$defs/request"}, {"$ref": "#/$defs/proof"}],
   "$defs": {
@@ -9,6 +9,29 @@
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "timestamp": {"type": "string", "format": "date-time"},
     "callId": {"type": "string", "pattern": "^call_[A-Za-z0-9_]+$"},
+    "recordLocation": {
+      "type": "object", "additionalProperties": false, "required": ["path", "line", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/text"}, "line": {"type": "integer", "minimum": 1}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "sourceProvenance": {
+      "required": ["source_metadata", "record_sources"],
+      "allOf": [
+        {"if": {"properties": {"native_execution_id": {"pattern": "^codex-subagent-followup:"}}},
+         "then": {"properties": {"record_sources": {"required": ["activation_call", "activation_output", "previous_activation_call", "previous_activation_output", "pre_activation_sample_call", "pre_activation_sample_output"]}}},
+         "else": {"properties": {"record_sources": {"propertyNames": {"enum": ["spawn_call", "spawn_output", "sample_call", "sample_output", "child_link"]}}}}},
+        {"if": {"required": ["child_source_path"]},
+         "then": {"properties": {"record_sources": {"required": ["child_link"]}}},
+         "else": {"properties": {"record_sources": {"not": {"required": ["child_link"]}}}}}
+      ],
+      "properties": {
+        "source_metadata": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/recordLocation"}},
+        "record_sources": {
+          "type": "object", "additionalProperties": false,
+          "required": ["spawn_call", "spawn_output", "sample_call", "sample_output"],
+          "patternProperties": {"^(spawn|sample|activation|previous_activation|pre_activation_sample)_(call|output)$|^child_link$": {"$ref": "#/$defs/recordLocation"}}
+        }
+      }
+    },
     "nativeAddress": {
       "type": "object", "additionalProperties": false, "required": ["kind", "parent", "agent_id"],
       "properties": {
@@ -24,13 +47,18 @@
     "identity": {
       "type": "object",
       "allOf": [{"if": {"properties": {"native_execution_id": {"pattern": "^codex-subagent-followup:"}}}, "then": {"$ref": "#/$defs/followupIdentity"}}],
-      "required": ["method_version", "run_id", "role_instance_id", "endpoint_ref", "native_address", "native_execution_id", "native_source_path"],
+      "required": ["method_version", "run_id", "role_instance_id", "endpoint_ref", "native_address", "native_execution_id"],
+      "oneOf": [{"required": ["native_source_path"], "not": {"required": ["native_source_paths"]}}, {"required": ["native_source_paths"], "not": {"required": ["native_source_path"]}}],
       "properties": {
-        "method_version": {"enum": ["4.5.0", "4.5.1"]},
+        "method_version": {"enum": ["4.5.0", "4.5.1", "4.5.2"]},
         "run_id": {"$ref": "#/$defs/text"}, "role_instance_id": {"$ref": "#/$defs/text"}, "endpoint_ref": {"$ref": "#/$defs/text"},
         "native_address": {"$ref": "#/$defs/nativeAddress"},
         "native_execution_id": {"type": "string", "pattern": "^codex-subagent-(spawn|followup):call_[A-Za-z0-9_]+$"},
         "native_source_path": {"$ref": "#/$defs/text"},
+        "native_source_paths": {
+          "type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/text"},
+          "description": "Alternative explicit chronological parent rollouts, never discovered or concatenated into a native file. Every original requires its own unique matching session_meta; selected call/output pairs may span files. Duplicates, chronological conflicts, replacement child or missing metadata fail closed. Proof binds each selected original location and metadata hash; this is private native evidence, not a host guarantee. Existing single-source requests/proofs remain unchanged."
+        },
         "child_source_path": {"$ref": "#/$defs/text", "description": "Optional explicit child rollout. Frozen by request SHA; never discovered by glob or task name. Parent SubAgentActivity spawn UUID and child session_meta parent/path/depth must agree. Old requests require new explicit attestation to enable child sampling; never rewrite originals."}
       }
     },
@@ -63,7 +91,7 @@
         {"if": {"required": ["child_source_path"]}, "then": {
           "required": ["child_session_id", "child_meta_sha256", "child_link_sha256"],
           "properties": {"child_session_id": {"type": "string", "format": "uuid"}, "child_meta_sha256": {"$ref": "#/$defs/sha256"}, "child_link_sha256": {"$ref": "#/$defs/sha256"}}
-        }}],
+        }}, {"if": {"required": ["native_source_paths"]}, "then": {"$ref": "#/$defs/sourceProvenance"}}],
       "type": "object", "unevaluatedProperties": false,
       "required": ["schema_version", "request_sha256", "canonical_task_id", "native_task_id", "spawn_call_id", "spawn_call_sha256", "spawn_output_sha256", "spawn_query_timestamp", "spawn_output_timestamp", "sample_call_id", "sample_call_sha256", "sample_output_sha256", "sample_query_timestamp", "sample_output_timestamp", "agent_status", "checked_at", "started_sha256"],
       "properties": {

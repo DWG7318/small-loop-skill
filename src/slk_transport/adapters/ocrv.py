@@ -7,6 +7,7 @@ from .. import SUPPORTED_METHOD_VERSIONS
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -366,12 +367,27 @@ class OcrvAdapter:
             isinstance(item, str) and item.strip() for item in criteria
         ):
             raise AdapterError("OCRV_PAYLOAD_INVALID", "d1_criteria must be a non-empty string array")
+        frozen_refs = payload.get("evidence_refs", [])
+        if not isinstance(frozen_refs, list):
+            raise AdapterError("OCRV_PAYLOAD_INVALID", "frozen evidence references must be an object array")
+        frozen_paths: set[Path] = set()
+        for ref in frozen_refs:
+            if (not isinstance(ref, Mapping) or set(ref) - {"bytes"} != {"path", "sha256"}
+                or not isinstance(ref["path"], str) or not Path(ref["path"]).is_absolute()
+                or not isinstance(ref["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", ref["sha256"])
+                or ("bytes" in ref and (type(ref["bytes"]) is not int or ref["bytes"] < 0))):
+                raise AdapterError("OCRV_PAYLOAD_INVALID", "frozen evidence requires an exact absolute path and sha256")
+            path = Path(ref["path"]).resolve()
+            if path in frozen_paths:
+                raise AdapterError("OCRV_PAYLOAD_INVALID", "duplicate frozen evidence path")
+            frozen_paths.add(path)
         evidence_files = payload["evidence_files"]
         if not isinstance(evidence_files, list) or not all(
-            isinstance(item, str) and Path(item).is_absolute() and Path(item).is_file()
+            isinstance(item, str) and Path(item).is_absolute()
+            and (Path(item).resolve() in frozen_paths or Path(item).is_file())
             for item in evidence_files
         ):
-            raise AdapterError("OCRV_PAYLOAD_INVALID", "evidence_files must contain existing absolute files")
+            raise AdapterError("OCRV_PAYLOAD_INVALID", "evidence_files must contain existing absolute files or frozen originals")
         scope = {
             "include_paths": [],
             "exclude_paths": [],
@@ -393,6 +409,10 @@ class OcrvAdapter:
             "review_scope": scope,
             "capacity": capacity,
         }
+        if "evidence_refs" in payload:
+            # Do not require current existence or recalculate the approved hash here.
+            # The indexed consumer reports missing/changed originals beside saved output.
+            request["evidence_refs"] = [dict(ref) for ref in frozen_refs]
         if envelope.payload_type == "D1_MANAGEMENT_RETURN":
             if envelope.payload.get("management_action") == "ADJUST_CAPACITY":
                 policy = envelope.payload.get("review_policy")

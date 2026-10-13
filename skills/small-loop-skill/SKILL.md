@@ -5,11 +5,11 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 # Small Loop Skill
 
-SLK 4.5.1 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
+SLK 4.5.2 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
 
 ## 谁负责什么
 
-- Codex Supervisor：Owner 确认的人选，负责方案、异常决策、正式 FAIL 的改进指引、豁免及最终 D2；也是现场临时补漏、核验与记录的第一责任人，不能以等待 SLK 源码修复代替可行的现场处置。可打破不适用的流程安排，但不伪造事实、借他人权限或接管 Checker D1。
+- Codex Supervisor：Owner 确认的人选，负责方案、异常决策、正式 FAIL 的改进指引、豁免及最终 D2；也是现场临时补漏、核验与记录的第一责任人，不能以等待 SLK 源码修复代替可行的现场处置。可打破不适用的流程安排，但不伪造事实、借他人权限或接管 Checker D1。项目未结束时保持 active，以有界原生等待接收结果和 OW 报告，不退出等待自己的 child 唤醒。
 - OCRV Checker：派发既定 CELL、隔离 D1、PASS 后推进下一 CELL；DSH Worker：施工当前 CELL、最低 D0、交候选。真实型号/reasoning 与原生端点必须登记，不以 Codex 对话冒充二者。
 - OW：Supervisor 的唯一直属 subagent，覆盖其全部 Run，不跨 Supervisor 共用。每 Run 分开登记 scope/证据/观察凭据；用 Owner 确认的高效低推理开销模型，gpt-6-luna high/xhigh 仅推荐。持续 active，每600秒核验真实运行、记录自身观察、只向父级报告异常/疑似/UNKNOWN，报告后继续。只观察，不干预、不代发工程消息、不重试/修复，不写 BI/TOKEN/工程事实。仅所属 Supervisor 可决定并二次确认停止；单 Run 暂停/关闭不停止其他 Run 的观察。
 
@@ -31,7 +31,7 @@ D0 是 Worker 交付前的基本信心；D1 是原 Checker 对完整候选的独
 
 施工中同一 Run 只有一个当前有效 SLK TOKEN：单调编号及 Run/CELL/节点/接收者/候选/下一动作/根记录指针。相同或更旧 TOKEN 不重开工作。不可变 payload/task file 与匹配 slk.native-start/v2 确认真实原生启动后，原发送者的密封消费者原子提交 TOKEN/runtime revision；界面 running、文字、旧 PID、终态或发送成功都不是启动证明。
 
-保存、投递受理、原生启动、工程判断、TOKEN 提交彼此分开。已有报告先原样保存并独立交出，不因格式、长度、退出码或 ACK/TOKEN/Temporal 错误扣留；不从正文、零 finding 或严重度代判 D0/D1/D2。业务与证据整理先结束，**真实交接及其必要原子提交是当次激活最后的任务动作**，随后结束；不交接后施工或盯接收者。未闭合只续原交接，不重跑工程或新 ID 重发。三工程角色不用正时长 wait_threads、后台自唤醒或 post-turn 延迟脚本。
+保存、投递受理、原生启动、工程判断、TOKEN 提交彼此分开。已有报告先原样保存并独立交出，不因格式、长度、退出码或 ACK/TOKEN/Temporal 错误扣留；不从正文、零 finding 或严重度代判 D0/D1/D2。业务与证据整理先结束，**真实交接及其必要原子提交是当次工程处置最后的任务动作**；Worker/Checker 随后结束本次激活，不交接后施工或盯接收者。Supervisor 交接后保持 active，使用有界原生等待，不接管普通 CELL。未闭合只续原交接，不重跑工程或新 ID 重发。Worker/Checker 不等待后继；所有角色不用后台自唤醒或 post-turn 延迟脚本。
 
 Temporal 是一套共享 headless 服务、每 Run 独立 SLK.Start/SLK.Run；其1200秒独立核验 OW、成员责任停留1800秒直接提醒 Supervisor，不代替 OW 的600秒巡查。UNKNOWN 不等于退出，accepted 不等于已读/接管/修复；保障失效先修复再派下一 CELL，已有结果仍保存交出。故障优先机械恢复，由 Supervisor 决定并观察；不新增中继/管理底座。真实原件、权限、事务合同不得退回自由文本。
 
@@ -67,3 +67,5 @@ Temporal 是一套共享 headless 服务、每 Run 独立 SLK.Start/SLK.Run；�
 不将检验本身当施工 CELL，不把内部顺序段升级成 CELL/额外 D1/TOKEN 或并行 Worker。不把发送/零 finding/D0/间接验证当 D1 PASS，不把豁免当 PASS，不由 Supervisor/OW 代写 Worker/Checker事实。正常链由原责任人直接完成，不用补救或 OW relay 冒充正常成功。
 
 不把经验数字、统一时间/大小、可选增强、历史演练或格式补交变成新门槛；保留必要授权、原生证据和验收。压缩续作后先回读中央 Run、计划、TOKEN、CELL/attempt 与下一动作，摘要冲突不串题。不新增作者私用脚本、隐藏代码路径、heartbeat/cron/daemon 维持角色；长期确定性能力走已文档化 Tool。
+
+Supervisor 不发 final 后声称自己或 child 仍会持续工作。Owner 叫停优先；真实宿主中断如实记录，不能承诺 child 必会存活或唤醒父级。所负责范围全部收尾、OW 停止经确认后才能正常结束父级。临时恢复成功不是永久修复；产出成功不等于接收者能读，必须核验真实消费者。

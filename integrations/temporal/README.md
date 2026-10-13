@@ -1,4 +1,4 @@
-# SLK 4.5.1 Temporal continuity templates
+# SLK 4.5.2 Temporal continuity templates
 
 ## 4.5.1 evidence and notice truth
 

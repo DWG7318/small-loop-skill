@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current source version: **4.5.1 — verified source and prebuilt distribution**. See the [451 plan](docs/superpowers/plans/2026-10-13-slk-4.5.1.md) and [validation evidence](VALIDATION-REPORT.md). Installation is confirmed by the target machine's installation receipt, not this version label. Existing Run identities and their historical method versions are not relabeled.
+Current source version: **4.5.2**. See the [452 changes](CHANGELOG.md) and [validation evidence](VALIDATION-REPORT.md). Installation is confirmed by the target machine's installation receipt, not this version label. Existing Run identities and their historical method versions are not relabeled.
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 
@@ -22,6 +22,8 @@ Codex is Supervisor using canonical `gpt-6.1-sol`; Owner freezes `high` or `xhig
 Overwatcher is mandatory: each Supervisor owns one native child subagent, registered for every Run that Supervisor manages. A fast, lower-reasoning model is recommended, not hard-coded. It observes actual cross-evidence facts every 600 seconds and reports `ANOMALY` or `UNKNOWN` only to its parent. It never relays normal work, retries delivery, edits BI/TOKEN, judges D0/D1/D2, or repairs a member. Removing one Run does not stop observation of the others. Only its Supervisor may stop it; every exit still requires Supervisor confirmation. Native parent/child identity and an actual current execution—not a tool's acceptance alone—prove activation.
 
 Temporal is one shared headless local service for multiple Runs. Each Run has an independent `SLK.Start` and `SLK.Run`: exact native-start acknowledgement, original-sender recovery, a 30-minute member-residency notice to Supervisor, a 20-minute Overwatcher audit, and a per-Run closure. It never decides engineering state or replaces direct role communication. SLK does not install Docker; unavailable or failed required continuity remains blocked until Supervisor repairs it.
+
+Supervisor stays active through its project, using bounded native waits without taking over ordinary Worker/Checker work. It must not exit and expect its own OW child to wake it. Worker/Checker still stop engineering before their final verified handoff. Owner stop and actual platform interruptions remain authoritative; the method does not promise a child survives its parent's exit.
 
 Run planning keeps tests, review and acceptance inside D0, D1 and D2 rather than creating inspection-only CELLs. Evidence shortage stays unproved, not PASS. RTK, Probe CLI and Ponytail remain optional efficiency aids with native fallbacks and raw evidence retention.
 

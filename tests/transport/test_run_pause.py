@@ -201,5 +201,6 @@ def test_explicit_ocrv_completion_and_exact_executor_stop_without_session_end(tm
     monkeypatch.setattr(native, "_file_native_probe", activity)
     monkeypatch.setattr(native, "process_probe", lambda pid, _created: {
         "exists": damage == "alive" and pid == identity["pid"], "identity_matches": damage == "alive" and pid == identity["pid"]})
+    monkeypatch.setattr("slk_transport.native_ocrv.process_probe", native.process_probe)
     proof = host.inspect_run_quiescence("pause-1", [source.parents[1]])
     assert proof["status"] == ("QUIESCENT" if damage is None else "NOT_QUIESCENT"), json.dumps(proof)

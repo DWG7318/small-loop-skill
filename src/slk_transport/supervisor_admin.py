@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -39,12 +40,13 @@ OPERATIONS = {
     "revise-plan": {"revised"},
     "register-role": {"registered"},
     "bind-overwatcher": {"overwatcher_bound"},
+    "replace-overwatcher": {"overwatcher_replaced"},
     "close-overwatcher": {"overwatcher_closed"},
     "close-run": {"recorded"},
     "abandon-run": {"recorded"},
     "close-role": {"closed", "already_closed"},
 }
-PROVISION_OPERATIONS = {"register-role", "bind-overwatcher"}
+PROVISION_OPERATIONS = {"register-role", "bind-overwatcher", "replace-overwatcher"}
 RESULT_FIELDS = {
     "schema_version", "status", "run_id", "supervisor_role_instance_id", "operation",
     "request_sha256", "operation_request_sha256", "state_result",
@@ -105,6 +107,87 @@ def _validated_saved_result(
     return saved
 
 
+def _recover_overwatcher_replacement(
+    request: Mapping[str, Any], operation: Mapping[str, Any], *,
+    supervisor_secret: str, current_revision: int,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Continue only the centrally committed original replacement, never rebind."""
+    run_id, role_id = request["run_id"], request["issued_role_instance_id"]
+    command = list(request["state_command"])
+    projection = wc._default_load_current_projection(run_id, command)
+    snapshot = projection.get("runtime_snapshot") or {}
+    events = [event for event in projection.get("events", [])
+              if event.get("event_id") == operation["event_id"]]
+    roles = [role for role in projection.get("roles", [])
+             if role.get("role") == "overwatcher" and role.get("lifecycle") == "active"]
+    binding_revision = operation["expected_binding_revision"] + 1
+    if (len(events) != 1 or len(roles) != 1
+        or projection.get("summary", {}).get("run_id") != run_id
+        or projection.get("summary", {}).get("closure_state") != "open"
+        or snapshot.get("runtime_revision") != current_revision
+        or snapshot.get("overwatcher_binding_revision") != binding_revision
+        or snapshot.get("overwatcher_status") != "ACTIVE"
+        or events[0].get("event_type") != "OVERWATCHER_REPLACED"
+        or events[0].get("author_role_instance_id") != request["supervisor_role_instance_id"]
+        or wc._event_details(events[0]) != {
+            "request_sha256": request["operation_request_sha256"],
+            "overwatcher_role_instance_id": role_id, "binding_revision": binding_revision,
+        }
+        or any(roles[0].get(key) != value for key, value in operation["replacement"].items())
+        or roles[0].get("foreground_turn_id") != operation["foreground_turn_id"]
+        or not any(endpoint.get("state") == "active" and all(
+            endpoint.get(key) == operation["endpoint"].get(key)
+            for key in ("endpoint_version", "transport_adapter", "host_identity", "session_id")
+        ) for endpoint in roles[0].get("endpoints", []))):
+        raise ValueError("stale replacement lacks the exact committed request and current new OW binding")
+    result = {"status": "overwatcher_replaced", "run_id": run_id,
+        "binding_revision": binding_revision, "overwatcher_role_instance_id": role_id}
+    destination = Path(request["credential_destination_path"])
+    if destination.exists():
+        saved_secret = wc.unprotect_dpapi_hex(destination)
+        try:
+            authenticated = wc._run_json_command(command,
+                ["authenticate-role", "--run-id", run_id, "--role-instance-id", role_id],
+                credential=saved_secret)
+        finally:
+            saved_secret = ""
+        if (authenticated.get("status") != "authenticated"
+            or authenticated.get("run_id") != run_id or authenticated.get("role") != "overwatcher"
+            or authenticated.get("role_instance_id") != role_id
+            or authenticated.get("runtime_revision") != current_revision):
+            raise ValueError("existing sealed credential does not authenticate the exact new OW")
+        return result, {"status": "SEALED_ROLE_VERIFIED", "run_id": run_id,
+            "role": "overwatcher", "role_instance_id": role_id, "sealed_path": str(destination),
+            "sealed_sha256": _sha256(destination), "runtime_revision": current_revision}
+    credential_id = roles[0].get("credential_id")
+    if not isinstance(credential_id, str) or not credential_id.startswith("credential-"):
+        raise ValueError("replacement recovery requires the current non-secret OW credential ID projection")
+    # Reuse the exact-binding rotation command. Its CAS also protects a race with
+    # another rotation; a lost rotation response can retry from the new current ID.
+    rotation_id = "replacement-seal-" + hashlib.sha256(
+        (request["operation_request_sha256"] + credential_id + ":" + str(current_revision)).encode("utf-8")).hexdigest()
+    rotation_path = Path(request["result_path"]).with_name(rotation_id + ".json")
+    wc._write_or_reuse_stable_request(rotation_path, {
+        "rotation_id": rotation_id, "run_id": run_id, "expected_binding_revision": binding_revision,
+        "expected_runtime_revision": current_revision, "role_instance_id": role_id,
+        "session_id": operation["replacement"]["session_id"],
+        "foreground_turn_id": operation["foreground_turn_id"],
+        "expected_overwatcher_credential_id": credential_id,
+        "evidence": {"path": request["operation_request_path"],
+                     "sha256": request["operation_request_sha256"]},
+        "reason": "recover one-time credential delivery for the exact committed replacement",
+        "occurred_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    })
+    rotated = wc._run_json_command(command,
+        ["rotate-overwatcher-credential", "--request", str(rotation_path)], credential=supervisor_secret)
+    if (rotated.get("status") != "overwatcher_credential_rotated" or rotated.get("run_id") != run_id
+        or rotated.get("overwatcher_role_instance_id") != role_id
+        or rotated.get("binding_revision") != binding_revision
+        or rotated.get("_slk_command", {}).get("process_exit", 0) != 0):
+        raise ValueError("exact replacement credential recovery did not succeed")
+    return {**rotated, **result}, None
+
+
 def execute_sealed_supervisor_admin(
     request_path: Path | str, *, request_sha256: str,
 ) -> dict[str, Any]:
@@ -116,6 +199,7 @@ def execute_sealed_supervisor_admin(
     if operation not in OPERATIONS:
         raise ValueError("Supervisor admin operation is not allowed")
     provisioning = operation in PROVISION_OPERATIONS
+    replacing_overwatcher = operation == "replace-overwatcher"
     worker_provisioning = (
         operation == "register-role" and request.get("issued_role") == "worker"
     )
@@ -176,14 +260,19 @@ def execute_sealed_supervisor_admin(
         issued_role = request.get("issued_role")
         issued_role_instance_id = request.get("issued_role_instance_id")
         destination = Path(request["credential_destination_path"])
-        identity = operation_value.get("identity")
-        expected_role = "overwatcher" if operation == "bind-overwatcher" else issued_role
+        identity = operation_value.get("replacement" if replacing_overwatcher else "identity")
+        expected_role = "overwatcher" if operation in {"bind-overwatcher", "replace-overwatcher"} else issued_role
         if (issued_role != expected_role or issued_role not in {"checker", "worker", "overwatcher"}
             or not isinstance(issued_role_instance_id, str) or not issued_role_instance_id
             or not destination.is_absolute()
             or not isinstance(identity, Mapping) or identity.get("role") != issued_role
             or identity.get("role_instance_id") != issued_role_instance_id):
             raise ValueError("issued role identity or sealed destination is invalid")
+        if replacing_overwatcher and (
+            operation_value.get("expected_runtime_revision") != revision
+            or not wc._positive_integer(operation_value.get("expected_binding_revision"))
+        ):
+            raise ValueError("replacement must name the exact original runtime and binding revision")
         if worker_provisioning:
             checker_role_instance_id = request.get("checker_role_instance_id")
             if not isinstance(checker_role_instance_id, str) or not checker_role_instance_id.strip():
@@ -193,12 +282,14 @@ def execute_sealed_supervisor_admin(
         return _validated_saved_result(
             saved, request, request_sha256=request_sha256, provisioning=provisioning,
         )
-    if provisioning and Path(request["credential_destination_path"]).exists():
+    if provisioning and not replacing_overwatcher and Path(request["credential_destination_path"]).exists():
         raise ValueError("issued role sealed destination exists without a matching result")
 
     secret = wc.unprotect_dpapi_hex(sealed)
     checker_secret = ""
     overwatcher_secret = ""
+    recovered_result = None
+    recovered_sealed_result = None
     try:
         authenticated = wc._run_json_command(
             list(state_command),
@@ -211,8 +302,13 @@ def execute_sealed_supervisor_admin(
             or authenticated.get("role_instance_id") != role_instance_id):
             raise ValueError("saved credential does not authenticate the exact current Supervisor revision")
         if authenticated.get("runtime_revision") != revision:
-            if operation not in {"pause-run", "resume-run", "close-run", "abandon-run"}:
+            if replacing_overwatcher:
+                recovered_result, recovered_sealed_result = _recover_overwatcher_replacement(
+                    request, operation_value, supervisor_secret=secret,
+                    current_revision=authenticated.get("runtime_revision"))
+            elif operation not in {"pause-run", "resume-run", "close-run", "abandon-run"}:
                 raise ValueError("saved credential does not authenticate the exact current Supervisor revision")
+        if authenticated.get("runtime_revision") != revision and not replacing_overwatcher:
             from .role_host import RoleHost
             projection = wc._default_load_current_projection(run_id, list(state_command))
             saved_terminal = next((event for event in projection.get("events", [])
@@ -227,6 +323,8 @@ def execute_sealed_supervisor_admin(
             if not same_terminal and not RoleHost.lifecycle_retry_matches(projection, operation, operation_value,
                     request["operation_request_sha256"], revision, role_instance_id):
                 raise ValueError("stale lifecycle revision does not belong to this exact operation")
+        if replacing_overwatcher and recovered_result is None and destination.exists():
+            raise ValueError("issued role sealed destination exists without a matching replacement")
         operation_secret = secret
         if worker_provisioning:
             checker_secret = wc.unprotect_dpapi_hex(checker_sealed)
@@ -285,7 +383,9 @@ def execute_sealed_supervisor_admin(
                 raise ValueError("close binding differs from the sealed Supervisor and original pair")
         state_operation = "write" if operation in {"close-run", "abandon-run"} else operation
         state_arguments = [state_operation, "--request", str(operation_request)]
-        if operation in {"start-d2", "pause-run", "resume-run"}:
+        if recovered_result is not None:
+            state_result = recovered_result
+        elif operation in {"start-d2", "pause-run", "resume-run"}:
             pass  # Original RoleHost wrote the single existing D2_STARTED event.
         elif overwatcher_closing:
             state_result = wc._run_json_command(
@@ -318,19 +418,25 @@ def execute_sealed_supervisor_admin(
         raise ValueError("Supervisor state command rejected without safe structured details")
     if state_result.get("status") not in OPERATIONS[operation] or state_result.get("run_id") != run_id:
         raise ValueError("Supervisor administration did not produce the allowed closed result")
-    sealed_result = None
+    sealed_result = recovered_sealed_result
     if provisioning:
-        secret_field = "overwatcher_write_credential" if operation == "bind-overwatcher" else "role_credential"
-        issued_secret = state_result.get(secret_field)
-        if not isinstance(issued_secret, str):
+        secret_field = "overwatcher_write_credential" if operation in {"bind-overwatcher", "replace-overwatcher"} else "role_credential"
+        issued_secret = state_result.pop(secret_field, None)
+        if sealed_result is None and not isinstance(issued_secret, str):
             raise ValueError("role registration did not return its one-time credential")
         try:
-            sealed_result = wc.seal_role_credential(
-                issued_secret, Path(request["credential_destination_path"]),
-                run_id=run_id, role=request["issued_role"],
-                role_instance_id=request["issued_role_instance_id"],
-                state_command=list(state_command),
-            )
+            if replacing_overwatcher and (
+                state_result.get("overwatcher_role_instance_id") != request["issued_role_instance_id"]
+                or state_result.get("binding_revision") != operation_value["expected_binding_revision"] + 1
+            ):
+                raise ValueError("replacement returned a different new OW identity")
+            if sealed_result is None:
+                sealed_result = wc.seal_role_credential(
+                    issued_secret, Path(request["credential_destination_path"]),
+                    run_id=run_id, role=request["issued_role"],
+                    role_instance_id=request["issued_role_instance_id"],
+                    state_command=list(state_command),
+                )
         finally:
             issued_secret = ""
         state_result = {

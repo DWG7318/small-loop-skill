@@ -522,8 +522,11 @@ def _inspect_run_quiescence(args: argparse.Namespace) -> int:
     if hashlib.sha256(config_path.read_bytes()).hexdigest() != args.adapter_config_sha256:
         raise ValueError("quiescence adapter config hash changed")
     config = _read_object(config_path, "quiescence adapter config")
+    host_ref = config.get("role_host_binding")
     if (config.get("run_id") != host.binding["run_id"]
-        or config.get("role_host_binding") != {"path": str(path), "sha256": args.sha256}
+        or not isinstance(host_ref, dict) or set(host_ref) != {"path", "sha256"}
+        or not isinstance(host_ref["path"], str) or not Path(host_ref["path"]).is_absolute()
+        or Path(host_ref["path"]).resolve() != path or host_ref["sha256"] != args.sha256
         or "temporal" not in host.binding
         or Path(config["attempt_root"]).resolve() != Path(host.binding["temporal"]["attempt_root"]).resolve()):
         raise ValueError("quiescence config changed the exact Run/root")

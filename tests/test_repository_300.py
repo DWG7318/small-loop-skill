@@ -438,7 +438,7 @@ def test_441_saved_authority_and_reload_contracts_are_closed() -> None:
     }
     assert "sealed_overwatcher_credential_path" in supervisor["$defs"]["overwatcherCloseRequest"]["required"]
     assert set(supervisor["$defs"]["provisionRequest"]["properties"]["operation"]["enum"]) == {
-        "register-role", "bind-overwatcher",
+        "register-role", "bind-overwatcher", "replace-overwatcher",
     }
     assert supervisor["$defs"]["workerProvisionRequest"]["properties"]["issued_role"] == {
         "const": "worker",

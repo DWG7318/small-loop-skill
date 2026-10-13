@@ -1,6 +1,7 @@
 from dataclasses import asdict, replace
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,7 +31,149 @@ def prepared(tmp_path, monkeypatch, mode="normal"):
     monkeypatch.setenv("CODEX_APP_TOOLS_PIPE_PATH", "inherited-native-pipe")
     monkeypatch.setenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "Codex Desktop")
     monkeypatch.setenv("FAKE_DESKTOP_MODE", mode)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     return Endpoint.from_dict(raw)
+
+
+def current_desktop_plugin(tmp_path, monkeypatch, *, damage=None, revision="current"):
+    """Configured bundled package fixture; never consult the user's installation."""
+    home = tmp_path / "codex-home"
+    marketplace = home / ("bundled-" + revision)
+    plugin = marketplace / "plugins/codex-app-tools"
+    (marketplace / ".agents/plugins").mkdir(parents=True)
+    (plugin / ".codex-plugin").mkdir(parents=True)
+    source = {"source": "local", "path": "./plugins/codex-app-tools"}
+    if damage == "remote-source": source["source"] = "github"
+    if damage == "escaped-package":
+        outside = tmp_path / "untrusted-plugin"
+        (outside / ".codex-plugin").mkdir(parents=True)
+        (outside / ".codex-plugin/plugin.json").write_text(json.dumps({
+            "name": "codex-app-tools", "mcpServers": "./.mcp.json"}), encoding="utf-8")
+        (outside / "server.mjs").write_bytes(SERVER.read_bytes())
+        source["path"] = "../../untrusted-plugin"
+    entry = {"name": "codex-app-tools", "source": source}
+    (marketplace / ".agents/plugins/marketplace.json").write_text(json.dumps({
+        "name": "other-marketplace" if damage == "wrong-marketplace" else "openai-bundled",
+        "plugins": [entry, entry] if damage == "duplicate-package" else [entry]}), encoding="utf-8")
+    (plugin / ".codex-plugin/plugin.json").write_text(json.dumps({
+        "name": "other-plugin" if damage == "wrong-package" else "codex-app-tools",
+        "mcpServers": "elsewhere.json" if damage == "wrong-server-declaration" else "./.mcp.json"}), encoding="utf-8")
+    server = plugin / "server.mjs"
+    server.write_bytes(SERVER.read_bytes() + ("\n# " + revision + "\n").encode())
+    if damage == "escaped-server":
+        outside = tmp_path / "untrusted-server.mjs"
+        server.rename(outside)
+        try:
+            server.symlink_to(outside)
+        except OSError as exc:
+            pytest.skip(f"symlink fixture unavailable: {exc}")
+    configured = str(marketplace)
+    if damage == "extended": configured = "\\\\?\\" + configured
+    if damage == "relative-marketplace": configured = "relative-marketplace"
+    (home / "config.toml").write_text('[marketplaces.openai-bundled]\nsource = '
+        + json.dumps(configured) + '\n[plugins."codex-app-tools@openai-bundled"]\nenabled = '
+        + ("false" if damage == "disabled" else "true") + '\n', encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    return server
+
+
+@pytest.mark.parametrize("extended", [False, pytest.param(True, marks=pytest.mark.skipif(os.name != "nt", reason="Windows path"))])
+def test_retired_desktop_plugin_uses_enabled_current_package_without_rewriting_delivery(tmp_path, monkeypatch, extended):
+    endpoint = prepared(tmp_path, monkeypatch)
+    endpoint.address["command"][1] = str(tmp_path / "retired-plugin/server.mjs")
+    original = asdict(endpoint)
+    server = current_desktop_plugin(tmp_path, monkeypatch, damage="extended" if extended else None)
+    envelope = supervisor_envelope()
+    args = (original, asdict(envelope), tmp_path / "attempts")
+    result = dispatch_once(*args, adapters={endpoint.adapter: CodexAdapter()})
+    assert result.status == "completed", result
+    root = tmp_path / "attempts" / envelope.run_id / envelope.message_id
+    provenance = json.loads((root / "desktop-send.json").read_text())["native_runtime"]
+    assert provenance["requested_command"] == original["address"]["command"]
+    assert provenance["requested_plugin_sha256"] == original["address"]["desktop"]["plugin_sha256"]
+    assert provenance["command"] == [sys.executable, str(server)]
+    assert provenance["plugin_sha256"] == hashlib.sha256(server.read_bytes()).hexdigest()
+    assert provenance["address_sha256"] == hashlib.sha256(json.dumps(original["address"], ensure_ascii=False,
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert json.loads((root / "endpoint.json").read_text()) == original == asdict(endpoint)
+    assert dispatch_once(*args, adapters={endpoint.adapter: CodexAdapter()}) == result
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(call["name"] == "send_message_to_thread" for call in calls) == 1
+
+
+@pytest.mark.parametrize("damage", ["disabled", "wrong-marketplace", "duplicate-package", "remote-source",
+    "escaped-package", "wrong-package", "wrong-server-declaration", "relative-marketplace", "escaped-server"])
+def test_retired_desktop_plugin_rejects_untrusted_current_source_before_native_calls(tmp_path, monkeypatch, damage):
+    endpoint = prepared(tmp_path, monkeypatch)
+    endpoint.address["command"][1] = str(tmp_path / "retired-plugin/server.mjs")
+    current_desktop_plugin(tmp_path, monkeypatch, damage=damage)
+    attempt = AttemptStore(tmp_path / "attempts").create(supervisor_envelope())
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, supervisor_envelope(), attempt)
+    assert error.value.error_code == "CODEX_DESKTOP_RUNTIME_UNAVAILABLE"
+    assert not (tmp_path / "native-calls.jsonl").exists()
+
+
+def test_present_changed_plugin_does_not_silently_select_current_package(tmp_path, monkeypatch):
+    endpoint = prepared(tmp_path, monkeypatch)
+    endpoint.address["desktop"]["plugin_sha256"] = "0" * 64
+    current_desktop_plugin(tmp_path, monkeypatch)
+    with pytest.raises(AdapterError) as error:
+        CodexAdapter().deliver(endpoint, supervisor_envelope(), AttemptStore(tmp_path / "attempts").create(supervisor_envelope()))
+    assert error.value.error_code == "CODEX_DESKTOP_PLUGIN_CHANGED"
+    assert not (tmp_path / "native-calls.jsonl").exists()
+
+
+def test_retired_plugin_and_node_preserve_original_node_rebind_contract(tmp_path, monkeypatch):
+    from test_supervisor_notification import desktop_node_fixture
+    raw, _notice, _projection, node = desktop_node_fixture(tmp_path, monkeypatch)
+    Path(raw["address"]["command"][1]).unlink()
+    server = current_desktop_plugin(tmp_path, monkeypatch)
+    server.write_text("import {spawn} from 'node:child_process'; const p=spawn(" + json.dumps(sys.executable)
+        + "," + json.dumps([str(SERVER)]) + ",{stdio:'inherit',windowsHide:true});"
+        + "p.on('exit',code=>process.exit(code===null?1:code));", encoding="utf-8")
+    envelope = supervisor_envelope()
+    result = dispatch_once(raw, asdict(envelope), tmp_path / "attempts", adapters={"codex-app-server": CodexAdapter()})
+    assert result.status == "completed", result
+    root = tmp_path / "attempts" / envelope.run_id / envelope.message_id
+    rebound = json.loads((root / "command-rebind.json").read_text())
+    assert rebound["requested_command"] == raw["address"]["command"]
+    assert rebound["plugin_sha256"] == raw["address"]["desktop"]["plugin_sha256"]
+    assert rebound["resolved_command"] == [node, str(server)]
+    actual = json.loads((root / "desktop-send.json").read_text())["native_runtime"]
+    assert actual["command"] == rebound["resolved_command"]
+    assert actual["plugin_sha256"] == hashlib.sha256(server.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("retired_before_send", [False, True])
+def test_retired_plugin_late_readback_records_actual_reader_without_second_send(tmp_path, monkeypatch, retired_before_send):
+    endpoint = prepared(tmp_path, monkeypatch, "unconfirmed")
+    old_server = tmp_path / "original-server.mjs"
+    old_server.write_bytes(SERVER.read_bytes())
+    endpoint.address["command"][1] = str(old_server)
+    endpoint.address["startup_timeout_seconds"] = 1
+    if retired_before_send:
+        old_server.unlink()
+        old_server = current_desktop_plugin(tmp_path, monkeypatch)
+    envelope = supervisor_envelope()
+    result = dispatch_once(asdict(endpoint), asdict(envelope), tmp_path / "attempts", adapters={endpoint.adapter: CodexAdapter()})
+    assert result.error_code == "CODEX_DESKTOP_READBACK_UNPROVED", result
+    attempt = Attempt(tmp_path / "attempts" / envelope.run_id / envelope.message_id)
+    originals = {name: (attempt.root / name).read_bytes() for name in (
+        "endpoint.json", "envelope.json", "failed.json", "desktop-send.json")}
+    old_server.unlink()
+    current = current_desktop_plugin(tmp_path, monkeypatch, revision="next")
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "late-confirmed")
+    completed = consume_desktop_readback(endpoint, envelope, attempt)
+    assert completed.status == "completed"
+    assert consume_desktop_readback(endpoint, envelope, attempt) == completed
+    assert validate_late_desktop_start(endpoint, envelope, attempt).status == "completed"
+    reader = json.loads((attempt.root / "desktop-readback.json").read_text())["native_reader"]
+    assert reader["command"] == [sys.executable, str(current)]
+    assert reader["plugin_sha256"] == hashlib.sha256(current.read_bytes()).hexdigest()
+    assert all((attempt.root / name).read_bytes() == data for name, data in originals.items())
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(call["name"] == "send_message_to_thread" for call in calls) == 1
 
 
 def test_desktop_native_readback_starts_exact_same_thread_without_cli_takeover(tmp_path, monkeypatch):

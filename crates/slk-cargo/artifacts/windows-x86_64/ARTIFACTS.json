@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "2d2326d29494e0fe28b3c8ab05b3b76338020003f843ed3f8bc2d24549bd7437",
-        "size": 1427440
+        "sha256": "e5e5e3cb0a67da99183e4fab31d4ece258c111414ce03113daaafeb9d015e4c6",
+        "size": 1428929
       }
     ],
-    "sha256": "2d2326d29494e0fe28b3c8ab05b3b76338020003f843ed3f8bc2d24549bd7437",
-    "size": 1427440
+    "sha256": "e5e5e3cb0a67da99183e4fab31d4ece258c111414ce03113daaafeb9d015e4c6",
+    "size": 1428929
   },
   "build": {
     "commands": [
@@ -16,7 +16,7 @@
       "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
       "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
     ],
-    "release_batch_sha256": "74f79f3234ce520d1340afd97e2bd280d0ad4f528162bbf2beadbe67cd523d7b",
+    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
     "source_hash_mode": "sha256-raw",
     "toolchains": [
       "cargo 1.94.0 (85eff7c80 2026-01-15)",
@@ -27,15 +27,15 @@
   "payload": [
     {
       "path": "bin/slk-cargo.exe",
-      "sha256": "ed85a5be3b1a02f8cfb0082e19ca0da3632d0514dadd6c2fe07bd4bf3283e296",
-      "size": 2909696
+      "sha256": "b046126972391b91891096e7cd6fa7cd6a35ea24a1ddab8a940d2843e0e4e4ab",
+      "size": 2914304
     }
   ],
-  "product_version": "4.5.1",
+  "product_version": "4.5.2",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "97c8fe4e1647eaac09d25e5d70f49d8e6d01c490a9d26b9e56f00a6adb10607f",
-    "Cargo.toml": "d2f7d4e4c13f7ca22d5a58d13d63628685d177014c36ef85333880aaf1e15d63",
+    "Cargo.lock": "5c78019c03aac6475406712dba09385ac7764854b13d6932be3e63ac01e56924",
+    "Cargo.toml": "2a7f66160f3782a191139950ce33e857c025d105786c1bca2f774c09abd49a91",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "059a7efca8a73270a04f07f4afca48bed61c344993d930f03b4c0543291cb80a",
     "src/args.rs": "abe878ce5acba0ae784dee3021ca6fec04414f88eaf42903db00527c2b41a4b2",

@@ -173,18 +173,19 @@ def test_native_active_late_cycle_is_not_dead(tmp_path, monkeypatch, age, expect
     assert result["status"] == expected
 
 
-def test_451_configuration_and_startup_use_native_subagent_semantics(tmp_path):
+@pytest.mark.parametrize("method_version", ["4.5.1", "4.5.2"])
+def test_451_configuration_and_startup_use_native_subagent_semantics(tmp_path, method_version):
     import json
     from pathlib import Path
     from .test_standard_adapter import write_json
     root, config = native_config(tmp_path)
-    config["method_version"] = "4.5.1"
+    config["method_version"] = method_version
     proof = Path(config["overwatcher_activity"]["attestation_path"])
-    write_json(proof, {**json.loads(proof.read_text()), "method_version": "4.5.1"})
+    write_json(proof, {**json.loads(proof.read_text()), "method_version": method_version})
     config["overwatcher_activity"]["attestation_sha256"] = standard_adapter._sha256(proof)
     write_json(root / f"{RUN_ID}.json", config)
-    assert standard_adapter._load_config(RUN_ID)["method_version"] == "4.5.1"
-    assert StartSlkRequest.from_dict({**start_value(), "method_version": "4.5.1"}).method_version == "4.5.1"
+    assert standard_adapter._load_config(RUN_ID)["method_version"] == method_version
+    assert StartSlkRequest.from_dict({**start_value(), "method_version": method_version}).method_version == method_version
 
 
 def test_generic_guard_recovery_keeps_exact_earliest_identity(monkeypatch):

@@ -259,6 +259,23 @@ def test_quiescence_cli_preserves_original_supervisor_author_check_before_pause(
     assert cli.main(arguments) == 0
 
 
+@pytest.mark.parametrize("damage", [None, "other-path", "wrong-hash", "extra-field"])
+def test_quiescence_cli_compares_binding_paths_not_windows_separator_spelling(tmp_path, monkeypatch, damage):
+    from slk_transport import cli
+    host, source, binding, config, _original, _projection = paused_cli_fixture(tmp_path, monkeypatch)
+    value = json.loads(config.read_text())
+    value["role_host_binding"]["path"] = binding.as_posix()
+    if damage == "other-path": value["role_host_binding"]["path"] = str(binding.with_name("other.json"))
+    if damage == "wrong-hash": value["role_host_binding"]["sha256"] = "0" * 64
+    if damage == "extra-field": value["role_host_binding"]["unrecognized"] = True
+    write_json(config, value)
+    output = tmp_path / "normalized-quiescence.json"
+    result = cli.main(["inspect-run-quiescence", "--binding", str(binding), "--sha256", admin.wc._sha256(binding),
+        "--adapter-config", str(config), "--adapter-config-sha256", admin.wc._sha256(config),
+        "--pause-id", "pause-1", "--coordinator-started", str(source / "started.json"), "--output", str(output)])
+    assert result == (0 if damage is None else 2)
+
+
 @pytest.mark.parametrize("damage", ["forged-status", "missing-start", "duplicate-inspection", "wrong-source",
                                     "old-clock", "instant-cycle", "future-cycle"])
 def test_cycle_requires_real_recollected_worker_facts_before_state_write(tmp_path, monkeypatch, damage):

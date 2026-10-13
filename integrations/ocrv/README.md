@@ -1,4 +1,4 @@
-# SLK OCRV integration 4.5.1
+# SLK OCRV integration 4.5.2
 
 Checker launcher, external-reference reader, decision bridge and exact handoff
 adapters. No new character limit is imposed on external original evidence.
@@ -34,4 +34,4 @@ native `--resume`, preserves the original attempt, and never turns an absent
 manifest or report into a D1. Legacy implicit recovery switches stay retired.
 
 The repository's first extraction tag is 1.0.0; SLK integration metadata stays
-4.5.1 and the modified upstream executable retains its explicit version.
+4.5.2 and the modified upstream executable retains its explicit version.

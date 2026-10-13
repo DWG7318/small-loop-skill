@@ -387,7 +387,7 @@ def _ordinary_450_admission(tmp_path, monkeypatch, method_version="4.5.0"):
 
 @pytest.mark.parametrize("history", ["absent", "inaccessible"])
 @pytest.mark.parametrize("evaluate", [evaluate_new_run_admission, evaluate_run_admission])
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2"])
 def test_450_ordinary_preflight_never_opens_history_and_reuses_current_authority(tmp_path, monkeypatch, history, evaluate, method_version):
     from jsonschema import Draft202012Validator
     from slk_transport import role_host

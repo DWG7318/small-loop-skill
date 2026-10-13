@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.5.2 — Run08 lifecycle and evidence corrections
+
+- Correct the contradictory parent-exit instruction and role Eval: Supervisor stays
+  active with bounded native waits; Worker/Checker still finish with their verified
+  handoff. Keep accountable onsite repair, observe-only OW and shared-Run boundaries.
+- Add the missing sealed `replace-overwatcher` entrance and exact committed-request
+  recovery without a second replacement or plaintext credentials. Its management
+  audit preserves engineering TOKEN/D2 semantics and original failure history.
+- Remove the subagent contract's accidental first-cycle admission prerequisite;
+  retain real binding/liveness/continuity checks and historical contract behavior.
+- Reuse the trusted currently enabled Desktop runtime only when the pinned plugin
+  disappeared, for normal send, late readback and shutdown census. Preserve original
+  endpoint/message identity and record actual runtime provenance separately.
+- Carry frozen per-CELL external material references into the original OCRV indexed
+  reader without a character cap. Missing/changed material is an explicit gap, not
+  newly trusted bytes or a reason to withhold an already-produced Worker report.
+- Accept explicit same-parent native rollout sources with exact call/output/child
+  identities and source hashes, instead of requiring one physical file. Keep OW
+  cycle facts tool-derived and truthful; no invented time, attempt or CLEAR state.
+- Include the reviewed Run08 closure repairs: orderly OW-end handling and precise
+  real native invocation census. Method 4.5.2 retains earlier contract compatibility;
+  BI remains 1.1.1 and read-only OW helper advances to 1.0.2.
+
 ## 4.5.1 — Run07 recovery corrections
 
 - Preserve the original authenticated engineering result independently of the

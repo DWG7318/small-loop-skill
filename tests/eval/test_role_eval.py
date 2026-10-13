@@ -39,7 +39,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.5.1"
+    assert pack["method_version"] == "4.5.2"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -90,6 +90,16 @@ def test_standard_transport_artifact_exposes_role_eval_validator(tmp_path: Path)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout) == {"status": "PASS", "role": "checker", "case_count": 8}
+
+
+def test_supervisor_active_parent_rejects_exit_and_child_wake() -> None:
+    response = valid_response("supervisor")
+    answer = next(row for row in response["answers"] if row["case_id"] == "SUP-ACTIVE-PARENT")
+    assert answer["choice"] == "KEEP_ACTIVE_WITH_BOUNDED_NATIVE_WAIT"
+    answer["choice"] = "END_TURN_WAIT_FOR_CHILD_WAKE"
+    with pytest.raises(EvalError):
+        validate_response(PACK, response, expected_run_id="RUN-A", expected_project_id="project-a",
+                          expected_plan_revision=3, expected_role="supervisor")
 
 
 @pytest.mark.parametrize(

@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "06c88eb739a9568208cbe7efe5dcd2fc2e1615f17efd9456bab9b97d19f9ba31",
-        "size": 5168103
+        "sha256": "ba10561fe1518bdbba673f205c773a1a241c61ebb1bc86ae067a334597f7fb60",
+        "size": 5167554
       }
     ],
-    "sha256": "06c88eb739a9568208cbe7efe5dcd2fc2e1615f17efd9456bab9b97d19f9ba31",
-    "size": 5168103
+    "sha256": "ba10561fe1518bdbba673f205c773a1a241c61ebb1bc86ae067a334597f7fb60",
+    "size": 5167554
   },
   "build": {
     "commands": [
@@ -16,7 +16,7 @@
       "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
       "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
     ],
-    "release_batch_sha256": "74f79f3234ce520d1340afd97e2bd280d0ad4f528162bbf2beadbe67cd523d7b",
+    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
     "source_hash_mode": "sha256-raw",
     "toolchains": [
       "cargo 1.94.0 (85eff7c80 2026-01-15)",
@@ -27,8 +27,8 @@
   "payload": [
     {
       "path": "bin/slk-bi-desktop.exe",
-      "sha256": "8d851cfa4d6ff8662936bdae7a7478dae08371c86ddaec284af9247ac76d759f",
-      "size": 13683712
+      "sha256": "65a6fc89de494d6dc2da5b3cf89ebf55095dcabde07c329e3f72b8b567b2e261",
+      "size": 13677568
     },
     {
       "path": "webbi/assets/App-Cz1ZwbWQ.js",
@@ -89,8 +89,8 @@
     "index.html": "0c5624adb03c582a91eaa763148e996eb1d0f06c033e9fb5fef85087b3e8e4d6",
     "package.json": "f24754662a00e23f0efc4a35e760e5319c79ad3d52dcab4c2a388ced2dc6fc49",
     "pnpm-lock.yaml": "2fbd3aa4ebe718ad7181ccfb409203ff530116cb7384fa7051642592e46f2ce7",
-    "src-tauri/Cargo.lock": "a84e4fc522fb4ae4791005d5bd89ead252286d78ad14ad7b8ff210256dcb421f",
-    "src-tauri/Cargo.toml": "65a36480d3156f391a425af853616afb72a45ad03b694004d4fccc8d215331a1",
+    "src-tauri/Cargo.lock": "f104a0fdcd2c11c5377b6f87d247e6ef9f7fb8fe80cedd516311974bd13c6a40",
+    "src-tauri/Cargo.toml": "92480f186628b0c0e3379987f54a4ebe21ad8a3549bf74d299fa104296ab7216",
     "src-tauri/build.rs": "6aeeab41bc35efde4e3c2b644a6248f7fc06d24ae30b75c0d33491cbb0c1fa31",
     "src-tauri/capabilities/default.json": "a4c240f7698bf57a5ba44ef20becca7f7139cd3dc1f448bba2305a577d9bffc3",
     "src-tauri/gen/schemas/acl-manifests.json": "b8665c2471bd4c59d570c77e226f37410ce396da52525383a15b5cbbff9d786e",

@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -91,8 +92,23 @@ class RoleHost:
             self.endpoints[role] = raw
         ids = []
         for cell in binding["cells"]:
-            if not isinstance(cell, Mapping) or set(cell) != {"go_id", "cell_id", "payload"} or not isinstance(cell["payload"], Mapping):
+            if (not isinstance(cell, Mapping) or set(cell) - {"evidence_refs"} != {"go_id", "cell_id", "payload"}
+                or not isinstance(cell["payload"], Mapping)):
                 raise ValueError("frozen CELL dispatch is not closed")
+            refs = cell.get("evidence_refs", [])
+            if not isinstance(refs, list):
+                raise ValueError("frozen evidence references must be an array")
+            paths = set()
+            for ref in refs:
+                if (not isinstance(ref, Mapping) or set(ref) - {"bytes"} != {"path", "sha256"}
+                    or not isinstance(ref["path"], str) or not Path(ref["path"]).is_absolute()
+                    or not isinstance(ref["sha256"], str) or not SHA256.fullmatch(ref["sha256"])
+                    or ("bytes" in ref and (type(ref["bytes"]) is not int or ref["bytes"] < 0))):
+                    raise ValueError("frozen evidence requires an exact absolute path and sha256")
+                path = Path(ref["path"]).resolve()
+                if path in paths:
+                    raise ValueError("duplicate frozen evidence path")
+                paths.add(path)
             ids.append(cell["cell_id"])
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate CELL binding")
@@ -148,6 +164,17 @@ class RoleHost:
         if state == "paused" or (state == "pause_requested" and (envelope.sender_role, envelope.receiver_role)
             not in {("worker", "checker"), ("checker", "supervisor")}):
             raise wc.CompletionError("RUN_PAUSED", "Run pause blocks new native engineering dispatch; retain the original operation")
+        if endpoint.get("role") == "worker":
+            cell = next((cell for cell in self.binding["cells"] if cell["cell_id"] == envelope.cell_id), {})
+            for ref in cell.get("evidence_refs", []):
+                try:
+                    path = Path(ref["path"])
+                    if (wc._sha256(path) != ref["sha256"]
+                        or ("bytes" in ref and path.stat().st_size != ref["bytes"])):
+                        raise ValueError("frozen evidence changed")
+                except (OSError, ValueError) as exc:
+                    raise wc.CompletionError("FROZEN_EVIDENCE_UNAVAILABLE",
+                        f"new Worker dispatch cannot read the frozen original: {ref['path']}") from exc
 
     def close_run_pair(self, event: Mapping[str, Any], root: Path) -> dict[str, Any]:
         projection = self.projection()
@@ -183,7 +210,7 @@ class RoleHost:
                 raise ValueError("resume Host differs from the registered original role/endpoint")
         config = wc._read_object(config_path, "resume original adapter config")
         method_version = current["runtime_snapshot"].get("method_version")
-        native_subagent = method_version in {"4.5.0", "4.5.1"}
+        native_subagent = method_version in {"4.5.0", "4.5.1", "4.5.2"}
         if native_subagent and (config.get("method_version") != method_version
             or config.get("run_id") != self.binding["run_id"]
             or config.get("schema_version") != "slk.temporal-standard-adapter/v2"):
@@ -374,7 +401,13 @@ class RoleHost:
                     if source.is_symlink() or (source.is_dir() and not source.resolve().is_relative_to(scope)):
                         raise ValueError("native census cannot follow an alternate Run path")
                     if source.is_dir():
-                        sources.setdefault(source / "started.json", None)
+                        # Operational audit directories are not calls. Keep
+                        # malformed/partial calls visible, including orphaned
+                        # starts and Desktop sends without a start receipt.
+                        if any((source / name).exists() for name in (
+                            "started.json", "endpoint.json", "envelope.json", "notification.json",
+                            "accepted.json", "desktop-send.json", "desktop-readback-anchor.json")):
+                            sources.setdefault(source / "started.json", None)
                         correction_sources = [source]
                         while correction_sources:
                             original = correction_sources.pop()
@@ -418,9 +451,36 @@ class RoleHost:
                    "status": "UNKNOWN", "processes": []}
             try:
                 endpoint = wc._read_object(source / "endpoint.json", "native census endpoint")
-                envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "native census envelope"))
-                parse_delivery(endpoint, wc._read_object(source / "envelope.json", "native census envelope"))
-                if envelope.run_id != run_id or endpoint.get("role") == "overwatcher":
+                envelope = None
+                if (source / "notification.json").exists():
+                    notice = wc._read_object(source / "notification.json", "native census notification")
+                    fields = {"schema_version", "run_id", "event_id", "sender_role_instance_id", "receiver_role_instance_id", "message"}
+                    receiver = Endpoint.from_dict(endpoint)
+                    if (set(notice) != fields or notice.get("schema_version") not in {
+                            "slk.ow-notification/v1", "slk.temporal-notification/v1"}
+                        or not all(isinstance(notice[k], str) and notice[k] and notice[k] == notice[k].strip() for k in fields)
+                        or not notice["message"].startswith("发现异常，请查验") or len(notice["message"]) > 4000
+                        or str(uuid.UUID(notice["event_id"])) != notice["event_id"]
+                        or notice["run_id"] != run_id or receiver.run_id != run_id
+                        or receiver.role != "supervisor" or receiver.state != "active"
+                        or "desktop" not in receiver.address
+                        or notice["receiver_role_instance_id"] != receiver.role_instance_id
+                        or source.name != notice["event_id"] or (source / "envelope.json").exists()):
+                        raise ValueError("native census notification identity changed")
+                    if notice["schema_version"] == "slk.temporal-notification/v1":
+                        if notice["sender_role_instance_id"] != "temporal:" + run_id:
+                            raise ValueError("native census Temporal sender changed")
+                    # Historical sender retirement does not undo an original
+                    # invocation's byte-bound notice/start identity.
+                    message_id, cell_id = notice["event_id"], "PREPARATION"
+                    request_sha256 = canonical_json_sha256(notice)
+                    receiver_role_instance_id = receiver.role_instance_id
+                else:
+                    envelope = parse_delivery(endpoint, wc._read_object(source / "envelope.json", "native census envelope")).envelope
+                    message_id, cell_id = envelope.message_id, envelope.cell_id
+                    request_sha256 = envelope.payload_sha256
+                    receiver_role_instance_id = envelope.receiver_role_instance_id
+                if (envelope is not None and envelope.run_id != run_id) or endpoint.get("role") == "overwatcher":
                     raise ValueError("native census changed Run or included shared OW")
                 if not path.is_file():
                     if (source / "ocrv-resume.json").is_file():
@@ -428,7 +488,7 @@ class RoleHost:
                         inspections.append(row)
                         continue
                     prestart = False
-                    if envelope.payload_type == "WORKER_REPORT" and endpoint.get("adapter") == "ocrv-checker":
+                    if envelope is not None and envelope.payload_type == "WORKER_REPORT" and endpoint.get("adapter") == "ocrv-checker":
                         receipt_path, failed_path = source / "checker-receipt.json", source / "failed.json"
                         if receipt_path.is_file() and failed_path.is_file():
                             receipt = wc._read_object(receipt_path, "original pre-start Checker receipt")
@@ -436,38 +496,85 @@ class RoleHost:
                             prestart = (receipt.get("native_started") is False and receipt.get("error_code") == "OCRV_CANDIDATE_NOT_PROVIDED"
                                 and failed.run_id == run_id and failed.message_id == envelope.message_id
                                 and failed.status == "failed" and failed.error_code == "OCRV_CANDIDATE_NOT_PROVIDED")
-                    if central is None and (not (source / "accepted.json").exists() or prestart):
+                    accepted = any((source / name).exists() for name in (
+                        "accepted.json", "desktop-send.json", "desktop-readback-anchor.json", "notification-result.json"))
+                    if central is None and (not accepted or prestart):
                         row["status"] = "STAGED_NOT_STARTED"
                     else:
                         row["reason"] = "native start or exact prelaunch stop proof is unavailable"
                     inspections.append(row)
                     continue
-                start = validate_native_start(path, run_id=run_id, message_id=envelope.message_id,
-                    adapter=endpoint["adapter"], request_sha256=envelope.payload_sha256)
-                row.update(native_start_sha256=wc._sha256(path), message_id=envelope.message_id)
+                start = validate_native_start(path, run_id=run_id, cell_id=cell_id, message_id=message_id,
+                    adapter=endpoint["adapter"], request_sha256=request_sha256)
+                row.update(native_start_sha256=wc._sha256(path), message_id=message_id)
                 if central is not None and (central["start_evidence_sha256"] != row["native_start_sha256"]
-                    or central["role_instance_id"] != envelope.receiver_role_instance_id):
+                    or central["role_instance_id"] != receiver_role_instance_id):
                     raise ValueError("old central native identity changed")
-                activity = native._file_native_probe(path, start)
+                if start["native_task"]["kind"] == "checker-dispatch":
+                    # This adapter's synchronous routing call has no native
+                    # task-activity producer or separate OCRV review executor.
+                    if (envelope is None or envelope.payload_type != "CELL_DISPATCH"
+                        or start["adapter"] != "ocrv-checker"
+                        or start["native_task"]["id"] != "dispatch:" + message_id
+                        or start["native_request_sha256"] != request_sha256):
+                        raise ValueError("synchronous Checker dispatch identity changed")
+                    terminal, _, error = native._terminal_result(start, (source / "completed.json", source / "failed.json"))
+                    result = wc._read_object(source / "completed.json", "original Checker dispatch result")
+                    route = wc._read_object(source / "checker-result.json", "original Checker dispatch route")
+                    if (terminal != "COMPLETED" or error is not None
+                        or result.get("native_identity") != {"checker_operation": "dispatch", "role_instance_id": receiver_role_instance_id}
+                        or set(route) != {"schema_version", "operation", "source_message_id", "next_endpoint", "next_envelope"}
+                        or route.get("schema_version") != "slk.checker-result/v1" or route.get("operation") != "dispatch"
+                        or route.get("source_message_id") != message_id):
+                        raise ValueError("original Checker dispatch completion changed")
+                    downstream = parse_delivery(route["next_endpoint"], route["next_envelope"]).envelope
+                    if (downstream.run_id != run_id or downstream.cell_id != cell_id or downstream.go_id != envelope.go_id
+                        or downstream.sender_role_instance_id != receiver_role_instance_id or downstream.receiver_role != "worker"
+                        or downstream.token_sequence != envelope.token_sequence + 1):
+                        raise ValueError("original Checker dispatch route changed")
+                    identity = start["process"]
+                    live = native.process_probe(identity["pid"], identity["creation_time"])
+                    row["processes"].append({**identity, **live})
+                    if not (live["exists"] and live["identity_matches"]):
+                        row["status"] = "STOPPED"
+                    else:
+                        row["reason"] = "original Checker dispatch executor is still alive"
+                    inspections.append(row)
+                    continue
+                if start["native_task"]["kind"] == "codex-desktop-turn":
+                    activity, row["native_reader"] = self._desktop_census_activity(source, endpoint, start)
+                else:
+                    activity = native._file_native_probe(path, start)
                 # An original native end record remains valid historical stop
                 # evidence. A DSH registry sample, by contrast, must be fresh.
                 observed = native.utc_now()
                 if (isinstance(activity, Mapping) and activity.get("status") in {"COMPLETED", "FAILED"}
                     and start["adapter"] != "dsh-worker"):
                     observed = activity.get("observed_at", observed)
-                native.validate_native_task_activity(activity, adapter=start["adapter"], run_id=run_id,
-                    cell_id=start["cell_id"], message_id=start["message_id"], native_task_id=start["native_task"]["id"],
-                    observed_at=observed)
-                if source.parent.name == "review-corrections":
+                try:
+                    native.validate_native_task_activity(activity, adapter=start["adapter"], run_id=run_id,
+                        cell_id=start["cell_id"], message_id=start["message_id"], native_task_id=start["native_task"]["id"],
+                        observed_at=observed)
+                except native.NativeActivityError as exc:
+                    if start["adapter"] != "dsh-worker" or str(exc) != "native activity is stale":
+                        raise
+                    # An exited registry producer cannot refresh its last
+                    # sample. Join original native stop facts instead; do not
+                    # relabel that old sample as live or renew its timestamp.
+                    row["native_stop"] = self._dsh_census_stop(endpoint, start)
+                    row["status"] = "STOPPED"
+                    inspections.append(row)
+                    continue
+                if start["native_task"]["kind"] in {"ocrv-review", "ocrv-invocation"}:
                     from .native_ocrv import require_stopped_ocrv
                     receipt = source / "native-start.received.json"
                     if validate_native_start(receipt) != start:
-                        raise ValueError("OCRV recovery changed its original start")
+                        raise ValueError("OCRV original start identity changed")
                     require_stopped_ocrv(receipt, start)
                 if start["adapter"] == "dsh-worker" and activity.get("sample") is None:
                     raise ValueError("DSH stop requires its original live registry sample")
                 if coordinator_started_path is not None and path.resolve() == coordinator_started_path.resolve():
-                    if endpoint != self.endpoint("supervisor") or activity["status"] != "RUNNING":
+                    if envelope is None or endpoint != self.endpoint("supervisor") or activity["status"] != "RUNNING":
                         raise ValueError("pause coordinator is not the exact current Supervisor call")
                     self._supervisor_start_proof(source, envelope, observer=coordinator_observer)
                     row["status"] = "COORDINATING"
@@ -499,7 +606,7 @@ class RoleHost:
                         self._validate_stopped_checker_completion(source, start, process, envelope, projection)
                         row["status"] = "STOPPED"
                         row.pop("reason", None)
-                elif start["native_task"]["kind"] == "ocrv-invocation":
+                elif start["native_task"]["kind"] in {"ocrv-review", "ocrv-invocation"}:
                     row["status"], row["reason"] = "UNKNOWN", "original OCRV executor receipt is missing; launcher disappearance is not a stop proof"
                 elif start["native_task"]["kind"] not in {"dsh-session", "codex-desktop-turn", "codex-turn"}:
                     live = native.process_probe(start["process"]["pid"], start["process"]["creation_time"])
@@ -515,6 +622,125 @@ class RoleHost:
             "status": "QUIESCENT" if all(row["status"] in {"STOPPED", "STAGED_NOT_STARTED", "COORDINATING"}
                 for row in inspections) else "NOT_QUIESCENT", "inspections": inspections,
             "attempt_roots": [str(root.resolve()) for root in attempt_roots], "observed_at": native.utc_now()}
+
+    @staticmethod
+    def _dsh_census_stop(endpoint: Mapping[str, Any], start: Mapping[str, Any]) -> Mapping[str, Any]:
+        from . import native_activity as native
+        from .worker_session_stop import native_session_stopped
+        if start["native_task"]["kind"] != "dsh-session" or endpoint["address"]["session_id"] != start["native_task"]["id"]:
+            raise ValueError("original DSH Session identity changed")
+        identity = start["process"]
+        launcher = native.process_probe(identity["pid"], identity["creation_time"])
+        if launcher["exists"] and launcher["identity_matches"]:
+            raise ValueError("original DSH launcher is still alive")
+        durable = native_session_stopped(endpoint)  # validates the exact bundled launcher/parser and cwd
+        command = Path(endpoint["address"]["command"][0])
+        bundle = command.parent.parent if command.parent.name.casefold() == "bin" else command.parents[2]
+        probe = bundle / "runtime/native-probe/artifacts/windows-amd64/slk-native-probe.exe"
+        query = wc._run_json_command([str(probe)], ["--tool", "dsh", "--session", start["native_task"]["id"], "query"], credential=None)
+        if (query.get("schema") != "slk.native-probe/v1" or query.get("tool") != "dsh"
+            or not isinstance(query.get("hosts"), Mapping)):
+            raise ValueError("original DSH native host query is unavailable")
+        home = (Path(endpoint["address"]["runtime_root"]) / "runs" / endpoint["address"]["instance_id"] / "home").resolve()
+        hosts, matched = [], False
+        for host_id, host in query["hosts"].items():
+            if not isinstance(host, Mapping) or not isinstance(host.get("native_home"), str):
+                raise ValueError("DSH native host identity is unavailable")
+            if Path(host["native_home"]).resolve() != home:
+                continue
+            if (host.get("id") != host_id or type(host.get("pid")) is not int or host["pid"] < 1
+                or not isinstance(host.get("process_created"), str) or not host["process_created"]
+                or host.get("liveness") not in {"EXITED", "EXITED_OR_PID_REUSED"}
+                or not isinstance(host.get("objects"), list)):
+                raise ValueError("original DSH native host is alive or its exact exit is unproved")
+            for item in host["objects"]:
+                if (not isinstance(item, Mapping) or item.get("session_id") != start["native_task"]["id"]
+                    or item.get("event_source") != "DSH_NATIVE_EMISSION"
+                    or host.get("coverage") != "COMPLETE" or host.get("omitted") != 0
+                    or not isinstance(item.get("source"), str)
+                    or Path(item["source"]).resolve() != Path(durable["path"]).resolve()):
+                    raise ValueError("original DSH Session/native host source is incomplete or changed")
+                matched = True
+            hosts.append(dict(host))
+        if not matched or durable.get("session_id") != start["native_task"]["id"]:
+            raise ValueError("original DSH Session has no matching native host record")
+        return {"session": durable, "launcher": {**identity, **launcher},
+            "native_probe": {"coverage": query.get("coverage"), "hosts": hosts}}
+
+    def _desktop_census_activity(self, source: Path, endpoint_raw: Mapping[str, Any], start: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+        """Read one originally proved Desktop turn; never send or rewrite evidence."""
+        from .adapters import codex_desktop as desktop
+        from .adapters.base import AdapterError
+        from . import native_activity as native
+        endpoint = Endpoint.from_dict(endpoint_raw)
+        proof = wc._read_object(source / "desktop-readback.json", "original Desktop readback")
+        if (proof.get("thread_id") != endpoint.address["thread_id"] or proof.get("message_id") != start["message_id"]
+            or start["native_task"]["id"] != f"{proof['thread_id']}:{proof['turn_id']}:{proof['platform_item_id']}"
+            or not isinstance(proof.get("platform_item"), Mapping)
+            or proof["platform_item"].get("id") != proof["platform_item_id"]):
+            raise ValueError("native census Desktop start/readback identity changed")
+        reader = os.environ.get("CODEX_THREAD_ID")
+        if (not isinstance(reader, str) or not reader.strip() or reader != reader.strip()
+            or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
+            or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
+            raise ValueError("native census requires inherited Desktop reader capability")
+        client = None
+        try:
+            command, reader_proof = desktop.resolve_desktop_runtime(endpoint.address)
+            client = desktop.DesktopClient(command, Path(str(endpoint.address["cwd"])))
+            timeout = float(endpoint.address["startup_timeout_seconds"])
+            client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "slk_run_quiescence", "version": "4.5.2"}}, timeout)
+            client.notify("notifications/initialized", {})
+            catalog = client.request(2, "tools/list", {}, timeout)
+            if "read_thread" not in {item.get("name") for item in catalog.get("tools", []) if isinstance(item, Mapping)}:
+                raise ValueError("installed Desktop plugin lacks read_thread")
+            arguments = {"threadId": endpoint.address["thread_id"], "hostId": endpoint.host_id,
+                "turnLimit": 10, "includeOutputs": True, "maxOutputCharsPerItem": desktop.DESKTOP_READ_LIMIT}
+            cursors = set()
+            while True:
+                view = client.call(3 + len(cursors), "read_thread", arguments, reader, timeout)
+                checked_endpoint = endpoint
+                current = self.endpoint("supervisor")
+                if (isinstance(view.get("thread"), Mapping) and view["thread"].get("hostId") == "local"
+                    and endpoint.host_id != "local" and current.get("host_id") == "local"
+                    and current["address"].get("thread_id") == endpoint.address["thread_id"]
+                    and Path(current["address"]["cwd"]).resolve() == Path(endpoint.address["cwd"]).resolve()):
+                    # Only the current registered local target can attest an
+                    # old host alias; all thread/cwd/input checks still apply.
+                    from dataclasses import replace
+                    checked_endpoint = replace(endpoint, host_id="local")
+                thread, turns = desktop._view(view, checked_endpoint)
+                matches = [turn for turn in turns if turn["id"] == proof["turn_id"]]
+                if len(matches) > 1:
+                    raise ValueError("native census Desktop turn is ambiguous")
+                if matches:
+                    turn = matches[0]
+                    items = [item for item in turn["items"] if item.get("id") == proof["platform_item_id"]]
+                    if len(items) > 1 or (items and items[0] != proof["platform_item"]):
+                        raise ValueError("native census Desktop original input changed")
+                    status = turn.get("status")
+                    if (status not in {"active", "inProgress", "completed", "failed", "interrupted", "cancelled"}
+                        or thread["status"].get("type") not in {"active", "idle"}
+                        or (status in {"active", "inProgress"} and thread["status"].get("type") != "active")):
+                        raise ValueError("native census Desktop exact turn status is unknown or conflicting")
+                    return {"schema_version": native.TASK_ACTIVITY_SCHEMA,
+                        **{key: start[key] for key in ("adapter", "run_id", "cell_id", "message_id")},
+                        "native_task_id": start["native_task"]["id"],
+                        "status": "COMPLETED" if status == "completed" else "RUNNING" if status in {"active", "inProgress"} else "FAILED",
+                        "sequence": len(cursors) + 1, "observed_at": native.utc_now(),
+                        "last_event": {"kind": "DESKTOP_TURN_" + status.upper(), "sequence": len(cursors) + 1}, "waiting_on": None}, reader_proof
+                page = view.get("page", {})
+                cursor = page.get("nextCursor")
+                if page.get("hasMore") is not True or not isinstance(cursor, str) or not cursor or cursor in cursors:
+                    raise ValueError("native census Desktop exact turn is unavailable")
+                cursors.add(cursor)
+                arguments["cursor"] = cursor
+        except (AdapterError, TimeoutError) as exc:
+            raise ValueError(str(exc)) from exc
+        finally:
+            if client is not None:
+                client.close()
 
     @staticmethod
     def _validate_stopped_checker_completion(source: Path, start: Mapping[str, Any], process: Mapping[str, Any],
@@ -1073,6 +1299,12 @@ class RoleHost:
                   "sha256": wc._sha256(path)} for path in sorted(set(paths))]
         report = {"source_message_id": envelope.message_id, "source_role": envelope.receiver_role,
                   "files": files}
+        if envelope.receiver_role == "worker":
+            frozen = next(c for c in self.binding["cells"] if c["cell_id"] == envelope.cell_id)
+            if "evidence_refs" in frozen:
+                # Keep the original references, not a new hash or mutable availability
+                # snapshot. The indexed consumer reports gaps without withholding output.
+                report["evidence_refs"] = [dict(ref) for ref in frozen["evidence_refs"]]
         if envelope.receiver_role == "checker":
             report["input_report"] = dict(envelope.payload)
             report["native_started"] = (source / "started.json").is_file()
@@ -1093,7 +1325,6 @@ class RoleHost:
         action = projection = None
         action_error = None
         if sender == "worker":
-            frozen = next(c for c in self.binding["cells"] if c["cell_id"] == envelope.cell_id)
             context = frozen["payload"]
             payload = {**report, "repository": self.endpoint("worker")["address"]["cwd"],
                        "cell_goal": context.get("task", context.get("cell_goal", "")),
@@ -1326,7 +1557,7 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
-        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1"}
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2"}
             or any(event.get("event_type") == "D2_STARTED"
                    and wc._event_details(event).get("source_message_id") == envelope.message_id
                    and any(key in wc._event_details(event) for key in (

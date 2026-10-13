@@ -147,7 +147,7 @@ def _valid_bi_receipt(path_value: Any, run_id: str, *, method_version: Any,
         and (not match_method or value.get("method_version") == method_version)
         and value.get("run_id") == run_id
         and value.get("bi_version") in (
-            {"1.1.1"} if method_version in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1") or value.get("method_version") in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1")
+            {"1.1.1"} if method_version in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2") or value.get("method_version") in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2")
             else {"1.1.0", "1.1.1"})
         and isinstance(value.get("device_id"), str)
         and bool(str(value.get("device_id")).strip())
@@ -165,7 +165,7 @@ def _temporal_binding_from_receipt(path_value: Any, run_id: str, *,
                 "workflow_templates", "client_command", "workflow_identity", "attempt_root",
                 "evidence_sha256",
             } or value.get("schema_version") != "slk.temporal-readiness/v2"
-            or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1"} or value.get("run_id") != run_id
+            or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2"} or value.get("run_id") != run_id
             or (method_version is not None and value.get("method_version") != method_version)
             or value.get("status") != "READY" or value.get("service_mode") != "SHARED_LOCAL"
             or value.get("workflow_templates") != ["SLK.Start", "SLK.Run"]
@@ -1043,7 +1043,7 @@ def _evaluate_run_admission(request: Mapping[str, Any], *,
         projection = {}
     snapshot = projection.get("runtime_snapshot")
     method_version = snapshot.get("method_version") if isinstance(snapshot, Mapping) else None
-    lightweight = not conformance_sample and method_version in {"4.5.0", "4.5.1"}
+    lightweight = not conformance_sample and method_version in {"4.5.0", "4.5.1", "4.5.2"}
     roles = [_role_result(item, lightweight=lightweight) for item in raw_roles if isinstance(item, Mapping)]
     if len(roles) != len(raw_roles) or sorted(item["role"] for item in roles) != sorted(REQUIRED_ROLES):
         raise ValueError("roles must contain exactly one supervisor, worker, checker, and overwatcher")

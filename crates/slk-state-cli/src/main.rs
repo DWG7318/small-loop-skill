@@ -377,13 +377,14 @@ fn close_role(arguments: &[String]) -> Result<Value, CliError> {
 }
 
 fn replace_overwatcher(arguments: &[String]) -> Result<Value, CliError> {
-    let request: ReplaceOverwatcherRequest = request(arguments)?;
+    let request_bytes = fs::read(required_path(arguments, "--request")?).map_err(CliError::command)?;
+    let request: ReplaceOverwatcherRequest = serde_json::from_slice(&request_bytes).map_err(CliError::command)?;
     let run_id = request.run_id.clone();
     let binding_revision = request.expected_binding_revision + 1;
     let role_instance_id = request.replacement.role_instance_id.clone();
     let store = configured_store()?;
     let issued = store
-        .replace_overwatcher(&role_credential()?, request)
+        .replace_overwatcher_json(&role_credential()?, &request_bytes)
         .map_err(CliError::command)?;
     Ok(json!({
         "status":"overwatcher_replaced",

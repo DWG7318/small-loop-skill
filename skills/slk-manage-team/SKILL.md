@@ -19,7 +19,9 @@ description: Use when an active Small Loop Skill (SLK) Run needs its current tea
 
 ## 准备完成边界
 
-基本准备真实闭合就完成；如用了准备 Goal，此时结束，不延伸到工程。首个未启动 CELL 仍由 Supervisor 以当前下一枚单调 TOKEN 交 Checker。已启动的旧交接只续原后缀，不重派。业务/记录结束后真实交接为最后任务动作，完成即结束活动；三工程角色不用 wait_threads 盯后继。
+基本准备真实闭合就完成；如用了准备 Goal，此时结束，不延伸到工程。首个未启动 CELL 仍由 Supervisor 以当前下一枚单调 TOKEN 交 Checker。已启动的旧交接只续原后缀，不重派。业务/记录结束后真实交接为最后工程动作；Worker/Checker 随后结束本次激活，Supervisor 仍保持 active，以有界原生等待接收结果和直属 OW 报告，不以准备完成为由退出。
+
+冻结 CELL 所需的 Git 外原合同，在既有 RoleHost 的该 CELL `evidence_refs` 中登记绝对 `path`、原 `sha256`（可附 `bytes`），不用把材料塞进工程 Git 或 Worker payload。沿原交接进入 OCRV 索引供 `slk_read_evidence` 读取；仅发路径/摘要不算可读，缺失或变化保留为材料缺口，不重新认可新字节。
 
 可恢复错误从最后可信进展续作，记录已完成项、阻塞、最后真实动作、下一合法动作；不重做已完成项、不盲目派工、不倒灌长历史。缺必需权限或不能安全继续就如实报告，Goal不保证自动恢复/永不退出；Owner暂停/取消优先。
 
