@@ -3,38 +3,37 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "b3b694cd86cebb6fd34694af921de46f2d06e0a0edd4d5754f10d1eda171c899",
-        "size": 3083861
+        "sha256": "bf520d9113066790996aa2c46a897b1e8aede1a208a5df77bb350ed87bad6fb0",
+        "size": 3123589
       }
     ],
-    "sha256": "b3b694cd86cebb6fd34694af921de46f2d06e0a0edd4d5754f10d1eda171c899",
-    "size": 3083861
+    "sha256": "bf520d9113066790996aa2c46a897b1e8aede1a208a5df77bb350ed87bad6fb0",
+    "size": 3123589
   },
   "build": {
     "command": [
-      "cargo",
+      "C:/Users/DWG/.cargo/bin/cargo.exe",
       "build",
       "--release",
       "-p",
       "slk-state-core"
     ],
-    "scope": "library only; final application batch has separate prebuild provenance",
+    "scope": "4.5.2 library; separate final application batch captures its build inputs",
     "source_hash_mode": "sha256-raw",
-    "toolchain": "rustc 1.94.0 (4a4ef493e 2026-03-02); cargo 1.94.0 (85eff7c80 2026-01-15)",
-    "working_directory": "D:/SLK parent workspace; core source reviewed and 146 core tests passed"
+    "working_directory": "D:/SLK parent workspace"
   },
   "payload": [
     {
       "path": "lib/slk_state_core.rlib",
-      "sha256": "6e833a125853fbc7e842f4177b74469b2ca7394d520305dfb8bb4d65fa1c2a4f",
-      "size": 9889284
+      "sha256": "f6ae405e1414fc3e651618cab5ce29aa9aa3adc26128f241f4bed137b0a3f5f7",
+      "size": 10061630
     }
   ],
-  "product_version": "4.5.1",
+  "product_version": "4.5.2",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "aa964ad027e4800495c91dc66e38c1b59a4bf3cd6ede65a47075a53e5c6521a0",
-    "Cargo.toml": "3553cd54dd1cfced8aa7f0c23723b75afbe8f4ab45e8b4999e6b22a875f4707c",
+    "Cargo.lock": "c114490cc1824db830c799063338ec84d8fc662f35837f5f40aa4709a36e7f64",
+    "Cargo.toml": "e88582f488763d7d218dd6f770b977515c99972f79d3ad469bdf770f59490569",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "a7cbb32a0d52a5cb8b79e28d0012b4ca5577c00d5f9de8eaf0f224c2deed7077",
     "migrations/0001.sql": "60a609c3f64c0ef4bf11c1f2d98316ff432b16508d551eb649d05acd25adf087",
@@ -52,22 +51,22 @@
     "src/export.rs": "52d691f11936c0515a41dbfed767acfce1ae266e2535da5768d46f862d89d753",
     "src/lib.rs": "79c85c8a51044aa2b0e00640034dfe4aeeb37cbf0798ec56d74d0dfcb6531a5d",
     "src/model.rs": "660acdd609baa7844194675957eaafed38b1f8f5c1a2841bf814a3f428f3ac5a",
-    "src/query.rs": "9822b5fd65950964a6eb89136dff43aae520765db6d0a4000bab2c568bf185ab",
+    "src/query.rs": "84089ddbb887a3b1fc4831eb3065d406475c9e8e5bbe7e805038fb6b64b13a97",
     "src/recovery_start.rs": "ff5a2dca70765eab5d6da287a53425ff2a4720f373a2dd88783b1047102d4c04",
     "src/schema.rs": "f909f4d531e563ef59c97a9c2ff2d243050b73b09bffe3aa7dfe3b092e2e4f1a",
-    "src/write.rs": "860e6e9b780c85d4cb5724720ef3036e843ec80de783c0aa4a42d0a1988cf62c",
+    "src/write.rs": "7c11acf3617d7f143312dcae3f90ebd638a659d8424f2cdf04a27c14a6de66b7",
     "tests/auth.rs": "9dffe83e3dbeb6cab98a761f11a543cfe22e7db29cb423997b5f55f334d5c3f6",
     "tests/concurrency.rs": "005b059b6269f3bd4b0fb5f34399c9ee3e5434eb4ddb46fddb59eb11ea09e268",
     "tests/config.rs": "898492a826d84ae75000c93ad17ba796573f91dfdae0789906fa6f421a21b14e",
     "tests/evidence.rs": "99fdb9b476039bc0261129052c09b749ff81c2c4e48de4a69b3c04105c2d2b2e",
     "tests/export.rs": "8f4f9c4cd669c2f32edb166e12f0bc298e2ba870fb59c7eea2491089aef442c0",
     "tests/overwatch_continuity.rs": "73ad9349625aea4952a09f7fe2c6f3285565d465d0269082e5863698f41fa11e",
-    "tests/overwatcher.rs": "8fd03f146994b6f08d45aac1cc07f898407c75c8209baaf12cfdd747bef2f73b",
+    "tests/overwatcher.rs": "80152f1b99c0d16398fe1f0c7d75bcaa9fd8b8fb8992b3080110ab1730a7f83d",
     "tests/query.rs": "af1a647145800fa4991ace3f687a3572af5ad804b8b6c5f7371966085ff89664",
     "tests/run_admin.rs": "1ec422ae97417d9343ae4162f445a7ac6f944ecae8f620deda5ec92c4654316d",
     "tests/runtime_snapshot.rs": "87b14301eb0f01a60931262da21536c000a548382d13743cf22f6210dc7079d6",
     "tests/schema.rs": "dadad86969dfc7d1a936f387a07fc88ca83537570b9cbc42a4c215835ddd87ba",
-    "tests/write_flow.rs": "08c8d91d7f53194e727cf6d2568f7e8d3cbaae4f12a5dd377bdd1838d4cd80c2"
+    "tests/write_flow.rs": "8ad91eb32d747705c3c409b7d104da9da08511a29f934ce75a408e5be13628d6"
   },
   "target": "windows-x86_64",
   "tool": "slk-state-core"

@@ -36,8 +36,8 @@ class DistributionTests(unittest.TestCase):
                 runtime = {item for item in wheel.namelist() if not ".dist-info/" in item}
                 self.assertEqual(runtime, {"slk_overwatch_tools/__init__.py", "slk_overwatch_tools/cadence.py",
                                            "slk_overwatch_tools/native_records.py"})
-                metadata = wheel.read("slk_overwatch_tools-1.0.1.dist-info/METADATA").decode()
-                self.assertIn("Version: 1.0.1", metadata)
+                metadata = wheel.read(f"slk_overwatch_tools-{builder.VERSION}.dist-info/METADATA").decode()
+                self.assertIn(f"Version: {builder.VERSION}", metadata)
                 self.assertNotIn("Requires-Dist:", metadata)
                 self.assertFalse(any("slk_transport" in item for item in wheel.namelist()))
 
@@ -46,7 +46,7 @@ class DistributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             name = builder.build_wheel(directory)
             with zipfile.ZipFile(Path(directory) / name) as wheel:
-                record = "slk_overwatch_tools-1.0.1.dist-info/RECORD"
+                record = f"slk_overwatch_tools-{builder.VERSION}.dist-info/RECORD"
                 rows = list(csv.reader(io.StringIO(wheel.read(record).decode())))
                 self.assertEqual({row[0] for row in rows}, set(wheel.namelist()))
                 for path, digest, size in rows:
@@ -63,7 +63,7 @@ class DistributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             builder.main(["--output", directory])
             manifest = json.loads((Path(directory) / "BUILD_INPUTS.json").read_text())
-            self.assertEqual(manifest["version"], "1.0.1")
+            self.assertEqual(manifest["version"], builder.VERSION)
             for relative, digest in manifest["source_sha256"].items():
                 self.assertEqual(digest, hashlib.sha256((ROOT / relative).read_bytes()).hexdigest())
             self.assertNotIn("BUILD_INPUTS.json", manifest["source_sha256"])

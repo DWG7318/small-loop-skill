@@ -1,4 +1,4 @@
-# SLK Overwatch tools 1.0.1
+# SLK Overwatch tools 1.0.2
 
 Small, deterministic, read-only helpers used by SLK transport. This is not an
 Agent, runtime manager, monitor service, timer, message sender or state writer.
@@ -8,7 +8,7 @@ Runtime and the wheel builder use only Python's standard library (Python 3.10+).
   calculates the existing cadence result. The caller supplies method policy;
   the helper does not maintain an SLK version allowlist or assert live execution.
 - `read_codex_subagent_snapshot(request, original_sample_id=None)` reads exactly
-  the caller-selected private Codex JSONL source and returns hashes, original
+  the caller-selected private Codex JSONL source (or explicit same-parent source list) and returns hashes, original
   times and status metadata. The caller must authenticate the source location,
   current registration and execution binding before calling it. A snapshot is
   not a native-start proof, host attestation or authorization to act.
@@ -24,7 +24,7 @@ There are no model-output, record-length or source-size limits in these readers.
 From this repository's root, after installing the prebuilt wheel:
 
 ```powershell
-python -m pip install --no-index artifacts/slk_overwatch_tools-1.0.1-py3-none-any.whl
+python -m pip install --no-index artifacts/slk_overwatch_tools-1.0.2-py3-none-any.whl
 python -m unittest discover -s tests -v
 ```
 

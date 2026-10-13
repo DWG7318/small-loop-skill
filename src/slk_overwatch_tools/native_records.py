@@ -1,4 +1,4 @@
-"""Read a caller-selected Codex rollout; never discover, write, attest or refresh it.
+"""Read caller-selected Codex rollouts; never discover, write, attest or refresh them.
 
 The caller authenticates the absolute source and current role/execution binding.
 Private Codex JSONL is not a stable API or cryptographic platform attestation.
@@ -62,8 +62,55 @@ def spawn_call_id(value: Mapping[str, Any]) -> str:
     return value.get("spawn_call_id", native_execution(value["native_execution_id"])[1])
 
 
+def native_source_paths(request: Mapping[str, Any]) -> list[str]:
+    """Return explicit sources in caller-supplied order, never discover a file."""
+    if ("native_source_path" in request) == ("native_source_paths" in request):
+        raise OverwatcherSubagentError("select exactly one native source form")
+    sources = request.get("native_source_paths", [request.get("native_source_path")])
+    if not isinstance(sources, list) or not sources:
+        raise OverwatcherSubagentError("native sources must be a non-empty explicit list")
+    resolved = []
+    for source in sources:
+        path = Path(native_text(source, "native source path"))
+        if not path.is_absolute():
+            raise OverwatcherSubagentError("native source must be absolute")
+        resolved.append(path.resolve())
+    if len(set(resolved)) != len(resolved):
+        raise OverwatcherSubagentError("native source paths must be unique")
+    return sources
+
+
+def _source_records(request: Mapping[str, Any], metadata: list):
+    """Stream original records with real locations; do not create a merged rollout."""
+    sequence = 0
+    previous_time = None
+    multiple = "native_source_paths" in request
+    parent_id = request["native_address"]["parent"]["session_id"]
+    for source in native_source_paths(request):
+        metas = []
+        with Path(source).open("rb") as stream:
+            for local_line, raw in enumerate(stream, 1):
+                sequence += 1
+                raw = raw.rstrip(b"\r\n")
+                record = native_object(raw)
+                digest = hashlib.sha256(raw).hexdigest()
+                location = {"path": source, "line": local_line, "sha256": digest}
+                payload = record.get("payload")
+                if record.get("type") == "session_meta" and isinstance(payload, dict):
+                    metas.append(payload.get("id"))
+                    metadata.append(location)
+                if multiple and record.get("type") == "response_item" and isinstance(payload, dict) and payload.get("type") in {"function_call", "function_call_output"}:
+                    current_time = datetime.fromisoformat(native_timestamp(record.get("timestamp")).replace("Z", "+00:00"))
+                    if previous_time is not None and current_time < previous_time:
+                        raise OverwatcherSubagentError("explicit native sources are not in chronological record order")
+                    previous_time = current_time
+                yield sequence, record, digest, location
+        if metas != [parent_id]:
+            raise OverwatcherSubagentError("native source parent session identity is absent or ambiguous")
+
+
 def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id: str | None = None) -> dict[str, Any]:
-    """Parse one exact source once; never search by name, latest file or child UUID."""
+    """Parse exact sources once; never search by name, latest file or child UUID."""
     kind, activation_id = native_execution(request["native_execution_id"])
     spawn_id = spawn_call_id(request)
     followup = kind == "codex-subagent-followup"
@@ -79,7 +126,8 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
     other_spawns: dict[str, list] = {}
     successful_spawns: dict[str, list] = {}
     child_links = []
-    metas = []
+    source_metadata = []
+    multiple = "native_source_paths" in request
 
     def covers_child(payload):
         if payload.get("namespace") != "collaboration" or not isinstance(payload.get("arguments"), str):
@@ -103,86 +151,79 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
 
     # Keep only tool records in memory. Their raw bytes remain private, and only
     # per-record hashes leave this reader (not a frozen hash of the growing file).
-    with Path(request["native_source_path"]).open("rb") as stream:
-        for line_number, raw in enumerate(stream, 1):
-            raw = raw.rstrip(b"\r\n")
-            record = native_object(raw)
-            record_type = native_text(record.get("type"), "native record type")
-            payload = record.get("payload")
-            if not isinstance(payload, dict):
-                raise OverwatcherSubagentError("native record payload must be an object")
-            if record_type == "session_meta":
-                metas.append(payload.get("id"))
-            if record_type == "event_msg" and "child_source_path" in request:
-                item = payload.get("item")
-                if (payload.get("type") == "item_completed" and isinstance(item, dict)
-                    and item.get("type") == "SubAgentActivity" and item.get("id") == spawn_id):
-                    child_links.append((line_number, record, hashlib.sha256(raw).hexdigest()))
-            if record_type != "response_item":
-                continue
-            payload_type = native_text(payload.get("type"), "native response type")
-            if payload_type not in {"function_call", "function_call_output"}:
-                continue
-            # Desktop injects cross-thread App receipts without an agent tool call.
-            # They cannot participate in collaboration call/output pairing.
-            if (payload_type == "function_call_output" and "call_id" not in payload
-                and payload.get("namespace") == "codex_app"
-                and payload.get("name") == "send_message_to_thread"):
-                native_text(payload.get("id"), "native App receipt id")
-                if not isinstance(payload.get("output"), str):
-                    raise OverwatcherSubagentError("native App receipt output must be text")
-                continue
-            call_id = native_text(payload.get("call_id"), "native function call_id")
-            if payload_type == "function_call":
-                native_text(payload.get("name"), "native function name")
-                if "arguments" not in payload:
-                    raise OverwatcherSubagentError("native function arguments field is missing")
-            elif "output" not in payload:
-                raise OverwatcherSubagentError("native function output field is missing")
-            counts = call_counts if payload["type"] == "function_call" else output_counts
-            counts[call_id] = counts.get(call_id, 0) + 1
-            if call_id != spawn_id and payload_type == "function_call" and payload.get("name") == "spawn_agent" and payload.get("namespace") == "collaboration":
+    for line_number, record, digest, location in _source_records(request, source_metadata):
+        record_type = native_text(record.get("type"), "native record type")
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            raise OverwatcherSubagentError("native record payload must be an object")
+        if record_type == "event_msg" and "child_source_path" in request:
+            item = payload.get("item")
+            if (payload.get("type") == "item_completed" and isinstance(item, dict)
+                and item.get("type") == "SubAgentActivity" and item.get("id") == spawn_id):
+                child_links.append((line_number, record, digest, location))
+        if record_type != "response_item":
+            continue
+        payload_type = native_text(payload.get("type"), "native response type")
+        if payload_type not in {"function_call", "function_call_output"}:
+            continue
+        # Desktop injects cross-thread App receipts without an agent tool call.
+        # They cannot participate in collaboration call/output pairing.
+        if (payload_type == "function_call_output" and "call_id" not in payload
+            and payload.get("namespace") == "codex_app"
+            and payload.get("name") == "send_message_to_thread"):
+            native_text(payload.get("id"), "native App receipt id")
+            if not isinstance(payload.get("output"), str):
+                raise OverwatcherSubagentError("native App receipt output must be text")
+            continue
+        call_id = native_text(payload.get("call_id"), "native function call_id")
+        if payload_type == "function_call":
+            native_text(payload.get("name"), "native function name")
+            if "arguments" not in payload:
+                raise OverwatcherSubagentError("native function arguments field is missing")
+        elif "output" not in payload:
+            raise OverwatcherSubagentError("native function output field is missing")
+        counts = call_counts if payload["type"] == "function_call" else output_counts
+        counts[call_id] = counts.get(call_id, 0) + 1
+        if call_id != spawn_id and payload_type == "function_call" and payload.get("name") == "spawn_agent" and payload.get("namespace") == "collaboration":
+            try:
+                if isinstance(payload["arguments"], str) and native_object(payload["arguments"]).get("task_name") == child.rsplit("/", 1)[-1]:
+                    other_spawns.setdefault(call_id, []).append((line_number, record.get("timestamp")))
+            except (ValueError, TypeError):
+                pass  # A failed/unknown spawn is not positive replacement evidence.
+        if payload_type == "function_call_output" and call_id in other_spawns:
+            try:
+                if isinstance(payload["output"], str) and native_object(payload["output"]) == {"task_name": child}:
+                    successful_spawns.setdefault(call_id, []).append((line_number, record.get("timestamp")))
+            except (ValueError, TypeError):
+                pass
+        if payload["type"] == "function_call":
+            if payload.get("name") == "followup_task" and spawn_id in outputs:
                 try:
-                    if isinstance(payload["arguments"], str) and native_object(payload["arguments"]).get("task_name") == child.rsplit("/", 1)[-1]:
-                        other_spawns.setdefault(call_id, []).append((line_number, record.get("timestamp")))
+                    targeted = targets_child(payload)
                 except (ValueError, TypeError):
-                    pass  # A failed/unknown spawn is not positive replacement evidence.
-            if payload_type == "function_call_output" and call_id in other_spawns:
+                    targeted = True  # Unknown scope cannot prove absence of a new activation.
+                if targeted:
+                    activation_queries[call_id] = line_number
+            if call_id not in selected_activation_ids:
+                if payload.get("name") != "list_agents" or spawn_id not in outputs:
+                    continue
                 try:
-                    if isinstance(payload["output"], str) and native_object(payload["output"]) == {"task_name": child}:
-                        successful_spawns.setdefault(call_id, []).append((line_number, record.get("timestamp")))
+                    covered = covers_child(payload)
                 except (ValueError, TypeError):
-                    pass
-            if payload["type"] == "function_call":
-                if payload.get("name") == "followup_task" and spawn_id in outputs:
-                    try:
-                        targeted = targets_child(payload)
-                    except (ValueError, TypeError):
-                        targeted = True  # Unknown scope cannot prove absence of a new activation.
-                    if targeted:
-                        activation_queries[call_id] = line_number
-                if call_id not in selected_activation_ids:
-                    if payload.get("name") != "list_agents" or spawn_id not in outputs:
-                        continue
-                    try:
-                        covered = covers_child(payload)
-                    except (ValueError, TypeError):
-                        # Scope cannot be established. Keep only its candidate
-                        # position: latest/frozen selection must fail, while a
-                        # later valid target query may supersede this failure.
-                        target_queries[call_id] = line_number
-                        continue
-                    if not covered:
-                        continue
+                    # Scope cannot be established. Keep only its candidate
+                    # position: latest/frozen selection must fail, while a
+                    # later valid target query may supersede this failure.
                     target_queries[call_id] = line_number
-            elif call_id not in selected_activation_ids and call_id not in calls:
-                continue
-            entry = (line_number, record, hashlib.sha256(raw).hexdigest())
-            target = calls if payload["type"] == "function_call" else outputs
-            target.setdefault(call_id, []).append(entry)
+                    continue
+                if not covered:
+                    continue
+                target_queries[call_id] = line_number
+        elif call_id not in selected_activation_ids and call_id not in calls:
+            continue
+        entry = (line_number, record, digest, location)
+        target = calls if payload["type"] == "function_call" else outputs
+        target.setdefault(call_id, []).append(entry)
     parent = request["native_address"]["parent"]
-    if metas != [parent["session_id"]]:
-        raise OverwatcherSubagentError("native source parent session identity is absent or ambiguous")
 
     def pair(call_id: str, name: str):
         if not CALL_ID.fullmatch(call_id):
@@ -223,6 +264,7 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
                 raise OverwatcherSubagentError("a later successful spawn reused this child path; use its new spawn identity")
     activation, activated = spawn, spawned
     lifecycle = {}
+    record_sources = {"spawn_call": spawn[3], "spawn_output": spawned[3]}
     if followup:
         activation, activated, _, _ = pair(activation_id, "followup_task")
         previous_kind, _ = native_execution(request["previous_native_execution_id"])
@@ -237,6 +279,7 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
         for prefix, query, reply in (("activation", activation, activated), ("previous_activation", previous, previous_output)):
             lifecycle.update({f"{prefix}_call_sha256": query[2], f"{prefix}_output_sha256": reply[2],
                               f"{prefix}_query_timestamp": query[1]["timestamp"], f"{prefix}_output_timestamp": reply[1]["timestamp"]})
+            record_sources.update({f"{prefix}_call": query[3], f"{prefix}_output": reply[3]})
     if any(position > activation[0] or calls[previous_id][0][0] < position < activation[0]
            for call_id, position in activation_queries.items() if call_id not in {activation_id, previous_id}):
         raise OverwatcherSubagentError("another native activation prevents exact execution attribution")
@@ -275,6 +318,8 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
             "sample_query_timestamp": query[1]["timestamp"], "sample_output_timestamp": reply[1]["timestamp"],
             "query_sequence": query[0], "sequence": reply[0], "agent_status": status,
         }
+        if multiple:
+            samples[call_id]["record_sources"] = {"sample_call": query[3], "sample_output": reply[3]}
     if followup:
         pre = samples[request["pre_activation_sample_call_id"]]
         if (pre["agent_status"] != "COMPLETED" or pre["query_sequence"] <= previous_output[0]
@@ -291,6 +336,8 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
                 raise OverwatcherSubagentError("pre-activation native sample was not current at activation")
         lifecycle.update({"pre_activation_" + key: pre[key] for key in (
             "sample_call_sha256", "sample_output_sha256", "sample_query_timestamp", "sample_output_timestamp")})
+        if multiple:
+            record_sources.update({"pre_activation_" + key: value for key, value in pre["record_sources"].items()})
     for call_id in selected - ({request["pre_activation_sample_call_id"]} if followup else set()):
         if samples[call_id]["query_sequence"] <= activated[0]:
             raise OverwatcherSubagentError("native running sample must be queried after the activation returned")
@@ -311,10 +358,15 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
         child_evidence = ({"child_session_id": item.get("agent_thread_id")} if latest["agent_status"] == "COMPLETED"
                           else _read_child_sample(request, item.get("agent_thread_id"), activated[1]["timestamp"]))
         child_evidence["child_link_sha256"] = link[2]
+        record_sources["child_link"] = link[3]
+    provenance = {}
+    if multiple:
+        provenance = {"source_metadata": source_metadata,
+                      "record_sources": {**record_sources, **latest["record_sources"]}}
     return {
         "spawn_call_id": spawn_id, "spawn_call_sha256": spawn[2], "spawn_output_sha256": spawned[2],
         "spawn_query_timestamp": spawn[1]["timestamp"], "spawn_output_timestamp": spawned[1]["timestamp"],
-        "samples": samples, **lifecycle, **latest, **child_evidence,
+        "samples": samples, **lifecycle, **latest, **child_evidence, **provenance,
     }
 
 

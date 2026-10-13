@@ -80,6 +80,8 @@ pub struct RoleProjection {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub foreground_turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_id: Option<String>,
     pub lifecycle: String,
     pub predecessor_role_instance_id: Option<String>,
     pub successor_role_instance_id: Option<String>,
@@ -263,6 +265,7 @@ struct OverwatcherBindingRow {
     bound_at: String,
     closed_at: Option<String>,
     foreground_turn_id: Option<String>,
+    credential_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -960,6 +963,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
             endpoints,
             binding_mode: None,
             foreground_turn_id: None,
+            credential_id: None,
         })
     })?;
     let mut output = rows.collect::<Result<Vec<_>, _>>()?;
@@ -967,7 +971,9 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
         .query_row(
             "SELECT role_instance_id, agent_runtime, provider, model, reasoning, session_id,
                     endpoint_version, transport_adapter, host_identity, lifecycle_state,
-                    bound_at, closed_at, foreground_turn_id
+                    bound_at, closed_at, foreground_turn_id,
+                    CASE WHEN credential_state='active' AND lifecycle_state='active'
+                         THEN credential_id END
              FROM overwatcher_bindings WHERE run_id=?1",
             [run_id],
             |row| {
@@ -985,6 +991,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
                     bound_at: row.get(10)?,
                     closed_at: row.get(11)?,
                     foreground_turn_id: row.get(12)?,
+                    credential_id: row.get(13)?,
                 })
             },
         )
@@ -1000,6 +1007,7 @@ fn load_roles(connection: &Connection, run_id: &str) -> Result<Vec<RoleProjectio
             reasoning: overwatcher.reasoning,
             session_id: overwatcher.session_id.clone(),
             foreground_turn_id: overwatcher.foreground_turn_id,
+            credential_id: overwatcher.credential_id,
             lifecycle: if active {
                 "active".into()
             } else {

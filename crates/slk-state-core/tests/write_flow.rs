@@ -269,6 +269,12 @@ fn current_d2_start_requires_delivered_d2_ready_and_result_requires_real_start()
         "attempt_roots":[fixture._root.path()], "observed_at":close.occurred_at,
         "inspections":[{"native_start_path":ready.start_evidence.stored_path,"native_start_sha256":ready.start_evidence.sha256,
             "message_id":ready.message_id,"status":"COORDINATING","processes":[]}]});
+    // The producer retains native provenance without changing the five core
+    // fields consumed by state. Provenance never grants stop authority.
+    census["inspections"][0]["native_reader"] = json!({
+        "command":["node", "server.mjs"], "plugin_sha256":"a".repeat(64)});
+    census["inspections"][0]["native_stop"] = json!({
+        "session":{"session_id":"original-session"}, "native_probe":{"coverage":"UNKNOWN"}});
     fs::write(&proof, serde_json::to_vec(&census).unwrap()).unwrap();
     close.details = json!({"outcome":"passed", "terminal_snapshot_path":snapshot,
         "terminal_snapshot_sha256":format!("{:x}", Sha256::digest(fs::read(&snapshot).unwrap())),
@@ -287,6 +293,19 @@ fn current_d2_start_requires_delivered_d2_ready_and_result_requires_real_start()
     )
     .unwrap();
     drop(db);
+    for damage in ["missing-core", "unexpected-key", "scalar-provenance"] {
+        let mut invalid = census.clone();
+        let row = invalid["inspections"][0].as_object_mut().unwrap();
+        match damage {
+            "missing-core" => { row.remove("processes"); }
+            "unexpected-key" => { row.insert("allow_close".into(), json!(true)); }
+            _ => { row.insert("native_reader".into(), json!("trust me")); }
+        }
+        fs::write(&proof, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        close.details["quiescence_sha256"] =
+            json!(format!("{:x}", Sha256::digest(fs::read(&proof).unwrap())));
+        assert!(fixture.store.write_event(&fixture.supervisor, close.clone()).is_err(), "{damage}");
+    }
     census["inspections"][0]["processes"] = json!([{"exists":true,"identity_matches":true}]);
     fs::write(&proof, serde_json::to_vec(&census).unwrap()).unwrap();
     close.details["quiescence_sha256"] =

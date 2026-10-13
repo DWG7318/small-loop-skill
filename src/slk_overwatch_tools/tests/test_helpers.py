@@ -174,6 +174,31 @@ class NativeRecordsTests(HelperCase):
         with self.assertRaises(self.helpers().OverwatcherSubagentError):
             self.helpers().native_object('{"payload": {}, "payload": {"type": "running"}}')
 
+    def test_explicit_cross_rollout_snapshot_preserves_each_record_source(self):
+        current = self.source.with_name("current.jsonl")
+        current.write_text("".join(json.dumps(item) + "\n" for item in [self.records[0], *self.records[3:]]))
+        del self.records[3:]
+        self.request.pop("native_source_path")
+        self.request["native_source_paths"] = [str(self.source), str(current)]
+        result = self.snapshot()
+        self.assertEqual(result["agent_status"], "RUNNING")
+        self.assertEqual(result["record_sources"]["spawn_call"]["path"], str(self.source))
+        self.assertEqual(result["record_sources"]["sample_output"]["path"], str(current))
+        self.assertEqual(result["record_sources"]["sample_output"]["line"], 3)
+        self.assertEqual([item["path"] for item in result["source_metadata"]], self.request["native_source_paths"])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+
+    def test_each_explicit_source_requires_its_own_unambiguous_parent_metadata(self):
+        current = self.source.with_name("current.jsonl")
+        self.request.pop("native_source_path")
+        self.request["native_source_paths"] = [str(self.source), str(current)]
+        for metadata in ([], [self.records[0], self.records[0]],
+                         [{"type": "session_meta", "payload": {"id": "another-parent"}}]):
+            with self.subTest(metadata=metadata):
+                current.write_text("".join(json.dumps(item) + "\n" for item in metadata))
+                with self.assertRaises(self.helpers().OverwatcherSubagentError):
+                    self.snapshot()
+
 
 if __name__ == "__main__":
     unittest.main()

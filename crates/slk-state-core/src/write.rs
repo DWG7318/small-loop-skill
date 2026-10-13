@@ -2929,18 +2929,31 @@ impl StateStore {
                     ));
                 }
                 if preclose_terminal {
-                    let d2_passed: Option<String> = transaction
-                        .query_row(
-                            "SELECT event_id FROM work_events
-                             WHERE run_id=?1 AND event_type='D2_PASSED'
-                             ORDER BY rowid DESC LIMIT 1",
-                            [&request.run_id],
-                            |row| row.get(0),
-                        )
-                        .optional()?;
-                    if d2_passed.as_deref() != final_cycle.as_ref().map(|item| item.2.as_str()) {
+                    // OW liveness/restoration advances the runtime, not D2's
+                    // engineering scope. Keep a fresh final cycle and bind the
+                    // last engineering event to its unchanged historical scope.
+                    let valid_d2: bool = transaction.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM work_events e
+                         JOIN run_runtime_snapshots d2 ON d2.run_id=e.run_id
+                           AND d2.latest_event_id=e.event_id
+                         WHERE e.run_id=?1 AND e.event_type='D2_PASSED'
+                           AND e.rowid=(SELECT MAX(rowid) FROM work_events
+                             WHERE run_id=?1 AND event_type NOT IN
+                               ('OVERWATCHER_TURN_RESUMED','OVERWATCHER_REPLACED'))
+                           AND d2.plan_revision=?2 AND d2.token_sequence=?3
+                           AND d2.token_holder_role_instance_id=?4
+                           AND d2.latest_message_id IS ?5 AND d2.method_version=?6)",
+                        params![request.run_id, snapshot.plan_revision, snapshot.token_sequence,
+                            snapshot.token_holder_role_instance_id, snapshot.latest_message_id,
+                            snapshot.method_version],
+                        |row| row.get(0),
+                    )?;
+                    if !valid_d2
+                        || final_cycle.as_ref().map(|item| item.2.as_str())
+                            != Some(snapshot.latest_event_id.as_str())
+                    {
                         return Err(StateError::OverwatcherObservationInvalid(
-                            "pre-close final cycle must bind the exact latest D2_PASSED snapshot"
+                            "pre-close final cycle requires current observation of unchanged D2_PASSED scope"
                                 .into(),
                         ));
                     }
@@ -3021,6 +3034,18 @@ impl StateStore {
         credential: &Credential,
         request: ReplaceOverwatcherRequest,
     ) -> Result<IssuedCredential, StateError> {
+        self.replace_overwatcher_json(credential, &serde_json::to_vec(&request)?)
+    }
+
+    /// Hash and consume the same bytes so the sealed caller can identify a
+    /// committed replacement even if its one-time response was lost.
+    pub fn replace_overwatcher_json(
+        &self,
+        credential: &Credential,
+        request_json: &[u8],
+    ) -> Result<IssuedCredential, StateError> {
+        let request: ReplaceOverwatcherRequest = serde_json::from_slice(request_json)?;
+        let request_sha256 = sha256_hex(request_json);
         if !valid_identifier(&request.event_id)
             || request.expected_binding_revision == 0
             || request.expected_runtime_revision == 0
@@ -3206,6 +3231,22 @@ impl StateStore {
             }
 
             let next_binding_revision = binding.0 + 1;
+            // Preserve exact non-secret replacement authority in the same transaction.
+            // A sealed consumer can then recover lost one-time delivery by rotating
+            // this binding's credential, without repeating the membership change.
+            transaction.execute(
+                "INSERT INTO work_events
+                 (event_id, run_id, plan_revision, author_role_instance_id, event_type,
+                  details_json, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, 'OVERWATCHER_REPLACED', ?5, ?6)",
+                params![request.event_id, request.run_id, snapshot.plan_revision,
+                    actor.role_instance_id,
+                    serde_json::to_string(&serde_json::json!({
+                        "request_sha256": request_sha256,
+                        "overwatcher_role_instance_id": request.replacement.role_instance_id,
+                        "binding_revision": next_binding_revision,
+                    }))?, request.occurred_at],
+            )?;
             let material = new_credential_material();
             let native_address_json = serde_json::to_string(&request.endpoint.native_address)?;
             let mut recovery_incident_id: Option<String> = None;
@@ -4382,6 +4423,11 @@ fn validate_bound_overwatcher_active(
                 "foreground turn continuity violation blocks new dispatch".into(),
             ));
         }
+        // Subagent startup admission independently verifies native ACTIVE.
+        // Its first observation cycle is not a preparation prerequisite.
+        if uses_supervisor_subagent(&method_version) {
+            return Ok(());
+        }
         let live_cycle: Option<i64> = connection
             .query_row(
                 "SELECT 1 FROM overwatch_cycles
@@ -5543,7 +5589,8 @@ fn validate_quiescence_census(
     let mut coordinators = 0;
     for row in rows {
         let value = row.as_object().ok_or_else(invalid)?;
-        if value.len() != 5
+        if !["native_start_path", "native_start_sha256", "message_id", "status", "processes"]
+            .iter().all(|key| value.contains_key(*key))
             || !value.keys().all(|key| {
                 matches!(
                     key.as_str(),
@@ -5552,8 +5599,14 @@ fn validate_quiescence_census(
                         | "message_id"
                         | "status"
                         | "processes"
+                        | "native_reader"
+                        | "native_stop"
                 )
             })
+            // Optional original-reader/stop provenance is explanatory only;
+            // it cannot replace the core identity, status or process checks.
+            || ["native_reader", "native_stop"].iter()
+                .any(|key| value.get(*key).is_some_and(|item| !item.is_object()))
         {
             return Err(invalid());
         }
@@ -5974,7 +6027,7 @@ fn validate_d2_event(
 }
 
 fn uses_supervisor_subagent(version: &str) -> bool {
-    matches!(version, "4.5.0" | "4.5.1")
+    matches!(version, "4.5.0" | "4.5.1" | "4.5.2")
 }
 
 // 4.5.x changes OW ownership, not the existing engineering/runtime protections.
