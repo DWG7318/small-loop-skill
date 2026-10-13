@@ -78,6 +78,7 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
     activation_queries: dict[str, int] = {}
     other_spawns: dict[str, list] = {}
     successful_spawns: dict[str, list] = {}
+    child_links = []
     metas = []
 
     def covers_child(payload):
@@ -112,10 +113,24 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
                 raise OverwatcherSubagentError("native record payload must be an object")
             if record_type == "session_meta":
                 metas.append(payload.get("id"))
+            if record_type == "event_msg" and "child_source_path" in request:
+                item = payload.get("item")
+                if (payload.get("type") == "item_completed" and isinstance(item, dict)
+                    and item.get("type") == "SubAgentActivity" and item.get("id") == spawn_id):
+                    child_links.append((line_number, record, hashlib.sha256(raw).hexdigest()))
             if record_type != "response_item":
                 continue
             payload_type = native_text(payload.get("type"), "native response type")
             if payload_type not in {"function_call", "function_call_output"}:
+                continue
+            # Desktop injects cross-thread App receipts without an agent tool call.
+            # They cannot participate in collaboration call/output pairing.
+            if (payload_type == "function_call_output" and "call_id" not in payload
+                and payload.get("namespace") == "codex_app"
+                and payload.get("name") == "send_message_to_thread"):
+                native_text(payload.get("id"), "native App receipt id")
+                if not isinstance(payload.get("output"), str):
+                    raise OverwatcherSubagentError("native App receipt output must be text")
                 continue
             call_id = native_text(payload.get("call_id"), "native function call_id")
             if payload_type == "function_call":
@@ -282,10 +297,96 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
         if datetime.fromisoformat(samples[call_id]["sample_query_timestamp"].replace("Z", "+00:00")) < datetime.fromisoformat(activated[1]["timestamp"].replace("Z", "+00:00")):
             raise OverwatcherSubagentError("native running sample timestamp precedes activation return")
     latest = samples[latest_id]
+    child_evidence = {}
+    if "child_source_path" in request:
+        if len(child_links) != 1:
+            raise OverwatcherSubagentError("native child UUID linkage is absent or ambiguous")
+        link = child_links[0]
+        payload, item = link[1]["payload"], link[1]["payload"]["item"]
+        if (payload.get("thread_id") != parent["session_id"] or item.get("kind") != "started"
+            or item.get("agent_path") != child or link[0] <= spawn[0]
+            or datetime.fromisoformat(native_timestamp(link[1]["timestamp"]).replace("Z", "+00:00"))
+               < datetime.fromisoformat(spawn[1]["timestamp"].replace("Z", "+00:00"))):
+            raise OverwatcherSubagentError("native child UUID linkage changed exact spawn/parent/path")
+        child_evidence = ({"child_session_id": item.get("agent_thread_id")} if latest["agent_status"] == "COMPLETED"
+                          else _read_child_sample(request, item.get("agent_thread_id"), activated[1]["timestamp"]))
+        child_evidence["child_link_sha256"] = link[2]
     return {
         "spawn_call_id": spawn_id, "spawn_call_sha256": spawn[2], "spawn_output_sha256": spawned[2],
         "spawn_query_timestamp": spawn[1]["timestamp"], "spawn_output_timestamp": spawned[1]["timestamp"],
-        "samples": samples, **lifecycle, **latest,
+        "samples": samples, **lifecycle, **latest, **child_evidence,
     }
 
 
+def _read_child_sample(request: Mapping[str, Any], child_id: Any, activated_at: str) -> dict[str, Any]:
+    """Read only the explicitly bound child source; metadata joins it to the parent spawn."""
+    if not isinstance(child_id, str) or not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", child_id):
+        raise OverwatcherSubagentError("native child UUID is invalid")
+    source = Path(request["child_source_path"])
+    if not re.fullmatch(r"rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-" + re.escape(child_id)
+                        + r"(?:_[0-9a-f-]+)?\.jsonl", source.name):
+        raise OverwatcherSubagentError("native child source does not locate the exact linked UUID")
+    child = request["native_address"]["agent_id"]
+    parent_id = request["native_address"]["parent"]["session_id"]
+    metas, queries, calls, outputs = [], {}, {}, {}
+    with source.open("rb") as stream:
+        for line_number, raw in enumerate(stream, 1):
+            raw = raw.rstrip(b"\r\n")
+            record = native_object(raw)
+            payload = record.get("payload")
+            if not isinstance(payload, dict):
+                raise OverwatcherSubagentError("native child payload is malformed")
+            entry = (line_number, record, hashlib.sha256(raw).hexdigest())
+            if record.get("type") == "session_meta":
+                metas.append(entry)
+            if record.get("type") != "response_item" or payload.get("type") not in {"function_call", "function_call_output"}:
+                continue
+            call_id = payload.get("call_id")
+            if call_id is None and payload.get("namespace") == "codex_app" and payload.get("name") == "send_message_to_thread":
+                continue
+            if not isinstance(call_id, str) or not CALL_ID.fullmatch(call_id):
+                raise OverwatcherSubagentError("native child call identity is invalid")
+            target = calls if payload["type"] == "function_call" else outputs
+            target.setdefault(call_id, []).append(entry)
+            if payload["type"] == "function_call" and payload.get("name") == "list_agents":
+                if payload.get("namespace") != "collaboration" or not isinstance(payload.get("arguments"), str):
+                    raise OverwatcherSubagentError("native child list query is unsupported")
+                arguments = native_object(payload["arguments"])
+                prefix = arguments.get("path_prefix")
+                if set(arguments) - {"path_prefix"} or ("path_prefix" in arguments and (
+                    not isinstance(prefix, str) or not re.fullmatch(r"/root(?:/[a-z0-9_]+)*", prefix))):
+                    raise OverwatcherSubagentError("native child list filter is unsupported")
+                if prefix is None or child == prefix or child.startswith(prefix + "/"):
+                    queries[call_id] = line_number
+    if len(metas) != 1:
+        raise OverwatcherSubagentError("native child metadata is absent or ambiguous")
+    meta = metas[0][1]["payload"]
+    spawned = native_object(native_object(native_object(meta.get("source")).get("subagent")).get("thread_spawn"))
+    if (meta.get("id") != child_id or meta.get("parent_thread_id") != parent_id or meta.get("agent_path") != child
+        or spawned.get("parent_thread_id") != parent_id or spawned.get("agent_path") != child
+        or type(spawned.get("depth")) is not int or spawned["depth"] != child.count("/") - 1):
+        raise OverwatcherSubagentError("native child metadata differs from exact parent and path")
+    if not queries:
+        raise OverwatcherSubagentError("native child original list query is absent")
+    call_id = max(queries, key=queries.get)
+    query, reply = calls.get(call_id, []), outputs.get(call_id, [])
+    if len(query) != 1 or len(reply) != 1 or query[0][0] >= reply[0][0] or query[0][0] <= metas[0][0]:
+        raise OverwatcherSubagentError("native child original list pair is absent or ambiguous")
+    query, reply = query[0], reply[0]
+    query_at, reply_at = (native_timestamp(row[1].get("timestamp")) for row in (query, reply))
+    def parsed(value): return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if not parsed(activated_at) <= parsed(query_at) <= parsed(reply_at):
+        raise OverwatcherSubagentError("native child sample does not follow exact activation")
+    raw_output = reply[1]["payload"].get("output")
+    if not isinstance(raw_output, str):
+        raise OverwatcherSubagentError("native child list output is unsupported")
+    output = native_object(raw_output)
+    if set(output) != {"agents"} or not isinstance(output["agents"], list):
+        raise OverwatcherSubagentError("native child list output is unsupported")
+    matching = [row for row in output["agents"] if isinstance(row, dict) and row.get("agent_name") == child]
+    if len(matching) != 1 or set(matching[0]) != {"agent_name", "agent_status"} or matching[0]["agent_status"] != "running":
+        raise OverwatcherSubagentError("native child own running status is absent or ambiguous")
+    return {"child_session_id": child_id, "child_meta_sha256": metas[0][2], "child_sample": {
+        "sample_call_id": call_id, "sample_call_sha256": query[2], "sample_output_sha256": reply[2],
+        "sample_query_timestamp": query_at, "sample_output_timestamp": reply_at,
+        "sequence": reply[0], "agent_status": "RUNNING"}}

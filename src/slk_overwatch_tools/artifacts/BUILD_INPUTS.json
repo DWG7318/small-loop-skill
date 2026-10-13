@@ -1,16 +1,16 @@
 {
-  "artifact": "slk_overwatch_tools-1.0.0-py3-none-any.whl",
-  "artifact_sha256": "15b03bdd26588e6b7615386ffb27665fecd6b6431520128744be31879c87f5e0",
+  "artifact": "slk_overwatch_tools-1.0.1-py3-none-any.whl",
+  "artifact_sha256": "e037eb0c043a3abee98d3c044ac8c82b9c52b39281681fc946ed7f40b8610aae",
   "product": "slk-overwatch-tools",
   "schema_version": "slk.tool-build-inputs/v1",
   "source_sha256": {
     "LICENSE": "feee640007c4680ef0b465dc06a3b91b3563adcd73f2e4689c0f112b56e7d45a",
-    "README.md": "21b989077ae1c293a7e8969f3e137d9d0427c09b668a68a5147073683177de20",
-    "__init__.py": "cf8462bd8b265d26bfff9732dbea69609e49a5bc8443215b1a234b3e3a0bbdde",
+    "README.md": "750bb785ed0508f9b76c7d7d4c2198a2d0eb4e0b4ed0316e8bc177a71b671f08",
+    "__init__.py": "364e67d8f753f15e8cbee1f489c9a88f6a2d3c4f3e264a3a08a13938b1c956eb",
     "build_wheel.py": "4c5bfb30ac23fc16667cf118482cadacda926961c3b973425aa09acc1315657b",
     "cadence.py": "c7bfe6e7810237e7a0a1f06f81c52dd57d16763a692638a9d2f10a065ec65b9d",
-    "native_records.py": "6ddc1e83a96881ccecdda609ce0d1f7d65a987521350ffdfb18f16d06858d665",
-    "pyproject.toml": "9c90f739147b47f2f4a1dd3ca40f3cd3613b49785ea2a4137083935919338870"
+    "native_records.py": "231699a4d8637c32412d72635bb43c18ad5bf33bd325680d6367523149e239ce",
+    "pyproject.toml": "bd7d4dedec8fa9c440d3d752e8276677e3f9bd7e057ac02347349205fac74077"
   },
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
