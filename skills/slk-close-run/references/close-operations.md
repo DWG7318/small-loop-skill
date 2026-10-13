@@ -24,4 +24,4 @@ slk-transport inspect-run-quiescence --binding <原Host绝对路径> --sha256 <�
 
 ## 本 Run Cargo 清理
 
-仅清此项目/Run 的精确 runtime/lease，参数读 `slk-cargo --help`。先核实 lease 的真实 owner、PID/创建身份及相关命令退出；活 owner 不清。旧 lease 缺精确存活证明时保留诊断与归档证据，不猜死、不删共享缓存根。原 `slk-cargo cleanup` 遇任何 lease 会拒绝，不绕过或扩大范围。不得删除源码 Git、提交、验收原件或共享 evidence。
+仅清此项目/Run 的精确 runtime/lease，参数读 `slk-cargo --help`。先核实 lease 的真实 owner、调用及相关 native 子进程退出；父 wrapper 或 Cargo 正常退出也不证明全部后代 writer 已停。真实 spawn 后保留 lease 供 Supervisor 核验；没有启动原生进程的 reservation 可正常释放。旧 PID-only lease 不能证明存活或死亡；`SLK_CARGO_CLEANUP_UNRESOLVED` 表示清理待核实，保留准确目录与诊断，不反称 Run 尚未关闭。新 lease 的调用 ID、原生 PID/creation time、target 和 Run 路径用于定位，不当全树存活/停止证明。`slk-cargo cleanup` 遇 retained lease 保留目录；Supervisor 取得相关 writer 全部停稳和准确归属证据后，才可现场清除此 Run 的 lease 和缓存，并记录处置。不猜死、不删共享缓存根或绕过范围，不删除源码 Git、提交、验收原件或共享 evidence。

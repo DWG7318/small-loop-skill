@@ -1,4 +1,27 @@
-# Validation Report — SLK 4.5.0 candidate
+# Validation Report — SLK 4.5.1
+
+## 2026-10-13 — 4.5.1 integration in progress
+
+Scope and delivery ledger: `docs/superpowers/plans/2026-10-13-slk-4.5.1.md`.
+Implementation includes preserved Run07 on-site corrections; installation remains
+4.5.0 until the final 4.5.1 artifact batch passes verification. No live Run07
+replay, provider call, Supervisor wakeup or product-code modification is used as
+a test. Detailed final commands/results and deployment identity are appended
+when performed, not inferred from version text. Sections below retain their
+original validation snapshots.
+
+- EventProjection D2 plan revision: one regression failed on null vs stored1;
+  after reading the existing column all35 write_flow tests passed. No migration.
+- 4.5.1 native-child identity regression failed before version routing, then
+  passed with the same parent/child and Owner-selected model protections.
+- 4.5.1 lightweight readiness failed before compatible version admission; all8
+  4.5.0/4.5.1 current-readiness cases then passed, no historical preflight added.
+- Full slk-state-core test targets passed (145 tests), retaining closed TOKEN
+  history, independent role authorization and append-only engineering facts.
+- Additional role Eval cases passed33 checks and remain development-only cases,
+  not extra runtime preflight questions.
+
+## Historical 4.5.0 validation
 
 ## 2026-10-11 — OW → P → S → M source acceptance
 

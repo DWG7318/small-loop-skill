@@ -1,20 +1,20 @@
 {
   "schema_version": "slk.tool-module-map/v1",
-  "method_version": "4.5.0",
+  "method_version": "4.5.1",
   "tested_native_platform": "windows-amd64",
   "modules": [
     {
       "tool": "slk-state-core",
       "prefix": "crates/slk-state-core",
       "repository": "https://github.com/DWG7318/slk-state-core.git",
-      "commit": "7ea54ec866191a22432e12b6553301d9408a033f",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "75c5f294cb0bf974fc61e3afa349c873d8cc5982",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [],
       "artifact_indices": [
         {
           "path": "crates/slk-state-core/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "ea426f68bb24b821b803613dbb590dd0e29bb9f09f680655e129eba472f23a1d"
+          "sha256": "b03dd083ce2b2b4e7be63b16feeae4e403b762f968fc5aabda8280a25c46c06d"
         }
       ]
     },
@@ -22,16 +22,16 @@
       "tool": "slk-state",
       "prefix": "crates/slk-state-cli",
       "repository": "https://github.com/DWG7318/slk-state.git",
-      "commit": "9678918650515ffdf49e8cd1bec52364e0012ffd",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "1785a31ecc56bb1334f3ca96ec88b61517e6aeda",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [
         "slk-state-core"
       ],
       "artifact_indices": [
         {
           "path": "crates/slk-state-cli/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "750703477afae8f9683a493802bfd85111005735cbfc3ec41b00ea472632f651"
+          "sha256": "33fb7aa05db0a0eb2e1dd6cead157f30273800990cfd2ddcd3a880d1ca2c7d0a"
         }
       ]
     },
@@ -39,16 +39,16 @@
       "tool": "slk-bi-query",
       "prefix": "crates/slk-bi-query",
       "repository": "https://github.com/DWG7318/slk-bi-query.git",
-      "commit": "db2a8786b84a39140286e6483a382f5c7e7bcbd7",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "5d0d3afb3972237bf786b11d39202b35184617ba",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [
         "slk-state-core"
       ],
       "artifact_indices": [
         {
           "path": "crates/slk-bi-query/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "61ced0716160e0200a13d90b3483aaf39018cb2749d1a713a958fd996ef543da"
+          "sha256": "bc199f818d619117ea9735e1e7d031c29bd5b2a8f832fccd868207f1ddb114f6"
         }
       ]
     },
@@ -56,16 +56,16 @@
       "tool": "slk-cargo",
       "prefix": "crates/slk-cargo",
       "repository": "https://github.com/DWG7318/slk-cargo.git",
-      "commit": "66ee4d9b03e1cfb294bfc4af49d17182c7cae288",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "acbad3f5bb2b50582188d2a091d86d1516c218c7",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [
         "slk-state-core"
       ],
       "artifact_indices": [
         {
           "path": "crates/slk-cargo/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "383135133aed3b08e2e2b77133b07464cba79bc9f2bb91f6ba1f4531d5d6d0af"
+          "sha256": "0110f332a48c6e9c9f44e866274851c6189f006bc7ab4c75283165ba2332899a"
         }
       ]
     },
@@ -73,8 +73,8 @@
       "tool": "slk-bi",
       "prefix": "apps/slk-bi",
       "repository": "https://github.com/DWG7318/slk-bi.git",
-      "commit": "2652d3604ed17182c3b5c25dfc7d436e846d492e",
-      "repository_tag": "1.0.0",
+      "commit": "2fc59a6e95b7ce795b719e0f4063e537702923bb",
+      "repository_tag": "1.0.1",
       "product_version": "1.1.1",
       "dependencies": [
         "slk-state-core"
@@ -82,7 +82,7 @@
       "artifact_indices": [
         {
           "path": "apps/slk-bi/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "ee17a9bb7764fab1754be0f6ec9ad988f060c81694dea9b928a05760b2ca873f"
+          "sha256": "8c6d2e5b3549e5efee7f780dbd2d7a04fe0b2cdccb63ac9c00b8944919bca1b4"
         }
       ]
     },
@@ -90,14 +90,14 @@
       "tool": "slk-overwatch-tools",
       "prefix": "src/slk_overwatch_tools",
       "repository": "https://github.com/DWG7318/slk-overwatch-tools.git",
-      "commit": "61a0eea936d609f5aa87efd4e4f6f6c271a33eec",
-      "repository_tag": "1.0.1",
-      "product_version": "1.0.0",
+      "commit": "077eba81d607d74555ad01dab86ac97d3994991c",
+      "repository_tag": "1.0.2",
+      "product_version": "1.0.1",
       "dependencies": [],
       "artifact_indices": [
         {
           "path": "src/slk_overwatch_tools/artifacts/BUILD_INPUTS.json",
-          "sha256": "a23fea9b2762dd07d8252c5f63bad6b93ef009f56ca8307a9ffd04e63811a76d"
+          "sha256": "5c97117db90561b84a88a7365303650af6e8d1ad1d38b07c0d0442bedd7110b1"
         }
       ]
     },
@@ -105,16 +105,16 @@
       "tool": "slk-transport",
       "prefix": "src/slk_transport",
       "repository": "https://github.com/DWG7318/slk-transport.git",
-      "commit": "34568345f4df9b059802e986a07591678bcd5e35",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "1ac64cae3b6e55c55894976a425beab554656bd8",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [
         "slk-overwatch-tools"
       ],
       "artifact_indices": [
         {
           "path": "src/slk_transport/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "a4615573f4867ec67969028ed74599da86af6a1727ee2129e81a3d074f855cde"
+          "sha256": "afdd6dc6c17c8da9c2f7c9b0999b7e2e9c5aba045429fac8ff4575cdc6595fb1"
         }
       ]
     },
@@ -122,16 +122,16 @@
       "tool": "slk-temporal",
       "prefix": "integrations/temporal",
       "repository": "https://github.com/DWG7318/slk-temporal.git",
-      "commit": "ff06e4d14a01c3bf17b85f55402e85f584a6b145",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "049dd0a1f6386a600d9be13cd478d1f099765048",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [
         "slk-transport"
       ],
       "artifact_indices": [
         {
           "path": "integrations/temporal/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "25cd214ad2fc1b6fbcaf38ec2a2e0c8a940b51836c491c3094af33f7f511715f"
+          "sha256": "35ccfad9cd78f4f69b2155aa6044f00a44d6f59ed8a17aa330b77aafc414a96e"
         }
       ]
     },
@@ -139,14 +139,14 @@
       "tool": "slk-native-probe",
       "prefix": "integrations/native-probe",
       "repository": "https://github.com/DWG7318/slk-native-probe.git",
-      "commit": "f796b87a83c88e19bce09a77a843d060b0439b25",
-      "repository_tag": "1.0.0",
+      "commit": "957a4947cd0b4b850c961e29a34e55ec2b57961c",
+      "repository_tag": "1.0.1",
       "product_version": "1.0.0",
       "dependencies": [],
       "artifact_indices": [
         {
           "path": "integrations/native-probe/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "314049bbb64c9d7b0f361d27df3c828d598a7a0a3a8b8d6b22e492da706f6d99"
+          "sha256": "c40becb6e0b5fc24749f5da7514d1b6d901e148873fac455038d5871ae0ed0c7"
         }
       ]
     },
@@ -154,9 +154,9 @@
       "tool": "slk-ocrv",
       "prefix": "integrations/ocrv",
       "repository": "https://github.com/DWG7318/slk-ocrv.git",
-      "commit": "c8894b1382c8e834e02a2a4893596090bd5b289d",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "e701dfdc386ed1cfdd5873bbd60d1a51bac0d1c5",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [
         "slk-native-probe",
         "slk-transport"
@@ -164,7 +164,7 @@
       "artifact_indices": [
         {
           "path": "integrations/ocrv/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "65af9d4714bfb51d0a5b9c87b6fb5b982decbf48c1e05c4efc7853905a328031"
+          "sha256": "2827b580a32a37f14a31c72d960ec9f54d16db1fcb87fda286b2d99787a5602f"
         }
       ]
     },
@@ -172,9 +172,9 @@
       "tool": "slk-dsh",
       "prefix": "integrations/dsh",
       "repository": "https://github.com/DWG7318/slk-dsh.git",
-      "commit": "f35b3b6e870c0aaac8ef52929fd7e581b4c75a0e",
-      "repository_tag": "1.0.0",
-      "product_version": "4.5.0",
+      "commit": "76d0c1b1958919de0cc86d33b95396a1027d41a3",
+      "repository_tag": "1.0.1",
+      "product_version": "4.5.1",
       "dependencies": [
         "slk-native-probe",
         "slk-transport"
@@ -182,7 +182,7 @@
       "artifact_indices": [
         {
           "path": "integrations/dsh/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "fa648dcbda88a95f164f6215428ed5c4ec11cf26c0eb189d7769621f670f4a1b"
+          "sha256": "c0119355d8853d6edaf050ef456649cd69a8ae7862ea45d658cd839ca42b117a"
         }
       ]
     }

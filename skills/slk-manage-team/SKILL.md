@@ -14,7 +14,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs its current tea
 3. Supervisor 启动或复用自己唯一直属 OW child，覆盖自己的全部 Run，不跨 Supervisor；每 Run 单独绑定技术 instance、scope、cycle、观察凭据，实际 parent/child 相同。只给观察权，不继承父级工程权限。真实型号/reasoning 已确认，gpt-6-luna high/xhigh 仅推荐。
 4. 建立本 Run 唯一 RUN_TEAM_REGISTRY，分开登记 agent identity、runtime、native/session locator、message endpoint、transport/status adapter、delivery success signal、设备、model/reasoning、Skill/工具版本及 revision。准确 Host 路径/hash 与密封权限匹配；不凭标题、窗口或历史位置猜地址。凭据操作按需读[认证说明](references/credential-preparation.md)。
 5. 各角色只读本角色职责/禁区、真实交接对象和现有8个 runtime-critical 场景；纠正误解后确认，普通 CELL 切换不重复，变化只复核受影响理解。完整结构化回应绑定当前 revision，未变理解可复用但不伪装新实测。OCRV 没任意聊天入口时不假造 Eval；核对当前原生 config/工具/MCP 与已验等价能力，首次真实审查保留准确 runtime_root + host + endpoint version 的 harness、native start/result，不为准备另跑正式 D1。
-6. 核对完整 SLK/Skill、必需组件、原生地址/状态、当前能力和消费者权限、BI；原责任链的端点必须真实可用，脚本/OW补救代发不算正常通路。4.5.0 普通新 Run 用 preflight-new-run，续接用 preflight-admission，不读取历史 conformance 或现场重演七腿。可选增强、兼容更新和查新失败仅提示；真实必需缺项保持 NOT_READY。
+6. 核对完整 SLK/Skill、必需组件、原生地址/状态、当前能力和消费者权限、BI；原责任链的端点必须真实可用，脚本/OW补救代发不算正常通路。4.5.x 普通新 Run 用 preflight-new-run，续接用 preflight-admission，不读取历史 conformance 或现场重演七腿。可选增强、兼容更新和查新失败仅提示；真实必需缺项保持 NOT_READY。
 7. 沿 `$slk-manage-temporal` 准备共享服务/本 Run 工作流，冻结真实 workflow identity 与准确 Host/config/OW proof，并完成一次当前 OW ACTIVE 核验及准入；不要求先有 cycle 或首 CELL 已施工。
 
 ## 准备完成边界

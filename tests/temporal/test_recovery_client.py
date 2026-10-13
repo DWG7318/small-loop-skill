@@ -139,7 +139,8 @@ def test_actual_restored_checkpoint_cannot_drop_or_change_completed_history():
 
 
 @pytest.mark.parametrize("notified", [True, False])
-def test_initial_recovery_accepts_only_exact_overdue_member_notice(notified):
+@pytest.mark.parametrize("modern", [True, False])
+def test_initial_recovery_accepts_only_exact_overdue_member_notice(notified, modern):
     source = packet()
     state = source["status"]
     state.update(responsible_role_instance_id="checker-a", responsibility_operation_id=delivery_value()["operation_id"],
@@ -153,6 +154,13 @@ def test_initial_recovery_accepts_only_exact_overdue_member_notice(notified):
         target["status"]["runtime_guard_blocker"] = {"event_id": event, "kind": "SUPERVISOR_NOTIFICATION_UNPROVED",
             "run_id": "RUN-A", "responsible_role_instance_id": "supervisor-a",
             "source_operation_id": "runtime-guard-" + event, "threshold_seconds": 0}
+    if modern:
+        target["status"].update(member_residency_notice_sent=notified,
+            member_residency_notice_attempted=True, pending_supervisor_notifications={} if notified else {event: {
+                "event_id": event, "kind": "MEMBER_RESIDENCY_EXCEEDED", "run_id": "RUN-A",
+                "responsible_role_instance_id": "checker-a", "source_operation_id": state["responsibility_operation_id"],
+                "threshold_seconds": 1800}})
+        if not notified: target["status"]["latest_runtime_alarm_event_id"] = event
     recovery.verify_restored_checkpoint(source, target, initial=True)
     assert target["status"]["member_residency_since"] == state["member_residency_since"]
     assert source["status"]["notification_failure"]["event_id"] == "RUN-A-ow-audit-189"

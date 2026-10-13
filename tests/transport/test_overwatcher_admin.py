@@ -376,6 +376,102 @@ def test_ow_consumer_preserves_safe_state_rejection_code_and_message(tmp_path, m
             request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
 
 
+@pytest.mark.parametrize("sensitive", [False, True])
+def test_safe_long_state_rejection_keeps_code_stage_and_request_without_secret(tmp_path, monkeypatch, sensitive):
+    request = request_fixture(tmp_path)
+    secret = "slk_" + "c" * 64
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _: secret)
+    message = "unknown field observed_attempt; expected one of " + ", ".join(f"field_{i}" for i in range(100))
+    if sensitive: message += " received=" + secret
+    def run(_command, arguments, **_kwargs):
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
+                    "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 7}
+        return {"status": "error", "code": "SLK_STATE_COMMAND_FAILED", "message": message,
+                "stage": "parse-request", "request_ref": "cycle-1"}
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(ValueError) as error:
+        admin.execute_sealed_overwatcher_admin(request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+    assert "SLK_STATE_COMMAND_FAILED" in str(error.value)
+    assert "unknown field observed_attempt" in str(error.value)
+    assert "parse-request" in str(error.value) and "cycle-1" in str(error.value)
+    assert secret not in str(error.value)
+
+
+@pytest.mark.parametrize("message", ['unknown field; "api_key": "dummy value with spaces"',
+    "unknown field; password='dummy value with spaces'", "unknown field; credential=dummy-value"])
+def test_state_error_redacts_quoted_secret_values_without_hiding_safe_code(tmp_path, monkeypatch, message):
+    request = request_fixture(tmp_path)
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _: "slk_" + "c" * 64)
+    def run(_command, args, **_kwargs):
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
+                    "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 7}
+        return {"status": "error", "code": "SLK_STATE_COMMAND_FAILED", "message": message}
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(ValueError) as error:
+        admin.execute_sealed_overwatcher_admin(request, request_sha256=admin.wc._sha256(request))
+    assert "SLK_STATE_COMMAND_FAILED" in str(error.value) and "unknown field" in str(error.value)
+    assert "dummy" not in str(error.value) and "value with spaces" not in str(error.value)
+
+
+@pytest.mark.parametrize("field", ["stage", "request_ref"])
+def test_state_error_context_cannot_echo_consumed_secret(tmp_path, monkeypatch, field):
+    request = request_fixture(tmp_path)
+    secret = "synthetic-private-credential"
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _: secret)
+    def run(_command, args, **_kwargs):
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
+                    "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 7}
+        return {"status": "error", "code": "SLK_STATE_COMMAND_FAILED", "message": "unknown field", field: secret}
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    with pytest.raises(ValueError) as error:
+        admin.execute_sealed_overwatcher_admin(request, request_sha256=admin.wc._sha256(request))
+    assert "SLK_STATE_COMMAND_FAILED" in str(error.value) and "unknown field" in str(error.value)
+    assert secret not in str(error.value)
+
+
+def test_scope_preserves_both_conflicting_attempts_and_derives_only_run_level_mechanics(tmp_path):
+    from slk_transport.native_activity import collect_overwatch_scope
+    request_fixture(tmp_path)
+    previous = json.loads((tmp_path / "scope-query.json").read_text())
+    projection = json.loads((tmp_path / "runtime.json").read_text())
+    projection["go_nodes"][0]["cell_nodes"][0]["attempt"] = 2
+    write_json(tmp_path / "runtime.json", projection)
+    result = collect_overwatch_scope(Path(previous["native_start_path"]), run_id="RUN-A", state_command=["slk-state"])
+    assert result["attempt_observation"] == {"go_id": "GO-001", "cell_id": "CELL-001",
+        "transport_event_attempt": 1, "projected_cell_attempt": 2, "conflict": True}
+    assert result["native_activity"]["status"] == "UNKNOWN"
+    mechanics = result["cycle_mechanics"]
+    assert [mechanics[key] for key in ("go_id", "cell_id", "attempt")] == [None, None, None]
+    assert mechanics["started_at"] == result["query_started_at"]
+    assert mechanics["completed_at"] == result["query_completed_at"]
+    assert mechanics["runtime_revision"] == projection["runtime_snapshot"]["runtime_revision"]
+    assert result["required_anomaly_codes"] == ["PROJECTION_MISMATCH", "ACTIVITY_UNPROVEN"]
+
+
+@pytest.mark.parametrize("damage", [None, "altered-fact", "missing-anomaly", "claimed-cell"])
+def test_conflicting_scope_report_is_verified_run_level_only(tmp_path, damage):
+    from slk_transport.native_activity import collect_overwatch_scope
+    request_fixture(tmp_path)
+    old = json.loads((tmp_path / "scope-query.json").read_text())
+    projection = json.loads((tmp_path / "runtime.json").read_text())
+    projection["go_nodes"][0]["cell_nodes"][0]["attempt"] = 2
+    write_json(tmp_path / "runtime.json", projection)
+    query = collect_overwatch_scope(Path(old["native_start_path"]), run_id="RUN-A", state_command=["slk-state"])
+    if damage == "altered-fact": query["attempt_observation"]["transport_event_attempt"] = 3
+    path = write_json(tmp_path / "conflict-query.json", query)
+    cycle = {**query["cycle_mechanics"], "checklist": {"bi_projection": "ANOMALY"},
+        "anomaly_codes": ["PROJECTION_MISMATCH", "ACTIVITY_UNPROVEN"],
+        "evidence_refs": [{"path": str(path), "sha256": admin.wc._sha256(path)}]}
+    if damage == "missing-anomaly": cycle["anomaly_codes"].remove("PROJECTION_MISMATCH")
+    if damage == "claimed-cell": cycle.update(go_id="GO-001", cell_id="CELL-001", attempt=2)
+    if damage is None: admin._verify_cycle(cycle, "RUN-A", ["slk-state"])
+    else:
+        with pytest.raises(ValueError): admin._verify_cycle(cycle, "RUN-A", ["slk-state"])
+
+
 def test_authenticated_ow_stale_snapshot_is_not_bad_credential_and_never_replayed(tmp_path, monkeypatch):
     request = request_fixture(tmp_path)
     monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _: "synthetic")

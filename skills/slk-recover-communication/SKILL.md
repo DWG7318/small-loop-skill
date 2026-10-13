@@ -22,7 +22,7 @@ description: Use when an active Small Loop Skill (SLK) Run has an exact delivery
 
 ## 不能闭合就升级
 
-重试耗尽、冲突或端点失效交登记 Supervisor，说明已保存内容、投递事实和未完成动作。`SUPERVISOR_DECISION_REQUIRED` 保持阻断；无活动接收者由 Owner/Main 真实激活，不猜接管。更换/恢复成员或旋转凭据用 `$slk-replace-member`，新端点不等于原消息已送达。Temporal 故障按原 operation 用 `$slk-manage-temporal`，不另造身份/工作流。
+重试耗尽、冲突或端点失效交登记 Supervisor，说明已保存内容、投递事实和未完成动作。Supervisor 按 `$slk-troubleshoot-run` 承担现场补漏，不无限等待源码维修；`SUPERVISOR_DECISION_REQUIRED` 由其据实处理，不靠换 ID 绕开。无活动接收者由 Owner/Main 真实激活，不猜接管。更换/恢复成员或旋转凭据用 `$slk-replace-member`，新端点不等于原消息已送达。Temporal 故障按原 operation 用 `$slk-manage-temporal`，不另造身份/工作流。
 
 报告原样保存/独立投递，不等 ACK/TOKEN/Temporal；维护失败另记，正文/格式/退出码不补造 D0/D1/D2、启动、接手或 TOKEN。旧格式/pre-D0/partial/context/terminal 自动消费退役，历史 FAIL/原件只读，不为模板重跑 Agent。
 

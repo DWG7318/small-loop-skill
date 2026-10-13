@@ -62,6 +62,15 @@ def live_checker(tmp_path, monkeypatch, *, credentials=None, second_cell=False, 
             native["observed_at"] = "2026-09-23T00:05:00Z"
             attempt.write_json_once("native-start.received.json", native)
             attempt.write_json_once("started.json", native)
+            if endpoint.role == "checker":
+                identity = {key: native[key] for key in ("run_id", "cell_id", "message_id", "native_request_sha256")}
+                identity["native_task_id"] = native["native_task"]["id"]
+                index_path = attempt.write_json_once("evidence-index.json", identity)
+                attempt.write_json_once("ocrv-native-process.json", {**identity,
+                    "schema_version": "slk.ocrv-native-process/v1", "index_path": str(index_path),
+                    "index_sha256": wc._sha256(index_path),
+                    "native_start_sha256": wc._sha256(attempt.root / "native-start.received.json"),
+                    "launcher_process": native["process"], "process": native["process"]})
             return DeliveryResult(RESULT_SCHEMA, envelope.message_id, envelope.run_id,
                 endpoint.adapter, "completed", {}, None, ("started.json",))
     def command(executable, arguments, **kwargs):
@@ -95,12 +104,22 @@ def live_checker(tmp_path, monkeypatch, *, credentials=None, second_cell=False, 
     monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda path: checker_secret
                         if Path(path) == Path(host.credential_path("checker"))
                         else pytest.fail("no other role credential may be consumed"))
+    # Receiver above is a simulation, not an OCRV child process. Its explicit
+    # seal models native exit; dedicated liveness tests override this probe.
+    from slk_transport import native_ocrv
+    original_probe = native_ocrv.process_probe
+    def simulated_checker_process(pid, creation_time):
+        if ((pid, creation_time) == (native["process"]["pid"], native["process"]["creation_time"])
+            and any((source / name).is_file() for name in ("completed.json", "failed.json"))):
+            return {"exists": False, "identity_matches": False}
+        return original_probe(pid, creation_time)
+    monkeypatch.setattr(native_ocrv, "process_probe", simulated_checker_process)
     return host, source, incoming, native
 
 
 def test_explicit_pass_delivers_only_next_required_cell_with_its_own_first_attempt(tmp_path, monkeypatch):
     host, source, _, _ = live_checker(tmp_path, monkeypatch, second_cell=True)
-    result = host.submit_checker_decision(source, "PASS", "original first CELL acceptance")
+    result = seal_and_handoff(host, source, "PASS", "original first CELL acceptance")
     assert result["handoff"]["status"] == "OWNED_HANDOFF_COMMITTED"
     request = json.loads(Path(result["handoff"]["commit_path"]).read_text())
     assert request["cell_id"] == "CELL-002" and request["attempt"] == 1
@@ -119,7 +138,7 @@ def test_actual_second_attempt_incomplete_return_keeps_original_candidate_and_at
         request = json.loads(Path(result["commit_path"]).read_text())
         return Path(request["start_evidence"]["stored_path"]).parent
     own("checker")
-    failed = host.submit_checker_decision(checker_source, "FAIL", "original defect, not host classification")
+    failed = seal_and_handoff(host, checker_source, "FAIL", "original defect, not host classification")
     supervisor_source = receiver(failed["handoff"])
     failure = json.loads((supervisor_source/"envelope.json").read_text())
     write_json(supervisor_source/"supervisor-result.json", {"operation": "rework",
@@ -144,7 +163,7 @@ def test_actual_second_attempt_incomplete_return_keeps_original_candidate_and_at
     second_checker = receiver(delivered["handoff"])
     monkeypatch.setenv("SLK_NATIVE_START_RECEIPT", str(second_checker/"native-start.received.json"))
     own("checker")
-    incomplete = host.submit_checker_decision(second_checker, "INCOMPLETE", "original unchecked item")
+    incomplete = seal_and_handoff(host, second_checker, "INCOMPLETE", "original unchecked item")
     second_supervisor = receiver(incomplete["handoff"])
     management = json.loads((second_supervisor/"envelope.json").read_text())
     write_json(second_supervisor/"supervisor-result.json", {"operation":"management",
@@ -157,7 +176,7 @@ def test_actual_second_attempt_incomplete_return_keeps_original_candidate_and_at
     assert returned_input["payload"]["candidate_payload"]["candidate"] == candidate
     monkeypatch.setenv("SLK_NATIVE_START_RECEIPT", str(final_checker/"native-start.received.json"))
     own("checker")
-    passed = host.submit_checker_decision(final_checker, "PASS", "original Checker final decision")
+    passed = seal_and_handoff(host, final_checker, "PASS", "original Checker final decision")
     assert passed["handoff"]["status"] == "OWNED_HANDOFF_COMMITTED"
     events = host.projection()["events"]
     second_events = [e for e in events if e["event_type"] in {"D1_INCOMPLETE", "D1_PASSED"}]
@@ -272,13 +291,104 @@ def test_explicit_checker_submission_really_hands_off_once(tmp_path, monkeypatch
         return dispatch_once(endpoint, envelope, arguments[arguments.index("--attempt-root")+1],
                              adapters={endpoint["adapter"]: Receiver()}).to_dict()
     monkeypatch.setattr(wc, "_run_json_command", command)
-    result = host.submit_checker_decision(source, verdict)
+    result = seal_and_handoff(host, source, verdict)
     assert result["handoff"]["status"] == "OWNED_HANDOFF_COMMITTED"
     assert len(received) == 1 and received[0].payload_type == kind
     projection = host.projection()
     assert projection["runtime_snapshot"]["token_holder_role_instance_id"] == host.endpoint("supervisor")["role_instance_id"]
     assert projection["token_history"][-1]["message_id"] == received[0].message_id
-    again = host.submit_checker_decision(source, verdict)
+    again = host.complete(source)
     assert again["handoff"]["status"] == "OWNED_HANDOFF_ALREADY_COMMITTED"
     assert len(received) == 1
-    assert not (source / "ocrv-result.json").exists()
+    assert (source / "ocrv-result.json").read_bytes() == b"original native report\r\n"
+
+
+def seal_and_handoff(host, source, verdict, message=None):
+    recorded = host.submit_checker_decision(source, verdict, message)
+    assert recorded["status"] == "CHECKER_D1_RECORDED"
+    assert recorded["handoff"]["status"] == "CHECKER_HANDOFF_PENDING"
+    seal_checker(source)
+    return host.complete(source)
+
+
+def seal_checker(source):
+    from slk_transport.contracts import DeliveryResult, RESULT_SCHEMA
+    envelope = Envelope.from_dict(json.loads((source / "envelope.json").read_text()))
+    (source / "ocrv-result.json").write_bytes(b"original native report\r\n")
+    write_json(source / "completed.json", DeliveryResult(RESULT_SCHEMA, envelope.message_id,
+        envelope.run_id, "ocrv-checker", "completed", {}, None, ()).to_dict())
+
+
+def test_persisted_checker_decision_waits_for_terminal_and_report_before_handoff(tmp_path, monkeypatch):
+    host, source, incoming, _ = live_checker(tmp_path, monkeypatch)
+    monkeypatch.setattr(host, "_send_owned", lambda *_a, **_k: pytest.fail("decision started a role before seal"))
+    recorded = host.submit_checker_decision(source, "PASS", "whole CELL accepted")
+    assert recorded["status"] == "CHECKER_D1_RECORDED"
+    assert recorded["handoff"]["status"] == "CHECKER_HANDOFF_PENDING"
+    assert host.complete(source)["handoff"]["status"] == "CHECKER_HANDOFF_PENDING"
+    (source / "ocrv-result.json").write_text("finalizing native metadata after decision")
+    assert host.complete(source)["handoff"]["status"] == "CHECKER_HANDOFF_PENDING"
+    events = [event for event in host.projection()["events"] if event["event_type"] == "D1_PASSED"]
+    assert len(events) == 1
+    assert host.projection()["runtime_snapshot"]["token_holder_role_instance_id"] == incoming.receiver_role_instance_id
+
+
+def test_persisted_d1_survives_failed_suffix_and_replays_only_missing_handoff(tmp_path, monkeypatch):
+    host, source, _, _ = live_checker(tmp_path, monkeypatch)
+    recorded = host.submit_checker_decision(source, "PASS", "one actual decision")
+    assert recorded["status"] == "CHECKER_D1_RECORDED"
+    seal_checker(source)
+    original_decision = Path(recorded["decision_path"]).read_bytes()
+    original_terminal = (source / "completed.json").read_bytes()
+    original_send = host._send_owned
+    monkeypatch.setattr(host, "_send_owned", lambda *_a, **_k: (_ for _ in ()).throw(
+        wc.CompletionError("TEMPORAL_NATIVE_ACK_UNPROVED", "retained for retry")))
+    failed = host.complete(source)
+    assert failed["status"] == "CHECKER_D1_RECORDED"
+    assert failed["handoff"]["status"] == "HOST_HANDOFF_FAILED"
+    monkeypatch.setattr(host, "_send_owned", original_send)
+    monkeypatch.delenv("SLK_NATIVE_START_RECEIPT")  # suffix is host recovery, not another model action
+    monkeypatch.setattr(host, "record_checker_decision", lambda *_: pytest.fail("D1 was submitted again"))
+    assert host.complete(source)["handoff"]["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert Path(recorded["decision_path"]).read_bytes() == original_decision
+    assert (source / "completed.json").read_bytes() == original_terminal
+    assert len([event for event in host.projection()["events"] if event["event_type"] == "D1_PASSED"]) == 1
+
+
+@pytest.mark.parametrize("executor", ["alive", "child-alive", "unqueryable", "missing-proof"])
+def test_checker_terminal_does_not_override_original_native_executor_liveness(tmp_path, monkeypatch, executor):
+    from slk_transport import native_ocrv
+    host, source, _envelope, start = live_checker(tmp_path, monkeypatch)
+    recorded = host.submit_checker_decision(source, "PASS", "persisted before original native exit")
+    seal_checker(source)  # A leftover wrapper terminal/result is not an OS stop proof.
+    decision_bytes = Path(recorded["decision_path"]).read_bytes()
+    proof_path = source / "ocrv-native-process.json"
+    original_proof = proof_path.read_bytes()
+    if executor == "child-alive":
+        proof = wc._read_object(proof_path, "executor")
+        write_json(proof_path, {**proof, "process": {"pid": 99, "creation_time": "fixture-child"}})
+    if executor == "missing-proof":
+        proof_path.unlink()
+    calls = []
+    def probe(pid, created):
+        calls.append((pid, created))
+        if executor == "unqueryable":
+            raise OSError("isolated process query denied")
+        if executor == "child-alive" and pid != 99:
+            return {"exists": False, "identity_matches": False}
+        return {"exists": True, "identity_matches": True}
+    monkeypatch.setattr(native_ocrv, "process_probe", probe)
+    monkeypatch.setattr(host, "_checker_handoff", lambda *_a: pytest.fail("live/unproved writer allowed handoff"))
+    result = host.complete(source)
+    assert result["status"] == "CHECKER_D1_RECORDED"
+    assert result["handoff"]["status"] == "CHECKER_HANDOFF_PENDING"
+    expected = [] if executor == "missing-proof" else [(start["process"]["pid"], start["process"]["creation_time"])]
+    if executor == "child-alive":
+        expected.append((99, "fixture-child"))
+    assert calls == expected
+    assert Path(recorded["decision_path"]).read_bytes() == decision_bytes
+    proof_path.write_bytes(original_proof)
+    monkeypatch.setattr(native_ocrv, "process_probe", lambda *_: {"exists": False, "identity_matches": False})
+    monkeypatch.setattr(host, "record_checker_decision", lambda *_: pytest.fail("D1 repeated after native exit"))
+    monkeypatch.setattr(host, "_checker_handoff", lambda *_: {"status": "OWNED_HANDOFF_COMMITTED"})
+    assert host.complete(source)["handoff"]["status"] == "OWNED_HANDOFF_COMMITTED"

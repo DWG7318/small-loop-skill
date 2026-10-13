@@ -12,6 +12,7 @@ import pytest
 
 from scripts.build_local_package import ARTIFACT_NAMES, build_package as _build_package
 from scripts.validate_repository import EXPECTED_SKILLS
+from scripts.tool_artifacts import begin_release_build, seal_release_build
 from runtime_fixtures import prepared_runtimes
 from scripts.local_package_metadata import INSTALL_SCRIPT_NAMES, LAUNCHER_NAMES, python_path_contents, read_version
 
@@ -35,8 +36,10 @@ def build_package(repository: Path, artifacts: Path, output: Path) -> Path:
 def fake_artifacts(root: Path) -> Path:
     """Simulated artifacts exercise installation only, not executable/runtime readiness."""
     root.mkdir()
+    begin_release_build(ROOT, root, build={"commands": ["SIMULATED INVENTORY ONLY; no compiler executed"]})
     for name in ARTIFACT_NAMES:
         (root / name).write_bytes(f"new-{name}-4.4.5\n".encode())
+    seal_release_build(ROOT, root)
     return root
 
 

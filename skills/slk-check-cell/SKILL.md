@@ -27,8 +27,8 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 先保存本人的事实、证据和完整原始报告（按需用 `$slk-record-run`）；索引用原件绝对路径/字节数/SHA-256。partial、长输出、非 JSON 和非零退出原样独立投递，不为 SLK 格式补交重跑。保存不等于接收，ACK/TOKEN/Temporal 失败不扣留报告。
 
-业务与证据完成后，原 Checker 调用绑定的 `slk_checker_decide(verdict, message?)` **一次，作为最后任务交接动作**。工具在所属可信入口内用本人的密封凭据核对当前 Run、候选消息、candidate/D1 attempt 和原生调用，按上述原正常边推进。PASS 内用标准完成后缀，不要求 Shell、第二次后缀或另一审查组。工具缺失、失败或未明确决定时仍交原报告并披露缺口，不让 Codex/宿主代判；工具发现或离线模拟不证明真实模型已调用。
+组检查结束且旧后台工作停稳后，同一 Checker 对完整 CELL 收束判断；全组 reuse 但无本人 D1 时仍须收束，不重审成功文件。原 Checker 调用绑定的 `slk_checker_decide(verdict, message?)` **一次，作为最后业务动作**。工具用本人的密封凭据核对 Run、候选消息、candidate/D1 attempt 和原生调用，先保存本人决定；随后仅做响应刷出、原始结果/manifest 封存与原生退出，再由可信 Host 完成实际交接。`CHECKER_D1_RECORDED` 只说明决定已存，不说明已送达。已有认证 D1 时不再调用模型，只续未完成交接；不要求 Checker 另写 Shell、第二次后缀或另一审查组。
 
-同一标准入口核实后继真实 `slk.native-start/v2`，再原子提交 TOKEN 与唯一 `runtime_revision`；受理或终态不反推启动，不混候选/attempt/revision，不分步 handoff，不交一次性 Worker 进程托管长审查。返回并刷出响应后结束本次原生调用，不等待/轮询后继、不继续施工，也不留 post-turn/background 动作。真实 transport 失败按 `$slk-recover-communication` 处理原投递，不重新审查或改变历史 FAIL。
+真实交接是全部业务和证据封存后的最后任务动作。标准完成后缀核实后继真实 `slk.native-start/v2`，再原子提交 TOKEN 与唯一 `runtime_revision`；受理或终态不反推启动，不混候选/attempt/revision，不把一次性 Worker 进程用于托管长审查。Checker 不等待/轮询后继、不继续审查，也不留 post-turn/background 动作。工具缺失、内层 `isError`/业务失败或未明确决定仍交原报告并披露缺口；不由 Host 代判。真实 transport 失败只续原投递，不重新审查、改变历史 FAIL 或丢弃已保存 D1。
 
 REQUESTED/PAUSED 不开新审查/派工，只按原暂停边界交出报告、管理回传及精确在途闭合，保留原决定和待续 operation。OW 只观察/报告 Supervisor，不代送、重试、写 Checker 事实或提交 TOKEN；guard 只阻断下一 CELL。

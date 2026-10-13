@@ -297,9 +297,18 @@ async def test_450_isolated_sdk_exit_guard_failure_recovery_and_two_run_monitori
             resolution = {**runtime_guard_resolution_value(), "run_id": run_a,
                 "blocker_event_id": snapshot["runtime_guard_blocker"]["event_id"]}
             restored = True  # Supervisor has obtained fresh trustworthy evidence, not a new child.
+            unresolved = set(snapshot["pending_supervisor_notifications"]) - {resolution["blocker_event_id"]}
             receipt = await delivery_client._submit_once(operation="resolve-runtime-guard", identity=exact, request=resolution)
             assert receipt["status"] == "RUNTIME_GUARD_REPAIRED"
             a_audits_before_wait = len([row for row in audits if row["run_id"] == run_a])
+            for index in range(len(unresolved)):
+                await env.sleep(1201)
+                # Later audit/callback notices remain independent obligations.
+                later = (await a[2].query(RunSlkWorkflow.status))["runtime_guard_blocker"]
+                assert later is not None and later["event_id"] in unresolved
+                unresolved.remove(later["event_id"])
+                resolution = {**resolution, "event_id": f"resolve-later-{index}", "blocker_event_id": later["event_id"]}
+                await delivery_client._submit_once(operation="resolve-runtime-guard", identity=exact, request=resolution)
             await env.sleep(1201)
             assert (await a[2].query(RunSlkWorkflow.status))["runtime_guard_blocker"] is None
             a_audits = [row["audit_cycle"] for row in audits if row["run_id"] == run_a]

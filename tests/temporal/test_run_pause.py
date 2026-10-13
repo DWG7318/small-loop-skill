@@ -51,9 +51,10 @@ def test_pause_clock_preserves_twenty_plus_ten_and_keeps_ow_audits(monkeypatch):
     run.set_run_pause(change("REQUESTED")); run.set_run_pause(change("PAUSED"))
     run._next_overwatcher_audit_at = clock + timedelta(minutes=20)
     notices, audits = [], []
-    async def notify(value): notices.append(value)
+    async def notify(value): notices.append(value); return True
     async def inspect(): audits.append(clock)
     monkeypatch.setattr(run, "_notify_supervisor", notify)
+    monkeypatch.setattr(workflows.workflow, "patched", lambda _name: True)
     monkeypatch.setattr(run, "_inspect_overwatcher", inspect)
     clock += timedelta(minutes=60)
     asyncio.run(run._perform_runtime_checks())
@@ -185,7 +186,8 @@ def test_real_sdk_resume_partial_commit_keeps_original_queued_operation_and_repl
         @activity.defn(name="slk.notify_supervisor")
         async def notify(value):
             notices.append(value)
-            return {"status": "NOTIFIED", "event_id": value["event_id"], "receipt_sha256": "e" * 64}
+            from .test_contracts import notification_value
+            return notification_value(value["event_id"], value["run_id"])
         async with await WorkflowEnvironment.start_time_skipping(
             test_server_existing_path=os.environ.get("SLK_TEMPORAL_TEST_SERVER_PATH")) as env:
             queue = "pause-test-" + uuid.uuid4().hex

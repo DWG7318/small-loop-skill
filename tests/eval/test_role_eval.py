@@ -39,7 +39,7 @@ def valid_response(role: str = "checker") -> dict[str, object]:
 def test_pack_is_closed_comprehensive_and_runtime_subset_is_bounded() -> None:
     pack = load_pack(PACK)
     assert pack["schema_version"] == "slk.role-eval-pack/v1"
-    assert pack["method_version"] == "4.5.0"
+    assert pack["method_version"] == "4.5.1"
     assert len(pack["cases"]) >= 36
     for role in ("supervisor", "checker", "worker", "overwatcher"):
         role_cases = [case for case in pack["cases"] if case["role"] == role]
@@ -244,6 +244,20 @@ def test_450_current_readiness_does_not_require_historical_conformance() -> None
     normal = cases["SUP-NORMAL-NOT-RECOVERY"]
     assert normal["correct_choice"] == "VERIFY_ORIGINAL_NORMAL_LEG"
     assert "不作普通新 Run 开工前演练门槛" in normal["rule"]
+
+
+def test_451_field_repairs_and_sealed_decisions_are_development_cases_not_new_preflight() -> None:
+    cases = {case["case_id"]: case for case in load_pack(PACK)["cases"]}
+    expected = {
+        "SUP-ONSITE-MISSING-DELIVERY": "DELIVER_EXISTING_ORIGINAL_AS_SUPERVISOR",
+        "CHK-REUSED-GROUPS-NO-D1": "MAKE_ONE_WHOLE_CELL_DECISION",
+        "CHK-SAVED-D1-HANDOFF-FAILED": "KEEP_D1_RESUME_MISSING_HANDOFF",
+        "WRK-CURRENT-CELL-SCOPE": "USE_CURRENT_CELL_REPLACING_OLD_SCOPE",
+    }
+    for identity, choice in expected.items():
+        assert cases[identity]["correct_choice"] == choice
+        assert choice in cases[identity]["choices"]
+        assert cases[identity]["runtime_critical"] is False
 
 
 def test_450_one_direct_overwatcher_child_is_not_shared_across_supervisors() -> None:

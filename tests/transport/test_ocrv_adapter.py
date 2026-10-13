@@ -256,16 +256,21 @@ def test_registered_checker_accepts_native_unlimited_budget_and_duration(tmp_pat
     OcrvAdapter().validate_address(Endpoint.from_dict(raw))
 
 
-def test_management_return_reuses_same_candidate_with_normal_unlimited_profile(
-    tmp_path: Path,
+@pytest.mark.parametrize('maximum,budget,minutes,action', [
+    (32_000, 128_000, 15, 'ADJUST_CAPACITY'),
+    (96_000, 150_000, 9, 'SUPPLY_EVIDENCE'),
+    (200_000, 0, 0, 'ADJUST_CAPACITY'),
+])
+def test_management_return_uses_real_endpoint_capacity_chain(
+    tmp_path: Path, original_checker_adapter, maximum, budget, minutes, action,
 ) -> None:
     original = candidate_envelope(tmp_path)
     endpoint = checker_endpoint(tmp_path)
     endpoint_raw = {**endpoint.__dict__, "address": dict(endpoint.address)}
     endpoint_raw["address"]["review_capacity"] = {
-        "max_tokens": 32_000,
-        "max_tokens_budget": 128_000,
-        "timeout_minutes": 15,
+        "max_tokens": maximum,
+        "max_tokens_budget": budget,
+        "timeout_minutes": minutes,
     }
     endpoint = Endpoint.from_dict(endpoint_raw)
     (tmp_path / "supervisor-decision.json").write_text("original management evidence", encoding="utf-8")
@@ -274,7 +279,7 @@ def test_management_return_reuses_same_candidate_with_normal_unlimited_profile(
         "candidate_message_id": original.message_id,
         "candidate_payload": dict(original.payload),
         "candidate_payload_sha256": original.payload_sha256,
-        "management_action": "ADJUST_CAPACITY",
+        "management_action": action,
         "management_summary": "Use the normal unlimited D1 profile.",
         "management_evidence_refs": [str(tmp_path / "supervisor-decision.json")],
         "review_policy": {
@@ -295,12 +300,17 @@ def test_management_return_reuses_same_candidate_with_normal_unlimited_profile(
         "payload_sha256": canonical_json_sha256(payload),
     })
 
-    request = OcrvAdapter()._candidate_request(returned)
+    attempt = AttemptStore(tmp_path / 'attempts').create(returned)
+    OcrvAdapter().deliver(endpoint, returned, attempt)
+    request = json.loads((attempt.root / 'ocrv-request.json').read_text())
+    argv = original_checker_adapter._review_args(
+        original_checker_adapter._validate_request(request), tmp_path / 'background', tmp_path / 'raw')
 
     assert request["candidate"] == original.payload["candidate"]
-    assert request["capacity"]["max_tokens"] == 200_000
-    assert request["capacity"]["max_tokens_budget"] == 0
-    assert request["capacity"]["timeout_minutes"] == 0
+    assert argv[argv.index('--max-tokens') + 1] == str(maximum)
+    assert argv[argv.index('--max-tokens-budget') + 1] == str(0 if action == 'ADJUST_CAPACITY' else budget)
+    assert argv[argv.index('--timeout') + 1] == str(0 if action == 'ADJUST_CAPACITY' else minutes)
+    assert argv[argv.index('--max-tools') + 1] == '0'  # template default, not unlimited
 
 
 @pytest.mark.parametrize('hashed', [False, True])
@@ -380,7 +390,7 @@ def test_ocrv_preserves_a_valid_incomplete_review_without_calling_it_pass(tmp_pa
     assert (attempt.root / "started.json").is_file()
 
 
-def test_checker_dispatch_creates_exact_worker_delivery_without_running_d1(tmp_path: Path) -> None:
+def test_checker_dispatch_creates_exact_worker_delivery_without_running_d1(tmp_path: Path, monkeypatch) -> None:
     checker = checker_endpoint(tmp_path)
     worker_raw = endpoint_value(role="worker", version=1)
     worker_raw["agent_runtime"] = "dsh"
@@ -397,6 +407,13 @@ def test_checker_dispatch_creates_exact_worker_delivery_without_running_d1(tmp_p
     raw["payload_sha256"] = canonical_json_sha256(payload)
     envelope = Envelope.from_dict(raw)
     attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+
+    write = type(attempt).write_json_once
+    def ordered_write(self, name, value):
+        if name == 'started.json':
+            assert (self.root / 'checker-result.json').is_file(), 'dispatch suffix must precede start visibility'
+        return write(self, name, value)
+    monkeypatch.setattr(type(attempt), 'write_json_once', ordered_write)
 
     result = OcrvAdapter().deliver(checker, envelope, attempt)
 
@@ -591,3 +608,106 @@ def test_retired_output_recovery_never_spawns_or_writes_state(tmp_path, monkeypa
     assert result.status == "failed" and result.error_code == "OUTPUT_FORMAT_RECOVERY_RETIRED"
     assert not (attempt.root / "started.json").exists()
     assert not (attempt.root / "ocrv-result.json").exists()
+
+
+def prepared_ocrv_resume_source(tmp_path, monkeypatch, adapter, damage=None):
+    from types import SimpleNamespace
+    from slk_transport.adapters.ocrv import _native_start_context
+    from slk_transport import role_host as hosts, native_ocrv, worker_completion as wc
+    endpoint, envelope = checker_endpoint(tmp_path), candidate_envelope(tmp_path)
+    source = tmp_path / 'attempts' / envelope.run_id / envelope.message_id
+    source.mkdir(parents=True)
+    request_path = source / 'ocrv-request.json'
+    request_path.write_text(json.dumps(OcrvAdapter()._candidate_request(envelope)))
+    context = _native_start_context(endpoint, envelope, adapter._sha256(request_path))
+    receipt = source / 'native-start.received.json'
+    with subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()'], stdin=subprocess.PIPE) as process:
+        adapter._publish_native_start(receipt, context, 'original-invocation',
+                                      os.getpid() if damage == 'live-writer' else process.pid)
+        process.communicate(timeout=10)
+    start = json.loads(receipt.read_text())
+    (source / 'started.json').write_text(json.dumps(start))
+    marker = f"SLK_NATIVE_INVOCATION=original-invocation;REQUEST_SHA256={adapter._sha256(request_path)}"
+    background = source / 'background.md'
+    background.write_text(marker + '\noriginal frozen CELL')
+    native_source = {'schema_version': 'slk.ocrv-native-source/v1',
+        **{key: context[key] for key in ('run_id', 'cell_id', 'message_id')},
+        'invocation_id': 'original-invocation', 'native_start_sha256': adapter._sha256(receipt),
+        'request_path': str(request_path), 'background_path': str(background),
+        'background_sha256': adapter._sha256(background), 'marker': marker,
+        'session_directory': str(source), 'prior_sessions': [], 'resume_session_id': None}
+    (source / 'ocrv-native-source.json').write_text(json.dumps(native_source))
+    session = source / 'original-session.jsonl'
+    rows = [
+        {'type': 'session_start', 'sessionId': 'original-session', 'uuid': 'header',
+         'timestamp': '2026-10-01T00:00:00Z', 'cwd': envelope.payload['repository']},
+        {'type': 'llm_request', 'sessionId': 'original-session', 'uuid': 'request',
+         'timestamp': '2026-10-01T00:00:01Z', 'messages': [{'content': marker}]},
+        {'type': 'session_end', 'sessionId': 'original-session', 'timestamp': '2026-10-01T00:00:02Z',
+         'duration_seconds': 2, 'run_manifest': {'files': []}},
+    ]
+    if damage == 'manifest':
+        rows[-1].pop('run_manifest')
+    session.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+    index = source / 'evidence-index.json'
+    index.write_text(json.dumps({**context, 'native_task_id': 'original-invocation'}))
+    (source / 'ocrv-native-process.json').write_text(json.dumps({
+        'schema_version': 'slk.ocrv-native-process/v1', **context,
+        'native_task_id': 'original-invocation', 'native_start_sha256': adapter._sha256(receipt),
+        'index_path': str(index), 'index_sha256': adapter._sha256(index),
+        'launcher_process': start['process'], 'process': start['process']}))
+    (source / 'endpoint.json').write_text(json.dumps(asdict(endpoint)))
+    (source / 'envelope.json').write_text(json.dumps(asdict(envelope)))
+    host = SimpleNamespace(binding={'plan_revision': 1}, projection=lambda: {'events': []})
+    monkeypatch.setattr(hosts, 'load_role_host', lambda _: None if damage == 'host' else host)
+    monkeypatch.setenv('SLK_NATIVE_START_RECEIPT', str(receipt))
+    monkeypatch.setenv('SLK_NATIVE_START_CONTEXT', json.dumps(context))
+    monkeypatch.setenv('OCRV_SLK_RUNTIME_ROOT', str(tmp_path / 'runtime'))
+    if damage == 'missing-endpoint':
+        (source / 'endpoint.json').unlink()
+    elif damage == 'envelope-hash':
+        value = asdict(envelope)
+        value['payload']['cell_goal'] = 'changed'
+        (source / 'envelope.json').write_text(json.dumps(value))
+    elif damage in {'local-only-decision', 'live-writer', None}:
+        decision = {'source_message_id': envelope.message_id, 'native_message_id': envelope.message_id,
+            'decision_source': 'CHECKER_EXPLICIT', 'native_task_id': 'original-invocation',
+            'role_instance_id': endpoint.role_instance_id, 'verdict': 'INCOMPLETE', 'message': 'original public limitations',
+            'native_start_path': str(receipt.resolve()), 'native_start_sha256': adapter._sha256(receipt),
+            'decided_at': '2026-10-01T00:05:00Z'}
+        (source / 'role-host').mkdir()
+        (source / 'role-host/checker-decision.json').write_text(json.dumps(decision))
+        event = {'event_id': wc._stable_id(envelope.message_id, 'd1_incomplete'), 'event_type': 'D1_INCOMPLETE',
+            'go_id': envelope.go_id, 'cell_id': envelope.cell_id, 'plan_revision': 1,
+            'author_role_instance_id': endpoint.role_instance_id, 'occurred_at': decision['decided_at'], 'details': decision}
+        if damage in {'live-writer', None}:
+            host.projection = lambda: {'events': [event]}
+    return host, source, endpoint, envelope, request_path
+
+
+@pytest.mark.parametrize('damage', ['missing-endpoint', 'envelope-hash', 'host', 'manifest', 'local-only-decision', 'live-writer', None])
+def test_resume_exact_source_preflight_and_authenticated_d1_zero_launch(
+    tmp_path, monkeypatch, original_checker_adapter, damage,
+):
+    adapter = original_checker_adapter
+    host, source, endpoint, envelope, request_path = prepared_ocrv_resume_source(tmp_path, monkeypatch, adapter, damage)
+    monkeypatch.setattr(adapter, '_discover_capabilities', lambda *_: pytest.fail('preflight/reuse spawned probe'))
+    monkeypatch.setattr(adapter.subprocess, 'Popen', lambda *_a, **_k: pytest.fail('preflight/reuse spawned native'))
+    output = tmp_path / 'resumed-result.json'
+    if damage is not None:
+        with pytest.raises(adapter.RequestError, match='bound original'):
+            adapter.run(request_path, output, resume_session='original-session')
+        assert not output.exists()
+    else:
+        # A saved D1 may reuse an already sealed result, never manufacture one.
+        output.write_text(json.dumps({'run_id': envelope.run_id, 'cell_id': envelope.cell_id,
+            'review_invocation_id': 'original-invocation', 'verdict': 'INCOMPLETE',
+            'request_sha256': adapter._sha256(request_path), 'findings': None,
+            'decision': {'message': 'original public limitations'}}))
+        before = output.read_bytes()
+        assert adapter.run(request_path, output, resume_session='original-session') == 0
+        result = json.loads(output.read_text())
+        assert result['review_invocation_id'] == 'original-invocation'
+        assert result['decision']['message'] == 'original public limitations'
+        assert result['findings'] is None
+        assert output.read_bytes() == before

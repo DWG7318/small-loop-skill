@@ -132,6 +132,51 @@ def test_native_running_attestation_is_closed_small_and_reused(simulated) -> Non
     assert attest() == result
 
 
+def linked_child(simulated):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    child_id = "22222222-2222-4222-8222-222222222222"
+    child_source = source.with_name("rollout-2026-10-11T01-02-04-" + child_id + ".jsonl")
+    request["child_source_path"] = str(child_source)
+    link = {"timestamp": records[2]["timestamp"], "type": "event_msg", "payload": {
+        "type": "item_completed", "thread_id": PARENT, "item": {"type": "SubAgentActivity",
+        "id": "call_spawn", "kind": "started", "agent_thread_id": child_id, "agent_path": CHILD}}}
+    records.insert(3, link)
+    meta = {"timestamp": records[0]["timestamp"], "type": "session_meta", "payload": {
+        "id": child_id, "parent_thread_id": PARENT, "agent_path": CHILD,
+        "source": {"subagent": {"thread_spawn": {"parent_thread_id": PARENT, "depth": 1, "agent_path": CHILD}}}}}
+    child_records = [meta, *sample(stamp(-5), call_id="call_child_list")]
+    def save_child(): child_source.write_text("".join(json.dumps(r) + "\n" for r in child_records))
+    save_child()
+    return child_records, link, save_child
+
+
+@pytest.mark.parametrize("damage", [None, "wrong-parent", "wrong-child", "wrong-spawn", "changed-meta", "bad-source", "missing-output", "ambiguous-followup", "native-exit", "native-exit-child-query-failed"])
+def test_exact_child_original_list_can_outlive_parent_sample_without_refreshing_time(simulated, damage):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    child_records, link, save_child = linked_child(simulated)
+    meta = child_records[0]
+    result = attest()
+    child_records.extend(sample(stamp(599), call_id="call_child_latest"))
+    if damage == "wrong-parent": meta["payload"]["parent_thread_id"] = "other"
+    if damage == "wrong-child": meta["payload"]["id"] = "other"
+    if damage == "wrong-spawn": link["payload"]["item"]["id"] = "call_other"
+    if damage == "changed-meta": meta["payload"]["changed"] = True
+    if damage == "bad-source": meta["payload"]["source"] = "unsupported"
+    if damage in {"missing-output", "native-exit-child-query-failed"}: child_records.pop()
+    if damage == "ambiguous-followup":
+        records.extend([record("function_call", stamp(595), namespace="collaboration", name="followup_task",
+            call_id="call_ambiguous", arguments=json.dumps({"target": CHILD, "message": SECRET}))])
+    if damage in {"native-exit", "native-exit-child-query-failed"}: records.extend(sample(stamp(600), {"completed": SECRET}, "call_parent_exit"))
+    save_child(); save()
+    actual = inspect(result, observed_at=stamp(601))
+    expected = "ACTIVE" if damage is None else "COMPLETED_WITHOUT_TERMINAL" if damage in {"native-exit", "native-exit-child-query-failed"} else "UNKNOWN"
+    assert actual["status"] == expected
+    assert SECRET not in json.dumps(actual)
+    if damage is None:
+        assert actual["last_event"]["observed_at"] == child_records[-1]["timestamp"]
+        assert actual["last_event"]["detail_sha256"] == hashlib.sha256(json.dumps(child_records[-1]).encode()).hexdigest()
+
+
 def native_projection(request):
     parent = request["native_address"]["parent"]
     child = request["native_address"]["agent_id"]
@@ -202,7 +247,9 @@ def test_native_exit_cli_rereads_originals_not_caller_status(simulated, tmp_path
 
 
 @pytest.mark.parametrize("case,expected", [("active", "CLEAR"), ("old-cycle", "ANOMALY"),
-    ("completed", "EXITED"), ("301-second-sample", "ANOMALY"), ("unsupported-failed-shape", "ANOMALY")])
+    ("completed", "EXITED"), ("301-second-sample", "ANOMALY"), ("unsupported-failed-shape", "ANOMALY"),
+    ("child-401", "CLEAR"), ("child-661", "LATE"), ("child-1200", "LATE"),
+    ("child-1201", "ANOMALY"), ("child-2904", "ANOMALY")])
 def test_450_audit_traverses_real_transport_entry_and_reader_in_simulation(simulated, tmp_path, monkeypatch, case, expected):
     pytest.importorskip("temporalio")
     import asyncio
@@ -212,8 +259,17 @@ def test_450_audit_traverses_real_transport_entry_and_reader_in_simulation(simul
     from slk_temporal import standard_adapter
     from slk_transport import native_activity
     _, _, records, request, _, _, save, attest, _ = simulated
+    child_records = linked_child(simulated)[0] if case.startswith("child-") else None
     result = attest()
     now = stamp()
+    if child_records is not None:
+        now = child_records[-1]["timestamp"]
+        audit_now = datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(seconds=int(case.split("-")[1]))
+        class AuditClock(datetime):
+            @classmethod
+            def now(cls, tz=None): return audit_now
+        monkeypatch.setattr(native_activity, "utc_now", lambda: audit_now.isoformat())
+        monkeypatch.setattr(standard_adapter, "datetime", AuditClock)
     if case in {"completed", "301-second-sample", "unsupported-failed-shape"}:
         status = {"failed": SECRET} if case == "unsupported-failed-shape" else {"completed": SECRET}
         records.extend(sample(now, status, "call_latest"))
@@ -255,6 +311,9 @@ def test_450_audit_traverses_real_transport_entry_and_reader_in_simulation(simul
     evidence = notices / "run-a" / "overwatcher-audits" / (receipt["evidence_sha256"] + ".json")
     saved = json.loads(evidence.read_text())
     if case == "301-second-sample": assert saved["native"]["error"] == "NATIVE_ACTIVITY_STALE"
+    if child_records is not None:
+        assert saved["native"]["last_event"]["observed_at"] == now
+        assert saved["cadence"]["elapsed_seconds"] == int(case.split("-")[1])
     assert SECRET not in evidence.read_text()
 
 
@@ -839,6 +898,48 @@ def test_unknown_valid_records_and_legacy_unrelated_tool_identifiers_remain_comp
         record("function_call_output", stamp(), call_id="legacy-tool-call-1", output=SECRET),
     ])
     assert attest()["status"] == "ATTESTED"
+
+
+@pytest.mark.parametrize("position", [1, 3, 5])
+def test_app_injected_message_receipt_without_call_id_is_not_an_ow_tool_pair(simulated, position):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    receipt = record("function_call_output", stamp(), id="app-injected-receipt",
+                     namespace="codex_app", name="send_message_to_thread", output=SECRET,
+                     internal_chat_message_metadata_passthrough={"opaque": SECRET})
+    records.insert(position, receipt)
+    result = attest()
+    proof = json.loads((evidence / "subagent-overwatcher-proof.json").read_text())
+    assert proof["spawn_call_id"] == "call_spawn"
+    assert proof["sample_call_id"] == "call_list"
+    # Selection hashes still bind exact original records, not a filtered copy.
+    for call_id, kind, key in (("call_spawn", "function_call", "spawn_call_sha256"),
+                               ("call_spawn", "function_call_output", "spawn_output_sha256"),
+                               ("call_list", "function_call", "sample_call_sha256"),
+                               ("call_list", "function_call_output", "sample_output_sha256")):
+        raw = next(line for line in source.read_bytes().splitlines()
+                   if (item := json.loads(line))["payload"].get("call_id") == call_id
+                   and item["payload"]["type"] == kind)
+        assert proof[key] == hashlib.sha256(raw).hexdigest()
+    assert SECRET not in json.dumps(proof)
+    assert inspect(result)["status"] == "ACTIVE"
+
+
+@pytest.mark.parametrize("damage", ["namespace", "name", "kind", "id", "output", "call-id"])
+def test_app_compatibility_never_skips_target_or_malformed_receipts(simulated, damage):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    receipt = record("function_call_output", stamp(), id="app-injected-receipt",
+                     namespace="codex_app", name="send_message_to_thread", output=SECRET)
+    payload = receipt["payload"]
+    if damage == "namespace": payload["namespace"] = "collaboration"
+    elif damage == "name": payload["name"] = "list_agents"
+    elif damage == "kind": payload["type"] = "function_call"
+    elif damage == "id": payload["id"] = ""
+    elif damage == "output": payload["output"] = None
+    elif damage == "call-id": payload["call_id"] = "call_spawn"
+    records.insert(1, receipt)
+    with pytest.raises(reader.OverwatcherSubagentError):
+        attest()
+    assert not (evidence / "subagent-overwatcher-proof.json").exists()
 
 
 def test_nested_child_locator_uses_parent_local_spawn_without_invented_ancestor_proof(simulated) -> None:

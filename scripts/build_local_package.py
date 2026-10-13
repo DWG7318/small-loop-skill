@@ -18,6 +18,7 @@ try:
     )
     from .validate_repository import release_files
     from .verify_bi_release import BiReleaseError, verify_bi_release
+    from .tool_artifacts import ArtifactError, RELEASE_PROVENANCE, verify_release_build
     from .verify_local_install import VerificationError, _plain_metadata, _python_runtime_layout, _safe_relative
 except ImportError:  # direct script execution
     from local_package_metadata import (
@@ -26,6 +27,7 @@ except ImportError:  # direct script execution
     )
     from validate_repository import release_files
     from verify_bi_release import BiReleaseError, verify_bi_release
+    from tool_artifacts import ArtifactError, RELEASE_PROVENANCE, verify_release_build
     from verify_local_install import VerificationError, _plain_metadata, _python_runtime_layout, _safe_relative
 
 
@@ -285,19 +287,26 @@ def build_package(
                         for source in files)
 
     actual_artifacts = {path.name for path in artifact_root.iterdir() if path.is_file()}
-    if actual_artifacts != set(ARTIFACT_NAMES) or any(path.is_dir() for path in artifact_root.iterdir()):
-        raise PackageError("artifact set must contain exactly the five managed files")
+    if (actual_artifacts - {RELEASE_PROVENANCE} != set(ARTIFACT_NAMES)
+        or any(path.is_dir() for path in artifact_root.iterdir())):
+        raise PackageError("artifact set must contain exactly the five managed files and build provenance")
     try:
         verify_bi_release(artifact_root / "slk-bi-desktop.exe", require_pe=False)
     except BiReleaseError as exc:
         raise PackageError(str(exc)) from exc
+    try:
+        provenance = verify_release_build(repo, artifact_root)
+    except ArtifactError as exc:
+        raise PackageError(str(exc)) from exc
     listed = _load_repository_manifest(repo)
     mappings = _repository_sources(repo, listed)
     mappings.extend((artifact_root / name, Path("tools/slk/bin") / name) for name in ARTIFACT_NAMES)
+    mappings.append((artifact_root / RELEASE_PROVENANCE,
+                     Path("tools/slk/share/small-loop-skill") / RELEASE_PROVENANCE))
     mappings.extend((source, Path(PYTHON_RUNTIME_PATH) / source.relative_to(runtime)) for source in runtime_files)
     mappings.extend(products)
     for integration, names in {
-        "dsh": ("dsh-slk.ps1", "dsh-slk.cmd", "slk-native-activity.patch.yml",
+        "dsh": ("dsh-slk.ps1", "dsh-slk.cmd", "prepare-worker-mcp.ps1", "slk-native-activity.patch.yml",
                 "slk_native_activity.mjs", "slk-worker-capabilities.json"),
         "ocrv": ("slk_checker_adapter.py", "slk_checker_decision.py", "slk-checker.cmd",
                  "slk_checker_post_d1.py", "slk_checker_recovery.py", "slk-checker-capabilities.json",
@@ -332,6 +341,15 @@ def build_package(
     try:
         for source, relative in mappings:
             _copy(source, destination / relative)
+        try:
+            if verify_release_build(repo, artifact_root) != provenance:
+                raise ArtifactError("release provenance changed during packaging")
+            for item in provenance["payload"]:
+                copied = destination / "tools/slk/bin" / item["path"]
+                if copied.stat().st_size != item["size"] or sha256(copied) != item["sha256"]:
+                    raise ArtifactError("copied release payload changed from sealed build")
+        except ArtifactError as exc:
+            raise PackageError(str(exc)) from exc
         (destination / PYTHON_RUNTIME_PATH / configuration).write_text(
             python_path_contents(configuration.removesuffix("._pth") + ".zip"),
             encoding="utf-8", newline="\n",

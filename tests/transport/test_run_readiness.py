@@ -308,9 +308,9 @@ def test_four_role_readiness_is_ready_only_when_every_fact_and_route_is_closed(
     assert result["optional_features"][0]["owner_evidence_ref"].startswith("owner:")
 
 
-def _ordinary_450_admission(tmp_path, monkeypatch):
+def _ordinary_450_admission(tmp_path, monkeypatch, method_version="4.5.0"):
     """Current component registration only: no historical engineering originals."""
-    current = _request(tmp_path, legacy_echo=True, method_version="4.5.0")
+    current = _request(tmp_path, legacy_echo=True, method_version=method_version)
     run_id = current["run_id"]
     Path(current["communication_rehearsal"]).unlink()
     bi = Path(current["bi_open_receipt"])
@@ -326,7 +326,7 @@ def _ordinary_450_admission(tmp_path, monkeypatch):
             row["actual_runtime"] = row["expected_runtime"] = "codex"
             row["actual_model"] = row["expected_model"] = "gpt-6.1-sol"
             row["native_activity_capability"] = proof("codex-native", {
-                "schema_version": "slk.native-activity-capability/v1", "method_version": "4.5.0",
+                "schema_version": "slk.native-activity-capability/v1", "method_version": method_version,
                 "runtime": "codex", "read_only_observation": True, "model_call_required": False,
                 "native_events": ["collaboration/list_agents"],
             })["path"]
@@ -356,8 +356,8 @@ def _ordinary_450_admission(tmp_path, monkeypatch):
             "workflow_identity_path": temporal["workflow_identity"]["path"],
             "workflow_identity_sha256": temporal["workflow_identity"]["sha256"], "attempt_root": temporal["attempt_root"]}})
     projection = {"schema_version": "slk.bi.run/v1", "run_id": run_id,
-        "summary": {"run_id": run_id, "slk_version": "4.5.0", "current_plan_revision": 1},
-        "runtime_snapshot": {"run_id": run_id, "method_version": "4.5.0", "plan_revision": 1,
+        "summary": {"run_id": run_id, "slk_version": method_version, "current_plan_revision": 1},
+        "runtime_snapshot": {"run_id": run_id, "method_version": method_version, "plan_revision": 1,
             "runtime_revision": 7, "token_sequence": 1,
             "token_holder_role_instance_id": f"{run_id}-supervisor", "latest_message_id": None},
         "roles": projected_roles, "token_history": [{"event_type": "TOKEN_CREATED", "token_sequence": 1,
@@ -387,10 +387,11 @@ def _ordinary_450_admission(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("history", ["absent", "inaccessible"])
 @pytest.mark.parametrize("evaluate", [evaluate_new_run_admission, evaluate_run_admission])
-def test_450_ordinary_preflight_never_opens_history_and_reuses_current_authority(tmp_path, monkeypatch, history, evaluate):
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1"])
+def test_450_ordinary_preflight_never_opens_history_and_reuses_current_authority(tmp_path, monkeypatch, history, evaluate, method_version):
     from jsonschema import Draft202012Validator
     from slk_transport import role_host
-    admission, _projection, calls = _ordinary_450_admission(tmp_path, monkeypatch)
+    admission, _projection, calls = _ordinary_450_admission(tmp_path, monkeypatch, method_version)
     original_host, hosts = role_host.RoleHost, []
     def current_host(*args, **kwargs):
         hosts.append(True)
@@ -404,7 +405,7 @@ def test_450_ordinary_preflight_never_opens_history_and_reuses_current_authority
         {"name": "RTK", "decision": "ON", "owner_evidence_ref": ""},
         {"name": "Ponytail", "decision": "UNCONFIRMED", "owner_evidence_ref": ""}]
     result = evaluate(admission)
-    assert result["status"] == "READY"
+    assert result["status"] == "READY", result
     assert result["conformance_run_id"] is None
     assert "TOOL_UPDATE_REQUIRED" in result["roles"][1]["advisory_codes"]
     assert "TOOL_UPDATE_UNPROVEN" in result["roles"][2]["advisory_codes"]

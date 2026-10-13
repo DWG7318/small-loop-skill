@@ -2,7 +2,7 @@
 
 import re
 
-from scripts.local_package_metadata import EXPECTED_SKILLS
+from scripts.local_package_metadata import EXPECTED_SKILLS, read_version
 from tests.skill_testkit import ROOT, read_skill, assert_skill_shape
 
 
@@ -43,7 +43,7 @@ def test_role_eval_stays_in_its_existing_asset_and_critical_case_count():
     # Runtime validation tests cover exact IDs, hashes, answers and revisions.
     import json
     asset = json.loads((ROOT / "skills/small-loop-skill/assets/SLK-ROLE-EVAL.v1.json").read_text(encoding="utf-8"))
-    assert asset["method_version"] == "4.5.0"
+    assert asset["method_version"] == read_version()
     counts = {}
     for case in asset["cases"]:
         if case.get("runtime_critical"):

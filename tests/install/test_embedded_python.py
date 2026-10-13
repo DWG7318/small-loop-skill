@@ -11,6 +11,7 @@ import pytest
 
 from scripts.build_local_package import ARTIFACT_NAMES, build_package
 from scripts.build_transport_zipapp import build_zipapp
+from scripts.tool_artifacts import begin_release_build, seal_release_build
 from runtime_fixtures import prepared_runtimes
 
 
@@ -25,9 +26,13 @@ def embedded_package(tmp_path: Path) -> Path:
         pytest.skip("set SLK_TEST_PYTHON_RUNTIME to an offline prepared Windows embed directory")
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
+    begin_release_build(ROOT, artifacts, build={"commands": [
+        "SIMULATED native artifacts + real transport zipapp; no native compiler executed",
+    ]})
     for name in ARTIFACT_NAMES:
         (artifacts / name).write_bytes(b"simulated non-executed SLK native artifact\n")
     build_zipapp(artifacts / "slk-transport.pyz")
+    seal_release_build(ROOT, artifacts)
     return build_package(ROOT, artifacts, tmp_path / "中文 空格 package", python_runtime=Path(source),
                          **prepared_runtimes(tmp_path / "prepared", runnable_registration=True))
 

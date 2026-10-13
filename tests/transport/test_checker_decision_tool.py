@@ -25,15 +25,21 @@ def call(params):
 def test_tool_explains_whole_candidate_authority_not_group_completion(bridge):
     description = bridge.TOOL['description']
     for marker in ('entire frozen candidate', 'not a file/group verdict',
-                   'Do not submit once per group', 'do not claim whole-CELL PASS'):
+                   'Do not submit once per group', 'never claim whole-CELL PASS'):
         assert marker in description
 
 
 def test_tool_keeps_unchanged_cell_seams_and_final_action_order_explicit(bridge):
     description = bridge.TOOL['description']
-    assert 'unchanged Shell/handshake seams' in description
-    assert description.index('save actual reports and evidence') < description.index('last action')
-    assert 'Do not continue reviewing after handoff' in description
+    assert 'unchanged seams' in description
+    assert description.index('Save public findings') < description.index('last action')
+    assert 'records D1 only, not handoff' in description
+
+
+def test_inner_action_error_is_mcp_error_not_outer_success(bridge):
+    result = bridge.respond(call({'name':'slk_checker_decide','arguments':{'verdict':'PASS'}}),
+        lambda _: {'isError': True, 'status': 'CHECKER_D1_RECORDED'})
+    assert result['result']['isError'] is True
 
 
 def test_discovery_and_notifications_do_not_decide_d1(bridge):

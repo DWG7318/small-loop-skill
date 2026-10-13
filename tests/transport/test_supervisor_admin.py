@@ -68,7 +68,7 @@ def terminal_request_fixture(tmp_path: Path, operation: str) -> Path:
         "reason": "terminal Run member retirement",
         "occurred_at": "2026-10-06T00:00:02Z",
     }
-    if operation == "close-run":
+    if operation in {"close-run", "abandon-run"}:
         operation_value = {
             "event_id": "run-closed-1",
             "run_id": "RUN-A",
@@ -77,7 +77,7 @@ def terminal_request_fixture(tmp_path: Path, operation: str) -> Path:
             "attempt": None,
             "plan_revision": 1,
             "role_instance_id": "RUN-A-supervisor-001",
-            "event_type": "RUN_CLOSED",
+            "event_type": "RUN_ABANDONED" if operation == "abandon-run" else "RUN_CLOSED",
             "details": {},
             "corrects_event_id": None,
             "occurred_at": "2026-10-06T00:00:01Z",

@@ -139,6 +139,16 @@ def test_dsh_command_uses_only_a_short_hashed_task_reference(tmp_path: Path) -> 
     assert len(instruction) < 600
 
 
+def test_initial_and_resume_use_bound_worker_mcp_without_shell_state_guidance(tmp_path):
+    from slk_transport.worker_resume import _ContinuationAdapter
+    for adapter in (DshAdapter(), _ContinuationAdapter(tmp_path / "instructions.md", "b" * 64)):
+        instruction = adapter.task_instruction(tmp_path / "task.json", "a" * 64)
+        assert "MCP slk_worker_action" in instruction
+        assert "submit-worker-action" not in instruction
+        assert "SLK_WORKER_ACTION_COMMAND" not in instruction
+        assert "shell" in instruction
+
+
 def test_dsh_resume_uses_only_the_recorded_session(tmp_path: Path, monkeypatch) -> None:
     from slk_transport.adapters import dsh
     original_spawn = dsh.spawn
@@ -333,7 +343,11 @@ def test_dsh_rejects_noncompleted_result_that_claims_a_candidate(tmp_path: Path)
     assert (attempt.root / "worker-result.json").is_file()
 
 
-def test_dsh_rejects_instance_reuse_across_runs(tmp_path: Path) -> None:
+def test_dsh_rejects_cross_run_delivery_before_native_start(tmp_path: Path) -> None:
+    from dataclasses import asdict
+    from slk_transport.contracts import ContractError
+    from slk_transport.dispatcher import dispatch_once
+
     endpoint = worker_endpoint(tmp_path, run_id="RUN-B")
     invalid = Endpoint(
         **{
@@ -342,10 +356,10 @@ def test_dsh_rejects_instance_reuse_across_runs(tmp_path: Path) -> None:
         }
     )
 
-    with pytest.raises(AdapterError) as error:
-        DshAdapter().validate_address(invalid)
-
-    assert error.value.error_code == "DSH_ADDRESS_INVALID"
+    with pytest.raises(ContractError, match="run_id"):
+        dispatch_once(asdict(invalid), asdict(worker_envelope("RUN-A")),
+                      tmp_path / "attempts", adapters={"dsh-worker": DshAdapter()})
+    assert not (tmp_path / "attempts").exists()
 
 
 @pytest.mark.parametrize(

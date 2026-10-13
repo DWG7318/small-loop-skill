@@ -60,6 +60,174 @@ def test_host_binding_is_checked_before_any_native_delivery(tmp_path, monkeypatc
         cli._job(args)
 
 
+def test_synchronous_dispatch_job_saves_native_result_without_waiting_for_sender_commit(tmp_path, monkeypatch, capsys):
+    host, source, original = prepared_host(tmp_path)
+    incoming = dispatch_incoming(host, original)
+    write_json(source / "endpoint.json", host.endpoint("checker"))
+    write_json(source / "envelope.json", asdict(incoming))
+    terminal = DeliveryResult("slk.transport-result/v1", incoming.message_id, incoming.run_id,
+        "ocrv-checker", "completed", {"checker_operation": "dispatch"}, None, ())
+    monkeypatch.setattr(host, "validate_native_dispatch", lambda *_: None)
+    monkeypatch.setattr(host, "complete", lambda *_: pytest.fail("synchronous receiver waited for its sender"))
+    monkeypatch.setattr(cli, "load_role_host", lambda *_: host)
+    monkeypatch.setattr(cli, "dispatch_once", lambda *_a, **_k: terminal)
+    args = argparse.Namespace(endpoint=source / "endpoint.json", envelope=source / "envelope.json",
+                              attempt_root=source.parents[1])
+    assert cli._job(args) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["native_result"] == terminal.to_dict()
+    assert result["output_delivery"]["status"] == "CHECKER_DISPATCH_PENDING_COMMIT"
+
+
+def dispatch_incoming(host, original):
+    payload = {"worker_endpoint": host.endpoint("worker"), "worker_payload": original.payload}
+    return Envelope.from_dict({**asdict(original), "sender_role": "supervisor",
+        "sender_role_instance_id": host.endpoint("supervisor")["role_instance_id"],
+        "receiver_role": "checker", "receiver_role_instance_id": host.endpoint("checker")["role_instance_id"],
+        "receiver_endpoint_version": host.endpoint("checker")["endpoint_version"],
+        "payload_type": "CELL_DISPATCH", "payload": payload,
+        "payload_sha256": wc.canonical_json_sha256(payload)})
+
+
+@pytest.mark.parametrize("already_committed", [False, True])
+def test_sender_consumes_synchronous_dispatch_only_after_exact_commit(tmp_path, monkeypatch, already_committed):
+    host, source, original = prepared_host(tmp_path)
+    incoming = dispatch_incoming(host, original)
+    root = source / "owned"
+    native = native_delivery(root, host, incoming)
+    before = host_boundary(host, incoming)
+    after = committed_projection(host, incoming, native)
+    current = [after if already_committed else before]
+    monkeypatch.setattr(host, "projection", lambda: current[0])
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _: "test-secret")
+    calls = []
+    def command(_command, arguments, **_kwargs):
+        calls.append(arguments[0])
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": incoming.run_id, "role": "supervisor",
+                "role_instance_id": incoming.sender_role_instance_id, "runtime_revision": 7}
+        assert arguments[0] == "commit-delivery-start"
+        current[0] = after
+        return {"status": "committed", "run_id": incoming.run_id, "message_id": incoming.message_id,
+            "runtime_revision": 8, "token_sequence": incoming.token_sequence,
+            "token_owner_role_instance_id": incoming.receiver_role_instance_id}
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    def consume(actual):
+        assert actual == native and current[0] is after
+        calls.append("suffix")
+        return {"status": "OWNED_HANDOFF_COMMITTED", "message_id": "saved-worker-message"}
+    monkeypatch.setattr(host, "complete", consume)
+    result = host._send_owned(root, incoming, "2026-10-13T00:00:00Z", before)
+    assert result["dispatch_handoff"]["message_id"] == "saved-worker-message"
+    assert calls[-1] == "suffix"
+    assert calls.count("commit-delivery-start") == (0 if already_committed else 1)
+
+
+def test_close_run_pair_uses_real_required_credential_signature(tmp_path, monkeypatch):
+    import inspect
+    from test_temporal_handoff_bridge import temporal_binding
+    host, _, _ = prepared_host(tmp_path)
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+        "temporal": temporal_binding(tmp_path, tmp_path / "canonical")}, host.digest)
+    event = {"event_id": "closed-1", "event_type": "RUN_CLOSED"}
+    monkeypatch.setattr(host, "projection", lambda: {"summary": {"run_id": "RUN-A", "state": "closed"},
+        "events": [event]})
+    signature = inspect.signature(wc._run_json_command)
+    def command(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        assert bound.arguments["credential"] is None
+        return {"schema_version": "slk.temporal-close-result/v1", "status": "PAIR_CLOSED",
+            "run_id": "RUN-A", "event_id": "closed-1"}
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    assert host.close_run_pair(event, tmp_path)["status"] == "PAIR_CLOSED"
+
+
+def test_job_reports_failed_persisted_decision_suffix_without_losing_native_result(tmp_path, monkeypatch, capsys):
+    host, source, _ = prepared_host(tmp_path)
+    terminal = DeliveryResult.from_dict(json.loads((source / "completed.json").read_text()))
+    monkeypatch.setattr(cli, "load_role_host", lambda *_: host)
+    monkeypatch.setattr(host, "validate_native_dispatch", lambda *_: None)
+    monkeypatch.setattr(cli, "dispatch_once", lambda *_a, **_k: terminal)
+    monkeypatch.setattr(host, "complete", lambda _: {"status": "CHECKER_D1_RECORDED", "verdict": "PASS",
+        "handoff": {"status": "HOST_HANDOFF_FAILED", "error_code": "TEMPORAL_NATIVE_ACK_UNPROVED"}})
+    args = argparse.Namespace(endpoint=source / "endpoint.json", envelope=source / "envelope.json",
+                              attempt_root=source.parents[1])
+    assert cli._job(args) == 5
+    result = json.loads(capsys.readouterr().out)
+    assert result["native_result"] == terminal.to_dict()
+    assert result["output_delivery"]["status"] == "CHECKER_D1_RECORDED"
+
+
+def test_commit_then_process_crash_replays_missing_dispatch_without_duplicate_receiver(tmp_path, monkeypatch):
+    from test_temporal_handoff_bridge import temporal_binding
+    from slk_transport.adapters.ocrv import OcrvAdapter
+    host, _, original = prepared_host(tmp_path)
+    canonical = tmp_path / "canonical"
+    host = RoleHost({**host.binding, "schema_version": "slk.role-host/v2",
+        "temporal": temporal_binding(tmp_path, canonical)}, host.digest)
+    incoming = dispatch_incoming(host, original)
+    source = canonical / incoming.run_id / incoming.message_id
+    write_json(source / "endpoint.json", host.endpoint("checker"))
+    write_json(source / "envelope.json", asdict(incoming))
+    projection = [host_boundary(host, incoming)]
+    monkeypatch.setattr(host, "projection", lambda: projection[0])
+    monkeypatch.setattr(cli, "load_role_host", lambda *_: host)
+    monkeypatch.setitem(cli.ADAPTERS, "ocrv-checker", OcrvAdapter())
+    monkeypatch.setattr(wc, "unprotect_dpapi_hex", lambda _: "test-secret")
+    starts, commits = [], []
+    def start(_binding, _root, endpoint, raw_envelope, **_kwargs):
+        envelope = Envelope.from_dict(raw_envelope)
+        native = canonical / envelope.run_id / envelope.message_id
+        starts.append(envelope.message_id)
+        write_json(native / "endpoint.json", endpoint)
+        write_json(native / "envelope.json", raw_envelope)
+        if envelope.receiver_role == "checker":
+            args = argparse.Namespace(endpoint=native / "endpoint.json", envelope=native / "envelope.json",
+                                      attempt_root=canonical)
+            assert cli._job(args) == 0
+        else:
+            write_json(native / "started.json", make_native_start(adapter=endpoint["adapter"],
+                run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
+                request_sha256=envelope.payload_sha256, native_request_sha256="b" * 64,
+                native_task_kind="dsh-session", native_task_id="session-original", native_task_status="RUNNING",
+                pid=os.getpid()))
+        return native
+    def command(_command, arguments, **_kwargs):
+        if arguments[0] == "authenticate-role":
+            role_id = arguments[-1]
+            return {"status": "authenticated", "run_id": incoming.run_id,
+                "role": next(role for role in host.endpoints if host.endpoint(role)["role_instance_id"] == role_id),
+                "role_instance_id": role_id, "runtime_revision": projection[0]["runtime_snapshot"]["runtime_revision"]}
+        assert arguments[0] == "commit-delivery-start"
+        request = json.loads(Path(arguments[-1]).read_text())
+        envelope = Envelope.from_dict(json.loads((canonical / incoming.run_id / request["message_id"] / "envelope.json").read_text()))
+        commits.append(envelope.message_id)
+        after = committed_projection(host, envelope, canonical / envelope.run_id / envelope.message_id)
+        after["events"] = [*projection[0]["events"], *after["events"]]
+        after["token_history"] = [*projection[0]["token_history"], *after["token_history"]]
+        after["runtime_snapshot"].update(runtime_revision=request["expected_runtime_revision"] + 1,
+            token_sequence=envelope.token_sequence, token_holder_role_instance_id=envelope.receiver_role_instance_id,
+            latest_message_id=envelope.message_id)
+        projection[0] = after
+        return {"status": "committed", "run_id": envelope.run_id, "message_id": envelope.message_id,
+            "runtime_revision": after["runtime_snapshot"]["runtime_revision"], "token_sequence": envelope.token_sequence,
+            "token_owner_role_instance_id": envelope.receiver_role_instance_id}
+    monkeypatch.setattr(wc, "start_temporal_delivery", start)
+    monkeypatch.setattr(wc, "_run_json_command", command)
+    complete = host.complete
+    monkeypatch.setattr(host, "complete", lambda _: (_ for _ in ()).throw(RuntimeError("process crash after commit")))
+    with pytest.raises(RuntimeError, match="crash after commit"):
+        host.continue_staged_handoff(source)
+    prepared = (source / "checker-result.json").read_bytes()
+    monkeypatch.setattr(host, "complete", complete)
+    result = host.continue_staged_handoff(source)
+    assert result["status"] == "OWNED_HANDOFF_ALREADY_COMMITTED"
+    assert result["dispatch_handoff"]["status"] == "OWNED_HANDOFF_COMMITTED"
+    assert host.continue_staged_handoff(source)["dispatch_handoff"]["status"] == "OWNED_HANDOFF_ALREADY_COMMITTED"
+    assert (source / "checker-result.json").read_bytes() == prepared
+    assert len(starts) == len(set(starts)) == len(commits) == len(set(commits)) == 2
+
+
 def test_continue_staged_handoff_cli_uses_hash_bound_original_sender_host(
     tmp_path, monkeypatch, capsys,
 ):
@@ -214,15 +382,16 @@ def test_recovery_preflight_checks_all_engineering_endpoints_not_only_supervisor
 
 
 @pytest.mark.parametrize("native,cadence", [("ACTIVE", "CURRENT"), ("UNKNOWN", "CURRENT"), ("ACTIVE", "CONTINUITY_UNPROVEN")])
-def test_450_resume_uses_native_proof_and_same_projection_without_terminal_shortcut(tmp_path, monkeypatch, native, cadence):
+@pytest.mark.parametrize("version", ["4.5.0", "4.5.1"])
+def test_450_resume_uses_native_proof_and_same_projection_without_terminal_shortcut(tmp_path, monkeypatch, native, cadence, version):
     host, _, _ = prepared_host(tmp_path)
     current = {"summary": {"run_id": host.binding["run_id"]},
-        "runtime_snapshot": {"method_version": "4.5.0", "plan_revision": host.binding["plan_revision"]},
+        "runtime_snapshot": {"method_version": version, "plan_revision": host.binding["plan_revision"]},
         "roles": [{"role": role, "role_instance_id": host.endpoint(role)["role_instance_id"], "lifecycle": "active",
             "endpoints": [{"state": "active", "endpoint_version": host.endpoint(role)["endpoint_version"],
                 "transport_adapter": host.endpoint(role)["adapter"]}]} for role in ("supervisor", "checker", "worker")]}
     config = write_json(tmp_path / "adapter.json", {"schema_version": "slk.temporal-standard-adapter/v2",
-        "method_version": "4.5.0", "run_id": host.binding["run_id"], "overwatcher_activity": {
+        "method_version": version, "run_id": host.binding["run_id"], "overwatcher_activity": {
             "role_instance_id": "ow-a", "endpoint_ref": "ow-endpoint", "started_path": str(tmp_path / "started.json"),
             "completed_path": "must-not-substitute-native", "failed_path": "must-not-substitute-native",
             "attestation_path": "original-native-proof", "attestation_sha256": "a" * 64}})
@@ -515,7 +684,7 @@ def supervisor_result_fixture(tmp_path, *, d2=False):
     return host, source, incoming, result, projection
 
 
-CURRENT_D2_VERSIONS = ["4.4.3", "4.4.4", "4.4.5", "4.5.0"]
+CURRENT_D2_VERSIONS = ["4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1"]
 
 
 def current_d2_fixture(tmp_path, monkeypatch, *, method_version="4.4.3"):
@@ -830,6 +999,7 @@ def test_revised_host_dispatches_first_split_successor_and_old_host_rejects_revi
     revised_projection["summary"]["current_plan_revision"] = 2
     revised_projection["runtime_snapshot"]["plan_revision"] = 2
     monkeypatch.setattr(revised, "_boundary", lambda _envelope: revised_projection)
+    monkeypatch.setattr(revised, "projection", lambda: revised_projection)
     monkeypatch.setattr(revised, "_send_owned", lambda _root, envelope, *_args: {
         "status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id})
 

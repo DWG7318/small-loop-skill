@@ -13,6 +13,8 @@ description: Use when an active Small Loop Skill (SLK) Run has uncertain member,
 2. 区分已保存、已受理、真实 native start、原角色工程决定、ACK/TOKEN 提交及实际结束。原件缺失、过期或矛盾保持 UNKNOWN；不从退出码、UI、报告格式或另一 Run 的活动推断 PASS、接手、停稳或死亡。
 3. 只选当前原因对应入口；命令/具体取证线索按需读[运行预案](references/run-recipes.md)的相应小节，不加载全部参考。
 
+Supervisor 对现场补漏与结果核验负责，不把可处理的漏交资料、错误位置或未闭合后缀一律退给 SLK 开发。可绕开不适用的流程障碍，用自己的身份代交已有原件、补充客观说明或续机械后缀；记录原责任人、原件/hash、自己的动作与未完成项。代交不等于代写 Worker/Checker 工程事实或代判 D1；资料确实不存在则如实披露，不补造。需要源码根治的缺陷另行留证，不妨碍权限内现场处置。
+
 | 当前操作/事实 | 直接入口 |
 | --- | --- |
 | 已有精确消息/交接，缺接收或提交证据 | `$slk-recover-communication`；由原发送者沿原 operation 恢复，不换 ID 或重发已确认交接。无原消息不套它。 |

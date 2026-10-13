@@ -28,7 +28,7 @@ def _load_adapter():
 
 
 def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=None,
-                  timeout_mode=None, post_damage=False, stream_failure=None):
+                  timeout_mode=None, post_damage=False, stream_failure=None, raw_missing=False):
     """Force wait's natural-return branch; keep receipt validation and drains real."""
     adapter = _load_adapter()
     request, output, _ = _request(tmp_path)
@@ -41,21 +41,13 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
     monkeypatch.setenv('SLK_NATIVE_START_RECEIPT', str(receipt))
     monkeypatch.setenv('SLK_NATIVE_START_CONTEXT', json.dumps(context))
     monkeypatch.setattr(adapter, '_discover_capabilities', lambda *_: {'invocations': []})
-    close = adapter._close_completed_review
     close_calls = []
 
     def close_once(process, *args):
         close_calls.append(process.pid)
-        if timeout_mode == 'already-exited':
-            return close(process, *args)
-        if timeout_mode == 'denied':
-            assert process.poll() is None
-            raise OSError('original review termination denied')
-        if timeout_mode == 'closed':
-            return
-        pytest.fail('natural exit must not close a dead process')
+        pytest.fail('D1 must never terminate the native process')
 
-    monkeypatch.setattr(adapter, '_close_completed_review', close_once)
+    monkeypatch.setattr(adapter, '_close_completed_review', close_once, raising=False)
 
     class ExitedProcess:
         pid = os.getpid()
@@ -80,7 +72,8 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
             decision = source / 'role-host/checker-decision.json'
             decision.parent.mkdir()
             decision.write_text(json.dumps({'source_message_id': context['message_id'],
-                'native_task_id': 'native-A', 'verdict': verdict}), encoding='utf-8')
+                'native_task_id': 'native-A', 'verdict': verdict,
+                'message': 'Public whole-CELL finding and unverified seam.'}), encoding='utf-8')
             completed = {**context, 'schema_version': 'slk.ocrv-completion/v1',
                 'native_task_id': 'native-A', 'native_start_sha256': adapter._sha256(receipt),
                 'decision_path': str(decision), 'decision_sha256': adapter._sha256(decision),
@@ -102,6 +95,8 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
             (tmp_path / 'ocrv-review.json').write_text(json.dumps({'status': 'partial',
                 'verdict': 'PASS', 'comments': [{'severity': 'LOW', 'message': 'original finding'}]}),
                 encoding='utf-8')
+            if raw_missing:
+                (tmp_path / 'ocrv-review.json').unlink()
             if timeout_mode is not None:
                 raise subprocess.TimeoutExpired('fake native review', timeout)
             return exit_code  # No TimeoutExpired in the natural-only cases.
@@ -162,7 +157,7 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
     monkeypatch.setattr(adapter.subprocess, 'Popen', lambda *_args, **_kwargs: process)
     status = adapter.run(request, output, invocation_override='native-A')
     assert auth_after_saved_logs[-1] is (stream_failure != 'open')
-    assert len(close_calls) == (1 if timeout_mode is not None and damage is None else 0)
+    assert close_calls == []  # D1 persistence is not native completion or kill authority.
     assert process.stdout.closed and process.stderr.closed
     result = json.loads(output.read_text(encoding='utf-8'))
     assert result['review']['exit_code'] == exit_code
@@ -173,9 +168,19 @@ def _natural_exit(tmp_path, monkeypatch, verdict='PASS', exit_code=0, damage=Non
         expected = 'original ' if stream_failure in ('write', 'read') else 'original stdout before natural exit\n'
         assert stdout.read_text(encoding='utf-8') == expected
     assert Path(result['artifacts']['stderr']).read_text(encoding='utf-8') == 'original stderr before natural exit\n'
-    assert json.loads(Path(result['artifacts']['raw_review']).read_text(encoding='utf-8'))['status'] == 'partial'
-    assert result['findings'] == [{'severity': 'LOW', 'message': 'original finding'}]
+    if not raw_missing:
+        assert json.loads(Path(result['artifacts']['raw_review']).read_text(encoding='utf-8'))['status'] == 'partial'
+        assert result['findings'] == [{'severity': 'LOW', 'message': 'original finding'}]
     return status, result
+
+
+def test_authenticated_public_decision_survives_missing_raw_review(tmp_path, monkeypatch):
+    status, result = _natural_exit(tmp_path, monkeypatch, raw_missing=True)
+    assert status == 0 and result['findings'] is None
+    decision = result['decision']
+    assert decision['message'] == 'Public whole-CELL finding and unverified seam.'
+    assert decision['sha256'] == hashlib.sha256(Path(decision['path']).read_bytes()).hexdigest()
+    assert result['review']['provider'] is None  # no guessing from requested configuration
 
 
 @pytest.mark.parametrize('stage', ['open', 'write', 'flush', 'read'])
@@ -321,7 +326,7 @@ def test_timeout_then_exited_original_retains_authenticated_d1(tmp_path, monkeyp
     assert result['verdict'] == verdict
     assert result['verdict_source'] == 'CHECKER_EXPLICIT'
     assert result['review']['closure_reason'] == 'EXPLICIT_D1_COMPLETED'
-    assert 'not a live owned process' in result['review']['closure_error']
+    assert result['review']['closure_error'] is None
 
 
 @pytest.mark.parametrize('verdict', ['PASS', 'FAIL', 'INCOMPLETE'])
@@ -331,7 +336,7 @@ def test_live_cleanup_error_does_not_erase_d1_or_retry_cleanup(tmp_path, monkeyp
     assert result['verdict'] == verdict
     assert result['verdict_source'] == 'CHECKER_EXPLICIT'
     assert result['review']['closure_reason'] == 'EXPLICIT_D1_COMPLETED'
-    assert 'original review termination denied' in result['review']['closure_error']
+    assert result['review']['closure_error'] is None
 
 
 @pytest.mark.parametrize('ending', ['\n', ''])
@@ -378,7 +383,7 @@ def test_denied_cleanup_exposes_original_streams_and_failure_before_native_exit(
         denied.set()
         raise OSError('original review termination denied')
 
-    monkeypatch.setattr(adapter, '_close_completed_review', deny)
+    monkeypatch.setattr(adapter, '_close_completed_review', deny, raising=False)
     outcome = []
     running = threading.Thread(target=lambda: outcome.append(adapter.run(request, output, invocation_override='native-A')))
     running.start()
@@ -396,40 +401,28 @@ def test_denied_cleanup_exposes_original_streams_and_failure_before_native_exit(
             'native_start_sha256': adapter._sha256(receipt), 'decision_path': str(decision),
             'decision_sha256': adapter._sha256(decision), 'verdict': 'FAIL', 'review_process': start['process']}
         (tmp_path / 'review-completed.json').write_text(json.dumps(completion))
-        assert denied.wait(8)
-        assert diagnostic_saved.wait(8)
+        time.sleep(0.4)
+        assert not denied.is_set()
         activity = json.loads((source / 'native-activity.json').read_text())
         assert running.is_alive() and not output.exists()
         assert (tmp_path / 'ocrv.stdout.txt').read_text() == 'original stdout' + ending
         assert (tmp_path / 'ocrv.stderr.txt').read_text() == 'original stderr' + ending
-        assert activity['status'] == 'RUNNING' and activity['error'] == 'OCRV_CLEANUP_FAILED'
+        assert activity['status'] == 'RUNNING' and 'error' not in activity
         # Final authentication must still reject a changed decision after denied cleanup.
         completion['native_task_id'] = 'other-invocation'
         (tmp_path / 'review-completed.json').write_text(json.dumps(completion))
     finally:
         release.touch()
         running.join(8)
-    assert not running.is_alive() and len(calls) == 1
+    assert not running.is_alive() and calls == []
     result = json.loads(output.read_text())
     assert outcome == [9] and result['review']['exit_code'] == 9
-    assert result['verdict'] is None and 'termination denied' in result['review']['closure_error']
+    assert result['verdict'] is None and 'does not bind' in result['review']['closure_error']
 
 
-def test_owned_cleanup_ancestry_has_no_depth_cap_and_rejects_cycles(monkeypatch):
+def test_decision_triggered_native_kill_path_is_removed():
     adapter = _load_adapter()
-    killed = []
-    monkeypatch.setattr(adapter, 'os', SimpleNamespace(name='posix', kill=lambda *args: killed.append(args)))
-    monkeypatch.setattr(adapter, '_process_creation_time', lambda _: 'original-time')
-    parents = {pid: pid - 1 for pid in range(2, 70)}
-    monkeypatch.setattr(adapter, '_process_parents', lambda: parents)
-    process = SimpleNamespace(pid=1, poll=lambda: None)
-    completed = {'review_process': {'pid': 69, 'creation_time': 'original-time'}}
-    adapter._close_completed_review(process, completed, {'creation_time': 'original-time'})
-    assert killed == [(69, 15)]
-    parents[2] = 69
-    with pytest.raises(adapter.RequestError, match='descendant'):
-        adapter._close_completed_review(process, completed, {'creation_time': 'original-time'})
-    assert killed == [(69, 15)]
+    assert not hasattr(adapter, '_close_completed_review')
 
 
 @pytest.mark.parametrize('timeout_mode', ['already-exited', 'denied', 'closed'])
@@ -441,8 +434,6 @@ def test_timeout_completion_is_reauthenticated_after_drain(tmp_path, monkeypatch
     assert result['verdict_source'] is None
     assert result['review']['closure_reason'] is None
     assert 'does not bind this native invocation' in result['review']['closure_error']
-    if timeout_mode == 'denied':
-        assert 'original review termination denied' in result['review']['closure_error']
 
 
 @pytest.mark.parametrize('damage', ['missing', 'json', 'utf8', 'invocation', 'start-hash', 'decision-hash'])

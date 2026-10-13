@@ -138,8 +138,8 @@ def test_installed_adapter_preflight_uses_exact_exclude_scope_without_model(tmp_
     assert '"b.py"' not in background
     assert "WORKER_SELF_REPORTED" not in background
     assert '"test_status"' not in background
-    assert "before reading Worker D0 originals" in background
-    assert "then read the indexed originals" in background
+    assert "before reading relevant Worker D0 originals" in background
+    assert "select relevant indexed originals" in background
     assert evidence.read_bytes() == original_evidence
 
 

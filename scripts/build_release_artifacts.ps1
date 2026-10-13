@@ -46,13 +46,18 @@ $env:PATH = "$(Split-Path -Parent $cargo);$env:PATH"
 $biRoot = Join-Path $repo "apps\slk-bi"
 if ($CargoTargetDirectory) {
     $target = [IO.Path]::GetFullPath($CargoTargetDirectory)
-    $env:CARGO_TARGET_DIR = $target
 } else {
     $target = Join-Path $repo "target"
 }
+$env:CARGO_TARGET_DIR = $target
 
 Push-Location $repo
 try {
+    Invoke-Checked { & $python scripts\tool_artifacts.py begin-release --repo $repo --artifacts $output `
+        --build-command "$pnpm --dir $biRoot tauri build --no-bundle" `
+        --build-command "$cargo build --release -p slk-state-cli -p slk-bi-query -p slk-cargo" `
+        --build-command "$python scripts/build_transport_zipapp.py" `
+        --toolchain (& $cargo --version) --toolchain (& $pnpm --version) --toolchain (& $python --version) } "Release input capture"
     Invoke-Checked { & $pnpm --dir $biRoot tauri build --no-bundle } "Tauri production build"
     Invoke-Checked { & $cargo build --release -p slk-state-cli -p slk-bi-query -p slk-cargo } "Rust release build"
 
@@ -65,6 +70,7 @@ try {
     }
     Invoke-Checked { & $python scripts\build_transport_zipapp.py --output (Join-Path $output "slk-transport.pyz") } "Transport zipapp build"
     Invoke-Checked { & $python scripts\verify_bi_release.py --executable (Join-Path $output "slk-bi-desktop.exe") --fingerprint-root (Join-Path $target "release\.fingerprint") } "BI release verification"
+    Invoke-Checked { & $python scripts\tool_artifacts.py seal-release --repo $repo --artifacts $output } "Release output provenance"
 } finally {
     Pop-Location
 }

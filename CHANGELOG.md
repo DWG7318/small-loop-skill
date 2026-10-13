@@ -1,5 +1,24 @@
 # Changelog
 
+## 4.5.1 — Run07 recovery corrections
+
+- Preserve the original authenticated engineering result independently of the
+  delivery suffix. Synchronous dispatch only continues after the original TOKEN
+  commit; Checker seals native results before the Host performs final handoff.
+- Add same-Checker whole-CELL judgment after successful native file-group reuse;
+  preserve actual model/capacity facts, original materials and unresolved evidence.
+- Expose explicit same-Checker native checkpoint continuation through the existing
+  recovery command. Saved candidates/decisions only finish their delivery suffix;
+  they never trigger duplicate Worker construction or a replacement D1.
+- Link fresh OW child evidence to its actual parent/spawn, distinguish late or
+  unknown continuity from exit, and keep failed notification attempts unsent.
+- Expose stored D2 plan revision and accepted CELL attempt, keep closed Run TOKEN as history, and label
+  unresolved Cargo lease cleanup honestly without deleting unknown owners.
+- Supervisor owns on-site temporary repair and documentation; existing originals
+  may be delivered under Supervisor authorship without impersonating D0/D1.
+- Bind release inputs and artifact bytes before assembly; install the same
+  verified package, preserving user data and active immutable bindings.
+
 ## 4.4.5 — CLOSED source maintenance (unreleased, not deployed)
 
 - Correct the existing DSH activity plugin's native dependency declaration: require only `agents` and read optional `workspaceRegistry` through Cordis `ctx.get`, so headless startup does not require the workspace service. Replace config-text composition checks with real framework mounting/sampling regressions, without calling a model or mutating live DSH configuration.

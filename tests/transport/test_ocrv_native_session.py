@@ -111,7 +111,7 @@ def test_exact_marker_exposes_native_tool_even_when_wrapper_stays_sequence_zero(
     assert "PRIVATE" not in json.dumps(first) + binding.decode()
 
 
-@pytest.mark.parametrize("damage", ["missing-marker", "wrong-provider", "wrong-model", "wrong-commit", "ambiguous"])
+@pytest.mark.parametrize("damage", ["missing-marker", "wrong-commit", "ambiguous"])
 def test_session_identity_never_comes_from_latest_time_or_same_cwd(tmp_path, damage):
     started, source, session, header, request, tool = fixture(tmp_path)
     if damage == "missing-marker": request["messages"] = [{"content": "unrelated input"}]
@@ -125,6 +125,22 @@ def test_session_identity_never_comes_from_latest_time_or_same_cwd(tmp_path, dam
     assert result["status"] == "UNKNOWN"
     assert result["error"] == "OCRV_NATIVE_SESSION_UNPROVEN"
     assert not (started.parent / "ocrv-session-binding.json").exists()
+
+
+def test_verified_session_exposes_actual_public_provider_model_not_assumed_defaults(tmp_path):
+    started, source, path, header, request, tool = fixture(tmp_path)
+    header.update(llmSource='provider:owner-configured', model='owner-model')
+    path.write_text(''.join(json.dumps(row) + '\n' for row in (header, request, tool)))
+    from slk_transport.native_ocrv import inspect_ocrv_session
+    result = inspect_ocrv_session(started, validate_native_start(started), include_identity=True)
+    assert result['native_identity'] == {'session_id': header['sessionId'],
+        'provider': 'owner-configured', 'model': 'owner-model', 'endpoint_source': 'provider:owner-configured'}
+    assert 'PRIVATE' not in json.dumps(result)
+    path = Path(__file__).resolve().parents[2] / 'integrations/ocrv/slk_checker_adapter.py'
+    spec = importlib.util.spec_from_file_location('identity_projection', path)
+    adapter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter)
+    assert adapter._verified_native_identity(started.with_name('native-start.received.json')) == result['native_identity']
 
 
 def test_large_private_rows_are_not_an_observation_size_gate_and_bound_session_end_is_factual(tmp_path):

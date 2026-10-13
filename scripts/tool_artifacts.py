@@ -15,6 +15,14 @@ import subprocess
 import tempfile
 import zipfile
 
+try:
+    from .local_package_metadata import ARTIFACT_NAMES
+except ImportError:
+    from local_package_metadata import ARTIFACT_NAMES
+
+
+RELEASE_PROVENANCE = "BUILD-PROVENANCE.json"
+
 
 class ArtifactError(ValueError):
     pass
@@ -36,7 +44,7 @@ def relative_path(value: str) -> Path:
     return Path(*path.parts)
 
 
-def source_hashes(prefix: Path) -> dict[str, str]:
+def source_hashes(prefix: Path, *, select=None, filesystem: bool = False) -> dict[str, str]:
     excluded = {
         "artifacts", ".git", ".codex", "target", "node_modules", "dist", "build",
         "__pycache__", ".pytest_cache", ".venv",
@@ -44,7 +52,7 @@ def source_hashes(prefix: Path) -> dict[str, str]:
     # Use the source inventory, not ignored developer caches or account data.
     # An independently exported prefix can also be built without a Git checkout.
     try:
-        listed = subprocess.run(
+        listed = None if filesystem else subprocess.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "."],
             cwd=prefix, capture_output=True, check=False,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
@@ -59,7 +67,11 @@ def source_hashes(prefix: Path) -> dict[str, str]:
             relative = relative_path(raw.decode("utf-8"))
             if any(part in excluded or part.endswith(".egg-info") for part in relative.parts):
                 continue
+            if select is not None and not select(relative):
+                continue
             source = prefix / relative
+            if select is not None and source.is_symlink():
+                raise ArtifactError(f"build input is a symbolic link: {relative}")
             if source.is_file() and not source.is_symlink():
                 result[relative.as_posix()] = digest(source)
         return dict(sorted(result.items()))
@@ -68,10 +80,134 @@ def source_hashes(prefix: Path) -> dict[str, str]:
                                 if name not in excluded and not name.endswith(".egg-info"))
         for name in sorted(files):
             source = Path(current) / name
+            if select is not None and not select(source.relative_to(prefix)):
+                continue
+            if select is not None and source.is_symlink():
+                raise ArtifactError(f"build input is a symbolic link: {source.relative_to(prefix)}")
             if source.is_symlink() or source.suffix in {".pyc", ".pyo", ".tmp", ".log"}:
                 continue
             result[source.relative_to(prefix).as_posix()] = digest(source)
     return dict(sorted(result.items()))
+
+
+def _release_input(path: Path) -> bool:
+    """Inputs consumed by the five-artifact build, not all release documents."""
+    name = path.as_posix()
+    if any(part in {"tests", "__tests__", "docs", "benches", "gen"} for part in path.parts):
+        return False
+    if any(marker in path.name for marker in (".test.", ".spec.")):
+        return False
+    if name in {"VERSION", "Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml",
+                ".cargo/config", ".cargo/config.toml", "scripts/build_release_artifacts.ps1",
+                "scripts/build_transport_zipapp.py", "scripts/tool_artifacts.py",
+                "scripts/verify_bi_release.py", "scripts/local_package_metadata.py"}:
+        return True
+    if name.startswith("crates/"):
+        return len(path.parts) > 2 and (path.parts[2] in {"src", "migrations"}
+                                      or path.name in {"Cargo.toml", "Cargo.lock", "build.rs"})
+    if name.startswith(("src/slk_transport/", "src/slk_overwatch_tools/")):
+        return path.suffix == ".py"
+    if name.startswith("apps/slk-bi/"):
+        relative = path.parts[2:]
+        return (relative[0] in {"src", "public", "src-tauri"}
+                or (len(relative) == 1 and path.suffix in {".json", ".yaml", ".yml", ".ts", ".js", ".mjs", ".html"}))
+    return False
+
+
+def release_source_hashes(repository: Path) -> dict[str, str]:
+    # These builders consume filesystem inputs even when Git ignores them.
+    # Bound traversal to their own source roots; never hash unrelated caches.
+    sources = {path.name: digest(path) for path in repository.iterdir()
+               if path.is_file() and _release_input(Path(path.name))}
+    for prefix in ("crates", "apps/slk-bi", "src/slk_transport", "src/slk_overwatch_tools", ".cargo", "scripts"):
+        relative_root = Path(prefix)
+        selected = source_hashes(repository / relative_root,
+            select=lambda path: _release_input(relative_root / path), filesystem=True)
+        sources.update({(relative_root / name).as_posix(): value for name, value in selected.items()})
+    sources = dict(sorted(sources.items()))
+    if not sources or "VERSION" not in sources or "Cargo.toml" not in sources:
+        raise ArtifactError("release build inputs are incomplete")
+    return sources
+
+
+def _save_release_index(path: Path, value: dict, *, replace: bool = False) -> Path:
+    if path.exists() and not replace:
+        raise ArtifactError("release provenance already exists; use a fresh artifact directory")
+    temporary = path.with_suffix(".json.tmp")
+    created = False
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as stream:
+            created = True
+            json.dump(value, stream, ensure_ascii=False, sort_keys=True, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+    finally:
+        if created:
+            temporary.unlink(missing_ok=True)
+    return path
+
+
+def begin_release_build(repository: Path, artifacts: Path, *, build: dict) -> Path:
+    """Capture selected input bytes before invoking any compiler/builder."""
+    if not isinstance(build, dict) or not build.get("commands"):
+        raise ArtifactError("release build commands must be recorded")
+    sources = release_source_hashes(repository)
+    artifacts.mkdir(parents=True, exist_ok=True)
+    if any(artifacts.iterdir()):
+        raise ArtifactError("release artifact directory must be empty before build")
+    return _save_release_index(artifacts / RELEASE_PROVENANCE, {
+        "schema_version": "slk.release-build-inputs/v1", "source_sha256": sources,
+        "product_version": (repository / "VERSION").read_text(encoding="utf-8").strip(),
+        "build": {**build, "source_hash_mode": "sha256-raw-selected-build-inputs"},
+    })
+
+
+def _release_index(repository: Path, artifacts: Path, schema: str) -> dict:
+    try:
+        value = json.loads((artifacts / RELEASE_PROVENANCE).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ArtifactError("release build provenance is missing or invalid") from exc
+    fields = {"schema_version", "source_sha256", "product_version", "build"}
+    if schema == "slk.release-artifacts/v1":
+        fields.add("payload")
+    if (not isinstance(value, dict) or set(value) != fields or value.get("schema_version") != schema
+        or not isinstance(value.get("build"), dict) or not value["build"].get("commands")):
+        raise ArtifactError("release build provenance is not a sealed build batch")
+    if (value["source_sha256"] != release_source_hashes(repository)
+        or value["product_version"] != (repository / "VERSION").read_text(encoding="utf-8").strip()):
+        raise ArtifactError("release build inputs changed since capture")
+    return value
+
+
+def _release_payload(artifacts: Path) -> list[dict]:
+    if {path.name for path in artifacts.iterdir()} != set(ARTIFACT_NAMES) | {RELEASE_PROVENANCE}:
+        raise ArtifactError("release artifact set must be the five outputs and provenance")
+    result = []
+    for name in sorted(ARTIFACT_NAMES):
+        path = artifacts / name
+        if not path.is_file() or path.is_symlink():
+            raise ArtifactError("release payload must be regular files")
+        result.append({"path": name, "size": path.stat().st_size, "sha256": digest(path)})
+    return result
+
+
+def seal_release_build(repository: Path, artifacts: Path) -> Path:
+    """Confirm unchanged inputs, then bind the exact completed output batch."""
+    value = _release_index(repository, artifacts, "slk.release-build-inputs/v1")
+    payload = _release_payload(artifacts)
+    if value["source_sha256"] != release_source_hashes(repository):
+        raise ArtifactError("release build inputs changed while sealing")
+    return _save_release_index(artifacts / RELEASE_PROVENANCE,
+        {**value, "schema_version": "slk.release-artifacts/v1", "payload": payload}, replace=True)
+
+
+def verify_release_build(repository: Path, artifacts: Path) -> dict:
+    value = _release_index(repository, artifacts, "slk.release-artifacts/v1")
+    if value["payload"] != _release_payload(artifacts):
+        raise ArtifactError("release payload changed since build sealing")
+    return value
 
 
 def archive_module(prefix: Path, target: str, inputs: dict[str, Path], *, tool: str,
@@ -172,6 +308,13 @@ def restore_module(artifacts: Path, destination: Path) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
+    for operation in ("begin-release", "seal-release", "verify-release"):
+        release = commands.add_parser(operation)
+        release.add_argument("--repo", required=True, type=Path)
+        release.add_argument("--artifacts", required=True, type=Path)
+        if operation == "begin-release":
+            release.add_argument("--build-command", action="append", required=True)
+            release.add_argument("--toolchain", action="append", default=[])
     pack = commands.add_parser("archive")
     pack.add_argument("--prefix", required=True, type=Path)
     pack.add_argument("--tool", required=True)
@@ -183,6 +326,16 @@ def main() -> int:
     restore.add_argument("--artifacts", required=True, type=Path)
     restore.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
+    if args.operation in {"begin-release", "seal-release", "verify-release"}:
+        if args.operation == "begin-release":
+            print(begin_release_build(args.repo, args.artifacts,
+                build={"commands": args.build_command, "toolchains": args.toolchain}))
+        elif args.operation == "seal-release":
+            print(seal_release_build(args.repo, args.artifacts))
+        else:
+            verify_release_build(args.repo, args.artifacts)
+            print("RELEASE_PROVENANCE_VERIFIED")
+        return 0
     if args.operation == "archive":
         inputs = {}
         for item in args.file:

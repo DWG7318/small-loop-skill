@@ -60,7 +60,10 @@ def test_worker_task_file_is_closed_hashed_and_copied_to_attempt(tmp_path: Path)
     assert non_completed["candidate"] is None
     assert (attempt.root / "transport-task.json").read_bytes() == task_path.read_bytes()
     instruction = DshAdapter().task_instruction(task_path, digest)
-    assert "guidance, never a delivery requirement" in instruction.lower()
+    assert "result_contract is guidance" in instruction.lower()
+    assert "save original output to result_path" in instruction.lower()
+    assert "Use bound MCP slk_worker_action" in instruction
+    assert "never shell state writes" in instruction
     assert "descriptor" in instruction.lower()
     assert "\r" not in instruction and "\n" not in instruction
     assert "envelope" not in instruction.lower()

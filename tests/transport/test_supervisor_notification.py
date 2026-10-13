@@ -18,6 +18,70 @@ from slk_temporal.contracts import (
 from test_codex_desktop import prepared
 
 
+def test_cli_current_notification_projection_is_separate_from_immutable_material(tmp_path, monkeypatch):
+    from slk_transport import cli
+    original = tmp_path / "original.json"
+    current = tmp_path / "current.json"
+    endpoint = tmp_path / "endpoint.json"
+    request = tmp_path / "request.json"
+    for path, value in ((original, {"revision": 1}), (current, {"revision": 2}), (endpoint, {"endpoint": "a"})):
+        path.write_text(json.dumps(value))
+    request.write_text(json.dumps({"notification": {"notice": "a"}, "endpoint_path": str(endpoint),
+        "runtime_projection_path": str(original), "attempt_root": str(tmp_path / "attempt")}))
+    saved = request.read_bytes(), original.read_bytes()
+    seen = []
+    monkeypatch.setattr(notification, "notify_temporal_supervisor", lambda notice, target, projection, root:
+                        seen.append(projection) or {"status": "NOTIFIED"})
+    assert cli.main(["notify-supervisor", "--request", str(request), "--current-runtime-projection", str(current)]) == 0
+    assert seen == [{"revision": 2}]
+    assert saved == (request.read_bytes(), original.read_bytes())
+
+
+def test_accepted_notification_retry_is_readback_only(tmp_path, monkeypatch):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "unconfirmed")
+    with pytest.raises(AdapterError, match="do not resend"):
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "late-normal")
+    result = notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    assert result["status"] == "NOTIFIED"
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(row["name"] == "send_message_to_thread" for row in calls) == 1
+
+
+def test_notification_receipt_write_failure_recovers_original_delivery_without_resend(tmp_path, monkeypatch):
+    endpoint, notice, projection = fixture(tmp_path, monkeypatch)
+    original = notification.Attempt.write_json_once
+    def interrupted(attempt, name, value):
+        if name == "notification-result.json":
+            raise OSError("simulated receipt persistence failure")
+        return original(attempt, name, value)
+    with monkeypatch.context() as patch:
+        patch.setattr(notification.Attempt, "write_json_once", interrupted)
+        with pytest.raises(OSError, match="persistence failure"):
+            notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    root = tmp_path / "notices" / notice["run_id"] / notice["event_id"]
+    saved = {name: (root / name).read_bytes() for name in ("delivery-result.json", "native-activity.json", "started.json")}
+    assert notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")["status"] == "NOTIFIED"
+    assert saved == {name: (root / name).read_bytes() for name in saved}
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(row["name"] == "send_message_to_thread" for row in calls) == 1
+
+
+def test_rebound_notification_pre_send_rejection_can_retry_once(tmp_path, monkeypatch):
+    endpoint, notice, projection, _node = desktop_node_fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "unknown-status")
+    with pytest.raises(AdapterError, match="unknown"):
+        notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")
+    root = tmp_path / "notices" / notice["run_id"] / notice["event_id"]
+    saved = (root / "command-rebind.json").read_bytes()
+    monkeypatch.setenv("FAKE_DESKTOP_MODE", "normal")
+    assert notification.notify_registered_supervisor(notice, endpoint, projection, tmp_path / "notices")["status"] == "NOTIFIED"
+    assert (root / "command-rebind.json").read_bytes() == saved
+    calls = [json.loads(line) for line in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
+    assert sum(row["name"] == "send_message_to_thread" for row in calls) == 1
+
+
 def fixture(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
     endpoint = asdict(prepared(tmp_path, monkeypatch))
@@ -207,6 +271,7 @@ def test_real_temporal_runtime_events_reach_native_start_validator_and_replay(tm
     member._responsible_role_instance_id = "checker-a"
     member._next_overwatcher_audit_at = now + timedelta(hours=1)
     monkeypatch.setattr(workflows.workflow, "now", lambda: now)
+    monkeypatch.setattr(workflows.workflow, "patched", lambda _name: True)
     monkeypatch.setattr(member, "_notify_supervisor", collect)
     asyncio.run(member._perform_runtime_checks())
 

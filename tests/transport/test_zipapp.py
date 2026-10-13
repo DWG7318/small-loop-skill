@@ -47,7 +47,10 @@ def test_transport_zipapp_contains_only_transport_and_explicit_ow_source(tmp_pat
         for name in names
     )
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
-    assert not any("test" in name.lower() or "session" in name.lower() for name in names)
+    # Native Session-reading code is runtime source, not user Session data.
+    assert "slk_transport/worker_session_stop.py" in names
+    assert not any("test" in name.lower() or {"session", "sessions"}.intersection(Path(name).parts)
+                   for name in names)
 
 
 @pytest.mark.parametrize("exit_code", [0, 7])

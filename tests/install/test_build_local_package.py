@@ -10,6 +10,7 @@ from scripts import build_local_package as package_builder
 from scripts.build_local_package import ARTIFACT_NAMES, PackageError, build_package as _build_package
 from scripts.validate_repository import EXPECTED_SKILLS
 from scripts.verify_local_install import VerificationError, _safe_relative, sha256, verify
+from scripts.tool_artifacts import RELEASE_PROVENANCE, begin_release_build, seal_release_build
 from runtime_fixtures import prepared_runtimes
 
 
@@ -137,9 +138,29 @@ def test_active_install_does_not_export_historical_auxiliary_instructions():
 def fake_artifacts(root: Path) -> Path:
     """Simulated artifacts exercise packaging only, not executable/runtime readiness."""
     root.mkdir()
+    begin_release_build(ROOT, root, build={"commands": ["SIMULATED INVENTORY ONLY; no compiler executed"]})
     for name in ARTIFACT_NAMES:
         (root / name).write_bytes(f"fake-{name}-4.4.5\n".encode())
+    seal_release_build(ROOT, root)
     return root
+
+
+@pytest.mark.parametrize("damage", ["missing-provenance", "mutated-output", "wrong-source"])
+def test_package_rejects_artifact_batch_before_trusting_repository_manifest(tmp_path, monkeypatch, damage):
+    artifacts = fake_artifacts(tmp_path / "artifacts")
+    repository = ROOT
+    if damage == "missing-provenance":
+        (artifacts / RELEASE_PROVENANCE).unlink()
+    elif damage == "mutated-output":
+        (artifacts / "slk-state.exe").write_bytes(b"changed simulated inventory")
+    else:
+        from test_tool_artifacts import release_source_fixture
+        repository = release_source_fixture(tmp_path / "other-source")
+    monkeypatch.setattr(package_builder, "_load_repository_manifest",
+        lambda _: pytest.fail("self-consistent manifest must not authorize stale compiled bytes"))
+    with pytest.raises(PackageError, match="(provenance|payload changed|build inputs changed)"):
+        build_package(repository, artifacts, tmp_path / "package")
+    assert not (tmp_path / "package").exists()
 
 
 @pytest.mark.parametrize("change", ("missing", "extra"))
@@ -259,6 +280,8 @@ def test_complete_package_has_exact_skills_artifacts_docs_and_hashes(tmp_path: P
     paths = {entry["path"] for entry in manifest["files"]}
     assert {f"skills/{name}/SKILL.md" for name in EXPECTED_SKILLS} <= paths
     assert {f"tools/slk/bin/{name}" for name in ARTIFACT_NAMES} <= paths
+    assert "tools/slk/share/small-loop-skill/BUILD-PROVENANCE.json" in paths
+    assert "tools/slk/runtime/dsh/prepare-worker-mcp.ps1" in paths
     assert "tools/slk/bin/slk-transport.cmd" in paths
     launcher = (package / "tools/slk/bin/slk-transport.cmd").read_text(encoding="utf-8")
     assert '"%~dp0..\\runtime\\python\\python.exe" "%~dp0slk-transport.pyz" %*' in launcher

@@ -141,7 +141,7 @@ function Get-ManagedState([string]$Root, [string[]]$ManagedRoots) {
         if (Test-Path -LiteralPath $target -PathType Leaf) {
             $state[$relative] = Get-Sha256 $target
         } elseif (Test-Path -LiteralPath $target -PathType Container) {
-            foreach ($file in Get-ChildItem -LiteralPath $target -File -Recurse | Sort-Object FullName) {
+            foreach ($file in Get-ChildItem -LiteralPath $target -File -Recurse -Force | Sort-Object FullName) {
                 $rootPrefix = (Get-FullPath $Root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
                 $key = (Assert-Within $Root $file.FullName).Substring($rootPrefix.Length).Replace('\', '/')
                 $state[$key] = Get-Sha256 $file.FullName
@@ -212,16 +212,39 @@ try {
     [void][System.IO.Directory]::CreateDirectory($backupRoot)
 
     $mutated = $true
+    $unchangedRuntimeRoots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($relative in $managedRoots) {
+        if (-not $relative.StartsWith('tools/slk/runtime/', [System.StringComparison]::Ordinal)) { continue }
+        $active = Assert-Within $codexRoot (Join-Path $codexRoot $relative)
+        $source = Assert-Within $stage (Join-Path $stage $relative)
+        if (-not (Test-Path -LiteralPath $active -PathType Container) -or
+            -not (Test-Path -LiteralPath $source -PathType Container)) { continue }
+        $reparse = @(@(Get-Item -LiteralPath $active, $source -Force;
+            Get-ChildItem -LiteralPath $active, $source -Recurse -Force) | Where-Object {
+                ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+            })
+        if ($reparse.Count -eq 0 -and
+            (Get-ManagedState $codexRoot @($relative)) -ceq (Get-ManagedState $stage @($relative))) {
+            [void]$unchangedRuntimeRoots.Add($relative)
+        }
+    }
+    foreach ($relative in $managedRoots) {
+        if ($unchangedRuntimeRoots.Contains($relative)) { continue }
         $active = Assert-Within $codexRoot (Join-Path $codexRoot $relative)
         if (Test-Path -LiteralPath $active) {
             $backup = Assert-Within $codexRoot (Join-Path $backupRoot $relative)
             [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $backup))
-            Move-Item -LiteralPath $active -Destination $backup
+            if ($relative.StartsWith('tools/slk/runtime/', [System.StringComparison]::Ordinal) -and
+                (Test-Path -LiteralPath $active -PathType Container)) {
+                # Same-volume rename fails atomically if an existing runtime is
+                # locked; Move-Item can move some children before reporting it.
+                [System.IO.Directory]::Move($active, $backup)
+            } else { Move-Item -LiteralPath $active -Destination $backup }
             $backedUpRoots.Add($relative)
         }
     }
     foreach ($relative in $managedRoots) {
+        if ($unchangedRuntimeRoots.Contains($relative)) { continue }
         $source = Assert-Within $stage (Join-Path $stage $relative)
         $active = Assert-Within $codexRoot (Join-Path $codexRoot $relative)
         if (-not (Test-Path -LiteralPath $source)) { throw "Staged managed root is missing: $relative" }
@@ -229,7 +252,9 @@ try {
         # All old roots have been backed up before this phase. Include an
         # attempted destination so a partial new move can also be cleaned up.
         $installedRoots.Add($relative)
-        Move-Item -LiteralPath $source -Destination $active
+        if ($relative.StartsWith('tools/slk/runtime/', [System.StringComparison]::Ordinal)) {
+            [System.IO.Directory]::Move($source, $active)
+        } else { Move-Item -LiteralPath $source -Destination $active }
     }
     [void](Invoke-HiddenPython $codexRoot @($verifyScript, '--root', $codexRoot))
     $probeRegistrationAttempted = $true

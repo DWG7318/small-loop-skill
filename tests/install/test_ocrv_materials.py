@@ -215,16 +215,9 @@ def test_native_bridge_observes_only_exact_parent_under_original_launcher(tmp_pa
     assert 'verdict' not in saved and 'decision' not in saved
 
 
-def test_completed_receipt_cannot_close_an_unrelated_process(tmp_path, monkeypatch):
+def test_completed_receipt_has_no_native_kill_authority():
     adapter = load('slk_checker_adapter.py')
-    class Process:
-        pid = 100
-        def poll(self): return None
-    monkeypatch.setattr(adapter, '_process_creation_time', lambda _: 'created')
-    monkeypatch.setattr(adapter, '_process_parents', lambda: {200: 999, 999: 0})
-    with pytest.raises(ValueError, match='descendant'):
-        adapter._close_completed_review(Process(), {'review_process': {'pid': 200, 'creation_time': 'created'}},
-                                        {'creation_time': 'created'})
+    assert not hasattr(adapter, '_close_completed_review')
 
 
 @pytest.mark.parametrize('damage', ['native', 'message', 'decision'])
@@ -246,3 +239,24 @@ def test_completion_receipt_rejects_other_invocations_and_changed_decision(tmp_p
     path.write_text(json.dumps(complete), encoding='utf-8')
     with pytest.raises(ValueError):
         adapter._completed_decision(path, (receipt, identity), 'native-A')
+
+
+def test_private_diagnostics_stay_archived_but_out_of_engineering_index(tmp_path):
+    adapter = load('slk_checker_adapter.py')
+    path, _, _ = _request(tmp_path)
+    request = json.loads(path.read_text())
+    private = tmp_path / 'native.stderr.txt'
+    private.write_text('PRIVATE_THINKING')
+    request['evidence_files'].append(str(private))
+    normalized = adapter._validate_request(request)
+    assert str(private) not in {row['path'] for row in normalized['evidence']}
+    assert private.read_text() == 'PRIVATE_THINKING'
+    background = adapter._background(normalized, {'invocations': []})
+    assert 'then read the indexed originals' not in background
+
+
+def test_unavailable_report_findings_are_not_empty_findings():
+    adapter = load('slk_checker_adapter.py')
+    assert adapter._normalized_findings(None) is None
+    assert adapter._normalized_findings({}) is None
+    assert adapter._normalized_findings({'comments': []}) == []

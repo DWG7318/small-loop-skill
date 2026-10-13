@@ -10,9 +10,10 @@ description: Use when an active Small Loop Skill (SLK) Run has a Worker ready to
 ## 本地预检与连续施工
 
 1. 对照已通过的 Run readiness，核对 DSH runtime/model/adapter/endpoint、所需 Skill/Tool、真实上下文与任务能力；核对不可变 task file/SHA-256、当前 `runtime_revision`、TOKEN、`CELL n/N`、目标/范围/依赖、D1 目标及候选基线。相同或更旧 TOKEN 不重开 CELL。
+   续作以当前版本 CELL 为准；先确认已替代的旧限制，不沿用上一 CELL 的禁改范围，也不自行扩大本 CELL 目标。
 2. 启动前做有界 Git 预检：repo root、worktree、common-dir、objects/refs 均须符合沙箱可写边界；支持独立可写 clone/simple layout，拒绝 common-dir 在沙箱外的 linked worktree。实例 ID 确定且不超过合同的 64 字符。预检失败或范围明显超能力时保留已有输出，报告实际限制，不造 candidate 或自行搬移布局。
 3. 同一 CELL 内连续完成编辑、命令、测试和最低 D0。可按需要顺序分内部段，但不另建 CELL/TOKEN、不并行 Worker、不换目标或自行进入未派发 CELL。最低 D0 围绕本次变化和风险提供基本信心，不重复完整 D1/D2。
-4. 原 Worker 用本次原生调用绑定的 `SLK_WORKER_ACTION_COMMAND` 调用 `submit-worker-action --event WORK_STARTED|D0_COMPLETED|CANDIDATE_SUBMITTED --details <本人的JSON动作文件>`，显式记录自身事实；候选动作含实际 `candidate`。所属可信入口内部消费本人的密封权限和密封 Checker endpoint/envelope，不泄露凭据，不从最终报告合成 D0 或候选。
+4. 原 Worker 从绑定的 `slk_worker_action` MCP 入口显式记录 `WORK_STARTED|D0_COMPLETED|CANDIDATE_SUBMITTED` 和本人的事实；候选动作含实际 `candidate`，初次及恢复调用使用同一入口。所属可信入口内部消费本人的密封权限和密封 Checker endpoint/envelope，不泄露凭据，不从最终报告合成 D0 或候选。不另猜 shell 命令或中央写入脚本；若尚待原派发提交，保留事实，沿同一绑定重试未完成动作，不写假成功。
 
 独占资源阻塞时才读 [资源恢复](references/resource-contention.md)，恢复同一节点，不算返工。Owner 已启用 Probe CLI/RTK/Ponytail 时可用于定位、低噪声输出和减少过度施工；完整原文仍可追溯，失败、截断、疑义或核心代码事实回读原文/原生命令。正式 FAIL 返工只接受绑定当前失败事件、候选和 round 的 `D1_REWORK_DIRECTIVE`，不是 Supervisor 的 D1 裁决。
 

@@ -11,6 +11,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 
 - 日常链 Supervisor → Checker → Worker → Checker；正式 FAIL 才由 Checker → Supervisor → 同一 Worker，第二连续 FAIL 调查并拆分。原 Checker 独立 D1、Worker 最低 D0、Supervisor 组合 D2，INCOMPLETE/工具故障不是产品 FAIL。
 - 方案按 DSH 能力和依赖细分，检查不列施工 CELL；复用有效事实，不重复检验体系。资源、权限与 Owner 决定保持。
+- 自己是现场临时补漏和记录的第一责任人：可用自己身份代交确已存在的原件、纠正位置或续机械后缀，不等源码维修；不冒充原作者、不编造未有资料或代判 D1。异常的具体处置可按事实改变，必要权限与真实验收不变。
 - 自己的唯一 OW 直属 child 覆盖自己的全部 Run，不跨 Supervisor；600秒主动核验，只写自身观察/向父级报告，报告后继续，不干预工程。accepted 不等于接管，UNKNOWN 不等于退出，停止需父级二次确认。
 - 原件位置/hash、原生真实启动、原角色显式认证动作和 TOKEN 提交各自留证；交接是最后任务动作，不 post-turn 自唤醒/盯下一角色。关键失败/决定及时追加，已有报告不被维护故障扣住。
 - Temporal 共享服务/每 Run 工作流负责通讯保障、1200秒 OW 核验与1800秒责任提醒，不代替工程判断。自己按需介入异常、规划、FAIL/豁免及最终 D2，不逐 CELL 盯工。
