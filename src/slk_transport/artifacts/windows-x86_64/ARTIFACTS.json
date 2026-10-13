@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "cccfd6d070bc77a280153935d364ae00241f3132fe4516f9ea3c0b12332340da",
-        "size": 433889
+        "sha256": "aae906273b80c4bae797cb632ff4759e3bca4f1111a723c0e4f93c79ca1f9e93",
+        "size": 433926
       }
     ],
-    "sha256": "cccfd6d070bc77a280153935d364ae00241f3132fe4516f9ea3c0b12332340da",
-    "size": 433889
+    "sha256": "aae906273b80c4bae797cb632ff4759e3bca4f1111a723c0e4f93c79ca1f9e93",
+    "size": 433926
   },
   "build": {
     "commands": [
@@ -16,25 +16,63 @@
       "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
       "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
     ],
-    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
+    "new_wheel_build": {
+      "builder_packages": {
+        "pip": "26.0.1",
+        "setuptools": "80.10.2",
+        "wheel": "0.45.1"
+      },
+      "builder_python": "3.14.0 (tags/v3.14.0:ebf955d, Oct  7 2025, 10:15:03) [MSC v.1944 64 bit (AMD64)]",
+      "command": [
+        "C:\\Python314\\python.exe",
+        "-m",
+        "pip",
+        "wheel",
+        "--no-build-isolation",
+        "--no-deps",
+        "--no-index",
+        "--wheel-dir",
+        "D:\\SLK\\.codex\\.tmp\\452\\build2\\wheels",
+        "D:\\SLK\\.codex\\.tmp\\452\\build2\\wheel-source\\transport"
+      ],
+      "negative_checks": [
+        {
+          "case": "prior 4.5.2 wheel versus build2 source",
+          "expected_rejection": "transport wheel source byte mismatch: slk_transport/overwatcher_admin.py"
+        },
+        {
+          "case": "wrong OW helper commit",
+          "expected_rejection": "transport wheel does not require the exact frozen OW commit"
+        }
+      ],
+      "ow_exact_commit": "1cbe4365b083d0c20a77305ba43b8e1248b75c47",
+      "packaged_python_files": 51,
+      "path": "D:\\SLK\\.codex\\.tmp\\452\\build2\\wheels\\slk_transport-4.5.2-py3-none-any.whl",
+      "sha256": "1ce8e3b1bd901bd07438aed22a9892059319028a6585c8adfe9c0f98c6320c61",
+      "size": 219726,
+      "source_files": 56,
+      "source_inventory_sha256": "4ae69c111cd596f2d30b1e1b81c3aa99c8fab349762d63345f89cd658553818f",
+      "status": "VERIFIED"
+    },
+    "release_batch_sha256": "d16847b762d24eaae78d48525b06d9aaf761bdd3db243d6ebca120bccd95b656",
+    "scope": "build2 transport-only archive; unchanged version and exact OW dependency",
     "source_hash_mode": "sha256-raw",
     "toolchains": [
       "cargo 1.94.0 (85eff7c80 2026-01-15)",
       "10.6.2",
       "Python 3.14.0"
-    ],
-    "wheel_command": "python -m pip wheel --no-deps --no-build-isolation --no-index <exact staged source>"
+    ]
   },
   "payload": [
     {
       "path": "bin/slk-transport.pyz",
-      "sha256": "372ef97c3bf3cdcd1c0de90085685c0a0b4b60c02ecf8786e9bc7c060d7ba7be",
-      "size": 223047
+      "sha256": "1bb88606a21a2929f53d582fd087655c32b852038237d8897f4ee8c617cc3543",
+      "size": 223048
     },
     {
       "path": "wheels/slk_transport-4.5.2-py3-none-any.whl",
-      "sha256": "8b1d07cef38679df2bb8589ea1ce6075ffa1995b4602f2e02bca2b274f83a779",
-      "size": 219723
+      "sha256": "1ce8e3b1bd901bd07438aed22a9892059319028a6585c8adfe9c0f98c6320c61",
+      "size": 219726
     }
   ],
   "product_version": "4.5.2",
@@ -67,7 +105,7 @@
     "jsonrpc.py": "bb570f0a8e867274f1bd96307bfb3cb85082387f6646ecf7634529a5c67f1e04",
     "native_activity.py": "d8feecf2b5d9c4b7eedee51b5b711382798a55479a6a8c18f885dfd86731b577",
     "native_ocrv.py": "aaa055a0954b840e0bbe39c2431ec9a736a64a2920fb5cdcf8fa502b15f7e99e",
-    "overwatcher_admin.py": "6f1732c1c1eccd795bab8809e485217932b385a47db89ce4c81e048741472794",
+    "overwatcher_admin.py": "51012f17a1bcf3bbe0298737e492e16ba9be85f02bd8df26775385a06842e6cb",
     "overwatcher_continuity.py": "aa3ad284aff5a530f4f4f8c495a74d2aa4d1019f37525063c9b21153bb8b51a5",
     "overwatcher_desktop.py": "ad5f1c6be33eb248e0ca7aeb026f586ff5bea3f85ffa584d6ab8c5c2230cfc3c",
     "overwatcher_subagent.py": "c3e5338e9d0c56f0fb55f6bec7991fa2635846d736510c044a45a1ccc417d0bc",

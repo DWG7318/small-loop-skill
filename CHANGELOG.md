@@ -19,6 +19,9 @@
 - Accept explicit same-parent native rollout sources with exact call/output/child
   identities and source hashes, instead of requiring one physical file. Keep OW
   cycle facts tool-derived and truthful; no invented time, attempt or CLEAR state.
+- Accept a genuine OW collection completed within one host-clock tick, matching
+  the Rust consumer. Reversed/stale clocks and missing, changed or falsely
+  attributed native evidence remain rejected; no sleeps or fabricated time.
 - Include the reviewed Run08 closure repairs: orderly OW-end handling and precise
   real native invocation census. Method 4.5.2 retains earlier contract compatibility;
   BI remains 1.1.1 and read-only OW helper advances to 1.0.2.

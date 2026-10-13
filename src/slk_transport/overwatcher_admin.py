@@ -47,7 +47,7 @@ def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) 
         now = utc_now()
         start, end = wc._timestamp(cycle["started_at"]), wc._timestamp(cycle["completed_at"])
         age = (wc._timestamp(now) - end).total_seconds()
-        if end <= start or not -1 <= age <= cycle["cadence_seconds"]:
+        if end < start or not -1 <= age <= cycle["cadence_seconds"]:
             raise ValueError("cycle must have real, current start and completion times")
         references = cycle["evidence_refs"]
         objects = []

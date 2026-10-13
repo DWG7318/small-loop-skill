@@ -1,5 +1,32 @@
 # Validation Report — SLK 4.5.2
 
+## 2026-10-14 — final Windows clock-boundary correction (build 2)
+
+The first main CI at `33197f4` passed Ubuntu but failed three Windows Python
+checks at the same OW cycle-clock predicate (2360 passed, 3 failed, 102 skipped).
+The prior main baseline also failed one of these checks. A frozen single-tick
+reproduction failed all three unchanged tests. The real collector can return
+equal query/cycle timestamps; Rust already admits equality, while Python alone
+rejected it. CI did not print the original timestamps, so equality in that
+particular CI run is a supported inference, not a logged value.
+
+The production change is one comparison, `end <= start` to `end < start`.
+No sleep, fabricated timestamp, new retry, wider freshness allowance or changed
+evidence/authority contract is used. Nine permanent cases first reproduced the
+failure and then passed: valid single tick, reversed/expired/future cycle,
+changed hash, missing original start, wrong TOKEN, old query, and forged native
+state even after recomputing its hash. Every negative case stops before the
+state-write command. The three original checks pass under the same single-tick
+probe. The complete affected seven-file suite passes **455 tests, 18 skipped**.
+
+This second build preserves the first draft and its immutable tag as intermediate
+evidence. It will use a distinct build tag and exact source/asset provenance;
+no previously pushed module tag is rewritten. Transport has the sole source
+change; the standard production build also recompiles the unchanged BI, so both
+modules receive exact new artifact revisions. Independent review passed the nine
+new cases and 163 related cases (4 skipped). The separate delivery receipt records
+actual final package, remote CI, deployment and old-code retirement results.
+
 ## 2026-10-14 — 4.5.2 Run08 corrections
 
 Baseline: main `0bf86eb369d2f8338cbe23a441834fd3619867ca`, including the
@@ -40,7 +67,7 @@ separately executed. No live shared service or OS privilege was changed for test
 Final minimal locked-dependency Rust workspace: **192 tests passed**. Frontend:
 **154 tests / 19 files passed**, typecheck and production build passed. No
 unrelated Cargo dependency re-resolution was retained. Final five public
-artifacts share sealed `BUILD-PROVENANCE.json` SHA256
+first-build artifacts share sealed `BUILD-PROVENANCE.json` SHA256
 `79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6`.
 All seven reused prepared runtime roots were rehashed: 28,356 files,
 989,594,724 bytes. Changed module archives contain current sources and real

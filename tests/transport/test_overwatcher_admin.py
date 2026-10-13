@@ -277,7 +277,7 @@ def test_quiescence_cli_compares_binding_paths_not_windows_separator_spelling(tm
 
 
 @pytest.mark.parametrize("damage", ["forged-status", "missing-start", "duplicate-inspection", "wrong-source",
-                                    "old-clock", "instant-cycle", "future-cycle"])
+                                    "old-clock", "reversed-cycle", "future-cycle"])
 def test_cycle_requires_real_recollected_worker_facts_before_state_write(tmp_path, monkeypatch, damage):
     request = request_fixture(tmp_path)
     raw = json.loads(request.read_text())
@@ -296,8 +296,8 @@ def test_cycle_requires_real_recollected_worker_facts_before_state_write(tmp_pat
         cycle["evidence_refs"].append({"path": str(copy), "sha256": hashlib.sha256(copy.read_bytes()).hexdigest()})
     elif damage == "old-clock":
         inspection["observed_at"] = "2026-09-23T00:00:00Z"
-    elif damage == "instant-cycle":
-        cycle["completed_at"] = cycle["started_at"]
+    elif damage == "reversed-cycle":
+        cycle["completed_at"] = (admin.wc._timestamp(cycle["started_at"]) - timedelta(microseconds=1)).isoformat()
     else:
         cycle["completed_at"] = "2099-01-01T00:00:00Z"
     write_json(inspection_path, inspection)
@@ -318,6 +318,80 @@ def test_cycle_requires_real_recollected_worker_facts_before_state_write(tmp_pat
         admin.execute_sealed_overwatcher_admin(request, request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
     assert calls == ["authenticate-role"]
     assert not Path(raw["result_path"]).exists()
+
+
+@pytest.mark.parametrize("damage,reason", [
+    (None, None),
+    ("reversed-cycle", "real, current start"),
+    ("expired-cycle", "real, current start"),
+    ("future-cycle", "real, current start"),
+    ("changed-hash", "missing or changed"),
+    ("missing-start", "exact authoritative started"),
+    ("wrong-token", "current authoritative scope"),
+    ("stale-query", "outside the cycle window"),
+    ("forged-inspection", "differs from recollected native facts"),
+])
+def test_same_tick_cycle_checks_real_evidence_before_state_write(tmp_path, monkeypatch, damage, reason):
+    from slk_transport import native_activity as native
+    # A real collection can finish within one host clock tick. Its original
+    # evidence and identity, not a strictly positive duration, prove the work.
+    fixed = native.utc_now()
+    monkeypatch.setattr(native, "utc_now", lambda: fixed)
+    monkeypatch.setattr(admin, "utc_now", lambda: fixed)
+    request = request_fixture(tmp_path)
+    raw = json.loads(request.read_text())
+    operation = Path(raw["operation_request_path"])
+    cycle = json.loads(operation.read_text())
+    query_path = tmp_path / "scope-query.json"
+    query = json.loads(query_path.read_text())
+    assert cycle["started_at"] == cycle["completed_at"] == fixed
+    assert query["cycle_mechanics"]["started_at"] == query["cycle_mechanics"]["completed_at"] == fixed
+    instant = admin.wc._timestamp(fixed)
+    if damage == "reversed-cycle":
+        cycle["completed_at"] = (instant - timedelta(microseconds=1)).isoformat()
+    elif damage in {"expired-cycle", "future-cycle"}:
+        offset = -601 if damage == "expired-cycle" else 2
+        cycle["started_at"] = cycle["completed_at"] = (instant + timedelta(seconds=offset)).isoformat()
+    elif damage == "changed-hash":
+        cycle["evidence_refs"][0]["sha256"] = "0" * 64
+    elif damage == "missing-start":
+        cycle["evidence_refs"] = cycle["evidence_refs"][1:]
+    elif damage == "wrong-token":
+        cycle["token_holder_role_instance_id"] = "another-worker"
+    elif damage == "stale-query":
+        query["query_started_at"] = query["query_completed_at"] = (instant - timedelta(seconds=601)).isoformat()
+        write_json(query_path, query)
+    elif damage == "forged-inspection":
+        path = tmp_path / "inspection.json"
+        inspection = json.loads(path.read_text())
+        inspection["status"] = "IN_PROGRESS"
+        write_json(path, inspection)
+    if damage in {"stale-query", "forged-inspection"}:
+        for ref in cycle["evidence_refs"]:
+            ref["sha256"] = admin.wc._sha256(Path(ref["path"]))
+    write_json(operation, cycle)
+    raw["operation_request_sha256"] = admin.wc._sha256(operation)
+    write_json(request, raw)
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda _: "synthetic-secret")
+    calls = []
+
+    def run(_command, args, **_kwargs):
+        calls.append(args[0])
+        if args[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "overwatcher",
+                    "role_instance_id": "RUN-A-overwatcher-001", "runtime_revision": 7}
+        return {"status": "overwatch_cycle_recorded", "run_id": "RUN-A", "cycle_id": "cycle-1"}
+
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    if damage is None:
+        result = admin.execute_sealed_overwatcher_admin(request, request_sha256=admin.wc._sha256(request))
+        assert result["status"] == "OVERWATCHER_ADMIN_COMPLETED"
+        assert calls == ["authenticate-role", "record-overwatch-cycle"]
+    else:
+        with pytest.raises(ValueError, match=reason):
+            admin.execute_sealed_overwatcher_admin(request, request_sha256=admin.wc._sha256(request))
+        assert calls == ["authenticate-role"]
+        assert not Path(raw["result_path"]).exists()
 
 
 def test_ow_consumer_authenticates_and_records_own_cycle_without_exposing_secret(tmp_path, monkeypatch, capsys):

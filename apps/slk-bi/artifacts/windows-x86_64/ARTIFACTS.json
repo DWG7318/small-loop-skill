@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "ba10561fe1518bdbba673f205c773a1a241c61ebb1bc86ae067a334597f7fb60",
-        "size": 5167554
+        "sha256": "f1c769ed68d872a758ce886e6fb93cb1f953130a71b1847c03606d40f078d00d",
+        "size": 5167552
       }
     ],
-    "sha256": "ba10561fe1518bdbba673f205c773a1a241c61ebb1bc86ae067a334597f7fb60",
-    "size": 5167554
+    "sha256": "f1c769ed68d872a758ce886e6fb93cb1f953130a71b1847c03606d40f078d00d",
+    "size": 5167552
   },
   "build": {
     "commands": [
@@ -16,7 +16,8 @@
       "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
       "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
     ],
-    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
+    "release_batch_sha256": "d16847b762d24eaae78d48525b06d9aaf761bdd3db243d6ebca120bccd95b656",
+    "scope": "build2 BI exe from standard Tauri rebuild; unchanged source/version/current frontendDist",
     "source_hash_mode": "sha256-raw",
     "toolchains": [
       "cargo 1.94.0 (85eff7c80 2026-01-15)",
@@ -27,7 +28,7 @@
   "payload": [
     {
       "path": "bin/slk-bi-desktop.exe",
-      "sha256": "65a6fc89de494d6dc2da5b3cf89ebf55095dcabde07c329e3f72b8b567b2e261",
+      "sha256": "73a20d7f2b780a876a043171fd9b77a3cbfa133cc112f10a09c73aed3cca8cb3",
       "size": 13677568
     },
     {
