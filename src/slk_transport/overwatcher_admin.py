@@ -104,6 +104,14 @@ def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) 
         if (query["source_message_id"] != snapshot["latest_message_id"] or query["runtime_snapshot"] != snapshot
             or query["runtime_projection_sha256"] != wc.canonical_json_sha256(projection)):
             raise ValueError("scope query differs from the current authoritative projection")
+        attempt_facts = query.get("attempt_observation")
+        if isinstance(attempt_facts, dict) and attempt_facts.get("conflict"):
+            from .native_activity import overwatch_attempt_observation
+            if (query["attempt_observation"] != overwatch_attempt_observation(projection)
+                or any(cycle.get(key) is not None for key in ("go_id", "cell_id", "attempt"))
+                or not unknown or not reported_unproven or "PROJECTION_MISMATCH" not in cycle.get("anomaly_codes", [])):
+                raise ValueError("conflicting attempts require exact original facts and a Run-level unproven observation")
+            return
         censuses = [value for _path, value in objects if value.get("schema_version") == "slk.run-quiescence/v1"]
         if projection["summary"].get("state") == "paused" and any(proof.get("status") == "QUIESCENT" for proof in censuses):
             from .role_host import RoleHost
@@ -178,7 +186,32 @@ def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) 
         # a later non-Worker query reproduce every mutable event/status field.
         if unknown and not reported_unproven:
             raise ValueError("unknown native facts cannot be reported as clear")
-        native_actual = inspect_native_activity(starts[0], terminal_paths=(source / "completed.json", source / "failed.json"))
+        from .native_activity import ACTIVITY_SCHEMA, validate_native_start
+        from .worker_resume_observation import select_worker_resume
+        from .native_ocrv import select_ocrv_resume
+        original_start = validate_native_start(starts[0])
+        try:
+            resumed = (select_worker_resume(source, endpoint=endpoint, envelope=envelope,
+                        original_start=original_start) if worker else
+                       select_ocrv_resume(source, endpoint=endpoint, envelope=envelope,
+                        original_start=original_start) if endpoint.get("adapter") == "ocrv-checker" else None)
+            native_actual = resumed.inspect_native(inspect_native_activity) if resumed is not None else None
+        except (KeyError, TypeError, OSError, ValueError) as exc:
+            # The original central proof is already checked above. A precisely
+            # repeated OCRV selection/query failure is an observable anomaly,
+            # not permission to clear it or to replace the source identity.
+            expected = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN",
+                "observed_at": native_reported["observed_at"], "error": f"NATIVE_RESUME_QUERY_UNAVAILABLE: {exc}"}
+            if (endpoint.get("adapter") == "ocrv-checker" and not worker and reported_unproven
+                and native_reported == expected and query.get("native_resume") is None
+                and query.get("worker_completion") is None):
+                return
+            raise
+        if query.get("native_resume") != (resumed.metadata if resumed is not None else None):
+            raise ValueError("native resume selection changed; recollect its current original evidence")
+        if native_actual is None:
+            native_actual = inspect_native_activity(starts[0], terminal_paths=(source / "completed.json", source / "failed.json"))
+        completion_source = resumed.source if resumed is not None else source
         for field in ("status", "process", "native_task", "terminal_evidence", "error"):
             if native_actual.get(field) != native_reported.get(field):
                 raise ValueError(f"native sample is stale: {field} changed; recollect the current query")
@@ -195,8 +228,9 @@ def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) 
         def current_native(path, **kwargs):
             kwargs.pop("observed_at", None)
             return inspect_native_activity(path, **kwargs)
-        actual = wc.inspect_worker_completion(source, projection, observed_at=utc_now(),
-                                              cadence_seconds=cycle["cadence_seconds"], native_inspector=current_native)
+        actual = wc.inspect_worker_completion(completion_source, projection, observed_at=utc_now(),
+            cadence_seconds=cycle["cadence_seconds"], native_inspector=(
+                (lambda *_a, **_k: native_actual) if resumed is not None else current_native))
         if {k: v for k, v in actual.items() if k != "observed_at"} != {k: v for k, v in reported.items() if k != "observed_at"}:
             raise ValueError("reported Worker inspection differs from recollected native facts")
     except (KeyError, TypeError, OSError, ValueError) as exc:
@@ -265,15 +299,32 @@ def execute_sealed_overwatcher_admin(
             list(state_command), [operation, "--request", str(operation_request)],
             credential=secret, credential_scope="overwatcher",
         )
+        if state_result.get("status") == "error" and isinstance(state_result.get("message"), str):
+            # Remove values, not useful schema diagnostics containing words such
+            # as "credential". Length is never evidence that an error is unsafe.
+            message = state_result["message"]
+            if secret:
+                message = message.replace(secret, "[REDACTED]")
+            message = re.sub(r"\bslk_[A-Za-z0-9_-]+", "[REDACTED]", message)
+            message = re.sub(
+                r'''(?i)(["']?\b(?:password|secret|credential|api[_ -]?key)["']?\s*[=:]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;]+)''',
+                r'\1[REDACTED]', message)
+            state_result = {**state_result, "message": message}
+            for field in ("stage", "request_ref"):
+                context = state_result.get(field)
+                if isinstance(context, str) and secret and secret in context:
+                    state_result.pop(field)
     finally:
         secret = ""
     if state_result.get("status") == "error":
         code, message = state_result.get("code"), state_result.get("message")
-        sensitive = json.dumps({"code": code, "message": message}, ensure_ascii=False).lower()
         if (isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,95}", code)
-            and isinstance(message, str) and message.strip() == message and 0 < len(message) <= 512
-            and not any(term in sensitive for term in ("credential", "secret", "password", "api_key"))):
-            raise ValueError(f"{code}: {message}")
+            and isinstance(message, str) and message.strip() == message and message):
+            context = " ".join(f"{field}={state_result[field]}" for field in ("stage", "request_ref")
+                               if isinstance(state_result.get(field), str)
+                               and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", state_result[field])
+                               and not state_result[field].startswith("slk_"))
+            raise ValueError(f"{code}: {message}" + (f" [{context}]" if context else ""))
     if (state_result.get("status") not in OPERATIONS[operation]
         or state_result.get("run_id") != run_id
         or any("credential" in str(key).lower() for key in state_result)):

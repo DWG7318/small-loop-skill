@@ -21,6 +21,389 @@ index 3db3936..e9f865b 100644
  	ctx := context.Background()
  	if telemetry.Init(ctx) {
  		defer telemetry.ShutdownWithTimeout(ctx, 5*time.Second)
+diff --git a/internal/agent/agent.go b/internal/agent/agent.go
+index bbf74b0..0a963d8 100644
+--- a/internal/agent/agent.go
++++ b/internal/agent/agent.go
+@@ -13,6 +13,7 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"maps"
++	"os"
+ 	"runtime/debug"
+ 	"slices"
+ 	"sort"
+@@ -240,6 +241,7 @@ func New(args Args) *Agent {
+ 	// model.Diff records lazily (a.diffs is only populated by loadDiffs,
+ 	// after New returns).
+ 	a.runner = llmloop.NewRunner(llmloop.Deps{
++		SLKWholeCell:      os.Getenv("SLK_CHECKER_WHOLE_CELL") == "1",
+ 		LLMClient:         args.LLMClient,
+ 		Model:             args.Model,
+ 		Template:          args.Template,
+@@ -367,6 +369,9 @@ func (a *Agent) Run(ctx context.Context) ([]model.LlmComment, error) {
+ 		// A persistence failure here is still a delivery error — a clean skip
+ 		// cannot be claimed if its session_end never reached disk.
+ 		manifestErr := a.finalizeManifest()
++		if finalErr := a.finishSLKWholeCell(ctx, nil); finalErr != nil {
++			manifestErr = errors.Join(manifestErr, finalErr)
++		}
+ 		if ferr := a.session.Finalize(); ferr != nil {
+ 			manifestErr = errors.Join(manifestErr, fmt.Errorf("finalize session: %w", ferr))
+ 		}
+@@ -431,6 +436,11 @@ func (a *Agent) Run(ctx context.Context) ([]model.LlmComment, error) {
+ 	if manifestErr := a.finalizeManifest(); manifestErr != nil {
+ 		err = errors.Join(err, manifestErr)
+ 	}
++	// SLK only: group completion is not a whole-CELL decision. The same runner,
++	// provider, model and MCP perform the final judgment after group work settles.
++	if finalErr := a.finishSLKWholeCell(ctx, comments); finalErr != nil {
++		err = errors.Join(err, finalErr)
++	}
+ 	if ferr := a.session.Finalize(); ferr != nil {
+ 		finalizeErr := fmt.Errorf("finalize session: %w", ferr)
+ 		if err != nil {
+@@ -442,6 +452,43 @@ func (a *Agent) Run(ctx context.Context) ([]model.LlmComment, error) {
+ 	return comments, err
+ }
+ 
++func (a *Agent) finishSLKWholeCell(ctx context.Context, comments []model.LlmComment) error {
++	if os.Getenv("SLK_CHECKER_WHOLE_CELL") != "1" {
++		return nil
++	}
++	if _, ok := a.args.Tools.Get("slk_checker_decide"); !ok {
++		return errors.New("SLK whole-CELL decision tool unavailable")
++	}
++	// Public group findings only. Native private reasoning stays in its archive.
++	public := append([]model.LlmComment{}, comments...)
++	for i := range public {
++		public[i].Thinking = ""
++	}
++	material, err := json.Marshal(struct {
++		Manifest *session.RunManifest `json:"file_group_manifest"`
++		Comments []model.LlmComment   `json:"comments"`
++	}{a.RunManifest(), public})
++	if err != nil {
++		return err
++	}
++	messages := []llm.Message{
++		llm.NewTextMessage("system", "You are the same original SLK Checker performing the final whole-CELL judgment after all file groups settled. Group completion/reuse, finding count and exit status are not D1. Review every CELL criterion and necessary cross-file/unchanged seams using existing read tools and relevant indexed public evidence. Do not repeat file-group reviews. Use slk_checker_decide once with your actual PASS, FAIL or INCOMPLETE and a public findings/limitations message as your final action. task_done is only a group marker and cannot decide D1. The host will dispatch only after native evidence is sealed; do not claim handoff has already happened."),
++		llm.NewTextMessage("user", a.args.Background+"\nPublic settled group results:\n"+string(material)),
++	}
++	done, stop, err := a.runner.RunMainTask(ctx, messages, llmloop.SLKWholeCellTask)
++	if a.args.CommentWorkerPool != nil {
++		a.args.CommentWorkerPool.Await()
++	}
++	a.runner.WaitBackground()
++	if err != nil {
++		return err
++	}
++	if !done {
++		return fmt.Errorf("SLK whole-CELL decision incomplete: %s", stop.Reason())
++	}
++	return nil
++}
++
+ // Session returns the session history associated with this Agent.
+ func (a *Agent) Session() *session.SessionHistory {
+ 	return a.session
+diff --git a/internal/agent/slk_test.go b/internal/agent/slk_test.go
+new file mode 100644
+index 0000000..a181cc1
+--- /dev/null
++++ b/internal/agent/slk_test.go
+@@ -0,0 +1,118 @@
++package agent
++
++import (
++	"context"
++	"github.com/alibaba/open-code-review/internal/config/template"
++	"github.com/alibaba/open-code-review/internal/llm"
++	"github.com/alibaba/open-code-review/internal/model"
++	"github.com/alibaba/open-code-review/internal/session"
++	"github.com/alibaba/open-code-review/internal/tool"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++)
++
++type finalSLKClient struct {
++	calls  int
++	prompt string
++}
++
++func (c *finalSLKClient) CompletionsWithCtx(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
++	c.calls++
++	for _, m := range req.Messages {
++		if s, ok := m.Content.(string); ok {
++			c.prompt += s
++		}
++	}
++	response := agentTaskDoneResponse()
++	response.Choices[0].Message.ToolCalls[0].Function = llm.FunctionCall{Name: "slk_checker_decide", Arguments: `{"verdict":"INCOMPLETE","message":"seam unproved"}`}
++	return response, nil
++}
++
++type finalSLKTool struct{ calls int }
++
++func (p *finalSLKTool) Tool() tool.Tool { return tool.Dynamic("slk_checker_decide") }
++func (p *finalSLKTool) Execute(context.Context, map[string]any) (string, error) {
++	p.calls++
++	return `{"status":"CHECKER_D1_RECORDED","verdict":"INCOMPLETE"}`, nil
++}
++
++func TestSLKAllReuseStillMakesOneWholeCellJudgment(t *testing.T) {
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "1")
++	diffs := []model.Diff{{OldPath: "cached.go", NewPath: "cached.go", Diff: "+cached", Insertions: 1}}
++	fp := reviewItemFingerprint(session.ReviewModeRange, diffs[0])
++	resume := &session.ResumeState{SessionID: "parent", ReviewMode: session.ReviewModeRange, DiffFrom: "main", DiffTo: "feature", Items: map[string]session.ResumeItem{fp: {FilePath: "cached.go", OldPath: "cached.go", NewPath: "cached.go", Fingerprint: fp, Comments: []model.LlmComment{{Path: "cached.go", Content: "public finding", Thinking: "PRIVATE_THINKING"}}}}}
++	client := &finalSLKClient{}
++	a := newManifestFlowAgentWithClient(t, diffs, resume, client)
++	a.args.Background = "SLK_NATIVE_INVOCATION=fixture;REQUEST_SHA256=fixture\nCELL CRITERION: unchanged seam"
++	p := &finalSLKTool{}
++	a.args.Tools.Register(p)
++	seedParentManifest(t, a, fp)
++	comments, err := a.dispatchSubtasks(context.Background())
++	if err != nil || client.calls != 0 {
++		t.Fatalf("reuse called provider: %v %d", err, client.calls)
++	}
++	if err = a.finalizeManifest(); err != nil {
++		t.Fatal(err)
++	}
++	if err = a.finishSLKWholeCell(context.Background(), comments); err != nil {
++		t.Fatal(err)
++	}
++	if client.calls != 1 || p.calls != 1 {
++		t.Fatalf("llm=%d decision=%d", client.calls, p.calls)
++	}
++	if !strings.Contains(client.prompt, "public finding") || !strings.Contains(client.prompt, "unchanged seam") || strings.Contains(client.prompt, "PRIVATE_THINKING") {
++		t.Fatalf("bad public final context: %s", client.prompt)
++	}
++}
++
++func TestSLKWholeCellDisabledForOrdinaryOCRV(t *testing.T) {
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "")
++	client := &finalSLKClient{}
++	a := newManifestFlowAgentWithClient(t, nil, nil, client)
++	if err := a.finishSLKWholeCell(context.Background(), nil); err != nil || client.calls != 0 {
++		t.Fatalf("ordinary OCRV changed: %v", err)
++	}
++}
++
++func TestSLKRunFullyReusedStillFinalizesWholeCell(t *testing.T) {
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "")
++	setTestHome(t, t.TempDir())
++	repo := initPreviewRepo(t)
++	if err := os.WriteFile(filepath.Join(repo, "fresh.go"), []byte("package fresh\n"), 0600); err != nil {
++		t.Fatal(err)
++	}
++	args := Args{RepoDir: repo, Model: "fake", LLMClient: manifestFlowClient{},
++		Template: template.Template{MaxTokens: 100000, MaxToolRequestTimes: 5,
++			MainTask: template.LlmConversation{Messages: []template.ChatMessage{{Role: "user", Content: "Review {{diffs}}"}}}}}
++	parent := New(args)
++	if _, err := parent.Run(context.Background()); err != nil {
++		t.Fatal(err)
++	}
++	resume, err := session.LoadReviewResumeState(repo, parent.SessionID())
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "1")
++	client, p := &finalSLKClient{}, &finalSLKTool{}
++	args.Resume = resume
++	args.LLMClient = client
++	args.Tools = tool.NewRegistry()
++	args.Tools.Register(p)
++	args.Background = "SLK_NATIVE_INVOCATION=offline;REQUEST_SHA256=offline\nWhole CELL unchanged seam criterion"
++	child := New(args)
++	if _, err = child.Run(context.Background()); err != nil {
++		t.Fatal(err)
++	}
++	if client.calls != 1 || p.calls != 1 || child.ResumeInfo().RerunFiles != 0 {
++		t.Fatalf("llm=%d decision=%d resume=%+v", client.calls, p.calls, child.ResumeInfo())
++	}
++	closed, err := session.LoadReviewResumeState(repo, child.SessionID())
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !closed.Closed || closed.Manifest == nil {
++		t.Fatal("final stage did not seal original native session")
++	}
++}
+diff --git a/internal/llmloop/loop.go b/internal/llmloop/loop.go
+index 88d056b..9f5311d 100644
+--- a/internal/llmloop/loop.go
++++ b/internal/llmloop/loop.go
+@@ -27,6 +27,8 @@ import (
+ // internal/agent (diff review) and internal/scan (full-file scan) build a
+ // Deps from their own state and hand it to NewRunner.
+ type Deps struct {
++	// SLK-only orchestration: file-group task_done never authorizes whole-CELL D1.
++	SLKWholeCell      bool
+ 	LLMClient         llm.LLMClient
+ 	Model             string
+ 	Template          template.Template
+@@ -481,6 +483,9 @@ func (r *Runner) RunMainTask(ctx context.Context, messages []llm.Message, taskKe
+ 					Result:     "Task completed successfully.",
+ 				})
+ 				taskCompleted = true
++				if r.deps.SLKWholeCell && taskKey == SLKWholeCellTask {
++					return true, StopNone, nil // no later tools/model work after explicit D1
++				}
+ 			} else if cp.Data != "" {
+ 				results = append(results, tool.ToolCallResult{
+ 					ToolCallID: call.ID,
+@@ -628,6 +633,14 @@ func graceRoundToolDefs(defs []llm.ToolDef) []llm.ToolDef {
+ // code_comment's path when the model omitted one.
+ func (r *Runner) executeToolCall(ctx context.Context, taskKey string, call llm.ToolCall, rec *session.TaskRecord, thinking string) tool.TaskCheckpoint {
+ 	t := tool.OfName(call.Function.Name)
++	if r.deps.SLKWholeCell {
++		if call.Function.Name == "slk_checker_decide" && taskKey != SLKWholeCellTask {
++			return tool.Of("slk_checker_decide is reserved for the final whole-CELL judgment after all groups settle; finish this file group with task_done.")
++		}
++		if t == tool.TaskDone && taskKey == SLKWholeCellTask {
++			return tool.Fail("whole-CELL D1 requires slk_checker_decide; task_done is not D1")
++		}
++	}
+ 
+ 	if t == tool.TaskDone {
+ 		args, err := parseToolArgs(call.Function.Arguments)
+@@ -823,9 +836,21 @@ func (r *Runner) executeToolCall(ctx context.Context, taskKey string, call llm.T
+ 		rec.AddToolResult(toolName, call.Function.Arguments, result)
+ 	}
+ 	r.resetToolFailureStreak(taskKey, toolName)
++	if r.deps.SLKWholeCell && taskKey == SLKWholeCellTask && toolName == "slk_checker_decide" {
++		var reply struct {
++			Status  string `json:"status"`
++			IsError bool   `json:"isError"`
++		}
++		if json.Unmarshal([]byte(result), &reply) == nil && !reply.IsError && reply.Status == "CHECKER_D1_RECORDED" {
++			return tool.Complete()
++		}
++		return tool.Fail("whole-CELL decision was not recorded: " + result)
++	}
+ 	return tool.Of(result)
+ }
+ 
++const SLKWholeCellTask = "__slk_whole_cell__"
++
+ // addNextMessage extends the conversation with the assistant message and
+ // tool responses, applying three-zone compression at the soft (60%) and
+ // warning (80%) MaxTokens thresholds. Returns false when even after
+diff --git a/internal/llmloop/slk_test.go b/internal/llmloop/slk_test.go
+new file mode 100644
+index 0000000..76b09a3
+--- /dev/null
++++ b/internal/llmloop/slk_test.go
+@@ -0,0 +1,54 @@
++package llmloop
++
++import (
++	"context"
++	"github.com/alibaba/open-code-review/internal/llm"
++	"github.com/alibaba/open-code-review/internal/tool"
++	"testing"
++)
++
++type slkDecisionProvider struct {
++	calls  int
++	result string
++}
++
++func (p *slkDecisionProvider) Tool() tool.Tool { return tool.Dynamic("slk_checker_decide") }
++func (p *slkDecisionProvider) Execute(context.Context, map[string]any) (string, error) {
++	p.calls++
++	return p.result, nil
++}
++
++func TestSLKDecisionOnlyFinalStageAndNoLaterTools(t *testing.T) {
++	client := &fakeClient{}
++	deps := newTestDeps(client)
++	deps.SLKWholeCell = true
++	p := &slkDecisionProvider{result: `{"status":"CHECKER_D1_RECORDED","verdict":"FAIL"}`}
++	deps.Tools.Register(p)
++	r := NewRunner(deps)
++	call := llm.ToolCall{ID: "decide", Function: llm.FunctionCall{Name: "slk_checker_decide", Arguments: `{"verdict":"FAIL"}`}}
++	if cp := r.executeToolCall(context.Background(), "group.go", call, nil, ""); cp.Completed || p.calls != 0 {
++		t.Fatal("group submitted whole-CELL D1")
++	}
++	if cp := r.executeToolCall(context.Background(), SLKWholeCellTask, llm.ToolCall{Function: llm.FunctionCall{Name: "task_done", Arguments: `{}`}}, nil, ""); !cp.Failed {
++		t.Fatal("task_done became whole-CELL D1")
++	}
++	response := taskDoneResponse()
++	response.Choices[0].Message.ToolCalls = []llm.ToolCall{call, call}
++	client.responses = []*llm.ChatResponse{response}
++	done, _, err := r.RunMainTask(context.Background(), []llm.Message{llm.NewTextMessage("user", "final")}, SLKWholeCellTask)
++	r.WaitBackground()
++	if err != nil || !done || p.calls != 1 || client.calls != 1 {
++		t.Fatalf("done=%v err=%v calls=%d llm=%d", done, err, p.calls, client.calls)
++	}
++}
++
++func TestSLKDecisionInnerErrorIsNotCompletion(t *testing.T) {
++	deps := newTestDeps(&fakeClient{})
++	deps.SLKWholeCell = true
++	p := &slkDecisionProvider{result: `{"isError":true,"status":"CHECKER_D1_RECORDED"}`}
++	deps.Tools.Register(p)
++	cp := NewRunner(deps).executeToolCall(context.Background(), SLKWholeCellTask, llm.ToolCall{Function: llm.FunctionCall{Name: "slk_checker_decide", Arguments: `{"verdict":"PASS"}`}}, nil, "")
++	if cp.Completed {
++		t.Fatal("inner MCP error became D1")
++	}
++}
+diff --git a/internal/mcp/client.go b/internal/mcp/client.go
+index 3994896..3a0027d 100644
+--- a/internal/mcp/client.go
++++ b/internal/mcp/client.go
+@@ -180,6 +180,9 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
+ 	}
+ 
+ 	if result.IsError {
++		if os.Getenv("SLK_CHECKER_WHOLE_CELL") == "1" && name == "slk_checker_decide" {
++			return "", fmt.Errorf("MCP decision failed: %s", contentToText(result.Content))
++		}
+ 		return fmt.Sprintf("MCP tool %q returned an error: %s", name, contentToText(result.Content)), nil
+ 	}
+ 
+diff --git a/internal/mcp/slk_test.go b/internal/mcp/slk_test.go
+new file mode 100644
+index 0000000..292dad3
+--- /dev/null
++++ b/internal/mcp/slk_test.go
+@@ -0,0 +1,33 @@
++package mcp
++
++import (
++	"context"
++	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
++	"testing"
++)
++
++func TestSLKDecisionMCPInnerErrorIsFailure(t *testing.T) {
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "1")
++	ctx := context.Background()
++	server := sdk.NewServer(&sdk.Implementation{Name: "offline", Version: "1"}, nil)
++	server.AddTool(&sdk.Tool{Name: "slk_checker_decide", InputSchema: map[string]any{"type": "object"}},
++		func(context.Context, *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
++			return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: "CHECKER_IDENTITY_INVALID"}}}, nil
++		})
++	st, ct := sdk.NewInMemoryTransports()
++	sc, err := server.Connect(ctx, st, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer sc.Close()
++	client := sdk.NewClient(&sdk.Implementation{Name: "offline-client", Version: "1"}, nil)
++	session, err := client.Connect(ctx, ct, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	c := &Client{session: session}
++	defer c.Close()
++	if _, err = c.CallTool(ctx, "slk_checker_decide", nil); err == nil {
++		t.Fatal("MCP isError returned outer success")
++	}
++}
 diff --git a/internal/session/persist.go b/internal/session/persist.go
 index 3a76da5..94b08d0 100644
 --- a/internal/session/persist.go

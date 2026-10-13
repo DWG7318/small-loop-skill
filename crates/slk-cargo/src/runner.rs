@@ -87,7 +87,7 @@ pub fn run_cargo_with_state(
     sink: &mut dyn OutputSink,
     state: Option<&StateContext>,
 ) -> Result<CargoRunResult, CargoGuardError> {
-    let _lease = acquire_run_lease(paths)?;
+    let mut lease = acquire_run_lease(paths)?;
     let mut target = paths.primary_target();
     let mut observed_contention = None;
     let mut state_warnings = Vec::new();
@@ -100,7 +100,7 @@ pub fn run_cargo_with_state(
                 format!("{}: {error}", target.display()),
             )
         })?;
-        let outcome = run_attempt(invocation, &target, config, sink)?;
+        let outcome = run_attempt(invocation, &target, config, sink, &mut lease)?;
         if observed_contention.is_none() {
             observed_contention = outcome.contention;
         }
@@ -199,6 +199,7 @@ fn run_attempt(
     target: &Path,
     config: &RunnerConfig,
     sink: &mut dyn OutputSink,
+    lease: &mut crate::RunLease,
 ) -> Result<AttemptOutcome, CargoGuardError> {
     let cargo_target = cargo_process_target(target);
     let mut child = Command::new(invocation.program())
@@ -208,6 +209,15 @@ fn run_attempt(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| CargoGuardError::new("SLK_CARGO_SPAWN", error.to_string()))?;
+
+    // A parent's exit and drained pipes do not prove every descendant writer
+    // stopped. Preserve this exact invocation for Supervisor inspection even
+    // on success; a spawn failure alone created no native process to protect.
+    lease.retain_for_inspection();
+    if let Err(error) = lease.record_child(&child, target) {
+        // Record failure does not cancel the already-started engineering work.
+        sink.stderr(format!("SLK_CARGO_LEASE_EVIDENCE_WARNING: {error}\n").as_bytes());
+    }
 
     let stdout = child.stdout.take().expect("piped child stdout");
     let stderr = child.stderr.take().expect("piped child stderr");

@@ -160,7 +160,8 @@ class RoleHost:
         path = wc._write_or_reuse_stable_request(root / (event["event_id"] + "-pair-close.json"), value)
         binding = self.binding["temporal"]
         result = wc._run_json_command(binding["client_command"], ["close-run", "--identity", binding["workflow_identity_path"],
-            "--identity-sha256", binding["workflow_identity_sha256"], "--request", str(path), "--request-sha256", wc._sha256(path)])
+            "--identity-sha256", binding["workflow_identity_sha256"], "--request", str(path), "--request-sha256", wc._sha256(path)],
+            credential=None)
         if {key: value for key, value in result.items() if key != "_slk_command"} != {
             "schema_version": "slk.temporal-close-result/v1", "status": "PAIR_CLOSED", **value}:
             raise ValueError("exact native pair cleanup was not confirmed")
@@ -181,8 +182,9 @@ class RoleHost:
                     and row.get("transport_adapter") == endpoint["adapter"] for row in registered.get("endpoints", []))):
                 raise ValueError("resume Host differs from the registered original role/endpoint")
         config = wc._read_object(config_path, "resume original adapter config")
-        native_subagent = current["runtime_snapshot"].get("method_version") == "4.5.0"
-        if native_subagent and (config.get("method_version") != "4.5.0"
+        method_version = current["runtime_snapshot"].get("method_version")
+        native_subagent = method_version in {"4.5.0", "4.5.1"}
+        if native_subagent and (config.get("method_version") != method_version
             or config.get("run_id") != self.binding["run_id"]
             or config.get("schema_version") != "slk.temporal-standard-adapter/v2"):
             raise ValueError("native OW resume requires the same 450 Run's v2 proof config")
@@ -373,6 +375,36 @@ class RoleHost:
                         raise ValueError("native census cannot follow an alternate Run path")
                     if source.is_dir():
                         sources.setdefault(source / "started.json", None)
+                        correction_sources = [source]
+                        while correction_sources:
+                            original = correction_sources.pop()
+                            corrections = original / "review-corrections"
+                            if corrections.is_symlink() or getattr(corrections, "is_junction", lambda: False)():
+                                raise ValueError("native census cannot follow alternate OCRV recovery paths")
+                            if corrections.is_dir():
+                                from .native_ocrv import ocrv_resume_identity
+                                for corrected in corrections.iterdir():
+                                    if not corrected.is_dir():
+                                        raise ValueError("native census found an invalid OCRV recovery entry")
+                                    incoming = Envelope.from_dict(wc._read_object(corrected / "envelope.json", "OCRV recovery source"))
+                                    ocrv_resume_identity(corrected, self, incoming)
+                                    sources.setdefault(corrected / "started.json", None)
+                                    correction_sources.append(corrected)
+                                    pending_roots.extend(corrected / suffix for suffix in (
+                                        "role-host/output-attempts", "role-host/checker-handoff/attempts"))
+                        resumes = source / "native-resumes"
+                        if resumes.is_symlink():
+                            raise ValueError("native census cannot follow an alternate resume path")
+                        if resumes.is_dir():
+                            for resumed in resumes.iterdir():
+                                if resumed.is_symlink() or not resumed.is_dir():
+                                    raise ValueError("native census found an invalid resume entry")
+                                from .worker_resume import source_identity
+                                incoming = Envelope.from_dict(wc._read_object(resumed / "envelope.json", "native resume envelope"))
+                                source_identity(resumed, self, incoming)
+                                sources.setdefault(resumed / "started.json", None)
+                                pending_roots.extend(resumed / suffix for suffix in (
+                                    "role-host/output-attempts", "role-host/worker-handoff/attempts"))
                         pending_roots.extend(source / suffix for suffix in (
                             "role-host/output-attempts", "role-host/worker-handoff/attempts", "role-host/attempts",
                             "role-host/rework/attempts", "role-host/management-return/attempts",
@@ -391,6 +423,10 @@ class RoleHost:
                 if envelope.run_id != run_id or endpoint.get("role") == "overwatcher":
                     raise ValueError("native census changed Run or included shared OW")
                 if not path.is_file():
+                    if (source / "ocrv-resume.json").is_file():
+                        row["reason"] = "explicit OCRV recovery has no proved native start or stop"
+                        inspections.append(row)
+                        continue
                     prestart = False
                     if envelope.payload_type == "WORKER_REPORT" and endpoint.get("adapter") == "ocrv-checker":
                         receipt_path, failed_path = source / "checker-receipt.json", source / "failed.json"
@@ -422,6 +458,12 @@ class RoleHost:
                 native.validate_native_task_activity(activity, adapter=start["adapter"], run_id=run_id,
                     cell_id=start["cell_id"], message_id=start["message_id"], native_task_id=start["native_task"]["id"],
                     observed_at=observed)
+                if source.parent.name == "review-corrections":
+                    from .native_ocrv import require_stopped_ocrv
+                    receipt = source / "native-start.received.json"
+                    if validate_native_start(receipt) != start:
+                        raise ValueError("OCRV recovery changed its original start")
+                    require_stopped_ocrv(receipt, start)
                 if start["adapter"] == "dsh-worker" and activity.get("sample") is None:
                     raise ValueError("DSH stop requires its original live registry sample")
                 if coordinator_started_path is not None and path.resolve() == coordinator_started_path.resolve():
@@ -538,10 +580,10 @@ class RoleHost:
             raise wc.CompletionError("ROLE_HOST_AUTHORITY_INVALID", "sealed credential does not authenticate its registered role")
         return value
 
-    def _boundary(self, envelope: Envelope) -> Mapping[str, Any]:
+    def _boundary(self, envelope: Envelope, *, wait: bool = True) -> Mapping[str, Any]:
         # Native start and TOKEN commit are separate. The parent host must finish
         # the latter before a fast receiver performs its deterministic suffix.
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + (10 if wait else 0)
         while True:
             projection = self.projection()
             snapshot = projection.get("runtime_snapshot", {})
@@ -711,7 +753,9 @@ class RoleHost:
             result = wc._read_object(source / "checker-result.json", "Checker dispatch")
             outgoing = self._dispatch_envelope(envelope, result)
             return self._send_owned(root, outgoing, datetime.now(timezone.utc).isoformat(),
-                                    self._boundary(envelope))
+                                    self.projection())
+        if role == "checker" and (root / "checker-decision.json").is_file():
+            return self.complete_checker_handoff(source)
         legacy_roots = [source / name for name in ("worker-continuation", "invalid-result-supplement",
                         "pre-d0-blocked-recovery", "incomplete-handoff")]
         legacy = next((path for path in legacy_roots if path.exists()), None) if role == "worker" else None
@@ -752,7 +796,8 @@ class RoleHost:
                     "delivery": delivery}
         return self._deliver_output(source, envelope, root)
 
-    def record_worker_action(self, source: Path, event_type: str, details: Mapping[str, Any]) -> dict[str, Any]:
+    def record_worker_action(self, source: Path, event_type: str, details: Mapping[str, Any],
+                             *, wait_for_commit: bool = True) -> dict[str, Any]:
         """Only the live original Worker submits its own existing standard work events."""
         if event_type not in {"WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"} or not isinstance(details, Mapping):
             raise ValueError("an explicit Worker event and details object are required")
@@ -760,6 +805,12 @@ class RoleHost:
         envelope = parse_delivery(endpoint, wc._read_object(source / "envelope.json", "Worker source")).envelope
         if wc._read_object(source / "endpoint.json", "Worker endpoint") != endpoint:
             raise wc.CompletionError("ROLE_HOST_BINDING_INVALID", "Worker endpoint changed")
+        from .worker_resume import source_identity, require_live_action
+        identity = source_identity(source, self, envelope)
+        if identity != envelope.message_id:
+            if os.environ.get("SLK_WORKER_NATIVE_RESUME_SHA256") != wc._sha256(source / "native-resume.json"):
+                raise wc.CompletionError("WORKER_ACTION_CALLER_UNPROVEN", "native continuation binding is missing")
+            require_live_action(source)
         context = {"adapter": endpoint["adapter"], "run_id": envelope.run_id,
                    "cell_id": envelope.cell_id, "message_id": envelope.message_id}
         try:
@@ -767,7 +818,6 @@ class RoleHost:
             if (not path.is_absolute() or path.resolve() != (source / "native-activity.json").resolve()
                 or json.loads(os.environ.get("SLK_NATIVE_ACTIVITY_CONTEXT", "null")) != context):
                 raise ValueError("Worker native invocation differs")
-            projection = self._boundary(envelope)  # reuse parent start/atomic-commit synchronization
             native = validate_native_start(source / "started.json", adapter=endpoint["adapter"],
                 run_id=envelope.run_id, cell_id=envelope.cell_id, message_id=envelope.message_id,
                 request_sha256=envelope.payload_sha256)
@@ -777,19 +827,20 @@ class RoleHost:
                 raise ValueError("Worker Session differs")
         except (ValueError, OSError, KeyError, TypeError) as exc:
             raise wc.CompletionError("WORKER_ACTION_CALLER_UNPROVEN", "not the original DSH invocation") from exc
+        projection = self._boundary(envelope) if wait_for_commit else self._boundary(envelope, wait=False)
         facts = {"decision_source": "WORKER_EXPLICIT", "source_message_id": envelope.message_id,
                  "native_start_sha256": wc._sha256(source / "started.json"),
                  "native_task_id": native["native_task"]["id"]}
         if event_type == "CANDIDATE_SUBMITTED":
             if not isinstance(details.get("candidate"), Mapping):
                 raise ValueError("Worker must explicitly identify its candidate")
-            facts["handoff_message_id"] = wc._stable_id(envelope.message_id, "output-delivery")
+            facts["handoff_message_id"] = wc._stable_id(identity, "output-delivery")
         if any(key in details and details[key] != value for key, value in facts.items()):
             raise wc.CompletionError("WORKER_ACTION_IDENTITY_MISMATCH", "Worker action changed native source identity")
         root = source / "role-host"
         root.mkdir(parents=True, exist_ok=True)
         path = root / f"worker-{event_type.lower()}.json"
-        request = {"event_id": wc._stable_id(envelope.message_id, event_type.lower()),
+        request = {"event_id": wc._stable_id(identity, event_type.lower()),
             "run_id": envelope.run_id, "go_id": envelope.go_id, "cell_id": envelope.cell_id,
             "attempt": wc._source_attempt(projection, envelope), "plan_revision": self.binding["plan_revision"],
             "role_instance_id": endpoint["role_instance_id"], "event_type": event_type,
@@ -870,12 +921,71 @@ class RoleHost:
         return {"status":"CHECKER_D1_RECORDED", "verdict":verdict, "decision_path":str(path)}
 
     def submit_checker_decision(self, source: Path, verdict: str, message: str | None = None) -> dict[str, Any]:
-        """The original Checker's deliberate call records D1 and runs its existing route."""
+        """Persist the deliberate decision; native output must seal before delivery."""
         recorded = self.record_checker_decision(source, verdict, message)
-        envelope = Envelope.from_dict(wc._read_object(source / "envelope.json", "Checker source"))
-        root = source / "role-host" / "checker-handoff"
+        return {**recorded, "handoff": {"status": "CHECKER_HANDOFF_PENDING", "reason": "NATIVE_RESULT_NOT_SEALED"}}
+
+    def complete_checker_handoff(self, source: Path) -> dict[str, Any]:
+        """Consume an authenticated saved D1 without another model call or D1 write."""
+        from .checker_escalation import _validate_explicit_decision
+        endpoint = self.endpoint("checker")
+        envelope = parse_delivery(endpoint, wc._read_object(source / "envelope.json", "Checker source")).envelope
+        if wc._read_object(source / "endpoint.json", "Checker endpoint") != endpoint:
+            raise wc.CompletionError("ROLE_HOST_BINDING_INVALID", "Checker endpoint changed")
+        path = source / "role-host" / "checker-decision.json"
+        decision = wc._read_object(path, "Checker decision")
+        verdict, message = decision.get("verdict"), decision.get("message")
+        event_type = {"PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE"}.get(verdict)
+        credential = wc.unprotect_dpapi_hex(self.credential_path("checker"))
+        try:
+            self._authenticate("checker", credential)
+        finally:
+            credential = ""
         projection = self.projection()
-        decision = wc._read_object(Path(recorded["decision_path"]), "Checker decision")
+        events = [event for event in projection.get("events", [])
+                  if event.get("event_id") == wc._stable_id(envelope.message_id, str(event_type).lower())]
+        if (projection.get("summary", {}).get("run_id") != envelope.run_id
+            or event_type is None or len(events) != 1 or events[0].get("event_type") != event_type
+            or any(events[0].get(key) != value for key, value in {
+                "go_id": envelope.go_id, "cell_id": envelope.cell_id,
+                "plan_revision": self.binding["plan_revision"]}.items())):
+            raise wc.CompletionError("CHECKER_STATE_WRITE_FAILED", "exact persisted D1 is not recorded")
+        _validate_explicit_decision(source, Endpoint.from_dict(endpoint), envelope,
+                                   events[0], wc._event_details(events[0]))
+        recorded = {"status": "CHECKER_D1_RECORDED", "verdict": verdict, "decision_path": str(path)}
+        terminals = [source / name for name in ("completed.json", "failed.json") if (source / name).is_file()]
+        if not terminals or not (source / "ocrv-result.json").is_file():
+            return {**recorded, "handoff": {"status": "CHECKER_HANDOFF_PENDING", "reason": "NATIVE_RESULT_NOT_SEALED"}}
+        if len(terminals) != 1:
+            raise wc.CompletionError("ROLE_HOST_CONFLICT", "Checker terminal evidence is not unique")
+        terminal = DeliveryResult.from_dict(wc._read_object(terminals[0], "Checker native terminal"))
+        if ((terminal.run_id, terminal.message_id, terminal.adapter) != (envelope.run_id, envelope.message_id, endpoint["adapter"])
+            or terminals[0].stem != terminal.status):
+            raise wc.CompletionError("ROLE_HOST_CONFLICT", "Checker native terminal changed identity")
+        from .native_ocrv import require_stopped_ocrv
+        try:
+            # A wrapper terminal cannot prove that its original native writer
+            # stopped. Reuse the decision's authenticated PID/creation identity.
+            receipt = Path(decision["native_start_path"])
+            native = validate_native_start(receipt)
+            if wc._sha256(receipt) != decision["native_start_sha256"]:
+                raise ValueError("Checker native identity changed during stop verification")
+            require_stopped_ocrv(receipt, native)
+        except (ValueError, OSError, KeyError, TypeError):
+            return {**recorded, "handoff": {"status": "CHECKER_HANDOFF_PENDING", "reason": "NATIVE_EXECUTOR_STOP_UNPROVEN"}}
+        try:
+            handoff = self._checker_handoff(source, envelope, projection, decision, recorded)
+        except (ValueError, OSError) as exc:
+            handoff = {"status": "HOST_HANDOFF_FAILED", "run_id": envelope.run_id,
+                       "source_message_id": envelope.message_id,
+                       "error_code": getattr(exc, "error_code", type(exc).__name__)}
+            wc._write_or_reuse_stable_request(source / "role-host" / f"failure-{handoff['error_code']}.json", handoff)
+        return {**recorded, "handoff": handoff}
+
+    def _checker_handoff(self, source: Path, envelope: Envelope, projection: Mapping[str, Any],
+                         decision: Mapping[str, Any], recorded: Mapping[str, Any]) -> dict[str, Any]:
+        verdict, message = decision["verdict"], decision["message"]
+        root = source / "role-host" / "checker-handoff"
         if (root / "envelope.json").is_file():
             outgoing = parse_delivery(wc._read_object(root / "endpoint.json", "Checker target"),
                 wc._read_object(root / "envelope.json", "Checker handoff")).envelope
@@ -942,15 +1052,19 @@ class RoleHost:
         if (outgoing.sender_role != "checker" or outgoing.sender_role_instance_id != envelope.receiver_role_instance_id
             or outgoing.run_id != envelope.run_id or outgoing.go_id != envelope.go_id):
             raise wc.CompletionError("ROLE_HOST_CONFLICT", "Checker action route changed identity")
-        handoff = self._send_owned(root, outgoing, decision["decided_at"], projection)
-        return {**recorded, "handoff": handoff}
+        return self._send_owned(root, outgoing, decision["decided_at"], projection)
 
     def _deliver_output(self, source: Path, envelope: Envelope, root: Path) -> dict[str, Any]:
         """Existing transport carries complete files independently of TOKEN/state/ACK."""
         from dataclasses import asdict
+        from .worker_resume import source_identity
+        identity = source_identity(source, self, envelope) if envelope.receiver_role == "worker" else envelope.message_id
+        if envelope.receiver_role == "checker" and (source.parent.name == "review-corrections" or (source / "ocrv-resume.json").exists()):
+            from .native_ocrv import ocrv_resume_identity
+            identity = ocrv_resume_identity(source, self, envelope)
         names = ("worker-result.json", "ocrv-result.json", "ocrv-review.json", "checker-receipt.json",
                  "supervisor-result.json", "native.stdout.txt", "native.stderr.txt",
-                 "completed.json", "failed.json")
+                 "completed.json", "failed.json", "native-resume.json", "ocrv-resume.json")
         paths = [source / name for name in names if (source / name).is_file()]
         for directory in ("review-segments", "review-corrections"):
             paths.extend(path for path in (source / directory).rglob("*")
@@ -1000,7 +1114,7 @@ class RoleHost:
                     if (len(matching) != 1 or submitted.get("attempt") != wc._source_attempt(projection, envelope)
                         or details.get("decision_source") != "WORKER_EXPLICIT"
                         or details.get("source_message_id") != envelope.message_id
-                        or details.get("handoff_message_id") != wc._stable_id(envelope.message_id, "output-delivery")
+                        or details.get("handoff_message_id") != wc._stable_id(identity, "output-delivery")
                         or details.get("native_start_sha256") != wc._sha256(source / "started.json")
                         or not isinstance(details.get("candidate"), Mapping)):
                         raise wc.CompletionError("WORKER_ACTION_IDENTITY_MISMATCH", "candidate is not the original Worker's recorded action")
@@ -1022,7 +1136,7 @@ class RoleHost:
             payload["candidate_status"] = "PROVIDED" if "candidate" in payload else "NOT_PROVIDED"
             kind = "CANDIDATE_READY" if "candidate" in payload else "WORKER_REPORT"
         outgoing = parse_delivery(target, {
-            **asdict(envelope), "message_id": wc._stable_id(envelope.message_id, "output-delivery"),
+            **asdict(envelope), "message_id": wc._stable_id(identity, "output-delivery"),
             "token_sequence": envelope.token_sequence + 1 if action else envelope.token_sequence,
             "sender_role": sender, "sender_role_instance_id": envelope.receiver_role_instance_id,
             "receiver_role": target_role, "receiver_role_instance_id": target["role_instance_id"],
@@ -1212,7 +1326,7 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
-        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0"}
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1"}
             or any(event.get("event_type") == "D2_STARTED"
                    and wc._event_details(event).get("source_message_id") == envelope.message_id
                    and any(key in wc._event_details(event) for key in (
@@ -1267,6 +1381,22 @@ class RoleHost:
             return {"status": "SUPERVISOR_MANAGEMENT_RECORDED", "action": decision["action"]}
         return {"status": "SUPERVISOR_D2_INCOMPLETE" if not events else "SUPERVISOR_D2_RECORDED", "verdict": decision["verdict"]}
 
+    def _consume_dispatch_suffix(self, native: Path, envelope: Envelope, result: dict[str, Any]) -> dict[str, Any]:
+        if envelope.receiver_role != "checker" or envelope.payload_type != "CELL_DISPATCH":
+            return result
+        try:
+            suffix = self.complete(native)
+        except (ValueError, OSError) as exc:
+            # The incoming commit remains successful even if its independently
+            # recoverable outgoing suffix failed. Never overwrite native output.
+            suffix = {"status": "HOST_HANDOFF_FAILED", "run_id": envelope.run_id,
+                      "source_message_id": envelope.message_id,
+                      "error_code": getattr(exc, "error_code", type(exc).__name__)}
+            root = native / "role-host"
+            root.mkdir(parents=True, exist_ok=True)
+            wc._write_or_reuse_stable_request(root / f"failure-{suffix['error_code']}.json", suffix)
+        return {**result, "dispatch_handoff": suffix}
+
     def _send_owned(
         self,
         root: Path,
@@ -1319,8 +1449,9 @@ class RoleHost:
                     if "temporal" in self.binding else root / "attempts")
         native = attempts / envelope.run_id / envelope.message_id
         if self._committed_delivery(latest, envelope, native):
-            return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": envelope.message_id,
-                    "native_attempt_path": str(native)}
+            return self._consume_dispatch_suffix(native, envelope,
+                {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": envelope.message_id,
+                 "native_attempt_path": str(native)})
         current = latest.get("runtime_snapshot", {})
         try:
             prepared_boundary = wc.resolve_authoritative_token_boundary(
@@ -1453,7 +1584,8 @@ class RoleHost:
                     ).isoformat(),
                 }
                 wc._write_or_reuse_stable_request(root / "handoff-timeline.json", timeline)
-            return {"status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id, "commit_path": str(path)}
+            return self._consume_dispatch_suffix(native, envelope,
+                {"status": "OWNED_HANDOFF_COMMITTED", "message_id": envelope.message_id, "commit_path": str(path)})
         finally:
             credential = ""
 

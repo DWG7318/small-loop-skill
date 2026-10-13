@@ -8,8 +8,8 @@ The original document/log reading tools remain uncapped.
 
 Developer builds with `./build.ps1 -Go <go executable>` (Go 1.25.5+ and Git).
 The same source module builds the short-lived `slk-native-probe.exe` helper and
-the clearly modified OCRV `1.12.13-slkprobe.1.0.0` executable. The official OCRV
-source archive, exact two-file lifecycle/writer patch and all original license
+the clearly modified OCRV `1.12.13-slkprobe.1.0.1` executable. The official OCRV
+source archive, maintained lifecycle/writer and SLK whole-CELL patch and original license
 notices are in `upstream`; this is not an unchanged upstream release.
 
 DSH 0.2.0-rc.2 native home registration:
@@ -97,3 +97,10 @@ temporary-file recovery. `node --test dsh/*.test.mjs` checks native corpus/archi
 and cadence plus native parser registration/rollback when
 `SLK_DSH_NATIVE_PACKAGE_ROOT` names a prepared official DSH package root.
 Product installation does not run these development tests or compile tools.
+
+The OCRV patch's offline agent/runner/MCP tests cover all-file reuse reaching the
+same Checker's final judgment, group `task_done` not being D1, inner MCP errors,
+and stopping the final loop after the explicit decision. SLK's wrapper waits for
+natural exit and sealed evidence before Host dispatch. Non-SLK review is unchanged.
+`build.ps1 -WorkRoot <task-path> -OutputRoot <task-output>` supports isolated builds
+from the pinned ZIP; it applies and tests the maintained patch before compiling.

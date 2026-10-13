@@ -150,6 +150,10 @@ class RunSlkWorkflow:
         self._responsibility_operation_id: str | None = None
         self._member_residency_since = None
         self._member_residency_notice_sent = False
+        self._member_residency_notice_attempted = False
+        self._notification_truth = False
+        self._pending_supervisor_notifications: dict[str, dict[str, Any]] = {}
+        self._latest_runtime_alarm_event_id: str | None = None
         self._overwatcher_audit_cycle = 0
         self._next_overwatcher_audit_at = None
         self._runtime_guard_blocker: dict[str, Any] | None = None
@@ -390,6 +394,7 @@ class RunSlkWorkflow:
         now = workflow.now()
         deadlines = [self._next_overwatcher_audit_at]
         if (self._member_residency_since is not None and not self._member_residency_notice_sent
+            and not self._member_residency_notice_attempted
             and not self._pause_confirmed()):
             deadlines.append(self._member_residency_since + MEMBER_RESIDENCY_LIMIT)
         due = min(item for item in deadlines if item is not None)
@@ -432,12 +437,21 @@ class RunSlkWorkflow:
         await self._perform_runtime_checks()
 
     async def _perform_runtime_checks(self) -> None:
+        self._notification_truth = workflow.patched("slk-4.5.1-notification-truth")
         now = workflow.now()
         if self._next_overwatcher_audit_at is not None and now >= self._next_overwatcher_audit_at:
+            pending = list(self._pending_supervisor_notifications.values())
             await self._inspect_overwatcher()
             self._next_overwatcher_audit_at = (
-                self._next_overwatcher_audit_at + OVERWATCHER_AUDIT_INTERVAL
+                (now if self._notification_truth else self._next_overwatcher_audit_at) + OVERWATCHER_AUDIT_INTERVAL
             )
+            for notice in pending:
+                if notice["event_id"] not in self._pending_supervisor_notifications:
+                    continue  # An exact Supervisor resolution may arrive during the audit activity.
+                delivered = await self._notify_supervisor(notice)
+                if (delivered and notice["kind"] == "MEMBER_RESIDENCY_EXCEEDED"
+                    and notice["source_operation_id"] == self._responsibility_operation_id):
+                    self._member_residency_notice_sent = True
         member_deadline = (
             self._member_residency_since + MEMBER_RESIDENCY_LIMIT
             if self._member_residency_since is not None
@@ -448,12 +462,14 @@ class RunSlkWorkflow:
             and not self._pause_confirmed()
             and now >= member_deadline
             and not self._member_residency_notice_sent
+            and not self._member_residency_notice_attempted
         ):
             operation_id = self._responsibility_operation_id
             role_instance_id = self._responsible_role_instance_id
             if operation_id is None or role_instance_id is None:
                 raise RuntimeError("member residency identity is incomplete")
-            await self._notify_supervisor(
+            self._member_residency_notice_attempted = self._notification_truth
+            delivered = await self._notify_supervisor(
                 {
                     "event_id": f"{self._startup.run_id}-member-residency-{operation_id}",
                     "kind": "MEMBER_RESIDENCY_EXCEEDED",
@@ -463,7 +479,7 @@ class RunSlkWorkflow:
                     "threshold_seconds": int(MEMBER_RESIDENCY_LIMIT.total_seconds()),
                 }
             )
-            self._member_residency_notice_sent = True
+            self._member_residency_notice_sent = bool(delivered) if self._notification_truth else True
 
     async def _inspect_overwatcher(self) -> None:
         if self._startup is None:
@@ -493,7 +509,8 @@ class RunSlkWorkflow:
                     "status", "run_id", "overwatcher_role_instance_id", "audit_cycle",
                     "evidence_sha256", "receipt_sha256",
                 },
-                status={"CLEAR", "ANOMALY", "EXITED"} if self._startup.method_version == "4.5.0" else {"CLEAR", "ANOMALY"},
+                status=({"CLEAR", "ANOMALY", "EXITED", "LATE"} if workflow.patched("slk-4.5.1-late-is-not-dead")
+                        else {"CLEAR", "ANOMALY", "EXITED"}) if self._startup.method_version in {"4.5.0", "4.5.1"} else {"CLEAR", "ANOMALY"},
             )
             if (
                 receipt.get("run_id") != self._startup.run_id
@@ -537,12 +554,17 @@ class RunSlkWorkflow:
         }
         if self._runtime_guard_blocker is None:
             self._runtime_guard_blocker = dict(blocker)
+        self._latest_runtime_alarm_event_id = event_id
         # A later alarm must remain reportable without replacing the unresolved
         # repair identity or crashing monitoring of this Run.
         return blocker
 
     async def _notify_supervisor(self, value: dict[str, Any]) -> bool:
         strict = workflow.patched("slk-441-native-supervisor-notice")
+        self._notification_truth = workflow.patched("slk-4.5.1-notification-truth")
+        retrying = value["event_id"] in self._pending_supervisor_notifications
+        if self._notification_truth:
+            self._pending_supervisor_notifications[value["event_id"]] = dict(value)
         try:
             receipt = await workflow.execute_activity(
                 "slk.notify_supervisor", value, result_type=dict,
@@ -562,10 +584,15 @@ class RunSlkWorkflow:
             if not strict or self._startup is None:
                 raise
             self._notification_failure = {"event_id": value["event_id"], "reason": "SUPERVISOR_NOTIFICATION_UNPROVED"}
-            self._set_runtime_guard(event_id=value["event_id"], kind="SUPERVISOR_NOTIFICATION_UNPROVED",
-                                    role_instance_id=self._startup.supervisor.role_instance_id)
+            latest_alarm = self._latest_runtime_alarm_event_id
+            if not self._notification_truth or value["event_id"] in self._pending_supervisor_notifications:
+                self._set_runtime_guard(event_id=value["event_id"], kind="SUPERVISOR_NOTIFICATION_UNPROVED",
+                                        role_instance_id=self._startup.supervisor.role_instance_id)
+            if retrying:
+                self._latest_runtime_alarm_event_id = latest_alarm
             return False  # retain bounded monitoring; never claim takeover or permit another CELL
         self._notification_failure = None
+        self._pending_supervisor_notifications.pop(value["event_id"], None)
         return True
 
     @staticmethod
@@ -673,7 +700,7 @@ class RunSlkWorkflow:
             raise ApplicationError("SLK Run has not initialized", non_retryable=True)
         if not self._admitted:
             raise ApplicationError("full new-Run admission must pass before delivery", non_retryable=True)
-        if self._runtime_guard_blocker is not None and self._startup.method_version != "4.5.0":
+        if self._runtime_guard_blocker is not None and self._startup.method_version not in {"4.5.0", "4.5.1"}:
             raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
         request = self._update_value(DeliveryRequest.from_dict, value)
         if self._runtime_guard_blocker is not None:
@@ -712,6 +739,7 @@ class RunSlkWorkflow:
         self._responsibility_operation_id = pending.operation_id
         self._member_residency_since = workflow.now()
         self._member_residency_notice_sent = False
+        self._member_residency_notice_attempted = False
         return result
 
     @workflow.update
@@ -741,7 +769,7 @@ class RunSlkWorkflow:
             overwatcher is None
             or notice.run_id != self._startup.run_id
             or notice.overwatcher_role_instance_id != overwatcher.role_instance_id
-            or (self._startup.method_version == "4.5.0"
+            or (self._startup.method_version in {"4.5.0", "4.5.1"}
                 and notice.requested_by_role_instance_id != self._startup.supervisor.role_instance_id)
         ):
             raise ApplicationError("Overwatcher exit notice changed the frozen Run identity", non_retryable=True)
@@ -766,6 +794,8 @@ class RunSlkWorkflow:
         ):
             raise ApplicationError("runtime guard resolution changed the frozen authority or blocker", non_retryable=True)
         self._runtime_guard_blocker = None
+        # Settle only this exact obligation, never another alarm for the same OW.
+        self._pending_supervisor_notifications.pop(resolution.blocker_event_id, None)
         return "RUNTIME_GUARD_REPAIRED"
 
     @workflow.update
@@ -803,6 +833,10 @@ class RunSlkWorkflow:
         self._admission_requested = packet["admission_requested"]
         self._admission_request_sha256 = packet["admission_request_sha256"]
         self._run_pause = state.get("run_pause")
+        self._notification_truth = "member_residency_notice_attempted" in state
+        self._member_residency_notice_attempted = state.get("member_residency_notice_attempted", False)
+        self._pending_supervisor_notifications = dict(state.get("pending_supervisor_notifications", {}))
+        self._latest_runtime_alarm_event_id = state.get("latest_runtime_alarm_event_id")
         pending = self._continuity.pending_delivery()
         self._restored_pending_operation = (pending.operation_id if pending is not None
             and pending.operation_id in self._delivery_started
@@ -818,6 +852,11 @@ class RunSlkWorkflow:
             snapshot["phase"] = "ADMISSION_FAILED" if self._admission_failure else "AWAITING_ADMISSION"
         return {
             **snapshot,
+            **({"member_residency_notice_attempted": self._member_residency_notice_attempted,
+                "pending_supervisor_notifications": dict(self._pending_supervisor_notifications)}
+               if self._notification_truth else {}),
+            **({"latest_runtime_alarm_event_id": self._latest_runtime_alarm_event_id}
+               if self._latest_runtime_alarm_event_id is not None else {}),
             **({"run_pause": self._run_pause} if self._run_pause is not None else {}),
             "admitted": self._admitted,
             "admission_attempt": self._admission_attempt,

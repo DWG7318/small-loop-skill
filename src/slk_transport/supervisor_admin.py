@@ -41,6 +41,7 @@ OPERATIONS = {
     "bind-overwatcher": {"overwatcher_bound"},
     "close-overwatcher": {"overwatcher_closed"},
     "close-run": {"recorded"},
+    "abandon-run": {"recorded"},
     "close-role": {"closed", "already_closed"},
 }
 PROVISION_OPERATIONS = {"register-role", "bind-overwatcher"}
@@ -167,6 +168,8 @@ def execute_sealed_supervisor_admin(
         raise ValueError("Supervisor operation changed Run identity")
     if operation == "close-run" and operation_value.get("event_type") != "RUN_CLOSED":
         raise ValueError("close-run requires the exact RUN_CLOSED event")
+    if operation == "abandon-run" and operation_value.get("event_type") != "RUN_ABANDONED":
+        raise ValueError("abandon-run requires the exact RUN_ABANDONED event")
     if operation == "close-role" and operation_value.get("role") not in {"checker", "worker"}:
         raise ValueError("close-role may retire only the exact Checker or Worker")
     if provisioning:
@@ -208,19 +211,20 @@ def execute_sealed_supervisor_admin(
             or authenticated.get("role_instance_id") != role_instance_id):
             raise ValueError("saved credential does not authenticate the exact current Supervisor revision")
         if authenticated.get("runtime_revision") != revision:
-            if operation not in {"pause-run", "resume-run", "close-run"}:
+            if operation not in {"pause-run", "resume-run", "close-run", "abandon-run"}:
                 raise ValueError("saved credential does not authenticate the exact current Supervisor revision")
             from .role_host import RoleHost
             projection = wc._default_load_current_projection(run_id, list(state_command))
-            saved_close = next((event for event in projection.get("events", [])
+            saved_terminal = next((event for event in projection.get("events", [])
                                 if event.get("event_id") == operation_value.get("event_id")), None)
-            same_close = (operation == "close-run" and saved_close is not None
-                and saved_close.get("event_type") == "RUN_CLOSED"
-                and saved_close.get("author_role_instance_id") == role_instance_id
-                and saved_close.get("occurred_at") == operation_value.get("occurred_at")
-                and wc._event_details(saved_close) == operation_value.get("details")
-                and all(saved_close.get(key) == operation_value.get(key) for key in ("go_id", "cell_id", "attempt", "corrects_event_id")))
-            if not same_close and not RoleHost.lifecycle_retry_matches(projection, operation, operation_value,
+            terminal_kind = {"close-run": "RUN_CLOSED", "abandon-run": "RUN_ABANDONED"}.get(operation)
+            same_terminal = (terminal_kind is not None and saved_terminal is not None
+                and saved_terminal.get("event_type") == terminal_kind
+                and saved_terminal.get("author_role_instance_id") == role_instance_id
+                and saved_terminal.get("occurred_at") == operation_value.get("occurred_at")
+                and wc._event_details(saved_terminal) == operation_value.get("details")
+                and all(saved_terminal.get(key) == operation_value.get(key) for key in ("go_id", "cell_id", "attempt", "corrects_event_id")))
+            if not same_terminal and not RoleHost.lifecycle_retry_matches(projection, operation, operation_value,
                     request["operation_request_sha256"], revision, role_instance_id):
                 raise ValueError("stale lifecycle revision does not belong to this exact operation")
         operation_secret = secret
@@ -279,7 +283,7 @@ def execute_sealed_supervisor_admin(
                 or Path(close_host.credential_path("supervisor")).resolve() != sealed.resolve()
                 or "temporal" not in close_host.binding):
                 raise ValueError("close binding differs from the sealed Supervisor and original pair")
-        state_operation = "write" if operation == "close-run" else operation
+        state_operation = "write" if operation in {"close-run", "abandon-run"} else operation
         state_arguments = [state_operation, "--request", str(operation_request)]
         if operation in {"start-d2", "pause-run", "resume-run"}:
             pass  # Original RoleHost wrote the single existing D2_STARTED event.

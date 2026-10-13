@@ -3,35 +3,27 @@
     "parts": [
       {
         "path": "payload.zip.part001",
-        "sha256": "4365511edc1e68d807765d19aa8700ab5b94b8a79ba10dafcaa9901308be20b9",
+        "sha256": "33e29741e7a74e743cdb968fb12e11d29ff6ee575d0c0bece785e8657c1cf266",
         "size": 67108864
       },
       {
         "path": "payload.zip.part002",
-        "sha256": "db12ebced826e7d2ec931e6dd3b6a1aa0af262e416adca6c85cefa568b86395b",
-        "size": 6289674
+        "sha256": "a7f201183e32d4978653a0b186d239d32da5b9b5c926b957c7c856cbc6cb3fd2",
+        "size": 6267931
       }
     ],
-    "sha256": "80ccd2864c3f5e98bf5719836c9ddd2761b6a774d7bd7a318057d89e4a0bef76",
-    "size": 73398538
+    "sha256": "4fc8b639b3ff6b919c9fbdabca18b31ec5f5a112e4d3ccfe77cb0b34acd79c5f",
+    "size": 73376795
   },
   "build": {
-    "command": [
-      "integrations/native-probe/build.ps1 -Go 'C:/Program Files/Go/bin/go.exe'"
-    ],
-    "modified_binary": "1.12.13-slkprobe.1.0.0 (not an official binary)",
-    "runtime_versions": {
-      "mingit": "2.56.0.2"
-    },
-    "scope": "verified developer outputs, no Run data",
-    "source_hash_mode": "sha256-raw",
-    "source_recipe": "slk-native-probe/upstream/ocrv-native-probe.patch and build.ps1",
-    "toolchain": "go1.26.3 windows/amd64, upstream minimum go1.25.5",
-    "upstream": {
-      "commit": "fabbdb296b0d97e2140ada8d54ca7d6d6d1d7ad4",
-      "repository": "https://github.com/alibaba/open-code-review",
-      "version": "1.12.13"
-    }
+    "native_binary_sha256": "644cd50c1f3295e380a8da6a3d2818a8a3f585980a139ca9dfffff3a88e0f0e8",
+    "native_command": "go build -trimpath -buildvcs=false -ldflags \"-X main.Version=1.12.13-slkprobe.1.0.1\" ./cmd/opencodereview",
+    "native_source": "pinned fabbdb296b0d97e2140ada8d54ca7d6d6d1d7ad4 ZIP plus maintained native-probe patch",
+    "native_toolchain": "go1.26.3 windows/amd64",
+    "reproduction": "two independent extracted/patched builds produced identical executable bytes",
+    "reused_runtime": "MinGit and OCRV LICENSE from SHA-verified 4.5.0 archive; not rebuilt",
+    "runtime_inventory_sha256": "5368701908426d4e2e258da5c91abd2ebd19aae141d34099bc89ade61403fbd2",
+    "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
@@ -1905,71 +1897,31 @@
       "size": 11356
     },
     {
-      "path": "runtime/ocrv/OCRV-SLK-CONFIGURATION.md",
-      "sha256": "7d836eb99e1b54e9140b8b8157e37cc07430cad8f56167efec3dca4cc7c1ea1e",
-      "size": 11679
-    },
-    {
       "path": "runtime/ocrv/bin/opencodereview.exe",
-      "sha256": "7274c6132e78cbaede23347f2ccc2932710c125cec299814e069cc551e9070ca",
-      "size": 81220096
+      "sha256": "644cd50c1f3295e380a8da6a3d2818a8a3f585980a139ca9dfffff3a88e0f0e8",
+      "size": 81230336
     },
     {
       "path": "runtime/ocrv/package.json",
-      "sha256": "fca8c815e7a933a39551c3a67e5fcd1b49b7e3f9a2e21ce1f8ba5c1f1d681d71",
+      "sha256": "c26891923a81d56ed3ff7cc96184ec4c08fd3f58e87a110bfe831bf8796844eb",
       "size": 571
-    },
-    {
-      "path": "runtime/ocrv/slk-checker-capabilities.json",
-      "sha256": "86b181cf00d3f49f9ddb2734a35b4a27bf1a8e50240c5ccb40e223f433b2f14e",
-      "size": 894
-    },
-    {
-      "path": "runtime/ocrv/slk-checker.cmd",
-      "sha256": "82d98c6223d29d67e78cb323e7880b1c38555c2a4b65c5b11117ea8eca6a3892",
-      "size": 623
-    },
-    {
-      "path": "runtime/ocrv/slk-native-activity-capabilities.json",
-      "sha256": "3bd6ec221f62b5d5763b5672127b918afc7e16848209af402648fcdd07ff2dda",
-      "size": 241
-    },
-    {
-      "path": "runtime/ocrv/slk_checker_adapter.py",
-      "sha256": "ff818596ea1f247e79dd1547a5e3c549bf50b6341ef9dd0bff3b52fa3d457102",
-      "size": 46099
-    },
-    {
-      "path": "runtime/ocrv/slk_checker_decision.py",
-      "sha256": "2821d7f9a3b59276fb97dcd2242eb8707189eb69a790f9c110d43d0ed6a07ed5",
-      "size": 13570
-    },
-    {
-      "path": "runtime/ocrv/slk_checker_post_d1.py",
-      "sha256": "c81d8c473cf7ec8f9bbb71d5c6726fcff8240f462a15b5988401b580aa8a6199",
-      "size": 6624
-    },
-    {
-      "path": "runtime/ocrv/slk_checker_recovery.py",
-      "sha256": "36b4df030f52f46e8e733e209879041edf266299ade8a7192391c73ac198d566",
-      "size": 415
     }
   ],
-  "product_version": "4.5.0",
+  "product_version": "4.5.1",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
-    "OCRV-SLK-CONFIGURATION.md": "7d836eb99e1b54e9140b8b8157e37cc07430cad8f56167efec3dca4cc7c1ea1e",
-    "README.md": "cd8327421c13921eae16caa324a918f7a3484161ca72ffd0ee808f3e4decc14e",
+    "OCRV-SLK-CONFIGURATION.md": "8c84d3142e92aedcb9be138835f5fce9bab1462d9ae375f10ff78160b1df98c5",
+    "README.md": "56698ec1e9b0bd20b23d647230c62305e7fe0bfc1e9ef5d9e85200fce6b69fbf",
     "install.ps1": "779bbf213b9c801d4863e951cf79dd878c72cb5c68294d5c5f4b9e66223da339",
     "rollback.ps1": "40e199163095cdda1825865544c9771beaf1f36c9ec4e74fb35c3d634fa9c564",
     "slk-checker-capabilities.json": "86b181cf00d3f49f9ddb2734a35b4a27bf1a8e50240c5ccb40e223f433b2f14e",
-    "slk-checker.cmd": "82d98c6223d29d67e78cb323e7880b1c38555c2a4b65c5b11117ea8eca6a3892",
+    "slk-checker.cmd": "6223d7d9a5133919c9e2e84b39182b27816884c866ebd0ec6f7e7bf71f8d6c98",
     "slk-native-activity-capabilities.json": "3bd6ec221f62b5d5763b5672127b918afc7e16848209af402648fcdd07ff2dda",
-    "slk_checker_adapter.py": "ff818596ea1f247e79dd1547a5e3c549bf50b6341ef9dd0bff3b52fa3d457102",
-    "slk_checker_decision.py": "2821d7f9a3b59276fb97dcd2242eb8707189eb69a790f9c110d43d0ed6a07ed5",
+    "slk_checker_adapter.py": "37f1040ce23e3f7aa63c2f221094dfbb751319edc9886054c1927fce6f267b2d",
+    "slk_checker_decision.py": "73bd1cd609703d0ed4b27cf8dff414995698b407984b562dda30fa1433c5beb1",
     "slk_checker_post_d1.py": "c81d8c473cf7ec8f9bbb71d5c6726fcff8240f462a15b5988401b580aa8a6199",
-    "slk_checker_recovery.py": "36b4df030f52f46e8e733e209879041edf266299ade8a7192391c73ac198d566"
+    "slk_checker_recovery.py": "b20b917cf5cb7bf265747a02534942c185566ede1bef4c281dfc894ce9190c12"
   },
   "target": "windows-x86_64",
   "tool": "slk-ocrv"

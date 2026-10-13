@@ -267,7 +267,7 @@ fn cleanup_refuses_active_lease_then_removes_only_the_exact_run() {
     let lease = acquire_run_lease(&current).unwrap();
     assert_eq!(
         cleanup_run(&current).unwrap_err().code(),
-        "SLK_CARGO_ACTIVE"
+        "SLK_CARGO_CLEANUP_UNRESOLVED"
     );
     drop(lease);
 
@@ -277,4 +277,45 @@ fn cleanup_refuses_active_lease_then_removes_only_the_exact_run() {
     assert!(root.path().join("cargo-home/cache").is_file());
     assert!(root.path().join("evidence.json").is_file());
     assert!(!cleanup_run(&current).unwrap());
+}
+
+#[test]
+fn legacy_pid_lease_is_unresolved_not_proof_that_a_process_is_alive() {
+    let root = tempdir().unwrap();
+    let paths = RunPaths::new(root.path(), "project-a", "run-legacy").unwrap();
+    fs::create_dir_all(paths.run_root().join("leases")).unwrap();
+    let lease = paths.run_root().join("leases/legacy.lease");
+    fs::write(&lease, "pid=4294967295\n").unwrap();
+    let error = cleanup_run(&paths).unwrap_err();
+    assert_eq!(error.code(), "SLK_CARGO_CLEANUP_UNRESOLVED");
+    assert!(error.message().contains("not proof of a live process"));
+    assert!(lease.is_file());
+}
+
+#[test]
+fn new_lease_records_exact_run_and_unique_invocation_without_claiming_liveness() {
+    let root = tempdir().unwrap();
+    let paths = RunPaths::new(root.path(), "project-a", "run-new").unwrap();
+    let first = acquire_run_lease(&paths).unwrap();
+    let second = acquire_run_lease(&paths).unwrap();
+    let records: Vec<serde_json::Value> = fs::read_dir(paths.run_root().join("leases"))
+        .unwrap()
+        .map(|entry| {
+            serde_json::from_str(&fs::read_to_string(entry.unwrap().path()).unwrap()).unwrap()
+        })
+        .collect();
+    assert_eq!(records.len(), 2);
+    assert_ne!(records[0]["invocation_id"], records[1]["invocation_id"]);
+    for record in records {
+        assert_eq!(record["schema_version"], "slk.cargo-lease/v1");
+        assert_eq!(record["wrapper_pid"], std::process::id());
+        assert_eq!(
+            record["run_root"],
+            paths.run_root().to_string_lossy().as_ref()
+        );
+        assert!(!record["created_at"].as_str().unwrap().is_empty());
+    }
+    drop(first);
+    drop(second);
+    assert!(cleanup_run(&paths).unwrap());
 }

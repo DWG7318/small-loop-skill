@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .adapters.codex import CodexAdapter
-from .adapters.codex_desktop import deliver_desktop
+from .adapters.codex_desktop import deliver_desktop, consume_desktop_readback
 from .adapters.base import AdapterError
 from .contracts import Endpoint, canonical_json_sha256
 from .evidence import Attempt
@@ -72,10 +72,16 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
         if result.get("native_start") != start or result.get("receipt_sha256") != canonical_json_sha256({k: v for k, v in result.items() if k != "receipt_sha256"}):
             raise ValueError("saved notification proof changed")
         return result
+    accepted = (root / "desktop-send.json").is_file() and (root / "desktop-readback-anchor.json").is_file()
     if root.is_dir() and any(root.iterdir()):
         names = {p.name for p in root.iterdir()}
+        allowed = {"endpoint.json", "notification.json", "desktop-material.json", "desktop-target-observation.json",
+                   "desktop-target-observation-latest.json", "command-rebind.json"}
+        if accepted:
+            allowed |= {"desktop-send.json", "desktop-readback-anchor.json", "desktop-prompt.json",
+                        "desktop-readback.json", "started.json", "delivery-result.json", "native-activity.json"}
         if (not {"endpoint.json", "notification.json"}.issubset(names)
-            or names - {"endpoint.json", "notification.json", "desktop-material.json", "desktop-target-observation.json", "desktop-target-observation-latest.json"}
+            or names - allowed
             or wc._read_object(root / "notification.json", "notice") != dict(notice)
             or wc._read_object(root / "endpoint.json", "notification endpoint") != dict(endpoint_raw)):
             raise ValueError("previous operational send is uncertain; inspect it before another send")
@@ -104,10 +110,9 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
     # Only exact platform delivery proves wake. The Supervisor still decides what
     # to do; the current trusted Desktop caller is only the transport executor.
     # It does not replace the registered semantic OW/Temporal sender or target.
-    native = deliver_desktop(
-        delivery_endpoint, identity, attempt, prompt, wait_for_completion=False
-    )
-    attempt.write_json_once("delivery-result.json", native.to_dict())
+    native = (consume_desktop_readback(delivery_endpoint, identity, attempt) if accepted else
+              deliver_desktop(delivery_endpoint, identity, attempt, prompt, wait_for_completion=False))
+    wc._write_or_reuse_stable_request(root / "delivery-result.json", native.to_dict())
     start = validate_native_start(root / "started.json", adapter=endpoint.adapter, run_id=notice["run_id"],
         cell_id="PREPARATION", message_id=notice["event_id"], request_sha256=identity.payload_sha256)
     result = {"status": "NOTIFIED", "event_id": notice["event_id"], "supervisor_role_instance_id": endpoint.role_instance_id,

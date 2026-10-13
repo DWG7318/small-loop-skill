@@ -1,8 +1,9 @@
 [CmdletBinding()]
-param([string]$Go = 'go', [string]$WorkRoot = (Join-Path $PSScriptRoot '.build'))
+param([string]$Go = 'go', [string]$WorkRoot = (Join-Path $PSScriptRoot '.build'),
+      [string]$OutputRoot = (Join-Path $PSScriptRoot 'artifacts\windows-amd64'))
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$output = Join-Path $PSScriptRoot 'artifacts\windows-amd64'
+$output = $OutputRoot
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $PSScriptRoot
 try {
@@ -25,16 +26,17 @@ try {
     & git apply (Join-Path $PSScriptRoot 'upstream\ocrv-native-probe.patch')
     if ($LASTEXITCODE -ne 0) { throw 'OCRV native patch failed.' }
     if (-not (Select-String -LiteralPath 'cmd\opencodereview\main.go' -SimpleMatch 'nativeprobe.StartOCRV()' -Quiet) -or
-        -not (Select-String -LiteralPath 'internal\session\persist.go' -SimpleMatch 'nativeprobe.RegisterOCRVSession(jw.sessionID, filename)' -Quiet)) {
+        -not (Select-String -LiteralPath 'internal\session\persist.go' -SimpleMatch 'nativeprobe.RegisterOCRVSession(jw.sessionID, filename)' -Quiet) -or
+        -not (Select-String -LiteralPath 'internal\agent\agent.go' -SimpleMatch 'a.finishSLKWholeCell(ctx, comments)' -Quiet)) {
         throw 'OCRV native hook is absent after patch; refusing an uninstrumented build.'
     }
     & $Go mod edit '-require=github.com/DWG7318/slk-native-probe@v1.0.0' ('-replace=github.com/DWG7318/slk-native-probe=' + $PSScriptRoot.Replace('\','/'))
     if ($LASTEXITCODE -ne 0) { throw 'Explicit local probe dependency failed.' }
     & $Go mod tidy
     if ($LASTEXITCODE -ne 0) { throw 'OCRV dependencies failed.' }
-    & $Go test ./internal/session
-    if ($LASTEXITCODE -ne 0) { throw 'OCRV native Session regression failed.' }
-    & $Go build -trimpath -buildvcs=false -ldflags '-X main.Version=1.12.13-slkprobe.1.0.0' -o (Join-Path $output 'opencodereview-1.12.13-slkprobe.1.0.0.exe') ./cmd/opencodereview
+    & $Go test ./internal/session ./internal/agent ./internal/llmloop ./internal/mcp
+    if ($LASTEXITCODE -ne 0) { throw 'OCRV native lifecycle/whole-CELL regression failed.' }
+    & $Go build -trimpath -buildvcs=false -ldflags '-X main.Version=1.12.13-slkprobe.1.0.1' -o (Join-Path $output 'opencodereview-1.12.13-slkprobe.1.0.1.exe') ./cmd/opencodereview
     if ($LASTEXITCODE -ne 0) { throw 'Modified OCRV build failed.' }
 } finally { Pop-Location }
 Write-Output ('Developer source retained at ' + $source)

@@ -1,4 +1,4 @@
-# SLK DSH integration 4.5.0
+# SLK DSH integration 4.5.1
 
 SLK's exact-instance Worker launcher and native activity compatibility import.
 The upstream is DeepSeek's `deepseek-harness` 0.2.0-rc.2, commit

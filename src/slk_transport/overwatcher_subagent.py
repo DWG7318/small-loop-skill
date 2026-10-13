@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -48,13 +49,17 @@ CHILD_PATH = re.compile(r"^/root(?:/[a-z0-9_]+)+$")
 
 def _fields(value: Mapping[str, Any], *, proof: bool = False) -> frozenset[str]:
     base = PROOF_FIELDS if proof else REQUEST_FIELDS
+    if "child_source_path" in value:
+        base |= {"child_source_path"}
+        if proof:
+            base |= {"child_session_id", "child_meta_sha256", "child_link_sha256"}
     if _execution(value.get("native_execution_id"))[0] == "codex-subagent-followup":
         return base | (FOLLOWUP_PROOF_FIELDS if proof else FOLLOWUP_REQUEST_FIELDS)
     return base
 
 
 def _identity(value: Mapping[str, Any]) -> None:
-    if value.get("method_version") != "4.5.0":
+    if value.get("method_version") not in {"4.5.0", "4.5.1"}:
         raise OverwatcherSubagentError("subagent OW method version is unsupported")
     for field in ("run_id", "role_instance_id", "endpoint_ref"):
         _text(value.get(field), field)
@@ -91,6 +96,16 @@ def _identity(value: Mapping[str, Any]) -> None:
                             + re.escape(parent["session_id"]) + r"(?:_[0-9a-f-]+)?\.jsonl", relative.name)
         or source.is_symlink() or not source.is_file()):
         raise OverwatcherSubagentError("native source is not this parent's exact Codex rollout")
+    if "child_source_path" in value:
+        child_source = Path(_text(value["child_source_path"], "child_source_path"))
+        try:
+            child_relative = child_source.resolve(strict=True).relative_to(CODEX_SESSIONS_ROOT.resolve(strict=True))
+        except (OSError, ValueError) as exc:
+            raise OverwatcherSubagentError("native child source is outside this host's Codex sessions root") from exc
+        if (not child_source.is_absolute() or child_source.is_symlink() or not child_source.is_file()
+            or len(child_relative.parts) != 4
+            or not re.fullmatch(r"\d{4}/\d{2}/\d{2}", "/".join(child_relative.parts[:3]))):
+            raise OverwatcherSubagentError("native child source must be one exact Codex rollout")
 
 
 def _request(path: Path, digest: str) -> dict[str, Any]:
@@ -125,7 +140,8 @@ def _activity(request: Mapping[str, Any], snapshot: Mapping[str, Any]) -> dict[s
         "native_task_id": _task_id(request), "status": snapshot["agent_status"], "sequence": sequence,
         # Re-reading does not manufacture a newer native sample.
         "observed_at": snapshot["sample_query_timestamp"],
-        "last_event": {"kind": "CODEX_SUBAGENT_LIST_READBACK", "sequence": sequence,
+        "last_event": {"kind": ("CODEX_SUBAGENT_CHILD_LIST_READBACK" if snapshot.get("child_sample_selected")
+                                else "CODEX_SUBAGENT_LIST_READBACK"), "sequence": sequence,
                        "observed_at": snapshot["sample_output_timestamp"],
                        "detail_sha256": snapshot["sample_output_sha256"]},
         "waiting_on": "CODEX_SUBAGENT" if snapshot["agent_status"] == "RUNNING" else None,
@@ -177,8 +193,8 @@ def validate_subagent_overwatcher_binding(proof_path: Path, *, proof_sha256: str
     """
     proof = _proof(proof_path, proof_sha256, started_path)
     if (projection.get("summary", {}).get("run_id") != proof["run_id"]
-        or projection.get("summary", {}).get("slk_version") != "4.5.0"
-        or projection.get("runtime_snapshot", {}).get("method_version") != "4.5.0"):
+        or projection.get("summary", {}).get("slk_version") != proof["method_version"]
+        or projection.get("runtime_snapshot", {}).get("method_version") != proof["method_version"]):
         raise OverwatcherSubagentError("native OW proof differs from the current Run")
     roles = projection.get("roles")
     if not isinstance(roles, list) or not all(isinstance(row, Mapping) for row in roles):
@@ -275,6 +291,17 @@ def subagent_overwatcher_probe(proof_path: Path, *, proof_sha256: str,
             or any(original[field] != proof[field] for field in fields if field.startswith("sample_"))
             or original["agent_status"] != proof["agent_status"]):
             raise OverwatcherSubagentError("original native records changed after attestation")
+        if "child_source_path" in request:
+            linkage_fields = ("child_session_id", "child_link_sha256")
+            if snapshot["agent_status"] == "RUNNING":
+                linkage_fields += ("child_meta_sha256",)
+            if any(snapshot[field] != proof[field] for field in linkage_fields):
+                raise OverwatcherSubagentError("original native child linkage changed after attestation")
+            child_sample = snapshot.get("child_sample")
+            if (snapshot["agent_status"] == "RUNNING"
+                and datetime.fromisoformat(child_sample["sample_query_timestamp"].replace("Z", "+00:00"))
+                    > datetime.fromisoformat(snapshot["sample_query_timestamp"].replace("Z", "+00:00"))):
+                snapshot = {**snapshot, **child_sample, "child_sample_selected": True}
         return _activity(request, snapshot)
     except (OSError, ValueError, TypeError, KeyError):
         return {"status": "UNKNOWN", "error": "NATIVE_QUERY_FAILED"}

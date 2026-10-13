@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slk-transport"
-version = "4.5.0"
+version = "4.5.1"
 description = "Exact cross-agent transport for Small Loop Skill"
 requires-python = ">=3.10"
-dependencies = ["slk-overwatch-tools @ git+https://github.com/DWG7318/slk-overwatch-tools.git@3aac39089f8e0ea681bdf0c4435b4573f0e33f6c"]
+dependencies = ["slk-overwatch-tools @ git+https://github.com/DWG7318/slk-overwatch-tools.git@077eba81d607d74555ad01dab86ac97d3994991c"]
 license = {file = "LICENSE"}
 
 [project.scripts]

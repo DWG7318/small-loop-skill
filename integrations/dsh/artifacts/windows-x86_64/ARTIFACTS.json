@@ -13,23 +13,56 @@
       },
       {
         "path": "payload.zip.part003",
-        "sha256": "c3cb944453f6fb0d7d713869b4ec2c36708603ab4fbcf2e66d818105f0c0dd4a",
-        "size": 60766959
+        "sha256": "821974be6aaf7e294f206e5bfc62d6abcab96c537cac8523f0d9d735b1c47834",
+        "size": 60770361
       }
     ],
-    "sha256": "754f4bc30b3d34050fa38a27a0606f3d7ce47c1b332005652fa69f68a6581a85",
-    "size": 194984687
+    "sha256": "c34ff2c073f35677f641b31ef580144df70cf1945ea77c6c15aa79d9b15a46a3",
+    "size": 194988089
   },
   "build": {
     "command": [
-      "npm ci --omit=dev --ignore-scripts (official registry, exact archived lock)"
+      "scripts/tool_artifacts.py archive_module (task-local orchestration)"
     ],
+    "current_integrations_sha256": {
+      "dsh-slk.cmd": "79ad607c7c8f0abc56b5a3dec7283fd24d9ff4f5428be28b5fd7c4ecd08487d6",
+      "dsh-slk.ps1": "98f309bc53bff178751052ac1b41b57177369e9f073ee1c8ad9b3aab20513aad",
+      "prepare-worker-mcp.ps1": "3a883142b62453ea7ad61756189f67406e1dd895615788d54c4b3a28e6f29845",
+      "slk-native-activity.patch.yml": "60f7420d01d6f73047eb70ebbcd0adafa6e55b0c3cc14537e4c5bffa7bffe153",
+      "slk-worker-capabilities.json": "7c5db245be07eb49a1a0641ca6a8037c5314393472f06085ca140ee68b1c80ad",
+      "slk_native_activity.mjs": "8fb93668a5ef1964cc2909af5a0a13eb6318d1d5434ab0ef2c7a65aaf9592581"
+    },
+    "prepared_runtime_inventory_sha256": "5368701908426d4e2e258da5c91abd2ebd19aae141d34099bc89ade61403fbd2",
     "probe_dependency": "separate slk-native-probe 1.0.0 archive; install as sibling native-probe",
     "production_lock_sha256": "b905d04b75c3d7188eb48754978c90fb80df33ab6a3b7dea30ab2bdd21766574",
+    "rebuild_status": "Node and DSH production dependencies reused unchanged; six current SLK integration files copied from captured repository source; npm install/build was not run.",
+    "reused_450_artifact": {
+      "archive_sha256": "754f4bc30b3d34050fa38a27a0606f3d7ce47c1b332005652fa69f68a6581a85",
+      "index_sha256": "fa648dcbda88a95f164f6215428ed5c4ec11cf26c0eb189d7769621f670f4a1b",
+      "original_build": {
+        "command": [
+          "npm ci --omit=dev --ignore-scripts (official registry, exact archived lock)"
+        ],
+        "probe_dependency": "separate slk-native-probe 1.0.0 archive; install as sibling native-probe",
+        "production_lock_sha256": "b905d04b75c3d7188eb48754978c90fb80df33ab6a3b7dea30ab2bdd21766574",
+        "runtime_versions": {
+          "node": "24.21.0"
+        },
+        "scope": "verified developer outputs, no Run data",
+        "source_hash_mode": "sha256-raw",
+        "upstream": {
+          "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+          "repository": "https://github.com/deepseek-ai/deepseek-harness",
+          "version": "0.2.0-rc.2"
+        }
+      },
+      "product_version": "4.5.0",
+      "verification": "original index, each archive part and combined archive verified; selected restored bytes rehashed"
+    },
     "runtime_versions": {
       "node": "24.21.0"
     },
-    "scope": "verified developer outputs, no Run data",
+    "scope": "isolated developer archive; no installation, provider calls, account data or Run data",
     "source_hash_mode": "sha256-raw",
     "upstream": {
       "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
@@ -133154,6 +133187,11 @@
       "size": 135
     },
     {
+      "path": "runtime/dsh/prepare-worker-mcp.ps1",
+      "sha256": "3a883142b62453ea7ad61756189f67406e1dd895615788d54c4b3a28e6f29845",
+      "size": 8519
+    },
+    {
       "path": "runtime/dsh/slk-native-activity.patch.yml",
       "sha256": "60f7420d01d6f73047eb70ebbcd0adafa6e55b0c3cc14537e4c5bffa7bffe153",
       "size": 80
@@ -133179,14 +133217,15 @@
       "size": 93580104
     }
   ],
-  "product_version": "4.5.0",
+  "product_version": "4.5.1",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
-    "README.md": "105770d52da0a9fbdbd24b0bfdc4cb3ef82307e323c76f94ab36d4378329342d",
+    "README.md": "12a3337e516f8babda813d546c364db634528195e49c2e5bda55a3c0365d9f7b",
     "dsh-slk.cmd": "79ad607c7c8f0abc56b5a3dec7283fd24d9ff4f5428be28b5fd7c4ecd08487d6",
     "dsh-slk.ps1": "98f309bc53bff178751052ac1b41b57177369e9f073ee1c8ad9b3aab20513aad",
     "install.ps1": "e5867c16860ecf187d54487e056908213b717533ae19ccb796d221af6f911a5f",
+    "prepare-worker-mcp.ps1": "3a883142b62453ea7ad61756189f67406e1dd895615788d54c4b3a28e6f29845",
     "rollback.ps1": "930cf600dc360c40f43c9ab541fd89d27b8901a09e76ab9ea67b6b01a1c0f0ea",
     "slk-native-activity.patch.yml": "60f7420d01d6f73047eb70ebbcd0adafa6e55b0c3cc14537e4c5bffa7bffe153",
     "slk-worker-capabilities.json": "7c5db245be07eb49a1a0641ca6a8037c5314393472f06085ca140ee68b1c80ad",

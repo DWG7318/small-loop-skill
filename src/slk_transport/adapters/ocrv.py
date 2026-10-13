@@ -301,6 +301,18 @@ class OcrvAdapter:
         }
         next_envelope = Envelope.from_dict(next_raw)
         request_sha256 = canonical_json_sha256(payload)
+        # The original sender may acknowledge immediately on started.json.
+        # Persist this no-model dispatch suffix before exposing that start.
+        attempt.write_json_once(
+            "checker-result.json",
+            {
+                "schema_version": "slk.checker-result/v1",
+                "operation": "dispatch",
+                "source_message_id": envelope.message_id,
+                "next_endpoint": asdict(worker),
+                "next_envelope": asdict(next_envelope),
+            },
+        )
         attempt.write_json_once(
             "started.json",
             make_native_start(
@@ -315,16 +327,6 @@ class OcrvAdapter:
                 native_task_status="RUNNING",
                 pid=os.getpid(),
             ),
-        )
-        attempt.write_json_once(
-            "checker-result.json",
-            {
-                "schema_version": "slk.checker-result/v1",
-                "operation": "dispatch",
-                "source_message_id": envelope.message_id,
-                "next_endpoint": asdict(worker),
-                "next_envelope": asdict(next_envelope),
-            },
         )
         return DeliveryResult(
             schema_version=RESULT_SCHEMA,
@@ -392,6 +394,14 @@ class OcrvAdapter:
             "capacity": capacity,
         }
         if envelope.payload_type == "D1_MANAGEMENT_RETURN":
+            if envelope.payload.get("management_action") == "ADJUST_CAPACITY":
+                policy = envelope.payload.get("review_policy")
+                if policy != {"profile": "NORMAL_D1_DEFAULT", "aggregate_budget": "NATIVE_UNLIMITED",
+                              "review_timeout": "NATIVE_UNLIMITED", "tool_rounds": "TEMPLATE_DEFAULT"}:
+                    raise AdapterError("OCRV_PAYLOAD_INVALID", "capacity adjustment requires the exact review policy")
+                # Explicit management adjustment changes only these two limits;
+                # retain the registered model's context capacity and provider timeout.
+                request["capacity"].update(max_tokens_budget=0, timeout_minutes=0)
             context = {key: envelope.payload[key] for key in (
                 "management_action", "management_summary", "management_evidence_refs")}
             refs = context["management_evidence_refs"]

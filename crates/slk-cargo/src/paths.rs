@@ -3,6 +3,7 @@ use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Child;
 
 use slk_state_core::config::{default_config_path, resolve_data_root_at};
 use uuid::Uuid;
@@ -95,11 +96,71 @@ impl RunPaths {
 #[derive(Debug)]
 pub struct RunLease {
     path: PathBuf,
+    retain: bool,
+}
+
+impl RunLease {
+    pub(crate) fn retain_for_inspection(&mut self) {
+        self.retain = true;
+    }
+
+    pub(crate) fn record_child(&self, child: &Child, target: &Path) -> std::io::Result<()> {
+        let record = serde_json::json!({
+            "schema_version": "slk.cargo-native-process/v1",
+            "process": {"pid": child.id(), "creation_time": child_creation_time(child)},
+            "target": target,
+        });
+        let mut file = OpenOptions::new().append(true).open(&self.path)?;
+        writeln!(file, "{record}")?;
+        file.sync_data()
+    }
+}
+
+#[cfg(windows)]
+fn child_creation_time(child: &Child) -> Option<String> {
+    use std::ffi::c_void;
+    use std::os::windows::io::AsRawHandle;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetProcessTimes(
+            handle: *mut c_void,
+            creation: *mut u64,
+            exit: *mut u64,
+            kernel: *mut u64,
+            user: *mut u64,
+        ) -> i32;
+    }
+    let (mut creation, mut exit, mut kernel, mut user) = (0, 0, 0, 0);
+    // Child owns a valid native handle even if this short-lived process exits.
+    let ok = unsafe {
+        GetProcessTimes(
+            child.as_raw_handle(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    (ok != 0).then(|| format!("win-filetime:{creation}"))
+}
+
+#[cfg(not(windows))]
+fn child_creation_time(child: &Child) -> Option<String> {
+    let stat = fs::read_to_string(format!("/proc/{}/stat", child.id())).ok()?;
+    // comm may contain spaces or parentheses; fields after its last ')' start at3.
+    let fields = stat
+        .rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    Some(format!("proc-start:{}", fields.get(19)?))
 }
 
 impl Drop for RunLease {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        if !self.retain {
+            let _ = fs::remove_file(&self.path);
+        }
     }
 }
 
@@ -111,15 +172,31 @@ pub fn acquire_run_lease(paths: &RunPaths) -> Result<RunLease, CargoGuardError> 
             format!("{}: {error}", directory.display()),
         )
     })?;
-    let path = directory.join(format!("{}.lease", Uuid::new_v4().simple()));
+    let invocation_id = Uuid::new_v4().simple().to_string();
+    let path = directory.join(format!("{invocation_id}.lease"));
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&path)
         .map_err(|error| CargoGuardError::new("SLK_CARGO_LEASE", error.to_string()))?;
-    writeln!(file, "pid={}", std::process::id())
+    let created_at = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
         .map_err(|error| CargoGuardError::new("SLK_CARGO_LEASE", error.to_string()))?;
-    Ok(RunLease { path })
+    // This identifies a reservation, not a process-liveness verdict. A wrapper
+    // can exit while a native child still uses the target directory.
+    let record = serde_json::json!({
+        "schema_version": "slk.cargo-lease/v1",
+        "invocation_id": invocation_id,
+        "wrapper_pid": std::process::id(),
+        "created_at": created_at,
+        "run_root": paths.run_root(),
+    });
+    writeln!(file, "{record}")
+        .map_err(|error| CargoGuardError::new("SLK_CARGO_LEASE", error.to_string()))?;
+    Ok(RunLease {
+        path,
+        retain: false,
+    })
 }
 
 pub fn cleanup_run(paths: &RunPaths) -> Result<bool, CargoGuardError> {
@@ -136,8 +213,8 @@ pub fn cleanup_run(paths: &RunPaths) -> Result<bool, CargoGuardError> {
             .is_some();
         if has_lease {
             return Err(CargoGuardError::new(
-                "SLK_CARGO_ACTIVE",
-                "an slk-cargo command still owns this Run runtime",
+                "SLK_CARGO_CLEANUP_UNRESOLVED",
+                "a retained lease is not proof of a live process; verify the exact invocation and native children before cleanup; leave this Run runtime intact until resolved",
             ));
         }
     }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -20,7 +21,7 @@ from ..native_activity import (
     validate_native_task_activity,
 )
 from ..process import windows_no_window_kwargs
-from ..instance_id import validate_worker_instance_id
+from ..instance_id import MAX_INSTANCE_ID
 from ..subprocess_watch import finish, spawn
 from ..task_file import create_task_file
 from ..workspace import WorkspaceError, preflight_git_workspace
@@ -89,10 +90,11 @@ class DshAdapter:
             raise AdapterError("DSH_ADDRESS_INVALID", "DSH address must use the exact field set")
         _string_array(address["command"], "command")
         instance_id = address["instance_id"]
-        try:
-            validate_worker_instance_id(endpoint.run_id, instance_id)
-        except (TypeError, ValueError) as exc:
-            raise AdapterError("DSH_ADDRESS_INVALID", str(exc)) from exc
+        # The registered endpoint binds native identity; deriving a new name
+        # from the Run would select another home and lose its existing Session.
+        if (not isinstance(instance_id, str) or len(instance_id) > MAX_INSTANCE_ID
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", instance_id) is None):
+            raise AdapterError("DSH_ADDRESS_INVALID", "instance_id must be a safe DSH native instance name")
         session_id = address["session_id"]
         if session_id is not None and (
             not isinstance(session_id, str) or not session_id.startswith("session-")
@@ -181,9 +183,9 @@ class DshAdapter:
     def task_instruction(task_path: Path, task_sha256: str) -> str:
         return (
             "Execute only this hash-verified task descriptor. Save original output to result_path; "
-            "result_contract is guidance, never a delivery requirement. Bound SLK_WORKER_ACTION_COMMAND: "
-            "submit-worker-action --event WORK_STARTED|D0_COMPLETED|CANDIDATE_SUBMITTED "
-            "[--details own.json]. Reports are not actions. "
+            "result_contract is guidance. Use bound MCP slk_worker_action for "
+            "WORK_STARTED/D0_COMPLETED/CANDIDATE_SUBMITTED, never shell state writes. "
+            "PENDING is not recorded: retry the same action after commit, no busy-loop. "
             f"<slk-transport-task path={json.dumps(str(task_path.resolve()))} "
             f"sha256={json.dumps(task_sha256)} />"
         )
@@ -340,8 +342,17 @@ class DshAdapter:
             preflight_git_workspace(workspace)
         except WorkspaceError as exc:
             raise AdapterError("DSH_WORKSPACE_NOT_READY", str(exc)) from exc
+        drop_id = envelope.message_id
+        if attempt.root.parent.name == "native-resumes":
+            from ..role_host import load_role_host
+            from ..worker_resume import source_identity
+            from dataclasses import asdict
+            host = load_role_host(asdict(endpoint))
+            if host is None:
+                raise AdapterError("ROLE_HOST_BINDING_INVALID", "native continuation requires its prepared host")
+            drop_id = source_identity(attempt.root, host, envelope)
         drop_parent = workspace / ".slk-transport"
-        drop_root = drop_parent / envelope.message_id
+        drop_root = drop_parent / drop_id
         parent_existed = drop_parent.exists()
         try:
             drop_root.mkdir(parents=True, exist_ok=False)

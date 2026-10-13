@@ -36,6 +36,7 @@ fn fake_cargo_script(root: &Path) -> std::path::PathBuf {
         &path,
         r#"import os
 import pathlib
+import subprocess
 import sys
 import time
 
@@ -47,6 +48,35 @@ print("OUT target=" + target, flush=True)
 if mode == "ordinary":
     print("ERR ordinary failure", file=sys.stderr, flush=True)
     raise SystemExit(7)
+
+if mode == "hold-child":
+    marker.write_text(str(os.getpid()), encoding="ascii")
+    deadline = time.monotonic() + 8
+    with marker.with_suffix(".alive").open("a", encoding="ascii") as writer:
+        while time.monotonic() < deadline and not marker.with_suffix(".stop").exists():
+            writer.write(str(time.monotonic()) + "\n")
+            writer.flush()
+            time.sleep(0.02)
+    marker.with_suffix(".done").write_text("done", encoding="ascii")
+    raise SystemExit(0)
+
+if mode in ("exit-parent-0", "exit-parent-7"):
+    subprocess.Popen([sys.executable, __file__, "hold-descendant", str(marker)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=0x08000000 if os.name == "nt" else 0)
+    raise SystemExit(int(mode.rsplit("-", 1)[1]))
+
+if mode == "hold-descendant":
+    marker.write_text(str(os.getpid()), encoding="ascii")
+    with (pathlib.Path(target) / "descendant-writer.txt").open("a", encoding="ascii") as writer:
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline and not marker.with_suffix(".stop").exists():
+            writer.write(str(time.monotonic()) + "\n")
+            writer.flush()
+            marker.with_suffix(".alive").write_text(str(time.monotonic()), encoding="ascii")
+            time.sleep(0.02)
+    marker.with_suffix(".done").write_text("done", encoding="ascii")
+    raise SystemExit(0)
 
 if mode == "windows-sharing":
     print("failed inside " + target + ": process cannot access the file because it is being used by another process. (os error 32)", file=sys.stderr, flush=True)
@@ -304,4 +334,170 @@ fn runner_does_not_terminate_unrelated_processes() {
     assert!(unrelated.try_wait().unwrap().is_none());
     unrelated.kill().unwrap();
     unrelated.wait().unwrap();
+}
+
+#[test]
+fn crashed_wrapper_leaves_exact_child_evidence_and_does_not_allow_cleanup() {
+    use std::time::Instant;
+    let root = tempdir().unwrap();
+    let paths = RunPaths::new(root.path(), "project-a", "run-crash").unwrap();
+    let script = fake_cargo_script(root.path());
+    let marker = root.path().join("child.marker");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_slk-cargo"));
+    command
+        .args(["run", "--data-root"])
+        .arg(root.path())
+        .args([
+            "--project-id",
+            "project-a",
+            "--run-id",
+            "run-crash",
+            "--cargo-program",
+            "python",
+            "--",
+        ])
+        .arg(&script)
+        .arg("hold-child")
+        .arg(&marker)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut wrapper = command.spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !marker.with_extension("alive").exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let was_alive = marker.with_extension("alive").exists();
+    wrapper.kill().unwrap();
+    wrapper.wait().unwrap();
+    let before = fs::metadata(marker.with_extension("alive"))
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let after = loop {
+        let size = fs::metadata(marker.with_extension("alive"))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        if size > before || Instant::now() >= deadline {
+            break size;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let child_pid = fs::read_to_string(&marker).unwrap_or_default();
+    let lease = fs::read_dir(paths.run_root().join("leases"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let records: Vec<serde_json::Value> = fs::read_to_string(&lease)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let cleanup_error = slk_cargo::cleanup_run(&paths).unwrap_err();
+    // Signal only this fixture's child to finish, including on failed assertions.
+    fs::write(marker.with_extension("stop"), b"stop").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !marker.with_extension("done").exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        was_alive && after > before,
+        "child must actually remain active after wrapper exit"
+    );
+    assert_eq!(cleanup_error.code(), "SLK_CARGO_CLEANUP_UNRESOLVED");
+    assert!(lease.is_file());
+    let native = records
+        .iter()
+        .find(|entry| entry["schema_version"] == "slk.cargo-native-process/v1")
+        .unwrap();
+    assert_eq!(
+        native["process"]["pid"],
+        child_pid.trim().parse::<u32>().unwrap()
+    );
+    assert!(native["process"]["creation_time"]
+        .as_str()
+        .unwrap()
+        .contains(':'));
+    assert_eq!(
+        native["target"],
+        paths.primary_target().to_string_lossy().as_ref()
+    );
+    assert!(marker.with_extension("done").exists());
+}
+
+fn assert_exited_native_parent_keeps_cleanup_unresolved(exit_code: i32) {
+    use std::time::Instant;
+    let root = tempdir().unwrap();
+    let paths = RunPaths::new(root.path(), "project-a", "run-descendant").unwrap();
+    let script = fake_cargo_script(root.path());
+    let marker = root.path().join("descendant.marker");
+    let mut capture = Capture::default();
+    let result = run_cargo(
+        &invocation(&script, &format!("exit-parent-{exit_code}"), &marker),
+        &paths,
+        &quick_config(),
+        &mut capture,
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !marker.with_extension("alive").exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let target_writer = paths.primary_target().join("descendant-writer.txt");
+    let before = fs::metadata(&target_writer).map(|m| m.len()).unwrap_or(0);
+    std::thread::sleep(Duration::from_millis(100));
+    let after = fs::metadata(&target_writer).map(|m| m.len()).unwrap_or(0);
+    let cleanup = slk_cargo::cleanup_run(&paths);
+    // Stop only this exact fixture before assertions, even on the old unsafe path.
+    fs::write(marker.with_extension("stop"), b"stop").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !marker.with_extension("done").exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(result.exit_code(), Some(exit_code));
+    assert_eq!(result.attempts(), 1);
+    assert!(
+        before > 0 && after > before,
+        "native parent's descendant must really write after parent exit"
+    );
+    assert!(marker.with_extension("done").exists());
+    assert_eq!(cleanup.unwrap_err().code(), "SLK_CARGO_CLEANUP_UNRESOLVED");
+    assert!(target_writer.is_file());
+    assert_eq!(
+        fs::read_dir(paths.run_root().join("leases"))
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn successful_native_parent_exit_does_not_prove_descendant_writers_stopped() {
+    assert_exited_native_parent_keeps_cleanup_unresolved(0);
+}
+
+#[test]
+fn failed_native_parent_exit_does_not_prove_descendant_writers_stopped() {
+    assert_exited_native_parent_keeps_cleanup_unresolved(7);
+}
+
+#[test]
+fn spawn_failure_does_not_leave_an_unowned_native_lease() {
+    let root = tempdir().unwrap();
+    let paths = RunPaths::new(root.path(), "project-a", "run-no-spawn").unwrap();
+    let missing = CargoInvocation::new(
+        root.path().join("missing-cargo.exe"),
+        vec!["check".into()],
+        None,
+    )
+    .unwrap();
+    let error = run_cargo(&missing, &paths, &quick_config(), &mut Capture::default()).unwrap_err();
+    assert_eq!(error.code(), "SLK_CARGO_SPAWN");
+    assert!(slk_cargo::cleanup_run(&paths).unwrap());
 }

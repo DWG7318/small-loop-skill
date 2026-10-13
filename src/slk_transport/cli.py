@@ -127,7 +127,14 @@ def _job(args: argparse.Namespace) -> int:
     if host is not None:
         source = args.attempt_root / result.run_id / result.message_id
         try:
-            output_delivery = host.complete(source)
+            if envelope_raw["payload_type"] == "CELL_DISPATCH" and endpoint_raw["role"] == "checker":
+                # The synchronous receiver cannot wait for the sender's ACK /
+                # TOKEN commit. Its saved checker-result is consumed by that
+                # original sender after the exact atomic commit (also on retry).
+                output_delivery = {"status": "CHECKER_DISPATCH_PENDING_COMMIT",
+                                   "source_message_id": result.message_id}
+            else:
+                output_delivery = host.complete(source)
         except (ValueError, OSError) as exc:
             # Engineering completion is immutable and is not handoff success.
             from .worker_completion import _write_or_reuse_stable_request
@@ -144,7 +151,7 @@ def _job(args: argparse.Namespace) -> int:
         return 0 if result.status == "completed" else 3
     delivery_failed = output_delivery.get("status") in {
         "OUTPUT_DELIVERY_UNCONFIRMED", "HOST_HANDOFF_FAILED",
-    } or output_delivery.get("handoff", {}).get("status") == "failed"
+    } or output_delivery.get("handoff", {}).get("status") in {"failed", "HOST_HANDOFF_FAILED"}
     _emit({"status": "failed" if delivery_failed else result.status,
            "run_id": result.run_id, "message_id": result.message_id,
            "native_result": native_result, "output_delivery": output_delivery})
@@ -427,7 +434,8 @@ def _notify_supervisor(args: argparse.Namespace) -> int:
     if set(request) != {"notification", "endpoint_path", "runtime_projection_path", "attempt_root"}:
         raise ValueError("operational notification request is not closed")
     endpoint = _read_object(Path(request["endpoint_path"]), "registered Supervisor endpoint")
-    projection = _read_object(Path(request["runtime_projection_path"]), "current Run projection")
+    projection_path = getattr(args, "current_runtime_projection", None) or Path(request["runtime_projection_path"])
+    projection = _read_object(projection_path, "current Run projection")
     root = Path(request["attempt_root"])
     if not root.is_absolute():
         raise ValueError("operational notification evidence root must be absolute")
@@ -591,6 +599,21 @@ def _submit_worker_action(args: argparse.Namespace) -> int:
     details = _read_object(args.details, "Worker action details") if args.details else {}
     _emit(host.record_worker_action(source, args.event, details))
     return 0
+
+
+def _resume_worker_session(args: argparse.Namespace) -> int:
+    from .worker_resume import invocation_environment, resume_worker_session
+    binding = args.binding.resolve()
+    digest = hashlib.sha256(binding.read_bytes()).hexdigest()
+    if digest != args.sha256:
+        raise ValueError("role host binding hash changed")
+    host = RoleHost(_read_object(binding, "role host binding"), digest)
+    with invocation_environment({"SLK_TRANSPORT_ROLE_HOST": str(binding), "SLK_TRANSPORT_ROLE_HOST_SHA256": digest}):
+        result = resume_worker_session(host, args.source_attempt, invocation_id=args.invocation_id,
+            instructions_path=args.instructions.resolve(), instructions_sha256=args.instructions_sha256)
+    _emit(result)
+    return 0 if result["status"] in {"completed", "CANDIDATE_HANDOFF_ONLY"} and result["output_delivery"].get("status") == "OUTPUT_DELIVERED" \
+        and result["output_delivery"].get("handoff", {}).get("status") in {"OWNED_HANDOFF_COMMITTED", "OWNED_HANDOFF_ALREADY_COMMITTED"} else 3
 
 
 def _consume_desktop_readback(args: argparse.Namespace) -> int:
@@ -792,6 +815,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ow_desktop.add_argument("--evidence-root", required=True, type=Path)
     notice = subparsers.add_parser("notify-supervisor")
     notice.add_argument("--request", required=True, type=Path)
+    notice.add_argument("--current-runtime-projection", type=Path)
     readiness = subparsers.add_parser("preflight-run")
     readiness.add_argument("--request", required=True, type=Path)
     admission = subparsers.add_parser("preflight-admission")
@@ -825,6 +849,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     worker_submit = subparsers.add_parser("submit-worker-action")
     worker_submit.add_argument("--event", required=True, choices=["WORK_STARTED", "D0_COMPLETED", "CANDIDATE_SUBMITTED"])
     worker_submit.add_argument("--details", type=Path)
+    subparsers.add_parser("worker-action-mcp", help="invocation-bound stdio MCP for the three explicit Worker actions")
+    worker_resume = subparsers.add_parser("resume-worker-session", help="Supervisor native continuation of a stopped original Worker, not a resend")
+    worker_resume.add_argument("--binding", required=True, type=Path)
+    worker_resume.add_argument("--sha256", required=True)
+    worker_resume.add_argument("--source-attempt", required=True, type=Path)
+    worker_resume.add_argument("--invocation-id", required=True)
+    worker_resume.add_argument("--instructions", required=True, type=Path)
+    worker_resume.add_argument("--instructions-sha256", required=True)
     desktop_readback = subparsers.add_parser("consume-desktop-readback")
     desktop_readback.add_argument("--source-attempt", required=True, type=Path)
     supervisor_admin = subparsers.add_parser("supervisor-admin")
@@ -932,6 +964,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _submit_supervisor_decision(args)
         if args.command == "submit-worker-action":
             return _submit_worker_action(args)
+        if args.command == "worker-action-mcp":
+            from .worker_mcp import main as worker_mcp_main
+            return worker_mcp_main()
+        if args.command == "resume-worker-session":
+            return _resume_worker_session(args)
         if args.command == "consume-desktop-readback":
             return _consume_desktop_readback(args)
         if args.command == "supervisor-admin":

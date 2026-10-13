@@ -207,6 +207,8 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
         path = Path(_nonempty(raw_path, "evidence file")).resolve()
         if not path.is_file():
             raise RequestError(f"evidence file does not exist: {path}")
+        if path.name.lower() in {"native.stderr.txt", "ocrv.stderr.txt", "thinking.txt", "reasoning.txt"}:
+            continue  # private diagnostics remain archived, not engineering input
         evidence.append(_compact_evidence(path))
     management = value.get("management_context")
     if "management_context" in value:
@@ -309,7 +311,7 @@ def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
     for invocation in capabilities["invocations"]:
         lines.append(f"- Optional {invocation['tool']} digest: `{invocation['stdout_sha256']}`")
     lines.extend(["", "Inspect the candidate against every D1 criterion and form your independent preliminary judgment",
-        "before reading Worker D0 originals; then read the indexed originals and reconcile any contradictions",
+        "before reading relevant Worker D0 originals; select relevant indexed originals and reconcile contradictions",
         "before your final D1 decision. The initial index contains locators only, not Worker self-evaluation.",
         "Read runtime originals with slk_read_evidence(index, offset?, limit?) using the Evidence number",
         "above; omit limit to read through EOF, or choose offset/limit yourself. There is no tool-imposed",
@@ -324,9 +326,10 @@ def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
         "Review unchanged Shell/handshake seams required by CELL criteria; modified-file/group coverage is not whole-CELL acceptance.",
         "Only you, the original OCRV Checker, own D1. State your actual decision and limitations.",
         "Counts, severity, coverage and exit codes do not decide for you; host text never authorizes D1.",
-        "Finish this review and save actual reports and evidence before using slk_checker_decide(verdict)",
-        "as your last action for the explicit D1 decision and existing handoff; the MCP reply is flushed",
-        "before the original invocation ends. Do not continue reviewing after handoff.",
+        "File groups use task_done only; the native final whole-CELL stage follows after every group settles.",
+        "In that final stage, save actual reports and evidence before using slk_checker_decide(verdict)",
+        "as your last action. It persists D1 only; existing Host handoff follows natural native exit",
+        "and sealed results. Do not continue reviewing after handoff.",
         "If the bound tool is unavailable or failed, disclose that fact; never claim a state",
         "write succeeded. The report remains deliverable independently of this action."])
     return "\n".join(lines) + "\n"
@@ -485,45 +488,6 @@ def _process_parents() -> dict[int, int]:
         kernel.CloseHandle(snapshot)
 
 
-def _close_completed_review(process: Any, completion: dict[str, Any], launcher: dict[str, Any]) -> None:
-    """Stop ONLY the exact review process; NEVER tree-kill a handed-off successor."""
-    target = completion["review_process"]
-    pid = target["pid"]
-    if type(pid) is not int or pid <= 0 or process.poll() is not None:
-        raise RequestError("native review is not a live owned process")
-    if _process_creation_time(process.pid) != launcher["creation_time"]:
-        raise RequestError("native review launcher identity changed")
-    parents = _process_parents()
-    current = pid
-    visited = set()
-    while current != process.pid:
-        if current in visited or current not in parents:
-            raise RequestError("completion process is not this review's descendant")
-        visited.add(current)
-        current = parents.get(current, 0)
-    if os.name != "nt":
-        if _process_creation_time(pid) != target["creation_time"]:
-            raise RequestError("native review process identity changed")
-        os.kill(pid, 15)
-        return
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.OpenProcess.restype = ctypes.c_void_p
-    kernel.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(ctypes.c_ulonglong)] * 4
-    kernel.TerminateProcess.argtypes = [ctypes.c_void_p, wintypes.UINT]
-    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-    handle = kernel.OpenProcess(0x1001, False, pid)
-    if not handle:
-        raise RequestError("native review process is not queryable")
-    try:
-        times = [ctypes.c_ulonglong() for _ in range(4)]
-        if (not kernel.GetProcessTimes(handle, *(ctypes.byref(value) for value in times))
-            or f"win-filetime:{times[0].value}" != target["creation_time"]
-            or not kernel.TerminateProcess(handle, 1)):
-            raise RequestError("exact native review closure failed")
-    finally:
-        kernel.CloseHandle(handle)
-
-
 def _completed_decision(path: Path, native: tuple[Path, dict], invocation: str) -> dict:
     completed = _read_json(path)
     receipt_path, context = native
@@ -543,7 +507,7 @@ def _completed_decision(path: Path, native: tuple[Path, dict], invocation: str) 
         or decision.get("verdict") not in {"PASS", "FAIL", "INCOMPLETE"}
         or decision["verdict"] != completed["verdict"]):
         raise RequestError("completion is not this Checker's explicit decision")
-    return completed
+    return {**completed, "message": decision.get("message")}
 
 
 def _native_context() -> tuple[Path, dict[str, str]] | None:
@@ -677,12 +641,12 @@ def preflight(request_path: Path, output_path: Path) -> int:
 
 
 
-def _normalized_findings(review: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _normalized_findings(review: dict[str, Any] | None) -> list[dict[str, Any]] | None:
     """Keep formal provider findings while excluding non-evidence reasoning payloads."""
 
     comments = review.get("comments") if isinstance(review, dict) else None
     if not isinstance(comments, list):
-        return []
+        return None
     excluded = {"thinking", "reasoning", "analysis"}
     return [
         {key: value for key, value in comment.items() if key not in excluded}
@@ -691,15 +655,128 @@ def _normalized_findings(review: dict[str, Any] | None) -> list[dict[str, Any]]:
     ]
 
 
+def _transport_import_path() -> None:
+    root = _packaged_root()
+    if root is not None:
+        package = str(root / "bin/slk-transport.pyz")
+        if package not in sys.path:
+            sys.path.insert(0, package)
+
+
+def _verified_native_identity(receipt: Path) -> dict[str, Any]:
+    """Actual public header metadata only after original marker/session binding."""
+    try:
+        _transport_import_path()
+        from slk_transport.native_activity import validate_native_start
+        from slk_transport.native_ocrv import inspect_ocrv_session
+        observed = inspect_ocrv_session(receipt, validate_native_start(receipt), include_identity=True)
+        return observed.get("native_identity", {}) if observed.get("error") != "OCRV_SESSION_EVENT_AFTER_END" else {}
+    except (ImportError, OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def _resume_preflight(native, request_path: Path, resume_session: str | None,
+                      original_request_path: Path | None = None) -> dict | None:
+    """Use the existing parser/Host and native binding before any paid launch."""
+    if native is None:
+        raise RequestError("resume/supplement requires the bound original source")
+    try:
+        _transport_import_path()
+        from slk_transport.contracts import parse_delivery
+        from slk_transport.role_host import load_role_host
+        from slk_transport.native_activity import validate_native_start
+        from slk_transport.native_ocrv import inspect_ocrv_session, require_stopped_ocrv
+        from slk_transport.checker_escalation import _validate_explicit_decision
+        from slk_transport import worker_completion as wc
+        receipt, context = native
+        source = receipt.parent
+        endpoint = _read_json(source / "endpoint.json")
+        incoming = parse_delivery(endpoint, _read_json(source / "envelope.json"))
+        host = load_role_host(endpoint)
+        if host is None or incoming.envelope.receiver_role != "checker":
+            raise RequestError("resume requires the bound original Checker Host")
+        envelope = incoming.envelope
+        from slk_transport.adapters.ocrv import OcrvAdapter
+        expected = OcrvAdapter()._candidate_request(envelope, OcrvAdapter._executing_capacity(endpoint["address"]))
+        actual = _validate_request(_read_json(request_path))
+        if any(actual[key] != expected[key] for key in ("run_id", "cell_id", "repository", "candidate", "cell_goal", "d1_criteria", "review_scope", "capacity")):
+            raise RequestError("resume changed the original frozen CELL/candidate scope")
+        start = validate_native_start(receipt, adapter=endpoint["adapter"], run_id=envelope.run_id,
+            cell_id=envelope.cell_id, message_id=envelope.message_id, request_sha256=envelope.payload_sha256,
+            native_request_sha256=_sha256(original_request_path or request_path))
+        if any(context[key] != start[key] for key in context):
+            raise RequestError("resume context changed original identity")
+        if validate_native_start(source / "started.json") != start:
+            raise RequestError("resume changed the original transport/native start")
+        saved = None
+        decision_path = source / "role-host/checker-decision.json"
+        projection = host.projection()
+        if decision_path.is_file():
+            decision = _read_json(decision_path)
+            event_type = {"PASS": "D1_PASSED", "FAIL": "D1_FAILED", "INCOMPLETE": "D1_INCOMPLETE"}.get(decision.get("verdict"))
+            events = [event for event in projection.get("events", []) if event.get("event_id") ==
+                wc._stable_id(envelope.message_id, str(event_type).lower()) and event.get("event_type") == event_type
+                and event.get("go_id") == envelope.go_id and event.get("cell_id") == envelope.cell_id
+                and event.get("plan_revision") == host.binding["plan_revision"]]
+            if len(events) != 1:
+                raise RequestError("existing D1 is not authenticated in the original Host")
+            _validate_explicit_decision(source, incoming.endpoint, envelope, events[0], wc._event_details(events[0]))
+            saved = {**decision, "path": str(decision_path), "sha256": _sha256(decision_path)}
+        elif any(event.get("event_id") == wc._stable_id(envelope.message_id, kind.lower())
+                 for event in projection.get("events", []) for kind in ("D1_PASSED", "D1_FAILED", "D1_INCOMPLETE")):
+            raise RequestError("recorded D1 requires its original decision source, never another model call")
+        require_stopped_ocrv(receipt, start)
+        observed = inspect_ocrv_session(receipt, start)
+        binding = _read_json(source / "ocrv-session-binding.json")
+        if (observed.get("status") != "COMPLETED" or observed.get("error")
+            or resume_session != binding["session_id"]):
+            raise RequestError("resume requires the exact completed original native Session")
+        if saved is not None:
+            return saved
+        # Native resume admission requires its real closed manifest. Never invent
+        # one for a killed/interrupted review just because file checkpoints exist.
+        manifest = None
+        with Path(binding["session_path"]).open("rb") as stream:
+            for raw in stream:
+                if b'"session_end"' in raw and raw.endswith(b"\n"):
+                    row = json.loads(raw)
+                    if row.get("type") == "session_end":
+                        manifest = row.get("run_manifest")
+        if not isinstance(manifest, dict):
+            raise RequestError("resume requires the original closed native manifest")
+        return None
+    except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+        raise RequestError(f"bound original resume preflight failed: {exc}") from exc
+
+
 def run(
     request_path: Path, output_path: Path, *, invocation_override: str | None = None,
     background_override: Path | None = None, resume_session: str | None = None,
     result_request_path: Path | None = None,
+    resume_origin: Path | None = None,
 ) -> int:
     request = _validate_request(_read_json(request_path))
     environment = _child_environment()
-    invocation, root = (invocation_override, output_path.resolve().parent) if invocation_override else _artifact_root(request)
     native = _native_context()
+    if resume_session is not None or background_override is not None:
+        original_native = ((resume_origin / "native-start.received.json", native[1])
+                           if resume_origin is not None and native is not None else native)
+        saved = _resume_preflight(original_native, request_path, resume_session, result_request_path)
+        if saved is not None:
+            # An authenticated D1 is already the original Checker's final act.
+            # Reuse existing output only. A decision never manufactures a seal;
+            # the explicit recovery entry can consume the original Host suffix.
+            if output_path.is_file():
+                prior = _read_json(output_path)
+                if (any(prior.get(key) != request[key] for key in ("run_id", "cell_id"))
+                    or prior.get("review_invocation_id") != saved["native_task_id"]
+                    or prior.get("verdict") != saved["verdict"]
+                    or prior.get("request_sha256") != _sha256(result_request_path or request_path)):
+                    raise RequestError("existing result conflicts with authenticated original D1")
+            else:
+                raise RequestError("CHECKER_D1_RECORDED: original result remains unsealed; resume only its Host handoff")
+            return 0
+    invocation, root = (invocation_override, output_path.resolve().parent) if invocation_override else _artifact_root(request)
     background_path = background_override or root / "d1-background.md"
     if background_override is None:
         background_path.write_text(_background(request, _discover_capabilities(request, root)), encoding="utf-8", newline="\n")
@@ -731,6 +808,8 @@ def run(
     })
     environment["SLK_CHECKER_EVIDENCE_INDEX"] = str(index_path)
     environment["SLK_CHECKER_EVIDENCE_INDEX_SHA256"] = _sha256(index_path)
+    if native is not None:
+        environment["SLK_CHECKER_WHOLE_CELL"] = "1"
     process = subprocess.Popen(
         command, cwd=request["repository"],
         env=environment,
@@ -745,6 +824,11 @@ def run(
         )
         _write_json_atomic(native[0].with_name("ocrv-native-source.json"),
             {**source, "native_start_sha256": _sha256(native[0])})
+        if resume_origin is not None:
+            # Explicit recovery is the trusted coordinator of this fresh source.
+            # Publish its actual start without rewriting the original delivery.
+            from slk_transport.evidence import Attempt
+            Attempt(native[0].parent).write_json_once("started.json", _read_json(native[0]))
     closure_error = None
     activity_lock = threading.Lock()
     stream_errors: list[str] = []
@@ -836,19 +920,7 @@ def run(
             returncode = process.wait(timeout=0.25)
             break
         except subprocess.TimeoutExpired:
-            if native is not None and completion_path.is_file() and completed_decision is None and closure_error is None:
-                try:
-                    candidate = _completed_decision(completion_path, native, invocation)
-                    launcher = _read_json(native[0])["process"]
-                    _close_completed_review(process, candidate, launcher)
-                    completed_decision = candidate
-                except (RequestError, OSError, KeyError, TypeError, UnicodeDecodeError) as exc:
-                    closure_error = str(exc)
-                    if activity_path is not None:
-                        with activity_lock:
-                            activity = _read_json(activity_path)
-                            activity["error"] = "OCRV_CLEANUP_FAILED"
-                            _write_json_atomic(activity_path, activity)
+            pass  # D1 persisted is not native completion; never kill pending writers.
     stdout_thread.join()
     stderr_thread.join()
     if native is not None:
@@ -904,16 +976,22 @@ def run(
                review.get("verdict") if native is None and isinstance(review, dict) else None)
     reasons = review.get("reason_codes", []) if isinstance(review, dict) else []
     llm = review.get("llm", {}) if isinstance(review, dict) else {}
+    identity = _verified_native_identity(native[0]) if native is not None else {}
     result = {
         "schema_version": RESULT_SCHEMA, "run_id": request["run_id"], "cell_id": request["cell_id"],
         "review_invocation_id": invocation, "verdict": verdict, "reason_codes": reasons,
         "verdict_source": "CHECKER_EXPLICIT" if verdict is not None else None,
+        "decision": ({"verdict": completed_decision["verdict"], "message": completed_decision.get("message"),
+                      "path": completed_decision["decision_path"], "sha256": completed_decision["decision_sha256"]}
+                     if completed_decision is not None else None),
         "findings": _normalized_findings(review),
         "review": {
             "status": review.get("status") if isinstance(review, dict) else None,
-            "provider": llm.get("provider") if isinstance(llm, dict) else None,
-            "model": llm.get("model") if isinstance(llm, dict) else None,
-            "session_id": review.get("session_id") if isinstance(review, dict) else None,
+            "provider": identity.get("provider") if identity else llm.get("provider") if isinstance(llm, dict) else None,
+            "model": identity.get("model") if identity else llm.get("model") if isinstance(llm, dict) else None,
+            "session_id": identity.get("session_id") if identity else review.get("session_id") if isinstance(review, dict) else None,
+            "identity_source": "VERIFIED_NATIVE_SESSION" if identity else "NATIVE_RAW_REPORT" if review else None,
+            "requested": {"provider": EXPECTED_PROVIDER, "model": EXPECTED_MODEL},
             "exit_code": returncode,
             "closure_reason": "EXPLICIT_D1_COMPLETED" if completed_decision is not None else None,
             "closure_error": closure_error,

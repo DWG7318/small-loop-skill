@@ -16,7 +16,7 @@ import sys
 TOOL_NAME = "slk_checker_decide"
 TOOL = {
     "name": TOOL_NAME,
-    "description": "Submit the original Checker's one explicit D1 decision for the entire frozen candidate and all CELL criteria, not a file/group verdict. Use existing cross-file tools and original evidence, including unchanged Shell/handshake seams required by CELL criteria. Do not submit once per group or repeat a prior whole-CELL decision; if you cannot establish all CELL goals, do not claim whole-CELL PASS. Native review ID proves identity, not whole-candidate completion. Finish this review and save actual reports and evidence first; make this decision and existing handoff your last action. The MCP reply is flushed before the original invocation ends. Do not continue reviewing after handoff. Optional message preserves actual findings/limitations without a report format. Counts, severity and exit status never determine D1. Reports remain independently delivered even if this action fails.",
+    "description": "In the native final whole-CELL stage, persist the original Checker's one explicit D1 decision for the entire frozen candidate and all CELL criteria, not a file/group verdict. Use existing cross-file tools and relevant original evidence, including unchanged seams required by CELL criteria. Do not submit once per group or repeat an authenticated whole-CELL decision. Save public findings and limitations in message, then use this as your last action. This call records D1 only, not handoff. Host dispatch follows natural native completion and sealed evidence. Counts, severity and exit status never determine D1; report limitations honestly and never claim whole-CELL PASS without establishing all goals.",
     "inputSchema": {"type": "object", "properties": {
         "verdict": {"type": "string", "enum": ["PASS", "FAIL", "INCOMPLETE"]},
         "message": {"type": "string"}},
@@ -117,7 +117,7 @@ def _publish_native_process() -> None:
 
 
 def _publish_completion(request: dict, response: dict) -> None:
-    """Only after the explicit host action returns AND its MCP reply is flushed."""
+    """D1 persistence receipt only, never native completion or permission to kill."""
     if not isinstance(request, dict):
         return
     params = request.get("params", {})
@@ -200,6 +200,8 @@ def respond(message: dict, action=record) -> dict | None:
             else:
                 result = action(verdict)
             response["result"] = {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}
+            if isinstance(result, dict) and result.get("isError"):
+                response["result"]["isError"] = True
         except (ValueError, OSError, KeyError, TypeError) as exc:
             response["result"] = {"isError": True, "content": [{"type": "text", "text": str(exc)}]}
     else:

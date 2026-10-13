@@ -39,6 +39,25 @@ def validate_checkpoint(value: object) -> dict:
              "responsibility_operation_id", "member_residency_since", "member_residency_notice_sent",
              "overwatcher_audit_cycle", "next_overwatcher_audit_at", "runtime_guard_blocker",
              "notification_failure", "recovery_failure"}
+    if isinstance(state, Mapping) and "member_residency_notice_attempted" in state:
+        extra |= {"member_residency_notice_attempted", "pending_supervisor_notifications"}
+        pending_notices = state.get("pending_supervisor_notifications")
+        if type(state["member_residency_notice_attempted"]) is not bool or not isinstance(pending_notices, Mapping):
+            raise ValueError("checkpoint notification attempts are invalid")
+        for event_id, notice in pending_notices.items():
+            if (not isinstance(notice, Mapping) or set(notice) != {"event_id", "kind", "run_id",
+                "responsible_role_instance_id", "source_operation_id", "threshold_seconds"}
+                or notice["event_id"] != event_id or notice["run_id"] != startup.run_id
+                or notice["responsible_role_instance_id"] not in identities
+                or type(notice["threshold_seconds"]) is not int or notice["threshold_seconds"] < 0
+                or not all(isinstance(notice[k], str) and IDENTIFIER.fullmatch(notice[k])
+                           for k in ("event_id", "kind", "source_operation_id"))):
+                raise ValueError("checkpoint pending notification changed identity")
+    if isinstance(state, Mapping) and "latest_runtime_alarm_event_id" in state:
+        extra.add("latest_runtime_alarm_event_id")
+        latest = state["latest_runtime_alarm_event_id"]
+        if not isinstance(latest, str) or not IDENTIFIER.fullmatch(latest):
+            raise ValueError("checkpoint latest alarm identity is invalid")
     if v2:
         extra.add("run_pause")
         pause = state.get("run_pause") if isinstance(state, Mapping) else None

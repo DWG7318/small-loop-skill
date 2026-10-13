@@ -127,8 +127,8 @@ class StartSlkRequest:
             "roles",
         }
         source = _closed(value, fields, "SLK startup request")
-        if source["method_version"] not in ("4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0"):
-            raise ContractError("method_version must be a supported 4.4.x or 4.5.0 method")
+        if source["method_version"] not in ("4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1"):
+            raise ContractError("method_version must be a supported 4.4.x or 4.5.x method")
         raw_roles = source["roles"]
         if not isinstance(raw_roles, list):
             raise ContractError("roles must be an array")
@@ -406,8 +406,8 @@ class RuntimeGuardResolution:
             "evidence_sha256",
         }
         source = _closed(value, fields, "runtime guard resolution")
-        if source["resolution"] != "OVERWATCHER_RESTORED":
-            raise ContractError("runtime guard resolution must prove OVERWATCHER_RESTORED")
+        if source["resolution"] not in {"OVERWATCHER_RESTORED", "EXACT_RUNTIME_RECOVERY_VERIFIED"}:
+            raise ContractError("runtime guard resolution must prove OVERWATCHER_RESTORED or EXACT_RUNTIME_RECOVERY_VERIFIED")
         return cls(
             event_id=_identifier(source["event_id"], "event_id"),
             run_id=_identifier(source["run_id"], "run_id"),
@@ -415,6 +415,6 @@ class RuntimeGuardResolution:
                 source["supervisor_role_instance_id"], "supervisor_role_instance_id"
             ),
             blocker_event_id=_identifier(source["blocker_event_id"], "blocker_event_id"),
-            resolution="OVERWATCHER_RESTORED",
+            resolution=source["resolution"],
             evidence_sha256=_hash(source["evidence_sha256"], "evidence_sha256"),
         )

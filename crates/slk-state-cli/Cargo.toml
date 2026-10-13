@@ -1,6 +1,6 @@
 [package]
 name = "slk-state-cli"
-version = "4.5.0"
+version = "4.5.1"
 edition = "2021"
 license = "MIT"
 description = "State transaction command-line tool for Small Loop Skill"
@@ -14,4 +14,4 @@ path = "src/main.rs"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
-slk-state-core = { git = "https://github.com/DWG7318/slk-state-core.git", rev = "7ea54ec866191a22432e12b6553301d9408a033f" }
+slk-state-core = { git = "https://github.com/DWG7318/slk-state-core.git", rev = "75c5f294cb0bf974fc61e3afa349c873d8cc5982" }

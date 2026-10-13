@@ -1,4 +1,34 @@
-# SLK 4.5.0 Temporal continuity templates
+# SLK 4.5.1 Temporal continuity templates
+
+## 4.5.1 evidence and notice truth
+
+OW patrol remains 600 seconds; the independent Temporal audit remains 1200 seconds;
+the 1800-second member-residency threshold is reminder-only. A cycle age older
+than 600 seconds and up to 1200 seconds with independently proven native activity is `LATE`, not a confirmed
+exit. Unknown evidence never means dead. Existing current-CELL work is preserved;
+an unresolved runtime guard still requires Supervisor verification before another CELL.
+
+An optional explicit `child_source_path` in a new immutable subagent request joins
+the parent's exact spawn `SubAgentActivity` UUID to the child's original
+`session_meta` parent/path/depth and fresh `collaboration.list_agents` call/output.
+No path discovery, self-authenticated cycle substitute, reader-clock freshening,
+or reasoning-body export is used. Old requests remain supported conservatively;
+enable child sampling through fresh explicit attestation, never rewrite old proof.
+Both original child query and output timestamps use the existing 1200-second
+audit window. Parent-only samples keep the conservative historical policy.
+
+`status().runtime_guard_blocker.event_id` is the exact unresolved repair target;
+`latest_runtime_alarm_event_id` may name a newer alarm. Both legacy
+`OVERWATCHER_RESTORED` and generic `EXACT_RUNTIME_RECOVERY_VERIFIED` require the
+same frozen Supervisor, exact blocker, and evidence hash. Resolving one event
+does not dismiss a newer alarm, even for the same OW.
+
+`member_residency_notice_attempted` is distinct from true native delivery.
+Unconfirmed notifications retain their original identity and are revisited only
+on the existing audit; accepted sends use readback only. Original notification
+material stays immutable while a separate current projection verifies the target.
+Neither acceptance nor `NOTIFIED` proves that the Supervisor read or repaired it.
+Temporal patch markers preserve historical command/timer replay.
 
 ## Current delivery and ordinary startup
 

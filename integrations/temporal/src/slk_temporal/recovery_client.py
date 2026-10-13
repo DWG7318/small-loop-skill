@@ -58,7 +58,7 @@ def validate_request(value: object) -> tuple[dict, dict, dict]:
     checkpoint = validate_checkpoint(read_proof(value["checkpoint"], "checkpoint"))
     startup = StartSlkRequest.from_dict(checkpoint["startup"])
     if (value["run_id"] != startup.run_id or identity["run_id"] != startup.run_id
-        or startup.method_version not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0"} or identity["task_queue"] != startup.task_queue
+        or startup.method_version not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1"} or identity["task_queue"] != startup.task_queue
         or identity["startup_fingerprint"] != startup.startup_fingerprint):
         raise ValueError("recovery changed business Run, method, queue or immutable startup")
     executions = value["source_executions"]
@@ -133,7 +133,7 @@ def _central(config: Mapping, startup: StartSlkRequest, checkpoint: Mapping, hos
     state = {"REQUESTED": "pause_requested", "PAUSED": "paused", "RESUMED": "active"}.get(
         pause["phase"] if pause else "RESUMED")
     if (projection.get("summary", {}).get("run_id") != startup.run_id
-        or runtime.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0"} or runtime.get("plan_revision") != host.get("plan_revision")
+        or runtime.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1"} or runtime.get("plan_revision") != host.get("plan_revision")
         or type(runtime.get("runtime_revision")) is not int
         or pending is not None and (runtime["runtime_revision"] < pending["source_runtime_revision"]
             or runtime.get("token_holder_role_instance_id") != pending["sender_role_instance_id"])
@@ -262,9 +262,12 @@ def verify_restored_checkpoint(source: dict, target: object, *, initial: bool) -
             raise ValueError("actual recovery lost activity identities")
     if initial:
         validate_checkpoint(target)
-        old, new = source["status"], target["status"]
+        defaults = {"member_residency_notice_attempted": False, "pending_supervisor_notifications": {},
+                    "latest_runtime_alarm_event_id": None}
+        old, new = ({**defaults, **packet["status"]} for packet in (source, target))
         allowed = {"next_overwatcher_audit_at"}
-        if old["member_residency_notice_sent"] is False and new["member_residency_notice_sent"] is True:
+        if (old["member_residency_notice_sent"] is False and new["member_residency_notice_sent"] is True
+            or old["member_residency_notice_attempted"] is False and new["member_residency_notice_attempted"] is True):
             since = old["member_residency_since"]
             if since is None or datetime.fromisoformat(since) + timedelta(minutes=30) > datetime.now(timezone.utc):
                 raise ValueError("recovery notice has no expired source responsibility")
@@ -279,6 +282,20 @@ def verify_restored_checkpoint(source: dict, target: object, *, initial: bool) -
                 or new["runtime_guard_blocker"] != expected_guard):
                 raise ValueError("recovery changed an unresolved guard or overdue notice identity")
             allowed |= {"member_residency_notice_sent", "notification_failure", "runtime_guard_blocker"}
+            if "member_residency_notice_attempted" in target["status"]:
+                pending = dict(old["pending_supervisor_notifications"])
+                if new["notification_failure"]:
+                    pending[event] = {"event_id": event, "kind": "MEMBER_RESIDENCY_EXCEEDED",
+                        "run_id": source["startup"]["run_id"],
+                        "responsible_role_instance_id": old["responsible_role_instance_id"],
+                        "source_operation_id": old["responsibility_operation_id"], "threshold_seconds": 1800}
+                else:
+                    pending.pop(event, None)
+                if (new["member_residency_notice_sent"] != (new["notification_failure"] is None)
+                    or new["pending_supervisor_notifications"] != pending
+                    or new["latest_runtime_alarm_event_id"] != (event if new["notification_failure"] else old["latest_runtime_alarm_event_id"])):
+                    raise ValueError("recovery changed true delivery or pending notification identity")
+                allowed |= {"member_residency_notice_attempted", "pending_supervisor_notifications", "latest_runtime_alarm_event_id"}
         if (target["continuity"] != source["continuity"]
             or any(target[key] != source[key] for key in ("delivery_started", "recovery_started", "admission_requested"))
             or {k: v for k, v in new.items() if k not in allowed}

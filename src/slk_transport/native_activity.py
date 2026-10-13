@@ -10,7 +10,7 @@ import os
 import re
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -398,11 +398,20 @@ def _inspect_native_projection(
     start: Mapping[str, Any],
     native_probe: Callable[[Mapping[str, Any]], Mapping[str, Any]],
     observed: str | None,
-    max_activity_age_seconds: int,
+    max_activity_age_seconds: int | None,
 ) -> tuple[dict[str, Any], str, str | None, str]:
     try:
         native = dict(native_probe(start))
         validation_observed = observed or utc_now()
+        if max_activity_age_seconds is None:
+            # Only the original-record reader emits this after exact parent /
+            # child linkage. Use the existing OW audit window, not an extra
+            # 300-second patrol requirement. Parent-only and other probes keep
+            # their conservative policy; explicit caller limits still apply.
+            event = native.get("last_event")
+            linked_child = (start["native_task"]["kind"] == "codex-subagent"
+                and isinstance(event, Mapping) and event.get("kind") == "CODEX_SUBAGENT_CHILD_LIST_READBACK")
+            max_activity_age_seconds = 1200 if linked_child else 300
         native_error = native.get("error")
         if native_error is not None:
             _nonempty(native_error, "error")
@@ -505,7 +514,7 @@ def inspect_native_activity(
     process_probe: Callable[[int, str], Mapping[str, Any]] = process_probe,
     native_probe: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     observed_at: str | None = None,
-    max_activity_age_seconds: int = 300,
+    max_activity_age_seconds: int | None = None,
 ) -> dict[str, Any]:
     start = validate_native_start(started_path)
     observed = observed_at or utc_now()
@@ -611,14 +620,36 @@ def inspect_native_activity(
     }
 
 
+def overwatch_attempt_observation(projection: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Keep both exact central facts; never silently normalize an attempt conflict."""
+    from . import worker_completion as wc
+    message = projection.get("runtime_snapshot", {}).get("latest_message_id")
+    if message is None:
+        return None
+    events = [event for event in projection.get("events", []) if event.get("event_type") == "TRANSPORT_STARTED"
+              and wc._event_details(event).get("message_id") == message]
+    if len(events) != 1:
+        return None
+    event = events[0]
+    cells = [cell for go in projection.get("go_nodes", []) if go.get("go_id") == event.get("go_id")
+             for cell in go.get("cell_nodes", []) if cell.get("cell_id") == event.get("cell_id")]
+    if len(cells) != 1:
+        return None
+    native_attempt, projected_attempt = event.get("attempt"), cells[0].get("attempt")
+    return {"go_id": event.get("go_id"), "cell_id": event.get("cell_id"),
+            "transport_event_attempt": native_attempt, "projected_cell_attempt": projected_attempt,
+            "conflict": native_attempt != projected_attempt}
+
+
 def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_command: list[str]) -> dict[str, Any]:
     """One tool-clock window around the original central and native queries."""
     from . import worker_completion as wc
 
     query_started_at = utc_now()
     projection = snapshot = None
-    start_sha256 = completion = None
+    start_sha256 = completion = resume_metadata = None
     query_error = None
+    attempt_observation = None
     native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
               "error": "NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}
     try:
@@ -626,6 +657,7 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
         snapshot = projection["runtime_snapshot"]
         if projection["summary"]["run_id"] != run_id:
             raise NativeActivityError("central query returned a different Run")
+        attempt_observation = overwatch_attempt_observation(projection)
     except (KeyError, TypeError, OSError, ValueError) as exc:
         query_error = f"CURRENT_PROJECTION_UNAVAILABLE: {exc}"
         native["error"] = query_error
@@ -674,22 +706,63 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
                 or start["cell_id"] != envelope.get("cell_id") or start["adapter"] != endpoint.get("adapter")
                 or start["request_sha256"] != envelope.get("payload_sha256")):
                 raise NativeActivityError("native delivery is not the current holder/CELL/message/request")
-            native = inspect_native_activity(started_path, terminal_paths=(source / "completed.json", source / "failed.json"))
             worker = any(role.get("role") == "worker"
                          and role.get("role_instance_id") == snapshot.get("token_holder_role_instance_id")
                          for role in projection.get("roles", []))
-            completion = (wc.inspect_worker_completion(source, projection, observed_at=utc_now(), cadence_seconds=600,
-                          native_inspector=lambda *_a, **_k: native) if worker else None)
+            try:
+                from .worker_resume_observation import select_worker_resume
+                from .native_ocrv import select_ocrv_resume
+                resumed = (select_worker_resume(source, endpoint=endpoint, envelope=envelope, original_start=start)
+                           if worker else select_ocrv_resume(source, endpoint=endpoint, envelope=envelope, original_start=start)
+                           if endpoint.get("adapter") == "ocrv-checker" else None)
+                if resumed is not None:
+                    resume_metadata = resumed.metadata
+                    native = resumed.inspect_native(inspect_native_activity)
+                    completion = (wc.inspect_worker_completion(resumed.source, projection, observed_at=utc_now(),
+                        cadence_seconds=600, native_inspector=lambda *_a, **_k: native) if worker else None)
+            except (KeyError, TypeError, OSError, ValueError) as exc:
+                resume_metadata = completion = None
+                native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
+                          "error": f"NATIVE_RESUME_QUERY_UNAVAILABLE: {exc}"}
+            else:
+                if resumed is None:
+                    native = inspect_native_activity(started_path,
+                        terminal_paths=(source / "completed.json", source / "failed.json"))
+                    completion = (wc.inspect_worker_completion(source, projection, observed_at=utc_now(), cadence_seconds=600,
+                                  native_inspector=lambda *_a, **_k: native) if worker else None)
             if sha256_file(started_path) != start_sha256:
                 raise NativeActivityError("original native start changed during query")
         except (KeyError, TypeError, OSError, ValueError) as exc:
             start_sha256 = None
             native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
                       "error": f"ORIGINAL_NATIVE_QUERY_UNAVAILABLE: {exc}"}
+    query_completed_at = utc_now()
+    conflict = attempt_observation is not None and attempt_observation["conflict"]
+    mechanics = None
+    if query_error is None and snapshot is not None:
+        mechanics = {key: snapshot.get(key) for key in ("plan_revision", "runtime_revision", "token_sequence",
+            "token_holder_role_instance_id", "latest_event_id", "latest_message_id")}
+        mechanics.update(run_id=run_id, binding_revision=snapshot.get("overwatcher_binding_revision"),
+            go_id=None if conflict or attempt_observation is None else attempt_observation["go_id"],
+            cell_id=None if conflict or attempt_observation is None else attempt_observation["cell_id"],
+            attempt=None if conflict or attempt_observation is None else attempt_observation["transport_event_attempt"],
+            started_at=query_started_at, completed_at=query_completed_at, cadence_seconds=600,
+            next_cycle_at=(datetime.fromisoformat(query_completed_at.replace("Z", "+00:00")) + timedelta(seconds=600)).isoformat())
+        roles = [row for row in projection.get("roles", []) if row.get("role") == "overwatcher" and row.get("lifecycle") == "active"]
+        if len(roles) == 1:
+            mechanics.update(role_instance_id=roles[0]["role_instance_id"], session_id=roles[0].get("session_id"),
+                             foreground_turn_id=roles[0].get("foreground_turn_id"))
+        sequences = [row.get("cycle_sequence") for row in projection.get("overwatch_cycles", [])]
+        if all(type(sequence) is int and sequence >= 1 for sequence in sequences) and len(set(sequences)) == len(sequences):
+            mechanics["cycle_sequence"] = max(sequences, default=0) + 1
+        mechanics["cycle_id"] = "ow-cycle-" + wc.canonical_json_sha256(mechanics)
     return {"schema_version": SCOPE_INSPECTION_SCHEMA, "run_id": run_id,
+            "attempt_observation": attempt_observation, "cycle_mechanics": mechanics,
+            "required_anomaly_codes": ["PROJECTION_MISMATCH", "ACTIVITY_UNPROVEN"] if conflict else [],
+            **({"native_resume": resume_metadata} if resume_metadata is not None else {}),
             "source_message_id": snapshot.get("latest_message_id") if snapshot is not None else None,
             "native_start_path": str(started_path.resolve()) if started_path is not None else None,
             "native_start_sha256": start_sha256, "runtime_snapshot": snapshot,
             "runtime_projection_sha256": wc.canonical_json_sha256(projection) if query_error is None else None,
             "native_activity": native, "worker_completion": completion,
-            "query_error": query_error, "query_started_at": query_started_at, "query_completed_at": utc_now()}
+            "query_error": query_error, "query_started_at": query_started_at, "query_completed_at": query_completed_at}
