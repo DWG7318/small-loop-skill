@@ -28,11 +28,11 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 5. Worker 与 Checker 的隔离、通讯和返工关系。
 6. 通讯异常、成员异常、连续返工和 D2 发现组合问题时如何恢复施工。
 7. 根 Run 记录由谁创建，各成员怎样记录和传输。
-8. Supervisor 在哪些边界按需激活：启动、Checker升级求助、通讯或成员恢复、计划与豁免决定，以及全部 CELL 后的 D2 交接。
-9. 日常 CELL 为什么由 Checker 与 Worker 直接推进，Supervisor 为什么按需激活；任何角色为什么不使用`wait_threads`或观察其他成员施工过程，并在交付后结束当前活动。
+8. Supervisor 怎样持续在线低 Token 观察真实状态，发现只 ACK、读文件或部分实现便结束时，如何现场恢复原节点并记录，而不接管施工和 D1；全部 CELL 后怎样进入 D2 交接。
+9. 日常 CELL 为什么由 Checker 与 Worker 直接推进、两者真实交接后结束；Supervisor 如何用原生等待和精简变化继续观察，为什么无输出不等于停工、消息受理不等于实际续作。
 10. 收到 D2 交接后，怎样先检查 Run/GO、最终候选和端到端结果，再核对详细施工历史。
 11. 面对允许误差或豁免时，怎样说明影响与剩余问题、安排补偿或后续 CELL；豁免不等于 D1 通过。
-12. 什么情况可以由 Supervisor 在一次激活中解决后交还 Checker；确实需要 Owner 掌握的资源或业务权限时，怎样先形成推荐方案和最低必要授权请求，而不是把问题原样交回 Owner。
+12. 什么情况可以由 Supervisor 现场解决后交还 Checker 并继续观察；确实需要 Owner 掌握的资源或业务权限时，怎样先形成推荐方案和最低必要授权请求，而不是把问题原样交回 Owner。
 
 ## 完成后
 

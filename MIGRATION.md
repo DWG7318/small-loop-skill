@@ -1,5 +1,7 @@
 # Migration from SLK 2.6.0 to 3.0.0
 
+This section records the original 3.0.0 boundary. The 3.0.9 changes at the end supersede its event-activated Supervisor behavior; historical Runs are not rewritten.
+
 SLK 3.0.0 is a new method boundary. Existing Runs can remain on their bound 2.6.0 method. A new Run can choose 3.0.0 and create a fresh root Run record.
 
 ## Topology
@@ -32,3 +34,11 @@ The `v2.6.0` tag and Release preserve the previous repository and install tree. 
 ## 3.0.5 planning clarification
 
 Runs adopting 3.0.5 keep D0, D1, and D2 as inspection layers rather than adding inspection-only CELLs. For midstream adoption into completed or partly completed work, re-plan only the still-needed construction: preserve and reuse completed results, and size the route, scope, and engineering activities needed to reach the current target reliably. Findings enter the CELL plan only when they require implementation work.
+
+## 3.0.8 → 3.0.9 independent maintenance
+
+Base: `v3.0.8`, commit `870b0e517c7a1cd9b2592e9e4a9115b54a312160`. This is not a 4.x downgrade or a merge from 4.x. Main/global 4.x deployments remain separate.
+
+Supervisor now stays active with low-token native observation and owns onsite recovery/recording; Worker and Checker retain their existing handoff and acceptance responsibilities. Interrupted work resumes the original node, model requests are distinguished from effective new turns, and the existing root Markdown gets one current summary with separate historical evidence. No new role, runtime or fixed timing gate is added.
+
+Adopt at a Run boundary in the authorized project only: verify the new Skill payload before replacing that project's old callable 3.0.8 entries. Preserve closed Run provenance, candidates and evidence, plus unrelated project/global Skills. Do not silently rebind a still-active Run.

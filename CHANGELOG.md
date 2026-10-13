@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.9
+
+- Independent maintenance from `v3.0.8` (`870b0e5`); no 4.x runtime, roles or transport components are imported.
+- Keep Supervisor active with low-token native observation, accountable onsite recovery and concise factual recording; remove contradictory event-only exits without taking over Checker dispatch or independent D1.
+- Recover incomplete/terminated nodes as well as failed deliveries using their original identity, baseline and valid edits; distinguish accepted requests, visible delivery, actual execution and completed handoff without inflating D1 failure counts.
+- Review capability before a candidate exists, preserve Owner model authorization scope, and verify the actual new-turn model rather than treating an accepted request as an in-place model switch.
+- Maintain one current Run summary with timestamps/authorship, retain prior attempts as history, and reconcile closure fields without rewriting original evidence.
+- Reinforce clean D1 handoffs and complete original scope; plan only necessary private-callchain bridges and affected-platform checks instead of a heavier preflight or repeated full D2.
+- Retain 13 Skills / 15 Skill payload files. Project-only adoption leaves global versions and other Runs untouched; remove obsolete fixed line-count test expectations, not role or acceptance safeguards.
+
 ## 3.0.8
 
 - Clarified model selection as an ordered decision across Owner choices, role baselines, each current CELL's concrete difficulty, and observed rework signals; defined when a CELL is clearly small and retained the normal Worker baseline whenever that judgment is uncertain.

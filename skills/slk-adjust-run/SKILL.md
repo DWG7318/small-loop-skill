@@ -1,6 +1,6 @@
 ---
 name: slk-adjust-run
-description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor decision after repeated D1 failure, D2 findings, or changed resources.
+description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor decision after incomplete execution, repeated D1 failure, D2 findings, or scope/resource changes.
 ---
 
 # Adjust an SLK Run
@@ -17,6 +17,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs a Supervisor de
 - 连续 D1 返工仍未收敛；
 - D2 发现 CELL 或 GO 之间的衔接问题；
 - 当前模型、电脑、环境或依赖与原计划差异较大；
+- 尚无候选却反复执行不完整，或实际模型/平台容量与当前任务不匹配；
 - CELL 变化已经影响后续 GO、技术路线、验收目标或 Owner 需求。
 
 ## 建议选择
@@ -25,7 +26,7 @@ Supervisor 在现有工程权限和资源范围内给出能继续施工的具体
 
 Supervisor 可以按实际原因组合以下办法：
 
-1. 在现有权限内补充信息、可用资源或验证方式；
+1. 在现有权限内补充信息、可用资源、必要路径或验证方式，现场补漏并记录；既有工程授权内的范围澄清不反复交给 Owner，新产品目标、受控资源/依赖或 Owner 指定模型的变化另按授权处理；
 2. 同一 GO 第一次 D2 返工时，使用 `$slk-select-models` 为当前修复 CELL 的 Worker 做第一次升级；同一 GO 第二次 D2 FAIL 时执行第二次升级，并由 Supervisor 重新规划当前修复 CELL。Owner 已指定模型时保留该选择，说明变更理由和影响，再由 Owner 决定是否改变指定；
 3. 调整当前或后续 CELL、施工顺序或技术路线，让已验证成果继续被继承；
 4. 解决方案需要 Owner 掌握的电脑、工具、账号、测试环境或业务权限时，提交推荐方案、预期影响、可行替代和最低必要授权；
@@ -37,4 +38,4 @@ Supervisor 可以按实际原因组合以下办法：
 
 调整通常保持原 Run 目标和已约定验收目标；Owner主动改变目标时，再更新相应定义。Supervisor 把原因、选择、影响、CELL n/N变化和未决风险写入根记录。
 
-调整完成后，Supervisor 把决定写入记录，沿 `Supervisor → Checker` 以递增编号的同一 `SLK TOKEN` 交还当前责任，随后结束本次激活。待施工 CELL 可以使用 `$slk-dispatch-cell` 校准并派发；当前 CELL 的修复可以回到 `$slk-rework-cell`。D2 衔接问题通过 Checker→Worker→Checker 修复后，再激活 Supervisor 检查相关 D2。
+调整完成后，Supervisor 把决定写入记录；本来持有令牌的正式调整沿 `Supervisor → Checker` 以递增编号的同一 `SLK TOKEN` 交还当前责任，旁观中补充信息或恢复则不夺取令牌、不虚增编号。Supervisor 随后继续低 Token 观察。待施工 CELL 可以使用 `$slk-dispatch-cell` 校准并派发；当前 CELL 的修复可以回到 `$slk-rework-cell`。候选前能力复核使用 `$slk-select-models`，不冒充 D1 返工；D2 衔接问题通过 Checker→Worker→Checker 修复后，再交 Supervisor 检查相关 D2。

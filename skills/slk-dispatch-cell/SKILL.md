@@ -16,6 +16,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 - 对照当前 GO、前序 CELL 的实际施工、D0/D1、返工表现和真实依赖，动态校准既定 CELL 是否仍处在正确位置；
 - 参考 Worker 当前模型、电脑、累积工程量和施工余量，判断范围是否仍然合适；
+- 确认必要私有调用链和桥接路径在施工范围内，D0/D1 覆盖实际受影响的平台编译边界；复用计划与已有事实，不重复做全项目预检；
 - 原验收目标不变而范围明显过大时，可以做一次简单的局部拆分：把 CELL 一分为二，形成两个串行 CELL，并同步 `CELL n/N` 与根 Run 记录；
 - 变化会影响 Run、GO 或验收目标时，建议请 Supervisor 使用 `$slk-adjust-run` 组织调整。
 
@@ -35,7 +36,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a Checker ready t
 
 Checker 使用能够继续 Worker 对话的真实激活操作一次发送完整 CELL，不把一个 CELL 拆成逐条命令派发，并在同一可见消息中写入 `SLK TOKEN Tnnn`、令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径；编号在 Run 内单调递增。文字只出现在后台记录中不构成投递。Worker 在令牌到达的该次激活中直接开始 CELL，不增加令牌专用回执；接收令牌不是 CELL 完工。Checker 发出完整 CELL 后结束本次激活，不使用`wait_threads`也不读取Worker施工状态；候选交付重新激活Checker。这里一次传递完整目标、边界和验收事实，也不把 Checker 的 D1 判断提前交给 Worker。
 
-真实激活操作明确报告消息未创建、投递失败或 Worker 任务不可用时，Checker 保留当前令牌并沿用同一拟发送编号重试；任务不可用时可以使用 `$slk-manage-team` 优先恢复原 Worker，缺少回复本身不表示需要更换 Worker。
+真实激活操作明确报告消息未创建、投递失败或 Worker 任务不可用时，Checker 保留当前令牌并沿用同一拟发送编号重试；交给 Supervisor 接手恢复后不再自行重试，交代已经发送或排队的消息，由其决定单一恢复投递。任务不可用时可以使用 `$slk-manage-team` 优先恢复原 Worker，缺少回复本身不表示需要更换 Worker。
 
 Worker 提出合理澄清时，Checker可以补充上下文；若答案会改变 Run 目标或验收目标，建议请 Supervisor 协助判断。
 

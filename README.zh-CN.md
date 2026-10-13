@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前版本：**3.0.8**
+当前版本：**3.0.9**（独立 `maintenance/3.0.9` 维护分支，基于 `v3.0.8`）
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。GO 与 CELL 沿一条线性路径推进。
 
@@ -19,7 +19,7 @@ CELL 派发 → Worker 施工与 D0 → 候选 → Checker 隔离 D1 → 通过/
 → 通讯测试 → 第一个 CELL
 ```
 
-Supervisor 在启动、上级求助、豁免、成员恢复和 D2 等边界按需激活；日常 CELL 由 Checker 与 Worker 直接推进，Supervisor 不在线等待逐 CELL 结果。一个当前有效的 `SLK TOKEN` 由既有可见交接消息携带：它标明最后已确认的责任边界，但不证明成员正在实时施工，也不新增角色、服务、状态文件或回执轮次。Checker 派发 CELL，并在隔离状态下执行 D1。Worker 完成当前 CELL，并在交付前执行最低程度 D0。
+Supervisor 在施工期间持续在线，通过原生等待和精简证据低 Token 观察 Worker/Checker，在既有授权内现场排障并记录处置结果；日常 CELL 仍由 Checker 与 Worker 直接推进，不接管派发或独立 D1。一个当前有效的 `SLK TOKEN` 由既有可见交接消息携带：它标明最后已确认的责任边界，但不证明成员正在实时施工，也不新增角色、服务、状态文件或回执轮次。Checker 派发 CELL，并在隔离状态下执行 D1。Worker 完成当前 CELL，并在交付前执行最低程度 D0；两者以交接为最后动作，Supervisor 则继续观察直到 Run 收尾或 Owner 明确停止。
 
 Run 规划沿用 D0、D1、D2 三层检查，不为检查本身创建独立 CELL。建议优先用现有入口直接验证产品，把检查工具或环境故障与产品缺陷分开，复用仍有效的客观证据，不逐层重复完整验收或先搭建检查体系；证据不足保留未证明，不写成 PASS。SLK 接入已经完成或部分完成的项目时，先保留并复用已完成工作，再选择为可靠达到当前目标所需的合理最小施工路线、范围和工程活动，而不是只追求最小代码差异。
 
@@ -44,7 +44,7 @@ Supervisor 在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。Worker、Checker、S
 
 ## 安装
 
-把 `skills/` 下 13 个目录作为同级目录放入 Codex Skill 根目录。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
+把 `skills/` 下 13 个目录作为同级目录放入 Owner 选定的项目 Skill 根目录（例如 `.agents/skills`）。核验固定提交、版本和 15 个 Skill 文件哈希后，仅清理该项目内已被替代的 SLK 3.0.8 可调用入口；保留无关 Skill 和旧 Run/证据记录，不覆盖全域 4.x 或其他在跑 Run 绑定的方法。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
 
 ## 验证
 

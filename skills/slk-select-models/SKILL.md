@@ -1,6 +1,6 @@
 ---
 name: slk-select-models
-description: Use when an active Small Loop Skill (SLK) Run needs role-specific model capability choices before member creation or after capability-related rework.
+description: Use when an active Small Loop Skill (SLK) Run needs role-specific model choices or a capability review after incomplete execution or rework.
 ---
 
 # Select Models for an SLK Run
@@ -35,7 +35,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs role-specific m
 
 升级后再次 FAIL，即第三次 D1 或同一 GO 第二次 D2 时，再升级当前 Worker：`Terra high → Sol medium；Sol medium → Sol high`。同时由 Checker 重新规划当前 CELL；D2 情境由 Supervisor 重新规划当前修复 CELL。可以把 CELL 一分为二或另选施工方案，不只依靠继续提高模型。
 
-升级只跟随当前 CELL。该 CELL 完成或被重新划分后，下一个 CELL 重新从基准线选择；拆出的新 CELL 也按各自实际范围重新选择。Checker 与 Supervisor 不因 D1 或 D2 FAIL 自动升级。
+该阶梯的升级只跟随当前 CELL。该 CELL 完成或被重新划分后，下一个 CELL 重新从基准线选择；拆出的新 CELL 也按各自实际范围重新选择。Owner 已授权覆盖剩余 Run 的模型选择持续有效，不因进入新 CELL 自动回退。Checker 与 Supervisor 不因 D1 或 D2 FAIL 自动升级。
 
 ## Owner 指定
 
@@ -47,4 +47,10 @@ Owner 已指定某个角色模型时，后续“提高一级”不自动覆盖�
 
 - CELL 的大小与 Worker 能力、电脑和累积工程量相互匹配，并保留余量。
 - D1 或 D2 返工需要模型变化、且 Worker 模型未由 Owner 直接指定时，按当前 CELL 的升级阶梯选择。
+- 候选前反复只受领、部分实现便结束或出现实际 model capacity 错误，也是能力复核信号，不计为 D1 FAIL；Supervisor 先分清任务不清、执行偏差、模型能力与平台资源故障，再选择原节点恢复、澄清/拆分或模型调整，不按统一次数自动升级。
+- 换型记录区分请求参数、平台受理和实际新回合生效；向 active 旧回合发送新参数不证明旧回合换型。以新回合的实际模型/推理档位等可见配置确认，不读隐藏推理；未能核实则记未确认，不并发启动同一节点，也不反复重发排队请求。
 - 本 Skill 由 `$slk-adjust-run` 调用时，完成模型选择后返回当前调整，由 Supervisor 统一记录和交还施工；这样不另起一轮重复调整。
+
+## 负面提示词
+
+- 不要为了换模型伪造 D1 失败，或把请求被受理写成模型已生效；不要擅改 Owner 指定、重复索取仍有效的同一授权，或把某次能力失配推广成所有项目的型号禁令。

@@ -13,7 +13,7 @@ SLK 是 Loop Engineering 的线性形态，面向中小型工程或大型工程�
 
 ## 可见成员
 
-- Supervisor 在启动、上级协助、豁免和 D2 等边界按需激活。
+- Supervisor 在 Run 施工期间持续在线，以低 Token 方式观察 Checker 与 Worker 的真实工作情况，发现问题就在既有授权内现场解决并记录问题、处置和结果；同时负责启动、调整、豁免和 D2。
 - Checker 负责日常 CELL 推进：向 Worker 派发、直接协作并在隔离状态下执行 D1。
 - Worker 完成当前 CELL，并在交付前执行最低程度 D0。
 
@@ -21,27 +21,28 @@ D0 提供交付前基本信心，D1 判断 CELL 是否达到约定目标，D2 �
 
 原对话与 Owner 选择 SLK，并明确 Run 目标、边界和 Owner 关心的结果。Agent 在创建 Supervisor 前结合项目整理 Run、GO、初始 CELL 与分层检查方案。Supervisor 接管后，原对话退出工程工作，继续保留 Owner 联系和 Supervisor 异常恢复入口。
 
-Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。随后按 Supervisor 创建 Checker，Checker 创建 Worker 的关系建立成员；在 Worker 创建前完成 Checker 职责理解确认。通讯测试完成后，Supervisor 用 `T001` 把第一个待派发 CELL 的责任交给 Checker；此后当前持有者在完成既有节点时单调增加编号，并用真实激活操作把完整 `SLK TOKEN` 消息投递到可见目标对话。令牌在可见目标对话出现才证明该次流转；同一 Run 全部成功流转中编号最大且身份匹配的令牌才是当前事实，并由接收者在该次激活中先登记到根记录再完成下一节点，不增加令牌专用回执。只有真实投递成功才结束当前活动，操作明确失败时仍持有当前令牌，并以同一拟发送编号、内容和接收者重试。当前令牌只证明当前责任与最后已确认边界，不证明接收者正在实时施工；旧 running 标记、旧进度或持有令牌也不证明活跃。没有后续令牌或结果时只报告“令牌已交给相应角色，后续执行未确认”。成员不使用`wait_threads`或读取其他成员施工状态，下一条真实消息重新激活对应角色；异常、重要计划变化、豁免和最终 D2 交接再激活 Supervisor。
+Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。随后按 Supervisor 创建 Checker，Checker 创建 Worker 的关系建立成员；在 Worker 创建前完成 Checker 职责理解确认。通讯测试完成后，Supervisor 用 `T001` 把第一个待派发 CELL 的责任交给 Checker；此后当前持有者在完成既有节点时单调增加编号，并用真实激活操作把完整 `SLK TOKEN` 消息投递到可见目标对话。令牌在可见目标对话出现才证明该次流转；同一 Run 全部成功流转中编号最大且身份匹配的令牌才是当前事实，并由接收者在该次激活中先登记到根记录再完成下一节点，不增加令牌专用回执。Worker 与 Checker 只有真实投递成功才结束当前活动，操作明确失败时仍持有当前令牌，并以同一拟发送编号、内容和接收者重试。当前令牌只证明当前责任与最后已确认边界，不证明接收者正在实时施工；旧 running 标记、旧进度或持有令牌也不证明活跃。没有后续令牌或结果时只报告“令牌已交给相应角色，后续执行未确认”。Worker 与 Checker 不使用`wait_threads`或读取彼此施工过程，下一条真实消息重新激活对应角色；Supervisor 交还工程责任后继续在线，按团队管理指导使用原生等待和精简状态观察，不接管日常 CELL 派发或独立 D1。
 
 ## 按当前情境选择指导
 
 - 新 Run、GO 与初始 CELL 方案：`$slk-plan-run`
 - Supervisor、Checker、Worker 的模型能力选择：`$slk-select-models`
 - Supervisor 开工前理解确认：`$slk-grill-supervisor`
-- 建立、恢复、更换或归档成员：`$slk-manage-team`
+- 建立、持续观察、恢复、更换或归档成员：`$slk-manage-team`
 - Checker 派发前校准并交付既定 CELL：`$slk-dispatch-cell`
 - Worker 施工与最低 D0：`$slk-execute-cell`
 - Checker 隔离执行 D1：`$slk-check-cell`
 - 各成员写入共享 Run 记录：`$slk-record-run`
 - D1 未通过后的普通返工：`$slk-rework-cell`
 - Supervisor 处理升级决策、返工路线、能力安排、Owner 授权建议或豁免：`$slk-adjust-run`
-- Worker 向 Checker 交付后缺少当前 CELL 的接收证据：`$slk-recover-communication`
+- Worker 向 Checker 交付未达，或任一成员收到当前令牌却未完成节点便结束：`$slk-recover-communication`
 - 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
 
 通常读取当前情境对应的指导即可；新的情况出现时，再补充相关 Skill。
 
 ## 负面提示词
 
-- 不要把 SLK Run 绑定到任何由单个对话持续工作到底的 Goal 模式，也不要让这类 Goal 驱动或续作 Run；这不限制目标定义，天然冲突来自固定对话与 `SLK TOKEN` 在 Supervisor、Checker、Worker 之间逐节点流转不能同时成为执行主线。
+- 不要把 SLK Run 绑定到任何由单个对话持续工作到底的 Goal 模式，也不要让这类 Goal 驱动或续作 Run；这不限制目标定义或 Supervisor 持续在线观察，天然冲突来自固定对话与 `SLK TOKEN` 在 Supervisor、Checker、Worker 之间逐节点流转不能同时成为执行主线。
 - 不要把针对某个 CELL、某类工作或一次经验形成的容量估计、数字边界或经验规则，泛化为所有 CELL、整个 Run 或其他项目共同遵守的一刀切定额；不要为了平均、整齐或便于管理，要求每个 CELL 满足相同指标。这不排除根据具体 CELL 的目标、难度、依赖、模型、电脑和余量，形成只适用于该 CELL 的、有事实依据的容量边界。
 - 不要把 SLK TOKEN 当成逐条命令队列、运行监视器或额外确认层；不要让相同或更旧的令牌编号创建新工作、回退指针或重开 CELL，当前同号未完成节点只从已记录边界续做；不要把 Checker 的 D1 交给 Supervisor，把接收令牌或局部结果当成 CELL 完工，把豁免写成 D1 PASS，或用 `wait_threads`、旧状态和读取成员施工状态代替真实交接。
+- 不要把低 Token 观察变成退出后等待别人唤醒，也不要用忙轮询、反复读取完整日志或新增监控角色代替 Supervisor 的现场负责。
