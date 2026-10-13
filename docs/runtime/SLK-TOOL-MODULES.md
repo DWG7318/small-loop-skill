@@ -1,4 +1,4 @@
-# 4.5.1 tool repositories and prepared outputs
+# 4.5.2 tool repositories and prepared outputs
 
 [SLK-TOOL-MODULES.json](SLK-TOOL-MODULES.json) is the release's exact mapping of
 11 source prefixes to independent repositories, commits, tags, product versions
@@ -8,8 +8,9 @@ copy or submodule checkout required for normal use.
 
 Every independent repository starts its extraction history at tag `1.0.0`.
 Repository tags and product versions are separate: this delivery uses SLK
-tools/templates `4.5.1`, BI/WebBI `1.1.1`, OW helper `1.0.1` and native probe
-`1.0.0`. Changed module repositories advance without rewriting historical tags;
+changed tools/templates `4.5.2`, BI/WebBI `1.1.1`, OW helper `1.0.2` and native probe
+`1.0.0`. The unchanged DSH integration retains product version `4.5.1`.
+Changed module repositories advance without rewriting historical tags;
 the exact commits, tags and artifact hashes are in the JSON map.
 The shared state core remains the sole SQL/transaction authority. The OW helper
 and native probe acquire no engineering write, dispatch or repair authority.
@@ -18,9 +19,9 @@ The artifact indices record actual payload hashes, source hashes and build
 provenance. Large ZIPs use verifiable parts of at most 64MiB, not paid LFS or
 link-only placeholders. Exact upstream source archives, patches, licenses and
 compiled outputs remain in Git. See [prepared runtimes](SLK-450-PREPARED-RUNTIMES.md)
-for the original runtime preparation and reproduction limitations. The 4.5.1
-package reuses those hash-verified third-party runtime bytes, updates the local
-OCRV integration to `1.12.13-slkprobe.1.0.1`, and rebuilds the five public SLK
+for the original runtime preparation and reproduction limitations. The 4.5.2
+package reuses the hash-verified 4.5.1 third-party runtime bytes, including local
+OCRV `1.12.13-slkprobe.1.0.1`, updates its integration, and rebuilds the five public SLK
 artifacts. Its `BUILD-PROVENANCE.json` captures actual inputs before compilation
 and seals the produced bytes; package assembly verifies that same batch.
 

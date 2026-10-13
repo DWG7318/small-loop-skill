@@ -1,4 +1,59 @@
-# Validation Report — SLK 4.5.1
+# Validation Report — SLK 4.5.2
+
+## 2026-10-14 — 4.5.2 Run08 corrections
+
+Baseline: main `0bf86eb369d2f8338cbe23a441834fd3619867ca`, including the
+preserved Run08 closure hotfix. No live Run history, credential, verdict or
+LCaS product code was rewritten for this upgrade. No model/provider call or
+new SLK engineering Run was used for acceptance.
+
+Independent behavioral RED reproduced the old Supervisor END_TURN instruction.
+After the role guidance/Eval correction, a cold review selected active bounded
+waiting, kept the shared OW alive for remaining Runs, and reported truthful
+cycle anomalies. The wrong OW replacement Skill entrance and ambiguous
+pure-transport versus acceptance-reassessment boundary found in review were
+corrected and reread. Role/Skill/Eval tests: 146 passed.
+
+Focused test-first fixes cover sealed OW replacement failure windows, first-cycle
+admission, trusted retired Desktop plugin resolution, exact multi-rollout/child
+evidence, and external frozen material producer-to-indexed-reader delivery.
+Independent review added missing public-schema and legacy overlapping-locator
+regressions. Rebuilt debug CLI/DPAPI replacement and closure consumers: 71 passed.
+The standalone OW helper suite passed 23 tests; independent locked Cargo metadata
+verified all four consumers resolve the exact new core, and all three CLI
+all-targets checks passed outside the parent workspace patch.
+
+First full Python pass: **2349 passed, 68 failed, 17 skipped** in 1201.71s.
+It ran during manifest/artifact assembly. All 68 failures were individually
+classified: 60 stale-manifest installation/repository checks, seven missing
+async-test-plugin failures before test execution, and one stale closed-enum
+expectation. After manifest refresh, installing nothing globally and using the
+existing complete test environment, the complete affected installation/repository
+suites passed **134 tests, 2 skipped**. Those two embedded-runtime cases then
+executed in a **4 passed** rerun with the prepared Windows Python. The complete
+Temporal suite passed **236 tests, 3 skipped** against an isolated SDK test server.
+This is combined full/scoped evidence, not a fictitious single all-green run.
+The three shared-Temporal cases, five unavailable Windows symlink-privilege
+cases and other optional prepared-runtime cases are not called passes unless
+separately executed. No live shared service or OS privilege was changed for tests.
+
+Final minimal locked-dependency Rust workspace: **192 tests passed**. Frontend:
+**154 tests / 19 files passed**, typecheck and production build passed. No
+unrelated Cargo dependency re-resolution was retained. Final five public
+artifacts share sealed `BUILD-PROVENANCE.json` SHA256
+`79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6`.
+All seven reused prepared runtime roots were rehashed: 28,356 files,
+989,594,724 bytes. Changed module archives contain current sources and real
+compiled outputs; unchanged native runtimes are not relabeled rebuilt.
+
+The exact old-code retirement transaction was independently reviewed and its
+functions exercised under PowerShell 5.1 and 7.6 in isolated fixtures, including
+same-volume move/restore, path/reparse rejection, config migration and byte-exact
+rollback. It operates only in a single-writer config maintenance window; the
+existing compare-then-replace helper is not falsely described as atomic CAS.
+Final module refs are in `docs/runtime/SLK-TOOL-MODULES.json`. Package, publication,
+local installation and retirement receipts are recorded separately after their
+actual execution. No fresh live multi-agent engineering Run is claimed here.
 
 ## 2026-10-13 — 4.5.1 source and isolated distribution acceptance
 
