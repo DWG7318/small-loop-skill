@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "cc1cc46d298ceaad73a927fa89a0918020d0e0eec4491232e6213d417b4301fe"
+      "sha256": "0d15c187d8a85fe9f35aac1615c1c77b915abc2221c99428af85d91a6abc8a9f"
     },
     {
       "path": "Cargo.lock",
@@ -56,7 +56,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "fca6664bc95075f7dcca317e8370ec36a15b2b2a3e40640cd0a8eb1e29ade274"
+      "sha256": "3536bbf6888c48551cd4fcff012f80712646e7bb2fb8b692e6cde4679341216e"
     },
     {
       "path": "VERSION",
@@ -72,11 +72,11 @@
     },
     {
       "path": "apps/slk-bi/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "25c0aec118750f0bd375d58a2a896b2e08807430d01aea07d69be570a0a37c94"
+      "sha256": "5d9d5e078eb8aaf70c6c9251a09c94be6aab36092a6ac6de5a53adf88579b631"
     },
     {
       "path": "apps/slk-bi/artifacts/windows-x86_64/payload.zip",
-      "sha256": "ba10561fe1518bdbba673f205c773a1a241c61ebb1bc86ae067a334597f7fb60"
+      "sha256": "f1c769ed68d872a758ce886e6fb93cb1f953130a71b1847c03606d40f078d00d"
     },
     {
       "path": "apps/slk-bi/index.html",
@@ -1044,7 +1044,7 @@
     },
     {
       "path": "docs/runtime/SLK-TOOL-MODULES.json",
-      "sha256": "f1b65084708793b1cf8f714154d2fe984e97f76e73d1d6ceeceb145fcf957942"
+      "sha256": "82b0d443f0d72efc880f0e09b91051ba898527b2c236131dc9e971552d5131fd"
     },
     {
       "path": "docs/runtime/SLK-TOOL-MODULES.md",
@@ -2012,11 +2012,11 @@
     },
     {
       "path": "src/slk_transport/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "a890d4d4666751027200d1574555176b6232a38b37e2cf3bbcd9973382bfa472"
+      "sha256": "64622d033077ac00918be218174e29339fa1ff63ff6e74c3d9ba18db41118efe"
     },
     {
       "path": "src/slk_transport/artifacts/windows-x86_64/payload.zip",
-      "sha256": "cccfd6d070bc77a280153935d364ae00241f3132fe4516f9ea3c0b12332340da"
+      "sha256": "aae906273b80c4bae797cb632ff4759e3bca4f1111a723c0e4f93c79ca1f9e93"
     },
     {
       "path": "src/slk_transport/build_zipapp.py",
@@ -2084,7 +2084,7 @@
     },
     {
       "path": "src/slk_transport/overwatcher_admin.py",
-      "sha256": "6f1732c1c1eccd795bab8809e485217932b385a47db89ce4c81e048741472794"
+      "sha256": "51012f17a1bcf3bbe0298737e492e16ba9be85f02bd8df26775385a06842e6cb"
     },
     {
       "path": "src/slk_transport/overwatcher_continuity.py",
@@ -2540,7 +2540,7 @@
     },
     {
       "path": "tests/transport/test_overwatcher_admin.py",
-      "sha256": "641e150c85b984ad09005343d96087dd79af74e821cf6cf6218c62561d4e4643"
+      "sha256": "aa5a482c953e6b5373e2ec0205e047871f61118f153044bd97532a156ffcb8ed"
     },
     {
       "path": "tests/transport/test_overwatcher_continuity.py",
