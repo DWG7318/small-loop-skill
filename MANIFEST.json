@@ -48,15 +48,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "119383e167503980fae441bbec06c2f94f16a1580470619e5c271086da0bbcd5"
+      "sha256": "0602438c7a1ccf4cdb95321c56bf7391f16542606e5ef5ebba21a58739ea0a6f"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "482f4bee5c302fbbb1b164125597fcc28cc7de8fd20460f4af1e9c4d38ea30f6"
+      "sha256": "1b58c4653b01aa985cb9dc2712e214a579a6e8428b4f5be50a81064c09fcf6f5"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "9433435e631d9113b8ad2af3147f921d563a481ae2f01615ebe1186c3d2b4c16"
+      "sha256": "83dd864cc49e31f216fb8604db9a07a0150de351d4d35959ea7f280bc177b968"
     },
     {
       "path": "VERSION",
@@ -1232,7 +1232,7 @@
     },
     {
       "path": "docs/superpowers/plans/2026-10-13-slk-4.5.1.md",
-      "sha256": "9fbcf064aa671b518e799946ff9ef2a41a98a64c4a00e1c808a797536ad4a476"
+      "sha256": "3f1db47945fa5fef832abcb14678b47d0f7db428953b27148b64478ae3d5ff4e"
     },
     {
       "path": "docs/superpowers/specs/2026-08-04-slk-2.5.0-worker-wake-patrol-design.md",

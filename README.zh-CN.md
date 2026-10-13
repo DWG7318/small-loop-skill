@@ -1,6 +1,6 @@
 # Small Loop Skill（SLK）
 
-当前源码版本：**4.5.1 — 集成验证中，尚未发布、部署**。进展见[451计划](docs/superpowers/plans/2026-10-13-slk-4.5.1.md)；[验证记录](VALIDATION-REPORT.md)保留此前维修证据。
+当前源码版本：**4.5.1 — 源码与预编译分发已验证**。详见[451计划](docs/superpowers/plans/2026-10-13-slk-4.5.1.md)与[验证记录](VALIDATION-REPORT.md)。是否已安装以目标电脑的安装回执为准，不由版本文字推断；历史 Run 的身份和版本不改写。
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小工程 Run，或大型工程中相对独立的范围。一个 SLK 就是一个 Run，只含一条串行 CELL 路径。
 

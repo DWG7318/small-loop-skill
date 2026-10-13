@@ -1,25 +1,89 @@
 # Validation Report — SLK 4.5.1
 
-## 2026-10-13 — 4.5.1 integration in progress
+## 2026-10-13 — 4.5.1 source and isolated distribution acceptance
 
-Scope and delivery ledger: `docs/superpowers/plans/2026-10-13-slk-4.5.1.md`.
-Implementation includes preserved Run07 on-site corrections; installation remains
-4.5.0 until the final 4.5.1 artifact batch passes verification. No live Run07
-replay, provider call, Supervisor wakeup or product-code modification is used as
-a test. Detailed final commands/results and deployment identity are appended
-when performed, not inferred from version text. Sections below retain their
-original validation snapshots.
+Scope: `docs/superpowers/plans/2026-10-13-slk-4.5.1.md`. Baseline main:
+`156cfc078a0bb4bb21ccab31174001a943716a66`. Existing Run07 on-site repairs
+were retained and independently reviewed. No live Run07 replay, paid provider
+call, Supervisor wakeup or LCaS product-code change was used as a test.
+This section freezes source/build acceptance before the final documentation
+package and real-user installation; it does not infer deployment from a version.
+The local delivery receipt records those later actions separately.
 
-- EventProjection D2 plan revision: one regression failed on null vs stored1;
-  after reading the existing column all35 write_flow tests passed. No migration.
-- 4.5.1 native-child identity regression failed before version routing, then
-  passed with the same parent/child and Owner-selected model protections.
-- 4.5.1 lightweight readiness failed before compatible version admission; all8
-  4.5.0/4.5.1 current-readiness cases then passed, no historical preflight added.
-- Full slk-state-core test targets passed (145 tests), retaining closed TOKEN
-  history, independent role authorization and append-only engineering facts.
-- Additional role Eval cases passed33 checks and remain development-only cases,
-  not extra runtime preflight questions.
+- Test-first regressions cover last-action handoff, exact ACK/commit/suffix
+  replay, original Worker/Checker continuation, native whole-CELL judgment,
+  real child observation proof, retryable notification failures, precise alarm
+  identity, D2 stored plan revision and accepted CELL attempt projection.
+  Existing authority, independent D1, immutable history, full evidence access
+  and Supervisor on-site repair responsibility remain intact. Independent
+  specification and quality reviews approved the repaired implementation.
+- Fresh full Python invocation (`python -m pytest -q -rs`, isolated SDK test
+  server) initially reported **2188 passed, 48 failed, 16 skipped** in
+  1023.08 seconds. Original outputs are retained, not relabeled green.
+  The 48 failures were 34 installer fixtures missing build provenance,
+  nine source-manifest checks during a concurrent fixture edit, one stale
+  schema-enum expectation, three stale Skill/Eval expectations and one old
+  task-instruction phrase. After fixture/expectation corrections and manifest
+  refresh, complete affected suites passed: installer **45 passed, 2 skipped**;
+  runtime closure **36 passed**; repository/abandon-run **27 passed**;
+  Skill/refactor/role Eval **151 passed**; task-file/DSH adapter **20 passed**.
+  These reruns cover all 48 original failed nodes without weakening role,
+  artifact identity or installation rollback assertions.
+- Nine of the original optional-runtime skips were then executed with the
+  actual prepared DSH and embedded Python: **11 passed** including two control
+  cases. Four embedded fixtures first needed the same test-only provenance
+  correction, followed by a fresh **4 passed** rerun included in that total.
+  Seven cases remain unavailable: three existing live-shared-Temporal cases
+  and four Windows symlink-privilege cases. No shared service, Docker or OS
+  privilege was changed to turn these into claimed passes. The above are
+  combined full/scoped evidence, not a fictitious single all-green invocation.
+- Fresh Rust `cargo test --workspace --all-targets --offline --quiet`:
+  **185 tests passed**. Frozen frontend: **154 tests / 19 files**, typecheck
+  and production build passed. Native probe Go and modified OCRV targeted
+  tests passed; two controlled native OCRV builds matched byte-for-byte.
+  Repository validator, all **21 Skills**, workflow replay and release
+  provenance verification passed. Role Eval remains lightweight; added
+  development regression scenarios do not enlarge routine startup preflight.
+- Installer repair preserves an existing runtime in place only after exact
+  ordinary-file inventory/hash equality, includes hidden files, rejects
+  reparse content and retains final/rollback verification. Changed runtimes
+  use atomic directory rename; a locked executable cannot cause a half-move.
+  Real Windows lock, hidden/extra-file, junction and rollback tests passed
+  independent review. No service-stop policy or validation bypass was added.
+- Five production artifacts were built and sealed against **193 build inputs**.
+  `BUILD-PROVENANCE.json` SHA256:
+  `74f79f3234ce520d1340afd97e2bd280d0ad4f528162bbf2beadbe67cd523d7b`.
+  Modified OCRV `1.12.13-slkprobe.1.0.1` SHA256:
+  `644cd50c1f3295e380a8da6a3d2818a8a3f585980a139ca9dfffff3a88e0f0e8`.
+  It is a reproducible maintained upstream patch, not an unmodified official
+  OCRV binary. Seven prepared runtimes require no end-user compilation.
+- All **11 independent module main branches and new immutable tags** were
+  pushed and read back; subtree identities match
+  `docs/runtime/SLK-TOOL-MODULES.json`. Archive parts were restored and every
+  payload/hash checked. Module tag versions may differ from product versions;
+  BI/WebBI remains **1.1.1**, while the SLK method/tools are **4.5.1**.
+- Candidate installation used its own installer under actual Windows
+  PowerShell **5.1.19041.7725**, default embedded Python (no override), and
+  isolated Codex/OCRV/DSH homes. Exit 0, **441.232 seconds**; measured duration
+  is not an admission deadline. Installed and original-package full verifiers
+  both passed **28,586 files**. All **20** recorded process checks exited 0
+  with empty stderr: core commands, Worker/Checker explicit resume helps,
+  Temporal helps, source-free isolated imports, native DSH/OCRV versions,
+  and BI's guarded no-GUI startup. The BI check is not visual acceptance;
+  DSH registration honestly remains `PENDING_RELOAD`, not a claimed live profile.
+  Five payloads, 193 build inputs and 18 integration sources matched exactly.
+  Candidate manifest SHA256:
+  `5ce4ba463860e4487eafd839f1cf3003022d6c5be2af9226d97fbf617fbac2d1`.
+  The final package refreshes documentation/source-inventory metadata only;
+  production artifacts and runtime bytes are unchanged and reverified.
+
+Detailed local evidence: `D:/SLK/.codex/.tmp/451/` (regression/build/archive
+logs), `D:/LCcoding/.codex/.tmp/451/install-check/ACCEPTANCE.md` (per-command
+times, exit codes and hashes). These are local evidence locations, not files
+assumed to exist in a GitHub consumer's checkout. Actual main push, installation,
+shared-service continuity and old-program cleanup are recorded separately at
+`D:/LCcoding/.codex/.tmp/451/DELIVERY-451.md` after they occur. No new GitHub
+Release, real model-session Run acceptance or provider reliability is claimed.
 
 ## Historical 4.5.0 validation
 
