@@ -2616,6 +2616,24 @@ fn slk_450_compares_the_declared_parent_and_child_with_registered_identities() {
 }
 
 #[test]
+fn slk_451_keeps_supervisor_child_identity_and_owner_model_choice() {
+    let fixture = Fixture::new_450();
+    slk_state_core::schema::open_database(fixture._root.path()).unwrap()
+        .execute("UPDATE runs SET slk_version='4.5.1' WHERE run_id='run-a'", []).unwrap();
+    let mut binding = subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    binding.identity.model = "gpt-6-luna".into();
+    binding.identity.reasoning = "high".into();
+    let mut wrong = binding.clone();
+    wrong.endpoint.native_address = subagent_address("wrong-parent", "session-overwatcher-a");
+    assert!(matches!(fixture.store.bind_overwatcher(&fixture.supervisor, wrong),
+        Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("registered Supervisor parent and child")));
+    fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    let run = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(run.summary.slk_version, "4.5.1");
+    assert_eq!(run.role("overwatcher").unwrap().reasoning, "high");
+}
+
+#[test]
 fn slk_450_one_supervisor_reuses_its_child_across_runs_but_cannot_bind_a_second_child() {
     let fixture = Fixture::new_450();
     fixture.store.bind_overwatcher(&fixture.supervisor,

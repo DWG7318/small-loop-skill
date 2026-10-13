@@ -763,7 +763,7 @@ impl StateStore {
                         .into(),
                 ));
             }
-            if run_contract.0 != "4.5.0"
+            if !uses_supervisor_subagent(&run_contract.0)
                 && (!is_gpt_capability_family(&request.identity.model, "luna")
                     || request.identity.reasoning != "xhigh")
             {
@@ -803,7 +803,7 @@ impl StateStore {
             if already_bound.is_some() {
                 return Err(StateError::OverwatcherAlreadyBound);
             }
-            if run_contract.0 == "4.5.0" {
+            if uses_supervisor_subagent(&run_contract.0) {
                 validate_supervisor_subagent_binding(
                     transaction,
                     &request.run_id,
@@ -832,7 +832,7 @@ impl StateStore {
                     },
                 )
                 .optional()?;
-            if let Some(existing) = shared_session.filter(|_| run_contract.0 != "4.5.0") {
+            if let Some(existing) = shared_session.filter(|_| !uses_supervisor_subagent(&run_contract.0)) {
                 let native_address = serde_json::to_string(&request.endpoint.native_address)?;
                 if existing.0 != request.identity.agent_runtime
                     || existing.1 != request.identity.provider
@@ -1335,6 +1335,14 @@ impl StateStore {
                 });
             }
 
+            // The accepted, exact handoff carries the engineering attempt. Keep
+            // the current CELL projection in the same transaction as its receipt;
+            // otherwise it remains at its insertion default through every rework.
+            // Idempotent replay returns above, so old receipts cannot roll it back.
+            transaction.execute(
+                "UPDATE cell_nodes SET attempt=?4 WHERE run_id=?1 AND go_id=?2 AND cell_id=?3",
+                params![request.run_id, request.go_id, request.cell_id, request.attempt],
+            )?;
             let next_runtime_revision = runtime_revision + 1;
             transaction.execute(
                 "INSERT INTO transport_start_receipts
@@ -1978,7 +1986,7 @@ impl StateStore {
                     target: target_role,
                 });
             }
-            if method_version == "4.5.0" && target_role == Role::Overwatcher {
+            if uses_supervisor_subagent(&method_version) && target_role == Role::Overwatcher {
                 let (child_identity, _) =
                     bound_overwatcher_identity_endpoint(transaction, &request.run_id)?;
                 validate_supervisor_subagent_binding(
@@ -1990,7 +1998,7 @@ impl StateStore {
                     Some(&request.run_id),
                 )?;
             }
-            if method_version == "4.5.0" && target_role == Role::Supervisor {
+            if uses_supervisor_subagent(&method_version) && target_role == Role::Supervisor {
                 validate_supervisor_owner_rebind(
                     transaction, &request.run_id, &actor.role_instance_id, &request.endpoint,
                 )?;
@@ -2322,7 +2330,12 @@ impl StateStore {
                     "paused Run rejects engineering writers".into(),
                 ));
             }
-            if !lifecycle && token.owner_role_instance_id != actor.role_instance_id {
+            // Explicit Supervisor abandonment is management, not an engineering handoff.
+            // authorize_event above still rejects every non-Supervisor author.
+            if !lifecycle
+                && request.event_type != EventType::RunAbandoned
+                && token.owner_role_instance_id != actor.role_instance_id
+            {
                 return Err(StateError::TokenOwnerMismatch {
                     requested_owner: actor.role_instance_id,
                     current_owner: token.owner_role_instance_id,
@@ -3075,7 +3088,7 @@ impl StateStore {
                     "SLK 4.4.x requires the fixed 600-second Overwatcher cadence".into(),
                 ));
             }
-            if method_version == "4.5.0" {
+            if uses_supervisor_subagent(&method_version) {
                 validate_supervisor_subagent_binding(
                     transaction,
                     &request.run_id,
@@ -3137,7 +3150,7 @@ impl StateStore {
             if identity_collision.is_some() {
                 return Err(StateError::OverwatcherSessionReused);
             }
-            if let Some(existing) = shared_session.filter(|_| method_version != "4.5.0") {
+            if let Some(existing) = shared_session.filter(|_| !uses_supervisor_subagent(&method_version)) {
                 let native_address = serde_json::to_string(&request.endpoint.native_address)?;
                 if existing.0 != request.replacement.agent_runtime
                     || existing.1 != request.replacement.provider
@@ -3680,7 +3693,7 @@ impl StateStore {
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
                 ));
             }
-            if method_version == "4.5.0" && request.last_native_status_id.is_none() {
+            if uses_supervisor_subagent(&method_version) && request.last_native_status_id.is_none() {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native subagent resume requires the exact latest COMPLETED status of the previous execution".into(),
                 ));
@@ -3801,14 +3814,14 @@ impl StateStore {
                                 .into(),
                         ));
                     }
-                    if method_version == "4.5.0" && latest_status.5 != NativeLiveness::Completed.as_str() {
+                    if uses_supervisor_subagent(&method_version) && latest_status.5 != NativeLiveness::Completed.as_str() {
                         return Err(StateError::OverwatcherCycleInvalid(
                             "native subagent resume requires the exact latest COMPLETED status of the previous execution".into(),
                         ));
                     }
                     ("VIOLATION", "NATIVE_STATUS")
                 };
-            if method_version == "4.5.0" {
+            if uses_supervisor_subagent(&method_version) {
                 let (child_identity, endpoint) =
                     bound_overwatcher_identity_endpoint(transaction, &request.run_id)?;
                 validate_supervisor_subagent_binding(
@@ -5960,10 +5973,14 @@ fn validate_d2_event(
     Ok(())
 }
 
-// 4.5.0 changes OW ownership, not the existing engineering/runtime protections.
+fn uses_supervisor_subagent(version: &str) -> bool {
+    matches!(version, "4.5.0" | "4.5.1")
+}
+
+// 4.5.x changes OW ownership, not the existing engineering/runtime protections.
 // Keep the stored and projected version intact; inherit guards from 4.4.5 only.
 fn runtime_guard_version(version: &str) -> &str {
-    if version == "4.5.0" {
+    if uses_supervisor_subagent(version) {
         "4.4.5"
     } else {
         version

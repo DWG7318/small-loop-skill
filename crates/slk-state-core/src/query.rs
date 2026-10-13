@@ -117,6 +117,7 @@ pub struct PlanRevisionProjection {
 pub struct EventProjection {
     pub event_id: String,
     pub event_type: String,
+    pub plan_revision: u32,
     pub author_role_instance_id: String,
     pub go_id: Option<String>,
     pub cell_id: Option<String>,
@@ -1127,13 +1128,14 @@ fn load_plan_revisions(
 fn load_events(connection: &Connection, run_id: &str) -> Result<Vec<EventProjection>, StateError> {
     let mut statement = connection.prepare(
         "SELECT event_id, event_type, author_role_instance_id, go_id, cell_id, attempt,
-                details_json, corrects_event_id, occurred_at
+                details_json, corrects_event_id, occurred_at, plan_revision
          FROM work_events WHERE run_id=?1 ORDER BY rowid",
     )?;
     let rows = statement.query_map([run_id], |row| {
         Ok(EventProjection {
             event_id: row.get(0)?,
             event_type: row.get(1)?,
+            plan_revision: row.get(9)?,
             author_role_instance_id: row.get(2)?,
             go_id: row.get(3)?,
             cell_id: row.get(4)?,

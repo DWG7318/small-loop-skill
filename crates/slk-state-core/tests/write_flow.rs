@@ -47,6 +47,34 @@ fn one_run_has_one_monotonic_current_token_and_linear_nodes() {
 }
 
 #[test]
+fn accepted_delivery_projects_engineering_attempt_without_replay_regression() {
+    let fixture = Fixture::new();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.3.5' WHERE run_id='run-a'", []).unwrap();
+    drop(db);
+    let first = fixture.revisioned_start_request(
+        2, "supervisor-a", "checker-a", "CELL-001", "CELL_ASSIGNMENT", "ocrv-checker",
+    );
+    fixture.store.commit_delivery_start(&fixture.supervisor, first.clone()).unwrap();
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.go_nodes[0].cell_nodes[0].attempt, 2);
+
+    let mut next = fixture.revisioned_start_request(
+        3, "checker-a", "worker-a", "CELL-001", "WORKER_TASK", "dsh-worker",
+    );
+    next.attempt = 3;
+    let mut rejected = next.clone();
+    rejected.expected_runtime_revision += 10;
+    assert!(fixture.store.commit_delivery_start(&fixture.checker, rejected).is_err());
+    assert_eq!(fixture.store.query_run("run-a").unwrap().go_nodes[0].cell_nodes[0].attempt, 2);
+    fixture.store.commit_delivery_start(&fixture.checker, next).unwrap();
+    fixture.store.commit_delivery_start(&fixture.supervisor, first).unwrap();
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.go_nodes[0].cell_nodes[0].attempt, 3);
+    assert_eq!(projection.events.iter().filter(|e| e.event_type == "TRANSPORT_STARTED").count(), 2);
+}
+
+#[test]
 fn current_d2_start_requires_delivered_d2_ready_and_result_requires_real_start() {
     let fixture = Fixture::new();
     let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
@@ -150,6 +178,14 @@ fn current_d2_start_requires_delivered_d2_ready_and_result_requires_real_start()
         .events
         .iter()
         .any(|e| e.event_type == "D2_PASSED"));
+    let public_projection = serde_json::to_value(&in_progress).unwrap();
+    let public_start = public_projection["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["event_id"] == "real-d2-start")
+        .unwrap();
+    assert_eq!(public_start["plan_revision"], json!(started.plan_revision));
     fixture
         .store
         .write_event(&fixture.supervisor, started.clone())
@@ -392,15 +428,64 @@ fn paused_terminal_operations_retain_original_supervisor_token_and_close_proofs(
     let fixture = Fixture::worker_active();
     pause_run(&fixture);
     let mut request = event(
-        "paused-abandon-without-token",
-        EventType::RunAbandoned,
-        json!({"reason":"Owner decision"}),
+        "paused-supersede-without-token",
+        EventType::RunSuperseded,
+        json!({"reason":"Owner decision", "superseded_by_run_id":"run-b"}),
     );
     request.role_instance_id = "supervisor-a".into();
     assert!(matches!(
         fixture.store.write_event(&fixture.supervisor, request),
         Err(StateError::TokenOwnerMismatch { .. })
     ));
+}
+
+#[test]
+fn supervisor_abandon_is_management_without_stealing_worker_token_or_other_run() {
+    for version in ["4.4.4", "4.5.0"] {
+        for paused in [false, true] {
+            let fixture = Fixture::worker_active();
+            if paused {
+                pause_run(&fixture);
+            } else {
+                let request = lifecycle_event(&fixture, "abandon-pause-request", "RUN_PAUSE_REQUESTED", "abandon-pause");
+                fixture.store.write_event(&fixture.supervisor, request).unwrap();
+            }
+            let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+            db.execute("UPDATE runs SET slk_version=?1 WHERE run_id='run-a'", [version]).unwrap();
+            drop(db);
+            let mut other_request = init_request("run-b");
+            other_request.supervisor = role("supervisor-b", Role::Supervisor);
+            other_request.supervisor_endpoint = endpoint("session-supervisor-b");
+            fixture.store.init_run(other_request).unwrap();
+            let other_before = serde_json::to_value(fixture.store.query_run("run-b").unwrap()).unwrap();
+            let before = fixture.store.query_run("run-a").unwrap();
+            let token = fixture.store.current_token("run-a").unwrap();
+            assert_eq!(token.owner_role_instance_id, "worker-a");
+            let mut request = event("owner-abandon-preparation", EventType::RunAbandoned,
+                json!({"reason":"Owner explicitly abandoned preparation; no D2 verdict"}));
+            request.role_instance_id = "supervisor-a".into();
+            request.go_id = None;
+            request.cell_id = None;
+            request.attempt = None;
+            assert!(matches!(fixture.store.write_event(&fixture.worker, request.clone()),
+                Err(StateError::RoleNotAuthorized { .. })));
+            fixture.store.write_event(&fixture.supervisor, request.clone()).unwrap();
+            let mut wrong_plan = request.clone();
+            wrong_plan.event_id = "abandon-wrong-plan".into();
+            wrong_plan.plan_revision += 1;
+            assert!(matches!(fixture.store.write_event(&fixture.supervisor, wrong_plan),
+                Err(StateError::PlanRevisionMismatch { .. })));
+            fixture.store.write_event(&fixture.supervisor, request).unwrap();
+            let after = fixture.store.query_run("run-a").unwrap();
+            assert_eq!(after.summary.state, "archived");
+            assert_eq!(after.summary.closure_state, "abandoned");
+            assert_eq!(after.summary.archive_reason.as_deref(), Some("abandoned"));
+            assert_eq!(after.events.len(), before.events.len() + 1);
+            assert!(!after.events.iter().any(|event| event.event_type == "D2_PASSED"));
+            assert_eq!(fixture.store.current_token("run-a").unwrap(), token);
+            assert_eq!(serde_json::to_value(fixture.store.query_run("run-b").unwrap()).unwrap(), other_before);
+        }
+    }
 }
 
 #[test]
