@@ -86,10 +86,12 @@ code { font-family: var(--webbi-mono); font-variant-numeric: tabular-nums; }
 .webbi-unread { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 7px; background: var(--webbi-green-soft); color: var(--webbi-green); font-size: 12px; font-weight: 680; white-space: nowrap; }
 .webbi-unread > span { width: 9px; height: 9px; border-radius: 50%; background: var(--webbi-green); }
 .webbi-status { display: inline-block; max-width: 180px; padding: 5px 9px; border-radius: 999px; background: var(--webbi-layer); color: var(--webbi-secondary); font-size: 12px; text-align: center; white-space: nowrap; }
-.webbi-status.tone-active { background: var(--webbi-accent-soft); color: var(--webbi-accent); }
+.webbi-status.tone-active { background: var(--webbi-green-soft); color: var(--webbi-green); }
 .webbi-status.tone-done { background: var(--webbi-green-soft); color: var(--webbi-green); }
-.webbi-status.tone-wait, .webbi-status.tone-rework { background: var(--webbi-amber-soft); color: var(--webbi-amber); }
-.webbi-status.tone-blocked { background: var(--webbi-red-soft); color: var(--webbi-red); }
+.webbi-status.tone-wait { background: var(--webbi-amber-soft); color: var(--webbi-amber); }
+.webbi-status.tone-blocked, .webbi-status.tone-rework { background: var(--webbi-red-soft); color: var(--webbi-red); }
+.webbi-cell-status.tone-active, .webbi-cell-status.tone-done { color: var(--webbi-green); }
+.webbi-cell-status.tone-blocked, .webbi-cell-status.tone-rework { color: var(--webbi-red); }
 .webbi-run-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--webbi-secondary); font-size: 12px; }
 .webbi-run-meta b { color: var(--webbi-ink); }
 .webbi-device { grid-column: 1 / -1; color: var(--webbi-secondary); font-size: 11px; overflow-wrap: anywhere; }
@@ -180,4 +182,17 @@ code { font-family: var(--webbi-mono); font-variant-numeric: tabular-nums; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .webbi-header { background: var(--webbi-surface); backdrop-filter: none; }
+}
+
+.webbi-appearance-button { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; margin-left: auto; border: 0; border-radius: 6px; background: transparent; color: var(--webbi-accent); }
+.webbi-appearance-button:hover, .webbi-appearance-button[aria-expanded="true"] { background: var(--webbi-layer); }
+.webbi-appearance-button + .webbi-settings-link { margin-left: 8px; }
+.webbi-appearance-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 14px max(20px, calc((100vw - 1120px) / 2)); border-bottom: 1px solid var(--webbi-line); color: var(--webbi-secondary); font-size: 12px; }
+.webbi-appearance-settings[hidden] { display: none; }
+.webbi-appearance-settings .background-transparency { color: var(--webbi-ink); font: 13px/1 var(--webbi-sans); }
+.webbi-appearance-settings .background-transparency select { min-height: 38px; border: 1px solid var(--webbi-line); border-radius: 5px; color: var(--webbi-ink); background: transparent; }
+.webbi-appearance-settings .background-transparency option { color: var(--webbi-ink); background: var(--webbi-surface); }
+html[data-bi-surface="web"] :is(.webbi-header, .webbi-run-list, .webbi-search, .webbi-settings, .webbi-appearance-settings) {
+  background: color-mix(in srgb, var(--webbi-surface) var(--bi-surface-opacity), transparent);
+  border-color: color-mix(in srgb, var(--webbi-line) var(--bi-surface-opacity), transparent);
 }

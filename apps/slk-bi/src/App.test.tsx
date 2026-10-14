@@ -81,11 +81,20 @@ describe("LE BI shell", () => {
     expect(screen.queryByRole("list", { name: /CELL 记录/ })).not.toBeInTheDocument();
   });
 
-  it("shows BI 1.1.1 and the exact local device identity in the header", async () => {
+  it("shows BI 1.1.2 and the exact local device identity in the header", async () => {
     render(<App api={fixtureApi} />);
 
-    expect(await screen.findByText("1.1.1")).toBeVisible();
+    expect(await screen.findByText("1.1.2")).toBeVisible();
     expect(screen.getByText("Workstation A · device-a")).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "背景透明度" })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByRole("combobox", { name: "背景透明度" })).toBeVisible();
+    await userEvent.setup().selectOptions(screen.getByRole("combobox", { name: "背景透明度" }), "60");
+    await userEvent.setup().click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.queryByRole("combobox", { name: "背景透明度" })).not.toBeInTheDocument();
+    expect(document.documentElement.style.getPropertyValue("--bi-surface-opacity")).toBe("40%");
+    await userEvent.setup().click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByRole("combobox", { name: "背景透明度" })).toHaveValue("60");
   });
 
   it("clears archived disclosure when its archive surface closes", async () => {

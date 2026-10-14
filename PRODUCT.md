@@ -4,11 +4,15 @@
 
 **LE BI** is the compact, read-only desktop view of machine-wide SLK state. Its primary user is the Owner overseeing concurrent SLK Runs; other Agents consume the same read projections through `slk-bi-query`.
 
+Desktop BI is the primary product surface. WebBI is its online extension and reads only desktop-uploaded display projections, never Agents, probes or Run databases directly. Changes to desktop display semantics must ship with the corresponding WebBI presentation in the same BI version; layouts may differ for the browser and mobile viewport.
+
 ## Product purpose
 
 The main surface shows only SLK Runs. Each row answers: which project and Run is this, when did it start, how much CELL work is complete, how much active work time was recorded, who owns the next action, and which SLK version is in use. Expanding a row reveals that SLK's Supervisor, Checker, Worker, and registered Overwatcher identities and model choices, Overwatcher assurance facts, and medium-detail CELL records.
 
 Only one Run is expanded across the active list and archive. Both share one outer scrolling surface with a five-Run-header budget; the selected detail body adds height separately. Within that body, only CELL records scroll, with at most six visible rows and the newest execution record first. Screen work-area constraints may show fewer rows, but never discard records. Role and Overwatcher facts remain outside the CELL scroller.
+
+Untouched planned CELLs do not appear in the detail list. The progress denominator still includes the full effective plan. Desktop and WebBI share the same ordering: latest recorded activity first, with reverse execution order for historical records without activity timestamps.
 
 An SLK may be independent or belong to a CLK/GLK project. That origin is a grouping dimension, not a second execution hierarchy in BI: LE BI never renders Chain, Node, Fusion, or DAG internals. Runs from the same independent project or CLK/GLK parent receive the same stable quiet tint and retain an explicit source label.
 
@@ -25,6 +29,8 @@ Completed, abandoned, and superseded SLKs leave the active surface immediately a
 ## Product character
 
 Compact, factual, and calm, with the restrained feel of a 1990s engineering calculator: muted LCD surfaces, monospaced data, segmented progress, thin rules, and small beveled controls. No command-center spectacle, card grid, decorative telemetry, or fake live animation.
+
+The title bar's top-right Settings gear opens background transparency of 20%, 40%, 60% or 80% (default 20%), saved locally. Closing Settings preserves the choice. Only frame/background colors change alpha; text and icons remain opaque. WebBI offers the same control against its page canvas, not the operating-system desktop. Loading and unmounted failure surfaces retain an opaque fallback.
 
 ## Accessibility
 

@@ -31,11 +31,11 @@ describe("RunStrip", () => {
     },
   );
 
-  it("reverses only a COPY of the execution list and keeps every CELL reachable", async () => {
+  it("renders the shared newest-first presentation unchanged and keeps every CELL reachable", async () => {
     const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());
     view.cells = Array.from({ length: 7 }, (_, index) => ({
       ...view.cells[0]!, cellId: `cell-${index}`, id: `CELL ${index % 3 + 1}`, name: `Execution ${index + 1}`,
-    }));
+    })).reverse();
     const before = JSON.stringify(view.cells);
     const user = userEvent.setup();
     render(<InteractiveStrip view={view} />);
@@ -69,7 +69,7 @@ describe("RunStrip", () => {
   it("reverses the GO-then-CELL execution list, not CELL ordinals across GO groups", () => {
     const group = runFixture.go_nodes[0]!;
     const cell = group.cell_nodes[0]!;
-    const run = { ...runFixture, token_history: [], roles: [], go_nodes: [
+    const run = { ...runFixture, events: [], token_history: [], roles: [], go_nodes: [
       { ...group, cell_nodes: [
         { ...cell, title: "First GO first" },
         { ...cell, cell_id: "go1-tail", ordinal: 9, title: "First GO tail" },
@@ -86,7 +86,7 @@ describe("RunStrip", () => {
     expect(Array.from(list.querySelectorAll("strong")).map((item) => item.textContent))
       .toEqual(["Second GO tail", "Second GO first", "First GO tail", "First GO first"]);
     expect(view.currentCellId).toBe(cell.cell_id);
-    expect(view.cells.map((item) => item.cellId)).toEqual([cell.cell_id, "go1-tail", "go2-first", "go2-tail"]);
+    expect(view.cells.map((item) => item.cellId)).toEqual(["go2-tail", "go2-first", "go1-tail", cell.cell_id]);
     expect(JSON.stringify(run)).toBe(before);
   });
 

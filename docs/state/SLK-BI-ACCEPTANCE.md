@@ -1,5 +1,16 @@
 # SLK BI Acceptance
 
+## BI / WebBI 1.1.2 (2026-10-14)
+
+- Desktop-first patch; WebBI reads only desktop-uploaded projections and shares the same display logic.
+- Accepted receiver-start receipts identify the recipient rather than the sender. Normal work/handoffs are green, actual troubleshooting remains red, and unproven starts are not fabricated as working.
+- Untouched planned CELL details are hidden; newest recorded work appears first without changing the plan denominator or source data.
+- Top-right Settings gear reveals 20/40/60/80% frame/background transparency, default 20%, remembered locally. Closing Settings preserves it; text/icons never use whole-window or parent opacity. Loading/render-failure fallback remains opaque.
+- Frontend: 165 tests passed, typecheck and production build passed. BI native commands: 9 Rust tests passed. Readiness/state compatibility: 119 Python tests passed; release/display contracts: 12 passed.
+- Owner's screenshot of the first local 1.1.2 build confirmed green Worker-working text and only the started CELL. Native Computer Use was stopped at Owner request. The later transparency/Settings addition is code/build tested; native visual acceptance of those controls is not claimed by the earlier screenshot.
+- Preserve SLK 4.5.2 and the live Run. No Supervisor/Worker/Checker/Temporal restart, state migration, ntfy configuration change or new data-collection path.
+- Precompiled native executable and compiled WebBI are retained with SHA-256/source provenance in `apps/slk-bi/artifacts/windows-x86_64/ARTIFACTS.json`; preparation consumes these bytes and does not compile.
+
 ## Local schema-8 cold-start correction (2026-10-04)
 
 The released reader rejected schema 8 before any projection was loaded. The new regression first failed with `UnsupportedVersion { found: 8, supported: 9 }`, then passed with explicit schema-8/9 read compatibility. The genuine schema-8 fixture covers every BI projection, three consecutive reads, original bytes, no migration backup, and denied writes. Versions 0/1/7/10 remain rejected. Desktop command tests also verify unchanged configuration and repeated cold reads. Rust workspace: 135 passed. This local correction does not replace any published tag or asset.

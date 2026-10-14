@@ -90,6 +90,26 @@ afterEach(() => {
 });
 
 describe("WebBI 1.1 browser UI", () => {
+  it("shows newest work first, hides untouched CELLs and preserves the plan total", async () => {
+    const mock = api();
+    const value = record();
+    const cell = value.run.go_nodes[0]!.cell_nodes[0]!;
+    value.run.go_nodes[0] = { ...value.run.go_nodes[0]!, cell_nodes: [
+      { ...cell, title: "Earlier completed", state: "d1_passed" },
+      { ...cell, cell_id: "current", ordinal: 2, title: "Current work" },
+      { ...cell, cell_id: "future", ordinal: 3, title: "Unstarted future", state: "planned" },
+    ] };
+    value.run.events = [{ ...runFixture.events[0]!, cell_id: "current" }];
+    vi.mocked(mock.getRun).mockResolvedValue(value);
+    window.location.hash = "#/runs/device-a/run-a";
+    const { container } = render(<WebBiApp api={mock} />);
+    await screen.findByText("Current work");
+    expect(Array.from(container.querySelectorAll(".webbi-cell-list strong")).map((element) => element.textContent))
+      .toEqual(["Current work", "Earlier completed"]);
+    expect(screen.queryByText("Unstarted future")).not.toBeInTheDocument();
+    expect(screen.getByText("1/3 CELL")).toBeInTheDocument();
+  });
+
   it("allows manual settings saves and test sends without a management token", async () => {
     const mock = api();
     render(<WebBiApp api={mock} />);
@@ -111,6 +131,9 @@ describe("WebBI 1.1 browser UI", () => {
     expect(await screen.findByRole("heading", { name: "Run 一览" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "全部" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "进行中" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("combobox", { name: "背景透明度" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByRole("combobox", { name: "背景透明度" })).toBeVisible();
     expect(screen.getByText((_, element) => element?.textContent === "电脑 Workstation A · device-a")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: /Close flow/ }));

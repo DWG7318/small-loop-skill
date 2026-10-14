@@ -3,6 +3,7 @@ import {
   IconBell,
   IconChevronRight,
   IconSearch,
+  IconSettings,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -19,6 +20,7 @@ import {
 } from "../messages/readMarkers";
 import { buildRunStripView, type RunStripView } from "../runPresentation";
 import { BI_VERSION } from "../version";
+import { BackgroundTransparency } from "../components/BackgroundTransparency";
 import type { NotificationSettingsInput } from "./contracts";
 import type { PublicNotificationSettings } from "./notifications";
 import type { WebBiArchiveRecord } from "./worker";
@@ -69,13 +71,23 @@ function roleLabel(role: RoleProjection["role"]) {
 }
 
 function WebHeader() {
+  const [settingsVisible, setSettingsVisible] = useState(false);
   return (
+    <>
     <header className="webbi-header">
       <a className="webbi-brand" href="#/" aria-label="LE BI Run 一览">LE BI</a>
       <code>{BI_VERSION}</code>
       <span>Run 一览</span>
+      <button className="webbi-appearance-button" type="button" aria-label="设置" title="设置"
+        aria-expanded={settingsVisible} aria-controls="webbi-appearance-settings"
+        onClick={() => setSettingsVisible((value) => !value)}><IconSettings size={19} aria-hidden="true" /></button>
       <a className="webbi-settings-link" href="#/settings"><IconBell size={17} />手机通知</a>
     </header>
+    <section id="webbi-appearance-settings" className="webbi-appearance-settings" aria-label="BI 设置" hidden={!settingsVisible}>
+      <BackgroundTransparency surface="web" />
+      <span>只调框体和背景，文字、图标保持不透明</span>
+    </section>
+    </>
   );
 }
 
@@ -244,11 +256,12 @@ function RunDetail({ api, deviceId, runId }: { api: WebBiApi; deviceId: string; 
           <header className="webbi-section-head"><h2>CELL 记录</h2><small>来自电脑端 BI 同一投影</small></header>
           <ol className="webbi-cell-list">
             {view.cells.map((cell) => (
-              <li key={cell.id}>
-                <code>{cell.id}</code><div><strong>{cell.name}</strong><p>{cell.note}</p><small>{cell.meta}</small></div>
+              <li key={cell.cellId}>
+                <code>{cell.id}</code><div><strong>{cell.name}</strong><p>{cell.note}</p><small className={`webbi-cell-status tone-${cell.tone}`}>{cell.meta}</small></div>
               </li>
             ))}
           </ol>
+          {!view.cells.length ? <p className="webbi-empty">尚无施工记录</p> : null}
         </section>
         <section>
           <header className="webbi-section-head"><h2>团队登记</h2><small>{record.run.roles.length} 个角色</small></header>

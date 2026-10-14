@@ -1,9 +1,10 @@
-import { IconArchive, IconMinus, IconPin, IconX } from "@tabler/icons-react";
+import { IconArchive, IconMinus, IconPin, IconSettings, IconX } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
 import { type SlkApi, tauriApi } from "./api";
 import { AppState, type AppStateValue } from "./components/AppState";
 import { RunStrip } from "./components/RunStrip";
+import { BackgroundTransparency } from "./components/BackgroundTransparency";
 import { archivedRunSummaries, buildRunStripView, visibleRunSummaries } from "./runPresentation";
 import { useSlkData } from "./useSlkData";
 import { MESSAGE_CATALOG } from "./messages/catalog";
@@ -44,7 +45,8 @@ function fitRunSurface(shell: HTMLDivElement, availableHeight: number) {
     const style = window.getComputedStyle(element);
     return (Number.parseFloat(style.borderTopWidth) || 0) + (Number.parseFloat(style.borderBottomWidth) || 0);
   };
-  const chrome = rectHeight(shell.querySelector(".control-bar")) + borders(shell);
+  const chrome = rectHeight(shell.querySelector(".control-bar")) +
+    rectHeight(shell.querySelector(".appearance-settings:not([hidden])")) + borders(shell);
   if (surface && content) {
     const blocks = Array.from(content.querySelectorAll<HTMLElement>(".slk-block"));
     const headers = blocks.map((block) => rectHeight(block.querySelector(".slk-row")) + borders(block));
@@ -83,6 +85,7 @@ function fitRunSurface(shell: HTMLDivElement, availableHeight: number) {
 
 export function App({ api = tauriApi }: AppProps) {
   const [archiveVisible, setArchiveVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const shell = useRef<HTMLDivElement>(null);
@@ -291,7 +294,7 @@ export function App({ api = tauriApi }: AppProps) {
   }
 
   function dragWindow(event: PointerEvent<HTMLElement>) {
-    if ((event.target as HTMLElement).closest("button") || !isTauri()) return;
+    if ((event.target as HTMLElement).closest("button, select, label") || !isTauri()) return;
     void currentWindow().then((appWindow) => appWindow.startDragging());
   }
 
@@ -308,6 +311,10 @@ export function App({ api = tauriApi }: AppProps) {
         {staleReason ? <span className="stale-notice" title={staleReason}>STALE</span> : null}
         {resizeError ? <span className="stale-notice" title={resizeError}>SIZE</span> : null}
         <div className="window-controls">
+          <button type="button" aria-label="设置" title="设置" aria-expanded={settingsVisible}
+            aria-controls="appearance-settings" className={settingsVisible ? "is-pressed" : ""}
+            onClick={() => setSettingsVisible((value) => !value)}
+          ><IconSettings size={13} aria-hidden="true" /></button>
           <button
             type="button"
             className={archiveVisible ? "is-pressed" : ""}
@@ -339,6 +346,11 @@ export function App({ api = tauriApi }: AppProps) {
           ><IconX size={13} aria-hidden="true" /></button>
         </div>
       </header>
+
+      <section id="appearance-settings" className="appearance-settings" aria-label="BI 设置" hidden={!settingsVisible}>
+        <BackgroundTransparency surface="desktop" />
+        <span>只调框体和背景，文字、图标保持不透明</span>
+      </section>
 
       {appState ? (
         <AppState state={appState} onRetry={() => void refresh()} />

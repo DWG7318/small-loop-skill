@@ -1,10 +1,18 @@
-# LE BI / WebBI 1.1.1 — SLK Read-Only View
+# LE BI / WebBI 1.1.2 — SLK Read-Only View
 
-LE BI presents machine-wide role-authored state plus accepted operational observations. BI 1.1.1 is versioned independently from the SLK method contract: the desktop and browser share one source version while every Run continues to show its actual SLK version. Neither surface participates in construction, inspection, transport, recovery, exemption, or closure.
+LE BI presents machine-wide role-authored state plus accepted operational observations. BI 1.1.2 is versioned independently from the SLK method contract: the desktop and browser share one source version while every Run continues to show its actual SLK version. Neither surface participates in construction, inspection, transport, recovery, exemption, or closure.
+
+## User-facing status and CELL records
+
+Normal work, inspection and handoff progression are green. A proven receiver start displays who is working; the existing message-bound TRANSPORT_STARTED and TOKEN receipts identify the receiver, not the event's sender. A D1 failure remains red until the recorded remediation advances; a Supervisor start following that failure reads “Supervisor 排障中”. Preparation, handoff and next-stage preparation name their actual phase instead of saying the system is waiting for a member. Explicit pauses, unavailable starts and genuine blocking retain their exceptional labels. This presentation never supplies evidence of private model thinking or creates engineering facts.
+
+Both surfaces hide untouched planned CELL rows while preserving the full planned progress denominator. Visible rows use newest recorded activity first, with reverse execution order for historical records without timestamps. Split/history and completed records remain readable; source records and work durations are unchanged.
 
 ## Data source
 
 The desktop resolves the same machine-wide `config.json` used by `slk-state` and `slk-bi-query`, then opens the configured SQLite database read-only for every refresh. Readers explicitly support schema 8 and 9 because migration 0009 changes only OW write constraints, not read columns; other versions fail closed. Reading never migrates the database or changes a Run's method version. WebBI stores only the bounded display projection uploaded by each desktop; that online archive is non-authoritative and never writes back to SLK state.
+
+Desktop BI is the primary view; WebBI is its extension, not an independent Agent/Run data collector. Its 30-second browser refresh reads only the uploaded online archive. Every desktop display-rule change must include the matching WebBI presentation in the same product version, without expanding either surface's data scope.
 
 If `SLK_CONFIG_PATH` is not set, the core uses the operating system's local-data SLK configuration path. Tests and isolated environments may set `SLK_CONFIG_PATH` to an explicit configuration file. The configuration contains an absolute data-root path and is created outside BI through the state CLI.
 
@@ -50,7 +58,7 @@ SLK_WEBBI_URL=https://slk.lcsp.work
 SLK_WEBBI_UPLOAD_TOKEN=<device upload token>
 ```
 
-All four values are required to enable upload. Missing values leave local BI fully operational and make sync a no-op. The uploader accepts HTTPS or actual HTTP loopback for development, rejects userinfo/query/fragment ambiguity and never follows authenticated upload redirects. It caps one envelope at 10 MiB, uses a 15-second timeout, sends only unconfirmed messages, and relies on server deduplication after restart. No local proxy/path/credential/source/log data is uploaded. Release 1.1.1 reads 1.1.0 and 1.1.1 `slk.bi.upload/v1` without relabeling old payloads; deploy the paired Worker/assets before new uploads, never emit a false old software version.
+All four values are required to enable upload. Missing values leave local BI fully operational and make sync a no-op. The uploader accepts HTTPS or actual HTTP loopback for development, rejects userinfo/query/fragment ambiguity and never follows authenticated upload redirects. It caps one envelope at 10 MiB, uses a 15-second timeout, sends only unconfirmed messages, and relies on server deduplication after restart. No local proxy/path/credential/source/log data is uploaded. Release 1.1.2 reads 1.1.0, 1.1.1 and 1.1.2 `slk.bi.upload/v1` without relabeling old payloads; deploy the paired Worker/assets before new uploads, never emit a false old software version.
 
 Cloudflare deployment uses one Worker, static assets and D1. Before initial deployment, replace the D1 placeholder in `apps/slk-bi/wrangler.jsonc`, apply `webbi/migrations/0001.sql`, and set `WEBBI_INGEST_TOKEN` and a base64-encoded 32-byte `WEBBI_SETTINGS_ENCRYPTION_KEY` as Worker secrets. The Owner-approved browser surface, exact GET Run/catalog routes and redacted notification settings are public: no login or Cloudflare Access gate. Notification settings PUT and test-send POST allow direct manual use without a management token; any visitor can edit that configuration. Engineering Run facts remain read-only, and uploads still require the ingest bearer. Public Run metadata includes the same device, role and Session identities as BI; stored credentials remain private.
 
@@ -61,6 +69,8 @@ WebBI stores ntfy server/topic/auth configuration server-side. Secrets are AES-G
 The first device bootstrap sends no phone notification. Later newly inserted selected messages are delivered once per configuration version/device/message identity. Notification failure is recorded without changing or rejecting the authoritative SLK fact.
 
 ## Display density
+
+The top-right Settings gear opens a background-transparency selector with 20%, 40%, 60% and 80% (default 20%) and remembers the local choice even after closing Settings. Native transparency is enabled only as the backing for CSS background alpha: text/icons never receive parent or whole-window opacity. Active and archived Run panels follow the same choice. WebBI mirrors the control against its page canvas, not through the browser to the desktop. Bootstrap/render-failure surfaces remain opaque, so this preference does not reintroduce a blank transparent failure shell.
 
 Visible text uses one shared 120% scale relative to the original LE BI typography. Icons, native window controls, and segmented progress geometry keep their original dimensions. An active list with zero through five Runs has no vertical scrolling state; six or more Runs use a viewport of approximately five collapsed rows with vertical scrolling. The threshold is the number of active Run identities, so expanding a row does not change whether the list is scrollable. The archive keeps its existing behavior.
 
@@ -78,7 +88,7 @@ These labels describe durable facts. The Overwatcher strip reports central bindi
 
 ## Security boundary
 
-The Tauri application registers nine read/metadata commands, one bounded outbound WebBI upload command, and the minimal native window capabilities required for drag, pin, minimize, close, and dynamic size. Its Windows named-mutex guard exits an accidental second instance without a daemon or state write; the native and document backgrounds are opaque. It has no role credential input, SLK state write command, shell/HTTP/updater plugin, telemetry, network listener, or remote UI content. Upload credentials stay in the native process and are not exposed through metadata or projections.
+The Tauri application registers nine read/metadata commands, one bounded outbound WebBI upload command, and the minimal native window capabilities required for drag, pin, minimize, close, and dynamic size. Its Windows named-mutex guard exits an accidental second instance without a daemon or state write. Native transparency supports only the Owner-selected background-alpha presentation; no extra native command or permission is introduced. It has no role credential input, SLK state write command, shell/HTTP/updater plugin, telemetry, network listener, or remote UI content. Upload credentials stay in the native process and are not exposed through metadata or projections.
 
 Supervisor, Checker, and Worker author engineering state through their Run-scoped credentials. A bound Overwatcher has a separate credential for append-only operational observations only. No role, including Overwatcher, receives a BI mutation command; Owner, BI, and other Agents remain read-only.
 

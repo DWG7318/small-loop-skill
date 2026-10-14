@@ -84,7 +84,7 @@ export function RunStrip({ view, archived = false, unread = false, open = false,
           {view.progress.passed}/{view.progress.total} CELL
           {view.currentCellWorkMs ? ` · ${formatDuration(view.currentCellWorkMs)}` : ""}
         </code>
-        <span className={`run-status status-${view.statusTone}`}>
+        <span className={`run-status status-${view.statusTone}`} title={view.status}>
           <span aria-hidden="true">{MARK[view.statusTone]}</span> {view.status}
         </span>
         <code className="slk-version">SLK {view.slkVersion}</code>
@@ -112,8 +112,9 @@ export function RunStrip({ view, archived = false, unread = false, open = false,
             </div>
           ) : null}
           <ol className="cell-list" tabIndex={0} aria-label={`${view.runName} CELL 记录`}>
-            {[...view.cells].reverse().map((cell) => <CellRow key={cell.cellId} cell={cell} />)}
+            {view.cells.map((cell) => <CellRow key={cell.cellId} cell={cell} />)}
           </ol>
+          {!view.cells.length ? <p className="quiet-empty">尚无施工记录</p> : null}
         </div>
       ) : null}
     </li>

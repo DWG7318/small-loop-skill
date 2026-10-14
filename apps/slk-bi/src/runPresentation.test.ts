@@ -24,6 +24,59 @@ function splitHistoryRun(): RunView {
 describe("compact Run presentation", () => {
   const project = { project_id: "project-a", name: "LCaS", repository_url: null, last_known_path: "D:/LCaS", run_count: 1 };
 
+  it.each([
+    ["checker-a", "CANDIDATE_SUBMITTED", "Checker 工作中", "active"],
+    ["supervisor-a", "D1_FAILED", "Supervisor 排障中", "blocked"],
+    ["worker-a", "REWORK_REQUESTED", "Worker 返工中", "active"],
+  ])("uses the proven recipient %s instead of the receipt author or previous phase", (recipient, previous, label, tone) => {
+    const event = runFixture.events[0]!;
+    const run: RunView = { ...runFixture,
+      token_history: [{ ...runFixture.token_history[0]!, to_role_instance_id: recipient,
+        message_id: "accepted", occurred_at: "2026-09-20T00:02:00.000Z" }],
+      events: [
+        { ...event, event_id: "phase", event_type: previous, occurred_at: "2026-09-20T00:01:00Z" },
+        { ...event, event_id: "started", event_type: "TRANSPORT_STARTED", author_role_instance_id: "checker-a",
+          details_json: '{"message_id":"accepted"}', occurred_at: "2026-09-20T00:02:00Z" },
+        { ...event, event_id: "registered", event_type: "ROLE_REGISTERED", occurred_at: "2026-09-20T00:03:00Z" },
+      ],
+    };
+    const before = JSON.stringify(run);
+    const view = buildRunStripView(project, run, new Date());
+    expect([view.status, view.statusTone]).toEqual([label, tone]);
+    expect(view.cells[0]!.meta).toContain(label);
+    expect(JSON.stringify(run)).toBe(before);
+    run.token_history = [];
+    expect(buildRunStripView(project, run, new Date()).status).toBe("接手状态待确认");
+  });
+
+  it("hides untouched future cells but preserves totals and puts the latest actual work first", () => {
+    const base = runFixture.go_nodes[0]!.cell_nodes[0]!;
+    const run: RunView = { ...runFixture, go_nodes: [{ ...runFixture.go_nodes[0]!, cell_nodes: [
+      { ...base, cell_id: "old", state: "d1_passed", ordinal: 1 },
+      { ...base, cell_id: "current", state: "planned", ordinal: 2 },
+      { ...base, cell_id: "future", state: "planned", ordinal: 3 },
+    ] }], events: [
+      { ...runFixture.events[0]!, cell_id: "old", event_type: "D1_PASSED", occurred_at: "2026-09-20T00:01:00Z" },
+      { ...runFixture.events[0]!, event_id: "new", cell_id: "current", occurred_at: "2026-09-20T00:02:00Z" },
+    ] };
+    const before = JSON.stringify(run);
+    const view = buildRunStripView(project, run, new Date());
+    expect(view.cells.map((cell) => cell.cellId)).toEqual(["current", "old"]);
+    expect(view.progress).toEqual({ passed: 1, total: 3 });
+    expect(JSON.stringify(run)).toBe(before);
+  });
+
+  it("keeps ordinary inspection green and real pause or failure exceptional", () => {
+    const withEvent = (event_type: string) => buildRunStripView(project,
+      { ...runFixture, events: [{ ...runFixture.events[0]!, event_type }] }, new Date());
+    for (const event of ["WORK_STARTED", "D1_STARTED", "D2_STARTED", "CANDIDATE_SUBMITTED", "D1_PASSED"]) {
+      expect(withEvent(event).statusTone).toBe("active");
+      expect(withEvent(event).status).not.toContain("等待");
+    }
+    expect(withEvent("RUN_PAUSED").statusTone).toBe("wait");
+    expect(withEvent("D1_FAILED").statusTone).toBe("blocked");
+  });
+
   it("excludes only confirmed pause time and resumes the same open work interval", () => {
     const fact = (event_type: string, minutes: number): EventProjection => ({
       event_id: event_type, event_type, author_role_instance_id: "worker-a", go_id: "GO-001",
@@ -52,7 +105,7 @@ describe("compact Run presentation", () => {
     const view = buildRunStripView(project, run, new Date("2026-09-20T02:00:00Z"));
 
     expect(view.progress).toEqual({ passed: 6, total: 12 });
-    expect(view.cells).toHaveLength(16);
+    expect(view.cells).toHaveLength(10);
     for (const id of ["CELL02", "CELL02-A", "CELL02-A3", "CELL03"]) {
       const history = view.cells.find((cell) => cell.name === id)!;
       expect(history.meta).toContain("已拆分");
@@ -68,7 +121,7 @@ describe("compact Run presentation", () => {
     run.events = [{ ...runFixture.events[0]!, event_type: "D1_PASSED" }];
     const view = buildRunStripView(project, run, new Date("2026-09-20T02:00:00Z"));
 
-    expect(view.status).toBe("等待 D2");
+    expect(view.status).toBe("准备总验收");
     expect(view.progress).toEqual({ passed: 12, total: 12 });
     expect(view.cells).toHaveLength(16);
   });
@@ -203,9 +256,9 @@ describe("compact Run presentation", () => {
     expect(view.progress).toEqual({ passed: 1, total: 2 });
     expect(view.totalWorkMs).toBe(37 * 60_000);
     expect(view.currentCellWorkMs).toBe(37 * 60_000);
-    expect(view.status).toBe("等待下一 CELL");
+    expect(view.status).toBe("推进下一 CELL");
     expect(view.slkVersion).toBe("4.1.0");
-    expect(view.cells).toHaveLength(2);
+    expect(view.cells).toHaveLength(1);
     expect(view.source).toEqual({ kind: "solo", label: "独立" });
   });
 
@@ -236,7 +289,7 @@ describe("compact Run presentation", () => {
       new Date("2026-09-20T02:00:00Z"),
     );
 
-    expect(view.status).toBe("等待 D2");
+    expect(view.status).toBe("准备总验收");
   });
 
   it("shows identity conflicts instead of silently merging unrelated cards", () => {
@@ -316,10 +369,10 @@ describe("compact Run presentation", () => {
   it.each([
     ["RUN_PAUSE_REQUESTED", "暂停请求中"],
     ["RUN_PAUSED", "已暂停"],
-    ["RUN_RESUMED", "已恢复"],
-    ["D2_PASSED", "验收通过 · 待收尾"],
-    ["D1_FAILED", "等待 Supervisor 指引"],
-    ["REWORK_REQUESTED", "Worker 返工中"],
+    ["RUN_RESUMED", "已恢复运行"],
+    ["D2_PASSED", "验收通过 · 收尾"],
+    ["D1_FAILED", "D1 未通过 · 待指引"],
+    ["REWORK_REQUESTED", "整改已安排"],
   ])("projects %s facts even after role registration", (event_type, expected) => {
     const run: RunView = {
       ...runFixture,
@@ -331,7 +384,7 @@ describe("compact Run presentation", () => {
     };
     const view = buildRunStripView(project, run, new Date("2026-09-20T00:03:00Z"));
     expect(view.status).toBe(expected);
-    if (event_type === "D1_FAILED") expect(view.cells[0]!.meta).toContain("等待 Supervisor 指引");
+    if (event_type === "D1_FAILED") expect(view.cells[0]!.meta).toContain("待整改指引");
   });
 
   it.each(["D1_INCOMPLETE", "D0_COMPLETED"])("keeps %s phase-ending facts through TOKEN handoff and role registration", (event_type) => {
@@ -347,9 +400,9 @@ describe("compact Run presentation", () => {
     };
     const before = JSON.stringify(run);
     const view = buildRunStripView(project, run, new Date("2026-09-20T00:05:00Z"));
-    expect(view.status).toBe("等待 Supervisor");
-    expect(view.statusTone).toBe("wait");
-    expect(view.cells[0]!.tone).toBe("wait");
+    expect(view.status).toBe(event_type === "D1_INCOMPLETE" ? "检验中断 · 待排查" : "自检完成 · 交接中");
+    expect(view.statusTone).toBe(event_type === "D1_INCOMPLETE" ? "blocked" : "active");
+    expect(view.cells[0]!.tone).toBe(view.statusTone);
     expect(view.cells[0]!.meta).not.toContain("进行中");
     expect(JSON.stringify(run)).toBe(before);
   });
@@ -359,7 +412,7 @@ describe("compact Run presentation", () => {
       .map((event_type, index) => ({ ...runFixture.events[0]!, event_id: String(index), event_type,
         occurred_at: `2026-09-20T00:0${index + 1}:00Z` }));
     expect(buildRunStripView(project, { ...runFixture, events: events.slice(0, 3) }, new Date()).status).toBe("已暂停");
-    expect(buildRunStripView(project, { ...runFixture, events: events.slice(0, 4) }, new Date()).status).toBe("已恢复");
+    expect(buildRunStripView(project, { ...runFixture, events: events.slice(0, 4) }, new Date()).status).toBe("已恢复运行");
     expect(buildRunStripView(project, { ...runFixture, events }, new Date()).status).toBe("Worker 工作中");
     expect(buildRunStripView(project, { ...runFixture, summary: { ...runFixture.summary, closure_state: "closed" }, events }, new Date()).status).toBe("已完成");
   });

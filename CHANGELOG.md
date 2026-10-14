@@ -1,5 +1,19 @@
 # Changelog
 
+## BI / WebBI 1.1.2 — readable work states
+
+- Show normal work, inspection and handoff progression in green; retain explicit fault,
+  troubleshooting and pause states. Use accepted receiver-start receipts so a started
+  Supervisor or Checker no longer remains displayed as waiting.
+- Hide untouched planned CELL detail rows and share newest-activity-first ordering
+  across desktop and WebBI. Preserve complete plan counts and source records.
+- Preserve the compact five-header/six-detail-row scrolling, single expansion,
+  8/16/24 progress segments, readable archive and authoritative unread-message behavior.
+- Add remembered 20/40/60/80% background transparency to desktop and WebBI;
+  text/icons stay opaque and startup/render-failure fallback stays visible.
+- Accept BI 1.1.2 alongside compatible older uploads/readiness receipts. The SLK
+  method remains 4.5.2; this patch does not restart engineering agents or workflows.
+
 ## 4.5.2 — Run08 lifecycle and evidence corrections
 
 - Correct the contradictory parent-exit instruction and role Eval: Supervisor stays

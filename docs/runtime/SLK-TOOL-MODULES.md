@@ -8,7 +8,7 @@ copy or submodule checkout required for normal use.
 
 Every independent repository starts its extraction history at tag `1.0.0`.
 Repository tags and product versions are separate: this delivery uses SLK
-changed tools/templates `4.5.2`, BI/WebBI `1.1.1`, OW helper `1.0.2` and native probe
+changed tools/templates `4.5.2`, BI/WebBI `1.1.2`, OW helper `1.0.2` and native probe
 `1.0.0`. The unchanged DSH integration retains product version `4.5.1`.
 Changed module repositories advance without rewriting historical tags;
 the exact commits, tags and artifact hashes are in the JSON map.

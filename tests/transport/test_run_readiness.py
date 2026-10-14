@@ -1205,14 +1205,15 @@ def test_context_unknown_does_not_accept_false_numeric_facts(tmp_path, field, in
 
 @pytest.mark.parametrize("method_version", ["4.4.3", "4.4.4", "4.4.5"])
 @pytest.mark.parametrize("receipt_method", ["4.4.2", "4.4.3"])
-def test_current_readiness_requires_actual_bi_111_even_with_legacy_receipt_label(tmp_path, receipt_method, method_version):
+@pytest.mark.parametrize("bi_version", ["1.1.1", "1.1.2"])
+def test_current_readiness_accepts_compatible_bi_patch_with_legacy_receipt_label(tmp_path, receipt_method, method_version, bi_version):
     request = _request(tmp_path, method_version=method_version)
     path = Path(request["bi_open_receipt"])
     receipt = json.loads(path.read_text())
     receipt.update(method_version=receipt_method, bi_version="1.1.0")
     write_json(path, receipt)
     assert "BI_OPEN_RECEIPT_INVALID" in evaluate_run_readiness(request)["reason_codes"]
-    receipt["bi_version"] = "1.1.1"
+    receipt["bi_version"] = bi_version
     write_json(path, receipt)
     assert evaluate_run_readiness(request)["status"] == "READY"
 

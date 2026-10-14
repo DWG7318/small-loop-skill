@@ -126,7 +126,7 @@ function request(path: string, init: RequestInit = {}) {
 }
 
 describe("WebBI worker", () => {
-  it.each(["1.1.0", "1.1.1"] as const)("ingests actual %s producers while reporting its own 1.1.1 release", async (bi_version) => {
+  it.each(["1.1.0", "1.1.1", "1.1.2"] as const)("ingests actual %s producers while reporting its own 1.1.2 release", async (bi_version) => {
     const store = new MemoryStore();
     const handler = createWebBiHandler({ store, notifier: new RecordingNotifier(), catalog: MESSAGE_CATALOG, ingest_token: "ingest-secret" });
     const payload = { ...upload("device-a"), bi_version };
@@ -136,7 +136,7 @@ describe("WebBI worker", () => {
     expect(response.status).toBe(202);
     expect(payload.bi_version).toBe(bi_version);
     const list = await handler(request("/api/v1/runs?archive=active"));
-    expect(await list.json()).toMatchObject({ bi_version: "1.1.1", runs: [{ device: { device_id: "device-a" } }] });
+    expect(await list.json()).toMatchObject({ bi_version: "1.1.2", runs: [{ device: { device_id: "device-a" } }] });
   });
 
   it("reads existing Run details and redacted settings publicly without changing state", async () => {

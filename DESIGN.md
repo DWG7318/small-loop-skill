@@ -36,7 +36,7 @@ Expansion stays inside the selected row and never opens a second pane. Exactly o
 
 - one role strip for Supervisor, Checker, Worker, and the registered Overwatcher, with Agent runtime, model, and reasoning level; four registered roles use four columns;
 - a separate Overwatcher assurance strip showing recorded binding, native liveness, and cycle facts;
-- CELL rows with state mark, original CELL number, title, medium-detail objective/result, active work time, and rework count when applicable. Display reverses a copy of the existing GO-then-CELL execution list, so the latest record is first without changing the plan, execution order, current-CELL fallback, or timing data.
+- CELL rows with state mark, original CELL number, title, medium-detail objective/result, active work time, and rework count when applicable. The shared desktop/WebBI presentation excludes untouched planned rows and sorts by newest recorded activity, then reverse execution order. It preserves source records, the full progress denominator, current-CELL fallback and timing data.
 
 There are only two scrolling levels. Active and archived Run headers share one outer main scroller whose natural budget is five headers; an expanded detail body adds height without consuming a header slot. CELL records alone form the inner scroller with at most six measured rows, visible scrollbar, keyboard focus, and contained overscroll. Role and Overwatcher strips stay outside it. Work-area constraints may reduce visible rows; all records remain reachable and no list is sliced.
 
@@ -44,13 +44,15 @@ LE BI does not render a timeline, inspector, project rail, SLK TOKEN payload, ra
 
 ## Archive
 
-The archive button toggles an in-window archive section. `closed`, `abandoned`, and `superseded` SLKs enter it immediately and independently of any parent project. Archived rows keep the same expansion behavior and are visually subdued on an opaque background without losing text contrast. Hiding the archive or removing the expanded Run from the visible source clears its disclosure and detail-height budget.
+The archive button toggles an in-window archive section. `closed`, `abandoned`, and `superseded` SLKs enter it immediately and independently of any parent project. Archived rows keep the same expansion behavior and the user's selected background alpha, never a parent-opacity fade of their text. Hiding the archive or removing the expanded Run from the visible source clears its disclosure and detail-height budget.
+
+Background transparency has four explicit steps: 20%, 40%, 60% and 80%, default 20%, saved as a local view preference. It affects frame/background colors only; do not use window or parent-element opacity. Startup/render-failure fallback stays opaque. Desktop and WebBI share the selector; the browser can reveal only its own page canvas.
 
 ## Status and time
 
-Green means recorded completion, blue means an authored active phase, amber means waiting, and red means rework or attention. Exact text is always present. “Working” is shown only from an unfinished authored work/check event; token ownership alone never creates it.
+Green means normal work, inspection, handoff progression or completion. Amber means an explicit wait, pause or unconfirmed start; red means a recorded fault or troubleshooting. Blue is reserved for explicitly evidenced deliberation, never the default work color. Exact text accompanies every state. “Working” needs an authored work/check event or a matching accepted TRANSPORT_STARTED receipt; TOKEN ownership alone never creates it. The receipt author is the sender, so the corresponding message-bound TOKEN identifies the recipient.
 
-Formal pause-request, paused, and resumed lifecycle events remain visible despite later administrative role registration. `D2_PASSED` means acceptance passed awaiting close, not a closed Run. `D1_FAILED` means awaiting Supervisor guidance; only `REWORK_REQUESTED` claims rework. Overwatcher anomalies or overdue cadence mean attention is needed, not that the observer paused.
+Formal pause-request, paused, and resumed lifecycle events remain visible despite later administrative role registration. `D2_PASSED` means acceptance passed with closure still pending. `D1_FAILED` remains a failure requiring guidance; a later accepted Supervisor start displays troubleshooting. `REWORK_REQUESTED` means remediation is arranged; an accepted Worker start proves the next work phase. Overwatcher anomalies or overdue cadence mean attention is needed, not that the observer paused.
 
 Total and current CELL work time are unions of recorded active intervals. Candidate submission, inspection result, blocker, and resource-contention boundaries stop the relevant interval; waiting does not accumulate.
 

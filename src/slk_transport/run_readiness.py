@@ -147,8 +147,8 @@ def _valid_bi_receipt(path_value: Any, run_id: str, *, method_version: Any,
         and (not match_method or value.get("method_version") == method_version)
         and value.get("run_id") == run_id
         and value.get("bi_version") in (
-            {"1.1.1"} if method_version in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2") or value.get("method_version") in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2")
-            else {"1.1.0", "1.1.1"})
+            {"1.1.1", "1.1.2"} if method_version in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2") or value.get("method_version") in ("4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2")
+            else {"1.1.0", "1.1.1", "1.1.2"})
         and isinstance(value.get("device_id"), str)
         and bool(str(value.get("device_id")).strip())
         and value.get("visible") is True

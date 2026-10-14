@@ -188,7 +188,7 @@
   background: rgb(255 255 255 / 18%);
 }
 
-.segment-active { border-color: var(--blue); background: var(--blue); }
+.segment-active { border-color: var(--green); background: var(--green); }
 .segment-done { border-color: var(--green); background: var(--green); }
 .segment-wait { border-color: var(--amber); background: var(--amber); }
 
@@ -206,7 +206,7 @@
 }
 
 .status-done { color: var(--green); }
-.status-active { color: var(--blue); }
+.status-active { color: var(--green); }
 .status-wait { color: var(--amber); }
 .status-rework,
 .status-blocked { color: var(--red); }
@@ -295,8 +295,8 @@
 .cell-copy span { color: var(--ink-2); font-size: var(--text-9); }
 .cell-meta { color: var(--ink-2); font: var(--text-8)/1.3 var(--mono); text-align: right; }
 .cell-done .cell-mark { color: var(--green); }
-.cell-active { background: rgb(40 84 119 / 7%); }
-.cell-active .cell-mark { color: var(--blue); }
+.cell-active { background: rgb(49 95 67 / 7%); }
+.cell-active .cell-mark { color: var(--green); }
 .cell-wait,
 .cell-exempt { color: var(--ink-3); }
 .cell-rework,
@@ -357,3 +357,53 @@
 @media (prefers-reduced-motion: reduce) {
   .chevron { transition: none; }
 }
+
+/* Opt-in by the mounted preference control. The loading/failure shell above
+   stays opaque when the application has not mounted or has crashed. */
+html[data-bi-surface="desktop"] {
+  --frame: color-mix(in srgb, #626b63 var(--bi-surface-opacity), transparent);
+  --line: color-mix(in srgb, #929e93 var(--bi-surface-opacity), transparent);
+  background: transparent;
+}
+html[data-bi-surface="desktop"] :is(body, #root, .app-shell, .runs-surface, .archive-panel, .run-details, .overwatch-status, .cell-active, .cell-rework, .cell-blocked) {
+  background: transparent;
+}
+html[data-bi-surface="desktop"] .control-bar {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--plastic-hi) var(--bi-surface-opacity), transparent),
+    color-mix(in srgb, var(--plastic) var(--bi-surface-opacity), transparent));
+}
+html[data-bi-surface="desktop"] .slk-block {
+  background: color-mix(in srgb, var(--group-bg) var(--bi-surface-opacity), transparent);
+}
+html[data-bi-surface="desktop"] :is(.quiet-empty, .app-state, .appearance-settings) {
+  background: color-mix(in srgb, var(--lcd) var(--bi-surface-opacity), transparent);
+}
+html[data-bi-surface="desktop"] .archive-panel > header {
+  background: color-mix(in srgb, #b7c0b4 var(--bi-surface-opacity), transparent);
+}
+.background-transparency {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 5px;
+  color: var(--ink-2);
+  font: var(--text-8)/1 var(--mono);
+  white-space: nowrap;
+}
+.background-transparency select {
+  height: 20px;
+  border: 1px solid var(--frame);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.background-transparency select:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.background-transparency option { background: var(--lcd); color: var(--ink); }
+.appearance-settings { display: flex; align-items: center; gap: 18px; min-height: 46px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--lcd); color: var(--ink-2); }
+.appearance-settings[hidden] { display: none; }
+.appearance-settings > span { font-size: var(--text-9); }
+.appearance-settings .background-transparency { font-size: var(--text-10); }
+.appearance-settings .background-transparency select { height: 25px; }

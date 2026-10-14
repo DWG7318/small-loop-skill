@@ -3,27 +3,16 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "aae906273b80c4bae797cb632ff4759e3bca4f1111a723c0e4f93c79ca1f9e93",
-        "size": 433926
+        "sha256": "fe4574f38dfa09e6c294ec437ea57c81930ab822ca0c842012ada96389c6bcc5",
+        "size": 433901
       }
     ],
-    "sha256": "aae906273b80c4bae797cb632ff4759e3bca4f1111a723c0e4f93c79ca1f9e93",
-    "size": 433926
+    "sha256": "fe4574f38dfa09e6c294ec437ea57c81930ab822ca0c842012ada96389c6bcc5",
+    "size": 433901
   },
   "build": {
     "commands": [
-      "C:\\Users\\DWG\\AppData\\Roaming\\npm\\pnpm.ps1 --dir D:\\SLK\\apps\\slk-bi tauri build --no-bundle",
-      "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
-      "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
-    ],
-    "new_wheel_build": {
-      "builder_packages": {
-        "pip": "26.0.1",
-        "setuptools": "80.10.2",
-        "wheel": "0.45.1"
-      },
-      "builder_python": "3.14.0 (tags/v3.14.0:ebf955d, Oct  7 2025, 10:15:03) [MSC v.1944 64 bit (AMD64)]",
-      "command": [
+      [
         "C:\\Python314\\python.exe",
         "-m",
         "pip",
@@ -32,47 +21,32 @@
         "--no-deps",
         "--no-index",
         "--wheel-dir",
-        "D:\\SLK\\.codex\\.tmp\\452\\build2\\wheels",
-        "D:\\SLK\\.codex\\.tmp\\452\\build2\\wheel-source\\transport"
+        "D:\\LCcoding\\.codex\\.tmp\\bi-1.1.2\\wheels",
+        "D:\\LCcoding\\.codex\\.tmp\\bi-1.1.2\\wheel-source"
       ],
-      "negative_checks": [
-        {
-          "case": "prior 4.5.2 wheel versus build2 source",
-          "expected_rejection": "transport wheel source byte mismatch: slk_transport/overwatcher_admin.py"
-        },
-        {
-          "case": "wrong OW helper commit",
-          "expected_rejection": "transport wheel does not require the exact frozen OW commit"
-        }
-      ],
-      "ow_exact_commit": "1cbe4365b083d0c20a77305ba43b8e1248b75c47",
-      "packaged_python_files": 51,
-      "path": "D:\\SLK\\.codex\\.tmp\\452\\build2\\wheels\\slk_transport-4.5.2-py3-none-any.whl",
-      "sha256": "1ce8e3b1bd901bd07438aed22a9892059319028a6585c8adfe9c0f98c6320c61",
-      "size": 219726,
-      "source_files": 56,
-      "source_inventory_sha256": "4ae69c111cd596f2d30b1e1b81c3aa99c8fab349762d63345f89cd658553818f",
-      "status": "VERIFIED"
-    },
-    "release_batch_sha256": "d16847b762d24eaae78d48525b06d9aaf761bdd3db243d6ebca120bccd95b656",
-    "scope": "build2 transport-only archive; unchanged version and exact OW dependency",
+      [
+        "python",
+        "scripts/build_transport_zipapp.py",
+        "--output",
+        "D:\\LCcoding\\.codex\\.tmp\\bi-1.1.2\\slk-transport.pyz"
+      ]
+    ],
+    "python": "3.14.0 (tags/v3.14.0:ebf955d, Oct  7 2025, 10:15:03) [MSC v.1944 64 bit (AMD64)]",
+    "scope": "Accept BI 1.1.2; method version and transport semantics unchanged",
+    "sha256": "8529581fd63eb8c11f228b478ca7443ee0d7230154d838a15643eb77f149dcce",
     "source_hash_mode": "sha256-raw",
-    "toolchains": [
-      "cargo 1.94.0 (85eff7c80 2026-01-15)",
-      "10.6.2",
-      "Python 3.14.0"
-    ]
+    "verified_python_files": 51
   },
   "payload": [
     {
       "path": "bin/slk-transport.pyz",
-      "sha256": "1bb88606a21a2929f53d582fd087655c32b852038237d8897f4ee8c617cc3543",
-      "size": 223048
+      "sha256": "cd861bcd0b90e929ebc93a98e8875d53928b8e64c861f8dc3c87e58749802ea3",
+      "size": 223053
     },
     {
       "path": "wheels/slk_transport-4.5.2-py3-none-any.whl",
-      "sha256": "1ce8e3b1bd901bd07438aed22a9892059319028a6585c8adfe9c0f98c6320c61",
-      "size": 219726
+      "sha256": "8529581fd63eb8c11f228b478ca7443ee0d7230154d838a15643eb77f149dcce",
+      "size": 219731
     }
   ],
   "product_version": "4.5.2",
@@ -117,7 +91,7 @@
     "recovery.py": "7366ad1534b763ae3957d4bad576d5e008ab1d2b7a1f0d3cb2a10e065dae0470",
     "role_eval.py": "c1a9686d0e68fdac85147ffbff3b1cf35d8fa3e03a11cc509a819727fdc96300",
     "role_host.py": "146f26d95c6f0adfc7361e157619d900af1bc763f029aff87ad92e80a963dc3a",
-    "run_readiness.py": "aa7c031b497b6b746b5f73d6b92f91bfdd97c05017d20e1d3e00ee79eef8b1db",
+    "run_readiness.py": "3ffeee9e46a1a2a7cc089696e9637ed7ca3b1270adbf640dfd528363efc08ac8",
     "runtime_binding_migration.py": "a83e7d56fb3ff97a08ddfab5f2be46fa43dfca54f6474ac35b8a7a8aba3eabb6",
     "subprocess_watch.py": "1ea11c75dabc955650f52e6e2510c408a81228b5a66d3602ece35a446fb221b9",
     "supervisor_admin.py": "56fbc46694b13aedbb4756b1e174e054730869dcda97772ebce444317a11da83",

@@ -22,7 +22,7 @@ def test_bi_release_declares_custom_protocol_as_the_default() -> None:
     assert cargo["features"]["custom-protocol"] == ["tauri/custom-protocol"]
 
 
-def test_bi_native_shell_is_opaque_and_single_instance() -> None:
+def test_bi_supports_background_alpha_with_opaque_fallback_and_single_instance() -> None:
     cargo = tomllib.loads(
         (ROOT / "apps/slk-bi/src-tauri/Cargo.toml").read_text(encoding="utf-8")
     )
@@ -33,7 +33,8 @@ def test_bi_native_shell_is_opaque_and_single_instance() -> None:
     main = (ROOT / "apps/slk-bi/src/main.tsx").read_text(encoding="utf-8")
     tokens = (ROOT / "apps/slk-bi/src/styles/tokens.css").read_text(encoding="utf-8")
 
-    assert config["app"]["windows"][0]["transparent"] is False
+    assert config["app"]["windows"][0]["transparent"] is True
+    assert config["app"]["windows"][0]["backgroundColor"] == "#00000000"
     assert cargo["target"]["cfg(windows)"]["dependencies"]["windows-sys"]["version"] == "=0.61.2"
     assert "single_instance::acquire" in source
     assert "CreateMutexW" in source
@@ -42,6 +43,15 @@ def test_bi_native_shell_is_opaque_and_single_instance() -> None:
     assert "bootstrap().catch" in main
     assert "background: var(--lcd)" in tokens
     assert "--help" in source and "should_launch_interface" in source
+
+    styles = (ROOT / "apps/slk-bi/src/styles/app.css").read_text(encoding="utf-8")
+    control = (ROOT / "apps/slk-bi/src/components/BackgroundTransparency.tsx").read_text(encoding="utf-8")
+    assert '[20, 40, 60, 80]' in control
+    assert 'color-mix(in srgb, var(--group-bg) var(--bi-surface-opacity), transparent)' in styles
+    assert 'html[data-bi-surface="desktop"]' in styles
+    assert 'delete root.dataset.biSurface' in control
+    assert not re.search(r'(?<![-\w])opacity\s*:', styles)
+    assert '.style.opacity' not in control
 
 
 def test_release_artifact_builder_uses_tauri_not_plain_cargo_for_bi() -> None:

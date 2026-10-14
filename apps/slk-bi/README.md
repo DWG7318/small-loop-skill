@@ -2,6 +2,8 @@
 
 The desktop BI and WebBI share this source tree and the same BI product version. Desktop state projection uses the canonical pinned `slk-state-core` dependency. Splitting the repository does not change the UI, read-only state boundary, notification contract or product version.
 
+Desktop BI is the primary surface; WebBI reads only projections uploaded by desktop BI, never Agents or Run databases directly. A desktop display-rule change must include the matching WebBI change in the same product release. Browser/mobile layout may differ without expanding the data scope.
+
 ## Development
 
 Use the Node/pnpm version recorded by `package.json` and `pnpm-lock.yaml`. From an independent checkout:

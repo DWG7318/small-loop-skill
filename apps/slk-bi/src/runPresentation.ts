@@ -63,7 +63,7 @@ const STATUS_EVENTS = new Set([
   "D0_COMPLETED", "WORK_STARTED", "WORK_PROGRESS", "CANDIDATE_SUBMITTED", "D1_STARTED", "D1_PASSED", "D1_FAILED", "D1_INCOMPLETE",
   "REWORK_REQUESTED", "D2_STARTED", "D2_PASSED", "D2_FAILED", "RUN_CLOSED", "BLOCKER_REPORTED",
   "RESOURCE_CONTENDED", "RESOURCE_RECOVERED", "TRANSPORT_FAILED",
-  "RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED",
+  "RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED", "TRANSPORT_STARTED",
 ]);
 
 export function visibleRunSummaries(runs: RunSummary[]) {
@@ -213,6 +213,36 @@ function currentCellId(run: RunView) {
   );
 }
 
+// TRANSPORT_STARTED is authored by the sender. Resolve the actual recipient
+// through the same message's accepted TOKEN receipt, never through the author.
+function startedRecipient(run: RunView, event: EventProjection): RoleProjection | undefined {
+  try {
+    const { message_id } = JSON.parse(event.details_json);
+    if (typeof message_id !== "string" || !message_id) return undefined;
+    const token = run.token_history.find((item) => item.message_id === message_id &&
+      item.cell_id === event.cell_id && Date.parse(item.occurred_at) === Date.parse(event.occurred_at));
+    return run.roles.find((role) => role.role_instance_id === token?.to_role_instance_id &&
+      role.lifecycle === "active" && role.role !== "overwatcher");
+  } catch {
+    return undefined;
+  }
+}
+
+function startedStatus(run: RunView, event: EventProjection): [string, RunTone] {
+  const recipient = startedRecipient(run, event);
+  if (!recipient) return ["接手状态待确认", "wait"];
+  const previous = effectiveEvents(run.events).filter((item) =>
+    item.event_type !== "TRANSPORT_STARTED" && STATUS_EVENTS.has(item.event_type) &&
+    item.cell_id === event.cell_id && Date.parse(item.occurred_at) <= Date.parse(event.occurred_at)).at(-1);
+  if (recipient.role === "supervisor" && previous &&
+    ["D1_FAILED", "D1_INCOMPLETE", "D2_FAILED", "BLOCKER_REPORTED", "RESOURCE_CONTENDED", "TRANSPORT_FAILED"].includes(previous.event_type)) {
+    return ["Supervisor 排障中", "blocked"];
+  }
+  if (recipient.role === "checker") return ["Checker 工作中", "active"];
+  if (recipient.role === "worker") return [previous?.event_type === "REWORK_REQUESTED" ? "Worker 返工中" : "Worker 工作中", "active"];
+  return ["Supervisor 工作中", "active"];
+}
+
 function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
   if (run.summary.identity_state === "DUPLICATE_ACTIVE_RUN") return ["Run 身份冲突", "blocked"];
   if (run.summary.identity_state === "ORPHANED_IDENTITY") return ["Run 身份待确认", "blocked"];
@@ -234,24 +264,31 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
   ) {
     if (latestObservation.kind === "ACTIVITY_UNPROVEN") return ["活动无法证明", "blocked"];
     if (latestObservation.kind === "DELIVERY_UNCONFIRMED") return ["通讯待确认", "blocked"];
-    if (latestObservation.kind === "DELIVERY_RETRYING") return ["通讯恢复中", "active"];
+    if (latestObservation.kind === "DELIVERY_RETRYING") return ["通讯恢复中", "blocked"];
     if (latestObservation.kind === "RECORD_CONFLICT") return ["记录冲突", "blocked"];
-    if (latestObservation.kind === "RECOVERY_ESCALATED") return ["等待 Supervisor 决策", "blocked"];
+    if (latestObservation.kind === "RECOVERY_ESCALATED") return ["异常待主管处理", "blocked"];
   }
   const event = latestEvent?.event_type;
-  if (event === "RUN_RESUMED") return ["已恢复", "wait"];
-  if (event === "WORK_STARTED" || event === "WORK_PROGRESS") return ["Worker 工作中", "active"];
-  if (event === "CANDIDATE_SUBMITTED") return ["等待 Checker", "wait"];
+  if (event === "TRANSPORT_STARTED") return startedStatus(run, latestEvent!);
+  if (event === "RUN_RESUMED") return ["已恢复运行", "active"];
+  if (event === "WORK_STARTED" || event === "WORK_PROGRESS" || event === "RESOURCE_RECOVERED") {
+    const author = run.roles.find((role) => role.role_instance_id === latestEvent?.author_role_instance_id);
+    return [`${author ? ROLE_LABELS[author.role] : "Worker"} 工作中`, "active"];
+  }
+  if (event === "CANDIDATE_SUBMITTED") return ["交接至 Checker", "active"];
+  if (event === "D0_COMPLETED") return ["自检完成 · 交接中", "active"];
   if (event === "D1_STARTED") return ["Checker 检验中", "active"];
   if (event === "D1_PASSED") {
     const allCells = effectiveCells(run);
     const allPassed = allCells.length > 0 && allCells.every((cell) => cell.state === "d1_passed");
-    return allPassed ? ["等待 D2", "wait"] : ["等待下一 CELL", "wait"];
+    return allPassed ? ["准备总验收", "active"] : ["推进下一 CELL", "active"];
   }
-  if (event === "D1_FAILED") return ["等待 Supervisor 指引", "blocked"];
-  if (event === "REWORK_REQUESTED") return ["Worker 返工中", "rework"];
+  if (event === "D1_FAILED") return ["D1 未通过 · 待指引", "blocked"];
+  if (event === "D1_INCOMPLETE") return ["检验中断 · 待排查", "blocked"];
+  if (event === "REWORK_REQUESTED") return ["整改已安排", "active"];
   if (event === "D2_STARTED") return ["D2 检验中", "active"];
-  if (event === "D2_PASSED") return ["验收通过 · 待收尾", "wait"];
+  if (event === "D2_PASSED") return ["验收通过 · 收尾", "active"];
+  if (event === "D2_FAILED") return ["总验收未通过", "blocked"];
   if (event === "RUN_CLOSED") return ["已完成", "done"];
   if (
     event === "BLOCKER_REPORTED" ||
@@ -260,14 +297,15 @@ function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
   ) {
     return ["需要处理", "blocked"];
   }
-  if (!responsible) return ["等待分配", "wait"];
+  if (!responsible) return ["准备中", "active"];
   if (responsible.role === "overwatcher") return ["TOKEN 归属异常", "blocked"];
   return [`等待 ${ROLE_LABELS[responsible.role]}`, "wait"];
 }
 
 function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): RunStripCell {
   const events = effectiveEvents(run.events).filter((event) => event.cell_id === cell.cell_id);
-  const latest = events.filter((event) => STATUS_EVENTS.has(event.event_type)).at(-1)?.event_type;
+  const latestEvent = events.filter((event) => STATUS_EVENTS.has(event.event_type)).at(-1);
+  const latest = latestEvent?.event_type;
   let tone: RunTone = "wait";
   let state = "未开始";
   if (cell.state === "split") {
@@ -276,23 +314,32 @@ function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): Ru
   } else if (cell.state === "d1_passed" || latest === "D1_PASSED") {
     tone = "done";
     state = "已完成 · D1 PASS";
+  } else if (latest === "TRANSPORT_STARTED") {
+    [state, tone] = startedStatus(run, latestEvent!);
   } else if (latest === "D1_FAILED") {
     tone = "blocked";
-    state = "D1 FAIL · 等待 Supervisor 指引";
+    state = "D1 未通过 · 待整改指引";
+  } else if (latest === "D1_INCOMPLETE") {
+    tone = "blocked";
+    state = "检验中断 · 待排查";
   } else if (latest === "REWORK_REQUESTED") {
-    tone = "rework";
-    state = "返工中";
+    tone = "active";
+    state = "整改已安排";
   } else if (latest === "BLOCKER_REPORTED" || latest === "RESOURCE_CONTENDED") {
     tone = "blocked";
     state = "需要处理";
-  } else if (latest === "WORK_STARTED" || latest === "WORK_PROGRESS") {
+  } else if (latest === "WORK_STARTED" || latest === "WORK_PROGRESS" || latest === "RESOURCE_RECOVERED") {
     tone = "active";
     state = "进行中 · Worker";
   } else if (latest === "D1_STARTED") {
     tone = "active";
     state = "进行中 · Checker";
   } else if (latest === "CANDIDATE_SUBMITTED") {
-    state = "等待 Checker";
+    tone = "active";
+    state = "交接至 Checker";
+  } else if (latest === "D0_COMPLETED") {
+    tone = "active";
+    state = "自检完成 · 交接中";
   }
   const duration = unionDuration(intervals.filter((interval) => interval.cellId === cell.cell_id));
   const durationText = duration ? ` · ${formatDuration(duration)}` : "";
@@ -306,6 +353,22 @@ function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): Ru
     meta: `${state}${durationText}${attemptText}`,
     tone,
   };
+}
+
+function visibleCells(run: RunView): CellProjection[] {
+  const activity = new Map<string, number>();
+  for (const event of effectiveEvents(run.events)) {
+    if (event.cell_id && STATUS_EVENTS.has(event.event_type) &&
+      !["RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"].includes(event.event_type)) {
+      activity.set(event.cell_id, Date.parse(event.occurred_at));
+    }
+  }
+  // Keep the full plan in the source and progress denominator. Only its display
+  // excludes untouched future work; historical/split records remain accessible.
+  return cells(run).map((cell, index) => ({ cell, index }))
+    .filter(({ cell }) => cell.state !== "planned" || activity.has(cell.cell_id))
+    .sort((a, b) => (activity.get(b.cell.cell_id) ?? 0) - (activity.get(a.cell.cell_id) ?? 0) || b.index - a.index)
+    .map(({ cell }) => cell);
 }
 
 function source(run: RunSummary) {
@@ -404,7 +467,7 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
     slkVersion: run.summary.slk_version,
     roles,
     overwatcher: overwatcher(run),
-    cells: allCells.map((cell) => cellView(cell, run, intervals)),
+    cells: visibleCells(run).map((cell) => cellView(cell, run, intervals)),
     ...sourceInfo,
   };
 }
