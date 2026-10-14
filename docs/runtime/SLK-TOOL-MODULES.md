@@ -12,6 +12,10 @@ changed tools/templates `4.5.2`, BI/WebBI `1.1.2`, OW helper `1.0.2` and native 
 `1.0.0`. The unchanged DSH integration retains product version `4.5.1`.
 Changed module repositories advance without rewriting historical tags;
 the exact commits, tags and artifact hashes are in the JSON map.
+The BI 1.1.2 patch retains its precompiled Windows executable and compiled WebBI
+in the BI subtree and independent repository. Only the transport readiness
+compatibility list also changes (repository tag 1.0.4); method version 4.5.2 and
+all other runtimes are unchanged. This is not a new full five-artifact SLK batch.
 The shared state core remains the sole SQL/transaction authority. The OW helper
 and native probe acquire no engineering write, dispatch or repair authority.
 

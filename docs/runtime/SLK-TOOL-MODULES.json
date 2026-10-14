@@ -73,16 +73,16 @@
       "tool": "slk-bi",
       "prefix": "apps/slk-bi",
       "repository": "https://github.com/DWG7318/slk-bi.git",
-      "commit": "4d0b49b09fbb2b13db4fc3519dd33f9c6dff221e",
-      "repository_tag": "1.0.3",
-      "product_version": "1.1.1",
+      "commit": "ec1492a25884f0cff3145741b01fa6e50551096c",
+      "repository_tag": "1.1.2",
+      "product_version": "1.1.2",
       "dependencies": [
         "slk-state-core"
       ],
       "artifact_indices": [
         {
           "path": "apps/slk-bi/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "5d9d5e078eb8aaf70c6c9251a09c94be6aab36092a6ac6de5a53adf88579b631"
+          "sha256": "85a625490f5a87a6e9f3a674b317c2e99f773a68b14e58195a45d919298ccf62"
         }
       ]
     },
@@ -105,8 +105,8 @@
       "tool": "slk-transport",
       "prefix": "src/slk_transport",
       "repository": "https://github.com/DWG7318/slk-transport.git",
-      "commit": "f706015940c4645bf30135a6143a89e487888c7b",
-      "repository_tag": "1.0.3",
+      "commit": "5dde054ef5701d23aef841878dbd4bb831ac7199",
+      "repository_tag": "1.0.4",
       "product_version": "4.5.2",
       "dependencies": [
         "slk-overwatch-tools"
@@ -114,7 +114,7 @@
       "artifact_indices": [
         {
           "path": "src/slk_transport/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "64622d033077ac00918be218174e29339fa1ff63ff6e74c3d9ba18db41118efe"
+          "sha256": "bb036ac28bb87bbbaaa71374bda39f1409a7ec4320e57b24d92ae77788b6cba5"
         }
       ]
     },
