@@ -52,7 +52,7 @@
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "7d6a709bb01dc1a6f1ff03dbbc9a9c8b39c48d1419f979ee5dfc8854154ab731"
+      "sha256": "5946ac37da2ab8d511379240b2dbdf0109a9c86071dc30b46855ab05425c78ac"
     },
     {
       "path": "VALIDATION-REPORT.md",
@@ -2380,7 +2380,7 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "88c2fe524ccc4e0aca656b500ee76d18a884d71763b6be3edd1b3288bb5c6178"
+      "sha256": "1c4ccde46f71bbba27911c7fbbb4ee4aae8e026ca4f0d9a806a4001cb76a9951"
     },
     {
       "path": "tests/test_repository_build_metadata.py",

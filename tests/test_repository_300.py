@@ -363,17 +363,17 @@ def test_release_file_discovery_follows_git_and_ignores_local_build_outputs(
 def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> None:
     english = read("README.md")
     chinese = read("README.zh-CN.md")
+    bi_version = json.loads(read("apps/slk-bi/package.json"))["version"]
     for text in (english, chinese):
         assert validate_repository.VERSION in text
+        assert f"BI/WebBI {bi_version}" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text
     assert "preflight-basic" in english
     assert "Supervisor subagent" in english
-    assert "BI 1.1.1" in english
     assert "preflight-basic" in chinese
     assert "直属 subagent" in chinese
-    assert "BI 1.1.1" in chinese
     assert "not standalone methods" in english
     assert "不能脱离 SLK Run 单独使用" in chinese
     for marker in ("RTK", "Probe CLI", "Ponytail"):
