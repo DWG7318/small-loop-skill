@@ -17,6 +17,7 @@ description: Use when an active Small Loop Skill (SLK) Run must restore a regist
 ## 版本化变更
 
 - 同一角色实例的 Session rebound 用密封 `supervisor-admin rebind-session`：退役旧端点、保留凭据和历史。OW 只允许同一直属 child、role instance、adapter、Host 的端点纠正，追加更高 endpoint version；不能借此跨 Supervisor 或更换 OW。
+- 同一直属 OW 的新回合不是新成员：先核对中央当前 binding/旧 foreground turn 与它的真实原生 `COMPLETED` 记录，再由 Supervisor 用既有密封 `resume-overwatcher-turn` 绑定新 active 证据。必须沿准确的前后回合链；旧记录缺失、身份不符或 binding 已退役时，先按实际情况排障，不能把 UNKNOWN 当完成、跳过中间回合或借改配置冒充恢复。新 proof 文件生成不等于恢复已提交；读回中央的新 foreground turn 后，才更新该 Run 的 adapter proof/hash 指针。共享 OW 逐 Run 核对，不改另一个 Run 的绑定；不放宽原生身份校验。
 - 确认新工程成员后由合法上游用 `replace-role` 退役旧凭据/端点并保留旧记录，再把当前节点交给新实例；不是 OW 更换入口。角色/模型选择仍遵守 Owner 权限，不静默覆盖登记或自动升级模型。
 - 真正更换直属 OW 用密封 `supervisor-admin` 的 `replace-overwatcher`：原请求绑定当前父级、旧 binding revision、新 child/role/proof，`issued_role=overwatcher`、新 instance 和密封目标必须一致；不先 close 再 bind、不复用旧凭据。新 child active 不等于中央已更换。若提交成功后响应/密封/收据失败，保留同一 operation 原件/hash/event 重入，仅补缺失密封认证后缀；不第二次换员。已有密封件损坏时保留它，显式选新密封目标/结果路径再续原 operation，不覆盖或伪造认证成功。逐 Run 更新受影响绑定，不中断其他 scope。
 - 计划拆分用密封 `revise-plan` 追加 revision 并冻结新 Host；首个后继仍由 Supervisor → Checker `CELL_DISPATCH`，不是直接派 Worker。

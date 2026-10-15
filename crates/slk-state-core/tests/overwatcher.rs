@@ -4255,6 +4255,44 @@ fn current_nonworker_cycle_requires_real_query_window_but_can_report_no_task_unk
     }
 }
 
+#[test]
+fn documented_member_unknown_fragment_is_accepted_by_central_writer() {
+    let fixture = Fixture::new_450();
+    let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
+    let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
+    let document = include_str!("../../../skills/slk-overwatch-run/references/cycle-evidence.md");
+    let fragment: serde_json::Value = serde_json::from_str(
+        document.split("```json\n").nth(1).unwrap().split("\n```").next().unwrap()).unwrap();
+    let mut value = serde_json::to_value(overwatch_cycle(1)).unwrap();
+    for (key, entry) in fragment.as_object().unwrap() {
+        value[key] = entry.clone();
+    }
+    let mut cycle: OverwatchCycleRequest = serde_json::from_value(value).unwrap();
+    cycle.go_id = None;
+    cycle.cell_id = None;
+    cycle.attempt = None;
+    cycle.runtime_revision = snapshot.runtime_revision;
+    cycle.latest_event_id = snapshot.latest_event_id.clone();
+    cycle.latest_message_id = snapshot.latest_message_id.clone();
+    cycle.cadence_seconds = 600;
+    cycle.next_cycle_at = "2026-09-22T00:14:00Z".into();
+    let query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
+        "source_message_id":null, "runtime_snapshot":snapshot, "runtime_projection_sha256":"a".repeat(64),
+        "native_start_path":null, "native_start_sha256":null, "query_error":null,
+        "query_started_at":cycle.started_at, "query_completed_at":cycle.completed_at,
+        "native_activity":{"status":"UNKNOWN", "observed_at":cycle.completed_at,
+            "error":"NO_NATIVE_TASK_FOR_CURRENT_TOKEN"}});
+    let scope = fixture.evidence_ref("member-scope.json", &serde_json::to_vec(&query).unwrap());
+    let own = fixture.evidence_ref("own-activation.json", b"isolated native activation fixture");
+    cycle.native_active_session_evidence_ref = own.path.clone();
+    cycle.evidence_refs = vec![scope, own];
+    assert_eq!(cycle.native_liveness, NativeLiveness::InProgress);
+    assert_eq!(cycle.checklist.active_session, OverwatchCheckResult::Clear);
+    assert_eq!(cycle.checklist.stall_and_duplicates, OverwatchCheckResult::Anomaly);
+    fixture.store.record_overwatch_cycle(&issued.credential, cycle).unwrap();
+}
+
 fn nonworker_query_window_for_method(method_version: &str) {
     let fixture = Fixture::new_440();
     let mut binding = overwatcher_binding("run-a", "overwatcher-a", "session-overwatcher-a");
