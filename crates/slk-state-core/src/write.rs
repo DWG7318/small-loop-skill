@@ -5569,6 +5569,41 @@ fn validate_pause_event(connection: &Connection, request: &WriteRequest) -> Resu
     Ok(())
 }
 
+fn census_recovery_start(
+    connection: &Connection,
+    run_id: &str,
+    message_id: &str,
+    path: &str,
+    hash: &str,
+    bytes: &[u8],
+) -> Result<NativeStartReceipt, StateError> {
+    // Reuse the delivery writer's full immutable-lineage validation, using
+    // only the exact original receipt already committed in the central ledger.
+    let request = connection.query_row(
+        "SELECT event_id, transport_receipt_id, go_id, cell_id, attempt, plan_revision,
+         runtime_revision, token_sequence, from_role_instance_id, to_role_instance_id,
+         endpoint_version, payload_type, payload_sha256, evidence_id, endpoint_sha256,
+         envelope_sha256, occurred_at FROM transport_start_receipts
+         WHERE run_id=?1 AND message_id=?2 AND evidence_path=?3 AND evidence_sha256=?4",
+        params![run_id, message_id, path, hash],
+        |row| Ok(CommitDeliveryStartRequest {
+            event_id: row.get(0)?, transport_receipt_id: row.get(1)?, run_id: run_id.into(),
+            go_id: row.get(2)?, cell_id: row.get(3)?, attempt: row.get(4)?, plan_revision: row.get(5)?,
+            expected_runtime_revision: row.get::<_, u64>(6)?.saturating_sub(1),
+            message_id: message_id.into(), token_sequence: row.get(7)?,
+            from_role_instance_id: row.get(8)?, to_role_instance_id: row.get(9)?,
+            endpoint_version: row.get(10)?, payload_type: row.get(11)?, payload_sha256: row.get(12)?,
+            start_evidence: crate::model::DeliveryStartEvidence {
+                evidence_id: row.get(13)?, stored_path: path.into(), sha256: hash.into(),
+                message_id: message_id.into(), endpoint_sha256: row.get(14)?, envelope_sha256: row.get(15)?,
+                native_status: crate::model::NativeStartStatus::Started,
+            },
+            occurred_at: row.get(16)?,
+        }),
+    )?;
+    recovery_start::validate(bytes, &request)
+}
+
 fn validate_quiescence_census(
     connection: &Connection,
     run_id: &str,
@@ -5657,11 +5692,20 @@ fn validate_quiescence_census(
                     .as_str()
                     .filter(|hash| is_lower_sha256(hash))
                     .ok_or_else(invalid)?;
-                if sha256_hex(&fs::read(path)?) != hash {
+                let bytes = fs::read(path)?;
+                if sha256_hex(&bytes) != hash {
                     return Err(invalid());
                 }
-                let start: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
-                if start["run_id"] != run_id || start["message_id"] != row["message_id"] {
+                let mut start: serde_json::Value = serde_json::from_slice(&bytes)?;
+                let mut source = Path::new(path).parent().ok_or_else(invalid)?;
+                if start["schema_version"] == "slk.desktop-current-turn-start-evidence/v1" {
+                    let actual = census_recovery_start(connection, run_id,
+                        row["message_id"].as_str().ok_or_else(invalid)?, path, hash, &bytes)?;
+                    // The row retains the logical original message and packet
+                    // hash; only the fully verified native entity is unwrapped.
+                    start = serde_json::json!({"native_task":{"kind":actual.native_task.kind,"id":actual.native_task.id}});
+                    source = source.parent().and_then(Path::parent).ok_or_else(invalid)?;
+                } else if start["run_id"] != run_id || start["message_id"] != row["message_id"] {
                     return Err(invalid());
                 }
                 if row["status"] == "COORDINATING" {
@@ -5672,7 +5716,7 @@ fn validate_quiescence_census(
                     {
                         return Err(invalid());
                     }
-                    coordinators.push((Path::new(path), start));
+                    coordinators.push((source, start));
                 }
             }
             _ => return Err(invalid()),
@@ -5688,14 +5732,14 @@ fn validate_quiescence_census(
     }
     if coordinators.len() > 1 {
         let mut entities = std::collections::BTreeSet::new();
-        for (path, start) in coordinators {
+        for (source, start) in coordinators {
             let kind = start["native_task"]["kind"].as_str().ok_or_else(invalid)?;
             let parts: Vec<_> = start["native_task"]["id"].as_str().ok_or_else(invalid)?.split(':').collect();
             if parts.len() != if kind == "codex-desktop-turn" { 3 } else { 2 }
                 || parts.iter().any(|part| part.is_empty()) {
                 return Err(invalid());
             }
-            let endpoint: serde_json::Value = serde_json::from_slice(&fs::read(path.with_file_name("endpoint.json"))?)?;
+            let endpoint: serde_json::Value = serde_json::from_slice(&fs::read(source.join("endpoint.json"))?)?;
             let host = endpoint["host_id"].as_str().filter(|value| !value.is_empty()).ok_or_else(invalid)?;
             let cwd = endpoint["address"]["cwd"].as_str().unwrap_or("");
             if endpoint["role"] != "supervisor" || endpoint["run_id"] != run_id

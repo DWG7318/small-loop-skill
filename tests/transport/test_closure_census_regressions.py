@@ -254,6 +254,57 @@ def test_historical_resume_uses_only_explicit_frozen_host_authority(tmp_path, mo
     assert all(path.read_bytes() == data for path, data in before.items())
 
 
+@pytest.mark.parametrize("damage", [None, "active", "coordinator", "changed-lineage", "wrong-reader", "changed-item"])
+def test_census_reads_central_desktop_bridge_from_original_scope_without_writes(tmp_path, monkeypatch, damage):
+    from test_desktop_current_turn import (unresolved_delivery, host_receipt, native_platform_record,
+        desktop_environment, prepare_desktop_current_turn, complete_desktop_current_turn)
+    from slk_transport.desktop_current_turn import resolve_delivery_start
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+    receipt = host_receipt(request)
+    current = asdict(desktop_endpoint(tmp_path, monkeypatch))
+    current.update(host_id=endpoint["host_id"], role_instance_id=endpoint["role_instance_id"])
+    native_platform_record(tmp_path, monkeypatch, request, receipt)
+    complete_desktop_current_turn(attempts, endpoint, envelope, receipt, environment=desktop_environment())
+    packet, _ = resolve_delivery_start(original, endpoint, envelope)
+    (tmp_path / "host").mkdir()
+    host, _, _ = prepared_host(tmp_path / "host")
+    if damage == "wrong-reader": current["address"]["thread_id"] = "another-thread"
+    host.endpoints["supervisor"] = current
+    monkeypatch.setattr(host, "projection", lambda: {"runtime_snapshot": {"runtime_revision": 9},
+        "native_invocations": [{"message_id": envelope["message_id"], "role_instance_id": endpoint["role_instance_id"],
+            "start_evidence_path": str(packet), "start_evidence_sha256": wc._sha256(packet)}]})
+    monkeypatch.setattr(desktop.DesktopClient, "__init__", lambda *_: None)
+    monkeypatch.setattr(desktop.DesktopClient, "request", lambda _s, _i, method, *_a:
+        {"tools": [{"name": "read_thread"}]} if method == "tools/list" else {})
+    monkeypatch.setattr(desktop.DesktopClient, "notify", lambda *_a: None)
+    monkeypatch.setattr(desktop.DesktopClient, "close", lambda *_a: None)
+    monkeypatch.setattr(desktop.DesktopClient, "call", lambda *_a: {
+        "thread": {"id": endpoint["address"]["thread_id"], "hostId": endpoint["host_id"],
+                   "cwd": endpoint["address"]["cwd"], "status": {"type": "active"}},
+        "page": {"hasMore": False}, "turns": [{"id": receipt["after"]["turn_id"],
+            "status": "inProgress" if damage in {"active", "coordinator"} else "completed", "items": [
+                {"id": receipt["after"]["platform_item_id"], "type": "unrelated"}] if damage == "changed-item" else []}]})
+    if damage == "changed-lineage":
+        value = wc._read_object(packet.with_name("recovery.json"), "recovery")
+        write_json(packet.with_name("recovery.json"), {**value, "recovery_of_message_id": "wrong"})
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    options = {}
+    if damage == "coordinator":
+        monkeypatch.setenv("CODEX_THREAD_ID", endpoint["address"]["thread_id"])
+        options["coordinator_started_path"] = packet
+    result = host.inspect_run_quiescence("close", [attempts], **options)
+    assert len(result["inspections"]) == 1, result
+    row = result["inspections"][0]
+    assert row["native_start_path"] == str(packet)
+    assert row["message_id"] == envelope["message_id"]
+    assert row["status"] == ("STOPPED" if damage is None else "COORDINATING" if damage == "coordinator" else "UNKNOWN"), row
+    assert result["status"] == ("QUIESCENT" if damage in {None, "coordinator"} else "NOT_QUIESCENT")
+    if damage == "coordinator":
+        assert native.census_coordinator_sources(result) == [packet]
+    assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before
+
+
 @pytest.mark.parametrize("damage", [None, "active", "missing-turn", "wrong-thread", "wrong-host", "wrong-item",
                                     "unknown", "no-capability", "retired-plugin", "disabled-plugin", "local-host-alias",
                                     "paginated", "cursor-loop", "duplicate-turn",

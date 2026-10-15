@@ -250,6 +250,27 @@ def test_correction_census_reads_explicit_frozen_host_across_plan_change(tmp_pat
     assert row['status'] == 'STOPPED', row
 
 
+@pytest.mark.parametrize('link_kind', ['is_symlink', 'is_junction'])
+def test_census_never_descends_into_rejected_ocrv_link(tmp_path, monkeypatch, link_kind):
+    host, source, envelope = prepared_host(tmp_path)
+    child = source / 'review-corrections' / '11111111-1111-4111-8111-111111111111'
+    (child / 'review-corrections').mkdir(parents=True)
+    (child / 'envelope.json').write_text(json.dumps(asdict(envelope)))
+    (child / 'ocrv-resume.json').write_text(json.dumps({'binding_sha256': host.digest}))
+    monkeypatch.setattr(host, 'projection', lambda: {'runtime_snapshot': {'runtime_revision': 7}})
+    original_check = getattr(Path, link_kind, lambda _path: False)
+    monkeypatch.setattr(Path, link_kind, lambda path: path == child or original_check(path), raising=False)
+    original_iterdir = Path.iterdir
+    def guarded_iterdir(path):
+        assert not path.is_relative_to(child), 'DESCENDED_INTO_REJECTED_LINK'
+        return original_iterdir(path)
+    monkeypatch.setattr(Path, 'iterdir', guarded_iterdir)
+    census = host.inspect_run_quiescence('review', [source.parents[1]])
+    row = next(row for row in census['inspections'] if Path(row['native_start_path']) == child / 'started.json')
+    assert row['status'] == 'UNKNOWN'
+    assert census['status'] == 'NOT_QUIESCENT'
+
+
 @pytest.mark.parametrize('damage', ['wrong-session', 'changed-capacity', 'executor-live', 'query-denied'])
 def test_authenticated_d1_cli_does_not_bypass_session_scope_or_writer_proof(tmp_path, monkeypatch, capsys, damage):
     adapter, recovery, host, source, envelope, identity = prepared(tmp_path, monkeypatch, None)

@@ -498,7 +498,7 @@ fn recovered_incomplete_after_independent_fail_preserves_causality_token_and_rep
         if fault == "ack-first" {
             fixture
                 .store
-                .commit_delivery_start(&fixture.checker, request)
+                .commit_delivery_start(&fixture.checker, request.clone())
                 .unwrap();
             assert!(matches!(
                 fixture.store.write_event(&fixture.checker, failed),
@@ -538,7 +538,7 @@ fn recovered_incomplete_after_independent_fail_preserves_causality_token_and_rep
             let count = fixture.store.query_run("run-a").unwrap().events.len();
             let replay = fixture
                 .store
-                .commit_delivery_start(&fixture.checker, request)
+                .commit_delivery_start(&fixture.checker, request.clone())
                 .unwrap();
             assert_eq!(replay.status, "IDEMPOTENT_REPLAY");
             assert_eq!(
@@ -548,6 +548,37 @@ fn recovered_incomplete_after_independent_fail_preserves_causality_token_and_rep
             let original = fixture.root.path().join("attempts/run-a/original-a");
             assert!(!original.join("started.json").exists());
             assert!(original.join("failed.json").exists());
+            let db = slk_state_core::schema::open_database(fixture.root.path()).unwrap();
+            db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+            let mut pause = WriteRequest { event_id:"bridge-pause".into(), run_id:"run-a".into(),
+                go_id:None, cell_id:None, attempt:None, plan_revision:1, role_instance_id:"supervisor-a".into(),
+                event_type:EventType::RunPauseRequested, details:json!({"pause_id":"p", "expected_runtime_revision":fixture.runtime_revision()}),
+                corrects_event_id:None, occurred_at:"2026-09-22T00:06:00Z".into() };
+            fixture.store.write_event(&fixture.supervisor, pause.clone()).unwrap();
+            pause.event_id = "bridge-paused".into();
+            pause.event_type = EventType::RunPaused;
+            pause.details["expected_runtime_revision"] = json!(fixture.runtime_revision());
+            let census = json!({"schema_version":"slk.run-quiescence/v1", "run_id":"run-a", "pause_id":"p",
+                "runtime_revision":fixture.runtime_revision(), "status":"QUIESCENT", "attempt_roots":[fixture.root.path()],
+                "observed_at":pause.occurred_at, "inspections":[
+                    {"native_start_path":path, "native_start_sha256":format!("{:x}", Sha256::digest(fs::read(&path).unwrap())),
+                     "message_id":"message-2", "status":"STOPPED", "processes":[]},
+                    {"native_start_path":request.start_evidence.stored_path, "native_start_sha256":request.start_evidence.sha256,
+                     "message_id":request.message_id, "status":"COORDINATING", "processes":[]}]});
+            let census_path = fixture.root.path().join("bridge-census.json");
+            fs::write(&census_path, serde_json::to_vec(&census).unwrap()).unwrap();
+            pause.details["quiescence_path"] = json!(census_path);
+            pause.details["quiescence_sha256"] = json!(format!("{:x}", Sha256::digest(fs::read(&census_path).unwrap())));
+            // Packet hash stays centrally correct, but changed referenced
+            // lineage must still fail the later census consumption.
+            let recovery = original.join("recovery/desktop-current-turn/recovery.json");
+            let prior = fs::read(&recovery).unwrap();
+            fs::write(&recovery, b"{}").unwrap();
+            let before_pause = fixture.runtime_revision();
+            assert!(fixture.store.write_event(&fixture.supervisor, pause.clone()).is_err());
+            assert_eq!(fixture.runtime_revision(), before_pause);
+            fs::write(&recovery, prior).unwrap();
+            fixture.store.write_event(&fixture.supervisor, pause).unwrap();
         }
     }
 }

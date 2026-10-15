@@ -459,7 +459,9 @@ class RoleHost:
                         if any((source / name).exists() for name in (
                             "started.json", "endpoint.json", "envelope.json", "notification.json",
                             "accepted.json", "desktop-send.json", "desktop-readback-anchor.json")):
-                            sources.setdefault(source / "started.json", None)
+                            bridge = source / "recovery/desktop-current-turn/start-evidence.json"
+                            sources.setdefault(bridge if bridge.is_file() and not (source / "started.json").exists()
+                                               else source / "started.json", None)
                         correction_sources = [source]
                         while correction_sources:
                             original = correction_sources.pop()
@@ -469,6 +471,10 @@ class RoleHost:
                             if corrections.is_dir():
                                 from .native_ocrv import ocrv_resume_identity
                                 for corrected in corrections.iterdir():
+                                    if corrected.is_symlink() or getattr(corrected, "is_junction", lambda: False)():
+                                        sources.setdefault(corrected / "started.json", None)
+                                        source_errors[corrected / "started.json"] = "native census cannot follow alternate OCRV recovery paths"
+                                        continue
                                     if not corrected.is_dir():
                                         raise ValueError("native census found an invalid OCRV recovery entry")
                                     sources.setdefault(corrected / "started.json", None)
@@ -510,7 +516,8 @@ class RoleHost:
         desktop_entities = {}
         coordinator_entity = None
         for path, central in sorted(sources.items(), key=lambda row: str(row[0])):
-            source = path.parent
+            source = native.census_native_source(path)
+            bridge = source != path.parent
             row = {"native_start_path": str(path), "native_start_sha256": None,
                    "message_id": central.get("message_id") if central else source.name,
                    "status": "UNKNOWN", "processes": []}
@@ -571,8 +578,10 @@ class RoleHost:
                         row["reason"] = "native start or exact prelaunch stop proof is unavailable"
                     inspections.append(row)
                     continue
-                start = validate_native_start(path, run_id=run_id, cell_id=cell_id, message_id=message_id,
-                    adapter=endpoint["adapter"], request_sha256=request_sha256)
+                start = native.read_census_native_start(path, run_id=run_id, message_id=message_id)
+                if (start["cell_id"] != cell_id or start["adapter"] != endpoint["adapter"]
+                    or start["request_sha256"] != request_sha256):
+                    raise ValueError("native census changed its exact delivery scope")
                 row.update(native_start_sha256=wc._sha256(path), message_id=message_id)
                 if central is not None and (central["start_evidence_sha256"] != row["native_start_sha256"]
                     or central["role_instance_id"] != receiver_role_instance_id):
@@ -609,7 +618,8 @@ class RoleHost:
                     inspections.append(row)
                     continue
                 if start["native_task"]["kind"] == "codex-desktop-turn":
-                    activity, row["native_reader"] = self._desktop_census_activity(source, endpoint, start, desktop_pages)
+                    activity, row["native_reader"] = self._desktop_census_activity(source, endpoint, start, desktop_pages,
+                        bridge_started_path=path if bridge else None)
                 else:
                     activity = native._file_native_probe(path, start)
                 diagnostic = native.compact_native_diagnostic(activity)
@@ -646,9 +656,19 @@ class RoleHost:
                 if start["adapter"] == "dsh-worker" and activity.get("sample") is None:
                     raise ValueError("DSH stop requires its original live registry sample")
                 if coordinator_started_path is not None and path.resolve() == coordinator_started_path.resolve():
-                    if envelope is None or endpoint != self.endpoint("supervisor") or activity["status"] != "RUNNING":
+                    if (envelope is None or activity["status"] != "RUNNING"
+                        or not bridge and endpoint != self.endpoint("supervisor")):
                         raise ValueError("pause coordinator is not the exact current Supervisor call")
-                    self._supervisor_start_proof(source, envelope, observer=coordinator_observer)
+                    if bridge:
+                        current = self.endpoint("supervisor")
+                        if (endpoint["role_instance_id"] != current["role_instance_id"]
+                            or endpoint["host_id"] != current["host_id"]
+                            or endpoint["address"]["thread_id"] != current["address"]["thread_id"]
+                            or Path(endpoint["address"]["cwd"]).resolve() != Path(current["address"]["cwd"]).resolve()
+                            or not coordinator_observer and os.environ.get("CODEX_THREAD_ID") != endpoint["address"]["thread_id"]):
+                            raise ValueError("bridge coordinator is not the exact current Supervisor call")
+                    else:
+                        self._supervisor_start_proof(source, envelope, observer=coordinator_observer)
                     row["status"] = "COORDINATING"
                 elif activity["status"] in {"COMPLETED", "FAILED"}:
                     row["status"] = "STOPPED"
@@ -754,17 +774,25 @@ class RoleHost:
             "native_probe": {"coverage": query.get("coverage"), "hosts": hosts}}
 
     def _desktop_census_activity(self, source: Path, endpoint_raw: Mapping[str, Any], start: Mapping[str, Any],
-                                 page_cache: dict | None = None) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+                                 page_cache: dict | None = None, *, bridge_started_path: Path | None = None) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
         """Read one originally proved Desktop turn; never send or rewrite evidence."""
         from .adapters import codex_desktop as desktop
         from .adapters.base import AdapterError
         from . import native_activity as native
         endpoint = Endpoint.from_dict(endpoint_raw)
-        proof = wc._read_object(source / "desktop-readback.json", "original Desktop readback")
+        if bridge_started_path is None:
+            proof = wc._read_object(source / "desktop-readback.json", "original Desktop readback")
+        else:
+            envelope = wc._read_object(source / "envelope.json", "bridge original envelope")
+            if native.read_census_native_start(bridge_started_path, run_id=start["run_id"], message_id=envelope["message_id"]) != start:
+                raise ValueError("native census Desktop bridge changed")
+            receipt = wc._read_object(bridge_started_path.with_name("host-receipt.json"), "bridge native readback")
+            proof = {"thread_id": receipt["target_thread_id"], "turn_id": receipt["after"]["turn_id"],
+                "platform_item_id": receipt["after"]["platform_item_id"], "message_id": start["message_id"]}
         if (proof.get("thread_id") != endpoint.address["thread_id"] or proof.get("message_id") != start["message_id"]
             or start["native_task"]["id"] != f"{proof['thread_id']}:{proof['turn_id']}:{proof['platform_item_id']}"
-            or not isinstance(proof.get("platform_item"), Mapping)
-            or proof["platform_item"].get("id") != proof["platform_item_id"]):
+            or bridge_started_path is None and (not isinstance(proof.get("platform_item"), Mapping)
+                or proof["platform_item"].get("id") != proof["platform_item_id"])):
             raise ValueError("native census Desktop start/readback identity changed")
         reader = os.environ.get("CODEX_THREAD_ID")
         if (not isinstance(reader, str) or not reader.strip() or reader != reader.strip()
@@ -775,7 +803,15 @@ class RoleHost:
         if page_cache is None:
             page_cache = {}
         try:
-            command, reader_proof = desktop.resolve_desktop_runtime(endpoint.address)
+            reader_address = endpoint.address
+            if bridge_started_path is not None and "desktop" not in reader_address:
+                current = self.endpoint("supervisor")
+                if (current["host_id"] != endpoint.host_id
+                    or current["address"]["thread_id"] != endpoint.address["thread_id"]
+                    or Path(current["address"]["cwd"]).resolve() != Path(endpoint.address["cwd"]).resolve()):
+                    raise ValueError("Desktop bridge reader changed its exact host/thread/cwd")
+                reader_address = current["address"]
+            command, reader_proof = desktop.resolve_desktop_runtime(reader_address)
             timeout = float(endpoint.address["startup_timeout_seconds"])
             arguments = {"threadId": endpoint.address["thread_id"], "hostId": endpoint.host_id,
                 "turnLimit": 10, "includeOutputs": True, "maxOutputCharsPerItem": desktop.DESKTOP_READ_LIMIT}
@@ -815,8 +851,25 @@ class RoleHost:
                 if matches:
                     turn = matches[0]
                     items = [item for item in turn["items"] if item.get("id") == proof["platform_item_id"]]
-                    if len(items) > 1 or (items and items[0] != proof["platform_item"]):
+                    if len(items) > 1 or (items and bridge_started_path is None and items[0] != proof["platform_item"]):
                         raise ValueError("native census Desktop original input changed")
+                    if items and bridge_started_path is not None:
+                        # The immutable native record proves the original bridge
+                        # input; any visible live representation must agree too.
+                        import xml.etree.ElementTree as ET
+                        item, output = items[0], items[0].get("output")
+                        request = wc._read_object(bridge_started_path.with_name("request.json"), "bridge request")
+                        if (item.get("type") != "functionCallOutput" or item.get("name") != "send_message_to_thread"
+                            or item.get("namespace") != "codex_app" or not isinstance(output, Mapping)
+                            or output.get("truncated") is not False or not isinstance(output.get("text"), str)):
+                            raise ValueError("native census Desktop bridge input changed")
+                        try:
+                            delegation = ET.fromstring(output["text"])
+                        except ET.ParseError as exc:
+                            raise ValueError("native census Desktop bridge input is unreadable") from exc
+                        if (delegation.tag != "codex_delegation" or [node.tag for node in delegation] != ["source_thread_id", "input"]
+                            or delegation[0].text != receipt["host_thread_id"] or delegation[1].text != request["prompt"]):
+                            raise ValueError("native census Desktop bridge input changed")
                     status = turn.get("status")
                     if (status not in {"active", "inProgress", "completed", "failed", "interrupted", "cancelled"}
                         or thread["status"].get("type") not in {"active", "idle"}

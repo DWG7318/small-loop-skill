@@ -495,6 +495,17 @@ def resolve_delivery_start(
     *, missing_ok: bool = False,
 ) -> tuple[Path, dict[str, Any] | None]:
     """Resolve ordinary v2 or explicit recovery lineage, without canonical backfill."""
+    return _resolve_delivery_start(original, endpoint, envelope, missing_ok=missing_ok, publish=True)
+
+
+def read_delivery_start(
+    original: Path, endpoint: Mapping[str, Any], envelope: Mapping[str, Any],
+) -> tuple[Path, dict[str, Any] | None]:
+    """Validate already-published lineage without publishing or repairing evidence."""
+    return _resolve_delivery_start(original, endpoint, envelope, missing_ok=False, publish=False)
+
+
+def _resolve_delivery_start(original, endpoint, envelope, *, missing_ok, publish):
     ordinary = original / "started.json"
     retry = original / "recovery" / "exact-1" / str(envelope["run_id"]) / str(envelope["message_id"])
     if missing_ok and not any(path.is_file() for path in (
@@ -531,7 +542,8 @@ def resolve_delivery_start(
     if recovery != expected or request["recovery_message_id"] == envelope["message_id"]:
         raise ContractError("desktop-current-turn recovery lineage changed")
     from .platform_records import find_codex_item, read_codex_item
-    platform_path = find_codex_item(request["target_thread_id"], after["platform_item_id"])
+    platform_path = (find_codex_item(request["target_thread_id"], after["platform_item_id"]) if publish else
+        Path(_object(root / "start-evidence.json", "published start evidence")["platform_record_path"]))
     platform = read_codex_item(platform_path, request["target_thread_id"], after["platform_item_id"])
     if (platform["kind"] != "delegation" or platform["source_thread_id"] != receipt["host_thread_id"]
         or platform["turn_id"] != after["turn_id"] or platform["text"] != request["prompt"]):
@@ -548,5 +560,8 @@ def resolve_delivery_start(
             ("request", "request.json"), ("host_receipt", "host-receipt.json"),
             ("recovery", "recovery.json"), ("started", "started.json"))},
         "platform_record_path": str(platform_path)}
-    _write_or_match(Attempt(root), "start-evidence.json", packet)
+    if publish:
+        _write_or_match(Attempt(root), "start-evidence.json", packet)
+    elif _object(root / "start-evidence.json", "published start evidence") != packet:
+        raise ContractError("desktop-current-turn published start evidence changed")
     return root / "start-evidence.json", started

@@ -233,6 +233,26 @@ def test_recovery_start_resolver_rejects_forged_or_mismatched_platform_lineage(t
     assert not (original / "started.json").exists()
 
 
+@pytest.mark.parametrize("damage", [None, "missing-packet", "changed-packet"])
+def test_readonly_recovery_resolution_never_publishes_or_repairs_evidence(tmp_path, monkeypatch, damage):
+    from slk_transport import desktop_current_turn as bridge
+    endpoint, envelope, attempts, original = unresolved_delivery(tmp_path)
+    request = prepare_desktop_current_turn(attempts, endpoint, envelope)
+    receipt = host_receipt(request)
+    native_platform_record(tmp_path, monkeypatch, request, receipt)
+    complete_desktop_current_turn(attempts, endpoint, envelope, receipt, environment=desktop_environment())
+    packet, started = bridge.resolve_delivery_start(original, endpoint, envelope)
+    if damage == "missing-packet": packet.unlink()
+    if damage == "changed-packet": packet.write_text('{}', encoding='utf-8')
+    before = {path: path.read_bytes() for path in tmp_path.rglob('*') if path.is_file()}
+    if damage is None:
+        assert bridge.read_delivery_start(original, endpoint, envelope) == (packet, started)
+    else:
+        with pytest.raises((ValueError, OSError, KeyError)):
+            bridge.read_delivery_start(original, endpoint, envelope)
+    assert {path: path.read_bytes() for path in tmp_path.rglob('*') if path.is_file()} == before
+
+
 def test_desktop_owned_writer_recovers_original_unresolved_handoff_without_forging_start(
     tmp_path: Path,
 ) -> None:

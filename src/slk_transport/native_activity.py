@@ -430,13 +430,36 @@ def census_coordinator_sources(proof: Mapping[str, Any]) -> list[Path]:
         path = Path(row["native_start_path"])
         if not path.is_absolute() or sha256_file(path) != row["native_start_sha256"]:
             raise NativeActivityError("coordinator native receipt changed")
-        start = validate_native_start(path, run_id=proof["run_id"], message_id=row["message_id"])
-        endpoint = wc._read_object(path.with_name("endpoint.json"), "coordinator endpoint")
+        start = read_census_native_start(path, run_id=proof["run_id"], message_id=row["message_id"])
+        endpoint = wc._read_object(census_native_source(path) / "endpoint.json", "coordinator endpoint")
         entities.add(coordinator_native_identity(start, endpoint))
         paths.append(path)
     if len(entities) > 1:
         raise NativeActivityError("census cannot exempt multiple Supervisor native turns")
-    return sorted(paths, key=lambda path: (not path.with_name("envelope.json").is_file(), str(path)))
+    return sorted(paths, key=lambda path: (not (census_native_source(path) / "envelope.json").is_file(), str(path)))
+
+
+def census_native_source(path: Path) -> Path:
+    if (path.name == "start-evidence.json" and path.parent.name == "desktop-current-turn"
+        and path.parent.parent.name == "recovery"):
+        return path.parents[2]
+    return path.parent
+
+
+def read_census_native_start(path: Path, *, run_id: str, message_id: str) -> dict:
+    source = census_native_source(path)
+    if source == path.parent:
+        return validate_native_start(path, run_id=run_id, message_id=message_id)
+    from . import worker_completion as wc
+    from .desktop_current_turn import read_delivery_start
+    endpoint = wc._read_object(source / "endpoint.json", "bridge original endpoint")
+    envelope = wc._read_object(source / "envelope.json", "bridge original envelope")
+    if envelope.get("run_id") != run_id or envelope.get("message_id") != message_id:
+        raise NativeActivityError("Desktop bridge changed its central original message")
+    evidence, start = read_delivery_start(source, endpoint, envelope)
+    if evidence.resolve() != path.resolve() or start is None:
+        raise NativeActivityError("Desktop bridge changed its original evidence path")
+    return start
 
 
 def _inspect_native_projection(
