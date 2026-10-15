@@ -5602,7 +5602,7 @@ fn validate_quiescence_census(
     }
     let rows = proof["inspections"].as_array().ok_or_else(invalid)?;
     let mut inspected = BTreeMap::new();
-    let mut coordinators = 0;
+    let mut coordinators = Vec::new();
     for row in rows {
         let value = row.as_object().ok_or_else(invalid)?;
         if !["native_start_path", "native_start_sha256", "message_id", "status", "processes"]
@@ -5651,15 +5651,14 @@ fn validate_quiescence_census(
                     return Err(invalid());
                 }
                 if row["status"] == "COORDINATING" {
-                    coordinators += 1;
-                    if coordinators > 1
-                        || !matches!(
+                    if !matches!(
                             start["native_task"]["kind"].as_str(),
                             Some("codex-desktop-turn" | "codex-turn")
                         )
                     {
                         return Err(invalid());
                     }
+                    coordinators.push((Path::new(path), start));
                 }
             }
             _ => return Err(invalid()),
@@ -5672,6 +5671,27 @@ fn validate_quiescence_census(
         }) {
             return Err(invalid());
         }
+    }
+    if coordinators.len() > 1 {
+        let mut entities = std::collections::BTreeSet::new();
+        for (path, start) in coordinators {
+            let kind = start["native_task"]["kind"].as_str().ok_or_else(invalid)?;
+            let parts: Vec<_> = start["native_task"]["id"].as_str().ok_or_else(invalid)?.split(':').collect();
+            if parts.len() != if kind == "codex-desktop-turn" { 3 } else { 2 }
+                || parts.iter().any(|part| part.is_empty()) {
+                return Err(invalid());
+            }
+            let endpoint: serde_json::Value = serde_json::from_slice(&fs::read(path.with_file_name("endpoint.json"))?)?;
+            let host = endpoint["host_id"].as_str().filter(|value| !value.is_empty()).ok_or_else(invalid)?;
+            let cwd = endpoint["address"]["cwd"].as_str().unwrap_or("");
+            if endpoint["role"] != "supervisor" || endpoint["run_id"] != run_id
+                || endpoint["address"]["thread_id"] != parts[0]
+                || kind == "codex-desktop-turn" && !Path::new(cwd).is_absolute() {
+                return Err(invalid());
+            }
+            entities.insert((kind.to_owned(), host.to_owned(), Path::new(cwd).to_path_buf(), parts[0].to_owned(), parts[1].to_owned()));
+        }
+        if entities.len() != 1 { return Err(invalid()); }
     }
     let mut statement = connection.prepare("SELECT message_id, evidence_path, evidence_sha256 FROM transport_start_receipts WHERE run_id=?1")?;
     let receipts = statement.query_map([run_id], |row| {

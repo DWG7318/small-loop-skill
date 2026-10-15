@@ -405,6 +405,40 @@ def compact_native_diagnostic(value: Mapping[str, Any]) -> str | None:
     return None
 
 
+def coordinator_native_identity(start: Mapping[str, Any], endpoint: Mapping[str, Any]) -> tuple[str, ...]:
+    """Count actual turns, never a caller-supplied grouping label or item alias."""
+    kind = start["native_task"]["kind"]
+    parts = start["native_task"]["id"].split(":")
+    if (kind not in {"codex-turn", "codex-desktop-turn"}
+        or len(parts) != (3 if kind == "codex-desktop-turn" else 2) or not all(parts)
+        or endpoint.get("role") != "supervisor" or endpoint.get("run_id") != start["run_id"]
+        or endpoint.get("address", {}).get("thread_id") != parts[0]):
+        raise NativeActivityError("coordinator is not an exact Supervisor native turn")
+    cwd = endpoint["address"].get("cwd")
+    if kind == "codex-desktop-turn" and (not isinstance(cwd, str) or not Path(cwd).is_absolute()):
+        raise NativeActivityError("Desktop coordinator lacks its exact cwd")
+    return kind, endpoint["host_id"], str(Path(cwd).resolve()) if cwd else "", parts[0], parts[1]
+
+
+def census_coordinator_sources(proof: Mapping[str, Any]) -> list[Path]:
+    """Recheck every receipt/hash while allowing aliases of one exact turn."""
+    from . import worker_completion as wc
+    paths, entities = [], set()
+    for row in proof.get("inspections", []):
+        if row.get("status") != "COORDINATING":
+            continue
+        path = Path(row["native_start_path"])
+        if not path.is_absolute() or sha256_file(path) != row["native_start_sha256"]:
+            raise NativeActivityError("coordinator native receipt changed")
+        start = validate_native_start(path, run_id=proof["run_id"], message_id=row["message_id"])
+        endpoint = wc._read_object(path.with_name("endpoint.json"), "coordinator endpoint")
+        entities.add(coordinator_native_identity(start, endpoint))
+        paths.append(path)
+    if len(entities) > 1:
+        raise NativeActivityError("census cannot exempt multiple Supervisor native turns")
+    return sorted(paths, key=lambda path: (not path.with_name("envelope.json").is_file(), str(path)))
+
+
 def _inspect_native_projection(
     start: Mapping[str, Any],
     native_probe: Callable[[Mapping[str, Any]], Mapping[str, Any]],

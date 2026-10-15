@@ -145,8 +145,8 @@ def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) 
                         and item.get("transport_adapter") == endpoint["adapter"] for item in row.get("endpoints", []))
                     for row in projection.get("roles", [])):
                     raise ValueError("paused cycle registered role/endpoint drifted")
-            coordinators = [Path(row["native_start_path"]) for row in proof["inspections"] if row["status"] == "COORDINATING"]
-            if len(coordinators) > 1: raise ValueError("paused cycle cannot exempt multiple Supervisors")
+            from .native_activity import census_coordinator_sources
+            coordinators = census_coordinator_sources(proof)
             if coordinators and not any(row.get("status") == "COORDINATING"
                 and Path(row["native_start_path"]).resolve() == coordinators[0].resolve()
                 and row.get("native_start_sha256") == _sha256(coordinators[0]) for row in original["inspections"]):

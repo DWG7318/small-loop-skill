@@ -545,14 +545,13 @@ def _inspect_run_quiescence(args: argparse.Namespace) -> int:
                     or hashlib.sha256(original_path.read_bytes()).hexdigest() != details["quiescence_sha256"]):
                     raise ValueError("original confirmed pause census changed")
                 original = _read_object(original_path, "confirmed pause census")
-                coordinators = [row for row in original.get("inspections", []) if row.get("status") == "COORDINATING"]
+                from .native_activity import census_coordinator_sources
+                coordinators = census_coordinator_sources(original)
                 coordinator_observer = (original.get("schema_version") == "slk.run-quiescence/v1"
                     and original.get("run_id") == host.binding["run_id"] and original.get("pause_id") == args.pause_id
                     and original.get("status") == "QUIESCENT"
                     and original.get("attempt_roots") == [str(root.resolve()) for root in roots]
-                    and len(coordinators) == 1
-                    and Path(coordinators[0]["native_start_path"]).resolve() == args.coordinator_started.resolve()
-                    and coordinators[0]["native_start_sha256"] == hashlib.sha256(args.coordinator_started.read_bytes()).hexdigest())
+                    and args.coordinator_started.resolve() in [item.resolve() for item in coordinators])
     # Only a centrally confirmed original coordinator can be observed without
     # being its author. The Host still validates its exact live native receipt.
     proof = host.inspect_run_quiescence(args.pause_id, roots, args.coordinator_started,

@@ -114,6 +114,107 @@ def activity(start, status, observed_at=None):
             "last_event": {"kind": "NATIVE_EVENT", "sequence": 1}, "waiting_on": None}
 
 
+def coordinator_alias_fixture(tmp_path, monkeypatch, *, other_turn=False, bad_item=False):
+    from test_role_host import supervisor_result_fixture
+    host, coordinator, incoming, _, _ = supervisor_result_fixture(tmp_path)
+    endpoint = desktop_endpoint(tmp_path, monkeypatch)
+    host.endpoints["supervisor"] = asdict(endpoint)
+    incoming = {**asdict(incoming), "receiver_role_instance_id": endpoint.role_instance_id,
+                "receiver_endpoint_version": endpoint.endpoint_version}
+    write_json(coordinator / "endpoint.json", asdict(endpoint))
+    write_json(coordinator / "envelope.json", incoming)
+    start = desktop_start(coordinator, endpoint, {"run_id": "RUN-A", "event_id": incoming["message_id"]})
+    start.update(cell_id=incoming["cell_id"], request_sha256=incoming["payload_sha256"])
+    write_json(coordinator / "started.json", start)
+    root = tmp_path / "aliases"
+    notice = {"schema_version": "slk.temporal-notification/v1", "run_id": "RUN-A",
+        "event_id": str(uuid.uuid4()), "sender_role_instance_id": "temporal:RUN-A",
+        "receiver_role_instance_id": endpoint.role_instance_id, "message": "发现异常，请查验。"}
+    alias = root / "RUN-A" / notice["event_id"]
+    write_json(alias / "endpoint.json", asdict(endpoint))
+    write_json(alias / "notification.json", notice)
+    alias_start = desktop_start(alias, endpoint, notice)
+    proof = wc._read_object(alias / "desktop-readback.json", "alias")
+    proof.update(platform_item_id="item-alias", platform_item={"id": "item-alias", "type": "functionCallOutput"})
+    if other_turn: proof["turn_id"] = "older-live-turn"
+    alias_start["native_task"]["id"] = f"thr_exact:{proof['turn_id']}:item-alias"
+    write_json(alias / "desktop-readback.json", proof)
+    write_json(alias / "started.json", alias_start)
+    projection = {"runtime_snapshot": {"runtime_revision": 7}, "native_invocations": [
+        {"message_id": value["message_id"], "role_instance_id": endpoint.role_instance_id,
+         "start_evidence_path": str(path / "started.json"), "start_evidence_sha256": wc._sha256(path / "started.json")}
+        for path, value in ((coordinator, start), (alias, alias_start))]}
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setenv("CODEX_THREAD_ID", endpoint.address["thread_id"])
+    monkeypatch.setattr(desktop.DesktopClient, "__init__", lambda *_: None)
+    monkeypatch.setattr(desktop.DesktopClient, "request", lambda _s, _i, method, *_a:
+        {"tools": [{"name": "read_thread"}]} if method == "tools/list" else {})
+    monkeypatch.setattr(desktop.DesktopClient, "notify", lambda *_a: None)
+    monkeypatch.setattr(desktop.DesktopClient, "close", lambda *_a: None)
+    calls = []
+    def read(_s, _id, _name, arguments, _caller, _timeout):
+        calls.append(dict(arguments))
+        return {"thread": {"id": endpoint.address["thread_id"], "hostId": endpoint.host_id,
+                "cwd": endpoint.address["cwd"], "status": {"type": "active"}},
+            "page": {"hasMore": False}, "turns": [{"id": turn, "status": "inProgress", "items": [
+                {"id": "item-original", "type": "functionCallOutput"},
+                {"id": "item-alias", "type": "changed" if bad_item else "functionCallOutput"}]}
+                for turn in ("turn-original", "older-live-turn")]}
+    monkeypatch.setattr(desktop.DesktopClient, "call", read)
+    return host, [coordinator.parents[1], root], coordinator, alias, calls
+
+
+@pytest.mark.parametrize("damage", [None, "other-turn", "bad-item"])
+def test_census_counts_validated_same_turn_aliases_as_one_coordinator(tmp_path, monkeypatch, damage):
+    host, roots, coordinator, alias, calls = coordinator_alias_fixture(tmp_path, monkeypatch,
+        other_turn=damage == "other-turn", bad_item=damage == "bad-item")
+    proof = host.inspect_run_quiescence("close", roots, coordinator / "started.json")
+    assert len(proof["inspections"]) == 2
+    assert {row["native_start_path"] for row in proof["inspections"]} == {
+        str(path / "started.json") for path in (coordinator, alias)}
+    assert proof["status"] == ("QUIESCENT" if damage is None else "NOT_QUIESCENT"), proof
+    assert sum(row["status"] == "COORDINATING" for row in proof["inspections"]) == (2 if damage is None else 1)
+    assert len(calls) == 1  # Raw page reused, each receipt/item still checked.
+    host.inspect_run_quiescence("close-again", roots, coordinator / "started.json")
+    assert len(calls) == 2  # No cache crosses an inspection boundary.
+
+
+@pytest.mark.parametrize("damage", [None, "hash", "other-turn", "other-host"])
+def test_coordinator_consumers_count_exact_receipts_not_claimed_labels(tmp_path, monkeypatch, damage):
+    host, roots, coordinator, alias, _ = coordinator_alias_fixture(tmp_path, monkeypatch,
+        other_turn=damage == "other-turn")
+    proof = host.inspect_run_quiescence("close", roots, coordinator / "started.json")
+    for row in proof["inspections"]:
+        row["status"] = "COORDINATING"
+        if damage == "hash": row["native_start_sha256"] = "0" * 64
+    if damage == "other-host":
+        endpoint = wc._read_object(alias / "endpoint.json", "alias")
+        write_json(alias / "endpoint.json", {**endpoint, "host_id": "other-host"})
+    if damage is None:
+        paths = native.census_coordinator_sources(proof)
+        assert paths[0] == coordinator / "started.json"  # Envelope call anchors notification aliases.
+        assert set(paths) == {coordinator / "started.json", alias / "started.json"}
+    else:
+        with pytest.raises(ValueError):
+            native.census_coordinator_sources(proof)
+
+
+def test_desktop_census_cached_raw_page_retains_original_observation_time(tmp_path, monkeypatch):
+    host, _, coordinator, alias, calls = coordinator_alias_fixture(tmp_path, monkeypatch)
+    pages = {}
+    monkeypatch.setattr(native, "utc_now", lambda: "2026-10-15T00:00:00Z")
+    endpoint = wc._read_object(coordinator / "endpoint.json", "endpoint")
+    first, _ = host._desktop_census_activity(coordinator, endpoint,
+        native.validate_native_start(coordinator / "started.json"), pages)
+    monkeypatch.setattr(native, "utc_now", lambda: "2026-10-15T00:10:00Z")
+    second, _ = host._desktop_census_activity(alias, endpoint, native.validate_native_start(alias / "started.json"), pages)
+    assert first["observed_at"] == second["observed_at"] == "2026-10-15T00:00:00Z"
+    assert len(calls) == 1
+    with pytest.raises(native.NativeActivityError, match="stale"):
+        native.validate_native_task_activity(second, **{key: second[key] for key in (
+            "adapter", "run_id", "cell_id", "message_id", "native_task_id")})
+
+
 @pytest.mark.parametrize("damage", [None, "active", "missing-turn", "wrong-thread", "wrong-host", "wrong-item",
                                     "unknown", "no-capability", "retired-plugin", "disabled-plugin", "local-host-alias",
                                     "paginated", "cursor-loop", "duplicate-turn",

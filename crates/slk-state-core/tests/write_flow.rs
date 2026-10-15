@@ -614,6 +614,45 @@ fn pause_confirmation_requires_complete_fresh_native_census_and_preserves_token(
 }
 
 #[test]
+fn pause_census_counts_native_turns_without_losing_alias_receipt_coverage() {
+    for damage in [None, Some("other-turn"), Some("other-host"), Some("hash"), Some("missing-row")] {
+        let fixture = Fixture::worker_active();
+        fixture.store.write_event(&fixture.supervisor,
+            lifecycle_event(&fixture, "request", "RUN_PAUSE_REQUESTED", "p")).unwrap();
+        let mut paused = lifecycle_event(&fixture, "paused", "RUN_PAUSED", "p");
+        let mut rows = Vec::new();
+        for number in 0..2 {
+            let source = fixture._root.path().join(format!("coordinator-{number}"));
+            fs::create_dir(&source).unwrap();
+            let path = source.join("started.json");
+            let turn = if damage == Some("other-turn") && number == 1 { "other" } else { "current" };
+            let message = format!("notice-{number}");
+            fs::write(&path, serde_json::to_vec(&json!({"run_id":"run-a", "message_id":message,
+                "native_task":{"kind":"codex-desktop-turn", "id":format!("thread:{turn}:item-{number}")}})).unwrap()).unwrap();
+            let host = if damage == Some("other-host") && number == 1 { "other" } else { "local" };
+            fs::write(source.join("endpoint.json"), serde_json::to_vec(&json!({"role":"supervisor", "run_id":"run-a",
+                "host_id":host, "address":{"thread_id":"thread", "cwd":fixture._root.path()}})).unwrap()).unwrap();
+            let hash = format!("{:x}", Sha256::digest(fs::read(&path).unwrap()));
+            let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+            db.execute("INSERT INTO transport_start_receipts(transport_receipt_id,run_id,event_id,message_id,go_id,cell_id,attempt,plan_revision,runtime_revision,token_sequence,from_role_instance_id,to_role_instance_id,endpoint_version,payload_type,payload_sha256,evidence_id,evidence_path,evidence_sha256,endpoint_sha256,envelope_sha256,native_status,request_sha256,occurred_at) VALUES(?5,'run-a',?5,?1,'GO-001','CELL-001',1,1,?6,3,'checker-a','supervisor-a',1,'D2_READY',?2,?5,?3,?4,?2,?2,'STARTED',?2,'2026-09-20T00:00:00Z')",
+                rusqlite::params![message, "a".repeat(64), path.to_str().unwrap(), hash, format!("receipt-{number}"), number + 100]).unwrap();
+            rows.push(json!({"native_start_path":path,"native_start_sha256":if damage == Some("hash") && number == 1 { "0".repeat(64) } else { hash },
+                "message_id":message,"status":"COORDINATING","processes":[]}));
+        }
+        if damage == Some("missing-row") { rows.pop(); }
+        let proof = json!({"schema_version":"slk.run-quiescence/v1", "run_id":"run-a", "pause_id":"p",
+            "runtime_revision":fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision,
+            "status":"QUIESCENT", "attempt_roots":[fixture._root.path()], "observed_at":paused.occurred_at, "inspections":rows});
+        let path = fixture._root.path().join("census.json");
+        fs::write(&path, serde_json::to_vec(&proof).unwrap()).unwrap();
+        paused.details["quiescence_path"] = json!(path);
+        paused.details["quiescence_sha256"] = json!(format!("{:x}", Sha256::digest(fs::read(&path).unwrap())));
+        let result = fixture.store.write_event(&fixture.supervisor, paused);
+        assert_eq!(result.is_ok(), damage.is_none(), "{damage:?}: {result:?}");
+    }
+}
+
+#[test]
 fn cancel_requested_pause_resumes_without_false_paused_or_token_change() {
     let fixture = Fixture::worker_active();
     let token = fixture.store.current_token("run-a").unwrap();

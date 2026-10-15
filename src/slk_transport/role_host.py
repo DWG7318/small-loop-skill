@@ -489,6 +489,9 @@ class RoleHost:
                             "worker-continuation/checker-attempts", "invalid-result-supplement/checker-attempts",
                             "pre-d0-blocked-recovery/checker-attempts", "incomplete-handoff/checker-attempts"))
         inspections = []
+        desktop_pages = {}
+        desktop_entities = {}
+        coordinator_entity = None
         for path, central in sorted(sources.items(), key=lambda row: str(row[0])):
             source = path.parent
             row = {"native_start_path": str(path), "native_start_sha256": None,
@@ -587,7 +590,7 @@ class RoleHost:
                     inspections.append(row)
                     continue
                 if start["native_task"]["kind"] == "codex-desktop-turn":
-                    activity, row["native_reader"] = self._desktop_census_activity(source, endpoint, start)
+                    activity, row["native_reader"] = self._desktop_census_activity(source, endpoint, start, desktop_pages)
                 else:
                     activity = native._file_native_probe(path, start)
                 diagnostic = native.compact_native_diagnostic(activity)
@@ -632,6 +635,12 @@ class RoleHost:
                     row["status"] = "STOPPED"
                 else:
                     row["reason"] = "original native call is still active or unknown"
+                if (start["native_task"]["kind"] == "codex-desktop-turn" and activity["status"] == "RUNNING"
+                    and endpoint.get("role") == "supervisor"):
+                    entity = native.coordinator_native_identity(start, endpoint)
+                    desktop_entities[path] = entity
+                    if row["status"] == "COORDINATING":
+                        coordinator_entity = entity
                 # OCRV owns a separate review process, not its launcher. Check
                 # that precise saved identity even after a Session end record.
                 process_path = source / "ocrv-native-process.json"
@@ -667,6 +676,13 @@ class RoleHost:
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 row["status"], row["reason"] = "UNKNOWN", str(exc)
             inspections.append(row)
+        if coordinator_entity is not None:
+            for row in inspections:
+                if (row["status"] == "UNKNOWN"
+                    and row.get("reason") == "original native call is still active or unknown"
+                    and desktop_entities.get(Path(row["native_start_path"])) == coordinator_entity):
+                    row["status"] = "COORDINATING"
+                    row.pop("reason")
         return {"schema_version": "slk.run-quiescence/v1", "run_id": run_id, "pause_id": pause_id,
             "runtime_revision": projection["runtime_snapshot"]["runtime_revision"],
             "status": "QUIESCENT" if all(row["status"] in {"STOPPED", "STAGED_NOT_STARTED", "COORDINATING"}
@@ -717,7 +733,8 @@ class RoleHost:
         return {"session": durable, "launcher": {**identity, **launcher},
             "native_probe": {"coverage": query.get("coverage"), "hosts": hosts}}
 
-    def _desktop_census_activity(self, source: Path, endpoint_raw: Mapping[str, Any], start: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    def _desktop_census_activity(self, source: Path, endpoint_raw: Mapping[str, Any], start: Mapping[str, Any],
+                                 page_cache: dict | None = None) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
         """Read one originally proved Desktop turn; never send or rewrite evidence."""
         from .adapters import codex_desktop as desktop
         from .adapters.base import AdapterError
@@ -735,21 +752,31 @@ class RoleHost:
             or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
             raise ValueError("native census requires inherited Desktop reader capability")
         client = None
+        if page_cache is None:
+            page_cache = {}
         try:
             command, reader_proof = desktop.resolve_desktop_runtime(endpoint.address)
-            client = desktop.DesktopClient(command, Path(str(endpoint.address["cwd"])))
             timeout = float(endpoint.address["startup_timeout_seconds"])
-            client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-                "clientInfo": {"name": "slk_run_quiescence", "version": "4.5.2"}}, timeout)
-            client.notify("notifications/initialized", {})
-            catalog = client.request(2, "tools/list", {}, timeout)
-            if "read_thread" not in {item.get("name") for item in catalog.get("tools", []) if isinstance(item, Mapping)}:
-                raise ValueError("installed Desktop plugin lacks read_thread")
             arguments = {"threadId": endpoint.address["thread_id"], "hostId": endpoint.host_id,
                 "turnLimit": 10, "includeOutputs": True, "maxOutputCharsPerItem": desktop.DESKTOP_READ_LIMIT}
             cursors = set()
             while True:
-                view = client.call(3 + len(cursors), "read_thread", arguments, reader, timeout)
+                key = (tuple(command), endpoint.host_id, endpoint.address["thread_id"],
+                    str(Path(endpoint.address["cwd"]).resolve()), arguments.get("cursor"))
+                cached = page_cache.get(key)
+                if cached is None:
+                    if client is None:
+                        client = desktop.DesktopClient(command, Path(str(endpoint.address["cwd"])))
+                        client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+                            "clientInfo": {"name": "slk_run_quiescence", "version": "4.5.2"}}, timeout)
+                        client.notify("notifications/initialized", {})
+                        catalog = client.request(2, "tools/list", {}, timeout)
+                        if "read_thread" not in {item.get("name") for item in catalog.get("tools", []) if isinstance(item, Mapping)}:
+                            raise ValueError("installed Desktop plugin lacks read_thread")
+                    view = client.call(3 + len(cursors), "read_thread", arguments, reader, timeout)
+                    observed_at = native.utc_now()
+                else:
+                    view, observed_at = cached
                 checked_endpoint = endpoint
                 current = self.endpoint("supervisor")
                 if (isinstance(view.get("thread"), Mapping) and view["thread"].get("hostId") == "local"
@@ -761,6 +788,7 @@ class RoleHost:
                     from dataclasses import replace
                     checked_endpoint = replace(endpoint, host_id="local")
                 thread, turns = desktop._view(view, checked_endpoint)
+                page_cache[key] = (view, observed_at)
                 matches = [turn for turn in turns if turn["id"] == proof["turn_id"]]
                 if len(matches) > 1:
                     raise ValueError("native census Desktop turn is ambiguous")
@@ -778,7 +806,7 @@ class RoleHost:
                         **{key: start[key] for key in ("adapter", "run_id", "cell_id", "message_id")},
                         "native_task_id": start["native_task"]["id"],
                         "status": "COMPLETED" if status == "completed" else "RUNNING" if status in {"active", "inProgress"} else "FAILED",
-                        "sequence": len(cursors) + 1, "observed_at": native.utc_now(),
+                        "sequence": len(cursors) + 1, "observed_at": observed_at,
                         "last_event": {"kind": "DESKTOP_TURN_" + status.upper(), "sequence": len(cursors) + 1}, "waiting_on": None}, reader_proof
                 page = view.get("page", {})
                 cursor = page.get("nextCursor")
