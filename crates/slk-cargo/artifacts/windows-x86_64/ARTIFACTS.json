@@ -3,36 +3,36 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "b825114683b666f352b8c65ab2471ec0394733aa0e1ce7efecf2580669b0ae69",
-        "size": 1540761
+        "sha256": "5f79f0d817d461b93a465900d4c985c10346cd7ca928e5047175d244fb026240",
+        "size": 1541436
       }
     ],
-    "sha256": "b825114683b666f352b8c65ab2471ec0394733aa0e1ce7efecf2580669b0ae69",
-    "size": 1540761
+    "sha256": "5f79f0d817d461b93a465900d4c985c10346cd7ca928e5047175d244fb026240",
+    "size": 1541436
   },
   "build": {
-    "command": "scripts/build_release_artifacts.ps1",
+    "assembly": "D:/LCcoding/.codex/.tmp/453-release/assemble_release.py",
     "provenance": "BUILD-PROVENANCE.json",
-    "release": "v4.5.2-build.3",
+    "release": "v4.5.3",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "BUILD-PROVENANCE.json",
-      "sha256": "76350f8406c64db129d39a1e2585bfac9c84781b6dcd3fa0e871af51ccbe2966",
-      "size": 23845
+      "sha256": "2baa46ce75d24123ab465c960eff97b2f04258cf5ae319aad23746488e098499",
+      "size": 24746
     },
     {
       "path": "bin/slk-cargo.exe",
-      "sha256": "6ae9fa9e80b915de014a6a62644f15f511dd55782218b9a4cdf07b7e7c60d556",
-      "size": 3204608
+      "sha256": "72efa563b21573d86ce99f69b96bc36a178e230c7f6e2bd2750860eee910c1ff",
+      "size": 3204096
     }
   ],
-  "product_version": "4.5.2",
+  "product_version": "4.5.3",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "b863b6e77efc37e01c633e9dbf49e38babdc9e89e38d1e7d54b677b70ab9b338",
-    "Cargo.toml": "c65964c450f56898ba7d0b09a1e91f72cb93caab2b805f6d3a30cd7ff2e2465f",
+    "Cargo.lock": "26620fba9d1a8a38328ae8b7300a737b3c5aaddd8de98f6e8b12ff8a0493fc53",
+    "Cargo.toml": "9051ab9b0ed6cd930b1d24eaa51f9cb373a14b70f6ea081066d413fa6bd99a71",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "059a7efca8a73270a04f07f4afca48bed61c344993d930f03b4c0543291cb80a",
     "src/args.rs": "abe878ce5acba0ae784dee3021ca6fec04414f88eaf42903db00527c2b41a4b2",

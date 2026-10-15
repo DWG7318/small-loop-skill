@@ -113,7 +113,7 @@ def simulated(tmp_path, monkeypatch):
     return reader, source, records, request, request_path, evidence, save, attest, inspect
 
 
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
 def test_native_running_attestation_is_closed_small_and_reused(simulated, method_version) -> None:
     reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
     request["method_version"] = method_version
@@ -132,6 +132,14 @@ def test_native_running_attestation_is_closed_small_and_reused(simulated, method
     assert SECRET not in json.dumps(proof)
     assert inspect(result, process_probe=lambda *_: pytest.fail("reader PID is not child liveness"))["status"] == "ACTIVE"
     assert attest() == result
+
+
+def test_native_attestation_rejects_unpublished_method(simulated):
+    reader, _source, _records, request, _request_path, evidence, _save, attest, _inspect = simulated
+    request["method_version"] = "4.5.4"
+    with pytest.raises(reader.OverwatcherSubagentError, match="method version is unsupported"):
+        attest()
+    assert not (evidence / "subagent-overwatcher-proof.json").exists()
 
 
 def linked_child(simulated):

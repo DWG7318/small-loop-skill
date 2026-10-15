@@ -1,5 +1,17 @@
 # Changelog
 
+## SLK 4.5.3 / BI-WebBI 1.1.3
+
+- Correct the release identity requested by Owner: this delivery is 4.5.3,
+  superseding the mistaken 4.5.2 build.3 name. Future releases use plain patch
+  increments, not build suffixes.
+- Admit 4.5.3 additively in method contracts, lightweight readiness, native OW,
+  D2 and Temporal paths; retain historical versions and existing Run identities.
+- BI/WebBI stays 1.1.3 with its immutable published executable and source.
+  Rebuild changed state/query/cargo/transport outputs and Temporal templates;
+  preserve exact reuse provenance for unchanged BI and prepared native runtimes.
+- The deferred 3.1.0 project is not part of this release.
+
 ## SLK 4.5.2 build.3 / BI-WebBI 1.1.3
 
 - Display real CELL quantities in at most three rows of ten; compact incomplete rows,

@@ -1,6 +1,6 @@
 {
   "schema_version": "slk.role-eval-pack/v1",
-  "method_version": "4.5.2",
+  "method_version": "4.5.3",
   "cases": [
     {"case_id":"SUP-ONSITE-MISSING-DELIVERY","role":"supervisor","runtime_critical":false,"scenario":"Worker 已产出有 hash 的原始资料，但漏交给 Checker；Supervisor 能读取原件，源码根治尚未完成。","choices":["DELIVER_EXISTING_ORIGINAL_AS_SUPERVISOR","WAIT_FOR_SLK_SOURCE_REPAIR","IMPERSONATE_WORKER_AND_DECLARE_PASS"],"correct_choice":"DELIVER_EXISTING_ORIGINAL_AS_SUPERVISOR","rule":"Supervisor 是现场补漏和记录的第一责任人，用本人身份代交已有原件、说明原作者/hash/缺口并核验送达；不等待源码维修、不伪造原件或代判 D1。"},
     {"case_id":"CHK-REUSED-GROUPS-NO-D1","role":"checker","runtime_critical":false,"scenario":"同一候选的文件组已成功检查并复用，但没有原 Checker 认证的整 CELL 决定。","choices":["MAKE_ONE_WHOLE_CELL_DECISION","PASS_FROM_EMPTY_FINDINGS","REPEAT_EVERY_SUCCESSFUL_GROUP"],"correct_choice":"MAKE_ONE_WHOLE_CELL_DECISION","rule":"复用有效组结果，同一 Checker 结合当前全部目标与跨文件接缝作一次整 CELL 判断；文件组结束不是 D1，不能据退出码或零 finding 代判。"},

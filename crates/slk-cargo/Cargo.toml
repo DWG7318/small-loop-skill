@@ -1,6 +1,6 @@
 [package]
 name = "slk-cargo"
-version = "4.5.2"
+version = "4.5.3"
 edition = "2021"
 license = "MIT"
 description = "Scoped Cargo execution and resource guard for Small Loop Skill"
@@ -8,7 +8,7 @@ repository = "https://github.com/DWG7318/slk-cargo"
 
 [dependencies]
 serde_json = "1.0.151"
-slk-state-core = { git = "https://github.com/DWG7318/slk-state-core.git", rev = "fbf74df77d2283de6a72541eec829ccb59375955" }
+slk-state-core = { git = "https://github.com/DWG7318/slk-state-core.git", rev = "0aba753f5d328484e59ec1c5c13fa594fedc3d19" }
 time = { version = "0.3.54", features = ["formatting", "parsing"] }
 uuid = { version = "1.24.0", features = ["v4"] }
 

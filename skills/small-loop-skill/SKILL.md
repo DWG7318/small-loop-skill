@@ -5,7 +5,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 # Small Loop Skill
 
-SLK 4.5.2 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
+SLK 4.5.3 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
 
 ## 谁负责什么
 

@@ -1,8 +1,8 @@
 # Small Loop Skill（SLK）
 
-当前源码版本：**4.5.2**。详见[452改动](CHANGELOG.md)与[验证记录](VALIDATION-REPORT.md)。是否已安装以目标电脑的安装回执为准，不由版本文字推断；历史 Run 的身份和版本不改写。Supervisor 在项目期间保持 active、有界原生等待，不退出等直属 OW 唤醒；Worker/Checker 仍先结束工程再最后交接。Owner 叫停优先，真实宿主中断不得伪称持续在线。
+当前源码版本：**4.5.3**。详见[453改动](CHANGELOG.md)与[验证记录](VALIDATION-REPORT.md)。是否已安装以目标电脑的安装回执为准，不由版本文字推断；历史 Run 的身份和版本不改写。Supervisor 在项目期间保持 active、有界原生等待，不退出等直属 OW 唤醒；Worker/Checker 仍先结束工程再最后交接。Owner 叫停优先，真实宿主中断不得伪称持续在线。
 
-**BI/WebBI 1.1.3** 与已复核的 Run09 维修共同组成 **SLK 4.5.2 build.3**，详见[实现验证](docs/maintenance/reports/2026-10-15-bi113-run09-implementation-result.md)和[交付状态](docs/maintenance/2026-10-15-bi113-build3-delivery.md)。BI 按真实数量显示格子（每行十格、最多三行），有依据时显示初始＋拆分净增，并提供 0–100%、步长 1% 的透明度滑条。格子上限仅用于显示，不限制 Run 的 CELL 数。使用预编译 Windows 成品，普通安装不需要编译；SLK 3.1.0 继续暂缓。
+**BI/WebBI 1.1.3** 与已复核的 Run09 维修共同组成 **SLK 4.5.3**，详见[实现验证](docs/maintenance/reports/2026-10-15-bi113-run09-implementation-result.md)和[版本纠正记录](docs/maintenance/2026-10-15-453-version-correction.md)。BI 按真实数量显示格子（每行十格、最多三行），有依据时显示初始＋拆分净增，并提供 0–100%、步长 1% 的透明度滑条。格子上限仅用于显示，不限制 Run 的 CELL 数。使用预编译 Windows 成品，普通安装不需要编译；SLK 3.1.0 继续暂缓。以后 SLK 使用正式补丁版本递增，不再用 build 后缀。
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小工程 Run，或大型工程中相对独立的范围。一个 SLK 就是一个 Run，只含一条串行 CELL 路径。
 

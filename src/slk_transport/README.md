@@ -1,4 +1,4 @@
-# SLK transport 4.5.2
+# SLK transport 4.5.3
 
 Exact role/Run/Session message contracts and the existing SLK transport commands.
 This is the sole transport source; the parent build script delegates to this
@@ -7,7 +7,7 @@ message delivery, native-start proof and engineering authority remain here.
 
 Ordinary SLK use installs the complete prebuilt bundle. There is no per-Run
 Python/pip build, source checkout or dependency download. The initial independent
-repository tag `1.0.0` records the original extraction; the product is 4.5.2.
+repository tag `1.0.0` records the original extraction; the product is 4.5.3.
 
 ## Independent development
 

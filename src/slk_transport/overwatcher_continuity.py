@@ -15,4 +15,4 @@ def inspect_overwatcher_cadence(projection: Mapping[str, Any], *, observed_at: s
     version = summary.get("slk_version") if isinstance(summary, Mapping) else None
     return inspect_cadence(projection, observed_at=observed_at,
                            current_method=version in SUPPORTED_METHOD_VERSIONS,
-                           native_subagent=version in {"4.5.0", "4.5.1", "4.5.2"})
+                           native_subagent=version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"})

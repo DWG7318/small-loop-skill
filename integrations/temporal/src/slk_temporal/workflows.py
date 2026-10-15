@@ -527,7 +527,7 @@ class RunSlkWorkflow:
                     "evidence_sha256", "receipt_sha256",
                 },
                 status=({"CLEAR", "ANOMALY", "EXITED", "LATE"} if workflow.patched("slk-4.5.1-late-is-not-dead")
-                        else {"CLEAR", "ANOMALY", "EXITED"}) if self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2"} else {"CLEAR", "ANOMALY"},
+                        else {"CLEAR", "ANOMALY", "EXITED"}) if self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"} else {"CLEAR", "ANOMALY"},
             )
             if (
                 receipt.get("run_id") != self._startup.run_id
@@ -721,7 +721,7 @@ class RunSlkWorkflow:
             raise ApplicationError("SLK Run has not initialized", non_retryable=True)
         if not self._admitted:
             raise ApplicationError("full new-Run admission must pass before delivery", non_retryable=True)
-        if self._runtime_guard_blocker is not None and self._startup.method_version not in {"4.5.0", "4.5.1", "4.5.2"}:
+        if self._runtime_guard_blocker is not None and self._startup.method_version not in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}:
             raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
         request = self._update_value(DeliveryRequest.from_dict, value)
         if self._runtime_guard_blocker is not None:
@@ -790,7 +790,7 @@ class RunSlkWorkflow:
             overwatcher is None
             or notice.run_id != self._startup.run_id
             or notice.overwatcher_role_instance_id != overwatcher.role_instance_id
-            or (self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2"}
+            or (self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}
                 and notice.requested_by_role_instance_id != self._startup.supervisor.role_instance_id)
         ):
             raise ApplicationError("Overwatcher exit notice changed the frozen Run identity", non_retryable=True)

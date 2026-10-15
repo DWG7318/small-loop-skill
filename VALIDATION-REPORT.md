@@ -1,4 +1,11 @@
-# Validation Report — SLK 4.5.2
+# Validation Report — SLK 4.5.3
+
+## 2026-10-15 — plain 4.5.3 release identity
+
+Owner corrected the release name to 4.5.3, without future build suffixes.
+The [correction record](docs/maintenance/2026-10-15-453-version-correction.md)
+separates current verification from the historical evidence below. Existing Run
+versions and previously published hashes are not relabeled. BI remains 1.1.3.
 
 ## 2026-10-15 — BI 1.1.3 and Run09 repair delivery (build 3)
 

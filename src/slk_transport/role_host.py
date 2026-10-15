@@ -210,7 +210,7 @@ class RoleHost:
                 raise ValueError("resume Host differs from the registered original role/endpoint")
         config = wc._read_object(config_path, "resume original adapter config")
         method_version = current["runtime_snapshot"].get("method_version")
-        native_subagent = method_version in {"4.5.0", "4.5.1", "4.5.2"}
+        native_subagent = method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}
         if native_subagent and (config.get("method_version") != method_version
             or config.get("run_id") != self.binding["run_id"]
             or config.get("schema_version") != "slk.temporal-standard-adapter/v2"):
@@ -824,7 +824,7 @@ class RoleHost:
                     if client is None:
                         client = desktop.DesktopClient(command, Path(str(endpoint.address["cwd"])))
                         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-                            "clientInfo": {"name": "slk_run_quiescence", "version": "4.5.2"}}, timeout)
+                            "clientInfo": {"name": "slk_run_quiescence", "version": "4.5.3"}}, timeout)
                         client.notify("notifications/initialized", {})
                         catalog = client.request(2, "tools/list", {}, timeout)
                         if "read_thread" not in {item.get("name") for item in catalog.get("tools", []) if isinstance(item, Mapping)}:
@@ -1708,7 +1708,7 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
-        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2"}
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3"}
             or any(event.get("event_type") == "D2_STARTED"
                    and wc._event_details(event).get("source_message_id") == envelope.message_id
                    and any(key in wc._event_details(event) for key in (

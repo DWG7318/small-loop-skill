@@ -8,16 +8,16 @@
       },
       {
         "path": "payload.zip.part002",
-        "sha256": "ef146aac8c2b562c3e20b949accc234c16c45d22406402a464e0d5fc4eba717b",
-        "size": 8202541
+        "sha256": "baa6a64684e6a1afdf236ac6630a212ce667573a5753d826047c16f4e30f4a63",
+        "size": 8202571
       }
     ],
-    "sha256": "f974174d9dcca827209d3ef087799c8e2b445aff2f17e796828ef420cfa2bf68",
-    "size": 75311405
+    "sha256": "99df948d02f9ea9d16529c18eb439336c3661c1a5136cae23a6f3ddb478b87e0",
+    "size": 75311435
   },
   "build": {
-    "native_runtimes": "unchanged, restored and hash-verified from previous published module",
-    "release": "v4.5.2-build.3",
+    "native_runtimes": "unchanged; restored and hash-verified from preceding published module",
+    "release": "v4.5.3",
     "source_hash_mode": "sha256-raw",
     "template_command": "pip wheel --no-deps --no-build-isolation --no-index ./integrations/temporal"
   },
@@ -6753,33 +6753,33 @@
       "size": 159710720
     },
     {
-      "path": "wheels/slk_temporal_templates-4.5.2-py3-none-any.whl",
-      "sha256": "d3834b12bee28de1cf9b0491163b4aec1899a69d2e753121fcf6c8f4d2b83e1a",
-      "size": 45317
+      "path": "wheels/slk_temporal_templates-4.5.3-py3-none-any.whl",
+      "sha256": "613d1f2f93afa5a1dee1ebca8511ce7e263f7be8b76ab927828212fb03ea91f4",
+      "size": 45322
     }
   ],
-  "product_version": "4.5.2",
+  "product_version": "4.5.3",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
     ".gitignore": "0b208f55b2f3e6dcf5b7ebc38de2457028713d3e7dbff73e5d3206f9d3f34a5c",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
-    "README.md": "e74dcec154ef185388fe4912d8ab3cd6f89a8d432dca3d7fbea5b22249f9e244",
-    "pyproject.toml": "946525fbdaf8afafcc99a7ecf9b846915f5e07176290091f74ebb9afcb0a3cdc",
+    "README.md": "5ef21a19a50c85215666b2451f9598cdc4cfcaabff1e54a5e5c72697da54b728",
+    "pyproject.toml": "43f093de00c4ffb3c688da4574cd193649ff42de829ecd489451021ffbe9d85d",
     "slk-overwatcher-capabilities.json": "c8061035ab138dedf56ed38ff4d86f453c9c83ed133cdb9de380ef722ee11912",
     "slk-overwatcher-native-capabilities.json": "8b6c87c59a57716e70745b707b13b7eca21edf4e0ab5839d94a42c88e4a6a5fe",
-    "src/slk_temporal/__init__.py": "faa1732b469d8ad47adf86f65f6fd73db7cf4640f499923446f3136c754a220c",
+    "src/slk_temporal/__init__.py": "abbf5f57c85211b1fa25eb2202c404fbcfe7c67314471be1a1fbcd5b45a4b299",
     "src/slk_temporal/activities.py": "545bd9fd0b9567e101efd0260061be2828eb532b62e60a49f9595332d255a61e",
     "src/slk_temporal/admitter.py": "8c0d7f0a6b625e3a7744214728cf8c9aed4a6753a98bfeb0622672b5b6fe17d4",
     "src/slk_temporal/checkpoint.py": "d8b8485f986b131cb4e602f2c82d23f9c21eeaceece0b2202829b359ffa22f2d",
     "src/slk_temporal/continuity.py": "da39247925136b11b71f8cf03c47b9a311547e9de9ad931f11cee2fdbb7e53e9",
-    "src/slk_temporal/contracts.py": "22d93062a49a1363d9a9e0ab98f3eb4f30c454b78edb5323556608a47c1a0a06",
+    "src/slk_temporal/contracts.py": "9e74841fcdf0ffc2b30de1c1f58fbcf2b99b052f75f679f13bc9c010812fdd5e",
     "src/slk_temporal/delivery_client.py": "69bea91f778770fd8580751565fd575bf7985c592078fe1bc6eecc7e285b56f4",
     "src/slk_temporal/inspector.py": "9d6f2c965bb3aa5f9e51690b36437834fccda3f97a283a8135e5efef03e756fe",
-    "src/slk_temporal/recovery_client.py": "be4afca93493b626d89cfaf5d4f623801ed32439cb76aab5cfb7641c84f12ac2",
-    "src/slk_temporal/standard_adapter.py": "dd9e8b84b0b51f4af75acb366d04300a5ca1a736d5b153c0b90b59209dd3fe85",
+    "src/slk_temporal/recovery_client.py": "760d259b48a061a45f287336bf360574273fe84394f3c3ade68f59f3b8a53bfd",
+    "src/slk_temporal/standard_adapter.py": "943713ffb02a5cd50216a258931670c9b16161620083e6e9efb11d9ab941df6d",
     "src/slk_temporal/starter.py": "97faa4b67fc2b595c77bcf8d2643fcbeb5225678153d0f85533a1643c59d13d3",
     "src/slk_temporal/worker.py": "dbb16b241b5ee2e815076dad327fd632afae401dcbc2a09c57a9805512f8aafc",
-    "src/slk_temporal/workflows.py": "bbafa56f9509ed5e0b2ff34754653892018f0d66ac750e11dd6a70ca5c500e80",
+    "src/slk_temporal/workflows.py": "f3be9369fbb894235b699d170a240357628eb6012ec3e2224af436b1d75f5dfd",
     "tests/test_independent_contract.py": "fa5475a85d63a8f4e9c361d7308e9722c4b6a1bb4604eec3961f27ee7ddd0b53"
   },
   "target": "windows-x86_64",

@@ -14,9 +14,9 @@ from .test_contracts import start_value, delivery_value, ack_value
 from .test_delivery_client import identity
 
 
-def packet():
+def packet(method_version="4.4.2"):
     run = workflows.RunSlkWorkflow()
-    run._startup = StartSlkRequest.from_dict({**start_value(), "method_version": "4.4.2"})
+    run._startup = StartSlkRequest.from_dict({**start_value(), "method_version": method_version})
     run._continuity = RunContinuity("RUN-A")
     run._continuity.request_delivery(DeliveryRequest.from_dict(delivery_value()))
     run._continuity.acknowledge(NativeStartAck.from_dict(ack_value()))
@@ -29,13 +29,13 @@ def packet():
     return run.recovery_checkpoint()
 
 
-def request_fixture(root):
+def request_fixture(root, method_version="4.4.2"):
     def write(name, value):
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value), encoding="utf-8")
         return recovery.proof(path)
-    checkpoint = packet()
+    checkpoint = packet(method_version)
     source = {**identity(), "task_queue": checkpoint["startup"]["task_queue"],
               "startup_fingerprint": StartSlkRequest.from_dict(checkpoint["startup"]).startup_fingerprint}
     source_proof = write("identity.json", source)
@@ -50,6 +50,30 @@ def request_fixture(root):
         "source_host": host, "source_config": config, "central_projection": write("central.json", {"runtime_revision": 339}),
         "decision": {"supervisor_role_instance_id": "supervisor-a", "reason": "same-scope reversible repair", "evidence_ref": "existing-authority"},
         "evidence_root": str(root / "versioned")}
+
+
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+def test_recovery_preserves_exact_method_identity_and_central_authority(tmp_path, monkeypatch, method_version):
+    request = request_fixture(tmp_path, method_version)
+    value, identity, checkpoint = recovery.validate_request(request)
+    startup = StartSlkRequest.from_dict(checkpoint["startup"])
+    assert startup.method_version == method_version
+    assert identity["startup_fingerprint"] == startup.startup_fingerprint
+    pending = checkpoint["continuity"]["pending"]["delivery"]
+    projection = {"summary": {"run_id": startup.run_id, "state": "active", "closure_state": "open", "closed_at": None},
+        "runtime_snapshot": {"method_version": method_version, "plan_revision": 7,
+            "runtime_revision": pending["source_runtime_revision"], "token_holder_role_instance_id": pending["sender_role_instance_id"]},
+        "roles": [{"role": role.role, "role_instance_id": role.role_instance_id, "lifecycle": "active"} for role in startup.roles]}
+    monkeypatch.setattr(recovery.adapter, "_query", lambda _config: projection)
+    monkeypatch.setattr(recovery.adapter, "_run_json", lambda *_args, **_kwargs: {
+        "status": "SUPERVISOR_RECOVERY_AUTHENTICATED", "run_id": startup.run_id,
+        "supervisor_role_instance_id": startup.supervisor.role_instance_id,
+        "runtime_revision": pending["source_runtime_revision"]})
+    config = {"transport_command": ["simulated"], "role_host_binding": request["source_host"], "state_config_path": "simulated"}
+    assert recovery._central(config, startup, checkpoint, {"plan_revision": 7}) == projection
+    projection["runtime_snapshot"]["method_version"] = "4.5.4"
+    with pytest.raises(ValueError, match="central boundary"):
+        recovery._central(config, startup, checkpoint, {"plan_revision": 7})
 
 
 @pytest.mark.parametrize("damage", ["unknown", "run", "source-state", "supervisor", "reason", "hash"])

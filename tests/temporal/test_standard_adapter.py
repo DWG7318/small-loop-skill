@@ -176,11 +176,12 @@ def test_standard_adapter_prepares_from_new_run_admission_and_live_revision(tmp_
     ("COMPLETED_WITHOUT_TERMINAL", None), ("UNKNOWN", "NATIVE_ACTIVITY_STALE"),
     ("ACTIVE", "NATIVE_QUERY_FAILED"),
 ])
-def test_450_product_start_requires_one_native_active_read_after_current_join(tmp_path, monkeypatch, native_status, native_error):
-    root, config = config_root(tmp_path, "4.5.0")
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+def test_450_product_start_requires_one_native_active_read_after_current_join(tmp_path, monkeypatch, native_status, native_error, method_version):
+    root, config = config_root(tmp_path, method_version)
     ow = config["overwatcher_activity"]
     proof = write_json(tmp_path / "ow" / "subagent-overwatcher-proof.json", {
-        "schema_version": "slk.subagent-overwatcher-proof/v1", "method_version": "4.5.0",
+        "schema_version": "slk.subagent-overwatcher-proof/v1", "method_version": method_version,
         "run_id": RUN_ID, "role_instance_id": ow["role_instance_id"], "endpoint_ref": ow["endpoint_ref"],
         "started_sha256": hashlib.sha256(Path(ow["started_path"]).read_bytes()).hexdigest(),
     })
@@ -188,11 +189,11 @@ def test_450_product_start_requires_one_native_active_read_after_current_join(tm
     ow.update(attestation_path=str(proof), attestation_sha256=hashlib.sha256(proof.read_bytes()).hexdigest())
     write_json(root / f"{RUN_ID}.json", config)
     standard_adapter.configure(root)
-    request = {"run_id": RUN_ID, "method_version": "4.5.0", "runtime_revision": 9,
+    request = {"run_id": RUN_ID, "method_version": method_version, "runtime_revision": 9,
         "task_queue": "slk-local", "ack_timeout_seconds": 30, "startup_idempotency_key": "start-a",
         "roles": [{"role": role, "role_instance_id": f"{role.lower()}-a", "endpoint_ref": f"{role.lower()}-endpoint"}
                   for role in ("SUPERVISOR", "CHECKER", "WORKER", "OVERWATCHER")]}
-    projection = {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"method_version": "4.5.0", "runtime_revision": 9}}
+    projection = {"summary": {"run_id": RUN_ID}, "runtime_snapshot": {"method_version": method_version, "runtime_revision": 9}}
     calls = []
     def run(command, arguments, **_kwargs):
         calls.append(arguments)

@@ -19,13 +19,13 @@ from .test_contracts import start_value, overwatcher_exit_value, runtime_guard_r
 from .test_delivery_client import identity
 
 
-def native_config(tmp_path):
-    root, config = config_root(tmp_path, "4.5.0")
+def native_config(tmp_path, method_version="4.5.0"):
+    root, config = config_root(tmp_path, method_version)
     config["schema_version"] = "slk.temporal-standard-adapter/v2"
     ow = config["overwatcher_activity"]
     # Static config loading deliberately does not parse private native originals.
     proof = write_json(tmp_path / "proof.json", {"schema_version": "slk.subagent-overwatcher-proof/v1",
-        "method_version": "4.5.0", "run_id": RUN_ID, "role_instance_id": ow["role_instance_id"],
+        "method_version": method_version, "run_id": RUN_ID, "role_instance_id": ow["role_instance_id"],
         "endpoint_ref": ow["endpoint_ref"], "started_sha256": standard_adapter._sha256(Path(ow["started_path"]))})
     ow.update(attestation_path=str(proof), attestation_sha256=standard_adapter._sha256(proof))
     write_json(root / f"{RUN_ID}.json", config)
@@ -33,16 +33,25 @@ def native_config(tmp_path):
     return root, config
 
 
-def test_450_config_load_is_static_and_requires_native_v2(tmp_path, monkeypatch):
-    root, config = native_config(tmp_path)
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+def test_450_config_load_is_static_and_requires_native_v2(tmp_path, monkeypatch, method_version):
+    root, config = native_config(tmp_path, method_version)
     monkeypatch.setattr(standard_adapter, "_run_json", lambda *_a, **_k: pytest.fail("config load must be static"))
-    assert standard_adapter._load_config(RUN_ID)["method_version"] == "4.5.0"
-    assert standard_adapter._load_bootstrap_config(RUN_ID)["method_version"] == "4.5.0"
+    assert standard_adapter._load_config(RUN_ID)["method_version"] == method_version
+    assert standard_adapter._load_bootstrap_config(RUN_ID)["method_version"] == method_version
     config["schema_version"] = "slk.temporal-standard-adapter/v1"
     config["overwatcher_activity"].pop("attestation_path")
     config["overwatcher_activity"].pop("attestation_sha256")
     write_json(root / f"{RUN_ID}.json", config)
     with pytest.raises(ValueError): standard_adapter._load_config(RUN_ID)
+
+
+def test_config_and_bootstrap_reject_unpublished_method(tmp_path):
+    native_config(tmp_path, "4.5.4")
+    with pytest.raises(ValueError, match="not closed"):
+        standard_adapter._load_config(RUN_ID)
+    with pytest.raises(ValueError, match="not closed"):
+        standard_adapter._load_bootstrap_config(RUN_ID)
 
 
 @pytest.mark.parametrize("field,value", [("schema_version", "slk.desktop-overwatcher-attestation/v1"),
@@ -62,8 +71,9 @@ def test_450_static_proof_correlation_rejects_drift(tmp_path, field, value):
     ("ACTIVE", "CONTINUITY_UNPROVEN", "ANOMALY"), ("UNKNOWN", "CURRENT", "ANOMALY"),
     ("COMPLETED_WITHOUT_TERMINAL", "CONTINUITY_UNPROVEN", "EXITED"),
     ("FAILED_WITHOUT_TERMINAL", "CURRENT", "EXITED")])
-def test_450_audit_uses_one_projection_native_proof_and_retains_small_hashed_evidence(tmp_path, monkeypatch, native, cadence, expected):
-    _, config = native_config(tmp_path)
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+def test_450_audit_uses_one_projection_native_proof_and_retains_small_hashed_evidence(tmp_path, monkeypatch, native, cadence, expected, method_version):
+    _, config = native_config(tmp_path, method_version)
     ow = config["overwatcher_activity"]
     calls, queries = [], []
     projection = {"summary": {"run_id": RUN_ID}, "marker": "fresh"}
@@ -94,7 +104,7 @@ def test_450_audit_uses_one_projection_native_proof_and_retains_small_hashed_evi
     assert (evidence.parent / (repeated["evidence_sha256"] + ".json")).is_file()
 
 
-@pytest.mark.parametrize("method,expected", [("4.5.0", "OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION"), ("4.4.5", "OVERWATCHER_AUDIT_FAILED")])
+@pytest.mark.parametrize("method,expected", [(version, "OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION") for version in ("4.5.0", "4.5.1", "4.5.2", "4.5.3")] + [("4.4.5", "OVERWATCHER_AUDIT_FAILED")])
 def test_workflow_accepts_exited_only_from_immutable_450_startup(monkeypatch, method, expected):
     from slk_temporal import workflows
     instance = RunSlkWorkflow()
@@ -135,7 +145,7 @@ def test_existing_guard_updates_have_exact_hashed_cli_identity_and_closed_reply(
 
 
 @pytest.mark.parametrize("same_cell", [True, False])
-@pytest.mark.parametrize("method", ["4.5.0", "4.4.5"])
+@pytest.mark.parametrize("method", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.4.5"])
 @pytest.mark.parametrize("handoff", [("worker-a", "checker-a"), ("checker-a", "supervisor-a")])
 def test_450_guard_does_not_stop_current_cell_but_blocks_the_next(monkeypatch, same_cell, method, handoff):
     from slk_temporal.continuity import RunContinuity
@@ -154,7 +164,7 @@ def test_450_guard_does_not_stop_current_cell_but_blocks_the_next(monkeypatch, s
     following = {**delivery_value(), "operation_id": "next", "message_id": "next-message",
         "cell_id": previous.cell_id if same_cell else "CELL-002",
         "sender_role_instance_id": handoff[0], "receiver_role_instance_id": handoff[1]}
-    if same_cell and method == "4.5.0":
+    if same_cell and method in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}:
         assert instance.request_delivery(following) == "DELIVERY_REQUESTED"
         assert instance._runtime_guard_blocker is not None and instance._run_pause is None
     else:
@@ -180,15 +190,15 @@ def test_450_guard_cannot_guess_current_scope_or_accept_another_run():
         instance.request_delivery({**delivery_value(), "run_id": "RUN-B"})
 
 
-@pytest.mark.parametrize("method", ["4.5.0", "4.4.5"])
+@pytest.mark.parametrize("method", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.4.5"])
 def test_450_schema_and_bootstrap_compatibility(tmp_path, method):
     from jsonschema import Draft202012Validator
-    root, config = native_config(tmp_path) if method == "4.5.0" else config_root(tmp_path, method)
+    root, config = native_config(tmp_path, method) if method != "4.4.5" else config_root(tmp_path, method)
     contracts = Path(__file__).resolve().parents[2] / "docs/contracts"
     for name, value in (("slk-temporal-standard-adapter.schema.json", config),
         ("slk-temporal-standard-bootstrap.schema.json", json.loads((root / f"{RUN_ID}.bootstrap.json").read_text()))):
         Draft202012Validator(json.loads((contracts / name).read_text())).validate(value)
-    if method == "4.5.0":
+    if method != "4.4.5":
         config["schema_version"] = "slk.temporal-standard-adapter/v1"
         config["overwatcher_activity"].pop("attestation_path")
         config["overwatcher_activity"].pop("attestation_sha256")

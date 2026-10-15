@@ -3,36 +3,36 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "0139fd5f2e3b7f3031aff5309adc8a3758fff3f0e6c9b15325660d639c430766",
-        "size": 1989498
+        "sha256": "bc3d5b8b6f45cf82f55435ea428ef512f5e3be72212069f7b163e6adf8880196",
+        "size": 1990125
       }
     ],
-    "sha256": "0139fd5f2e3b7f3031aff5309adc8a3758fff3f0e6c9b15325660d639c430766",
-    "size": 1989498
+    "sha256": "bc3d5b8b6f45cf82f55435ea428ef512f5e3be72212069f7b163e6adf8880196",
+    "size": 1990125
   },
   "build": {
-    "command": "scripts/build_release_artifacts.ps1",
+    "assembly": "D:/LCcoding/.codex/.tmp/453-release/assemble_release.py",
     "provenance": "BUILD-PROVENANCE.json",
-    "release": "v4.5.2-build.3",
+    "release": "v4.5.3",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "BUILD-PROVENANCE.json",
-      "sha256": "76350f8406c64db129d39a1e2585bfac9c84781b6dcd3fa0e871af51ccbe2966",
-      "size": 23845
+      "sha256": "2baa46ce75d24123ab465c960eff97b2f04258cf5ae319aad23746488e098499",
+      "size": 24746
     },
     {
       "path": "bin/slk-state.exe",
-      "sha256": "b901751fce130a467df3b7f92b6a0ea9786ad32731f56760ce274dc298066d2c",
-      "size": 4826112
+      "sha256": "8fb316985790042b8dcdbd8082d78799c3dfe3c3433ad29abe2d0fd794587f56",
+      "size": 4820992
     }
   ],
-  "product_version": "4.5.2",
+  "product_version": "4.5.3",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "7c67d8f5e441505c475edc27f2bd2f6a824b43e6c7040445400bd828ba282313",
-    "Cargo.toml": "5a049240deea51df24a3e1e8c823481491245b55284c9dc72a3725683693053c",
+    "Cargo.lock": "dc25364b4f55a7f33639f3495139a1e26f63891c72197f7e967ac0fab02c88c7",
+    "Cargo.toml": "1452e4d66b40226eb33091a75051aba9a3bbe8dfc143a758aa1f786be25fb4d7",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "9147a3fc466ccbc6152d804a1220e64e0b0cb753132098d60573c6451bf9e917",
     "src/main.rs": "f1c499e14371bda108a805c27db034dc53f4c1ba0f3dcf399cbaa2a8b1434d9b",

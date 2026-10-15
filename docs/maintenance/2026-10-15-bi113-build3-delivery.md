@@ -1,5 +1,7 @@
 # BI 1.1.3 / SLK 4.5.2 build.3 delivery
 
+Historical delivery record. Owner subsequently corrected this release identity to [SLK 4.5.3](2026-10-15-453-version-correction.md); the build-suffix name is superseded, not the naming convention for future releases. Original evidence below is retained rather than relabeled.
+
 Owner authorized merge, GitHub push, precompiled delivery, local upgrade and obsolete-code cleanup on 2026-10-15. SLK 3.1.0 and its project installation remain deferred. The method identity remains 4.5.2; the new build tag distinguishes the Run09 repairs without relabeling existing Runs.
 
 ## Plan
