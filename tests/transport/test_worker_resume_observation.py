@@ -104,6 +104,27 @@ def test_scope_uses_latest_validated_native_start_not_uuid_order_or_old_terminal
     assert all(path.read_bytes() == data for path, data in original_bytes.items())
 
 
+def test_scope_accepts_exact_selected_resume_argument_and_retains_central_original(tmp_path, monkeypatch):
+    source, endpoint, envelope, _projection = original_scope(tmp_path, monkeypatch)
+    fresh = continuation(source, endpoint, envelope)
+    result = collect(fresh)
+    assert result["native_activity"]["status"] == "ACTIVE", result["native_activity"]
+    assert result["native_start_path"] == str((source / "started.json").resolve())
+    assert result["native_start_sha256"] == wc._sha256(source / "started.json")
+    assert result["native_resume"]["native_start_path"] == str(fresh / "started.json")
+    assert result["native_resume"]["native_start_sha256"] == wc._sha256(fresh / "started.json")
+
+
+def test_scope_rejects_superseded_resume_argument(tmp_path, monkeypatch):
+    source, endpoint, envelope, _projection = original_scope(tmp_path, monkeypatch)
+    now = datetime.now(timezone.utc)
+    old = continuation(source, endpoint, envelope, observed_at=(now - timedelta(minutes=2)).isoformat(), terminal=True)
+    continuation(source, endpoint, envelope, observed_at=(now - timedelta(minutes=1)).isoformat())
+    result = collect(old)
+    assert result["native_activity"]["status"] == "UNKNOWN"
+    assert "selected" in result["native_activity"]["error"]
+
+
 def test_pending_accepted_invocation_is_unknown_not_old_completed(tmp_path, monkeypatch):
     source, endpoint, envelope, _projection = original_scope(tmp_path, monkeypatch)
     fresh = continuation(source, endpoint, envelope, pending=True)

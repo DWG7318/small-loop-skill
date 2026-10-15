@@ -675,6 +675,17 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
         try:
             if started_path is None:
                 raise NativeActivityError("original started.json was not supplied")
+            requested_path = started_path
+            source = requested_path.parent
+            if requested_path.name != "started.json":
+                raise NativeActivityError("native query requires an original or recognized resume start")
+            while source.parent.name in {"native-resumes", "review-corrections"}:
+                for item in (source, source.parent, requested_path):
+                    if item.is_symlink() or getattr(item, "is_junction", lambda: False)():
+                        raise NativeActivityError("native query cannot follow an alternate resume path")
+                source = source.parent.parent
+            requested_path = requested_path.resolve()
+            started_path = source / "started.json"
             started_path = started_path.resolve()
             start_sha256 = sha256_file(started_path)
             start = validate_native_start(started_path, run_id=run_id, message_id=snapshot["latest_message_id"])
@@ -684,7 +695,9 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
             if len(events) != 1:
                 raise NativeActivityError("central native start is not uniquely bound")
             proof = wc._event_details(events[0])
-            if (proof.get("start_evidence_sha256") != start_sha256
+            if ((proof.get("start_evidence_path") is not None
+                 and Path(proof["start_evidence_path"]).resolve() != started_path)
+                or proof.get("start_evidence_sha256") != start_sha256
                 or any(sha256_file(source / (name + ".json")) != proof.get(name + "_sha256")
                        for name in ("endpoint", "envelope"))):
                 raise NativeActivityError("original delivery differs from the central start proof")
@@ -724,6 +737,9 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
                 resumed = (select_worker_resume(source, endpoint=endpoint, envelope=envelope, original_start=start)
                            if worker else select_ocrv_resume(source, endpoint=endpoint, envelope=envelope, original_start=start)
                            if endpoint.get("adapter") == "ocrv-checker" else None)
+                if requested_path != started_path and (resumed is None or resumed.started_path is None
+                    or resumed.started_path.resolve() != requested_path):
+                    raise NativeActivityError("supplied native resume is not the exact selected activation")
                 if resumed is not None:
                     resume_metadata = resumed.metadata
                     native = resumed.inspect_native(inspect_native_activity)
