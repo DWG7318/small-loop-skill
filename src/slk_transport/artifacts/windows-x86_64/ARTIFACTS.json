@@ -3,50 +3,34 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "fe4574f38dfa09e6c294ec437ea57c81930ab822ca0c842012ada96389c6bcc5",
-        "size": 433901
+        "sha256": "042d753c71d72aafea55cb0d8437f1874a880aae06463fa20018785282ac68e3",
+        "size": 451595
       }
     ],
-    "sha256": "fe4574f38dfa09e6c294ec437ea57c81930ab822ca0c842012ada96389c6bcc5",
-    "size": 433901
+    "sha256": "042d753c71d72aafea55cb0d8437f1874a880aae06463fa20018785282ac68e3",
+    "size": 451595
   },
   "build": {
-    "commands": [
-      [
-        "C:\\Python314\\python.exe",
-        "-m",
-        "pip",
-        "wheel",
-        "--no-build-isolation",
-        "--no-deps",
-        "--no-index",
-        "--wheel-dir",
-        "D:\\LCcoding\\.codex\\.tmp\\bi-1.1.2\\wheels",
-        "D:\\LCcoding\\.codex\\.tmp\\bi-1.1.2\\wheel-source"
-      ],
-      [
-        "python",
-        "scripts/build_transport_zipapp.py",
-        "--output",
-        "D:\\LCcoding\\.codex\\.tmp\\bi-1.1.2\\slk-transport.pyz"
-      ]
-    ],
-    "python": "3.14.0 (tags/v3.14.0:ebf955d, Oct  7 2025, 10:15:03) [MSC v.1944 64 bit (AMD64)]",
-    "scope": "Accept BI 1.1.2; method version and transport semantics unchanged",
-    "sha256": "8529581fd63eb8c11f228b478ca7443ee0d7230154d838a15643eb77f149dcce",
-    "source_hash_mode": "sha256-raw",
-    "verified_python_files": 51
+    "command": "scripts/build_release_artifacts.ps1",
+    "provenance": "BUILD-PROVENANCE.json",
+    "release": "v4.5.2-build.3",
+    "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
+      "path": "BUILD-PROVENANCE.json",
+      "sha256": "76350f8406c64db129d39a1e2585bfac9c84781b6dcd3fa0e871af51ccbe2966",
+      "size": 23845
+    },
+    {
       "path": "bin/slk-transport.pyz",
-      "sha256": "cd861bcd0b90e929ebc93a98e8875d53928b8e64c861f8dc3c87e58749802ea3",
-      "size": 223053
+      "sha256": "3ec400584652da76d3ab82b460259ed2991c5d9eb76be9a7a00d47ff3c36b0c7",
+      "size": 227082
     },
     {
       "path": "wheels/slk_transport-4.5.2-py3-none-any.whl",
-      "sha256": "8529581fd63eb8c11f228b478ca7443ee0d7230154d838a15643eb77f149dcce",
-      "size": 219731
+      "sha256": "a86f60f8f89d6e2de8c001442f41a41363b9709c12498ff75c869a69ad14683c",
+      "size": 223755
     }
   ],
   "product_version": "4.5.2",
@@ -67,19 +51,19 @@
     "checker_completion.py": "80d0fa6241f92770e6e036e69fd04c59640f03644006e3e0cdd45bb4d6f7769a",
     "checker_escalation.py": "572f861cd8a99d727933493c87982517c30c3e8947011353f95e1f1930aae001",
     "checker_management.py": "c4e67a48c31c61affb2f3d010591005cfe477fc637dad4bbe900043318575675",
-    "cli.py": "3ec4da044cc61809ae2564b96e21043836d2d0840236d02733afb920f1a5e0e9",
+    "cli.py": "9c5fe28cfd8c9d19e9114efddd694ea2a1b4e576c4af83b299648f3e3fdfd900",
     "context_review.py": "c0c6b5d08bbcc9b8dd05d6ffc23057c246e8cf124014c9a16c36b700bbb657d4",
     "contracts.py": "ceead879574bd4bf608c916d256754bb4116d83f34a36f20054f908bc336a4dc",
-    "desktop_current_turn.py": "1d17c34dd5b34815368c6d194191692745e5cfe46058eefcc66ba569a66442bf",
+    "desktop_current_turn.py": "514a292aa6e5e4865c30c3e26ef83eaa38d33ba7ee984dda1ccb46a3eb6cda44",
     "dispatcher.py": "25187a4d5adeb0e576ccffa67a1f421f09630ab54e308a15840b36afa9f339bc",
     "drill_verify.py": "b3ac32e416751701b53bba050418a8c823d1bd8c37f8063a24ce174f77a53c7e",
     "evidence.py": "4bb814f1b18f626982e8b538a8add5d9d39ee03584d036c2c5f6633c15a2f590",
     "independent_checker_fail.py": "c0c6b5d08bbcc9b8dd05d6ffc23057c246e8cf124014c9a16c36b700bbb657d4",
     "instance_id.py": "0f4e61e8ac9328a12414237d9188f8a2184e8bffff71af78673a8ea7af72ef0b",
     "jsonrpc.py": "bb570f0a8e867274f1bd96307bfb3cb85082387f6646ecf7634529a5c67f1e04",
-    "native_activity.py": "d8feecf2b5d9c4b7eedee51b5b711382798a55479a6a8c18f885dfd86731b577",
-    "native_ocrv.py": "aaa055a0954b840e0bbe39c2431ec9a736a64a2920fb5cdcf8fa502b15f7e99e",
-    "overwatcher_admin.py": "51012f17a1bcf3bbe0298737e492e16ba9be85f02bd8df26775385a06842e6cb",
+    "native_activity.py": "5ed4a6afa0e9e87fcf847baa0ccf9c1313e6858a23ec770bb7dea9345a025232",
+    "native_ocrv.py": "367281b9a0a37e6cc474ad8f3bedd758375260138b3c8df141406be224639688",
+    "overwatcher_admin.py": "9960419c1a9f49707a2431d86d0a5699e6ebe22dd3ba60a5467ca4421f367fce",
     "overwatcher_continuity.py": "aa3ad284aff5a530f4f4f8c495a74d2aa4d1019f37525063c9b21153bb8b51a5",
     "overwatcher_desktop.py": "ad5f1c6be33eb248e0ca7aeb026f586ff5bea3f85ffa584d6ab8c5c2230cfc3c",
     "overwatcher_subagent.py": "c3e5338e9d0c56f0fb55f6bec7991fa2635846d736510c044a45a1ccc417d0bc",
@@ -90,8 +74,8 @@
     "pyproject.toml": "f0937cdcffe3b737a3aaa09cc8077a255ee8ee4e627d9ec6f8eaf2c6586bd610",
     "recovery.py": "7366ad1534b763ae3957d4bad576d5e008ab1d2b7a1f0d3cb2a10e065dae0470",
     "role_eval.py": "c1a9686d0e68fdac85147ffbff3b1cf35d8fa3e03a11cc509a819727fdc96300",
-    "role_host.py": "146f26d95c6f0adfc7361e157619d900af1bc763f029aff87ad92e80a963dc3a",
-    "run_readiness.py": "3ffeee9e46a1a2a7cc089696e9637ed7ca3b1270adbf640dfd528363efc08ac8",
+    "role_host.py": "8c6265909bca6fe3963b68c085c9d734764f804abab4fff6e51564aa0cae5c08",
+    "run_readiness.py": "e867988d3a5148afa4d378e0e2a243d094d2a612064c4beaf7dba1a87afe9e15",
     "runtime_binding_migration.py": "a83e7d56fb3ff97a08ddfab5f2be46fa43dfca54f6474ac35b8a7a8aba3eabb6",
     "subprocess_watch.py": "1ea11c75dabc955650f52e6e2510c408a81228b5a66d3602ece35a446fb221b9",
     "supervisor_admin.py": "56fbc46694b13aedbb4756b1e174e054730869dcda97772ebce444317a11da83",
@@ -104,7 +88,7 @@
     "tests/test_independent_contract.py": "794b6a7c6dbc0d32c4852ec159d48b803d4a915db1a4637b7f0ff89bd6cf0343",
     "worker_completion.py": "96437d3c8eb2d7a7c6cf7e5586e0e7a7e0dde6c0a0a1bd293bc53a012b72d4e8",
     "worker_mcp.py": "c0ddf1f173c40477527dc01ea5e801588f650dbb1b07ce6b049f4f2e20b58445",
-    "worker_resume.py": "7a39511090f491a81629648500ed991f22d4c55375409c0563cbe61a0974e235",
+    "worker_resume.py": "e5cacbd0db4438cfeb47a695d79dd2489cd3c923f5dffbfa62c4bd8ec72c6a3e",
     "worker_resume_observation.py": "492411e250106d5dc5c24c215b76d2090782adc911e505915a841bed06ea5acf",
     "worker_session_stop.py": "1726135794c35d6b32a00fb7c2f01b8d0714b7a2cf3bd9578894abb1ca29395a",
     "workspace.py": "7e42b2d53d86b50af9011a9dc5f1764e069efe74c4fd92ae5c7c9ed9be2f4a55"

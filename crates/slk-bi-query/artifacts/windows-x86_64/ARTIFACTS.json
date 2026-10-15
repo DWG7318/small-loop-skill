@@ -3,39 +3,36 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "eb9a1b9496b7976526adf115446c1a8461c3a141f8fd6cc63bffb2b4a83296e0",
-        "size": 1248003
+        "sha256": "52b52773923a199441ba4a42eb9972bdafbc4825540ae756de11bfedd046f0a6",
+        "size": 1267492
       }
     ],
-    "sha256": "eb9a1b9496b7976526adf115446c1a8461c3a141f8fd6cc63bffb2b4a83296e0",
-    "size": 1248003
+    "sha256": "52b52773923a199441ba4a42eb9972bdafbc4825540ae756de11bfedd046f0a6",
+    "size": 1267492
   },
   "build": {
-    "commands": [
-      "C:\\Users\\DWG\\AppData\\Roaming\\npm\\pnpm.ps1 --dir D:\\SLK\\apps\\slk-bi tauri build --no-bundle",
-      "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
-      "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
-    ],
-    "release_batch_sha256": "79a5f2faa0ca93901ea6546bf2cec4355fe5671fb9f8c1f64fd00461a70d52a6",
-    "source_hash_mode": "sha256-raw",
-    "toolchains": [
-      "cargo 1.94.0 (85eff7c80 2026-01-15)",
-      "10.6.2",
-      "Python 3.14.0"
-    ]
+    "command": "scripts/build_release_artifacts.ps1",
+    "provenance": "BUILD-PROVENANCE.json",
+    "release": "v4.5.2-build.3",
+    "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
+      "path": "BUILD-PROVENANCE.json",
+      "sha256": "76350f8406c64db129d39a1e2585bfac9c84781b6dcd3fa0e871af51ccbe2966",
+      "size": 23845
+    },
+    {
       "path": "bin/slk-bi-query.exe",
-      "sha256": "71a2d41bf78ce586d19b8342569e92defd237dfcd5db6e5aad1d8f37dfb55545",
-      "size": 2476544
+      "sha256": "8bfc9581317596e58eb46a19fe8bc25a346c8c586b8ce19a77f8ee6c5ef8f65e",
+      "size": 2497024
     }
   ],
   "product_version": "4.5.2",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "9ffc5b249aef1db4e1f775bbffa9ee33add28a0a6cc7fbc01d44690896be04f5",
-    "Cargo.toml": "6dfb407e999adcae77ab0ff810b8e7fb5221bc33b59ebd899467e6c37f4209db",
+    "Cargo.lock": "77cdc4ffb6e2d79e42d6c7a2a066f4cc2b5cebb3a55357d987e6d65353eb4194",
+    "Cargo.toml": "32c6aa2e2981b5addd7f80f2121fa5c29bcfcfd4248791b592f4eb938db1cbab",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "882ff1ce8bb3a2465625ec674fbe217685194c9af186c97e54e1add3e5820445",
     "src/main.rs": "89a16f9a393658a7bf62ec772559ce8374167d4019ef6a7b142c073341ec5c7b",

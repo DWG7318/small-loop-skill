@@ -3,49 +3,22 @@
     "parts": [
       {
         "path": "payload.zip.part001",
-        "sha256": "58fd453ff169650e5bd796b2f96644b87449f88c491519451099dd7484964c1f",
+        "sha256": "2ad68715e5b2b4757ae2db44842ee6037f26f26b3ae18920d3e069cbf0d0947c",
         "size": 67108864
       },
       {
         "path": "payload.zip.part002",
-        "sha256": "e91efd35ece80319129aed0bffb94d1edaefe6212294a6e3e0e0f31192cba376",
-        "size": 6300709
+        "sha256": "3ccf842ca163d6901622957ccf60362eb5d01719e94ced2724545f89e96daf05",
+        "size": 6301366
       }
     ],
-    "sha256": "4226ae0df88c6e6422d6497acf73daf3f2776523dbc945ceab4d685988df6f83",
-    "size": 73409573
+    "sha256": "58b6295a5082e815aa21a1c8fee74aff8d8ca78244246a249e80046c7bc84ebb",
+    "size": 73410230
   },
   "build": {
-    "command": "scripts/tool_artifacts.py archive_module via 452 task script",
-    "current_integrations_sha256": {
-      "OCRV-SLK-CONFIGURATION.md": "847f524aff04c8bd30c8b0655bab3f6e1caa013ea921897d2617b80191384813",
-      "slk-checker-capabilities.json": "86b181cf00d3f49f9ddb2734a35b4a27bf1a8e50240c5ccb40e223f433b2f14e",
-      "slk-checker.cmd": "6223d7d9a5133919c9e2e84b39182b27816884c866ebd0ec6f7e7bf71f8d6c98",
-      "slk-native-activity-capabilities.json": "3bd6ec221f62b5d5763b5672127b918afc7e16848209af402648fcdd07ff2dda",
-      "slk_checker_adapter.py": "ef2026eddfbec95949cc3d72555aaa27348da660acee16ba77445da72597a972",
-      "slk_checker_decision.py": "73bd1cd609703d0ed4b27cf8dff414995698b407984b562dda30fa1433c5beb1",
-      "slk_checker_post_d1.py": "c81d8c473cf7ec8f9bbb71d5c6726fcff8240f462a15b5988401b580aa8a6199",
-      "slk_checker_recovery.py": "b20b917cf5cb7bf265747a02534942c185566ede1bef4c281dfc894ce9190c12"
-    },
-    "native_binary_sha256": "644cd50c1f3295e380a8da6a3d2818a8a3f585980a139ca9dfffff3a88e0f0e8",
-    "prepared_runtime_inventory_sha256": "5368701908426d4e2e258da5c91abd2ebd19aae141d34099bc89ade61403fbd2",
-    "rebuild_status": "OCRV 1.12.13-slkprobe.1.0.1 and MinGit reused unchanged; eight current SLK wrappers/configuration files overlaid. No native compilation.",
-    "reused_451_artifact": {
-      "archive_sha256": "4fc8b639b3ff6b919c9fbdabca18b31ec5f5a112e4d3ccfe77cb0b34acd79c5f",
-      "index_sha256": "2827b580a32a37f14a31c72d960ec9f54d16db1fcb87fda286b2d99787a5602f",
-      "original_build": {
-        "native_binary_sha256": "644cd50c1f3295e380a8da6a3d2818a8a3f585980a139ca9dfffff3a88e0f0e8",
-        "native_command": "go build -trimpath -buildvcs=false -ldflags \"-X main.Version=1.12.13-slkprobe.1.0.1\" ./cmd/opencodereview",
-        "native_source": "pinned fabbdb296b0d97e2140ada8d54ca7d6d6d1d7ad4 ZIP plus maintained native-probe patch",
-        "native_toolchain": "go1.26.3 windows/amd64",
-        "reproduction": "two independent extracted/patched builds produced identical executable bytes",
-        "reused_runtime": "MinGit and OCRV LICENSE from SHA-verified 4.5.0 archive; not rebuilt",
-        "runtime_inventory_sha256": "5368701908426d4e2e258da5c91abd2ebd19aae141d34099bc89ade61403fbd2",
-        "source_hash_mode": "sha256-raw"
-      },
-      "product_version": "4.5.1"
-    },
-    "scope": "452 developer archive; no deployment, native build, provider or Run calls",
+    "integration": "eight current repository integration files",
+    "native_binary": "reused 1.12.13-slkprobe.1.0.1, not recompiled",
+    "release": "v4.5.2-build.3",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
@@ -1921,8 +1894,8 @@
     },
     {
       "path": "runtime/ocrv/OCRV-SLK-CONFIGURATION.md",
-      "sha256": "847f524aff04c8bd30c8b0655bab3f6e1caa013ea921897d2617b80191384813",
-      "size": 14993
+      "sha256": "5d20a7a21ee6bea0e31dc82291346b11b9b1225b9fe07ab0a5a6d4422ba03a1e",
+      "size": 16240
     },
     {
       "path": "runtime/ocrv/bin/opencodereview.exe",
@@ -1951,13 +1924,13 @@
     },
     {
       "path": "runtime/ocrv/slk_checker_adapter.py",
-      "sha256": "ef2026eddfbec95949cc3d72555aaa27348da660acee16ba77445da72597a972",
-      "size": 54584
+      "sha256": "0e49a215f6768900fcee9c44fcb28ab55707abc3854f2093ce0b849e61345146",
+      "size": 55147
     },
     {
       "path": "runtime/ocrv/slk_checker_decision.py",
-      "sha256": "73bd1cd609703d0ed4b27cf8dff414995698b407984b562dda30fa1433c5beb1",
-      "size": 13512
+      "sha256": "977fc46d0e08f7e29b2265e0bc47e14eaf7d1c3844ec31a89351caa54cc593cd",
+      "size": 13677
     },
     {
       "path": "runtime/ocrv/slk_checker_post_d1.py",
@@ -1974,15 +1947,15 @@
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
-    "OCRV-SLK-CONFIGURATION.md": "847f524aff04c8bd30c8b0655bab3f6e1caa013ea921897d2617b80191384813",
+    "OCRV-SLK-CONFIGURATION.md": "5d20a7a21ee6bea0e31dc82291346b11b9b1225b9fe07ab0a5a6d4422ba03a1e",
     "README.md": "ff9e580e54ee0b8edff8db9bb51a33c21b8289581e06e9704bb6be8f62cd1a26",
     "install.ps1": "779bbf213b9c801d4863e951cf79dd878c72cb5c68294d5c5f4b9e66223da339",
     "rollback.ps1": "40e199163095cdda1825865544c9771beaf1f36c9ec4e74fb35c3d634fa9c564",
     "slk-checker-capabilities.json": "86b181cf00d3f49f9ddb2734a35b4a27bf1a8e50240c5ccb40e223f433b2f14e",
     "slk-checker.cmd": "6223d7d9a5133919c9e2e84b39182b27816884c866ebd0ec6f7e7bf71f8d6c98",
     "slk-native-activity-capabilities.json": "3bd6ec221f62b5d5763b5672127b918afc7e16848209af402648fcdd07ff2dda",
-    "slk_checker_adapter.py": "ef2026eddfbec95949cc3d72555aaa27348da660acee16ba77445da72597a972",
-    "slk_checker_decision.py": "73bd1cd609703d0ed4b27cf8dff414995698b407984b562dda30fa1433c5beb1",
+    "slk_checker_adapter.py": "0e49a215f6768900fcee9c44fcb28ab55707abc3854f2093ce0b849e61345146",
+    "slk_checker_decision.py": "977fc46d0e08f7e29b2265e0bc47e14eaf7d1c3844ec31a89351caa54cc593cd",
     "slk_checker_post_d1.py": "c81d8c473cf7ec8f9bbb71d5c6726fcff8240f462a15b5988401b580aa8a6199",
     "slk_checker_recovery.py": "b20b917cf5cb7bf265747a02534942c185566ede1bef4c281dfc894ce9190c12"
   },
