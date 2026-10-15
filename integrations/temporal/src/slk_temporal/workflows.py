@@ -436,12 +436,23 @@ class RunSlkWorkflow:
             pass
         await self._perform_runtime_checks()
 
+    def _runtime_checks_closed(self) -> bool:
+        # A close update can arrive while an Activity is in flight. Preserve
+        # historical commands on replay, but start no more checks/notices for
+        # this terminal Run. Already attempted notification results stay intact.
+        return (self._continuity is not None and self._continuity.is_terminal()
+                and workflow.patched("slk-run-close-stops-runtime-checks"))
+
     async def _perform_runtime_checks(self) -> None:
+        if self._runtime_checks_closed():
+            return
         self._notification_truth = workflow.patched("slk-4.5.1-notification-truth")
         now = workflow.now()
         if self._next_overwatcher_audit_at is not None and now >= self._next_overwatcher_audit_at:
             pending = list(self._pending_supervisor_notifications.values())
             await self._inspect_overwatcher()
+            if self._runtime_checks_closed():
+                return
             self._next_overwatcher_audit_at = (
                 (now if self._notification_truth else self._next_overwatcher_audit_at) + OVERWATCHER_AUDIT_INTERVAL
             )
@@ -452,6 +463,8 @@ class RunSlkWorkflow:
                 if (delivered and notice["kind"] == "MEMBER_RESIDENCY_EXCEEDED"
                     and notice["source_operation_id"] == self._responsibility_operation_id):
                     self._member_residency_notice_sent = True
+                if self._runtime_checks_closed():
+                    return
         member_deadline = (
             self._member_residency_since + MEMBER_RESIDENCY_LIMIT
             if self._member_residency_since is not None
@@ -484,6 +497,8 @@ class RunSlkWorkflow:
     async def _inspect_overwatcher(self) -> None:
         if self._startup is None:
             raise ValueError("SLK Run has not initialized")
+        if self._runtime_checks_closed():
+            return
         overwatcher = self._startup.overwatcher
         if overwatcher is None:
             raise RuntimeError("mandatory Overwatcher binding is missing")
@@ -503,6 +518,8 @@ class RunSlkWorkflow:
                 retry_policy=ONE_ATTEMPT,
                 activity_id=f"audit-{overwatcher.role_instance_id}-{self._overwatcher_audit_cycle}",
             )
+            if self._runtime_checks_closed():
+                return
             receipt = _closed_receipt(
                 receipt,
                 {
@@ -524,6 +541,8 @@ class RunSlkWorkflow:
                     or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)):
                     raise ValueError("Overwatcher audit evidence identity is invalid")
         except Exception:
+            if self._runtime_checks_closed():
+                return
             blocker = self._set_runtime_guard(
                 event_id=f"{self._startup.run_id}-overwatcher-audit-{self._overwatcher_audit_cycle}",
                 kind="OVERWATCHER_AUDIT_FAILED",
@@ -560,6 +579,8 @@ class RunSlkWorkflow:
         return blocker
 
     async def _notify_supervisor(self, value: dict[str, Any]) -> bool:
+        if self._runtime_checks_closed():
+            return False
         strict = workflow.patched("slk-441-native-supervisor-notice")
         self._notification_truth = workflow.patched("slk-4.5.1-notification-truth")
         retrying = value["event_id"] in self._pending_supervisor_notifications
