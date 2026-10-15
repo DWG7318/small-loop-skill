@@ -24,10 +24,10 @@ export function groupTone(groupKey: string) {
 }
 
 function SegmentedProgress({ passed, total, tone }: { passed: number; total: number; tone: string }) {
-  const segments = total <= 8 ? 8 : total <= 16 ? 16 : 24;
-  const filled = total > 0
-    ? passed >= total ? segments : Math.min(segments - 1, Math.floor((passed / total) * segments))
-    : 0;
+  const segments = Math.min(total, 30);
+  const filled = total <= 30
+    ? Math.min(passed, segments)
+    : passed >= total ? segments : Math.min(segments - 1, Math.floor((passed / total) * segments));
   return (
     <span
       className="segmented-progress"
@@ -36,7 +36,9 @@ function SegmentedProgress({ passed, total, tone }: { passed: number; total: num
       aria-valuemin={0}
       aria-valuemax={total}
       aria-valuenow={passed}
-      title={`CELL 进度比例概览 ${passed}/${total}，每格不对应具体 CELL`}
+      title={total > 30
+        ? `CELL 进度比例概览 ${passed}/${total}，30 格按比例显示，不对应具体 CELL`
+        : `CELL 进度 ${passed}/${total}，每格代表 1 个 CELL 的完成数量`}
     >
       {Array.from({ length: segments }, (_, index) => (
         <span key={index} className={index < filled ? `segment segment-${tone}` : "segment"} />

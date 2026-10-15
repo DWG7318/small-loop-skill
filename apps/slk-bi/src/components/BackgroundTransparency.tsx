@@ -1,12 +1,18 @@
 import { useLayoutEffect, useState } from "react";
 
-const LEVELS = [20, 40, 60, 80] as const;
 const STORAGE_KEY = "le-bi:background-transparency:v1";
+
+function isLevel(value: number) {
+  return Number.isInteger(value) && value >= 0 && value <= 100;
+}
 
 function savedLevel() {
   try {
-    const value = Number(window.localStorage.getItem(STORAGE_KEY));
-    if (LEVELS.some((level) => level === value)) return value;
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored !== null && stored.trim() !== "") {
+      const value = Number(stored);
+      if (isLevel(value)) return value;
+    }
   } catch { /* A local display preference must not block BI. */ }
   return 20;
 }
@@ -25,15 +31,13 @@ export function BackgroundTransparency({ surface }: { surface: "desktop" | "web"
     };
   }, [level, surface]);
 
-  return <label className="background-transparency" title={surface === "desktop"
-    ? "仅框体和背景透明，文字与图标保持不透明"
-    : "仅框体和背景透出页面底色，文字与图标保持不透明"}>
+  return <label className="background-transparency">
     <span>背景透明度</span>
-    <select aria-label="背景透明度" value={level} onChange={(event) => {
+    <input type="range" aria-label="背景透明度" aria-valuetext={`${level}%`}
+      min={0} max={100} step={1} value={level} onChange={(event) => {
       const next = Number(event.target.value);
-      if (LEVELS.some((item) => item === next)) setLevel(next);
-    }}>
-      {LEVELS.map((item) => <option key={item} value={item}>{item}%</option>)}
-    </select>
+      if (isLevel(next)) setLevel(next);
+    }} />
+    <span className="background-transparency-value">{level}%</span>
   </label>;
 }

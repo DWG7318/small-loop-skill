@@ -349,7 +349,6 @@ export function App({ api = tauriApi }: AppProps) {
 
       <section id="appearance-settings" className="appearance-settings" aria-label="BI 设置" hidden={!settingsVisible}>
         <BackgroundTransparency surface="desktop" />
-        <span>只调框体和背景，文字、图标保持不透明</span>
       </section>
 
       {appState ? (

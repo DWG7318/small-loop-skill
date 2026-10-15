@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -86,15 +86,18 @@ describe("LE BI shell", () => {
 
     expect(await screen.findByText("1.1.2")).toBeVisible();
     expect(screen.getByText("Workstation A · device-a")).toBeVisible();
-    expect(screen.queryByRole("combobox", { name: "背景透明度" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider", { name: "背景透明度" })).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.getByRole("combobox", { name: "背景透明度" })).toBeVisible();
-    await userEvent.setup().selectOptions(screen.getByRole("combobox", { name: "背景透明度" }), "60");
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toBeVisible();
+    expect(screen.queryByText("只调框体和背景，文字、图标保持不透明")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("slider", { name: "背景透明度" }), { target: { value: "100" } });
     await userEvent.setup().click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.queryByRole("combobox", { name: "背景透明度" })).not.toBeInTheDocument();
-    expect(document.documentElement.style.getPropertyValue("--bi-surface-opacity")).toBe("40%");
+    expect(screen.queryByRole("slider", { name: "背景透明度" })).not.toBeInTheDocument();
+    expect(document.documentElement.style.getPropertyValue("--bi-surface-opacity")).toBe("0%");
     await userEvent.setup().click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.getByRole("combobox", { name: "背景透明度" })).toHaveValue("60");
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveValue("100");
+    fireEvent.change(screen.getByRole("slider", { name: "背景透明度" }), { target: { value: "37" } });
+    expect(document.documentElement.style.getPropertyValue("--bi-surface-opacity")).toBe("63%");
   });
 
   it("clears archived disclosure when its archive surface closes", async () => {

@@ -131,9 +131,19 @@ describe("WebBI 1.1 browser UI", () => {
     expect(await screen.findByRole("heading", { name: "Run 一览" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "全部" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "进行中" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("combobox", { name: "背景透明度" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider", { name: "背景透明度" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.getByRole("combobox", { name: "背景透明度" })).toBeVisible();
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toBeVisible();
+    expect(screen.queryByText("只调框体和背景，文字、图标保持不透明")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("slider", { name: "背景透明度" }), { target: { value: "100" } });
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.queryByRole("slider", { name: "背景透明度" })).not.toBeInTheDocument();
+    expect(document.documentElement.style.getPropertyValue("--bi-surface-opacity")).toBe("0%");
+    expect(document.documentElement.dataset.biSurface).toBe("web");
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveValue("100");
+    fireEvent.change(screen.getByRole("slider", { name: "背景透明度" }), { target: { value: "37" } });
+    expect(document.documentElement.style.getPropertyValue("--bi-surface-opacity")).toBe("63%");
     expect(screen.getByText((_, element) => element?.textContent === "电脑 Workstation A · device-a")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: /Close flow/ }));

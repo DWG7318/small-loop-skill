@@ -22,7 +22,7 @@ Every collapsed row is one SLK Run and shows, left to right:
 2. origin: independent, `CLK · project`, or `GLK · project`;
 3. project name, short Run name, and one-line description;
 4. total recorded work duration;
-5. proportional segmented progress in eight columns within a 62 px footprint: 8 segments for 0–8 effective CELLs, 16 for 9–16, and 24 for 17 or more; incomplete work never fills every segment;
+5. segmented progress in ten equal-width columns with a consistent gap within a 62 px footprint: 0–30 effective CELLs use exactly that many segments, with no placeholders and a naturally shorter final row; totals above 30 use 30 proportional segments across three rows, never all filled before true completion. Exact counts remain in text and accessible progress values; this drawing cap never limits the plan or CELL records;
 6. passed/total CELL count and current CELL work duration;
 7. factual state or current responsibility;
 8. SLK version;
@@ -46,7 +46,7 @@ LE BI does not render a timeline, inspector, project rail, SLK TOKEN payload, ra
 
 The archive button toggles an in-window archive section. `closed`, `abandoned`, and `superseded` SLKs enter it immediately and independently of any parent project. Archived rows keep the same expansion behavior and the user's selected background alpha, never a parent-opacity fade of their text. Hiding the archive or removing the expanded Run from the visible source clears its disclosure and detail-height budget.
 
-Background transparency has four explicit steps: 20%, 40%, 60% and 80%, default 20%, saved as a local view preference. It affects frame/background colors only; do not use window or parent-element opacity. Startup/render-failure fallback stays opaque. Desktop and WebBI share the selector; the browser can reveal only its own page canvas.
+Background transparency uses a standard range input from 0% to 100% in 1% steps, with the current percentage shown, default 20%, saved under the existing local view preference key. Explicit 0% and prior 20%/40%/60%/80% choices restore; missing, blank or invalid values fall back to 20%, and unavailable storage never blocks the control. It affects frame/background colors only; do not use window or parent-element opacity. Text, icons and controls remain opaque and interactive even at 100%. Startup/render-failure fallback stays opaque. Desktop and WebBI share the slider; the browser can reveal only its own page canvas. Do not add redundant transparency helper copy or a matching title tooltip.
 
 ## Status and time
 

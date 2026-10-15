@@ -30,7 +30,7 @@ Completed, abandoned, and superseded SLKs leave the active surface immediately a
 
 Compact, factual, and calm, with the restrained feel of a 1990s engineering calculator: muted LCD surfaces, monospaced data, segmented progress, thin rules, and small beveled controls. No command-center spectacle, card grid, decorative telemetry, or fake live animation.
 
-The title bar's top-right Settings gear opens background transparency of 20%, 40%, 60% or 80% (default 20%), saved locally. Closing Settings preserves the choice. Only frame/background colors change alpha; text and icons remain opaque. WebBI offers the same control against its page canvas, not the operating-system desktop. Loading and unmounted failure surfaces retain an opaque fallback.
+The title bar's top-right Settings gear opens a standard background-transparency slider from 0% to 100% in 1% steps (default 20%), with the current percentage shown and saved locally. Closing Settings preserves the choice, including 0% and prior four-step preferences. Only frame/background colors change alpha; text and icons remain opaque, and controls remain interactive at 100%. WebBI offers the same control against its page canvas, not the operating-system desktop. Loading and unmounted failure surfaces retain an opaque fallback.
 
 ## Accessibility
 

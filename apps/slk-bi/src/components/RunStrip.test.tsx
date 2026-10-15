@@ -2,10 +2,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import { buildRunStripView, type RunStripView } from "../runPresentation";
 import { runFixture, twoRunFixture } from "../test/fixtures";
 import { groupTone, RunStrip } from "./RunStrip";
+
+const appStyles = readFileSync("src/styles/app.css", "utf8");
 
 afterEach(cleanup);
 
@@ -15,21 +18,58 @@ function InteractiveStrip({ view }: { view: RunStripView }) {
 }
 
 describe("RunStrip", () => {
-  it.each([[0, 8], [1, 8], [8, 8], [9, 16], [16, 16], [17, 24], [24, 24], [25, 24], [1000, 24]])(
-    "shows %i effective CELLs in %i proportional segments without premature full progress", (total, segments) => {
+  it.each([0, 1, 4, 10, 11, 20, 21, 30, 31, 100])(
+    "shows %i effective CELLs exactly up to 30, proportionally above 30", (total) => {
+      const segments = Math.min(total, 30);
       const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());
-      view.progress = { total, passed: Math.max(0, total - 1) };
+      view.progress = { total, passed: 0 };
+      const before = JSON.stringify(view);
       const { rerender } = render(<RunStrip view={view} />);
       const progress = screen.getByRole("progressbar");
       expect(progress.children).toHaveLength(segments);
       expect(progress).toHaveAttribute("aria-valuemax", String(total));
-      expect(progress).toHaveAttribute("aria-valuenow", String(view.progress.passed));
-      expect(progress).toHaveAttribute("title", expect.stringContaining("比例概览"));
-      expect(progress.querySelectorAll(".segment-active").length).toBeLessThan(segments);
-      rerender(<RunStrip view={{ ...view, progress: { total, passed: total } }} />);
-      expect(progress.querySelectorAll(".segment-active")).toHaveLength(total ? segments : 0);
+      expect(progress).toHaveAttribute("title", total > 30
+        ? `CELL 进度比例概览 0/${total}，30 格按比例显示，不对应具体 CELL`
+        : `CELL 进度 0/${total}，每格代表 1 个 CELL 的完成数量`);
+      for (const passed of new Set([0, Math.floor(total / 2), Math.max(0, total - 1), total])) {
+        rerender(<RunStrip view={{ ...view, progress: { total, passed } }} />);
+        expect(progress).toHaveAttribute("aria-valuenow", String(passed));
+        expect(progress).toHaveAccessibleName(`CELL 进度 ${passed}/${total}`);
+        expect(screen.getByText(`${passed}/${total} CELL`, { exact: false })).toBeVisible();
+        const filled = total > 30 ? Math.floor(passed / total * 30) : passed;
+        expect(progress.querySelectorAll(".segment-active")).toHaveLength(filled);
+        if (passed < total) expect(filled).toBeLessThan(segments);
+      }
+      expect(JSON.stringify(view)).toBe(before);
     },
   );
+
+  it("uses ten equal columns with one gap size and no placeholder segments", () => {
+    const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());
+    view.progress = { total: 21, passed: 4 };
+    render(<><style>{appStyles}</style><RunStrip view={view} /></>);
+    const progress = screen.getByRole("progressbar");
+    const style = getComputedStyle(progress);
+    expect(style.gridTemplateColumns).toBe("repeat(10, minmax(0, 1fr))");
+    expect(style.gap).toBe("2px");
+    expect(style.width).toBe("62px");
+    expect(progress.querySelectorAll(".segment")).toHaveLength(21);
+    expect(getComputedStyle(progress.children[0]!).width).toBe("100%");
+  });
+
+  it("caps only the progress drawing and keeps all 100 CELL records unchanged", () => {
+    const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());
+    view.cells = Array.from({ length: 100 }, (_, index) => ({
+      ...view.cells[0]!, cellId: `cell-${index}`, id: `CELL ${index + 1}`, name: `Execution ${index + 1}`,
+    }));
+    view.progress = { total: 100, passed: 99 };
+    const before = JSON.stringify(view);
+    render(<RunStrip view={view} open />);
+    expect(screen.getByRole("progressbar").children).toHaveLength(30);
+    expect(screen.getByRole("list", { name: "Close flow CELL 记录" }).children).toHaveLength(100);
+    expect(screen.getByText("Execution 100")).toBeInTheDocument();
+    expect(JSON.stringify(view)).toBe(before);
+  });
 
   it("renders the shared newest-first presentation unchanged and keeps every CELL reachable", async () => {
     const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());

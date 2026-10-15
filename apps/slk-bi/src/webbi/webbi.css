@@ -189,9 +189,9 @@ code { font-family: var(--webbi-mono); font-variant-numeric: tabular-nums; }
 .webbi-appearance-button + .webbi-settings-link { margin-left: 8px; }
 .webbi-appearance-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 14px max(20px, calc((100vw - 1120px) / 2)); border-bottom: 1px solid var(--webbi-line); color: var(--webbi-secondary); font-size: 12px; }
 .webbi-appearance-settings[hidden] { display: none; }
-.webbi-appearance-settings .background-transparency { color: var(--webbi-ink); font: 13px/1 var(--webbi-sans); }
-.webbi-appearance-settings .background-transparency select { min-height: 38px; border: 1px solid var(--webbi-line); border-radius: 5px; color: var(--webbi-ink); background: transparent; }
-.webbi-appearance-settings .background-transparency option { color: var(--webbi-ink); background: var(--webbi-surface); }
+.webbi-appearance-settings .background-transparency { display: inline-flex; align-items: center; gap: 8px; color: var(--webbi-ink); font: 13px/1 var(--webbi-sans); white-space: nowrap; }
+.webbi-appearance-settings .background-transparency input[type="range"] { width: 128px; min-height: 38px; margin: 0; background: transparent; accent-color: var(--webbi-accent); cursor: pointer; }
+.webbi-appearance-settings .background-transparency-value { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 html[data-bi-surface="web"] :is(.webbi-header, .webbi-run-list, .webbi-search, .webbi-settings, .webbi-appearance-settings) {
   background: color-mix(in srgb, var(--webbi-surface) var(--bi-surface-opacity), transparent);
   border-color: color-mix(in srgb, var(--webbi-line) var(--bi-surface-opacity), transparent);
