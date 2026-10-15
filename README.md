@@ -2,6 +2,8 @@
 
 Current source version: **4.5.2**. See the [452 changes](CHANGELOG.md) and [validation evidence](VALIDATION-REPORT.md). Installation is confirmed by the target machine's installation receipt, not this version label. Existing Run identities and their historical method versions are not relabeled.
 
+This development branch also contains **BI/WebBI 1.1.3** and the reviewed Run09 repairs, with [local precompiled candidates and verification](docs/maintenance/reports/2026-10-15-bi113-run09-implementation-result.md). These candidates are not published or deployed; the published module map below remains the previous release. BI 1.1.3 uses actual CELL segments (ten per row, up to three rows), verified initial-plus-split counts, and a 0–100% transparency slider in 1% steps. The 4.x repair release number is not assigned; SLK 3.1.0 remains deferred.
+
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 
 ## Core
