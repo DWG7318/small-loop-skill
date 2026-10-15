@@ -1205,7 +1205,7 @@ def test_context_unknown_does_not_accept_false_numeric_facts(tmp_path, field, in
 
 @pytest.mark.parametrize("method_version", ["4.4.3", "4.4.4", "4.4.5"])
 @pytest.mark.parametrize("receipt_method", ["4.4.2", "4.4.3"])
-@pytest.mark.parametrize("bi_version", ["1.1.1", "1.1.2"])
+@pytest.mark.parametrize("bi_version", ["1.1.1", "1.1.2", "1.1.3", "1.1.47"])
 def test_current_readiness_accepts_compatible_bi_patch_with_legacy_receipt_label(tmp_path, receipt_method, method_version, bi_version):
     request = _request(tmp_path, method_version=method_version)
     path = Path(request["bi_open_receipt"])
@@ -1216,6 +1216,14 @@ def test_current_readiness_accepts_compatible_bi_patch_with_legacy_receipt_label
     receipt["bi_version"] = bi_version
     write_json(path, receipt)
     assert evaluate_run_readiness(request)["status"] == "READY"
+
+
+@pytest.mark.parametrize("version", ["1.1.-1", "1.1.3-beta", "1.1.03", "1.2.0", "2.0.0", 113, None])
+def test_bi_readiness_rejects_unproven_release_family(tmp_path, version):
+    request = _request(tmp_path, method_version="4.4.5")
+    path = Path(request["bi_open_receipt"])
+    write_json(path, {**json.loads(path.read_text()), "bi_version": version})
+    assert "BI_OPEN_RECEIPT_INVALID" in evaluate_run_readiness(request)["reason_codes"]
 
 
 def test_unconfirmed_or_missing_optional_feature_keeps_run_in_preparation(tmp_path: Path) -> None:

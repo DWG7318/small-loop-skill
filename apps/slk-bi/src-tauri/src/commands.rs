@@ -185,7 +185,7 @@ pub fn validate_sync_payload(payload: &Value, expected_device_id: &str) -> Resul
     if object.get("schema_version").and_then(Value::as_str) != Some("slk.bi.upload/v1")
         || !matches!(
             object.get("bi_version").and_then(Value::as_str),
-            Some("1.1.0") | Some("1.1.1") | Some(BI_VERSION)
+            Some("1.1.0") | Some("1.1.1") | Some("1.1.2") | Some(BI_VERSION)
         )
     {
         return Err("SLK_WEBBI_UPLOAD_VERSION_UNSUPPORTED".into());
