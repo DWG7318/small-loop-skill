@@ -46,7 +46,9 @@ def test_bi_supports_background_alpha_with_opaque_fallback_and_single_instance()
 
     styles = (ROOT / "apps/slk-bi/src/styles/app.css").read_text(encoding="utf-8")
     control = (ROOT / "apps/slk-bi/src/components/BackgroundTransparency.tsx").read_text(encoding="utf-8")
-    assert '[20, 40, 60, 80]' in control
+    assert 'type="range"' in control
+    assert 'min={0} max={100} step={1}' in control
+    assert '<select' not in control
     assert 'color-mix(in srgb, var(--group-bg) var(--bi-surface-opacity), transparent)' in styles
     assert 'html[data-bi-surface="desktop"]' in styles
     assert 'delete root.dataset.biSurface' in control

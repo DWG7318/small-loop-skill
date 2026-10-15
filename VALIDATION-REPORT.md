@@ -1,5 +1,21 @@
 # Validation Report — SLK 4.5.2
 
+## 2026-10-15 — BI 1.1.3 and Run09 repair delivery (build 3)
+
+The [implementation report](docs/maintenance/reports/2026-10-15-bi113-run09-implementation-result.md)
+records the source fixes, independent reviews, 1760-test transport regression,
+isolated Temporal replay and their explicit limits. Publication does not convert
+historical audit 83's unproven cause into a verified diagnosis.
+
+Fresh delivery checks passed: frontend 221 tests in 20 files plus typecheck;
+Rust workspace 198 tests; 97 state/recovery/closure cases against the actual
+release state/query executables. The final five-artifact production batch was
+rebuilt after pinning the new independent core. Its production BI fingerprint
+and sealed source/output provenance pass; all seven consumer archives restore
+with exact payload and current source hashes. No real provider or live Run was
+used as a deployment test. Native headless startup is not visual acceptance.
+Actual publication/install/cleanup status is tracked in the [delivery record](docs/maintenance/2026-10-15-bi113-build3-delivery.md).
+
 ## 2026-10-14 — final Windows clock-boundary correction (build 2)
 
 The first main CI at `33197f4` passed Ubuntu but failed three Windows Python

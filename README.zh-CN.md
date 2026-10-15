@@ -2,7 +2,7 @@
 
 当前源码版本：**4.5.2**。详见[452改动](CHANGELOG.md)与[验证记录](VALIDATION-REPORT.md)。是否已安装以目标电脑的安装回执为准，不由版本文字推断；历史 Run 的身份和版本不改写。Supervisor 在项目期间保持 active、有界原生等待，不退出等直属 OW 唤醒；Worker/Checker 仍先结束工程再最后交接。Owner 叫停优先，真实宿主中断不得伪称持续在线。
 
-本开发分支另包含 **BI/WebBI 1.1.3** 与已复核的 Run09 维修，已准备[本地预编译候选及验证记录](docs/maintenance/reports/2026-10-15-bi113-run09-implementation-result.md)，**尚未发布或部署**；下文已发布模块映射仍属上一版。BI 1.1.3 按真实数量显示格子（每行十格、最多三行）、有依据时显示初始＋拆分净增，并提供 0–100%、步长 1% 的透明度滑条。4.x 维修发布号尚未确定，SLK 3.1.0 继续暂缓。
+**BI/WebBI 1.1.3** 与已复核的 Run09 维修共同组成 **SLK 4.5.2 build.3**，详见[实现验证](docs/maintenance/reports/2026-10-15-bi113-run09-implementation-result.md)和[交付状态](docs/maintenance/2026-10-15-bi113-build3-delivery.md)。BI 按真实数量显示格子（每行十格、最多三行），有依据时显示初始＋拆分净增，并提供 0–100%、步长 1% 的透明度滑条。格子上限仅用于显示，不限制 Run 的 CELL 数。使用预编译 Windows 成品，普通安装不需要编译；SLK 3.1.0 继续暂缓。
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小工程 Run，或大型工程中相对独立的范围。一个 SLK 就是一个 Run，只含一条串行 CELL 路径。
 
@@ -17,7 +17,7 @@ Overwatcher：Supervisor 必需的直属 subagent，只观察并向所属 Superv
 Temporal：必需的连续性与计时保障，不拥有工程权威
 ```
 
-任何 CELL 开工前，Supervisor 打开预编译 BI（当前兼容补丁：1.1.2），通过 `preflight-basic` 确认已安装 SLK、DSH/OCRV、Skill、工具、状态、共用 Temporal，以及准确的角色身份/端点。成员接受简短角色说明和角色 eval；检查必需的正常直连通讯，不模拟一整轮工程。严格通讯演练保留为开发/回归工具，不再成为普通开工依赖。缺项采用预制配置和排障建议，未知问题由 Supervisor 决定。十分钟检查、二十分钟准备只是效率建议，不是截止、失败或停止门槛。使用者调用成品，不在每次开工编译或重建依赖。
+任何 CELL 开工前，Supervisor 打开预编译 BI（当前兼容补丁：1.1.3），通过 `preflight-basic` 确认已安装 SLK、DSH/OCRV、Skill、工具、状态、共用 Temporal，以及准确的角色身份/端点。成员接受简短角色说明和角色 eval；检查必需的正常直连通讯，不模拟一整轮工程。严格通讯演练保留为开发/回归工具，不再成为普通开工依赖。缺项采用预制配置和排障建议，未知问题由 Supervisor 决定。十分钟检查、二十分钟准备只是效率建议，不是截止、失败或停止门槛。使用者调用成品，不在每次开工编译或重建依赖。
 
 Codex 担任 Supervisor，固定 canonical `gpt-6.1-sol`，每个 Run 由 Owner 选择 `high` 或 `xhigh`；OCRV 担任 Checker（Qwen3.8-Max）；DSH 担任 Worker（DeepSeek V4 Flash）。runtime、model、reasoning、Session、adapter、endpoint 与原生活动都由工具验证，不从提示词推断。Supervisor 还要按 DSH 实际能力给冻结方案定 CELL：大工作在派工前拆成可独立 D0/D1 的中小 CELL，不降低验收。目标是绝大部分 CELL 首轮 D1 PASS；第二次连续正式 D1 FAIL 后加强调查并考虑版本化拆分未接受范围，这是施工指引而非输出否决器，D1 权威仍属于 Checker。
 
@@ -31,7 +31,7 @@ Run 的测试、复核与验收仍归入 D0、D1、D2，不另建纯检验 CELL�
 
 ## 状态与 BI
 
-SLK 使用版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出和只读 LE BI。BI/WebBI 1.1.2 显示设备/版本、四角色身份、Agent 明确标注的新消息和归档 Run；正常工作显示绿色，未开工 CELL 详情隐藏，最新施工记录优先。右上角设置齿轮可选择背景透明度，文字与图标保持不透明；加载或渲染失败时保留可见的回退页面，避免意外打开第二个实例。桌面 BI 为主体，WebBI 仅接收桌面 BI 上传的各设备独立投影，并同步其显示规则；ntfy 可用服务器 URL、用户名、密码、Topic 四项配置。BI/WebBI 不推断消息类型，也不修改工程事实。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
+SLK 使用版本化 SQLite 权威状态、耐久证据、确定性 Markdown 导出和只读 LE BI。BI/WebBI 1.1.3 显示设备/版本、四角色身份、Agent 明确标注的新消息和归档 Run；正常工作显示绿色，未开工 CELL 详情隐藏，最新施工记录优先。右上角设置齿轮可选择背景透明度，文字与图标保持不透明；加载或渲染失败时保留可见的回退页面，避免意外打开第二个实例。桌面 BI 为主体，WebBI 仅接收桌面 BI 上传的各设备独立投影，并同步其显示规则；ntfy 可用服务器 URL、用户名、密码、Topic 四项配置。BI/WebBI 不推断消息类型，也不修改工程事实。详见 [`docs/state/SLK-STATE.md`](docs/state/SLK-STATE.md) 与 [`docs/state/SLK-BI.md`](docs/state/SLK-BI.md)。
 
 ## Skill 集合
 

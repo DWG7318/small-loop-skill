@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "a3cb031229cc4afe28e46ebb0760d05d95bf9034269f1e8c5f05b8e87b90e9d0"
+      "sha256": "7eabd605f7cdfa27ae20d870016fbb38d825f1a2d2ab604413e6f1a154c1f6ce"
     },
     {
       "path": "Cargo.lock",
@@ -48,15 +48,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "fd4c28d5ab3d18f0bc24bd61374fe0ca57061995c41c0d3a8c8a22405d76b200"
+      "sha256": "2c1e3e2c86ba904adb4f58d004142441339d0fe226d24b5d9b400615bdcf7a62"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "53621ff9fe754f2a1c17142ff9e91e4dc28503a4a99734ab4faf3f56b5050f05"
+      "sha256": "43e8af3b13cb12905732f71eb90644d252f77a76dc6942a854666ad6b4e24b23"
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "3536bbf6888c48551cd4fcff012f80712646e7bb2fb8b692e6cde4679341216e"
+      "sha256": "a8bf3743b9a2fd884421a7b87c34bb0920f0dd5f0055c9f9e0f69e5cd54c5c16"
     },
     {
       "path": "VERSION",
@@ -72,11 +72,11 @@
     },
     {
       "path": "apps/slk-bi/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "85a625490f5a87a6e9f3a674b317c2e99f773a68b14e58195a45d919298ccf62"
+      "sha256": "e0921bd6bd62102bc06741c29ecae46d541ecbecd0e00dfe8da3df8ae5490092"
     },
     {
       "path": "apps/slk-bi/artifacts/windows-x86_64/payload.zip",
-      "sha256": "2211e23fa3e6ab0a2eae71eb9100cb1d4b60f8073a623dac0af9f6f6c6851573"
+      "sha256": "5bcccd746a247cacac0ad07be95758e9dd75884b670c2ca33f6c3dcc57a0852e"
     },
     {
       "path": "apps/slk-bi/index.html",
@@ -92,11 +92,11 @@
     },
     {
       "path": "apps/slk-bi/src-tauri/Cargo.lock",
-      "sha256": "f140044012da5fa7d43bfa0af6351cd925291112ec9e5b0089cc4e906c5c249e"
+      "sha256": "2d12ecfdfbaa8150eb63b9e3f14b382292c925b110da46d9ab6774ae40cb87ca"
     },
     {
       "path": "apps/slk-bi/src-tauri/Cargo.toml",
-      "sha256": "67edab8b211f775b9923fe5acb522dabd1f673d2456cc56886dc9c36fd9b058e"
+      "sha256": "cc9082376c256036964af93c79c3eb8b65026dbe796bcc14e9137e2b22e3558c"
     },
     {
       "path": "apps/slk-bi/src-tauri/build.rs",
@@ -568,11 +568,11 @@
     },
     {
       "path": "crates/slk-bi-query/Cargo.lock",
-      "sha256": "9ffc5b249aef1db4e1f775bbffa9ee33add28a0a6cc7fbc01d44690896be04f5"
+      "sha256": "77cdc4ffb6e2d79e42d6c7a2a066f4cc2b5cebb3a55357d987e6d65353eb4194"
     },
     {
       "path": "crates/slk-bi-query/Cargo.toml",
-      "sha256": "6dfb407e999adcae77ab0ff810b8e7fb5221bc33b59ebd899467e6c37f4209db"
+      "sha256": "32c6aa2e2981b5addd7f80f2121fa5c29bcfcfd4248791b592f4eb938db1cbab"
     },
     {
       "path": "crates/slk-bi-query/LICENSE",
@@ -584,11 +584,11 @@
     },
     {
       "path": "crates/slk-bi-query/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "7204c2576e78c7b189399dd01b9b84ce98b931a75e8a8e34d68b60bd915d3864"
+      "sha256": "25d38a62c98e3b817e194c1af3f5f5cfce67e06f6b6302bc817ec064f51c4367"
     },
     {
       "path": "crates/slk-bi-query/artifacts/windows-x86_64/payload.zip",
-      "sha256": "eb9a1b9496b7976526adf115446c1a8461c3a141f8fd6cc63bffb2b4a83296e0"
+      "sha256": "52b52773923a199441ba4a42eb9972bdafbc4825540ae756de11bfedd046f0a6"
     },
     {
       "path": "crates/slk-bi-query/src/main.rs",
@@ -600,11 +600,11 @@
     },
     {
       "path": "crates/slk-cargo/Cargo.lock",
-      "sha256": "5c78019c03aac6475406712dba09385ac7764854b13d6932be3e63ac01e56924"
+      "sha256": "b863b6e77efc37e01c633e9dbf49e38babdc9e89e38d1e7d54b677b70ab9b338"
     },
     {
       "path": "crates/slk-cargo/Cargo.toml",
-      "sha256": "2a7f66160f3782a191139950ce33e857c025d105786c1bca2f774c09abd49a91"
+      "sha256": "c65964c450f56898ba7d0b09a1e91f72cb93caab2b805f6d3a30cd7ff2e2465f"
     },
     {
       "path": "crates/slk-cargo/LICENSE",
@@ -616,11 +616,11 @@
     },
     {
       "path": "crates/slk-cargo/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "74314b2e92666675f67eefd5ef1e9fcf1594b0bcdf0871ee318a8270968c3167"
+      "sha256": "f3650787d5a74c314daf1acc5124b6e7335cb449e4813763f81ed6f01bb77ad2"
     },
     {
       "path": "crates/slk-cargo/artifacts/windows-x86_64/payload.zip",
-      "sha256": "e5e5e3cb0a67da99183e4fab31d4ece258c111414ce03113daaafeb9d015e4c6"
+      "sha256": "b825114683b666f352b8c65ab2471ec0394733aa0e1ce7efecf2580669b0ae69"
     },
     {
       "path": "crates/slk-cargo/src/args.rs",
@@ -664,11 +664,11 @@
     },
     {
       "path": "crates/slk-state-cli/Cargo.lock",
-      "sha256": "05002b443f02245f2c2bce7cf133ab54536cc37e9ce0947d252d493fe8aa0c35"
+      "sha256": "7c67d8f5e441505c475edc27f2bd2f6a824b43e6c7040445400bd828ba282313"
     },
     {
       "path": "crates/slk-state-cli/Cargo.toml",
-      "sha256": "419684b8f49eb6cfd66ac79e843b400a984252e8f782fabbf064353882fc2537"
+      "sha256": "5a049240deea51df24a3e1e8c823481491245b55284c9dc72a3725683693053c"
     },
     {
       "path": "crates/slk-state-cli/LICENSE",
@@ -680,11 +680,11 @@
     },
     {
       "path": "crates/slk-state-cli/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "1dca7adf064a80226a3f8478ef6aaef4a2eb7997b8273bb91a5988f9e41149e6"
+      "sha256": "dcd37697e4dbede8b1738b05495dab57ec299f600215b206173251d454c78783"
     },
     {
       "path": "crates/slk-state-cli/artifacts/windows-x86_64/payload.zip",
-      "sha256": "8d45ae6e034b73740113b197259a0de2295275d5aa32093522fa6fdea8cba850"
+      "sha256": "0139fd5f2e3b7f3031aff5309adc8a3758fff3f0e6c9b15325660d639c430766"
     },
     {
       "path": "crates/slk-state-cli/src/main.rs",
@@ -712,11 +712,11 @@
     },
     {
       "path": "crates/slk-state-core/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "d680b3319172c682209da282a96fdff976fb83eafab2e850a6d23523cae69954"
+      "sha256": "17aa3e6cd1599e593a5176358d094e76f013bbd3f9cd89936117ef1e069f8a86"
     },
     {
       "path": "crates/slk-state-core/artifacts/windows-x86_64/payload.zip",
-      "sha256": "bf520d9113066790996aa2c46a897b1e8aede1a208a5df77bb350ed87bad6fb0"
+      "sha256": "d7464cc03814c66baee6600f50d264a432e7ad7e2371d9c1551a5bb7fd8967e9"
     },
     {
       "path": "crates/slk-state-core/migrations/0001.sql",
@@ -1043,6 +1043,10 @@
       "sha256": "398d940f3c8f8d9ff3f5ec176f49fd1436410e0dca5dc922e52d2bdc0ac24959"
     },
     {
+      "path": "docs/maintenance/2026-10-15-bi113-build3-delivery.md",
+      "sha256": "a76a2dc0016357244516d8472816d01042daac1b07c7b7ba0d3fadf6ab5dacd6"
+    },
+    {
       "path": "docs/maintenance/2026-10-15-run09-upgrade-intake.md",
       "sha256": "0d37bb77a32cc65f61cbdf5b01eaa96f0dcf65c9b5e3ee6330981ed1aef5841f"
     },
@@ -1080,11 +1084,11 @@
     },
     {
       "path": "docs/runtime/SLK-TOOL-MODULES.json",
-      "sha256": "978f7598406c7e985c6572160b89a7fb52fa69e3883652fc4495c3c03e6d707a"
+      "sha256": "19c0ab5a46b91a0e0439e43e61a5d05358a87cd303380e1453904d4bccb288e3"
     },
     {
       "path": "docs/runtime/SLK-TOOL-MODULES.md",
-      "sha256": "7ac961ace683d259659c5bfb8caab28e79cdb032c70ec59fe839ba7f1723d637"
+      "sha256": "98229f878dc55cc6520d8a4cfa8c7e35ac8575f00ff129ebfb9d924cfb58e724"
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
@@ -1592,15 +1596,15 @@
     },
     {
       "path": "integrations/ocrv/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "0ccd007cfb5e97cd7a324541b805da1c726f3a4517e6ef337250a769846d0b82"
+      "sha256": "ac7ef5c969b1631565b94b2b84ff458738566e5c612f872d7f0cc625fc6e1ec0"
     },
     {
       "path": "integrations/ocrv/artifacts/windows-x86_64/payload.zip.part001",
-      "sha256": "58fd453ff169650e5bd796b2f96644b87449f88c491519451099dd7484964c1f"
+      "sha256": "2ad68715e5b2b4757ae2db44842ee6037f26f26b3ae18920d3e069cbf0d0947c"
     },
     {
       "path": "integrations/ocrv/artifacts/windows-x86_64/payload.zip.part002",
-      "sha256": "e91efd35ece80319129aed0bffb94d1edaefe6212294a6e3e0e0f31192cba376"
+      "sha256": "3ccf842ca163d6901622957ccf60362eb5d01719e94ced2724545f89e96daf05"
     },
     {
       "path": "integrations/ocrv/install.ps1",
@@ -1652,7 +1656,7 @@
     },
     {
       "path": "integrations/temporal/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "1ab1f33e8352ec42693a49503a24a4c35332006f7cdaf07114048a49f50e3ef6"
+      "sha256": "aab0da9e46baf6a1ee89b9fff835720801554ff656c2887fb803f81840388baf"
     },
     {
       "path": "integrations/temporal/artifacts/windows-x86_64/payload.zip.part001",
@@ -1660,7 +1664,7 @@
     },
     {
       "path": "integrations/temporal/artifacts/windows-x86_64/payload.zip.part002",
-      "sha256": "5758badc76a389cd55f135157b75635cf8090df068dd11a2bb2211fa85e19805"
+      "sha256": "ef146aac8c2b562c3e20b949accc234c16c45d22406402a464e0d5fc4eba717b"
     },
     {
       "path": "integrations/temporal/pyproject.toml",
@@ -2056,11 +2060,11 @@
     },
     {
       "path": "src/slk_transport/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "bb036ac28bb87bbbaaa71374bda39f1409a7ec4320e57b24d92ae77788b6cba5"
+      "sha256": "17ce2dd91e237b1485e997bc4ff907748ea8ff7f8c80e94dae9a85f4f89c3836"
     },
     {
       "path": "src/slk_transport/artifacts/windows-x86_64/payload.zip",
-      "sha256": "fe4574f38dfa09e6c294ec437ea57c81930ab822ca0c842012ada96389c6bcc5"
+      "sha256": "042d753c71d72aafea55cb0d8437f1874a880aae06463fa20018785282ac68e3"
     },
     {
       "path": "src/slk_transport/build_zipapp.py",
@@ -2256,7 +2260,7 @@
     },
     {
       "path": "tests/install/test_bi_release.py",
-      "sha256": "6376cf2825b0899e321f3fb750f6bbb8d5cc49e11b8c708deb5dd2178b993cf1"
+      "sha256": "1dc41e608d46c98f3f53c154f5e19982c407cea84f1f5b4b5354796c1783e7b9"
     },
     {
       "path": "tests/install/test_build_local_package.py",

@@ -1,5 +1,22 @@
 # Changelog
 
+## SLK 4.5.2 build.3 / BI-WebBI 1.1.3
+
+- Display real CELL quantities in at most three rows of ten; compact incomplete rows,
+  accurate totals beyond thirty, and verified initial-plus-net-split counts. This is
+  a presentation limit, not an engineering CELL cap.
+- Replace transparency presets with a remembered 0–100%, 1%-step slider. Background
+  alpha does not fade text/icons. Desktop and WebBI share the presentation rules.
+- Deliver full original OCRV instructions through the existing hash-bound external
+  reader and a compact native bootstrap; no artificial evidence-reader cap.
+- Normalize exact original/resumed execution identity, explicit frozen historical
+  hosts and current Desktop recovery proof; reject foreign or unproven identity.
+- Repair pending-pause cancellation, OW turn continuation, terminal Temporal races,
+  exact coordinator aliases and native UNKNOWN diagnostic preservation. OW remains
+  observe-only and missing evidence never becomes a fabricated success.
+- Ship precompiled current module outputs with pinned independent repository refs.
+  Existing Run method identities remain 4.5.2. Project 3.1.0 is not included.
+
 ## BI / WebBI 1.1.2 — readable work states
 
 - Show normal work, inspection and handoff progression in green; retain explicit fault,
