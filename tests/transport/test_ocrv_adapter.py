@@ -100,6 +100,25 @@ def test_commit_candidate_projection_never_accepts_invalid_native_commit(
         original_checker_adapter._validate_candidate(request["candidate"])
 
 
+def test_request_projection_keeps_worker_d0_and_reasoning_out_of_first_read(tmp_path):
+    raw = asdict(candidate_envelope(tmp_path))
+    report = tmp_path / 'worker-d0.json'
+    report.write_text(json.dumps({'d0': 'WORKER_D0_BODY', 'reasoning': 'WORKER_PRIVATE_BODY'}))
+    raw['payload'].update(evidence_files=[str(report)], d0={'conclusion': 'WORKER_D0_BODY'},
+                          reasoning='WORKER_PRIVATE_BODY', status='WORKER_SELF_REPORTED_PASS')
+    raw['payload_sha256'] = canonical_json_sha256(raw['payload'])
+    original = json.dumps(raw, sort_keys=True)
+
+    request = OcrvAdapter()._candidate_request(Envelope.from_dict(raw))
+
+    assert request['evidence_files'] == [str(report)]
+    assert not any(value in json.dumps(request) for value in
+                   ('WORKER_D0_BODY', 'WORKER_PRIVATE_BODY', 'WORKER_SELF_REPORTED_PASS'))
+    assert request['cell_goal'] == raw['payload']['cell_goal']
+    assert request['d1_criteria'] == raw['payload']['d1_criteria']
+    assert json.dumps(raw, sort_keys=True) == original
+
+
 def recovery_envelope(tmp_path: Path) -> Envelope:
     source_attempt, _worker, _checker = completion_fixture(tmp_path)
     projection = tmp_path / "runtime-projection.json"

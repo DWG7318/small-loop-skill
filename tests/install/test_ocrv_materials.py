@@ -2,11 +2,12 @@
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
-from test_ocrv_preflight import _request
+from test_ocrv_preflight import _fake_ocr, _request
 
 
 def load(name):
@@ -120,7 +121,7 @@ def test_reader_rejects_invalid_ranges_and_unregistered_files(tmp_path, monkeypa
         bridge.read_evidence(arguments[0], offset=arguments[1], limit=arguments[2])
 
 
-def test_management_summary_is_present_without_changing_goal_or_inlining_log(tmp_path):
+def test_management_summary_stays_in_request_not_bootstrap_or_worker_log(tmp_path):
     adapter = load('slk_checker_adapter.py')
     request_path, _, _ = _request(tmp_path)
     request = json.loads(request_path.read_text(encoding='utf-8'))
@@ -128,9 +129,11 @@ def test_management_summary_is_present_without_changing_goal_or_inlining_log(tmp
         'management_summary': 'Read the original missing log; retain the frozen candidate.',
         'management_evidence_refs': [request['evidence_files'][0]]}
     normalized = adapter._validate_request(request)
-    background = adapter._background(normalized, {'invocations': []})
+    background = adapter._background(normalized)
     assert normalized['cell_goal'] == request['cell_goal']
-    assert request['management_context']['management_summary'] in background
+    assert normalized['management_context'] == request['management_context']
+    assert request['management_context']['management_summary'] not in background
+    assert 'Supervisor management_context' in background
     assert 'slk_read_evidence' in background
     assert 'WORKER_SELF_REPORTED_PASS' not in background
 
@@ -156,12 +159,135 @@ def test_background_retains_unchanged_seam_criteria_and_last_action_order(tmp_pa
     scope['criterion_ids'] = ['D1-001', 'D1-002']
     scope['scope_sha256'] = adapter._canonical_sha({key: scope[key] for key in
         ('include_paths', 'exclude_paths', 'criterion_ids')})
-    background = adapter._background(adapter._validate_request(request), {'invocations': []})
-    assert request['cell_goal'] in background
-    assert all(criterion in background for criterion in request['d1_criteria'])
+    background = adapter._background(adapter._validate_request(request))
+    assert request['cell_goal'] not in background
+    assert all(criterion not in background for criterion in request['d1_criteria'])
+    assert background.index('slk_read_evidence(0)') < background.index('independent preliminary judgment')
+    assert background.index('slk_read_evidence(1)') < background.index('independent preliminary judgment')
+    assert background.index('independent preliminary judgment') < background.index('Worker D0 originals')
+    assert 'entire cell_goal and every d1_criteria entry' in background
     assert 'unchanged Shell/handshake seams' in background
     assert background.index('save actual reports and evidence') < background.index('last action')
     assert 'Do not continue reviewing after handoff' in background
+
+
+def _run_material_request(tmp_path, monkeypatch):
+    adapter, bridge = load('slk_checker_adapter.py'), load('slk_checker_decision.py')
+    request, output, repository = _request(tmp_path)
+    value = json.loads(request.read_text(encoding='utf-8'))
+    value['cell_goal'] = '完整目标🙂' * 1800 + 'GOAL-END'
+    value['d1_criteria'] = ['全部准则🙂' * 1800 + 'CRITERIA-END']
+    value['management_context'] = {'management_action': 'SUPPLY_EVIDENCE',
+        'management_summary': 'Keep the complete goal and criteria. MANAGEMENT-END',
+        'management_evidence_refs': value['evidence_files']}
+    value['evidence_refs'] = [{'path': str(tmp_path / f'missing-{i}.log'), 'sha256': 'a' * 64}
+                              for i in range(100)]
+    request.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8', newline='\r\n')
+    before = request.read_bytes()
+    receipt = tmp_path / 'native-start.received.json'
+    context = {'adapter': 'ocrv-checker', 'run_id': value['run_id'], 'cell_id': value['cell_id'],
+        'message_id': 'message-materials', 'request_sha256': 'b' * 64,
+        'native_request_sha256': hashlib.sha256(before).hexdigest()}
+    fake, log = _fake_ocr(tmp_path)
+    monkeypatch.setenv('OCRV_SLK_COMMAND_JSON', json.dumps([sys.executable, str(fake)]))
+    monkeypatch.setenv('FAKE_OCR_LOG', str(log))
+    monkeypatch.setenv('SLK_NATIVE_START_RECEIPT', str(receipt))
+    monkeypatch.setenv('SLK_NATIVE_START_CONTEXT', json.dumps(context))
+    monkeypatch.setattr(adapter, '_session_directory', lambda *_: tmp_path / 'sessions')
+    monkeypatch.setattr(adapter, '_discover_capabilities', lambda *_: {'invocations': []})
+    assert adapter.run(request, output, invocation_override='native-materials') == 0
+    index = tmp_path / 'evidence-index.json'
+    monkeypatch.setenv('SLK_CHECKER_EVIDENCE_INDEX', str(index))
+    monkeypatch.setenv('SLK_CHECKER_EVIDENCE_INDEX_SHA256', adapter._sha256(index))
+    return adapter, bridge, request, before, receipt, index, value
+
+
+def test_native_bootstrap_reads_complete_request_catalog_and_external_d0(tmp_path, monkeypatch):
+    adapter, bridge, request, before, _, index, value = _run_material_request(tmp_path, monkeypatch)
+    background = (tmp_path / 'd1-background.md').read_text(encoding='utf-8')
+    request_read = bridge.read_evidence(0)
+    assert request_read['text'] == before.decode('utf-8')
+    assert '\r\n' in request_read['text']
+    assert request_read['eof'] is True and request_read['next_offset'] == len(request_read['text'])
+    assert json.loads(request_read['text']) == value
+    assert request.read_bytes() == before
+    assert all(marker in request_read['text'] for marker in ('GOAL-END', 'CRITERIA-END', 'MANAGEMENT-END'))
+    assert 'WORKER_SELF_REPORTED' not in request_read['text']
+    assert not any(marker in background for marker in ('GOAL-END', 'CRITERIA-END', 'MANAGEMENT-END'))
+    catalog_read = bridge.read_evidence(1)
+    catalog = json.loads(catalog_read['text'])
+    assert catalog_read['eof'] is True
+    assert len(catalog_read['text']) > 8000
+    assert catalog['evidence_refs'] == value['evidence_refs']
+    assert len(catalog['evidence_gaps']) == 100
+    assert all(item['reason'] == 'UNAVAILABLE' for item in catalog['evidence_gaps'])
+    assert 'WORKER_SELF_REPORTED' not in catalog_read['text']
+    assert catalog['evidence'][0]['index'] == 2
+    original = bridge.read_evidence(catalog['evidence'][0]['index'])
+    assert original['text'] == Path(value['evidence_files'][0]).read_bytes().decode('utf-8')
+    assert 'WORKER_SELF_REPORTED_D0' in original['text']
+    assert not Path(original['path']).is_relative_to(Path(value['repository']))
+    indexed = json.loads(index.read_text(encoding='utf-8'))
+    assert indexed['evidence'][0]['sha256'] == adapter._sha256(request)
+    assert indexed['evidence'][1]['sha256'] == adapter._sha256(Path(catalog_read['path']))
+    assert str(index) not in {item['path'] for item in indexed['evidence']}
+    assert catalog_read['path'] not in {item['path'] for item in catalog['evidence']}
+
+
+@pytest.mark.parametrize('damage', ['request', 'catalog', 'index', 'invocation', 'request-binding'])
+def test_generated_material_index_rejects_changed_originals_and_wrong_invocation(tmp_path, monkeypatch, damage):
+    _, bridge, request, _, receipt, index, _ = _run_material_request(tmp_path, monkeypatch)
+    number = 0
+    if damage == 'request':
+        request.write_text('{}', encoding='utf-8')
+    elif damage == 'catalog':
+        indexed = json.loads(index.read_text(encoding='utf-8'))
+        Path(indexed['evidence'][1]['path']).write_text('{}', encoding='utf-8')
+        number = 1
+    elif damage == 'index':
+        index.write_text('{}', encoding='utf-8')
+    else:
+        saved = json.loads(receipt.read_text(encoding='utf-8'))
+        if damage == 'invocation': saved['native_task']['id'] = 'other-invocation'
+        else: saved['native_request_sha256'] = '0' * 64
+        receipt.write_text(json.dumps(saved), encoding='utf-8')
+    with pytest.raises(ValueError):
+        bridge.read_evidence(number)
+
+
+def test_read_tool_requires_request_before_review_and_d0_after_review():
+    description = load('slk_checker_decision.py').READ_TOOL['description']
+    assert 'request' in description and 'catalog' in description
+    assert 'before independent preliminary review' in description
+    assert 'Worker D0 originals only after' in description
+
+
+def test_material_registration_rejects_request_not_matching_native_binding(tmp_path):
+    adapter = load('slk_checker_adapter.py')
+    request, _, _ = _request(tmp_path)
+    normalized = adapter._validate_request(adapter._read_json(request))
+    context = {'run_id': normalized['run_id'], 'cell_id': normalized['cell_id'],
+        'message_id': 'message-materials', 'native_request_sha256': '0' * 64}
+    with pytest.raises(adapter.RequestError, match='request hash'):
+        adapter._index_materials(normalized, request, tmp_path, 'native-materials',
+                                 {'invocations': []}, context)
+    assert not (tmp_path / 'material-catalog.json').exists()
+    assert not (tmp_path / 'evidence-index.json').exists()
+
+
+def test_bootstrap_does_not_grow_with_request_material(tmp_path):
+    adapter = load('slk_checker_adapter.py')
+    path, _, _ = _request(tmp_path)
+    original = adapter._read_json(path)
+    short = adapter._background(adapter._validate_request(original))
+    original['cell_goal'] *= 1000
+    original['d1_criteria'][0] *= 1000
+    original['management_context'] = {'management_action': 'SUPPLY_EVIDENCE',
+        'management_summary': 'management summary ' * 1000,
+        'management_evidence_refs': original['evidence_files']}
+    original['evidence_refs'] = [{'path': str(tmp_path / f'missing-{i}.log'), 'sha256': 'a' * 64}
+                                  for i in range(100)]
+    assert adapter._background(adapter._validate_request(original)) == short
 
 
 def test_reader_protocol_rejects_path_and_never_calls_decision(tmp_path, monkeypatch):
@@ -251,7 +377,7 @@ def test_private_diagnostics_stay_archived_but_out_of_engineering_index(tmp_path
     normalized = adapter._validate_request(request)
     assert str(private) not in {row['path'] for row in normalized['evidence']}
     assert private.read_text() == 'PRIVATE_THINKING'
-    background = adapter._background(normalized, {'invocations': []})
+    background = adapter._background(normalized)
     assert 'then read the indexed originals' not in background
 
 

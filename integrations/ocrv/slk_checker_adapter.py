@@ -318,44 +318,54 @@ def _discover_capabilities(request: dict[str, Any], artifact_root: Path) -> dict
     return {"available": available, "selected": selected, "invocations": invocations}
 
 
-def _background(request: dict[str, Any], capabilities: dict[str, Any]) -> str:
+def _index_materials(
+    request: dict[str, Any], request_path: Path, root: Path, invocation: str,
+    capabilities: dict[str, Any], native_context: dict[str, str] | None = None,
+) -> Path:
+    """Bind full inputs without placing their content in native background."""
+    identity = {
+        **(native_context or {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
+        "native_task_id": invocation,
+    }
+    frozen = ({"evidence_refs": request["evidence_refs"], "evidence_gaps": request["evidence_gaps"]}
+              if "evidence_refs" in request else {})
+    original = _compact_evidence(request_path.resolve())
+    if native_context is not None and original["sha256"] != native_context["native_request_sha256"]:
+        raise RequestError("original request hash does not match native invocation")
+    catalog_path = root / "material-catalog.json"
+    # Catalog enumerates engineering originals only. It never hashes itself or
+    # the enclosing index, and the existing request is never rewritten.
+    _write_json_atomic(catalog_path, {
+        **identity, "request": {"index": 0, **original},
+        "evidence": [{"index": index, **item} for index, item in enumerate(request["evidence"], 2)],
+        **frozen, "capabilities": capabilities,
+    })
+    index_path = root / "evidence-index.json"
+    _write_json_atomic(index_path, {
+        **identity, "evidence": [original, _compact_evidence(catalog_path), *request["evidence"]],
+        **frozen,
+    })
+    return index_path
+
+
+def _background(request: dict[str, Any]) -> str:
     lines = [
-        "# SLK D1 Review Input", "", f"- Run: `{request['run_id']}`",
-        f"- CELL: `{request['cell_id']}`",
-        f"- Candidate: `{json.dumps(request['candidate'], ensure_ascii=False, sort_keys=True)}`",
-        f"- Scope: `{request['review_scope']['scope_sha256']}`", "", "## CELL Goal", "",
-        request["cell_goal"], "", "## D1 Criteria", "",
+        "# SLK D1 Review Bootstrap", "",
+        f"- Scope: `{request['review_scope']['scope_sha256']}`", "",
+        "Before reviewing, read slk_read_evidence(0) through EOF: the complete original request.",
+        "Read its candidate, entire cell_goal and every d1_criteria entry, review_scope and capacity.",
+        "Preserve any Supervisor management_context as a supplement, not a replacement goal or D1 verdict.",
+        "Then read slk_read_evidence(1) through EOF: the complete material catalog with numbered",
+        "evidence locators, hashes, frozen references, gaps and optional capability metadata.",
+        "The request contains review inputs and locators, not the separately indexed Worker D0 body.",
+        "Frozen material gaps are disclosed in that catalog; unavailable originals are not acceptance evidence.",
+        "If the mandatory request/catalog cannot be read completely, disclose the limitation; do not claim PASS.",
     ]
-    lines.extend(f"{index}. {criterion}" for index, criterion in enumerate(request["d1_criteria"], 1))
-    if "management_context" in request:
-        context = request["management_context"]
-        lines.extend(["", "## Supervisor supplement — not a replacement CELL goal or D1 verdict", "",
-            context["management_action"], context["management_summary"]])
-    lines.extend(["", "## Evidence Index — locators, not Worker acceptance conclusions", ""])
-    scoped_paths = set(request["review_scope"]["include_paths"])
-    if request["evidence"]:
-        for index, item in enumerate(request["evidence"]):
-            summary = {key: value for key, value in item["summary"].items() if key in {
-                "format", "candidate", "changed_paths", "changed_paths_summary",
-                "base_commit", "head_commit", "candidate_commit"}}
-            changed_paths = summary.get("changed_paths")
-            if scoped_paths and isinstance(changed_paths, list):
-                summary["changed_paths"] = [path for path in changed_paths if path in scoped_paths]
-            lines.append(f"- Evidence {index}: `{item['path']}` — sha256 `{item['sha256']}`, {item['bytes']} bytes")
-            lines.append("  " + json.dumps(summary, ensure_ascii=False, sort_keys=True))
-    else:
-        lines.append("- None supplied; do not invent runtime evidence.")
-    if request.get("evidence_gaps"):
-        lines.extend(["", "## Frozen material gaps — these originals were not indexed or read", ""])
-        lines.extend("- " + json.dumps(gap, ensure_ascii=False, sort_keys=True) for gap in request["evidence_gaps"])
-        lines.append("Saved Worker output remains available. Gaps are not acceptance evidence; do not claim whole-CELL PASS without establishing every CELL criterion.")
-    for invocation in capabilities["invocations"]:
-        lines.append(f"- Optional {invocation['tool']} digest: `{invocation['stdout_sha256']}`")
     lines.extend(["", "Inspect the candidate against every D1 criterion and form your independent preliminary judgment",
         "before reading relevant Worker D0 originals; select relevant indexed originals and reconcile contradictions",
-        "before your final D1 decision. The initial index contains locators only, not Worker self-evaluation.",
-        "Read runtime originals with slk_read_evidence(index, offset?, limit?) using the Evidence number",
-        "above; omit limit to read through EOF, or choose offset/limit yourself. There is no tool-imposed",
+        "before your final D1 decision. The material catalog contains locators and metadata, not Worker self-evaluation.",
+        "Read runtime originals with slk_read_evidence(index, offset?, limit?) using numbers from this invocation's",
+        "catalog, not prior sessions; omit limit to read through EOF, or choose offset/limit yourself. There is no tool-imposed",
         "content-length ceiling; originals are hash-checked. Git file_read in commit/range mode cannot read uncommitted runtime logs.",
         "Do not treat an index, a summary, a missing file or a truncated chunk as the full original.",
         "Your D1 decision concerns the entire frozen candidate and every CELL criterion,",
@@ -628,9 +638,10 @@ def _publish_native_start(
 
 def preflight(request_path: Path, output_path: Path) -> int:
     request = _validate_request(_read_json(request_path))
-    _invocation, root = _artifact_root(request)
+    invocation, root = _artifact_root(request)
     capabilities = _discover_capabilities(request, root)
-    background = _background(request, capabilities)
+    _index_materials(request, request_path, root, invocation, capabilities)
+    background = _background(request)
     background_path = root / "d1-background.md"
     background_path.write_text(background, encoding="utf-8", newline="\n")
     encoded = background.encode("utf-8")
@@ -820,7 +831,19 @@ def run(
     invocation, root = (invocation_override, output_path.resolve().parent) if invocation_override else _artifact_root(request)
     background_path = background_override or root / "d1-background.md"
     if background_override is None:
-        background_path.write_text(_background(request, _discover_capabilities(request, root)), encoding="utf-8", newline="\n")
+        index_path = _index_materials(request, request_path, root, invocation,
+            _discover_capabilities(request, root), native[1] if native is not None else None)
+        background_path.write_text(_background(request), encoding="utf-8", newline="\n")
+    else:
+        # Legacy explicit backgrounds retain their original evidence numbering.
+        # Current native resume regenerates a fresh bootstrap/catalog instead.
+        index_path = root / "evidence-index.json"
+        _write_json_atomic(index_path, {
+            **(native[1] if native is not None else {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
+            "native_task_id": invocation, "evidence": request["evidence"],
+            **({"evidence_refs": request["evidence_refs"], "evidence_gaps": request["evidence_gaps"]}
+               if "evidence_refs" in request else {}),
+        })
     source = None
     if native is not None:
         marker = f"SLK_NATIVE_INVOCATION={invocation};REQUEST_SHA256={native[1]['native_request_sha256']}"
@@ -842,13 +865,6 @@ def run(
     raw_path = root / "ocrv-review.json"
     stdout_path, stderr_path = root / "ocrv.stdout.txt", root / "ocrv.stderr.txt"
     command = _review_args(request, background_path, raw_path) + (["--resume", resume_session] if resume_session else [])
-    index_path = root / "evidence-index.json"
-    _write_json_atomic(index_path, {
-        **(native[1] if native is not None else {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
-        "native_task_id": invocation, "evidence": request["evidence"],
-        **({"evidence_refs": request["evidence_refs"], "evidence_gaps": request["evidence_gaps"]}
-           if "evidence_refs" in request else {}),
-    })
     environment["SLK_CHECKER_EVIDENCE_INDEX"] = str(index_path)
     environment["SLK_CHECKER_EVIDENCE_INDEX_SHA256"] = _sha256(index_path)
     if native is not None:

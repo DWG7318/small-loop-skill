@@ -24,7 +24,7 @@ TOOL = {
 }
 READ_TOOL = {
     "name": "slk_read_evidence",
-    "description": "Read exact indexed runtime evidence outside Git after independent preliminary review. Index numbers come from the bound background, not arbitrary paths. Returns the full original by default, with SHA256, next_offset and eof. OCRV may choose offset/limit for a range; the tool imposes no content-length ceiling or automatic truncation. A requested range is not the whole original. No shell, writes, other invocation or unindexed file access.",
+    "description": "Read exact invocation-bound inputs outside Git. Follow the bound background: read the complete request and material catalog before independent preliminary review; read relevant Worker D0 originals only after that initial judgment. Use this invocation's catalog numbers, never prior-session numbers or arbitrary paths. Returns the full original by default, with SHA256, next_offset and eof. OCRV may choose offset/limit for a range; the tool imposes no content-length ceiling or automatic truncation. A requested range is not the whole original. No shell, writes, other invocation or unindexed file access.",
     "inputSchema": {"type": "object", "properties": {
         "index": {"type": "integer", "minimum": 0},
         "offset": {"type": "integer", "minimum": 0, "default": 0},

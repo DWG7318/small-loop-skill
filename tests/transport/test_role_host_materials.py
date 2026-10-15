@@ -133,8 +133,14 @@ def test_material_gap_never_withholds_worker_output_or_reapproves_new_bytes(tmp_
     paths = [item["path"] for item in normalized["evidence"]]
     assert str(original) not in paths
     assert str(source / "worker-result.json") in paths
-    background = adapter._background(normalized, {"invocations": []})
-    assert json.dumps(gap, ensure_ascii=False, sort_keys=True) in background
+    background = adapter._background(normalized)
+    request_path = write_json(tmp_path / "indexed-request.json", request)
+    adapter._index_materials(normalized, request_path, tmp_path, "gap-check", {"invocations": []})
+    catalog = wc._read_object(tmp_path / "material-catalog.json", "complete material catalog")
+    assert catalog["evidence_gaps"] == [gap]
+    assert catalog["evidence_refs"] == normalized["evidence_refs"]
+    assert "slk_read_evidence(1)" in background
+    assert json.dumps(gap, ensure_ascii=False, sort_keys=True) not in background
     assert "do not claim whole-CELL PASS" in background
     reader = bind_reader(tmp_path, monkeypatch, sent[0], normalized)
     assert reader.read_evidence(paths.index(str(source / "worker-result.json")))["text"] == before.decode("utf-8")
