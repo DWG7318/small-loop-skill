@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "bf520d9113066790996aa2c46a897b1e8aede1a208a5df77bb350ed87bad6fb0",
-        "size": 3123589
+        "sha256": "d7464cc03814c66baee6600f50d264a432e7ad7e2371d9c1551a5bb7fd8967e9",
+        "size": 3159223
       }
     ],
-    "sha256": "bf520d9113066790996aa2c46a897b1e8aede1a208a5df77bb350ed87bad6fb0",
-    "size": 3123589
+    "sha256": "d7464cc03814c66baee6600f50d264a432e7ad7e2371d9c1551a5bb7fd8967e9",
+    "size": 3159223
   },
   "build": {
     "command": [
@@ -16,17 +16,18 @@
       "build",
       "--release",
       "-p",
-      "slk-state-core"
+      "slk-state-core",
+      "--locked",
+      "--offline"
     ],
-    "scope": "4.5.2 library; separate final application batch captures its build inputs",
-    "source_hash_mode": "sha256-raw",
-    "working_directory": "D:/SLK parent workspace"
+    "scope": "4.5.2 build.3 library; final application batch records separate frozen inputs",
+    "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "lib/slk_state_core.rlib",
-      "sha256": "f6ae405e1414fc3e651618cab5ce29aa9aa3adc26128f241f4bed137b0a3f5f7",
-      "size": 10061630
+      "sha256": "f64fad1a968322d4232c7c6b9b09e738f5eaf6bd51455c2a89f638d47464c55b",
+      "size": 10173216
     }
   ],
   "product_version": "4.5.2",
@@ -51,22 +52,22 @@
     "src/export.rs": "52d691f11936c0515a41dbfed767acfce1ae266e2535da5768d46f862d89d753",
     "src/lib.rs": "79c85c8a51044aa2b0e00640034dfe4aeeb37cbf0798ec56d74d0dfcb6531a5d",
     "src/model.rs": "660acdd609baa7844194675957eaafed38b1f8f5c1a2841bf814a3f428f3ac5a",
-    "src/query.rs": "84089ddbb887a3b1fc4831eb3065d406475c9e8e5bbe7e805038fb6b64b13a97",
+    "src/query.rs": "a39cb9dbd68a46b61a309660b1db1be36603220617132dc843d2cde7273101cc",
     "src/recovery_start.rs": "ff5a2dca70765eab5d6da287a53425ff2a4720f373a2dd88783b1047102d4c04",
     "src/schema.rs": "f909f4d531e563ef59c97a9c2ff2d243050b73b09bffe3aa7dfe3b092e2e4f1a",
-    "src/write.rs": "7c11acf3617d7f143312dcae3f90ebd638a659d8424f2cdf04a27c14a6de66b7",
+    "src/write.rs": "28b7124946b38ee92b8cd8411bb24c2d2640e33f0c310a7e854a35e32a100d49",
     "tests/auth.rs": "9dffe83e3dbeb6cab98a761f11a543cfe22e7db29cb423997b5f55f334d5c3f6",
     "tests/concurrency.rs": "005b059b6269f3bd4b0fb5f34399c9ee3e5434eb4ddb46fddb59eb11ea09e268",
     "tests/config.rs": "898492a826d84ae75000c93ad17ba796573f91dfdae0789906fa6f421a21b14e",
     "tests/evidence.rs": "99fdb9b476039bc0261129052c09b749ff81c2c4e48de4a69b3c04105c2d2b2e",
     "tests/export.rs": "8f4f9c4cd669c2f32edb166e12f0bc298e2ba870fb59c7eea2491089aef442c0",
     "tests/overwatch_continuity.rs": "73ad9349625aea4952a09f7fe2c6f3285565d465d0269082e5863698f41fa11e",
-    "tests/overwatcher.rs": "80152f1b99c0d16398fe1f0c7d75bcaa9fd8b8fb8992b3080110ab1730a7f83d",
-    "tests/query.rs": "af1a647145800fa4991ace3f687a3572af5ad804b8b6c5f7371966085ff89664",
+    "tests/overwatcher.rs": "b3c4eeac8c70e9463ca71640887007eeee1068f2f45e63383255688b7e897f55",
+    "tests/query.rs": "07f8df0cbd88625f16fb4897fcb1aa0a2e5e0c3e243044425d8402b9b615d5d3",
     "tests/run_admin.rs": "1ec422ae97417d9343ae4162f445a7ac6f944ecae8f620deda5ec92c4654316d",
-    "tests/runtime_snapshot.rs": "87b14301eb0f01a60931262da21536c000a548382d13743cf22f6210dc7079d6",
+    "tests/runtime_snapshot.rs": "dd87bd5e79d5e23ccb00f5a35af079abbc5682209ca241d15182d6d793903e4d",
     "tests/schema.rs": "dadad86969dfc7d1a936f387a07fc88ca83537570b9cbc42a4c215835ddd87ba",
-    "tests/write_flow.rs": "8ad91eb32d747705c3c409b7d104da9da08511a29f934ce75a408e5be13628d6"
+    "tests/write_flow.rs": "5fa87be2303adc41dc91d34774f53afcfe21c7eaa123d4e1540351d20244e887"
   },
   "target": "windows-x86_64",
   "tool": "slk-state-core"
