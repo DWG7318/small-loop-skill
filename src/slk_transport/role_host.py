@@ -590,6 +590,11 @@ class RoleHost:
                     activity, row["native_reader"] = self._desktop_census_activity(source, endpoint, start)
                 else:
                     activity = native._file_native_probe(path, start)
+                diagnostic = native.compact_native_diagnostic(activity)
+                if diagnostic is not None:
+                    row.update(reason=diagnostic, native_activity=dict(activity))
+                    inspections.append(row)
+                    continue
                 # An original native end record remains valid historical stop
                 # evidence. A DSH registry sample, by contrast, must be fresh.
                 observed = native.utc_now()

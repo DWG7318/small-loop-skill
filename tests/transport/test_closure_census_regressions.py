@@ -36,6 +36,31 @@ def test_audit_only_directories_are_not_native_invocations(tmp_path, monkeypatch
     assert proof["status"] == "QUIESCENT"
 
 
+def test_ocrv_unproven_session_keeps_exact_probe_diagnostic_in_census(tmp_path, monkeypatch):
+    host, _, original = census_host(tmp_path, monkeypatch)
+    incoming = dispatch_incoming(host, original)
+    root = tmp_path / "ocrv-unproven"
+    source = root / incoming.run_id / incoming.message_id
+    write_json(source / "endpoint.json", host.endpoint("checker"))
+    write_json(source / "envelope.json", asdict(incoming))
+    start = native.make_native_start(adapter="ocrv-checker", run_id=incoming.run_id, cell_id=incoming.cell_id,
+        message_id=incoming.message_id, request_sha256=incoming.payload_sha256,
+        native_request_sha256="b" * 64, native_task_kind="ocrv-invocation",
+        native_task_id=str(uuid.uuid4()), native_task_status="RUNNING", pid=os.getpid())
+    write_json(source / "started.json", start)
+    diagnostic = native._file_native_probe(source / "started.json", start)
+    assert diagnostic == {"status": "UNKNOWN", "error": "OCRV_NATIVE_SESSION_UNPROVEN",
+                          "last_event": None, "waiting_on": None}
+    before = {path.name: path.read_bytes() for path in source.iterdir()}
+    proof = host.inspect_run_quiescence("close", [root])
+    assert proof["status"] == "NOT_QUIESCENT"
+    row = proof["inspections"][0]
+    assert row["status"] == "UNKNOWN"
+    assert row["reason"] == diagnostic["error"]
+    assert row["native_activity"] == diagnostic
+    assert {path.name: path.read_bytes() for path in source.iterdir()} == before
+
+
 def notification_source(tmp_path, monkeypatch):
     host, _, _ = census_host(tmp_path, monkeypatch)
     endpoint = desktop_endpoint(tmp_path, monkeypatch)

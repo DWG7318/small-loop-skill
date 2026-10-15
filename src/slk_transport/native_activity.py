@@ -394,6 +394,17 @@ def validate_native_task_activity(
     return dict(value)
 
 
+def compact_native_diagnostic(value: Mapping[str, Any]) -> str | None:
+    """Recognize a reader failure, not an invented task/event observation."""
+    error = value.get("error")
+    if ({"status", "error"} <= set(value) <= {"status", "error", "last_event", "waiting_on"}
+        and value["status"] == "UNKNOWN" and value.get("last_event") is None
+        and value.get("waiting_on") is None and isinstance(error, str) and error
+        and error == error.strip()):
+        return error
+    return None
+
+
 def _inspect_native_projection(
     start: Mapping[str, Any],
     native_probe: Callable[[Mapping[str, Any]], Mapping[str, Any]],
@@ -415,9 +426,7 @@ def _inspect_native_projection(
         native_error = native.get("error")
         if native_error is not None:
             _nonempty(native_error, "error")
-            if (set(native) <= {"status", "error", "last_event", "waiting_on"}
-                and native.get("status") == "UNKNOWN" and native.get("last_event") is None
-                and native.get("waiting_on") is None):
+            if compact_native_diagnostic(native) is not None:
                 return {"last_event": None, "waiting_on": None}, "UNKNOWN", native_error, validation_observed
         validate_native_task_activity(
             native,
