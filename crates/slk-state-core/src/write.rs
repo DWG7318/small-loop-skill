@@ -6121,7 +6121,7 @@ fn validate_d2_event(
 }
 
 fn uses_supervisor_subagent(version: &str) -> bool {
-    matches!(version, "4.5.0" | "4.5.1" | "4.5.2")
+    matches!(version, "4.5.0" | "4.5.1" | "4.5.2" | "4.5.3")
 }
 
 // 4.5.x changes OW ownership, not the existing engineering/runtime protections.

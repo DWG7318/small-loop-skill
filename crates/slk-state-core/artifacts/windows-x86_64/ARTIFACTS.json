@@ -3,38 +3,38 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "d7464cc03814c66baee6600f50d264a432e7ad7e2371d9c1551a5bb7fd8967e9",
-        "size": 3159223
+        "sha256": "2a398957ffeaa7e1178f115f0dcd2fabb0b4d4549b91f18ec28f862225e7d34a",
+        "size": 3158478
       }
     ],
-    "sha256": "d7464cc03814c66baee6600f50d264a432e7ad7e2371d9c1551a5bb7fd8967e9",
-    "size": 3159223
+    "sha256": "2a398957ffeaa7e1178f115f0dcd2fabb0b4d4549b91f18ec28f862225e7d34a",
+    "size": 3158478
   },
   "build": {
     "command": [
       "C:/Users/DWG/.cargo/bin/cargo.exe",
       "build",
       "--release",
-      "-p",
-      "slk-state-core",
       "--locked",
-      "--offline"
+      "--offline",
+      "-p",
+      "slk-state-core"
     ],
-    "scope": "4.5.2 build.3 library; final application batch records separate frozen inputs",
+    "scope": "SLK 4.5.3 state-core library; application assembly has separate frozen-input provenance",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "lib/slk_state_core.rlib",
-      "sha256": "f64fad1a968322d4232c7c6b9b09e738f5eaf6bd51455c2a89f638d47464c55b",
-      "size": 10173216
+      "sha256": "6e84e8d5c1e31bd27dcf9e61c81929165fb479cd4e3adc764bbcd92f62f6b2e7",
+      "size": 10169314
     }
   ],
-  "product_version": "4.5.2",
+  "product_version": "4.5.3",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "c114490cc1824db830c799063338ec84d8fc662f35837f5f40aa4709a36e7f64",
-    "Cargo.toml": "e88582f488763d7d218dd6f770b977515c99972f79d3ad469bdf770f59490569",
+    "Cargo.lock": "c001498c7fc125eb9cdb2dfceca408d9c8010375c21b6de5bff901add0e8448a",
+    "Cargo.toml": "f01e8fc8958d3a42ec5d10d6c6f284af2433750558cad1aa8efcb7635ce87834",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "a7cbb32a0d52a5cb8b79e28d0012b4ca5577c00d5f9de8eaf0f224c2deed7077",
     "migrations/0001.sql": "60a609c3f64c0ef4bf11c1f2d98316ff432b16508d551eb649d05acd25adf087",
@@ -55,14 +55,14 @@
     "src/query.rs": "a39cb9dbd68a46b61a309660b1db1be36603220617132dc843d2cde7273101cc",
     "src/recovery_start.rs": "ff5a2dca70765eab5d6da287a53425ff2a4720f373a2dd88783b1047102d4c04",
     "src/schema.rs": "f909f4d531e563ef59c97a9c2ff2d243050b73b09bffe3aa7dfe3b092e2e4f1a",
-    "src/write.rs": "28b7124946b38ee92b8cd8411bb24c2d2640e33f0c310a7e854a35e32a100d49",
+    "src/write.rs": "125760fb8f3e4172fcc980f5b985eefd374e6702ebceaafcabed621ebd08afee",
     "tests/auth.rs": "9dffe83e3dbeb6cab98a761f11a543cfe22e7db29cb423997b5f55f334d5c3f6",
     "tests/concurrency.rs": "005b059b6269f3bd4b0fb5f34399c9ee3e5434eb4ddb46fddb59eb11ea09e268",
     "tests/config.rs": "898492a826d84ae75000c93ad17ba796573f91dfdae0789906fa6f421a21b14e",
     "tests/evidence.rs": "99fdb9b476039bc0261129052c09b749ff81c2c4e48de4a69b3c04105c2d2b2e",
     "tests/export.rs": "8f4f9c4cd669c2f32edb166e12f0bc298e2ba870fb59c7eea2491089aef442c0",
     "tests/overwatch_continuity.rs": "73ad9349625aea4952a09f7fe2c6f3285565d465d0269082e5863698f41fa11e",
-    "tests/overwatcher.rs": "b3c4eeac8c70e9463ca71640887007eeee1068f2f45e63383255688b7e897f55",
+    "tests/overwatcher.rs": "925c04696d78e5ba9ef48cc2f62b6cd8bfda0364563baaf1e44cd32fef41981b",
     "tests/query.rs": "07f8df0cbd88625f16fb4897fcb1aa0a2e5e0c3e243044425d8402b9b615d5d3",
     "tests/run_admin.rs": "1ec422ae97417d9343ae4162f445a7ac6f944ecae8f620deda5ec92c4654316d",
     "tests/runtime_snapshot.rs": "dd87bd5e79d5e23ccb00f5a35af079abbc5682209ca241d15182d6d793903e4d",

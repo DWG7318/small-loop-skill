@@ -2815,6 +2815,33 @@ fn slk_452_preserves_subagent_ownership_and_admits_initial_dispatch() {
 }
 
 #[test]
+fn slk_453_preserves_subagent_identity_and_rejects_unpublished_454() {
+    let fixture = Fixture::new_450();
+    slk_state_core::schema::open_database(fixture._root.path()).unwrap()
+        .execute("UPDATE runs SET slk_version='4.5.3' WHERE run_id='run-a'", []).unwrap();
+    let binding = subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a");
+    let mut wrong = binding.clone();
+    wrong.endpoint.native_address = subagent_address("wrong-parent", "session-overwatcher-a");
+    assert!(matches!(fixture.store.bind_overwatcher(&fixture.supervisor, wrong),
+        Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("registered Supervisor parent and child")));
+    fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    fixture.store.commit_delivery_start(&fixture.supervisor, first_subagent_dispatch(&fixture)).unwrap();
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(projection.summary.slk_version, "4.5.3");
+    assert_eq!(projection.runtime_snapshot.unwrap().method_version, "4.5.3");
+    assert_eq!(fixture.store.current_token("run-a").unwrap().owner_role_instance_id, "checker-a");
+
+    let unpublished = Fixture::new_450();
+    slk_state_core::schema::open_database(unpublished._root.path()).unwrap()
+        .execute("UPDATE runs SET slk_version='4.5.4' WHERE run_id='run-a'", []).unwrap();
+    assert!(matches!(unpublished.store.bind_overwatcher(&unpublished.supervisor,
+        subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")),
+        Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("supported effective SLK contract")));
+    assert_eq!(unpublished.store.query_run("run-a").unwrap().summary.slk_version, "4.5.4");
+    assert_eq!(unpublished.store.current_token("run-a").unwrap().sequence, 1);
+}
+
+#[test]
 fn slk_450_one_supervisor_reuses_its_child_across_runs_but_cannot_bind_a_second_child() {
     let fixture = Fixture::new_450();
     fixture.store.bind_overwatcher(&fixture.supervisor,
@@ -3378,7 +3405,7 @@ fn first_subagent_dispatch(fixture: &Fixture) -> CommitDeliveryStartRequest {
 
 #[test]
 fn subagent_initial_dispatch_does_not_require_a_first_observation_cycle() {
-    for version in ["4.5.0", "4.5.1", "4.5.2"] {
+    for version in ["4.5.0", "4.5.1", "4.5.2", "4.5.3"] {
         let fixture = Fixture::new_450();
         slk_state_core::schema::open_database(fixture._root.path()).unwrap()
             .execute("UPDATE runs SET slk_version=?1 WHERE run_id='run-a'", [version]).unwrap();
