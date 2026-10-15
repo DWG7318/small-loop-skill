@@ -385,6 +385,17 @@ def _ordinary_450_admission(tmp_path, monkeypatch, method_version="4.5.0"):
     return admission, projection, calls
 
 
+@pytest.mark.parametrize("evaluate", [evaluate_new_run_admission, evaluate_run_admission])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2"])
+def test_ordinary_admission_accepts_bi_113_without_historical_rehearsal(tmp_path, monkeypatch, evaluate, method_version):
+    admission, _projection, _calls = _ordinary_450_admission(tmp_path, monkeypatch, method_version)
+    path = Path(admission["bi_open_receipt"])
+    write_json(path, {**json.loads(path.read_text()), "bi_version": "1.1.3"})
+    result = evaluate(admission)
+    assert result["status"] == "READY", result
+    assert result["conformance_run_id"] is None
+
+
 @pytest.mark.parametrize("history", ["absent", "inaccessible"])
 @pytest.mark.parametrize("evaluate", [evaluate_new_run_admission, evaluate_run_admission])
 @pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2"])
