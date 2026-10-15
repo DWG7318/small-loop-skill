@@ -640,9 +640,13 @@ fn pause_census_counts_native_turns_without_losing_alias_receipt_coverage() {
                 "message_id":message,"status":"COORDINATING","processes":[]}));
         }
         if damage == Some("missing-row") { rows.pop(); }
-        let proof = json!({"schema_version":"slk.run-quiescence/v1", "run_id":"run-a", "pause_id":"p",
+        let mut proof = json!({"schema_version":"slk.run-quiescence/v1", "run_id":"run-a", "pause_id":"p",
             "runtime_revision":fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision,
             "status":"QUIESCENT", "attempt_roots":[fixture._root.path()], "observed_at":paused.occurred_at, "inspections":rows});
+        let historical = fixture._root.path().join("historical-host.json");
+        fs::write(&historical, b"{\"run_id\":\"run-a\",\"plan_revision\":1}").unwrap();
+        proof["historical_host_refs"] = json!([{"path":historical,
+            "sha256":format!("{:x}", Sha256::digest(fs::read(&historical).unwrap()))}]);
         let path = fixture._root.path().join("census.json");
         fs::write(&path, serde_json::to_vec(&proof).unwrap()).unwrap();
         paused.details["quiescence_path"] = json!(path);

@@ -57,6 +57,33 @@ def source_identity(source: Path, host, envelope: Envelope) -> str:
     return wc._stable_id(envelope.message_id, "native-resume:" + source.name)
 
 
+def census_host_bindings(current, references) -> dict:
+    """Explicit frozen history for observation only; never an acting credential."""
+    from .role_host import RoleHost
+    if not isinstance(references, list):
+        raise ValueError("historical Host references must be an explicit array")
+    hosts, paths = {current.digest: current}, set()
+    for ref in references:
+        if (not isinstance(ref, Mapping) or set(ref) != {"path", "sha256"}
+            or not isinstance(ref["path"], str) or not isinstance(ref["sha256"], str)
+            or native.SHA256.fullmatch(ref["sha256"]) is None):
+            raise ValueError("historical Host reference is not an exact path and SHA256")
+        path = Path(ref["path"])
+        if (not path.is_absolute() or not path.is_file()
+            or any(item.is_symlink() or getattr(item, "is_junction", lambda: False)()
+                   for item in (path, *path.parents))
+            or path.resolve() in paths or ref["sha256"] in hosts or wc._sha256(path) != ref["sha256"]):
+            raise ValueError("historical Host reference is missing, duplicated or changed")
+        old = RoleHost(wc._read_object(path, "frozen historical Host"), ref["sha256"])
+        if (old.binding["run_id"] != current.binding["run_id"] or old.state != current.state
+            or old.binding["plan_revision"] > current.binding["plan_revision"]
+            or old.binding.get("temporal") != current.binding.get("temporal")):
+            raise ValueError("historical Host changed Run, state authority, plan order or Workflow binding")
+        hosts[ref["sha256"]] = old
+        paths.add(path.resolve())
+    return hosts
+
+
 def require_live_action(source: Path) -> None:
     if any((source / name).exists() for name in ("completed.json", "failed.json")):
         raise ValueError("ended native invocation cannot submit a new Worker action")

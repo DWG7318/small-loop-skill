@@ -266,6 +266,7 @@ class RoleHost:
         fields = {"schema_version", "run_id", "role_instance_id", "pause_id", "binding_path", "binding_sha256",
                   "adapter_config_path", "adapter_config_sha256", "evidence_root", "coordinator_started_path"}
         pause_fields = set(fields)
+        if "historical_host_refs" in request: fields.add("historical_host_refs")
         if operation == "resume-run": fields |= {"pause_request_path", "pause_request_sha256"}
         cancel_requested = operation == "resume-run" and "cancel_requested" in request
         if cancel_requested: fields |= {"cancel_requested", "reason"}
@@ -301,7 +302,7 @@ class RoleHost:
             old = wc._read_object(old_path, "original pause request")
             if old.get("pause_id") != request["pause_id"] or old.get("run_id") != request["run_id"]:
                 raise ValueError("resume changed the original pause identity")
-            if cancel_requested and (set(old) != pause_fields
+            if cancel_requested and (set(old) - {"historical_host_refs"} != pause_fields
                 or old.get("schema_version") != "slk.run-lifecycle/v1"
                 or old.get("role_instance_id") != request["role_instance_id"]):
                 raise ValueError("cancellation changed the original Supervisor pause request")
@@ -392,7 +393,8 @@ class RoleHost:
                     central("RUN_RESUMED")
                     temporal("RESUMED", resumed)
                     return {"status": "resumed", "run_id": request["run_id"], "pause_id": request["pause_id"]}
-            proof = self.inspect_run_quiescence(request["pause_id"], attempt_roots, coordinator)
+            proof = self.inspect_run_quiescence(request["pause_id"], attempt_roots, coordinator,
+                **({"historical_host_refs": request["historical_host_refs"]} if "historical_host_refs" in request else {}))
             if proof["status"] != "QUIESCENT":
                 return {"status": "pause_requested", "run_id": request["run_id"], "quiescence": proof}
             path = root / f"quiescence-{proof['runtime_revision']}.json"
@@ -414,16 +416,21 @@ class RoleHost:
             credential = ""
 
     def inspect_run_quiescence(self, pause_id: str, attempt_roots: list[Path],
-                               coordinator_started_path: Path | None = None, *, coordinator_observer: bool = False) -> dict[str, Any]:
+                               coordinator_started_path: Path | None = None, *, coordinator_observer: bool = False,
+                               historical_host_refs: list | None = None) -> dict[str, Any]:
         """Recheck every original call, including old endpoints and nonholders.
 
         Transport terminal files are output facts, not native-stop evidence. No
         process is killed here and shared services/OW are never stop targets.
         """
         from . import native_activity as native
+        from .worker_resume import census_host_bindings
+        historical_host_refs = [] if historical_host_refs is None else historical_host_refs
+        historical_hosts = census_host_bindings(self, historical_host_refs)
         projection = self.projection()
         run_id = str(self.binding["run_id"])
         sources: dict[Path, Mapping[str, Any] | None] = {}
+        source_errors = {}
         # Original output/legacy continuation paths are bounded descendants of
         # each actual source. Do not glob arbitrary JSON or infer by adapter.
         pending_roots = list(attempt_roots)
@@ -464,9 +471,12 @@ class RoleHost:
                                 for corrected in corrections.iterdir():
                                     if not corrected.is_dir():
                                         raise ValueError("native census found an invalid OCRV recovery entry")
-                                    incoming = Envelope.from_dict(wc._read_object(corrected / "envelope.json", "OCRV recovery source"))
-                                    ocrv_resume_identity(corrected, self, incoming)
                                     sources.setdefault(corrected / "started.json", None)
+                                    try:
+                                        incoming = Envelope.from_dict(wc._read_object(corrected / "envelope.json", "OCRV recovery source"))
+                                        ocrv_resume_identity(corrected, self, incoming, historical_hosts=historical_hosts)
+                                    except (OSError, ValueError, TypeError, KeyError) as exc:
+                                        source_errors[corrected / "started.json"] = str(exc)
                                     correction_sources.append(corrected)
                                     pending_roots.extend(corrected / suffix for suffix in (
                                         "role-host/output-attempts", "role-host/checker-handoff/attempts"))
@@ -478,9 +488,16 @@ class RoleHost:
                                 if resumed.is_symlink() or not resumed.is_dir():
                                     raise ValueError("native census found an invalid resume entry")
                                 from .worker_resume import source_identity
-                                incoming = Envelope.from_dict(wc._read_object(resumed / "envelope.json", "native resume envelope"))
-                                source_identity(resumed, self, incoming)
                                 sources.setdefault(resumed / "started.json", None)
+                                try:
+                                    incoming = Envelope.from_dict(wc._read_object(resumed / "envelope.json", "native resume envelope"))
+                                    marker = wc._read_object(resumed / "native-resume.json", "native resume provenance")
+                                    old = historical_hosts.get(marker.get("binding_sha256"))
+                                    if old is None:
+                                        raise ValueError("native continuation lacks its exact frozen historical Host reference")
+                                    source_identity(resumed, old, incoming)
+                                except (OSError, ValueError, TypeError, KeyError) as exc:
+                                    source_errors[resumed / "started.json"] = str(exc)
                                 pending_roots.extend(resumed / suffix for suffix in (
                                     "role-host/output-attempts", "role-host/worker-handoff/attempts"))
                         pending_roots.extend(source / suffix for suffix in (
@@ -498,6 +515,8 @@ class RoleHost:
                    "message_id": central.get("message_id") if central else source.name,
                    "status": "UNKNOWN", "processes": []}
             try:
+                if path in source_errors:
+                    raise ValueError(source_errors[path])
                 endpoint = wc._read_object(source / "endpoint.json", "native census endpoint")
                 envelope = None
                 if (source / "notification.json").exists():
@@ -684,6 +703,7 @@ class RoleHost:
                     row["status"] = "COORDINATING"
                     row.pop("reason")
         return {"schema_version": "slk.run-quiescence/v1", "run_id": run_id, "pause_id": pause_id,
+            **({"historical_host_refs": historical_host_refs} if historical_host_refs else {}),
             "runtime_revision": projection["runtime_snapshot"]["runtime_revision"],
             "status": "QUIESCENT" if all(row["status"] in {"STOPPED", "STAGED_NOT_STARTED", "COORDINATING"}
                 for row in inspections) else "NOT_QUIESCENT", "inspections": inspections,

@@ -215,6 +215,45 @@ def test_desktop_census_cached_raw_page_retains_original_observation_time(tmp_pa
             "adapter", "run_id", "cell_id", "message_id", "native_task_id")})
 
 
+@pytest.mark.parametrize("damage", [None, "missing-ref", "hash", "run", "state", "newer-plan", "endpoint", "marker"])
+def test_historical_resume_uses_only_explicit_frozen_host_authority(tmp_path, monkeypatch, damage):
+    from slk_transport.role_host import RoleHost
+    from test_worker_resume_observation import continuation
+    old, source, incoming = prepared_host(tmp_path)
+    binding = dict(old.binding)
+    if damage == "run": binding["run_id"] = "RUN-OTHER"
+    if damage == "state": binding["state_command"] = ["another-state-authority"]
+    if damage == "newer-plan": binding["plan_revision"] = 5
+    frozen = write_json(tmp_path / "explicit-frozen-host.json", binding)
+    digest = wc._sha256(frozen)
+    fresh = continuation(source, old.endpoint("worker"), asdict(incoming))
+    marker = wc._read_object(fresh / "native-resume.json", "marker")
+    marker["binding_sha256"] = "a" * 64 if damage == "marker" else digest
+    write_json(fresh / "native-resume.json", marker)
+    if damage == "endpoint":
+        endpoint = wc._read_object(fresh / "endpoint.json", "endpoint")
+        endpoint["address"]["session_id"] = "different-session"
+        write_json(fresh / "endpoint.json", endpoint)
+    current = RoleHost({**old.binding, "plan_revision": 4}, "b" * 64)
+    monkeypatch.setattr(current, "projection", lambda: {"runtime_snapshot": {"runtime_revision": 8}})
+    for path in (source, fresh):
+        start = native.validate_native_start(path / "started.json")
+        value = activity(start, "COMPLETED")
+        value["sample"] = {"source": "DSH_LIVE_AGENT_REGISTRY", "native_task_id": value["native_task_id"],
+                           "observed_at": value["observed_at"]}
+        write_json(path / "native-activity.json", value)
+    refs = [] if damage == "missing-ref" else [{"path": str(frozen), "sha256": "0" * 64 if damage == "hash" else digest}]
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    if damage in {"hash", "run", "state", "newer-plan"}:
+        with pytest.raises(ValueError):
+            current.inspect_run_quiescence("close", [source.parents[1]], historical_host_refs=refs)
+    else:
+        proof = current.inspect_run_quiescence("close", [source.parents[1]], historical_host_refs=refs)
+        assert proof["status"] == ("QUIESCENT" if damage is None else "NOT_QUIESCENT"), proof
+        if damage is None: assert proof["historical_host_refs"] == refs
+    assert all(path.read_bytes() == data for path, data in before.items())
+
+
 @pytest.mark.parametrize("damage", [None, "active", "missing-turn", "wrong-thread", "wrong-host", "wrong-item",
                                     "unknown", "no-capability", "retired-plugin", "disabled-plugin", "local-host-alias",
                                     "paginated", "cursor-loop", "duplicate-turn",

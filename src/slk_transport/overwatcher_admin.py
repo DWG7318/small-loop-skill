@@ -152,7 +152,8 @@ def _verify_cycle(cycle: dict[str, Any], run_id: str, state_command: list[str]) 
                 and row.get("native_start_sha256") == _sha256(coordinators[0]) for row in original["inspections"]):
                 raise ValueError("paused observation cannot exempt a different Supervisor invocation")
             actual = host.inspect_run_quiescence(details["pause_id"], [Path(root) for root in proof["attempt_roots"]],
-                coordinators[0] if coordinators else None, coordinator_observer=True)
+                coordinators[0] if coordinators else None, coordinator_observer=True,
+                historical_host_refs=proof.get("historical_host_refs", []))
             if ({key: value for key, value in actual.items() if key != "observed_at"}
                 != {key: value for key, value in proof.items() if key != "observed_at"}):
                 raise ValueError("paused cycle native writers changed; recollect and report actual facts")

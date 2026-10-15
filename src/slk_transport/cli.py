@@ -555,7 +555,8 @@ def _inspect_run_quiescence(args: argparse.Namespace) -> int:
     # Only a centrally confirmed original coordinator can be observed without
     # being its author. The Host still validates its exact live native receipt.
     proof = host.inspect_run_quiescence(args.pause_id, roots, args.coordinator_started,
-                                       coordinator_observer=coordinator_observer)
+        coordinator_observer=coordinator_observer,
+        historical_host_refs=[{"path": path, "sha256": digest} for path, digest in args.historical_host])
     from .worker_completion import _write_or_reuse_stable_request
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -878,6 +879,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     quiescence.add_argument("--adapter-config-sha256", required=True)
     quiescence.add_argument("--pause-id", required=True)
     quiescence.add_argument("--coordinator-started", type=Path)
+    quiescence.add_argument("--historical-host", nargs=2, action="append", default=[], metavar=("PATH", "SHA256"))
     quiescence.add_argument("--output", required=True, type=Path)
     overwatcher_admin = subparsers.add_parser("overwatcher-admin")
     overwatcher_admin.add_argument("--request", required=True, type=Path)

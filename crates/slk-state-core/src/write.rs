@@ -5581,8 +5581,22 @@ fn validate_quiescence_census(
         )
     };
     let object = proof.as_object().ok_or_else(invalid)?;
-    if object.len() != 8 {
+    if object.len() != 8 + usize::from(object.contains_key("historical_host_refs")) {
         return Err(invalid());
+    }
+    if let Some(references) = object.get("historical_host_refs") {
+        let mut paths = std::collections::BTreeSet::new();
+        let mut hashes = std::collections::BTreeSet::new();
+        for reference in references.as_array().ok_or_else(invalid)? {
+            if reference.as_object().is_none_or(|value| value.len() != 2) { return Err(invalid()); }
+            let path = reference["path"].as_str().filter(|path| Path::new(path).is_absolute()).ok_or_else(invalid)?;
+            let hash = reference["sha256"].as_str().filter(|hash| is_lower_sha256(hash)).ok_or_else(invalid)?;
+            let bytes = fs::read(path)?;
+            let host: serde_json::Value = serde_json::from_slice(&bytes)?;
+            if !paths.insert(path) || !hashes.insert(hash) || sha256_hex(&bytes) != hash || host["run_id"] != run_id {
+                return Err(invalid());
+            }
+        }
     }
     let observed = proof["observed_at"].as_str().ok_or_else(invalid)?;
     let age = parse_rfc3339(occurred_at)? - parse_rfc3339(observed)?;

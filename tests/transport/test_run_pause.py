@@ -98,6 +98,22 @@ def lifecycle_host(tmp_path, monkeypatch):
     return host, op, projection
 
 
+def test_lifecycle_passes_explicit_historical_refs_only_to_readonly_census(tmp_path, monkeypatch):
+    host, op, projection = lifecycle_host(tmp_path, monkeypatch)
+    refs = [{"path": str(tmp_path / "frozen-history.json"), "sha256": "c" * 64}]
+    op["historical_host_refs"] = refs
+    seen = []
+    def census(*_args, **kwargs):
+        seen.append(kwargs)
+        return {"status": "NOT_QUIESCENT", "runtime_revision": projection["runtime_snapshot"]["runtime_revision"]}
+    monkeypatch.setattr(host, "inspect_run_quiescence", census)
+    monkeypatch.setattr(wc, "_run_json_command", lambda _command, arguments, **_kwargs: temporal_result(arguments))
+    result = host.run_lifecycle("pause-run", op, operation_sha256="b" * 64, expected_revision=7)
+    assert result["status"] == "pause_requested"
+    assert seen == [{"historical_host_refs": refs}]
+    assert [row["event_type"] for row in projection["events"]] == ["RUN_PAUSE_REQUESTED"]
+
+
 @pytest.mark.parametrize("pause_id", ["pause-1", "pause-" + "a" * 512])
 def test_original_lifecycle_request_retries_partial_central_and_temporal_without_new_events(tmp_path, monkeypatch, pause_id):
     host, op, projection = lifecycle_host(tmp_path, monkeypatch)

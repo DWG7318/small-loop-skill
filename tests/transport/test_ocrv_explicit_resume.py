@@ -230,8 +230,24 @@ def test_correction_marker_tamper_blocks_cli_and_census(tmp_path, monkeypatch, c
     (fresh / 'ocrv-resume.json').write_text(json.dumps(marker))
     monkeypatch.setattr(adapter.subprocess, 'Popen', lambda *_a, **_k: pytest.fail('tampered marker launched native'))
     assert recovery.main() == 4
-    with pytest.raises(ValueError, match='provenance'):
-        host.inspect_run_quiescence('review-census', [source.parent.parent])
+    census = host.inspect_run_quiescence('review-census', [source.parent.parent])
+    row = next(row for row in census['inspections'] if Path(row['native_start_path']) == fresh / 'started.json')
+    assert row['status'] == 'UNKNOWN'
+    assert 'historical Host reference' in row['reason']
+    assert census['status'] == 'NOT_QUIESCENT'
+
+
+def test_correction_census_reads_explicit_frozen_host_across_plan_change(tmp_path, monkeypatch, capsys):
+    adapter, recovery, host, source, fresh = run_partial(tmp_path, monkeypatch, lambda *_a, **_k: {'status': 'started'})
+    frozen = tmp_path / 'frozen-checker-host.json'
+    frozen.write_bytes((tmp_path / 'binding.json').read_bytes())
+    assert wc._sha256(frozen) == host.digest
+    host.binding = {**host.binding, 'plan_revision': host.binding['plan_revision'] + 1}
+    host.digest = 'f' * 64
+    census = host.inspect_run_quiescence('review-census', [source.parent.parent],
+        historical_host_refs=[{'path': str(frozen), 'sha256': wc._sha256(frozen)}])
+    row = next(row for row in census['inspections'] if Path(row['native_start_path']) == fresh / 'started.json')
+    assert row['status'] == 'STOPPED', row
 
 
 @pytest.mark.parametrize('damage', ['wrong-session', 'changed-capacity', 'executor-live', 'query-denied'])

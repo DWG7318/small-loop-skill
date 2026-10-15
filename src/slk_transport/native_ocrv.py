@@ -200,7 +200,7 @@ def require_stopped_ocrv(receipt: Path, start: Mapping[str, Any]) -> None:
             raise ValueError("original OCRV writer is still alive; recorded D1 is not a sealed result")
 
 
-def ocrv_resume_identity(source: Path, host, envelope) -> str:
+def ocrv_resume_identity(source: Path, host, envelope, *, historical_hosts=None) -> str:
     """Validate a bounded descendant of the exact original Checker source.
 
     The logical message/D1 stays unchanged. Only public report delivery gets a
@@ -211,6 +211,11 @@ def ocrv_resume_identity(source: Path, host, envelope) -> str:
     current = Path(source)
     identity = envelope.message_id
     while True:
+        if historical_hosts is not None and current.parent.name == "review-corrections":
+            marker = wc._read_object(current / "ocrv-resume.json", "OCRV recovery provenance")
+            host = historical_hosts.get(marker.get("binding_sha256"))
+            if host is None:
+                raise ValueError("OCRV recovery lacks its exact frozen historical Host reference")
         if any(path.is_symlink() or getattr(path, "is_junction", lambda: False)()
                for path in (current, current.parent)):
             raise ValueError("OCRV recovery cannot follow an alternate source")
