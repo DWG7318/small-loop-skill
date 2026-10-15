@@ -254,7 +254,7 @@ def test_historical_resume_uses_only_explicit_frozen_host_authority(tmp_path, mo
     assert all(path.read_bytes() == data for path, data in before.items())
 
 
-@pytest.mark.parametrize("damage", [None, "active", "coordinator", "changed-lineage", "wrong-reader", "changed-item"])
+@pytest.mark.parametrize("damage", [None, "active", "coordinator", "changed-lineage", "wrong-reader", "wrong-reader-host", "wrong-reader-cwd", "changed-item"])
 def test_census_reads_central_desktop_bridge_from_original_scope_without_writes(tmp_path, monkeypatch, damage):
     from test_desktop_current_turn import (unresolved_delivery, host_receipt, native_platform_record,
         desktop_environment, prepare_desktop_current_turn, complete_desktop_current_turn)
@@ -270,6 +270,8 @@ def test_census_reads_central_desktop_bridge_from_original_scope_without_writes(
     (tmp_path / "host").mkdir()
     host, _, _ = prepared_host(tmp_path / "host")
     if damage == "wrong-reader": current["address"]["thread_id"] = "another-thread"
+    if damage == "wrong-reader-host": current["host_id"] = "another-host"
+    if damage == "wrong-reader-cwd": current["address"]["cwd"] = str(tmp_path / "another-workspace")
     host.endpoints["supervisor"] = current
     monkeypatch.setattr(host, "projection", lambda: {"runtime_snapshot": {"runtime_revision": 9},
         "native_invocations": [{"message_id": envelope["message_id"], "role_instance_id": endpoint["role_instance_id"],
