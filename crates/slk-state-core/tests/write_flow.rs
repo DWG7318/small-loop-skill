@@ -614,6 +614,70 @@ fn pause_confirmation_requires_complete_fresh_native_census_and_preserves_token(
 }
 
 #[test]
+fn cancel_requested_pause_resumes_without_false_paused_or_token_change() {
+    let fixture = Fixture::worker_active();
+    let token = fixture.store.current_token("run-a").unwrap();
+    let mut other_request = init_request("run-b");
+    other_request.supervisor = role("supervisor-b", Role::Supervisor);
+    other_request.supervisor_endpoint = endpoint("session-supervisor-b");
+    fixture.store.init_run(other_request).unwrap();
+    let other_before = serde_json::to_value(fixture.store.query_run("run-b").unwrap()).unwrap();
+    fixture.store.write_event(&fixture.supervisor,
+        lifecycle_event(&fixture, "requested-cancel-source", "RUN_PAUSE_REQUESTED", "cancel-pause"))
+        .unwrap();
+    let request = cancel_requested_event(&fixture, "requested-cancel-resume", "cancel-pause");
+    fixture.store.write_event(&fixture.supervisor, request.clone()).unwrap();
+    fixture.store.write_event(&fixture.supervisor, request).unwrap();
+    let projection = fixture.store.query_run("run-a").unwrap();
+    assert_ne!(projection.summary.state, "pause_requested");
+    assert_ne!(projection.summary.state, "paused");
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), token);
+    assert!(!projection.events.iter().any(|e| e.event_type == "RUN_PAUSED"));
+    assert_eq!(projection.events.iter().filter(|e| e.event_type == "RUN_RESUMED").count(), 1);
+    assert!(projection.events.iter().any(|e| e.event_id == "requested-cancel-source"));
+    let delayed = lifecycle_event(&fixture, "delayed-paused", "RUN_PAUSED", "cancel-pause");
+    assert!(fixture.store.write_event(&fixture.supervisor, delayed).is_err());
+    assert_eq!(serde_json::to_value(fixture.store.query_run("run-b").unwrap()).unwrap(), other_before);
+}
+
+#[test]
+fn cancel_requested_pause_does_not_bypass_identity_revision_or_confirmed_pause() {
+    let fixture = Fixture::worker_active();
+    fixture.store.write_event(&fixture.supervisor,
+        lifecycle_event(&fixture, "cancel-negative-source", "RUN_PAUSE_REQUESTED", "cancel-pause"))
+        .unwrap();
+    let request = cancel_requested_event(&fixture, "cancel-negative", "cancel-pause");
+    assert!(fixture.store.write_event(&fixture.worker, request.clone()).is_err());
+    for kind in ["pause", "revision", "run", "marker", "reason", "extra"] {
+        let mut invalid = request.clone();
+        invalid.event_id = format!("cancel-negative-{kind}");
+        match kind {
+            "pause" => invalid.details["pause_id"] = json!("not-the-original-pause"),
+            "revision" => invalid.details["expected_runtime_revision"] = json!(99999),
+            "run" => invalid.run_id = "not-this-run".into(),
+            "marker" => invalid.details["cancel_requested"] = json!(false),
+            "reason" => invalid.details["reason"] = json!("  "),
+            _ => invalid.details["unrelated"] = json!(true),
+        }
+        assert!(fixture.store.write_event(&fixture.supervisor, invalid).is_err(), "{kind}");
+    }
+    let no_request = Fixture::worker_active();
+    assert!(no_request.store.write_event(&no_request.supervisor,
+        cancel_requested_event(&no_request, "cancel-without-request", "cancel-pause")).is_err());
+    let confirmed = Fixture::worker_active();
+    pause_run(&confirmed);
+    assert!(confirmed.store.write_event(&confirmed.supervisor,
+        cancel_requested_event(&confirmed, "cancel-confirmed", "pause-1")).is_err());
+}
+
+fn cancel_requested_event(fixture: &Fixture, id: &str, pause: &str) -> WriteRequest {
+    let mut request = lifecycle_event(fixture, id, "RUN_RESUMED", pause);
+    request.details["cancel_requested"] = json!(true);
+    request.details["reason"] = json!("Supervisor cancels the unconfirmed request; no pause claimed");
+    request
+}
+
+#[test]
 fn resource_contention_does_not_advance_token_or_count_as_rework() {
     let fixture = Fixture::worker_active();
     fixture

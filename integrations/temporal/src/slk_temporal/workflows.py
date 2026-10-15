@@ -655,7 +655,7 @@ class RunSlkWorkflow:
         if (value["phase"] == "REQUESTED" and old is not None
             and any(event["pause_id"] == value["pause_id"] for event in old["events"].values())):
             raise ApplicationError("pause cycle identity was already used", non_retryable=True)
-        required = {"REQUESTED": {None, "RESUMED"}, "PAUSED": {"REQUESTED"}, "RESUMED": {"PAUSED"}}
+        required = {"REQUESTED": {None, "RESUMED"}, "PAUSED": {"REQUESTED"}, "RESUMED": {"REQUESTED", "PAUSED"}}
         if prior not in required[value["phase"]] or (value["phase"] != "REQUESTED" and value["pause_id"] != old["pause_id"]):
             raise ApplicationError("pause lifecycle transition is invalid", non_retryable=True)
         pending = self._continuity.pending_delivery()
@@ -664,7 +664,7 @@ class RunSlkWorkflow:
         if (value["phase"] == "PAUSED" and pending is not None
             and pending.operation_id in self._delivery_started and deferred != pending.operation_id):
             raise ApplicationError("pause cannot confirm an unresolved native delivery", non_retryable=True)
-        paused_at = old["paused_at"] if old is not None else None
+        paused_at = old["paused_at"] if old is not None and old["pause_id"] == value["pause_id"] else None
         if value["phase"] == "PAUSED":
             confirmed = workflow.now()
             if "confirmed_at" in value:
@@ -676,7 +676,7 @@ class RunSlkWorkflow:
             paused_at = confirmed.isoformat()
         elif "confirmed_at" in value:
             raise ApplicationError("only PAUSED may contain its central confirmation time", non_retryable=True)
-        if value["phase"] == "RESUMED" and self._member_residency_since is not None:
+        if value["phase"] == "RESUMED" and paused_at is not None and self._member_residency_since is not None:
             # A role whose responsibility began inside a pause only loses its
             # own overlap, never the time before it took responsibility.
             start = max(datetime.fromisoformat(paused_at), self._member_residency_since)

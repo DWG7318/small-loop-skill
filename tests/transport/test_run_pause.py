@@ -3,6 +3,7 @@
 from pathlib import Path
 import hashlib
 import json
+import sys
 import pytest
 
 from test_role_host import prepared_host
@@ -63,8 +64,14 @@ def lifecycle_host(tmp_path, monkeypatch):
     host, source, _ = prepared_host(tmp_path)
     roots = [source.parents[1], tmp_path / "notices"]
     roots[1].mkdir()
-    host.binding["temporal"] = {"attempt_root": str(roots[0]), "client_command": ["python"],
-        "workflow_identity_path": "identity", "workflow_identity_sha256": "a" * 64}
+    identity = write_json(tmp_path / "workflow-identity.json", {"schema_version": "slk.temporal-workflow-identity/v1",
+        "run_id": "RUN-A", "address": "test-only", "task_queue": "test-queue", "start_workflow_id": "start-a",
+        "start_run_id": "start-execution", "run_workflow_id": "run-a", "run_run_id": "run-execution",
+        "startup_fingerprint": "a" * 64})
+    host.binding["schema_version"] = "slk.role-host/v2"
+    host.binding["temporal"] = {"attempt_root": str(roots[0]),
+        "client_command": [sys.executable, "-m", "slk_temporal.delivery_client"],
+        "workflow_identity_path": str(identity), "workflow_identity_sha256": wc._sha256(identity)}
     binding = write_json(tmp_path / "host.json", host.binding)
     host.digest = wc._sha256(binding)
     config = write_json(tmp_path / "adapter.json", {"run_id": "RUN-A", "attempt_root": str(roots[0]),
@@ -123,6 +130,159 @@ def test_original_lifecycle_request_retries_partial_central_and_temporal_without
     assert [row["event_type"] for row in projection["events"]] == ["RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"]
     monkeypatch.setattr(host, "inspect_run_quiescence", lambda *_a: pytest.fail("already released"))
     assert host.run_lifecycle("resume-run", resume, operation_sha256="c" * 64, expected_revision=9)["status"] == "resumed"
+
+
+def requested_cancel_host(tmp_path, monkeypatch):
+    host, pause, projection = lifecycle_host(tmp_path, monkeypatch)
+    saved = write_json(tmp_path / "pause.json", pause)
+    projection["events"].append({"event_id": wc._stable_id(wc._sha256(saved), "run_pause_requested"),
+        "event_type": "RUN_PAUSE_REQUESTED", "author_role_instance_id": pause["role_instance_id"],
+        "details_json": json.dumps({"pause_id": pause["pause_id"], "expected_runtime_revision": 6})})
+    resume = {**pause, "pause_request_path": str(saved), "pause_request_sha256": wc._sha256(saved),
+              "cancel_requested": True, "reason": "Cancel the unconfirmed request; preserve the active call"}
+    monkeypatch.setattr(host, "inspect_run_quiescence", lambda *_a: pytest.fail("cancellation must not claim quiescence"))
+    monkeypatch.setattr(host, "_resume_preflight", lambda *_a: pytest.fail("cancellation must not require stopped members"))
+    return host, resume, projection
+
+
+def temporal_result(arguments):
+    value = json.loads(Path(arguments[arguments.index("--request") + 1]).read_text())
+    return {"schema_version": "slk.temporal-lifecycle-update-result/v1", "run_id": value["run_id"],
+            "status": value["phase"], "event_id": value["event_id"]}
+
+
+def sealed_lifecycle(tmp_path, monkeypatch, host, op, projection, revision=7):
+    from slk_transport import supervisor_admin as admin
+    from slk_transport.role_host import RoleHost
+    operation = write_json(tmp_path / "cancel.json", op)
+    request = write_json(tmp_path / "admin.json", {"schema_version": "slk.supervisor-admin/v1",
+        "run_id": host.binding["run_id"], "supervisor_role_instance_id": host.endpoint("supervisor")["role_instance_id"],
+        "expected_runtime_revision": revision, "sealed_credential_path": host.credential_path("supervisor"),
+        "state_command": host.state, "operation": "resume-run", "operation_request_path": str(operation),
+        "operation_request_sha256": wc._sha256(operation), "result_path": str(tmp_path / "admin-result.json")})
+    command = wc._run_json_command
+    def run(command_args, arguments, *, credential, credential_scope="role", state_config_path=None, pythonpath=None):
+        if arguments[0] == "authenticate-role":
+            assert credential == "secret"
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "supervisor",
+                "role_instance_id": "RUN-A-supervisor-001", "runtime_revision": projection["runtime_snapshot"]["runtime_revision"]}
+        return command(command_args, arguments, credential=credential, credential_scope=credential_scope,
+                       state_config_path=state_config_path, pythonpath=pythonpath)
+    monkeypatch.setattr(wc, "_run_json_command", run)
+    monkeypatch.setattr(wc, "_default_load_current_projection", lambda *_a, **_k: projection)
+    # Substitute only process/DPAPI/native boundaries; keep the sealed consumer,
+    # binding validation, lifecycle implementation and retry matcher real.
+    for name in ("projection", "_authenticate", "_state_json", "inspect_run_quiescence", "_resume_preflight"):
+        original = getattr(host, name)
+        monkeypatch.setattr(RoleHost, name, lambda _self, *args, _method=original, **kwargs: _method(*args, **kwargs))
+    return lambda: admin.execute_sealed_supervisor_admin(request, request_sha256=wc._sha256(request))
+
+
+def test_lifecycle_temporal_uses_strict_command_signature_without_role_credential(tmp_path, monkeypatch):
+    host, op, _projection = lifecycle_host(tmp_path, monkeypatch)
+    def temporal(command, arguments, *, credential, credential_scope="role", state_config_path=None, pythonpath=None):
+        assert credential is None
+        return temporal_result(arguments)
+    monkeypatch.setattr(wc, "_run_json_command", temporal)
+    assert host.run_lifecycle("pause-run", op, operation_sha256="b" * 64, expected_revision=7)["status"] == "paused"
+
+
+@pytest.mark.parametrize("boundary", ["first-temporal", "central", "final-temporal", None])
+def test_requested_cancel_retries_exact_event_across_commit_boundaries(tmp_path, monkeypatch, boundary):
+    host, op, projection = requested_cancel_host(tmp_path, monkeypatch)
+    projection["current_token"] = {"token_id": "T014", "holder": "worker"}
+    before_token = dict(projection["current_token"])
+    saved = write_json(tmp_path / "cancel.json", op)
+    digest = wc._sha256(saved)
+    calls, writes, failed = [], [], False
+    original_state = host._state_json
+    def temporal(command, arguments, *, credential, credential_scope="role", state_config_path=None, pythonpath=None):
+        nonlocal failed
+        assert credential is None
+        result = temporal_result(arguments)
+        calls.append(result["event_id"])
+        if not failed and ((boundary == "first-temporal" and len(calls) == 1)
+                           or (boundary == "final-temporal" and len(calls) == 2)):
+            failed = True
+            raise ValueError("boundary unavailable")
+        return result
+    def state(arguments, **kwargs):
+        nonlocal failed
+        event = json.loads(Path(arguments[-1]).read_text())
+        writes.append(event)
+        if boundary == "central" and not failed:
+            failed = True
+            raise ValueError("boundary unavailable")
+        return original_state(arguments, **kwargs)
+    monkeypatch.setattr(wc, "_run_json_command", temporal)
+    monkeypatch.setattr(host, "_state_json", state)
+    execute = sealed_lifecycle(tmp_path, monkeypatch, host, op, projection)
+    if boundary:
+        with pytest.raises(ValueError, match="boundary unavailable"):
+            execute()
+        assert not (tmp_path / "admin-result.json").exists()
+    assert execute()["status"] == "SUPERVISOR_ADMIN_COMPLETED"
+    assert host.lifecycle_retry_matches(projection, "resume-run", op, digest, 7, op["role_instance_id"])
+    assert host.run_lifecycle("resume-run", op, operation_sha256=digest, expected_revision=7)["status"] == "resumed"
+    assert [event["event_type"] for event in projection["events"]] == ["RUN_PAUSE_REQUESTED", "RUN_RESUMED"]
+    details = wc._event_details(projection["events"][-1])
+    assert details == {"pause_id": op["pause_id"], "expected_runtime_revision": 7,
+                       "cancel_requested": True, "reason": op["reason"]}
+    assert len(set(calls)) == 1 and all(event == writes[0] for event in writes)
+    assert projection["current_token"] == before_token
+
+
+@pytest.mark.parametrize("damage", ["role", "run", "pause", "revision", "marker", "reason", "extra",
+    "no-request", "already-paused", "original-author", "original-request", "central-author", "central-request"])
+def test_requested_cancel_rejects_changed_authority_before_any_temporal_write(tmp_path, monkeypatch, damage):
+    host, op, projection = requested_cancel_host(tmp_path, monkeypatch)
+    revision = 7
+    if damage == "role": op["role_instance_id"] = "RUN-A-worker-001"
+    elif damage == "run": op["run_id"] = "RUN-B"
+    elif damage == "pause": op["pause_id"] = "another-pause"
+    elif damage == "revision": revision = 6
+    elif damage == "marker": op["cancel_requested"] = False
+    elif damage == "reason": op["reason"] = "  "
+    elif damage == "extra": op["unrelated"] = True
+    elif damage == "no-request": projection["events"].clear()
+    elif damage == "already-paused": projection["events"][-1]["event_type"] = "RUN_PAUSED"
+    elif damage == "central-author": projection["events"][-1]["author_role_instance_id"] = "another-supervisor"
+    elif damage == "central-request": projection["events"][-1]["event_id"] = "another-request"
+    else:
+        old_path = Path(op["pause_request_path"])
+        old = json.loads(old_path.read_text())
+        if damage == "original-author": old["role_instance_id"] = "another-supervisor"
+        else: old["unexpected"] = "changed"
+        write_json(old_path, old)
+        op["pause_request_sha256"] = wc._sha256(old_path)
+        projection["events"][-1]["event_id"] = wc._stable_id(op["pause_request_sha256"], "run_pause_requested")
+    monkeypatch.setattr(wc, "_run_json_command", lambda *_a, **_k: pytest.fail("invalid cancel reached Temporal"))
+    monkeypatch.setattr(host, "_state_json", lambda *_a, **_k: pytest.fail("invalid cancel reached central"))
+    execute = sealed_lifecycle(tmp_path, monkeypatch, host, op, projection, revision)
+    with pytest.raises(ValueError):
+        execute()
+
+
+def test_cancel_retry_requires_same_closed_details_and_latest_lifecycle(tmp_path, monkeypatch):
+    host, op, projection = requested_cancel_host(tmp_path, monkeypatch)
+    digest = wc.canonical_json_sha256(op)
+    monkeypatch.setattr(wc, "_run_json_command", lambda _c, args, **_k: temporal_result(args))
+    host.run_lifecycle("resume-run", op, operation_sha256=digest, expected_revision=7)
+    event = projection["events"][-1]
+    original = event["details_json"]
+    for details in ({**json.loads(original), "reason": "other"},
+                    {**json.loads(original), "cancel_requested": False},
+                    {**json.loads(original), "extra": True}):
+        event["details_json"] = json.dumps(details)
+        assert not host.lifecycle_retry_matches(projection, "resume-run", op, digest, 7, op["role_instance_id"])
+        with pytest.raises(ValueError):
+            host.run_lifecycle("resume-run", op, operation_sha256=digest, expected_revision=7)
+    event["details_json"] = original
+    projection["events"].append({"event_id": "later", "event_type": "RUN_PAUSE_REQUESTED",
+        "author_role_instance_id": op["role_instance_id"], "details_json": json.dumps({"pause_id": "pause-2"})})
+    assert not host.lifecycle_retry_matches(projection, "resume-run", op, digest, 7, op["role_instance_id"])
+    with pytest.raises(ValueError):
+        host.run_lifecycle("resume-run", op, operation_sha256=digest, expected_revision=7)
 
 
 def test_physical_entry_fences_construction_but_retains_original_started_closure(tmp_path, monkeypatch):

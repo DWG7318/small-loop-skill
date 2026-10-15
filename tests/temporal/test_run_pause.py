@@ -145,6 +145,90 @@ def test_original_paused_receipt_roundtrips_without_inventing_lifecycle_or_ack(m
     validate_checkpoint(restored.recovery_checkpoint())
 
 
+def test_cancel_requested_retains_residency_request_and_replay(monkeypatch):
+    run = prepared(monkeypatch)
+    run.request_delivery(delivery_value())
+    run.native_started(ack_value())
+    base = run._member_residency_since
+    run.set_run_pause(change("REQUESTED"))
+    monkeypatch.setattr(workflows.workflow, "now", lambda: base + timedelta(hours=2))
+    assert run.set_run_pause(change("RESUMED")) == "RESUMED"
+    assert run.set_run_pause(change("RESUMED")) == "RESUMED"
+    assert run._member_residency_since == base
+    assert run._run_pause["paused_at"] is None
+    assert set(run._run_pause["events"]) == {"requested", "resumed"}
+    packet = run.recovery_checkpoint()
+    validate_checkpoint(packet)
+    restored = prepared(monkeypatch)
+    restored._restore_checkpoint(packet)
+    assert restored.recovery_checkpoint() == packet
+    with pytest.raises(Exception, match="transition"):
+        restored.set_run_pause(change("PAUSED"))
+    assert restored._run_pause["phase"] == "RESUMED"
+
+
+def test_cancel_preserves_frozen_authority_and_pause_identity(monkeypatch):
+    run = prepared(monkeypatch)
+    with pytest.raises(Exception, match="transition"):
+        run.set_run_pause(change("RESUMED"))
+    run.set_run_pause(change("REQUESTED"))
+    for key, wrong in (("run_id", "OTHER"), ("supervisor_role_instance_id", "worker-a"),
+                       ("pause_id", "wrong-pause")):
+        with pytest.raises(Exception):
+            run.set_run_pause({**change("RESUMED"), key: wrong})
+    assert run._run_pause["phase"] == "REQUESTED"
+
+
+def test_cancelled_checkpoint_does_not_require_or_allow_false_paused(monkeypatch):
+    run = prepared(monkeypatch)
+    run.set_run_pause(change("REQUESTED"))
+    run._run_pause.update(phase="RESUMED", delivery_generation=1)
+    run._run_pause["events"]["resumed"] = change("RESUMED")
+    validate_checkpoint(run.recovery_checkpoint())
+    run._run_pause["paused_at"] = workflows.workflow.now().isoformat()
+    with pytest.raises(ValueError, match="timestamp"):
+        validate_checkpoint(run.recovery_checkpoint())
+
+
+def test_cancel_new_cycle_never_inherits_previous_confirmed_clock(monkeypatch):
+    run = prepared(monkeypatch)
+    run.request_delivery(delivery_value())
+    run.native_started(ack_value())
+    base = run._member_residency_since
+    monkeypatch.setattr(workflows.workflow, "now", lambda: base + timedelta(minutes=20))
+    run.set_run_pause(change("REQUESTED"))
+    run.set_run_pause(change("PAUSED"))
+    monkeypatch.setattr(workflows.workflow, "now", lambda: base + timedelta(minutes=80))
+    run.set_run_pause(change("RESUMED"))
+    assert run._member_residency_since == base + timedelta(minutes=60)
+    run.set_run_pause({**change("REQUESTED", "requested-2"), "pause_id": "pause-2"})
+    assert run._run_pause["paused_at"] is None
+    validate_checkpoint(run.recovery_checkpoint())
+    monkeypatch.setattr(workflows.workflow, "now", lambda: base + timedelta(hours=3))
+    run.set_run_pause({**change("RESUMED", "resumed-2"), "pause_id": "pause-2"})
+    assert run._member_residency_since == base + timedelta(minutes=60)
+    validate_checkpoint(run.recovery_checkpoint())
+
+
+def test_cancel_retries_keep_original_pending_operation_and_other_run_unchanged(monkeypatch):
+    run, other = prepared(monkeypatch), prepared(monkeypatch)
+    other._startup = workflows.StartSlkRequest.from_dict({**start_value(), "run_id": "RUN-B"})
+    other._continuity = workflows.RunContinuity("RUN-B")
+    other_before = other.status()
+    delivery = delivery_value()
+    run.request_delivery(delivery)
+    run._delivery_started.add(delivery["operation_id"])
+    run._continuity.record_delivery_result(delivery["operation_id"], "PAUSED")
+    run.set_run_pause(change("REQUESTED"))
+    for _ in range(3):
+        run.set_run_pause(change("RESUMED"))
+        assert run.status()["pending_operation_id"] == delivery["operation_id"]
+        assert run._run_pause["deferred_operation_id"] == "RETRY:" + delivery["operation_id"]
+        assert len(run._run_pause["events"]) == 2
+        validate_checkpoint(run.recovery_checkpoint())
+    assert other.status() == other_before
+
+
 @pytest.mark.parametrize("mode", ["deferred", "delivered-unacked", "central-before-temporal"])
 def test_real_sdk_resume_partial_commit_keeps_original_queued_operation_and_replays(mode):
     from temporalio import activity

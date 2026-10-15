@@ -5506,6 +5506,22 @@ fn validate_pause_event(connection: &Connection, request: &WriteRequest) -> Resu
         if details.len() != 2 || !matches!(previous_kind, None | Some("RUN_RESUMED")) {
             return Err(invalid());
         }
+    } else if request.event_type == EventType::RunResumed
+        && details.get("cancel_requested") == Some(&serde_json::Value::Bool(true))
+    {
+        // Cancelling an unconfirmed request does not claim PAUSED or QUIESCENT.
+        // Keep normal authorization, revision and matching pause identity checks.
+        if previous_kind != Some("RUN_PAUSE_REQUESTED")
+            || details.len() != 4
+            || !details
+                .get("reason")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|reason| !reason.trim().is_empty())
+            || serde_json::from_str::<serde_json::Value>(&previous.unwrap().1)?["pause_id"]
+                != pause_id
+        {
+            return Err(invalid());
+        }
     } else {
         let required = if request.event_type == EventType::RunPaused {
             "RUN_PAUSE_REQUESTED"

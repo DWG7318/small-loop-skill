@@ -90,12 +90,16 @@ def validate_checkpoint(value: object) -> dict:
             phases.add(event["phase"])
         expected = {"REQUESTED": {"REQUESTED"}, "PAUSED": {"REQUESTED", "PAUSED"},
                     "RESUMED": {"REQUESTED", "PAUSED", "RESUMED"}}
-        if groups[pause["pause_id"]] != expected[pause["phase"]] or any(
-            phases != expected["RESUMED"] for identity, phases in groups.items() if identity != pause["pause_id"]):
+        completed = (expected["RESUMED"], {"REQUESTED", "RESUMED"})
+        current_allowed = completed if pause["phase"] == "RESUMED" else (expected[pause["phase"]],)
+        if groups[pause["pause_id"]] not in current_allowed or any(
+            phases not in completed for identity, phases in groups.items() if identity != pause["pause_id"]):
             raise ValueError("checkpoint pause transition is incomplete")
-        if pause["phase"] in {"PAUSED", "RESUMED"}:
+        if pause["phase"] in {"PAUSED", "RESUMED"} and "PAUSED" in groups[pause["pause_id"]]:
             if not isinstance(pause["paused_at"], str) or datetime.fromisoformat(pause["paused_at"]).utcoffset() is None:
                 raise ValueError("checkpoint pause timestamp is invalid")
+        elif pause["phase"] == "RESUMED" and pause["paused_at"] is not None:
+            raise ValueError("cancelled request must not claim a confirmed pause timestamp")
         if (pause["phase"] == "PAUSED" and pending is not None and pending.operation_id in value["delivery_started"]
             and pause["deferred_operation_id"] != pending.operation_id):
             raise ValueError("confirmed pause cannot retain unresolved delivery")

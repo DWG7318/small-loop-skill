@@ -246,6 +246,12 @@ class RoleHost:
             or wc._event_details(own).get("pause_id") != request.get("pause_id")
             or wc._event_details(own).get("expected_runtime_revision") != revision):
             return False
+        if "cancel_requested" in request:
+            if (operation != "resume-run" or request["cancel_requested"] is not True
+                or not isinstance(request.get("reason"), str) or not request["reason"].strip()
+                or wc._event_details(own) != {"pause_id": request["pause_id"],
+                    "expected_runtime_revision": revision, "cancel_requested": True, "reason": request["reason"]}):
+                return False
         # Other engineering writes may have drained during REQUESTED. They do
         # not authorize a new operation; the current last lifecycle must still
         # be this exact pause, never a later Run pause or another Supervisor.
@@ -259,7 +265,10 @@ class RoleHost:
                       operation_sha256: str, expected_revision: int) -> dict[str, Any]:
         fields = {"schema_version", "run_id", "role_instance_id", "pause_id", "binding_path", "binding_sha256",
                   "adapter_config_path", "adapter_config_sha256", "evidence_root", "coordinator_started_path"}
+        pause_fields = set(fields)
         if operation == "resume-run": fields |= {"pause_request_path", "pause_request_sha256"}
+        cancel_requested = operation == "resume-run" and "cancel_requested" in request
+        if cancel_requested: fields |= {"cancel_requested", "reason"}
         if (operation not in {"pause-run", "resume-run"} or set(request) != fields
             or request.get("schema_version") != "slk.run-lifecycle/v1"
             or request["run_id"] != self.binding["run_id"]
@@ -267,6 +276,9 @@ class RoleHost:
             or not re.fullmatch(r"[A-Za-z0-9_.-]+", str(request["pause_id"]))
             or request["binding_sha256"] != self.digest or "temporal" not in self.binding):
             raise ValueError("Run lifecycle request is not the closed frozen Supervisor operation")
+        if cancel_requested and (request["cancel_requested"] is not True
+            or not isinstance(request["reason"], str) or not request["reason"].strip()):
+            raise ValueError("cancellation requires cancel_requested:true and a nonempty reason")
         def roots(value):
             path = Path(value["adapter_config_path"])
             if not path.is_absolute() or wc._sha256(path) != value["adapter_config_sha256"]:
@@ -289,6 +301,10 @@ class RoleHost:
             old = wc._read_object(old_path, "original pause request")
             if old.get("pause_id") != request["pause_id"] or old.get("run_id") != request["run_id"]:
                 raise ValueError("resume changed the original pause identity")
+            if cancel_requested and (set(old) != pause_fields
+                or old.get("schema_version") != "slk.run-lifecycle/v1"
+                or old.get("role_instance_id") != request["role_instance_id"]):
+                raise ValueError("cancellation changed the original Supervisor pause request")
             attempt_roots += roots(old)
         attempt_roots = list(dict.fromkeys(path.resolve() for path in attempt_roots))
         root = Path(request["evidence_root"])
@@ -307,6 +323,10 @@ class RoleHost:
                 if existing is not None: return existing
                 revision = projection["runtime_snapshot"]["runtime_revision"]
                 details = {"pause_id": request["pause_id"], "expected_runtime_revision": revision}
+                if cancel_requested:
+                    if revision != expected_revision:
+                        raise ValueError("cancellation changed its current runtime revision")
+                    details.update(cancel_requested=True, reason=request["reason"])
                 if proof is not None:
                     details.update(quiescence_path=str(proof), quiescence_sha256=wc._sha256(proof))
                 event = {"event_id": identity, "run_id": request["run_id"], "role_instance_id": request["role_instance_id"],
@@ -317,7 +337,10 @@ class RoleHost:
                 if path.is_file():
                     event = wc._read_object(path, "original lifecycle event request")
                     if (event.get("event_id") != identity or event.get("run_id") != request["run_id"]
-                        or wc._event_details(event).get("expected_runtime_revision") != revision):
+                        or wc._event_details(event).get("expected_runtime_revision") != revision
+                        or cancel_requested and (wc._event_details(event) != details
+                            or event.get("role_instance_id") != request["role_instance_id"]
+                            or event.get("event_type") != kind)):
                         raise ValueError("uncommitted lifecycle request boundary changed; keep the gate closed")
                 else:
                     wc._write_or_reuse_stable_request(path, event)
@@ -331,7 +354,7 @@ class RoleHost:
                 path = wc._write_or_reuse_stable_request(root / (phase.lower() + "-temporal.json"), value)
                 binding = self.binding["temporal"]
                 result = wc._run_json_command(binding["client_command"], ["set-run-pause", "--identity", binding["workflow_identity_path"],
-                    "--identity-sha256", binding["workflow_identity_sha256"], "--request", str(path), "--request-sha256", wc._sha256(path)])
+                    "--identity-sha256", binding["workflow_identity_sha256"], "--request", str(path), "--request-sha256", wc._sha256(path)], credential=None)
                 core = {key: item for key, item in result.items() if key != "_slk_command"}
                 if core != {"schema_version": "slk.temporal-lifecycle-update-result/v1", "status": phase,
                             "run_id": request["run_id"], "event_id": event["event_id"]}:
@@ -342,10 +365,32 @@ class RoleHost:
                     raise ValueError("pause request changed its initial revision")
                 temporal("REQUESTED", requested)
             else:
-                completed = next((event for event in self.projection().get("events", [])
+                current = self.projection()
+                completed = next((event for event in current.get("events", [])
                                   if event.get("event_id") == wc._stable_id(operation_sha256, "run_resumed")), None)
+                if cancel_requested:
+                    if completed is not None:
+                        if not self.lifecycle_retry_matches(current, operation, request, operation_sha256,
+                                                            expected_revision, request["role_instance_id"]):
+                            raise ValueError("cancellation retry changed its committed lifecycle event")
+                    else:
+                        lifecycle = [event for event in current.get("events", []) if event.get("event_type") in {
+                            "RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"}]
+                        if (current.get("summary", {}).get("run_id") != request["run_id"]
+                            or current["runtime_snapshot"]["runtime_revision"] != expected_revision
+                            or not lifecycle or lifecycle[-1].get("event_type") != "RUN_PAUSE_REQUESTED"
+                            or lifecycle[-1].get("event_id") != wc._stable_id(request["pause_request_sha256"], "run_pause_requested")
+                            or lifecycle[-1].get("author_role_instance_id") != request["role_instance_id"]
+                            or wc._event_details(lifecycle[-1]).get("pause_id") != request["pause_id"]):
+                            raise ValueError("cancellation requires the exact current REQUESTED pause and revision")
                 if completed is not None:
                     temporal("RESUMED", completed)
+                    return {"status": "resumed", "run_id": request["run_id"], "pause_id": request["pause_id"]}
+                if cancel_requested:
+                    resumed = {"event_id": wc._stable_id(operation_sha256, "run_resumed")}
+                    temporal("RESUMED", resumed)
+                    central("RUN_RESUMED")
+                    temporal("RESUMED", resumed)
                     return {"status": "resumed", "run_id": request["run_id"], "pause_id": request["pause_id"]}
             proof = self.inspect_run_quiescence(request["pause_id"], attempt_roots, coordinator)
             if proof["status"] != "QUIESCENT":
