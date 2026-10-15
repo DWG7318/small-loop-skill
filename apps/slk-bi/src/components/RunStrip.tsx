@@ -83,7 +83,7 @@ export function RunStrip({ view, archived = false, unread = false, open = false,
         <code className="work-time">{formatDuration(view.totalWorkMs)}</code>
         <SegmentedProgress passed={view.progress.passed} total={view.progress.total} tone={progressTone} />
         <code className="cell-progress">
-          {view.progress.passed}/{view.progress.total} CELL
+          {view.progress.passed}/{view.progress.totalLabel ? `(${view.progress.totalLabel})` : view.progress.total} CELL
           {view.currentCellWorkMs ? ` · ${formatDuration(view.currentCellWorkMs)}` : ""}
         </code>
         <span className={`run-status status-${view.statusTone}`} title={view.status}>

@@ -46,6 +46,11 @@ function envelope(run: RunView = runFixture): WebBiUploadEnvelope {
 }
 
 describe("WebBI upload contract", () => {
+  it("preserves optional desktop count provenance and accepts older uploads without it", () => {
+    const run = { ...runFixture, cell_count_origin: { initial: 3, split_added: 1 } };
+    expect(parseUploadEnvelope(envelope(run), catalog).runs[0]?.run.cell_count_origin).toEqual(run.cell_count_origin);
+    expect(parseUploadEnvelope(envelope(), catalog).runs[0]?.run.cell_count_origin).toBeUndefined();
+  });
   it.each(["1.1.0", "1.1.1"])("reads %s archives without relabeling their producer", (version) => {
     expect(parseUploadEnvelope({ ...envelope(), bi_version: version }, catalog).bi_version).toBe(version);
   });

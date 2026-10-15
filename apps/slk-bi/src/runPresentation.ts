@@ -31,7 +31,7 @@ export interface RunStripView {
   runName: string;
   description: string;
   startDate: string;
-  progress: { passed: number; total: number };
+  progress: { passed: number; total: number; totalLabel?: string };
   currentCellId: string | null;
   totalWorkMs: number;
   currentCellWorkMs: number;
@@ -451,6 +451,11 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
     : `${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
   const [statusText, statusTone] = status(run, responsible);
   const sourceInfo = source(run.summary);
+  const origin = run.cell_count_origin;
+  const totalLabel = origin && Number.isSafeInteger(origin.initial) && origin.initial >= 0
+    && Number.isSafeInteger(origin.split_added) && origin.split_added > 0
+    && origin.initial + origin.split_added === effective.length
+    ? `${origin.initial}+${origin.split_added}` : undefined;
 
   return {
     runId: run.run_id,
@@ -458,7 +463,7 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
     runName: run.summary.run_name || allCells[0]?.title || run.summary.goal,
     description: run.summary.run_description || run.summary.goal,
     startDate,
-    progress: { passed, total: effective.length },
+    progress: { passed, total: effective.length, ...(totalLabel ? { totalLabel } : {}) },
     currentCellId: cellId,
     totalWorkMs: unionDuration(intervals),
     currentCellWorkMs: unionDuration(intervals.filter((interval) => interval.cellId === cellId)),

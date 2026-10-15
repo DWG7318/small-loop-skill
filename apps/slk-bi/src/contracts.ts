@@ -242,6 +242,7 @@ export interface RunsView {
 export interface RunView {
   schema_version: "slk.bi.run/v1";
   run_id: string;
+  cell_count_origin?: { initial: number; split_added: number } | null;
   summary: RunSummary;
   administrative_snapshot: {
     run_id: string;

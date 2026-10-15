@@ -269,6 +269,12 @@ struct OverwatcherBindingRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CellCountOrigin {
+    pub initial: usize,
+    pub split_added: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RunProjection {
     pub schema_version: u32,
     pub summary: RunSummary,
@@ -276,6 +282,7 @@ pub struct RunProjection {
     pub runtime_snapshot: Option<RuntimeSnapshot>,
     pub boundaries_json: String,
     pub go_nodes: Vec<GoProjection>,
+    pub cell_count_origin: Option<CellCountOrigin>,
     pub roles: Vec<RoleProjection>,
     pub plan_revisions: Vec<PlanRevisionProjection>,
     pub events: Vec<EventProjection>,
@@ -379,6 +386,18 @@ impl StateStore {
             .into_iter()
             .find(|summary| summary.run_id == run_id)
             .ok_or_else(|| StateError::RunNotFound(run_id.to_string()))?;
+        let go_nodes = load_go_nodes(&connection, run_id)?;
+        let events = load_events(&connection, run_id)?;
+        let initial_plan: Option<String> = connection
+            .query_row(
+                "SELECT snapshot_json FROM plan_revisions WHERE run_id=?1 AND revision=1",
+                [run_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let cell_count_origin = initial_plan
+            .as_deref()
+            .and_then(|plan| cell_count_origin(run_id, plan, &go_nodes, &events));
         Ok(RunProjection {
             schema_version: connection
                 .pragma_query_value(None, "user_version", |row| row.get(0))?,
@@ -386,10 +405,11 @@ impl StateStore {
             administrative_snapshot: run_state_snapshot_from(&connection, run_id)?,
             runtime_snapshot: Some(runtime_snapshot_from(&connection, run_id)?),
             boundaries_json,
-            go_nodes: load_go_nodes(&connection, run_id)?,
+            go_nodes,
+            cell_count_origin,
             roles: load_roles(&connection, run_id)?,
             plan_revisions: load_plan_revisions(&connection, run_id)?,
-            events: load_events(&connection, run_id)?,
+            events,
             native_invocations: {
                 let mut statement = connection.prepare(
                     "SELECT message_id, to_role_instance_id, evidence_path, evidence_sha256
@@ -906,6 +926,86 @@ fn load_go_nodes(connection: &Connection, run_id: &str) -> Result<Vec<GoProjecti
         });
     }
     Ok(output)
+}
+
+// Optional display provenance, never a new source of planning state. Incomplete
+// legacy history or non-split edits fall back to the current effective total.
+fn cell_count_origin(
+    run_id: &str,
+    initial_plan: &str,
+    go_nodes: &[GoProjection],
+    events: &[EventProjection],
+) -> Option<CellCountOrigin> {
+    let plan: Value = serde_json::from_str(initial_plan).ok()?;
+    if plan.get("run_id")?.as_str()? != run_id {
+        return None;
+    }
+    let initial_cells = plan.get("cell_nodes")?.as_array()?;
+    let mut active = HashSet::new();
+    for cell in initial_cells {
+        let identity = (
+            cell.get("go_id")?.as_str()?.to_owned(),
+            cell.get("cell_id")?.as_str()?.to_owned(),
+        );
+        if !active.insert(identity) {
+            return None;
+        }
+    }
+    let initial = active.len();
+    let mut seen = active.clone();
+    let corrected: HashSet<_> = events
+        .iter()
+        .filter_map(|e| e.corrects_event_id.as_deref())
+        .collect();
+    for event in events
+        .iter()
+        .filter(|e| e.event_type == "CELL_SPLIT" && !corrected.contains(e.event_id.as_str()))
+    {
+        let details: Value = serde_json::from_str(&event.details_json).ok()?;
+        let go = details.get("source_go_id")?.as_str()?;
+        let parent = details.get("source_cell_id")?.as_str()?;
+        if event.go_id.as_deref() != Some(go)
+            || event.cell_id.as_deref() != Some(parent)
+            || !active.remove(&(go.to_owned(), parent.to_owned()))
+        {
+            return None;
+        }
+        let successors = details.get("successor_cell_ids")?.as_array()?;
+        if successors.len() < 2 {
+            return None;
+        }
+        for successor in successors {
+            let identity = (go.to_owned(), successor.as_str()?.to_owned());
+            if !seen.insert(identity.clone()) {
+                return None;
+            }
+            active.insert(identity);
+        }
+    }
+    let current_all: HashSet<_> = go_nodes
+        .iter()
+        .flat_map(|go| {
+            go.cell_nodes
+                .iter()
+                .map(|cell| (go.go_id.clone(), cell.cell_id.clone()))
+        })
+        .collect();
+    let current_active: HashSet<_> = go_nodes
+        .iter()
+        .flat_map(|go| {
+            go.cell_nodes
+                .iter()
+                .filter(|cell| cell.state != "split")
+                .map(|cell| (go.go_id.clone(), cell.cell_id.clone()))
+        })
+        .collect();
+    if seen != current_all || active != current_active {
+        return None;
+    }
+    Some(CellCountOrigin {
+        initial,
+        split_added: active.len().checked_sub(initial)?,
+    })
 }
 
 fn load_cell_nodes(

@@ -9,6 +9,133 @@ use slk_state_core::model::{
 use slk_state_core::write::StateStore;
 
 #[test]
+fn cell_count_origin_replays_split_history_without_counting_retired_parents() {
+    let fixture = Fixture::new();
+    let read = || fixture.store.run_view("run-a").unwrap();
+    assert_eq!(
+        read()["cell_count_origin"],
+        json!({"initial": 2, "split_added": 0})
+    );
+    let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    recorded_split(&connection, "CELL-001", &["CELL-001A", "CELL-001B"], 1);
+    assert_eq!(
+        read()["cell_count_origin"],
+        json!({"initial": 2, "split_added": 1})
+    );
+    recorded_split(
+        &connection,
+        "CELL-001A",
+        &["CELL-001A1", "CELL-001A2", "CELL-001A3"],
+        2,
+    );
+    let before = connection.total_changes();
+    assert_eq!(
+        read()["cell_count_origin"],
+        json!({"initial": 2, "split_added": 3})
+    );
+    assert_eq!(connection.total_changes(), before);
+}
+
+#[test]
+fn cell_count_origin_does_not_invent_history_or_attribute_other_edits_to_splits() {
+    for damage in [
+        "missing",
+        "invalid",
+        "wrong_run",
+        "ordinary_add",
+        "ordinary_remove",
+        "missing_event",
+        "wrong_child",
+        "duplicate_child",
+    ] {
+        let fixture = Fixture::new();
+        let connection = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        recorded_split(&connection, "CELL-001", &["CELL-001A", "CELL-001B"], 1);
+        // This temporary test database models incomplete/corrupt legacy history.
+        // Production history remains append-only; only this fixture bypasses it.
+        connection
+            .execute_batch(
+                "DROP TRIGGER plan_revisions_no_update;
+            DROP TRIGGER work_events_no_update; DROP TRIGGER work_events_no_delete;",
+            )
+            .unwrap();
+        match damage {
+            "missing" => {
+                connection
+                    .execute(
+                        "UPDATE plan_revisions SET snapshot_json='{}' WHERE run_id='run-a'",
+                        [],
+                    )
+                    .unwrap();
+            }
+            "invalid" => {
+                connection
+                    .execute(
+                        "UPDATE plan_revisions SET snapshot_json='invalid' WHERE run_id='run-a'",
+                        [],
+                    )
+                    .unwrap();
+            }
+            "wrong_run" => {
+                connection.execute("UPDATE plan_revisions SET snapshot_json=json_set(snapshot_json,'$.run_id','other') WHERE run_id='run-a'", []).unwrap();
+            }
+            "ordinary_add" => {
+                connection.execute("INSERT INTO cell_nodes(run_id,go_id,cell_id,ordinal,title,objective,state) VALUES('run-a','GO-001','added',999,'Added','Not split','planned')", []).unwrap();
+            }
+            "ordinary_remove" => {
+                connection
+                    .execute(
+                        "DELETE FROM cell_nodes WHERE run_id='run-a' AND cell_id='CELL-002'",
+                        [],
+                    )
+                    .unwrap();
+            }
+            "missing_event" => {
+                connection
+                    .execute("DELETE FROM work_events WHERE event_type='CELL_SPLIT'", [])
+                    .unwrap();
+            }
+            "wrong_child" => {
+                connection.execute("UPDATE work_events SET details_json=json_set(details_json,'$.successor_cell_ids[0]','missing') WHERE event_type='CELL_SPLIT'", []).unwrap();
+            }
+            "duplicate_child" => {
+                connection.execute("UPDATE work_events SET details_json=json_set(details_json,'$.successor_cell_ids[1]','CELL-001A') WHERE event_type='CELL_SPLIT'", []).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let view = fixture.store.run_view("run-a").unwrap();
+        assert!(
+            view["cell_count_origin"].is_null(),
+            "{damage}: invented origin"
+        );
+        assert!(
+            view["go_nodes"].is_array(),
+            "missing optional history must not hide the Run"
+        );
+    }
+}
+
+fn recorded_split(
+    connection: &rusqlite::Connection,
+    parent: &str,
+    successors: &[&str],
+    order: i64,
+) {
+    connection
+        .execute(
+            "UPDATE cell_nodes SET state='split' WHERE run_id='run-a' AND cell_id=?1",
+            [parent],
+        )
+        .unwrap();
+    for (index, id) in successors.iter().enumerate() {
+        connection.execute("INSERT INTO cell_nodes(run_id,go_id,cell_id,ordinal,title,objective,state) VALUES('run-a','GO-001',?1,?2,?1,'Child','planned')",
+            rusqlite::params![id, order * 10 + index as i64]).unwrap();
+    }
+    connection.execute("INSERT INTO work_events(event_id,run_id,go_id,cell_id,attempt,plan_revision,author_role_instance_id,event_type,details_json,occurred_at) VALUES(?1,'run-a','GO-001',?2,1,1,'supervisor-a','CELL_SPLIT',?3,'2026-09-20T01:00:00Z')",
+        rusqlite::params![format!("split-{order}"), parent, json!({"source_go_id":"GO-001","source_cell_id":parent,"source_attempt":1,"successor_cell_ids":successors}).to_string()]).unwrap();
+}
+
+#[test]
 fn query_requires_explicit_run_and_returns_stable_order_without_credentials() {
     let fixture = Fixture::new();
     assert!(matches!(

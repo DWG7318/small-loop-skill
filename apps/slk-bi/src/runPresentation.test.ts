@@ -24,6 +24,23 @@ function splitHistoryRun(): RunView {
 describe("compact Run presentation", () => {
   const project = { project_id: "project-a", name: "LCaS", repository_url: null, last_known_path: "D:/LCaS", run_count: 1 };
 
+  it("uses verified initial + split additions without changing real progress or input", () => {
+    const run = { ...splitHistoryRun(), cell_count_origin: { initial: 7, split_added: 5 } };
+    const before = JSON.stringify(run);
+    const view = buildRunStripView(project, run, new Date());
+    expect(view.progress).toEqual({ passed: 6, total: 12, totalLabel: "7+5" });
+    expect(JSON.stringify(run)).toBe(before);
+    run.cell_count_origin = { initial: 12, split_added: 0 };
+    expect(buildRunStripView(project, run, new Date()).progress.totalLabel).toBeUndefined();
+  });
+
+  it.each([null, {}, { initial: 3, split_added: 1 }, { initial: -1, split_added: 13 },
+    { initial: 7.5, split_added: 4.5 }, { initial: "7", split_added: 5 },
+    { initial: 7, split_added: NaN }])("falls back to the effective total for unavailable or inconsistent origin %j", (origin) => {
+    const run = { ...splitHistoryRun(), cell_count_origin: origin } as unknown as RunView;
+    expect(buildRunStripView(project, run, new Date()).progress).toEqual({ passed: 6, total: 12 });
+  });
+
   it.each([
     ["checker-a", "CANDIDATE_SUBMITTED", "Checker 工作中", "active"],
     ["supervisor-a", "D1_FAILED", "Supervisor 排障中", "blocked"],

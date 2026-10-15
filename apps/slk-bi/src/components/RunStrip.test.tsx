@@ -18,6 +18,14 @@ function InteractiveStrip({ view }: { view: RunStripView }) {
 }
 
 describe("RunStrip", () => {
+  it("shows initial + net split count while drawing the real number of cells", () => {
+    const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());
+    view.progress = { passed: 1, total: 4, totalLabel: "3+1" };
+    render(<RunStrip view={view} />);
+    expect(screen.getByText("1/(3+1) CELL", { exact: false })).toBeVisible();
+    expect(screen.getByRole("progressbar").children).toHaveLength(4);
+    expect(screen.getByRole("progressbar")).toHaveAccessibleName("CELL 进度 1/4");
+  });
   it.each([0, 1, 4, 10, 11, 20, 21, 30, 31, 100])(
     "shows %i effective CELLs exactly up to 30, proportionally above 30", (total) => {
       const segments = Math.min(total, 30);
