@@ -25,12 +25,18 @@ export function groupTone(groupKey: string) {
 
 function SegmentedProgress({ passed, total, tone }: { passed: number; total: number; tone: string }) {
   const segments = Math.min(total, 30);
+  const columns = Math.min(segments, 10);
   const filled = total <= 30
     ? Math.min(passed, segments)
     : passed >= total ? segments : Math.min(segments - 1, Math.floor((passed / total) * segments));
   return (
     <span
       className="segmented-progress"
+      style={columns < 10 ? {
+        gridTemplateColumns: columns ? `repeat(${columns}, minmax(0, 1fr))` : "none",
+        // Keep the full-row 62 px / 2 px-gap geometry without empty tracks.
+        width: Math.max(0, (64 * columns - 20) / 10),
+      } : undefined}
       role="progressbar"
       aria-label={`CELL 进度 ${passed}/${total}`}
       aria-valuemin={0}

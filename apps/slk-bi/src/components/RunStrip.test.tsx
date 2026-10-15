@@ -65,6 +65,15 @@ describe("RunStrip", () => {
     expect(getComputedStyle(progress.children[0]!).width).toBe("100%");
   });
 
+  it.each([[0, "0px"], [1, "4.4px"], [4, "23.6px"], [10, "62px"]])(
+    "shrinks the progress box to %i actual columns", (total, width) => {
+      const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());
+      view.progress = { total, passed: 0 };
+      render(<><style>{appStyles}</style><RunStrip view={view} /></>);
+      expect(getComputedStyle(screen.getByRole("progressbar")).width).toBe(width);
+    },
+  );
+
   it("caps only the progress drawing and keeps all 100 CELL records unchanged", () => {
     const view = buildRunStripView(twoRunFixture.projects.projects[0]!, runFixture, new Date());
     view.cells = Array.from({ length: 100 }, (_, index) => ({
