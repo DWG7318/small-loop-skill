@@ -42,3 +42,9 @@ Base: `v3.0.8`, commit `870b0e517c7a1cd9b2592e9e4a9115b54a312160`. This is not a
 Supervisor now stays active with low-token native observation and owns onsite recovery/recording; Worker and Checker retain their existing handoff and acceptance responsibilities. Interrupted work resumes the original node, model requests are distinguished from effective new turns, and the existing root Markdown gets one current summary with separate historical evidence. No new role, runtime or fixed timing gate is added.
 
 Adopt at a Run boundary in the authorized project only: verify the new Skill payload before replacing that project's old callable 3.0.8 entries. Preserve closed Run provenance, candidates and evidence, plus unrelated project/global Skills. Do not silently rebind a still-active Run.
+
+## 3.0.9 → 3.1.0
+
+Base: `fc03fc422b61ff7d266835cfb39799ffd68f3062`. Replace only the authorized project's 3.x Skills after its active Run ends; never merge 4.x runtime or replace global 4.x. D1 escalation, role boundaries and final-action handoffs stay unchanged. D2 findings no longer force model changes by count; recovery accounts for external jobs left behind by an ended turn. Carry forward the Owner-approved Supervisor recommendation (6.1-sol/high minimum recommended).
+
+BI 1.1.4 is an independent compiled companion. Register the existing Markdown through its creator Supervisor, without migrating engineering state. The source remains authoritative. Missing metadata is unknown; no invented OW, timings or message types. See `skills/slk-record-run/references/bi.md`. The new BI reference makes 16 Skill payload files; retain all 13 Skills.

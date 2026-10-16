@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.0
+
+- Independently based on 3.0.9 (`fc03fc422b61ff7d266835cfb39799ffd68f3062`), without any 4.x method/runtime changes.
+- Diagnose D2 findings by cause; remove D2-count automatic Worker model escalation. Preserve existing D1 escalation and Owner model selections.
+- Before recovering an ended Agent turn, check its exact external Cargo/test job and recover its result; never duplicate conflicting work or globally kill other Runs' jobs.
+- Use universal precompiled BI/WebBI 1.1.4 with the existing Markdown record. Preserve explicit creator identity and creator-only information archival; BI never writes engineering completion.
+- Carry forward the Owner's Supervisor recommendation: minimum recommended gpt-6.1-sol/high, never downgrade merely to observe cheaply.
+
 ## 3.0.9
 
 - Independent maintenance from `v3.0.8` (`870b0e5`); no 4.x runtime, roles or transport components are imported.

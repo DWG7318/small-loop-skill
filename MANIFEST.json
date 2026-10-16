@@ -1,6 +1,6 @@
 {
   "name": "Small Loop Skill Collection",
-  "version": "3.0.9",
+  "version": "3.1.0",
   "skill_count": 13,
   "excludes": [
     "MANIFEST.json"
@@ -20,7 +20,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "0869d39bacd078813904d850ce08e22e48b4feff2b88667b3086a4c8c4581f65"
+      "sha256": "702c2e20ea76dbcb7873d3dc42a5de1ffc1954e86ca769e96f3c7960cea774d8"
     },
     {
       "path": "LICENSE",
@@ -28,15 +28,15 @@
     },
     {
       "path": "MIGRATION.md",
-      "sha256": "b79b6b1f53f419383d7390ee390a1de33d3f8756017e8bf70b37e28d82b53cfe"
+      "sha256": "cd7f8ee03810532fe911dae323e271df0ab3e612daf0f4d1e9e4ba1dd81815ac"
     },
     {
       "path": "README.md",
-      "sha256": "016b2bf3d91eff829d44df456175bbb57d78333beba4f0a1eb36322433d31a10"
+      "sha256": "9eabc4c0f8473e0900aebec9b009eaae5143f34ef652f62c9791ad57c70f99a8"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "4b8a3665578b9cc5056f80acc823f0582b8c45f0111affdfce3a1db93bc3ea4c"
+      "sha256": "76041b32ca845ebf5cc1d789c04323103d4185d2832e5d018b5092ebeac86796"
     },
     {
       "path": "VALIDATION-REPORT.md",
@@ -44,7 +44,11 @@
     },
     {
       "path": "VERSION",
-      "sha256": "11c7c96942a1a8a4d51da813897c69403141802c4508dc88f867fe7022ef19ff"
+      "sha256": "b2f44d3b6e29f8b1b73ea4735f006affc4d198e1fd9c7d50e736159b1ef636c6"
+    },
+    {
+      "path": "docs/3.1.0-verification.md",
+      "sha256": "80e866c486bad89c2b622485f731de0919ae1188a8f6eb5b966c41762974345a"
     },
     {
       "path": "docs/superpowers/plans/2026-07-29-slk-2.3.1-owner-approved-hardening.md",
@@ -100,11 +104,11 @@
     },
     {
       "path": "scripts/validate_repository.py",
-      "sha256": "125cd69347c4cd60d793352e499318d8805e2438a38bc206f6a199c3a6d6fc74"
+      "sha256": "a800ef1332f2008aa0c50fcab55cc1252d34e7bd284bdfe7ad255969db35c335"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
-      "sha256": "665b71985ceebea4a3c8cc000d33a3f2767a23ee1251797e61a78c8de56c7c69"
+      "sha256": "5695a6ac5f59605c752f97d78a55916c7494187aad1fa513c518bcee3debd31d"
     },
     {
       "path": "skills/slk-check-cell/SKILL.md",
@@ -136,15 +140,19 @@
     },
     {
       "path": "skills/slk-record-run/SKILL.md",
-      "sha256": "9116d0e461824df41b65db280b7b1155b46d791a37ea88678e5d1e7390d2a568"
+      "sha256": "cbc62b2b77036e6fe284482ce86a694f8b4203b8cb968db3033ba352d396a68d"
     },
     {
       "path": "skills/slk-record-run/assets/SLK-RUN.template.md",
-      "sha256": "9d82d38033e66d4133d7a486a31073872d3ca311a15b0403f3abae8a8e2ab99c"
+      "sha256": "8d7dfb35941139b9d70e7e9c082696071e8dd8bec4523686e9143e872c7a2abb"
+    },
+    {
+      "path": "skills/slk-record-run/references/bi.md",
+      "sha256": "0017c0498a183bc503be788d10d55ddf0a972d772c11015b4987884828b12e5b"
     },
     {
       "path": "skills/slk-recover-communication/SKILL.md",
-      "sha256": "67d822bc8261237d0c9852b78268cf92b1eabf9cb43e05af91bd86e72ea8c760"
+      "sha256": "df5c345981c4c62e9dd4de726e812bb38e47aecce246e6f94e9650c603779116"
     },
     {
       "path": "skills/slk-rework-cell/SKILL.md",
@@ -152,7 +160,7 @@
     },
     {
       "path": "skills/slk-select-models/SKILL.md",
-      "sha256": "e5acb97a2f871659b2e8fed36432229f23d0cc758705ac7f3e9d6dea1466bcb1"
+      "sha256": "224f38bba8e13187961ba7276e8ef1568b0614403bfbec43a3fef512bedfe4a8"
     },
     {
       "path": "skills/small-loop-skill/SKILL.md",
@@ -167,12 +175,16 @@
       "sha256": "3334d4d00b034ff87c62b14f31035303bd3b30d68895e0ba9dd6a6afc2eda104"
     },
     {
+      "path": "tests/test_310_regressions.py",
+      "sha256": "297df5257180aba85624d0744cea8012f5c231ec925015fbef7de044f8c61f5b"
+    },
+    {
       "path": "tests/test_repository_300.py",
-      "sha256": "9c77fe3ff76b1880ca703b6cdbf8df12ed82a0bc66abb9daba51db084d2afe30"
+      "sha256": "6854bbbb7b4f7cbeee4bddbf6c1615869b9a4069e1722be98e413e8db666f20d"
     },
     {
       "path": "tests/test_skill_collection_300.py",
-      "sha256": "df3dc8c1c66a51e49c8fb529a6e5fa3813e4f170dbb3bd1bc9527977c5a8dc78"
+      "sha256": "5fceec47cced9ddbac73f28f0c5bce819bf0f654c37cdaa4863652fd8e497e54"
     }
   ]
 }

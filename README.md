@@ -1,6 +1,6 @@
 # Small Loop Skill (SLK)
 
-Current version: **3.0.9** (independent `maintenance/3.0.9` branch, based on `v3.0.8`)
+Current version: **3.1.0** (independent `maintenance/3.1.0` branch, based on `v3.0.9` / `fc03fc4`, whose base is `v3.0.8`)
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent small/medium scope inside a larger project. GO and CELL work follow one serial path.
 
@@ -44,7 +44,9 @@ Supervisor creates `SLK-RUN-<RUN-ID>.md` in the project root. Worker, Checker, a
 
 ## Install
 
-Place the 13 directories under `skills/` as sibling directories in the Owner-selected project Skill root (for example `.agents/skills`). Verify the pinned commit/version and all 15 Skill payload hashes, then retire only superseded SLK 3.0.8 callable entries inside that project; preserve unrelated Skills and old Run/evidence records. Do not overwrite global 4.x installations or another active Run's bound method. The main router and 12 focused companion Skills cover planning, model selection, execution, checking, recovery, records, and closure. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
+Use independent, precompiled BI/WebBI 1.1.4 with the existing Markdown record; see [BI usage](skills/slk-record-run/references/bi.md). No 4.x method runtime is imported. D2 repairs are cause-based; ended Agent turns do not prove external Cargo/test jobs have ended. Supervisor's current recommended minimum is `gpt-6.1-sol/high`; Owner selections remain authoritative.
+
+Place the 13 directories under `skills/` as sibling directories in the Owner-selected project Skill root (for example `.agents/skills`). Verify the pinned commit/version and all 16 Skill payload hashes, then retire only superseded SLK 3.0.9 callable entries inside that project; preserve unrelated Skills and old Run/evidence records. Do not overwrite global 4.x installations or another active Run's bound method. The main router and 12 focused companion Skills cover planning, model selection, execution, checking, recovery, records, and closure. Invoke `$small-loop-skill`; it recommends the relevant sibling Skill as the Run changes.
 
 ## Validation
 

@@ -23,7 +23,7 @@ description: Use when an active Small Loop Skill (SLK) Run needs role-specific m
 
 | 角色 | 当前建议基准 |
 |---|---|
-| Supervisor | `gpt-5.6-sol` + `xhigh`，用于方法理解、调整决策、豁免和 D2 组合检查。 |
+| Supervisor | 职责关键，负责方法理解、调整决策、豁免和 D2 组合检查，不应为轻量观察擅自降为低性能模型；当前推荐最低 `gpt-6.1-sol` + `high`。 |
 | Checker | `gpt-5.6-sol` + `medium`，用于日常派发与隔离 D1。 |
 | Worker | 常规 CELL 使用 `gpt-5.6-terra` + `high`；只有明显小的 CELL 才使用 `gpt-5.6-luna` + `xhigh`。 |
 
@@ -31,9 +31,11 @@ description: Use when an active Small Loop Skill (SLK) Run needs role-specific m
 
 ## 当前 CELL 的升级阶梯
 
-第一次 D1 FAIL 先用原模型做针对性返工。同一 CELL 第二次 D1 返工，或同一 GO 第一次 D2 返工时，只升级负责当前返工 CELL 的 Worker：小 CELL 路径为 `Luna xhigh → Terra high`，常规路径为 `Terra high → Sol medium`。
+第一次 D1 FAIL 先用原模型做针对性返工。同一 CELL 第二次 D1 返工时，只升级负责当前返工 CELL 的 Worker：小 CELL 路径为 `Luna xhigh → Terra high`，常规路径为 `Terra high → Sol medium`。
 
-升级后再次 FAIL，即第三次 D1 或同一 GO 第二次 D2 时，再升级当前 Worker：`Terra high → Sol medium；Sol medium → Sol high`。同时由 Checker 重新规划当前 CELL；D2 情境由 Supervisor 重新规划当前修复 CELL。可以把 CELL 一分为二或另选施工方案，不只依靠继续提高模型。
+升级后再次 FAIL，即第三次 D1 时，再升级当前 Worker：`Terra high → Sol medium；Sol medium → Sol high`。同时由 Checker 重新规划当前 CELL。可以把 CELL 一分为二或另选施工方案，不只依靠继续提高模型。
+
+D2 发现问题时，Supervisor 先查实际原因：产品衔接、范围遗漏、检查方法、环境或能力。按原因安排修复与相关复验，不按 D2 失败次数自动升级 Worker；只有实际能力不足的证据才进入模型复核，Owner 指定仍优先。
 
 该阶梯的升级只跟随当前 CELL。该 CELL 完成或被重新划分后，下一个 CELL 重新从基准线选择；拆出的新 CELL 也按各自实际范围重新选择。Owner 已授权覆盖剩余 Run 的模型选择持续有效，不因进入新 CELL 自动回退。Checker 与 Supervisor 不因 D1 或 D2 FAIL 自动升级。
 
@@ -46,7 +48,7 @@ Owner 已指定某个角色模型时，后续“提高一级”不自动覆盖�
 ## 施工中的调整
 
 - CELL 的大小与 Worker 能力、电脑和累积工程量相互匹配，并保留余量。
-- D1 或 D2 返工需要模型变化、且 Worker 模型未由 Owner 直接指定时，按当前 CELL 的升级阶梯选择。
+- D1 返工需要模型变化、且 Worker 模型未由 Owner 直接指定时，按当前 CELL 的升级阶梯选择；D2 按实际原因决策，不套次数阶梯。
 - 候选前反复只受领、部分实现便结束或出现实际 model capacity 错误，也是能力复核信号，不计为 D1 FAIL；Supervisor 先分清任务不清、执行偏差、模型能力与平台资源故障，再选择原节点恢复、澄清/拆分或模型调整，不按统一次数自动升级。
 - 换型记录区分请求参数、平台受理和实际新回合生效；向 active 旧回合发送新参数不证明旧回合换型。以新回合的实际模型/推理档位等可见配置确认，不读隐藏推理；未能核实则记未确认，不并发启动同一节点，也不反复重发排队请求。
 - 本 Skill 由 `$slk-adjust-run` 调用时，完成模型选择后返回当前调整，由 Supervisor 统一记录和交还施工；这样不另起一轮重复调整。

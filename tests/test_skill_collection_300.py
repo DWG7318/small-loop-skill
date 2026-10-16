@@ -14,7 +14,7 @@ from skill_testkit import (
 
 
 def test_version_is_current_3x_maintenance() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.0.9"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.1.0"
 
 
 def test_collection_has_one_main_and_twelve_children() -> None:
@@ -270,18 +270,16 @@ def test_local_d0_attempts_are_distinct_from_checker_d1_rework() -> None:
 def test_select_models_matches_capability_to_each_visible_role() -> None:
     text = read_skill("slk-select-models")
     for marker in (
-        "`gpt-5.6-sol` + `xhigh`",
+        "`gpt-6.1-sol` + `high`",
         "`gpt-5.6-sol` + `medium`",
         "`gpt-5.6-terra` + `high`",
         "`gpt-5.6-luna` + `xhigh`",
         "只有明显小的 CELL",
         "同一 CELL 第二次 D1 返工",
-        "同一 GO 第一次 D2 返工",
         "Luna xhigh → Terra high",
         "Terra high → Sol medium",
         "Terra high → Sol medium；Sol medium → Sol high",
         "第三次 D1",
-        "同一 GO 第二次 D2",
         "重新规划当前 CELL",
         "升级只跟随当前 CELL",
         "下一个 CELL 重新从基准线选择",
@@ -659,8 +657,7 @@ def test_adjust_run_keeps_supervisor_authority_and_d1_exemption_clear() -> None:
         "Supervisor",
         "连续 D1",
         "D2",
-        "同一 GO 第一次 D2 返工",
-        "同一 GO 第二次 D2 FAIL",
+        "D2 FAIL 后先查实际原因",
         "$slk-select-models",
         "重新规划当前修复 CELL",
         "Owner 授权",

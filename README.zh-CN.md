@@ -1,6 +1,8 @@
 # Small Loop Skill（SLK）
 
-当前版本：**3.0.9**（独立 `maintenance/3.0.9` 维护分支，基于 `v3.0.8`）
+当前版本：**3.1.0**（独立 `maintenance/3.1.0` 维护分支，基于 `v3.0.9` / `fc03fc4`；3.0.9 的基线为 `v3.0.8`）
+
+本版仅修正 D2 按实际原因处理、恢复前核对遗留外部任务，并接入独立预编译 BI/WebBI 1.1.4；[BI 用法](skills/slk-record-run/references/bi.md)。不引入 4.x 的机制。Supervisor 当前推荐最低 `gpt-6.1-sol/high`，不为轻量观察自行降级，Owner 指定保持优先。
 
 SLK 是 Loop Engineering 的线性形态，用于一个有边界的中小型工程 Run，或大型工程中相对独立的中小范围。GO 与 CELL 沿一条线性路径推进。
 
@@ -44,7 +46,7 @@ Supervisor 在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。Worker、Checker、S
 
 ## 安装
 
-把 `skills/` 下 13 个目录作为同级目录放入 Owner 选定的项目 Skill 根目录（例如 `.agents/skills`）。核验固定提交、版本和 15 个 Skill 文件哈希后，仅清理该项目内已被替代的 SLK 3.0.8 可调用入口；保留无关 Skill 和旧 Run/证据记录，不覆盖全域 4.x 或其他在跑 Run 绑定的方法。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
+把 `skills/` 下 13 个目录作为同级目录放入 Owner 选定的项目 Skill 根目录（例如 `.agents/skills`）。核验固定提交、版本和 16 个 Skill 文件哈希后，仅清理该项目内已被替代的 SLK 3.0.9 可调用入口；保留无关 Skill 和旧 Run/证据记录，不覆盖全域 4.x 或其他在跑 Run 绑定的方法。调用 `$small-loop-skill` 后，主 Skill 会随 Run 状态建议使用相应子 Skill。
 
 ## 验证
 
