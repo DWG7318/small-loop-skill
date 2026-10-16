@@ -73,16 +73,16 @@
       "tool": "slk-bi",
       "prefix": "apps/slk-bi",
       "repository": "https://github.com/DWG7318/slk-bi.git",
-      "commit": "439547faea6d26c6e20be9974af7938313fcc3b5",
-      "repository_tag": "1.1.3",
-      "product_version": "1.1.3",
+      "commit": "d9af2c6c5bde3d3e465983186254fc89c0b1e575",
+      "repository_tag": "1.1.4",
+      "product_version": "1.1.4",
       "dependencies": [
         "slk-state-core"
       ],
       "artifact_indices": [
         {
           "path": "apps/slk-bi/artifacts/windows-x86_64/ARTIFACTS.json",
-          "sha256": "e0921bd6bd62102bc06741c29ecae46d541ecbecd0e00dfe8da3df8ae5490092"
+          "sha256": "7cb100c3bb4293b2601a055974c354bebd154200d488d6fefcd9083b877c6b78"
         }
       ]
     },

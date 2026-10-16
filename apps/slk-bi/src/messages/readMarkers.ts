@@ -3,6 +3,11 @@ export interface ReadMarker {
   read_message_ids: string[];
 }
 
+// View updates are read markers only: never synthesize Agent event types or ntfy messages.
+export function displayedUpdateIds(ids: readonly string[], revision?: string): string[] {
+  return revision ? [...ids, `VIEW:${revision}`] : [...ids];
+}
+
 function unique(values: readonly string[]) {
   return [...new Set(values.filter(Boolean))].sort();
 }

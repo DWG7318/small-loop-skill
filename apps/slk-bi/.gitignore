@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wrangler/
+target/
+src-tauri/target/
+*.tsbuildinfo
+.codex/

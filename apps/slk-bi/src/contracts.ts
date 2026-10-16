@@ -9,6 +9,7 @@ export interface ProjectSummary {
 }
 
 export interface RunSummary {
+  archive_control?: "creator";
   run_id: string;
   project_id: string;
   run_name: string;
@@ -230,16 +231,27 @@ export interface MethodAdoptionReceiptProjection {
 }
 
 export interface ProjectsView {
+  source_warnings?: string[];
   schema_version: "slk.bi.projects/v1";
   projects: ProjectSummary[];
 }
 
 export interface RunsView {
+  source_warnings?: string[];
   schema_version: "slk.bi.runs/v1";
   runs: RunSummary[];
 }
 
 export interface RunView {
+  source_record?: {
+    kind: "markdown";
+    creator_supervisor_id: string;
+    revision: string;
+    status_text: string;
+    timing_available: boolean;
+    progress: { passed: number; total: number } | null;
+    archived_by?: string;
+  };
   schema_version: "slk.bi.run/v1";
   run_id: string;
   cell_count_origin?: { initial: number; split_added: number } | null;
@@ -341,6 +353,21 @@ export function parseRunProjection(value: unknown): RunView {
   const projection = schema(value, "slk.bi.run/v1");
   object(projection.summary);
   object(projection.administrative_snapshot);
+  if (projection.source_record !== undefined) {
+    const source = object(projection.source_record);
+    for (const key of ["creator_supervisor_id", "revision", "status_text"]) {
+      if (typeof source[key] !== "string") throw new Error("SLK_BI_SOURCE_RECORD_INVALID");
+    }
+    if (source.kind !== "markdown" || !source.creator_supervisor_id || !source.revision || typeof source.timing_available !== "boolean") {
+      throw new Error("SLK_BI_SOURCE_RECORD_INVALID");
+    }
+    if (source.progress !== null) {
+      const progress = object(source.progress);
+      if (!Number.isSafeInteger(progress.passed) || !Number.isSafeInteger(progress.total)
+        || Number(progress.passed) < 0 || Number(progress.total) < Number(progress.passed)) throw new Error("SLK_BI_SOURCE_PROGRESS_INVALID");
+    }
+    if (source.archived_by !== undefined && source.archived_by !== source.creator_supervisor_id) throw new Error("SLK_BI_ARCHIVE_CREATOR_MISMATCH");
+  }
   for (const key of ["go_nodes", "roles", "plan_revisions", "events", "token_history", "evidence", "overwatch_cycles", "overwatcher_native_status_receipts", "overwatcher_incident_transitions", "overwatcher_binding_transitions", "operational_observations", "reconciliation_receipts", "method_adoption_receipts"]) {
     collection(projection, key);
   }

@@ -3,39 +3,56 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "5bcccd746a247cacac0ad07be95758e9dd75884b670c2ca33f6c3dcc57a0852e",
-        "size": 5191615
+        "sha256": "c0722815489c93a77b73fc84ee341f7d0e6e49f795a7fc66b21c1bc6cd7d170c",
+        "size": 6013201
       }
     ],
-    "sha256": "5bcccd746a247cacac0ad07be95758e9dd75884b670c2ca33f6c3dcc57a0852e",
-    "size": 5191615
+    "sha256": "c0722815489c93a77b73fc84ee341f7d0e6e49f795a7fc66b21c1bc6cd7d170c",
+    "size": 6013201
   },
   "build": {
-    "command": "scripts/build_release_artifacts.ps1",
-    "provenance": "BUILD-PROVENANCE.json",
-    "release": "v4.5.2-build.3",
-    "source_hash_mode": "sha256-raw"
+    "commands": [
+      "pnpm test (230 passed)",
+      "pnpm typecheck",
+      "pnpm build:ui",
+      "cargo test --manifest-path src-tauri/Cargo.toml --locked (17 passed; independent Git-pinned core)",
+      "cargo build --manifest-path src-tauri/Cargo.toml --release --locked",
+      "pnpm dlx wrangler@4.147.0 deploy --config .codex/wrangler-bi114.jsonc"
+    ],
+    "independent_core_revision": "0aba753f5d328484e59ec1c5c13fa594fedc3d19",
+    "source_hash_mode": "sha256-raw",
+    "toolchains": {
+      "node": "24.13.1",
+      "pnpm": "9.15.9",
+      "rust": "1.94.0",
+      "wrangler": "4.147.0"
+    }
   },
   "payload": [
     {
-      "path": "BUILD-PROVENANCE.json",
-      "sha256": "76350f8406c64db129d39a1e2585bfac9c84781b6dcd3fa0e871af51ccbe2966",
-      "size": 23845
+      "path": "UNIVERSAL-SOURCES.md",
+      "sha256": "34e6bb5bedca84a24d9076780cca87bc4c034a5c4369ab7e7801259d6c5c8f33",
+      "size": 4728
     },
     {
-      "path": "bin/slk-bi-desktop.exe",
-      "sha256": "2cdf857338dddc37a0d3edef2a1e4b45fbc06fac6a35dfc5a749a2b536e5ce0b",
-      "size": 13714944
+      "path": "slk-bi-desktop.exe",
+      "sha256": "6649de8a50b4dde73044cd6b0809b81b057c166eb22e2247115a63aedfb58222",
+      "size": 15595008
     },
     {
-      "path": "webbi/assets/App-BRQVHabk.js",
-      "sha256": "a9c1af9d001c0fc5b96df9ebacb91c17bebb309be1a32110868db01171f8afce",
-      "size": 18853
+      "path": "slk-bi.ps1",
+      "sha256": "f2c7b3aaf7f803ed4fee4e4314c685a3bb270f8bec50677575f3fcdfb0a110db",
+      "size": 1389
     },
     {
-      "path": "webbi/assets/WebBiApp-BxQvo4Ed.js",
-      "sha256": "23570af15f5d3044597da84187a92f86b63328106ce9e81362156cd0c7c3992c",
-      "size": 15939
+      "path": "webbi/assets/App-BBnUUJbh.js",
+      "sha256": "27a4446e7ff7f2d8e7f00a6abab20911f72af4346cb25fcd369e9cb7c1f043a6",
+      "size": 20092
+    },
+    {
+      "path": "webbi/assets/WebBiApp-PclQXLuJ.js",
+      "sha256": "bf4a02eae34037a53c63c71c0ffe3992d3a2ecf5da227a90109d03c71bfee179",
+      "size": 15929
     },
     {
       "path": "webbi/assets/WebBiApp-p2cSufbP.css",
@@ -53,19 +70,19 @@
       "size": 2054
     },
     {
+      "path": "webbi/assets/index-B1B2Xnzw.js",
+      "sha256": "e40c474f7547629e0442ac2cd14b2a073d0b57c31a4a1ea966bf365fce2e96c7",
+      "size": 229449
+    },
+    {
       "path": "webbi/assets/index-C0uvuhP7.css",
       "sha256": "1486360360b0c9fe8d77e2a2d8b71ada78e1bbcb0274b00a3743325b5770d1ad",
       "size": 10444
     },
     {
-      "path": "webbi/assets/index-Cl1tBM-Z.js",
-      "sha256": "1abf24522fd8e180517fb74510e9f0572dcbeb964fdb8879dc60f52be9174d44",
-      "size": 229441
-    },
-    {
-      "path": "webbi/assets/readMarkers-C97BeT-F.js",
-      "sha256": "a2f7cb78d8b4d10de2af1a6db0c3c7869896c996fd6b4eac0fd28f9f735c2a6e",
-      "size": 18055
+      "path": "webbi/assets/readMarkers-BWsWZ9p_.js",
+      "sha256": "91a3305b3066861a738c50f59f9bb940d0742920a4912251becc6ef0d2f61319",
+      "size": 19105
     },
     {
       "path": "webbi/assets/window-DWiz2dJS.js",
@@ -74,20 +91,30 @@
     },
     {
       "path": "webbi/index.html",
-      "sha256": "18a2e63d44eceb263e054cb2620b02ffdc07c831571b3b82f4828b3dc12e51a6",
+      "sha256": "bdff565d8693a6c0c9a6b3e35a9a25efa485785ab1aa7b2bb31f98a2ba304fc0",
       "size": 445
+    },
+    {
+      "path": "webbi/worker.js",
+      "sha256": "824721263880432d2e0c5b002d8361dbe66976267a32248da53ead3fd0f4b30f",
+      "size": 34256
     }
   ],
-  "product_version": "1.1.3",
+  "product_version": "1.1.4",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
+    ".gitattributes": "fbe79cf9be511441537d8a8f7cc4acb2f8ce46c4c03a5d5d2a880e7c94a3ff13",
+    ".gitignore": "52b59fc88878fbf31a7353ee6d8536ffc35a1cd8a848ce52cfe1a574e31094e5",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "b6723b350039237c31f361731c221ccb2f3fa9f80bd814c1524f95a77b1bc1e2",
+    "RELEASE-1.1.4.md": "eeae95d3b9b99847c147bd0df5c4d208841daded1d2311b7084e63b2c07752ae",
+    "UNIVERSAL-SOURCES.md": "34e6bb5bedca84a24d9076780cca87bc4c034a5c4369ab7e7801259d6c5c8f33",
     "index.html": "0c5624adb03c582a91eaa763148e996eb1d0f06c033e9fb5fef85087b3e8e4d6",
-    "package.json": "b1deb2f6f13b92adc2529cd6e0d11f8d7af23d0cfe7a903ff167929e5923c5d6",
+    "package.json": "c3256540d038ea269ad40377322d692ded39c4fc3bbadc4428765c56f08d33e4",
     "pnpm-lock.yaml": "2fbd3aa4ebe718ad7181ccfb409203ff530116cb7384fa7051642592e46f2ce7",
-    "src-tauri/Cargo.lock": "2d12ecfdfbaa8150eb63b9e3f14b382292c925b110da46d9ab6774ae40cb87ca",
-    "src-tauri/Cargo.toml": "cc9082376c256036964af93c79c3eb8b65026dbe796bcc14e9137e2b22e3558c",
+    "slk-bi.ps1": "f2c7b3aaf7f803ed4fee4e4314c685a3bb270f8bec50677575f3fcdfb0a110db",
+    "src-tauri/Cargo.lock": "a781f5eb4ddc58d774ea2fb319b06eaa9eb0b86a66231ebc13d78c80dd8c24f4",
+    "src-tauri/Cargo.toml": "fba6387f3a956487c7a7b9b3d9c9801661c9df4873b572ccde86e0316069828b",
     "src-tauri/build.rs": "6aeeab41bc35efde4e3c2b644a6248f7fc06d24ae30b75c0d33491cbb0c1fa31",
     "src-tauri/capabilities/default.json": "a4c240f7698bf57a5ba44ef20becca7f7139cd3dc1f448bba2305a577d9bffc3",
     "src-tauri/gen/schemas/acl-manifests.json": "b8665c2471bd4c59d570c77e226f37410ce396da52525383a15b5cbbff9d786e",
@@ -147,13 +174,16 @@
     "src-tauri/icons/ios/AppIcon-76x76@2x.png": "32d16616581fad9ddbb5e2874a331845740eb4d7d7d73a9c9b325bdef4dc1bdf",
     "src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png": "42dc1ea931dddbc23f2ced70bba1018236ec03c35cd48699c35a29275848b010",
     "src-tauri/icons/slk-source.svg": "9e3aa8daa6f4c9ccd7a2d5270220704998bb5b25a0c0f13b497d5d7e6f2c81ad",
-    "src-tauri/src/commands.rs": "3047a9824f1cce7f6c2cdcff514a880a0b96e66a284f038890bf669b5070a638",
-    "src-tauri/src/lib.rs": "2960a380a3e793d27b4a0c7f66c58f66e29312b716a310e18be5678b81725cf0",
+    "src-tauri/src/cli.rs": "0fbdcef2fc7f0929fc51fb5b1faa02a0674d87077354d4ea2d610b146b504d6e",
+    "src-tauri/src/commands.rs": "a38adbcdd2de25bb507c4466e1ff190654cf4d2948f2b3ee0d8490e10bf62904",
+    "src-tauri/src/lib.rs": "be660d03ceec9bb000b6fcbad0b54d16e41bb96a688d3b559e754ca174ee2a45",
     "src-tauri/src/main.rs": "5bb541ce69905fda239ee48e676430726f131c22d73cfd2a3ec83d65c05b4048",
-    "src-tauri/tauri.conf.json": "8720762398f61603be563f8a23795f5cf77c0f3923172c1fd441811ae65458b1",
-    "src-tauri/tests/read_commands.rs": "00145cbc1662c56fd35efe04dba9df9e81ae73a7be9b144f3b561959b25a9013",
-    "src/App.test.tsx": "3f1531cd1915f5b933779c7dcd970820906436adf7c6287aa2d2e25ea1a6ca49",
-    "src/App.tsx": "d5897995eeeb788ebeec7e5cc56d3f45ef3cac55c848f6c5718241eea40b1998",
+    "src-tauri/src/sources.rs": "55b022a68857167e2b59541b5f0abbac31667b0ffde3a42b28c2259d5a0417fd",
+    "src-tauri/tauri.conf.json": "666f052d664cbf0e96440fe48de3039a43252b99798be2efe951b1c859b2b0c2",
+    "src-tauri/tests/markdown_sources.rs": "8cf3ade9badd2752b18cfdcf0d310be452579347606d7d13b5bf7fe01cb92842",
+    "src-tauri/tests/read_commands.rs": "b7205e36a2eac766bb19e4e72d8796601932acd060e11c1b6c328d11acfea328",
+    "src/App.test.tsx": "678ae3ca6a11a656aabab3225271f2770eb01fc55d7cc28631213567573e76bd",
+    "src/App.tsx": "cd5aa491ca583b07f057b45dab4c7142e25f75bcc5029b7eb29e249dfae8d5c4",
     "src/App.windowSizing.test.tsx": "6fc459719ba40d756e512b432a62f109fc2dbc410fd2a6ac25f6a5dbbc542cf6",
     "src/a11y.test.tsx": "c20fbf4bcae594b64bb80cd32efeb619dc2e22d1103894c70a46534438a33af4",
     "src/api.ts": "33f470bd728b2df141a1c0d863c23bc12168c5e21232787aed1a6a6705dc8880",
@@ -162,45 +192,47 @@
     "src/components/BackgroundTransparency.test.tsx": "09e514a0dbab23205dba7911f31cc6c6bd92478d32cae29ef87e0abd135cac5a",
     "src/components/BackgroundTransparency.tsx": "98acfde7ae0ec5a7972c9bee1d3fe54b3bc661f8709c8639c01bd0657db26c10",
     "src/components/RunStrip.test.tsx": "e27a6eb53684839f18db97512bc1cb2d70c3f86344a7d314277b3230079721f6",
-    "src/components/RunStrip.tsx": "0dfb2267e511556c9bbac01d27485a429d7a06a63d90adb552f9dec20204706d",
+    "src/components/RunStrip.tsx": "a9aeb3f78122b5fb6266c80d7115b9a0b0d85ff826eb5a072a550ba8eec4e0ea",
     "src/contracts.test.ts": "6847bdab315c23614aab5d6bd02756b466422a79a46309bbeb6a2b2d13621a41",
-    "src/contracts.ts": "12e1084b2d0e2067c51b95dfc088780eb66c2ecc1ccfd017b12c052bff692195",
+    "src/contracts.ts": "f4350b7eff4b5c9e02e42e51fea6b0b65d687f11aeb7ba8a8e5b65f9c77d03bd",
     "src/main.tsx": "2ed02a50119a3022a6d61982ed425b77d16f5c314d364f32663a4696a15983c1",
     "src/messages/catalog.ts": "d8bd2502602f8c3e96b3209459cdc2ec8124b049597fc4d0ccb7e28a978e2821",
     "src/messages/messageFeed.test.ts": "526c1d3fa1612d110e2204d1ed1c3fae80c35366e7ca1d3dc8057a393d1b459e",
     "src/messages/messageFeed.ts": "515822f0690043f6362909fb97b0c02449e02faf71eb1c1bf6f27563b553414f",
-    "src/messages/readMarkers.test.ts": "af1b7c551dbd2e7aefdc70b99d747eb0a1b2b63c51960408d1b9da51e2f5564c",
-    "src/messages/readMarkers.ts": "4f3eba495a31526e113798c6258a4287bef5c3f35c5a660a85cb079bda2ff8df",
+    "src/messages/readMarkers.test.ts": "6806d6138b925cd0edba2142304a4b51bd625b9c209d0a2ae68fc5ce92d047ed",
+    "src/messages/readMarkers.ts": "aff93fb89e665aa681d5299e3cde74f9e0f0b3529c0c4fa94426f88a38aaf7ca",
     "src/runPresentation.test.ts": "40f7d484e090276d1af1383674272982bc5f8d668bc80d9c9b0c41842690fbcd",
-    "src/runPresentation.ts": "20864f9b34160f9603ea2bc28beb5409a94a7c0c6295fe02ebf1f735ba6584fe",
+    "src/runPresentation.ts": "68e0bbe19b71046788b8cb8d0c8ffa759c5275c98926295250a328a86af00473",
     "src/styles/app.css": "12f7c1e442ab820c63fbbfe4f88ccea6dbcb810c14523c3dbf31e15fc0a89b4f",
     "src/styles/tokens.css": "bda57f8652ec41eb2f79ced01d06467a3c69c3ef444643dcb43ccf53f00b366f",
     "src/test/fixtures.ts": "beb9907db6fbec155b9eb3b00a8417b4ddf18f3018aa682f50479e502a0a0d72",
     "src/test/setup.ts": "9b328c4843431fa76d8de00008fc159e95f99a840211085ff3b8f25e53d14409",
-    "src/useSlkData.test.tsx": "8d798a0d8562d88853f1b2ced4cb1c7a8ffc3d73f5854db9ee0077ea21a0ff99",
-    "src/useSlkData.ts": "4448fe048a1d0ede48d3d7009b9217f66f65861576bbf2018ffaaba44e3a1573",
-    "src/version.ts": "d16dd810de6ebae67081ec60820d7aebdc36862960047e0a8dcae8f64c11f8c9",
+    "src/universalCompatibility.test.ts": "a03bee4ef5e71aa6c8dec570cd0892c97973d408c699a461782902b64a166bbc",
+    "src/useSlkData.test.tsx": "af11ee32545ed2df991d929c398e2ef864e2df02fc4a17335fb6ee19097db900",
+    "src/useSlkData.ts": "2fc369ef602c8d74855c8d2970fd9d507d1b4f1da156ce2e4a23046ca34beb5c",
+    "src/version.ts": "d9e8d6c84f7b759831dc8fceffdc3d1170fa26b21315627567b691c04e0c6b20",
     "src/webbi/WebBiApp.test.tsx": "9f703984f306abf4f5c5b145bf006cc8385040c9d4c1cb576430a070f15470db",
-    "src/webbi/WebBiApp.tsx": "9aea5e4aeed5d14af533945f245c020c5749606d8dfc35b8052982bb50513cb7",
+    "src/webbi/WebBiApp.tsx": "18f86aada3674b0a21486eb3550fcbdc3d9e6d48d30b0f66bf2f560bd59c5b93",
+    "src/webbi/archivePersistence.test.ts": "9c7e8dd8dea3587c453830fa776f6a5767bcf88ff0f16bea8a2ad06338dc701c",
     "src/webbi/cloudflare.test.ts": "0cf5c85d023454c00b5ab6b61db2bc09bedce5a89bd57deceab3d3345df2812b",
     "src/webbi/cloudflare.ts": "f4c3e2a36eb8056017af79ae4e6905ff39a6cda3b813e34943050fac0be9d967",
-    "src/webbi/contracts.test.ts": "7653753b58c51e09b7c137a1dd14d0d80af8f59039f2d49c6bb1c4d9d29b91ba",
+    "src/webbi/contracts.test.ts": "78b841dfba6ad76229a5388c3e92df6a37f8f16f9d271362dc13bb04315818bf",
     "src/webbi/contracts.ts": "0cc972132377c83a6a8e5d1c04b8731e422f3c53bc17f6124a474f8812c5c3cd",
     "src/webbi/d1Store.test.ts": "51c66f778115371ae510a6390073d50f1126a6da8f742306bde5e0fb7859ac39",
-    "src/webbi/d1Store.ts": "5fa1cd1707fd35651a073f9c1bc6a00650ca1fbf47ff46ee2882cd12e2f04a86",
+    "src/webbi/d1Store.ts": "5f7594cf7c0a09bce2db37ac9e67c2886cb08ce5f960f0a577470df41cd65cd1",
     "src/webbi/notifications.test.ts": "eea0e9c8622d47e1ee9d941408a3adbbee4b480137b62f8e48e42ec13184d5ca",
     "src/webbi/notifications.ts": "2242d5174a16b8e6d0fedd9751b1d5cbed3e5c1d05df3e45add95b3e9beadf10",
     "src/webbi/ntfy.test.ts": "5b3e529818465995dca314bb194ab9d4d378a437fcbd5f723fe8d2c7f7cec90b",
     "src/webbi/ntfy.ts": "cf043f9154199737078d449637860ae33517be8a045903ca93b6efebcd736656",
-    "src/webbi/sync.test.ts": "120650fb35c0ee3b3e280782461cf4ce69fdb56eb0015afda916f6c98d658b13",
+    "src/webbi/sync.test.ts": "0be69e4d8d0f25c67ce7d7e9fe2cd3a720164383e1e52e6f3d27635e7ef36fdf",
     "src/webbi/sync.ts": "fc9a19f23915ec318e287aac79d78552c574088aafe2aa317f71118b924dd6c3",
     "src/webbi/testFixtures.ts": "5adf45c12143dfd5f72db756797b9d189d1d4fdf9cee0404df33fe59919a3606",
     "src/webbi/useWebBiSync.ts": "a07422c05857032e6c9c931a8e4420331654fc629d0e9b721732973ba1d525f6",
     "src/webbi/webApi.test.ts": "c82866048ffb13f511ef0146553feec841bc21f8f030ae2250df68cee0936257",
     "src/webbi/webApi.ts": "fb3bbeb7d7aa6250bf20a323317988c5d96c2678e60d716a03a73ada0b2a5e48",
     "src/webbi/webbi.css": "f596707615498195744607cdbddc0405e0edb5932f7a01882e28759b01e4a493",
-    "src/webbi/worker.test.ts": "c326c50e94cd4e39a7ba1b635634728b9a9858191cbac000950bb5614ada40a5",
-    "src/webbi/worker.ts": "df697cfd7ccaefc0b026beefe6c4a050efe8e5a8e7e2c98a171dc673c93b1fa9",
+    "src/webbi/worker.test.ts": "0491a1567f0d4734c895114fb2d3933837dd55ac8321dac33467323d7fa872fd",
+    "src/webbi/worker.ts": "67f3787ac4eaba00327b4ef940dd5cbeb62ab3ff244693eda47e6b8732c9880a",
     "tsconfig.json": "b77482fd85cb6efcab104272b267a8992ba309d6438a7ab87fe3b0b3f2597a24",
     "vite.config.ts": "5e7a978cece480e1fec2b350d0e24fb2c1c8f5eebb2faddb910a3c4ed350bbec",
     "webbi/migrations/0001.sql": "db961f5aac1c18eca9b23be8e0bf685b44362c1dfbb8cc5a93f3e46e75685e15",

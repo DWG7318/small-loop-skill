@@ -32,8 +32,10 @@ export interface RunStripView {
   description: string;
   startDate: string;
   progress: { passed: number; total: number; totalLabel?: string };
+  progressAvailable?: boolean;
   currentCellId: string | null;
   totalWorkMs: number;
+  timingAvailable?: boolean;
   currentCellWorkMs: number;
   status: string;
   statusTone: RunTone;
@@ -67,15 +69,15 @@ const STATUS_EVENTS = new Set([
 ]);
 
 export function visibleRunSummaries(runs: RunSummary[]) {
-  return runs.filter(
-    (run) => run.closure_state === "open" && run.state !== "archived" && !run.archived_at,
-  );
+  return runs.filter((run) => !isArchivedSummary(run));
 }
 
+export function isArchivedSummary(run: RunSummary) {
+  return (run.archive_control !== "creator" && run.closure_state !== "open")
+    || run.state === "archived" || Boolean(run.archived_at);
+}
 export function archivedRunSummaries(runs: RunSummary[]) {
-  return runs.filter(
-    (run) => run.closure_state !== "open" || run.state === "archived" || Boolean(run.archived_at),
-  );
+  return runs.filter(isArchivedSummary);
 }
 
 function effectiveEvents(events: EventProjection[]) {
@@ -246,9 +248,11 @@ function startedStatus(run: RunView, event: EventProjection): [string, RunTone] 
 function status(run: RunView, responsible?: RoleProjection): [string, RunTone] {
   if (run.summary.identity_state === "DUPLICATE_ACTIVE_RUN") return ["Run 身份冲突", "blocked"];
   if (run.summary.identity_state === "ORPHANED_IDENTITY") return ["Run 身份待确认", "blocked"];
-  if (run.summary.closure_state === "closed") return ["已完成", "done"];
+  if (run.summary.closure_state === "closed") return [run.summary.archive_control === "creator" && !run.summary.archived_at ? "已完成 · 待归档" : "已完成", "done"];
   if (run.summary.closure_state === "abandoned") return ["已废弃", "exempt"];
   if (run.summary.closure_state === "superseded") return ["已替代", "exempt"];
+  // Record text is a source claim, not a live execution probe or an authored event.
+  if (run.source_record) return [`记录：${run.source_record.status_text || "状态未提供"}`, "wait"];
   const events = effectiveEvents(run.events);
   const pause = events.filter((event) =>
     ["RUN_PAUSE_REQUESTED", "RUN_PAUSED", "RUN_RESUMED"].includes(event.event_type)).at(-1);
@@ -308,6 +312,10 @@ function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): Ru
   const latest = latestEvent?.event_type;
   let tone: RunTone = "wait";
   let state = "未开始";
+  if (cell.state === "unknown") state = "状态未提供";
+  if (run.source_record && cell.state === "working") {state = "记录：进行中"; tone = "active";}
+  if (run.source_record && cell.state === "d1_failed") {state = "D1 未通过"; tone = "blocked";}
+  if (run.source_record && cell.state === "exempt") {state = "Supervisor 豁免"; tone = "exempt";}
   if (cell.state === "split") {
     tone = "exempt";
     state = "已拆分 · 历史";
@@ -347,7 +355,7 @@ function cellView(cell: CellProjection, run: RunView, intervals: Interval[]): Ru
   const notePrefix = tone === "done" ? "结果" : tone === "active" || tone === "rework" ? "当前" : "目标";
   return {
     cellId: cell.cell_id,
-    id: `CELL ${String(cell.ordinal).padStart(2, "0")}`,
+    id: run.source_record ? `CELL ${cell.cell_id}` : `CELL ${String(cell.ordinal).padStart(2, "0")}`,
     name: cell.title,
     note: `${notePrefix}：${cell.outcome || cell.objective}`,
     meta: `${state}${durationText}${attemptText}`,
@@ -436,7 +444,7 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
   const roles = (["supervisor", "checker", "worker", "overwatcher"] as const).flatMap((roleName) => {
     const role = run.roles.find(
       (candidate) => candidate.role === roleName && candidate.lifecycle === "active",
-    );
+    ) ?? (run.source_record ? run.roles.find((candidate) => candidate.role === roleName) : undefined);
     if (roleName === "overwatcher" && !role) return [];
     return [{
       role: ROLE_LABELS[roleName],
@@ -454,7 +462,7 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
   const origin = run.cell_count_origin;
   const totalLabel = origin && Number.isSafeInteger(origin.initial) && origin.initial >= 0
     && Number.isSafeInteger(origin.split_added) && origin.split_added > 0
-    && origin.initial + origin.split_added === effective.length
+    && origin.initial + origin.split_added === (run.source_record?.progress?.total ?? effective.length)
     ? `${origin.initial}+${origin.split_added}` : undefined;
 
   return {
@@ -463,9 +471,12 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
     runName: run.summary.run_name || allCells[0]?.title || run.summary.goal,
     description: run.summary.run_description || run.summary.goal,
     startDate,
-    progress: { passed, total: effective.length, ...(totalLabel ? { totalLabel } : {}) },
+    progress: { ...(run.source_record?.progress ?? { passed, total: effective.length }), ...(totalLabel ? { totalLabel } : {}) },
+    progressAvailable: !run.source_record || Boolean(run.source_record.progress)
+      || (effective.length > 0 && effective.every((cell) => cell.state !== "unknown")),
     currentCellId: cellId,
     totalWorkMs: unionDuration(intervals),
+    timingAvailable: run.source_record?.timing_available !== false,
     currentCellWorkMs: unionDuration(intervals.filter((interval) => interval.cellId === cellId)),
     status: statusText,
     statusTone,
@@ -475,6 +486,11 @@ export function buildRunStripView(project: ProjectSummary, run: RunView, now: Da
     cells: visibleCells(run).map((cell) => cellView(cell, run, intervals)),
     ...sourceInfo,
   };
+}
+
+export function formatCellProgress(view: Pick<RunStripView, "progress" | "progressAvailable">) {
+  const { passed, total, totalLabel } = view.progress;
+  return `${view.progressAvailable === false ? "—" : passed}/${totalLabel ? `(${totalLabel})` : total} CELL`;
 }
 
 export function formatDuration(milliseconds: number) {

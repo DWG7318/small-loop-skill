@@ -12,6 +12,7 @@ import { projectSupportedAuthoritativeMessages } from "./messages/messageFeed";
 import {
   acknowledgeDisplayedMessages,
   bootstrapReadMarker,
+  displayedUpdateIds,
   hasUnreadMessages,
   mergeReadMarker,
   parseReadMarker,
@@ -104,6 +105,10 @@ export function App({ api = tauriApi }: AppProps) {
     ),
     [snapshot],
   );
+  const updateIds = (runId: string) => displayedUpdateIds(
+    (messagesByRun.get(runId) ?? []).map((message) => message.message_id),
+    snapshot?.runDetails.find((run) => run.run_id === runId)?.source_record?.revision,
+  );
 
   const { activeRows, archivedRows } = useMemo(() => {
     if (!snapshot) return { activeRows: [], archivedRows: [] };
@@ -126,8 +131,8 @@ export function App({ api = tauriApi }: AppProps) {
     if (!snapshot) return;
     setReadMarkers((current) => {
       const next = { ...current };
-      for (const [runId, messages] of messagesByRun) {
-        const ids = messages.map((message) => message.message_id);
+      for (const [runId] of messagesByRun) {
+        const ids = updateIds(runId);
         const key = `le-bi:1.1:read:${snapshot.metadata.device_id}:${runId}`;
         const stored = next[runId] ?? parseReadMarker(window.localStorage.getItem(key));
         next[runId] = stored ? mergeReadMarker(stored, ids) : bootstrapReadMarker(ids);
@@ -139,7 +144,7 @@ export function App({ api = tauriApi }: AppProps) {
 
   function acknowledgeRun(runId: string) {
     if (!snapshot) return;
-    const ids = (messagesByRun.get(runId) ?? []).map((message) => message.message_id);
+    const ids = updateIds(runId);
     const key = `le-bi:1.1:read:${snapshot.metadata.device_id}:${runId}`;
     setReadMarkers((current) => {
       const acknowledged = acknowledgeDisplayedMessages(
@@ -156,7 +161,7 @@ export function App({ api = tauriApi }: AppProps) {
     return marker
       ? hasUnreadMessages(
           marker,
-          (messagesByRun.get(runId) ?? []).map((message) => message.message_id),
+          updateIds(runId),
         )
       : false;
   }

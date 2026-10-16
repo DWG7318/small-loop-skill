@@ -51,7 +51,7 @@ describe("WebBI upload contract", () => {
     expect(parseUploadEnvelope(envelope(run), catalog).runs[0]?.run.cell_count_origin).toEqual(run.cell_count_origin);
     expect(parseUploadEnvelope(envelope(), catalog).runs[0]?.run.cell_count_origin).toBeUndefined();
   });
-  it.each(["1.1.0", "1.1.1", "1.1.2", "1.1.3"])("reads %s archives without relabeling their producer", (version) => {
+  it.each(["1.1.0", "1.1.1", "1.1.2", "1.1.3", "1.1.4"])("reads %s archives without relabeling their producer", (version) => {
     expect(parseUploadEnvelope({ ...envelope(), bi_version: version }, catalog).bi_version).toBe(version);
   });
 

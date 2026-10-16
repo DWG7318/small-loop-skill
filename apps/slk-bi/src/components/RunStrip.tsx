@@ -1,4 +1,4 @@
-import { formatDuration, type RunStripCell, type RunStripView } from "../runPresentation";
+import { formatDuration, formatCellProgress, type RunStripCell, type RunStripView } from "../runPresentation";
 
 interface RunStripProps {
   view: RunStripView;
@@ -23,10 +23,10 @@ export function groupTone(groupKey: string) {
   return (hash % 8) + 1;
 }
 
-function SegmentedProgress({ passed, total, tone }: { passed: number; total: number; tone: string }) {
+function SegmentedProgress({ passed, total, tone, available = true }: { passed: number; total: number; tone: string; available?: boolean }) {
   const segments = Math.min(total, 30);
   const columns = Math.min(segments, 10);
-  const filled = total <= 30
+  const filled = !available ? 0 : total <= 30
     ? Math.min(passed, segments)
     : passed >= total ? segments : Math.min(segments - 1, Math.floor((passed / total) * segments));
   return (
@@ -37,12 +37,12 @@ function SegmentedProgress({ passed, total, tone }: { passed: number; total: num
         // Keep the full-row 62 px / 2 px-gap geometry without empty tracks.
         width: Math.max(0, (64 * columns - 20) / 10),
       } : undefined}
-      role="progressbar"
-      aria-label={`CELL 进度 ${passed}/${total}`}
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={passed}
-      title={total > 30
+      role={available ? "progressbar" : "img"}
+      aria-label={available ? `CELL 进度 ${passed}/${total}` : `${total} CELL，D1 进度未提供`}
+      aria-valuemin={available ? 0 : undefined}
+      aria-valuemax={available ? total : undefined}
+      aria-valuenow={available ? passed : undefined}
+      title={!available ? `${total} CELL，D1 进度未提供` : total > 30
         ? `CELL 进度比例概览 ${passed}/${total}，30 格按比例显示，不对应具体 CELL`
         : `CELL 进度 ${passed}/${total}，每格代表 1 个 CELL 的完成数量`}
     >
@@ -86,10 +86,10 @@ export function RunStrip({ view, archived = false, unread = false, open = false,
           <strong><span>{view.projectName}</span> · <span className="run-name">{view.runName}</span></strong>
           <span>{view.description}</span>
         </span>
-        <code className="work-time">{formatDuration(view.totalWorkMs)}</code>
-        <SegmentedProgress passed={view.progress.passed} total={view.progress.total} tone={progressTone} />
+        <code className="work-time" title={view.timingAvailable === false ? "来源未提供工作耗时" : undefined}>{view.timingAvailable === false ? "—" : formatDuration(view.totalWorkMs)}</code>
+        <SegmentedProgress passed={view.progress.passed} total={view.progress.total} tone={progressTone} available={view.progressAvailable} />
         <code className="cell-progress">
-          {view.progress.passed}/{view.progress.totalLabel ? `(${view.progress.totalLabel})` : view.progress.total} CELL
+          {formatCellProgress(view)}
           {view.currentCellWorkMs ? ` · ${formatDuration(view.currentCellWorkMs)}` : ""}
         </code>
         <span className={`run-status status-${view.statusTone}`} title={view.status}>

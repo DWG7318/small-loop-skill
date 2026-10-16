@@ -6,6 +6,19 @@ import { twoRunFixture } from "./test/fixtures";
 import { useSlkData } from "./useSlkData";
 
 describe("useSlkData", () => {
+  it("keeps readable Runs when one source cannot be read", async () => {
+    const healthy = twoRunFixture.runDetails[0]!;
+    const api = {
+      metadata: async () => ({ schema_version: "slk.bi.metadata/v1", bi_version: "1.1.4", device_id: "pc", device_name: "PC", webbi_sync_enabled: false }),
+      projects: async () => twoRunFixture.projects,
+      runs: async () => twoRunFixture.runs,
+      run: async (id: string) => { if (id !== healthy.run_id) throw new Error("source unavailable"); return healthy; },
+    } as SlkApi;
+    const { result } = renderHook(() => useSlkData(api));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.snapshot?.runDetails).toEqual([healthy]);
+    expect(result.current.staleReason).toContain("source unavailable");
+  });
   it("keeps the last good snapshot when refresh fails", async () => {
     let refresh = 0;
     const metadata = {
