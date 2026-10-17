@@ -1,4 +1,4 @@
-# SLK Overwatch tools 1.0.2
+# SLK Overwatch tools 1.0.3
 
 Small, deterministic, read-only helpers used by SLK transport. This is not an
 Agent, runtime manager, monitor service, timer, message sender or state writer.
@@ -24,7 +24,7 @@ There are no model-output, record-length or source-size limits in these readers.
 From this repository's root, after installing the prebuilt wheel:
 
 ```powershell
-python -m pip install --no-index artifacts/slk_overwatch_tools-1.0.2-py3-none-any.whl
+python -m pip install --no-index artifacts/slk_overwatch_tools-1.0.3-py3-none-any.whl
 python -m unittest discover -s tests -v
 ```
 

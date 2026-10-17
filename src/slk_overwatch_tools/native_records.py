@@ -309,6 +309,10 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
         status = matching[0]["agent_status"]
         if status == "running":
             status = "RUNNING"
+        elif status == "interrupted":
+            # A real interruption is terminal for this activation, not success
+            # and not missing evidence. Keep the existing failed projection.
+            status = "FAILED"
         elif isinstance(status, dict) and set(status) == {"completed"} and isinstance(status["completed"], str):
             status = "COMPLETED"
         else:
@@ -322,12 +326,12 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
             samples[call_id]["record_sources"] = {"sample_call": query[3], "sample_output": reply[3]}
     if followup:
         pre = samples[request["pre_activation_sample_call_id"]]
-        if (pre["agent_status"] != "COMPLETED" or pre["query_sequence"] <= previous_output[0]
+        if (pre["agent_status"] not in {"COMPLETED", "FAILED"} or pre["query_sequence"] <= previous_output[0]
             or pre["sequence"] >= activation[0]
             or request["pre_activation_sample_call_id"] != max(
                 (key for key, position in target_queries.items() if previous_output[0] < position < activation[0]),
                 key=target_queries.get, default=None)):
-            raise OverwatcherSubagentError("followup requires the latest completed sample of the exact previous execution")
+            raise OverwatcherSubagentError("followup requires the latest terminal sample of the exact previous execution")
         activation_time = datetime.fromisoformat(activation[1]["timestamp"].replace("Z", "+00:00"))
         for field in ("sample_query_timestamp", "sample_output_timestamp"):
             sample_time = datetime.fromisoformat(pre[field].replace("Z", "+00:00"))
@@ -336,6 +340,7 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
                 raise OverwatcherSubagentError("pre-activation native sample was not current at activation")
         lifecycle.update({"pre_activation_" + key: pre[key] for key in (
             "sample_call_sha256", "sample_output_sha256", "sample_query_timestamp", "sample_output_timestamp")})
+        lifecycle["pre_activation_agent_status"] = pre["agent_status"]
         if multiple:
             record_sources.update({"pre_activation_" + key: value for key, value in pre["record_sources"].items()})
     for call_id in selected - ({request["pre_activation_sample_call_id"]} if followup else set()):
@@ -355,7 +360,7 @@ def read_codex_subagent_snapshot(request: Mapping[str, Any], original_sample_id:
             or datetime.fromisoformat(native_timestamp(link[1]["timestamp"]).replace("Z", "+00:00"))
                < datetime.fromisoformat(spawn[1]["timestamp"].replace("Z", "+00:00"))):
             raise OverwatcherSubagentError("native child UUID linkage changed exact spawn/parent/path")
-        child_evidence = ({"child_session_id": item.get("agent_thread_id")} if latest["agent_status"] == "COMPLETED"
+        child_evidence = ({"child_session_id": item.get("agent_thread_id")} if latest["agent_status"] in {"COMPLETED", "FAILED"}
                           else _read_child_sample(request, item.get("agent_thread_id"), activated[1]["timestamp"]))
         child_evidence["child_link_sha256"] = link[2]
         record_sources["child_link"] = link[3]

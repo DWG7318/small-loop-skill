@@ -5,7 +5,7 @@ backend-path = ["."]
 
 [project]
 name = "slk-overwatch-tools"
-version = "1.0.2"
+version = "1.0.3"
 description = "Deterministic read-only Overwatcher helpers"
 requires-python = ">=3.10"
 dependencies = []

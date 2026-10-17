@@ -4,6 +4,6 @@ from .native_records import (
     OverwatcherSubagentError, native_object, read_codex_subagent_snapshot,
 )
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __all__ = ["OverwatcherContinuityError", "OverwatcherSubagentError", "inspect_cadence",
            "native_object", "read_codex_subagent_snapshot"]

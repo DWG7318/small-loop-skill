@@ -31,8 +31,17 @@ use crate::model::{
 use crate::schema::{open_database, SchemaError};
 
 const TRANSACTION_ATTEMPTS: usize = 3;
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct D2RepairCellAppend {
+    source_d2_failed_event_id: String,
+    cell: crate::model::CellDefinition,
+}
 #[path = "recovery_start.rs"]
 mod recovery_start;
+#[path = "overwatcher_native.rs"]
+mod overwatcher_native;
 type OverwatchCycleBindingRow = (String, String, i64, String, String, u64, String, String);
 type ActiveOverwatcherGateRow = (Option<i64>, Option<String>, String, u64, String, String);
 
@@ -1467,6 +1476,13 @@ impl StateStore {
             ));
         }
         let split = parse_cell_split(&request.snapshot)?;
+        let append = request.snapshot.get("d2_repair_cell_append")
+            .map(|value| serde_json::from_value::<D2RepairCellAppend>(value.clone()))
+            .transpose()
+            .map_err(|_| StateError::InvalidPlan("invalid D2 repair CELL append".into()))?;
+        if split.is_some() && append.is_some() {
+            return Err(StateError::InvalidPlan("append and split are separate plan changes".into()));
+        }
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(
                 transaction,
@@ -1478,6 +1494,14 @@ impl StateStore {
             validate_run_parameter_change(transaction, &request.run_id)?;
             let revision = previous + 1;
             let mut stored_snapshot = request.snapshot.clone();
+            if let Some(specification) = append.as_ref() {
+                if request.snapshot.get("expected_plan_revision").and_then(serde_json::Value::as_u64)
+                    != Some(u64::from(previous)) {
+                    return Err(StateError::InvalidPlan("D2 repair append requires the current plan revision".into()));
+                }
+                apply_d2_repair_cell_append(transaction, &request.run_id, specification)?;
+                stored_snapshot["authoritative_cell_nodes"] = authoritative_cell_nodes(transaction, &request.run_id)?;
+            }
             let split_details = if let Some((expected_revision, specification)) = split.as_ref() {
                 if *expected_revision != previous {
                     return Err(StateError::PlanRevisionMismatch {
@@ -1541,7 +1565,8 @@ impl StateStore {
                     actor.role_instance_id,
                     serde_json::to_string(&serde_json::json!({
                         "reason": request.reason,
-                        "previous_revision": previous
+                        "previous_revision": previous,
+                        "d2_repair_cell_append": request.snapshot.get("d2_repair_cell_append")
                     }))?,
                     request.occurred_at
                 ],
@@ -2878,13 +2903,47 @@ impl StateStore {
             ));
         }
         self.with_immediate_transaction(|transaction| {
-            let overwatcher_role_instance_id =
-                authorize_overwatcher(transaction, &request.run_id, credential)?;
+            let actor = authorize_role(transaction, &request.run_id, credential)?;
+            let supervisor_close = actor.role == Role::Supervisor;
+            if !supervisor_close && actor.role != Role::Overwatcher {
+                return Err(StateError::OverwatcherBindingNotAuthorized);
+            }
             let (method_version, closure_state): (String, String) = transaction.query_row(
                 "SELECT slk_version, closure_state FROM runs WHERE run_id=?1",
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
+            let mut native_exit = None;
+            let overwatcher_role_instance_id = if supervisor_close {
+                let creator: String = transaction.query_row(
+                    "SELECT author_role_instance_id FROM work_events WHERE run_id=?1 AND event_type='RUN_INITIALIZED' ORDER BY rowid LIMIT 1",
+                    [&request.run_id], |row| row.get(0))?;
+                if !uses_supervisor_subagent(&method_version) || creator != actor.role_instance_id
+                    || request.final_cycle_id.is_some() {
+                    return Err(StateError::OverwatcherBindingNotAuthorized);
+                }
+                let (identity, endpoint) = bound_overwatcher_identity_endpoint(transaction, &request.run_id)?;
+                validate_supervisor_subagent_binding(transaction, &request.run_id, &actor.role_instance_id,
+                    &identity, &endpoint, Some(&request.run_id))?;
+                let (canonical, execution, evidence): (String, String, String) = transaction.query_row(
+                    "SELECT canonical_task_id,foreground_turn_id,native_active_session_evidence_ref
+                     FROM overwatcher_bindings WHERE run_id=?1 AND lifecycle_state='active'",
+                    [&request.run_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+                if !Path::new(&request.archive_evidence_ref).is_absolute()
+                    || Path::new(&request.archive_evidence_ref) != Path::new(&evidence) {
+                    return Err(StateError::OverwatcherObservationInvalid("terminal close requires the exact bound native activation proof".into()));
+                }
+                let reference = EvidenceReference { path: evidence.clone(), sha256: sha256_hex(&fs::read(evidence)?) };
+                let observation = overwatcher_native::observe(&reference, overwatcher_native::Binding {
+                    run_id: &request.run_id, role_instance_id: &identity.role_instance_id, method_version: &method_version,
+                    native_address: &endpoint.native_address, canonical_task_id: &canonical, execution_id: &execution,
+                }, &request.occurred_at)?;
+                if !matches!(observation.status, "COMPLETED" | "FAILED") {
+                    return Err(StateError::OverwatcherObservationInvalid("terminal close requires the exact current child execution to have ended".into()));
+                }
+                native_exit = Some(observation.metadata);
+                identity.role_instance_id
+            } else { actor.role_instance_id.clone() };
             if uses_revisioned_runtime_contract(&method_version) {
                 let preclose_terminal = closure_state == "open"
                     && matches!(
@@ -2907,11 +2966,11 @@ impl StateStore {
                         "terminal close runtime revision is stale".into(),
                     ));
                 }
-                let final_cycle_id = request.final_cycle_id.as_deref().ok_or_else(|| {
+                let final_cycle_id = if supervisor_close { None } else { Some(request.final_cycle_id.as_deref().ok_or_else(|| {
                     StateError::OverwatcherObservationInvalid(
                         "terminal close requires the final observation cycle".into(),
                     )
-                })?;
+                })?) };
                 let final_cycle: Option<(String, u64, String)> = transaction
                     .query_row(
                         "SELECT cycle_id, runtime_revision, latest_event_id FROM overwatch_cycles
@@ -2920,8 +2979,8 @@ impl StateStore {
                         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                     )
                     .optional()?;
-                if final_cycle.as_ref().map(|item| item.0.as_str()) != Some(final_cycle_id)
-                    || final_cycle.as_ref().map(|item| item.1) != Some(requested_revision)
+                if !supervisor_close && (final_cycle.as_ref().map(|item| item.0.as_str()) != final_cycle_id
+                    || final_cycle.as_ref().map(|item| item.1) != Some(requested_revision))
                 {
                     return Err(StateError::OverwatcherObservationInvalid(
                         "terminal close must cite the latest cycle at the same runtime revision"
@@ -2949,7 +3008,7 @@ impl StateStore {
                         |row| row.get(0),
                     )?;
                     if !valid_d2
-                        || final_cycle.as_ref().map(|item| item.2.as_str())
+                        || !supervisor_close && final_cycle.as_ref().map(|item| item.2.as_str())
                             != Some(snapshot.latest_event_id.as_str())
                     {
                         return Err(StateError::OverwatcherObservationInvalid(
@@ -2960,11 +3019,15 @@ impl StateStore {
                 }
             }
             let revision = current_plan_revision(transaction, &request.run_id)?;
-            let details = serde_json::json!({
+            let mut details = serde_json::json!({
                 "archive_evidence_ref": request.archive_evidence_ref.clone(),
                 "final_cycle_id": request.final_cycle_id.clone(),
                 "runtime_revision": request.runtime_revision,
             });
+            if let Some(exit) = native_exit {
+                details["native_exit"] = exit;
+                details["closed_by_supervisor"] = serde_json::json!(actor.role_instance_id);
+            }
             let details_json = serde_json::to_string(&details)?;
             let payload_sha256 = sha256_hex(details_json.as_bytes());
             transaction.execute(
@@ -3689,6 +3752,7 @@ impl StateStore {
             request.last_native_status_id.as_deref(),
         ) {
             (Some(identifier), None) | (None, Some(identifier)) => valid_identifier(identifier),
+            (None, None) => true,
             _ => false,
         };
         if !valid_identifier(&request.event_id)
@@ -3734,7 +3798,10 @@ impl StateStore {
                     "native status turn resume requires effective SLK 4.2.8 or later".into(),
                 ));
             }
-            if uses_supervisor_subagent(&method_version) && request.last_native_status_id.is_none() {
+            let self_contained_native = request.last_native_status_id.is_none()
+                && request.last_anomaly_cycle_id.is_none();
+            if (uses_supervisor_subagent(&method_version) && request.last_anomaly_cycle_id.is_some())
+                || (self_contained_native && !uses_supervisor_subagent(&method_version)) {
                 return Err(StateError::OverwatcherCycleInvalid(
                     "native subagent resume requires the exact latest COMPLETED status of the previous execution".into(),
                 ));
@@ -3774,8 +3841,35 @@ impl StateStore {
                     current: runtime.runtime_revision,
                 });
             }
+            let mut native_observation = None;
             let (expected_continuity_state, resume_basis) =
-                if let Some(cycle_id) = request.last_anomaly_cycle_id.as_deref() {
+                if self_contained_native {
+                    if !matches!(binding.5.as_str(), "ACTIVE" | "VIOLATION") {
+                        return Err(StateError::OverwatcherCycleInvalid(
+                            "native followup must preserve an active binding".into(),
+                        ));
+                    }
+                    let (_, endpoint) = bound_overwatcher_identity_endpoint(transaction, &request.run_id)?;
+                    let canonical: String = transaction.query_row(
+                        "SELECT canonical_task_id FROM overwatcher_bindings WHERE run_id=?1",
+                        [&request.run_id], |row| row.get(0))?;
+                    let observation = overwatcher_native::observe(
+                        &request.native_active_session_evidence,
+                        overwatcher_native::Binding {
+                            run_id: &request.run_id, role_instance_id: &request.role_instance_id,
+                            method_version: &method_version, native_address: &endpoint.native_address,
+                            canonical_task_id: &canonical, execution_id: &request.foreground_turn_id,
+                        }, &request.occurred_at)?;
+                    if observation.status != "RUNNING"
+                        || !matches!(observation.previous_status, Some("COMPLETED" | "FAILED"))
+                        || observation.previous_execution_id.as_deref() != Some(request.previous_foreground_turn_id.as_str()) {
+                        return Err(StateError::OverwatcherCycleInvalid(
+                            "native followup requires exact terminal previous execution and fresh RUNNING current execution".into(),
+                        ));
+                    }
+                    native_observation = Some(observation.metadata);
+                    (binding.5.as_str(), "NATIVE_FOLLOWUP")
+                } else if let Some(cycle_id) = request.last_anomaly_cycle_id.as_deref() {
                     if binding.5 != "ACTIVE" {
                         return Err(StateError::OverwatcherCycleInvalid(
                             "anomaly-cycle turn resume requires active continuity".into(),
@@ -3919,6 +4013,32 @@ impl StateStore {
                     ],
                 )?;
             }
+            if resume_basis == "NATIVE_FOLLOWUP" && binding.5 == "VIOLATION" {
+                // Current exact native continuity resolves the current incident;
+                // historical MISSING/MISMATCHED receipts remain unchanged.
+                let mut statement = transaction.prepare(
+                    "SELECT current.incident_id FROM overwatcher_incident_transitions current
+                     WHERE current.run_id=?1 AND current.binding_revision=?2
+                       AND current.incident_code='OVERWATCHER_CONTINUITY_VIOLATION'
+                       AND current.state IN ('OPEN','ACKNOWLEDGED')
+                       AND current.rowid=(SELECT MAX(latest.rowid)
+                           FROM overwatcher_incident_transitions latest
+                           WHERE latest.run_id=current.run_id AND latest.incident_id=current.incident_id)")?;
+                let incidents: Vec<String> = statement.query_map(
+                    params![request.run_id, request.binding_revision], |row| row.get(0))?
+                    .collect::<Result<_, _>>()?;
+                for (index, incident) in incidents.iter().enumerate() {
+                    transaction.execute(
+                        "INSERT INTO overwatcher_incident_transitions
+                         (transition_id, incident_id, run_id, binding_revision, incident_code,
+                          state, evidence_path, evidence_sha256, occurred_at)
+                         VALUES (?1,?2,?3,?4,'OVERWATCHER_CONTINUITY_VIOLATION','RESOLVED',?5,?6,?7)",
+                        params![format!("incident-resolved-{}-{index}", request.event_id), incident,
+                            request.run_id, request.binding_revision,
+                            request.native_active_session_evidence.path,
+                            request.native_active_session_evidence.sha256, request.occurred_at])?;
+                }
+            }
             let revision = current_plan_revision(transaction, &request.run_id)?;
             transaction.execute(
                 "INSERT INTO work_events
@@ -3939,6 +4059,7 @@ impl StateStore {
                         "last_anomaly_cycle_id": request.last_anomaly_cycle_id,
                         "last_native_status_id": request.last_native_status_id,
                         "resume_basis": resume_basis,
+                        "native_observation": native_observation,
                         "native_active_session_evidence": request.native_active_session_evidence,
                         "reason": request.reason,
                     }))?,
@@ -4566,6 +4687,48 @@ fn parse_cell_split(
             StateError::InvalidPlan("CELL split contract must use the closed 4.4.2 shape".into())
         })?;
     Ok(Some((expected, specification)))
+}
+
+fn apply_d2_repair_cell_append(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+    specification: &D2RepairCellAppend,
+) -> Result<(), StateError> {
+    let latest_d2: Option<(String, String)> = transaction.query_row(
+        "SELECT event_id,event_type FROM work_events WHERE run_id=?1
+         AND event_type IN ('D2_FAILED','D2_PASSED') ORDER BY rowid DESC LIMIT 1",
+        [run_id], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional()?;
+    if latest_d2 != Some((specification.source_d2_failed_event_id.clone(), "D2_FAILED".into())) {
+        return Err(StateError::InvalidPlan("D2 repair append requires the exact latest D2 failure".into()));
+    }
+    let unaccepted: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM cell_nodes WHERE run_id=?1 AND state NOT IN ('d1_passed','split')",
+        [run_id], |row| row.get(0),
+    )?;
+    let cell = &specification.cell;
+    let tail: Option<(String, u32)> = transaction.query_row(
+        "SELECT c.go_id,c.ordinal FROM cell_nodes c JOIN go_nodes g
+         ON g.run_id=c.run_id AND g.go_id=c.go_id WHERE c.run_id=?1
+         ORDER BY g.ordinal DESC,c.ordinal DESC LIMIT 1",
+        [run_id], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional()?;
+    let exists: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM cell_nodes WHERE run_id=?1 AND cell_id=?2)",
+        params![run_id, cell.cell_id], |row| row.get(0),
+    )?;
+    if unaccepted != 0 || exists || !valid_identifier(&cell.cell_id)
+        || tail != Some((cell.go_id.clone(), cell.ordinal.saturating_sub(1)))
+        || cell.ordinal < 2 || cell.title.trim().is_empty() || cell.title.trim() != cell.title
+        || cell.objective.trim().is_empty() || cell.objective.trim() != cell.objective {
+        return Err(StateError::InvalidPlan("D2 repair must append one new tail CELL without altering accepted work".into()));
+    }
+    transaction.execute(
+        "INSERT INTO cell_nodes (run_id,go_id,cell_id,ordinal,title,objective,state)
+         VALUES (?1,?2,?3,?4,?5,?6,'planned')",
+        params![run_id,cell.go_id,cell.cell_id,cell.ordinal,cell.title,cell.objective],
+    )?;
+    Ok(())
 }
 
 fn apply_cell_split(
@@ -5610,6 +5773,16 @@ fn validate_quiescence_census(
     occurred_at: &str,
     proof: &serde_json::Value,
 ) -> Result<(), StateError> {
+    validate_native_census(connection, run_id, occurred_at, proof, false)
+}
+
+fn validate_native_census(
+    connection: &Connection,
+    run_id: &str,
+    occurred_at: &str,
+    proof: &serde_json::Value,
+    terminal_close: bool,
+) -> Result<(), StateError> {
     let invalid = || {
         StateError::WorkEventInvalid(
             "quiescence requires a complete fresh original native-call census".into(),
@@ -5635,6 +5808,9 @@ fn validate_quiescence_census(
     }
     let observed = proof["observed_at"].as_str().ok_or_else(invalid)?;
     let age = parse_rfc3339(occurred_at)? - parse_rfc3339(observed)?;
+    // This is the current census observation, not the age of immutable
+    // historical evidence. A native activation may precede TOKEN commit, so
+    // an unchanged runtime revision cannot make an old census fresh.
     if !(0..=60).contains(&age) {
         return Err(invalid());
     }
@@ -5666,6 +5842,8 @@ fn validate_quiescence_census(
                         | "processes"
                         | "native_reader"
                         | "native_stop"
+                        | "reason"
+                        | "current_safety"
                 )
             })
             // Optional original-reader/stop provenance is explanatory only;
@@ -5673,6 +5851,10 @@ fn validate_quiescence_census(
             || ["native_reader", "native_stop"].iter()
                 .any(|key| value.get(*key).is_some_and(|item| !item.is_object()))
         {
+            return Err(invalid());
+        }
+        if (value.contains_key("reason") || value.contains_key("current_safety"))
+            && (!terminal_close || row["status"] != "UNKNOWN") {
             return Err(invalid());
         }
         let path = row["native_start_path"]
@@ -5686,7 +5868,12 @@ fn validate_quiescence_census(
         }
         match row["status"].as_str() {
             Some("STAGED_NOT_STARTED")
-                if row["native_start_sha256"].is_null() && !Path::new(path).exists() => {}
+                if row["native_start_sha256"].is_null() && !Path::new(path).exists() => {
+                    validate_census_not_started(Path::new(path), run_id, row)?;
+                }
+            Some("UNKNOWN") if terminal_close => {
+                validate_historical_current_stop(run_id, occurred_at, row, &proof["historical_host_refs"])?;
+            }
             Some("STOPPED" | "COORDINATING") => {
                 let hash = row["native_start_sha256"]
                     .as_str()
@@ -5729,6 +5916,12 @@ fn validate_quiescence_census(
         }) {
             return Err(invalid());
         }
+        if terminal_close {
+            for process in processes { validate_stopped_process(process)?; }
+        }
+    }
+    if terminal_close && (proof["status"] == "NOT_QUIESCENT") != rows.iter().any(|row| row["status"] == "UNKNOWN") {
+        return Err(invalid());
     }
     if coordinators.len() > 1 {
         let mut entities = std::collections::BTreeSet::new();
@@ -5773,6 +5966,228 @@ fn validate_quiescence_census(
     Ok(())
 }
 
+fn census_invalid() -> StateError {
+    StateError::WorkEventInvalid("original native-call current safety is unproved".into())
+}
+
+fn census_object(path: &Path) -> Result<serde_json::Value, StateError> {
+    census_regular_path(path)?;
+    Ok(serde_json::from_slice(&fs::read(path)?)?)
+}
+
+fn census_regular_path(path: &Path) -> Result<(), StateError> {
+    if !path.is_absolute() { return Err(census_invalid()); }
+    for ancestor in path.ancestors() {
+        let metadata = fs::symlink_metadata(ancestor)?;
+        if metadata.file_type().is_symlink() { return Err(census_invalid()); }
+        #[cfg(windows)] {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 { return Err(census_invalid()); }
+        }
+    }
+    Ok(())
+}
+
+fn census_hashed_object(path: &Path, hash: &serde_json::Value) -> Result<serde_json::Value, StateError> {
+    let expected = hash.as_str().filter(|hash| is_lower_sha256(hash)).ok_or_else(census_invalid)?;
+    census_regular_path(path)?;
+    let bytes = fs::read(path)?;
+    if sha256_hex(&bytes) != expected { return Err(census_invalid()); }
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+// The absence of started.json alone never proves that an accepted Desktop
+// call was not sent. An adapter-written pre-send boundary is required.
+fn validate_census_not_started(path: &Path, run_id: &str, row: &serde_json::Value) -> Result<(), StateError> {
+    let source = path.parent().ok_or_else(census_invalid)?;
+    if ["desktop-readback-anchor.json", "desktop-send.json", "desktop-readback.json", "notification-result.json", "native-resume.json", "ocrv-resume.json"]
+        .iter().any(|name| source.join(name).exists()) { return Err(census_invalid()); }
+    if !source.join("accepted.json").exists() { return Ok(()); }
+    let endpoint = census_object(&source.join("endpoint.json"))?;
+    let identity_path = if source.join("notification.json").is_file() { "notification.json" } else { "envelope.json" };
+    let identity = census_object(&source.join(identity_path))?;
+    if endpoint["adapter"] == "ocrv-checker" && identity["payload_type"] == "WORKER_REPORT" {
+        let receipt = census_object(&source.join("checker-receipt.json"))?;
+        let failed = census_object(&source.join("failed.json"))?;
+        if identity["run_id"] == run_id && identity["message_id"] == row["message_id"]
+            && endpoint["run_id"] == run_id && receipt["native_started"] == false
+            && receipt["error_code"] == "OCRV_CANDIDATE_NOT_PROVIDED"
+            && failed["run_id"] == run_id && failed["message_id"] == row["message_id"]
+            && failed["status"] == "failed" && failed["error_code"] == "OCRV_CANDIDATE_NOT_PROVIDED"
+        { return Ok(()); }
+        return Err(census_invalid());
+    }
+    let boundary = census_object(&source.join("desktop-pre-send-failure.json"))?;
+    let message = if identity_path == "notification.json" { &identity["event_id"] } else { &identity["message_id"] };
+    let request_hash = if identity_path == "notification.json" { serde_json::json!(sha256_hex(&serde_json::to_vec(&identity)?)) } else { identity["payload_sha256"].clone() };
+    if boundary.as_object().is_none_or(|v| v.len() != 8)
+        || endpoint["run_id"] != run_id || endpoint["adapter"] != "codex-app-server" || !endpoint["address"]["desktop"].is_object()
+        || identity["run_id"] != run_id || message != &row["message_id"]
+        || boundary["schema_version"] != "slk.desktop-send-boundary/v1" || boundary["phase"] != "NOT_SENT"
+        || boundary["run_id"] != run_id || boundary["message_id"] != row["message_id"]
+        || boundary["request_sha256"] != request_hash
+        || boundary["endpoint_sha256"] != sha256_hex(&fs::read(source.join("endpoint.json"))?)
+        || !boundary["error_code"].as_str().is_some_and(|s| !s.is_empty())
+        || !boundary["observed_at"].as_str().is_some_and(|s| parse_rfc3339(s).is_ok())
+    { return Err(census_invalid()); }
+    if source.join("failed.json").is_file() {
+        let failure = census_object(&source.join("failed.json"))?;
+        if failure["run_id"] != run_id || failure["message_id"] != row["message_id"]
+            || failure["adapter"] != endpoint["adapter"] || failure["status"] != "failed"
+            || !failure["native_identity"].as_object().is_some_and(serde_json::Map::is_empty) || failure["error_code"] != boundary["error_code"]
+            || !failure["evidence"].as_array().is_some_and(|v| v.iter().any(|s| s == "desktop-pre-send-failure.json"))
+        { return Err(census_invalid()); }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn current_process_creation(pid: u32) -> Result<Option<String>, StateError> {
+    use std::ffi::c_void;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn GetLastError() -> u32;
+        fn GetProcessTimes(handle: *mut c_void, creation: *mut u64, exit: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+    let handle = unsafe { OpenProcess(0x1000, 0, pid) };
+    if handle.is_null() {
+        return if unsafe { GetLastError() } == 87 { Ok(None) } else { Err(census_invalid()) };
+    }
+    let (mut creation, mut exit, mut kernel, mut user) = (0, 0, 0, 0);
+    let ok = unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+    unsafe { CloseHandle(handle); }
+    if ok == 0 { return Err(census_invalid()); }
+    Ok((exit == 0).then(|| format!("win-filetime:{creation}")))
+}
+
+#[cfg(not(windows))]
+fn current_process_creation(pid: u32) -> Result<Option<String>, StateError> {
+    let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(census_invalid()),
+    };
+    let fields: Vec<_> = stat.rsplit_once(')').ok_or_else(census_invalid)?.1.split_whitespace().collect();
+    let start = fields.get(19).ok_or_else(census_invalid)?;
+    Ok(Some(format!("proc-start:{start}")))
+}
+
+fn validate_stopped_process(value: &serde_json::Value) -> Result<(), StateError> {
+    let pid = value["pid"].as_u64().and_then(|pid| u32::try_from(pid).ok()).filter(|pid| *pid > 0).ok_or_else(census_invalid)?;
+    let creation = value["creation_time"].as_str().filter(|s| !s.is_empty()).ok_or_else(census_invalid)?;
+    if value["exists"].as_bool().is_none() || value["identity_matches"].as_bool().is_none()
+        || value["exists"] == true && value["identity_matches"] == true
+        || value["exists"] == false && value["identity_matches"] == true
+    { return Err(census_invalid()); }
+    let canonical = if let Some(hex) = creation.strip_prefix("windows-filetime:") {
+        format!("win-filetime:{}", u64::from_str_radix(hex, 16).map_err(|_| census_invalid())?)
+    } else { creation.to_owned() };
+    if !canonical.split_once(':').is_some_and(|(kind, value)|
+        matches!(kind, "win-filetime" | "proc-start") && value.parse::<u64>().is_ok())
+        || current_process_creation(pid)?.as_deref() == Some(canonical.as_str())
+    { return Err(census_invalid()); }
+    Ok(())
+}
+
+fn validate_historical_current_stop(run_id: &str, occurred_at: &str, row: &serde_json::Value, historical_hosts: &serde_json::Value) -> Result<(), StateError> {
+    let safety = &row["current_safety"];
+    let path = Path::new(row["native_start_path"].as_str().ok_or_else(census_invalid)?);
+    let source = path.parent().ok_or_else(census_invalid)?;
+    let resumes = source.parent().ok_or_else(census_invalid)?;
+    let original = resumes.parent().ok_or_else(census_invalid)?;
+    let start = census_hashed_object(path, &row["native_start_sha256"])?;
+    let _: NativeStartReceipt = serde_json::from_value(start.clone())?;
+    let endpoint = census_hashed_object(&source.join("endpoint.json"), &safety["endpoint_sha256"])?;
+    let envelope = census_object(&source.join("envelope.json"))?;
+    let marker = census_hashed_object(&source.join("native-resume.json"), &safety["resume_marker_sha256"])?;
+    let stop = &safety["native_stop"];
+    let session = &stop["session"];
+    let sid = start["native_task"]["id"].as_str().filter(|s| !s.is_empty() && !s.contains(['/', '\\', ':'])).ok_or_else(census_invalid)?;
+    if safety.as_object().is_none_or(|v| v.len() != 8)
+        || safety["status"] != "STOPPED" || safety["source_gap"] != "FROZEN_HOST_UNAVAILABLE"
+        || row["reason"] != "native continuation lacks its exact frozen historical Host reference"
+        || safety["native_start_sha256"] != row["native_start_sha256"]
+        || parse_rfc3339(safety["observed_at"].as_str().ok_or_else(census_invalid)?)? > parse_rfc3339(occurred_at)?
+        || resumes.file_name().and_then(|s| s.to_str()) != Some("native-resumes")
+        || marker.as_object().is_none_or(|v| v.len() != 7)
+        || marker["schema_version"] != "slk.worker-native-resume/v1"
+        || historical_hosts.as_array().is_some_and(|hosts| hosts.iter().any(|host| host["sha256"] == marker["binding_sha256"]))
+        || marker["invocation_id"].as_str() != source.file_name().and_then(|s| s.to_str())
+        || Path::new(marker["original_source"].as_str().ok_or_else(census_invalid)?) != original
+        || !marker["binding_sha256"].as_str().is_some_and(is_lower_sha256)
+        || marker["instructions_sha256"] != sha256_hex(&fs::read(source.join("instructions.md"))?)
+        || endpoint != census_object(&original.join("endpoint.json"))?
+        || envelope != census_object(&original.join("envelope.json"))?
+        || start["schema_version"] != "slk.native-start/v2" || start["status"] != "STARTED" || start["adapter"] != "dsh-worker"
+        || !start["request_sha256"].as_str().is_some_and(is_lower_sha256)
+        || !start["native_request_sha256"].as_str().is_some_and(is_lower_sha256)
+        || start["run_id"] != run_id || start["message_id"] != row["message_id"]
+        || start["native_task"]["kind"] != "dsh-session"
+        || endpoint["run_id"] != run_id || endpoint["adapter"] != "dsh-worker" || endpoint["role"] != "worker"
+        || endpoint["address"]["session_id"] != sid || envelope["run_id"] != run_id
+        || envelope["message_id"] != row["message_id"] || envelope["cell_id"] != start["cell_id"]
+        || envelope["payload_sha256"] != start["request_sha256"]
+        || envelope["receiver_role_instance_id"] != endpoint["role_instance_id"]
+        || envelope["receiver_endpoint_version"] != endpoint["endpoint_version"]
+        || envelope["receiver_role"] != "worker"
+        || stop["launcher"]["pid"] != start["process"]["pid"]
+        || stop["launcher"]["creation_time"] != start["process"]["creation_time"]
+        || safety["coordinator"]["pid"] != marker["coordinator_process"]["pid"]
+        || safety["coordinator"]["creation_time"] != marker["coordinator_process"]["creation_time"]
+        || session["status"] != "NATIVE_SESSION_STOPPED" || session["session_id"] != sid
+        || session["turn"].as_u64().is_none_or(|turn| turn == 0)
+        || session["last_seq"].as_u64().is_none() || session["turn_end_seq"].as_u64().is_none()
+        || session["turn_end_seq"].as_u64() > session["last_seq"].as_u64()
+        || parse_rfc3339(session["turn_ended_at"].as_str().ok_or_else(census_invalid)?)? > parse_rfc3339(occurred_at)?
+    { return Err(census_invalid()); }
+    let invocation = marker["invocation_id"].as_str().ok_or_else(census_invalid)?;
+    if uuid::Uuid::parse_str(invocation).ok().is_none_or(|id| id.to_string() != invocation) { return Err(census_invalid()); }
+    for directory in [source, resumes, original] {
+        if fs::symlink_metadata(directory)?.file_type().is_symlink() { return Err(census_invalid()); }
+    }
+    let mut hashes = BTreeMap::new();
+    for name in ["endpoint.json", "envelope.json", "started.json", "completed.json", "failed.json", "worker-result.json", "checker-result.json", "ocrv-result.json", "incomplete-handoff/evidence.json"] {
+        let path = original.join(name);
+        if path.is_file() { hashes.insert(name, sha256_hex(&fs::read(path)?)); }
+    }
+    if marker["original_source_sha256"] != sha256_hex(&serde_json::to_vec(&hashes)?) { return Err(census_invalid()); }
+    validate_stopped_process(&stop["launcher"])?;
+    validate_stopped_process(&safety["coordinator"])?;
+    let runtime = Path::new(endpoint["address"]["runtime_root"].as_str().ok_or_else(census_invalid)?);
+    let instance = endpoint["address"]["instance_id"].as_str().filter(|s| !s.is_empty() && !s.contains(['/', '\\', ':'])).ok_or_else(census_invalid)?;
+    let home = runtime.join("runs").join(instance).join("home");
+    let session_path = Path::new(session["path"].as_str().ok_or_else(census_invalid)?);
+    census_regular_path(session_path)?;
+    if !runtime.is_absolute() || !session_path.is_absolute()
+        || session_path.file_name().and_then(|s| s.to_str()) != Some("session.v4.jsonl.zstd")
+        || session_path.parent().and_then(Path::file_name).and_then(|s| s.to_str()) != Some(sid)
+        || session_path.parent().and_then(Path::parent).and_then(Path::parent) != Some(home.join("sessions").as_path())
+        || !session["sha256"].as_str().is_some_and(is_lower_sha256)
+        || session["sha256"] != sha256_hex(&fs::read(session_path)?)
+    { return Err(census_invalid()); }
+    let hosts = stop["native_probe"]["hosts"].as_array().filter(|v| !v.is_empty()).ok_or_else(census_invalid)?;
+    let mut host_ids = BTreeSet::new();
+    let mut matched = false;
+    for host in hosts {
+        let host_id = host["id"].as_str().filter(|s| is_lower_sha256(s)).ok_or_else(census_invalid)?;
+        if !host_ids.insert(host_id) || Path::new(host["native_home"].as_str().ok_or_else(census_invalid)?) != home
+            || host["coverage"] != "COMPLETE" || host["omitted"] != 0
+            || !matches!(host["liveness"].as_str(), Some("EXITED" | "EXITED_OR_PID_REUSED"))
+        { return Err(census_invalid()); }
+        validate_stopped_process(&serde_json::json!({"pid":host["pid"],"creation_time":host["process_created"],"exists":false,"identity_matches":false}))?;
+        for item in host["objects"].as_array().ok_or_else(census_invalid)? {
+            if item["session_id"] != sid || item["event_source"] != "DSH_NATIVE_EMISSION"
+                || Path::new(item["source"].as_str().ok_or_else(census_invalid)?) != session_path
+            { return Err(census_invalid()); }
+            matched = true;
+        }
+    }
+    if !matched { return Err(census_invalid()); }
+    Ok(())
+}
+
 fn validate_run_close_proof(
     connection: &Connection,
     request: &WriteRequest,
@@ -5784,9 +6199,10 @@ fn validate_run_close_proof(
         [&request.run_id], |row| row.get(0)).optional()?.ok_or_else(invalid)?;
     let active_ow: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM overwatcher_bindings WHERE run_id=?1 AND lifecycle_state='active')",
         [&request.run_id], |row| row.get(0))?;
-    if active_ow {
-        return Err(invalid());
-    }
+    let creator: String = connection.query_row(
+        "SELECT author_role_instance_id FROM work_events WHERE run_id=?1 AND event_type='RUN_INITIALIZED' ORDER BY rowid LIMIT 1",
+        [&request.run_id], |row| row.get(0))?;
+    if active_ow || creator != request.role_instance_id { return Err(invalid()); }
     let evidence = |field: &str| -> Result<serde_json::Value, StateError> {
         let path = request.details[format!("{field}_path")]
             .as_str()
@@ -5813,13 +6229,15 @@ fn validate_run_close_proof(
     let proof = evidence("quiescence")?;
     if proof["schema_version"] != "slk.run-quiescence/v1"
         || proof["run_id"] != request.run_id
-        || proof["status"] != "QUIESCENT"
+        || !matches!(proof["status"].as_str(), Some("QUIESCENT" | "NOT_QUIESCENT"))
         || proof["runtime_revision"].as_u64()
             != Some(current_runtime_revision(connection, &request.run_id)?)
     {
         return Err(invalid());
     }
-    validate_quiescence_census(connection, &request.run_id, &request.occurred_at, &proof)?;
+    // Historical incompleteness stays visible. Per-original-call current stop
+    // facts can discharge it; administrative labels cannot.
+    validate_native_census(connection, &request.run_id, &request.occurred_at, &proof, true)?;
     if !request.details["close_binding_path"]
         .as_str()
         .is_some_and(|path| Path::new(path).is_absolute())
@@ -6121,7 +6539,7 @@ fn validate_d2_event(
 }
 
 fn uses_supervisor_subagent(version: &str) -> bool {
-    matches!(version, "4.5.0" | "4.5.1" | "4.5.2" | "4.5.3")
+    matches!(version, "4.5.0" | "4.5.1" | "4.5.2" | "4.5.3" | "4.5.4")
 }
 
 // 4.5.x changes OW ownership, not the existing engineering/runtime protections.

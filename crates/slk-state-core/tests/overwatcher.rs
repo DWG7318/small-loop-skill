@@ -2815,10 +2815,11 @@ fn slk_452_preserves_subagent_ownership_and_admits_initial_dispatch() {
 }
 
 #[test]
-fn slk_453_preserves_subagent_identity_and_rejects_unpublished_454() {
+fn slk_453_and_454_preserve_subagent_identity_and_reject_unpublished_455() {
+    for version in ["4.5.3", "4.5.4"] {
     let fixture = Fixture::new_450();
     slk_state_core::schema::open_database(fixture._root.path()).unwrap()
-        .execute("UPDATE runs SET slk_version='4.5.3' WHERE run_id='run-a'", []).unwrap();
+        .execute("UPDATE runs SET slk_version=?1 WHERE run_id='run-a'", [version]).unwrap();
     let binding = subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a");
     let mut wrong = binding.clone();
     wrong.endpoint.native_address = subagent_address("wrong-parent", "session-overwatcher-a");
@@ -2827,17 +2828,18 @@ fn slk_453_preserves_subagent_identity_and_rejects_unpublished_454() {
     fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
     fixture.store.commit_delivery_start(&fixture.supervisor, first_subagent_dispatch(&fixture)).unwrap();
     let projection = fixture.store.query_run("run-a").unwrap();
-    assert_eq!(projection.summary.slk_version, "4.5.3");
-    assert_eq!(projection.runtime_snapshot.unwrap().method_version, "4.5.3");
+    assert_eq!(projection.summary.slk_version, version);
+    assert_eq!(projection.runtime_snapshot.unwrap().method_version, version);
     assert_eq!(fixture.store.current_token("run-a").unwrap().owner_role_instance_id, "checker-a");
+    }
 
     let unpublished = Fixture::new_450();
     slk_state_core::schema::open_database(unpublished._root.path()).unwrap()
-        .execute("UPDATE runs SET slk_version='4.5.4' WHERE run_id='run-a'", []).unwrap();
+        .execute("UPDATE runs SET slk_version='4.5.5' WHERE run_id='run-a'", []).unwrap();
     assert!(matches!(unpublished.store.bind_overwatcher(&unpublished.supervisor,
         subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")),
         Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("supported effective SLK contract")));
-    assert_eq!(unpublished.store.query_run("run-a").unwrap().summary.slk_version, "4.5.4");
+    assert_eq!(unpublished.store.query_run("run-a").unwrap().summary.slk_version, "4.5.5");
     assert_eq!(unpublished.store.current_token("run-a").unwrap().sequence, 1);
 }
 
@@ -2874,6 +2876,219 @@ fn slk_450_resume_requires_positive_completed_not_missing_or_mismatched() {
         assert!(matches!(fixture.store.resume_overwatcher_turn(&fixture.supervisor,
             native_status_resume_request(&fixture, "unknown-old-execution", "reject-unproved-resume")),
             Err(StateError::OverwatcherCycleInvalid(message)) if message.contains("COMPLETED")));
+    }
+}
+
+fn exact_followup_fixture(previous_status: serde_json::Value) -> (Fixture, ResumeOverwatcherTurnRequest) {
+    let (fixture,request,_)=exact_followup_fixture_with_credential(previous_status);
+    (fixture,request)
+}
+
+fn exact_followup_fixture_with_credential(previous_status: serde_json::Value) -> (Fixture, ResumeOverwatcherTurnRequest, slk_state_core::auth::IssuedCredential) {
+    exact_followup_fixture_at(previous_status, 0)
+}
+
+fn exact_followup_fixture_at(previous_status: serde_json::Value, age_seconds: i64) -> (Fixture, ResumeOverwatcherTurnRequest, slk_state_core::auth::IssuedCredential) {
+    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+    let fixture = Fixture::new_450();
+    let mut binding = subagent_binding("run-a", "overwatcher-a", "/root/ow");
+    binding.foreground_turn_id = "codex-subagent-spawn:call_spawn".into();
+    binding.canonical_task_id = "codex-subagent-spawn-call_spawn".into();
+    let issued=fixture.store.bind_overwatcher(&fixture.supervisor, binding).unwrap();
+    let now = OffsetDateTime::now_utc() - time::Duration::seconds(age_seconds);
+    let at = |seconds| (now - time::Duration::seconds(seconds)).format(&Rfc3339).unwrap();
+    let call = |name: &str, id: &str, arguments: serde_json::Value, seconds| json!({
+        "timestamp": at(seconds), "type":"response_item", "payload":{
+            "type":"function_call", "namespace":"collaboration", "name":name,
+            "call_id":id,"arguments":arguments.to_string()}});
+    let output = |id: &str, body: String, seconds| json!({"timestamp":at(seconds),"type":"response_item",
+        "payload":{"type":"function_call_output","call_id":id,"output":body}});
+    let records = vec![json!({"type":"session_meta","payload":{"id":"session-supervisor-a"}}),
+        call("spawn_agent","call_spawn",json!({"task_name":"ow","message":"PRIVATE"}),4),
+        output("call_spawn",json!({"task_name":"/root/ow"}).to_string(),4),
+        call("list_agents","call_pre",json!({}),3),
+        output("call_pre",json!({"agents":[{"agent_name":"/root/ow","agent_status":previous_status}]}).to_string(),3),
+        call("followup_task","call_next",json!({"target":"/root/ow","message":"PRIVATE"}),2),
+        output("call_next",String::new(),2),
+        call("list_agents","call_post",json!({"path_prefix":"/root/ow"}),1),
+        output("call_post",json!({"agents":[{"agent_name":"/root/ow","agent_status":"running"}]}).to_string(),1)];
+    let source = fixture._root.path().join("rollout-2026-10-17T01-02-03-session-supervisor-a.jsonl");
+    fs::write(&source, records.iter().map(|row| row.to_string()+"\n").collect::<String>()).unwrap();
+    let request = json!({"schema_version":"slk.subagent-overwatcher-request/v1","method_version":"4.5.0",
+        "run_id":"run-a","role_instance_id":"overwatcher-a","endpoint_ref":"endpoint-a",
+        "native_address":subagent_address("session-supervisor-a","/root/ow"),
+        "native_execution_id":"codex-subagent-followup:call_next","native_source_path":source,
+        "spawn_call_id":"call_spawn","previous_native_execution_id":"codex-subagent-spawn:call_spawn",
+        "pre_activation_sample_call_id":"call_pre"});
+    let request_ref = fixture.evidence_ref("subagent-overwatcher-request.json", request.to_string().as_bytes());
+    let mut proof = request;
+    proof["schema_version"] = json!("slk.subagent-overwatcher-proof/v1");
+    proof["request_sha256"] = json!(request_ref.sha256);
+    proof["canonical_task_id"] = json!("codex-subagent-spawn-call_spawn");
+    proof["native_task_id"] = json!("codex-subagent:session-supervisor-a:call_next:/root/ow");
+    proof["sample_call_id"] = json!("call_post");
+    proof["agent_status"] = json!("RUNNING");
+    proof["pre_activation_agent_status"] = json!(if previous_status == "interrupted" {"FAILED"} else {"COMPLETED"});
+    proof["checked_at"] = json!(at(0));
+    for (prefix, index) in [("spawn",1),("previous_activation",1),("pre_activation_sample",3),("activation",5),("sample",7)] {
+        for (part, offset) in [("call",0),("output",1)] {
+            proof[format!("{prefix}_{part}_sha256")] = json!(format!("{:x}",Sha256::digest(records[index+offset].to_string().as_bytes())));
+            proof[format!("{prefix}_{}_timestamp",if part=="call" {"query"} else {"output"})] = records[index+offset]["timestamp"].clone();
+        }
+    }
+    let start = json!({"schema_version":"slk.native-start/v2","status":"STARTED","adapter":"codex-overwatcher",
+        "run_id":"run-a","cell_id":"RUN-OVERWATCH","message_id":"codex-subagent-followup-call_next",
+        "request_sha256":proof["request_sha256"],"native_request_sha256":proof["activation_call_sha256"],
+        "observed_at":at(0),"process":{"pid":1,"creation_time":"reader-only"},
+        "native_task":{"kind":"codex-subagent","id":proof["native_task_id"],"status":"RUNNING"}});
+    proof["started_sha256"] = json!(fixture.evidence_ref("started.json",start.to_string().as_bytes()).sha256);
+    let evidence = fixture.evidence_ref("subagent-overwatcher-proof.json",proof.to_string().as_bytes());
+    let request = ResumeOverwatcherTurnRequest {event_id:"resume-exact-followup".into(),run_id:"run-a".into(),
+        role_instance_id:"overwatcher-a".into(),session_id:"/root/ow".into(),binding_revision:1,
+        expected_runtime_revision:fixture.runtime_revision(),previous_foreground_turn_id:"codex-subagent-spawn:call_spawn".into(),
+        foreground_turn_id:"codex-subagent-followup:call_next".into(),last_anomaly_cycle_id:None,last_native_status_id:None,
+        native_active_session_evidence:evidence,reason:"reconcile exact original interrupted child followup".into(),occurred_at:at(0)};
+    (fixture,request,issued)
+}
+
+#[test]
+fn native_followup_retains_unknown_history_and_resolves_current_continuity_with_raw_proof() {
+    let (fixture,mut request,issued)=exact_followup_fixture_with_credential(json!("interrupted"));
+    fixture.store.record_overwatcher_status(&issued.credential,RecordOverwatcherStatusRequest {
+        status_id:"unproved-old-observation".into(),run_id:"run-a".into(),binding_revision:1,
+        role_instance_id:"overwatcher-a".into(),session_id:"/root/ow".into(),
+        foreground_turn_id:request.previous_foreground_turn_id.clone(),native_liveness:NativeLiveness::Missing,
+        evidence:fixture.evidence_ref("old-unknown.json",b"unproved old observation, not native failure"),
+        observed_at:request.occurred_at.clone(),
+    }).unwrap();
+    request.expected_runtime_revision=fixture.runtime_revision();
+    fixture.store.resume_overwatcher_turn(&fixture.supervisor,request).unwrap();
+    let db=slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    let statuses:Vec<String>=db.prepare("SELECT native_liveness FROM overwatcher_native_status_receipts").unwrap()
+        .query_map([],|r| r.get(0)).unwrap().collect::<Result<_,_>>().unwrap();
+    assert_eq!(statuses,vec!["MISSING"]);
+    let transitions:Vec<String>=db.prepare("SELECT state FROM overwatcher_incident_transitions ORDER BY rowid").unwrap()
+        .query_map([],|r| r.get(0)).unwrap().collect::<Result<_,_>>().unwrap();
+    assert_eq!(transitions,vec!["OPEN","RESOLVED"]);
+}
+
+#[test]
+fn native_followup_reconciles_terminal_to_running_without_fabricating_status_history() {
+    for terminal in [json!("interrupted"),json!({"completed":"PRIVATE"})] {
+        let (fixture,request) = exact_followup_fixture(terminal);
+        let token = fixture.store.current_token("run-a").unwrap();
+        fixture.store.resume_overwatcher_turn(&fixture.supervisor,request).unwrap();
+        let projection = fixture.store.query_run("run-a").unwrap();
+        assert_eq!(projection.role("overwatcher").unwrap().session_id,"/root/ow");
+        assert_eq!(projection.role("overwatcher").unwrap().foreground_turn_id.as_deref(),Some("codex-subagent-followup:call_next"));
+        assert_eq!(fixture.store.current_token("run-a").unwrap(),token);
+        let database=slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        assert_eq!(database.query_row("SELECT COUNT(*) FROM overwatcher_native_status_receipts",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(slk_state_core::schema::SCHEMA_VERSION,9);
+        let details:String=database.query_row("SELECT details_json FROM work_events WHERE event_id='resume-exact-followup'",[],|r|r.get(0)).unwrap();
+        assert!(details.contains("NATIVE_FOLLOWUP"));
+        assert!(!details.contains("PRIVATE"));
+    }
+}
+
+#[test]
+fn native_followup_rejects_unproved_terminal_and_forged_identity_without_writes() {
+    for damage in ["active","unknown","proof-run","proof-parent","proof-child","proof-prior","proof-new",
+        "proof-terminal","missing-terminal","hash","source","missing-start","wrong-request","current-completed","later-followup",
+        "latest-interrupted","latest-completed","latest-unknown","latest-wrong-namespace","pending-list","duplicate-call","duplicate-json-key","wrong-runtime","wrong-authority"] {
+        let (fixture,mut request)=exact_followup_fixture(match damage {"active"=>json!("running"),"unknown"=>json!("unknown"),_=>json!("interrupted")});
+        let path=std::path::Path::new(&request.native_active_session_evidence.path);
+        let mut proof:serde_json::Value=serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        match damage {
+            "proof-run"=>proof["run_id"]=json!("other-run"),
+            "proof-parent"=>proof["native_address"]["parent"]["session_id"]=json!("other-parent"),
+            "proof-child"=>proof["native_address"]["agent_id"]=json!("/root/other"),
+            "proof-prior"=>proof["previous_native_execution_id"]=json!("codex-subagent-spawn:call_other"),
+            "proof-new"=>proof["native_execution_id"]=json!("codex-subagent-followup:call_other"),
+            "proof-terminal"=>proof["pre_activation_agent_status"]=json!("COMPLETED"),
+            "missing-terminal"=>{proof.as_object_mut().unwrap().remove("pre_activation_agent_status");},
+            "source"=>{fs::write(proof["native_source_path"].as_str().unwrap(),"{}\n").unwrap();},
+            "missing-start"=>{fs::remove_file(path.with_file_name("started.json")).unwrap();},
+            "wrong-request"=>{fs::write(path.with_file_name("subagent-overwatcher-request.json"),"{}").unwrap();},
+            "current-completed"|"later-followup"|"latest-interrupted"|"latest-completed"|"latest-unknown"|"latest-wrong-namespace"|"pending-list"|"duplicate-call"|"duplicate-json-key"=>{
+                let source=std::path::Path::new(proof["native_source_path"].as_str().unwrap());
+                let mut rows:Vec<serde_json::Value>=fs::read_to_string(source).unwrap().lines().map(|line|serde_json::from_str(line).unwrap()).collect();
+                if damage=="current-completed" {rows[8]["payload"]["output"]=json!(json!({"agents":[{"agent_name":"/root/ow","agent_status":{"completed":"private"}}]}).to_string());}
+                else if damage=="later-followup" {let mut next=rows[5].clone();next["payload"]["call_id"]=json!("call_later");rows.push(next);}
+                else if damage=="duplicate-call" {rows.push(rows[7].clone());}
+                else if damage!="duplicate-json-key" {
+                    let mut query=rows[7].clone();query["timestamp"]=json!(request.occurred_at);query["payload"]["call_id"]=json!("call_latest");
+                    if damage=="latest-wrong-namespace" {query["payload"]["namespace"]=json!("unproved");}
+                    rows.push(query);
+                    if damage!="pending-list" {
+                        let mut output=rows[8].clone();output["timestamp"]=json!(request.occurred_at);output["payload"]["call_id"]=json!("call_latest");
+                        output["payload"]["output"]=json!(json!({"agents":[{"agent_name":"/root/ow","agent_status":
+                            match damage {"latest-interrupted"=>json!("interrupted"),"latest-completed"=>json!({"completed":"private"}),_=>json!("unknown")}}]}).to_string());
+                        rows.push(output);
+                    }
+                }
+                let mut body=rows.iter().map(|row|row.to_string()+"\n").collect::<String>();
+                if damage=="duplicate-json-key" {body=body.replacen("\"id\":\"session-supervisor-a\"","\"id\":\"other\",\"id\":\"session-supervisor-a\"",1);}
+                fs::write(source,body).unwrap();
+            },
+            "wrong-runtime"=>request.expected_runtime_revision+=1,
+            _=>{}
+        }
+        fs::write(path,proof.to_string()).unwrap();
+        request.native_active_session_evidence.sha256=if damage=="hash" {"0".repeat(64)} else {format!("{:x}",Sha256::digest(fs::read(path).unwrap()))};
+        let before=fixture.runtime_revision();
+        let actor=if damage=="wrong-authority" {&fixture.checker} else {&fixture.supervisor};
+        assert!(fixture.store.resume_overwatcher_turn(actor,request).is_err(),"{damage}");
+        assert_eq!(fixture.runtime_revision(),before,"{damage}");
+    }
+}
+
+#[test]
+fn native_followup_rejects_stale_exact_raw_observation_without_writes() {
+    let (fixture,request,_)=exact_followup_fixture_at(json!("interrupted"),301);
+    let before=fixture.runtime_revision();
+    assert!(fixture.store.resume_overwatcher_turn(&fixture.supervisor,request).is_err());
+    assert_eq!(fixture.runtime_revision(),before);
+}
+
+#[test]
+fn native_followup_preserves_exact_multiple_source_provenance() {
+    for damage in [None,Some("metadata"),Some("location"),Some("duplicate"),Some("order"),Some("foreign-parent")] {
+        let (fixture,mut resume)=exact_followup_fixture(json!("interrupted"));
+        let proof_path=std::path::Path::new(&resume.native_active_session_evidence.path).to_path_buf();
+        let mut proof:serde_json::Value=serde_json::from_slice(&fs::read(&proof_path).unwrap()).unwrap();
+        let request_path=proof_path.with_file_name("subagent-overwatcher-request.json");
+        let mut request:serde_json::Value=serde_json::from_slice(&fs::read(&request_path).unwrap()).unwrap();
+        let source=std::path::PathBuf::from(proof["native_source_path"].as_str().unwrap());
+        let second=source.with_file_name("explicit-second-parent-rollout.jsonl");
+        let rows:Vec<serde_json::Value>=fs::read_to_string(&source).unwrap().lines().map(|line|serde_json::from_str(line).unwrap()).collect();
+        fs::write(&source,rows[..7].iter().map(|r|r.to_string()+"\n").collect::<String>()).unwrap();
+        let mut second_rows=vec![rows[0].clone(),rows[7].clone(),rows[8].clone()];
+        if damage==Some("foreign-parent") {second_rows[0]["payload"]["id"]=json!("wrong-parent");}
+        fs::write(&second,second_rows.iter().map(|r|r.to_string()+"\n").collect::<String>()).unwrap();
+        request.as_object_mut().unwrap().remove("native_source_path");
+        proof.as_object_mut().unwrap().remove("native_source_path");
+        let paths=match damage {Some("duplicate")=>json!([source,source]),Some("order")=>json!([second,source]),_=>json!([source,second])};
+        request["native_source_paths"]=paths.clone();proof["native_source_paths"]=paths;
+        let location=|index:usize| json!({"path":if index<7 {&source} else {&second},
+            "line":if index<7 {index+1} else {index-5},"sha256":format!("{:x}",Sha256::digest(rows[index].to_string().as_bytes()))});
+        proof["source_metadata"]=json!([location(0),{"path":second,"line":1,"sha256":location(0)["sha256"]}]);
+        for (prefix,index) in [("spawn",1),("previous_activation",1),("pre_activation_sample",3),("activation",5),("sample",7)] {
+            proof["record_sources"][format!("{prefix}_call")]=location(index);
+            proof["record_sources"][format!("{prefix}_output")]=location(index+1);
+        }
+        if damage==Some("metadata") {proof["source_metadata"][1]["sha256"]=json!("0".repeat(64));}
+        if damage==Some("location") {proof["record_sources"]["sample_call"]["line"]=json!(3);}
+        let request_ref=fixture.evidence_ref("subagent-overwatcher-request.json",request.to_string().as_bytes());
+        proof["request_sha256"]=json!(request_ref.sha256);
+        let mut start:serde_json::Value=serde_json::from_slice(&fs::read(proof_path.with_file_name("started.json")).unwrap()).unwrap();
+        start["request_sha256"]=proof["request_sha256"].clone();
+        proof["started_sha256"]=json!(fixture.evidence_ref("started.json",start.to_string().as_bytes()).sha256);
+        resume.native_active_session_evidence=fixture.evidence_ref("subagent-overwatcher-proof.json",proof.to_string().as_bytes());
+        let before=fixture.runtime_revision();
+        let result=fixture.store.resume_overwatcher_turn(&fixture.supervisor,resume);
+        assert_eq!(result.is_ok(),damage.is_none(),"{damage:?}: {result:?}");
+        if damage.is_some() {assert_eq!(fixture.runtime_revision(),before);}
     }
 }
 
@@ -3405,7 +3620,7 @@ fn first_subagent_dispatch(fixture: &Fixture) -> CommitDeliveryStartRequest {
 
 #[test]
 fn subagent_initial_dispatch_does_not_require_a_first_observation_cycle() {
-    for version in ["4.5.0", "4.5.1", "4.5.2", "4.5.3"] {
+    for version in ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"] {
         let fixture = Fixture::new_450();
         slk_state_core::schema::open_database(fixture._root.path()).unwrap()
             .execute("UPDATE runs SET slk_version=?1 WHERE run_id='run-a'", [version]).unwrap();
@@ -4741,5 +4956,54 @@ fn event(event_id: &str, event_type: EventType, role_instance_id: &str) -> Write
         details: json!({}),
         corrects_event_id: None,
         occurred_at: "2026-09-22T00:00:02Z".into(),
+    }
+}
+
+#[test]
+fn creator_can_close_ended_child_without_a_fabricated_final_cycle() {
+    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+    for status in [json!("interrupted"), json!({"completed":"PRIVATE"}), json!("running"), json!("unknown")] {
+        let (fixture, resumed) = exact_followup_fixture(json!("interrupted"));
+        fixture.store.resume_overwatcher_turn(&fixture.supervisor, resumed.clone()).unwrap();
+        let other = fixture.add_450_run("run-b", "supervisor-b", "session-supervisor-a");
+        fixture.store.bind_overwatcher(&other, subagent_binding("run-b", "overwatcher-b", "/root/ow")).unwrap();
+        let other_before = fixture.store.query_run("run-b").unwrap();
+        // Engineering D2 is arranged independently of lifecycle proof in this
+        // isolated fixture; closure must still check the bound D2 scope.
+        let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        db.execute("INSERT INTO work_events (event_id,run_id,plan_revision,author_role_instance_id,event_type,details_json,occurred_at)
+            VALUES ('close-d2-ready','run-a',1,'supervisor-a','D2_PASSED','{}',?1)", [&resumed.occurred_at]).unwrap();
+        db.execute("INSERT INTO run_runtime_snapshots
+            SELECT run_id,runtime_revision+1,plan_revision,token_sequence,token_holder_role_instance_id,'close-d2-ready',
+                latest_message_id,method_version,overwatcher_binding_revision,overwatcher_status,committed_at
+            FROM run_runtime_snapshots WHERE run_id='run-a' ORDER BY runtime_revision DESC LIMIT 1", []).unwrap();
+        db.execute("UPDATE runs SET current_runtime_revision=current_runtime_revision+1 WHERE run_id='run-a'", []).unwrap();
+        let proof: serde_json::Value = serde_json::from_slice(&fs::read(&resumed.native_active_session_evidence.path).unwrap()).unwrap();
+        let source = std::path::Path::new(proof["native_source_path"].as_str().unwrap());
+        let at = OffsetDateTime::now_utc().format(&Rfc3339).unwrap();
+        let mut raw = fs::read_to_string(source).unwrap();
+        for row in [json!({"timestamp":at,"type":"response_item","payload":{"type":"function_call",
+                "namespace":"collaboration","name":"list_agents","call_id":"call_closed","arguments":"{\"path_prefix\":\"/root/ow\"}"}}),
+            json!({"timestamp":at,"type":"response_item","payload":{"type":"function_call_output","call_id":"call_closed",
+                "output":json!({"agents":[{"agent_name":"/root/ow","agent_status":status}]}).to_string()}})] {
+            raw.push_str(&(row.to_string()+"\n"));
+        }
+        fs::write(source, raw).unwrap();
+        let request = CloseOverwatcherRequest { event_id:"close-ended-child".into(), run_id:"run-a".into(),
+            archive_evidence_ref:resumed.native_active_session_evidence.path.clone(), final_cycle_id:None,
+            runtime_revision:Some(fixture.runtime_revision()), occurred_at:OffsetDateTime::now_utc().format(&Rfc3339).unwrap() };
+        let before = fixture.runtime_revision();
+        assert!(fixture.store.close_overwatcher(&fixture.checker, request.clone()).is_err());
+        let result = fixture.store.close_overwatcher(&fixture.supervisor, request);
+        let stopped = status == "interrupted" || status.is_object();
+        assert_eq!(result.is_ok(), stopped, "{status}: {result:?}");
+        assert_eq!(fixture.store.query_run("run-b").unwrap(), other_before);
+        assert!(fixture.store.query_run("run-a").unwrap().overwatch_cycles.is_empty());
+        if stopped {
+            let details: String = db.query_row("SELECT details_json FROM operational_observations WHERE observation_id='close-ended-child'", [], |r| r.get(0)).unwrap();
+            let value: serde_json::Value = serde_json::from_str(&details).unwrap();
+            assert_eq!(value["native_exit"]["agent_status"], if status == "interrupted" { "FAILED" } else { "COMPLETED" });
+            assert!(!details.contains("PRIVATE"));
+        } else { assert_eq!(fixture.runtime_revision(), before); }
     }
 }

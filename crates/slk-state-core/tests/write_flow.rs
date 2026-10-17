@@ -1392,6 +1392,86 @@ fn plan_revision_requires_a_substantive_nonempty_change() {
 }
 
 #[test]
+fn d2_repair_append_preserves_history_and_opens_only_the_next_cell() {
+    let fixture = Fixture::new();
+    fixture.store.handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a")).unwrap();
+    let mut passed = event("accepted-before-d2", EventType::D1Passed, json!({"verdict":"PASS"}));
+    passed.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, passed).unwrap();
+    let mut ready = handoff(3, "checker-a", "supervisor-a");
+    ready.payload_type = "D2_READY".into();
+    fixture.store.handoff_token(&fixture.checker, ready).unwrap();
+    let mut failed = event("original-d2-failure", EventType::D2Failed, json!({"verdict":"FAIL"}));
+    failed.role_instance_id = "supervisor-a".into();
+    failed.go_id = None;
+    failed.cell_id = None;
+    failed.attempt = None;
+    fixture.store.write_event(&fixture.supervisor, failed).unwrap();
+    fixture.store.handoff_token(&fixture.supervisor, handoff(4, "supervisor-a", "checker-a")).unwrap();
+    let before = fixture.store.query_run("run-a").unwrap();
+    let token_before = fixture.store.current_token("run-a").unwrap();
+    let request = RevisePlanRequest {
+        event_id: "append-d2-repair".into(), run_id: "run-a".into(),
+        snapshot: json!({"expected_plan_revision":1,"d2_repair_cell_append":{
+            "source_d2_failed_event_id":"original-d2-failure",
+            "cell":{"go_id":"GO-001","cell_id":"CELL-002","ordinal":2,
+                    "title":"D2 correction","objective":"Correct the actual composition defect"}
+        }}),
+        reason: "Owner-approved single corrective CELL after real D2 failure".into(),
+        occurred_at: "2026-09-20T00:00:07Z".into(),
+    };
+    let mut wrong_failure = request.clone();
+    wrong_failure.snapshot["d2_repair_cell_append"]["source_d2_failed_event_id"] = json!("accepted-before-d2");
+    assert!(fixture.store.revise_plan(&fixture.supervisor, wrong_failure).is_err());
+    assert!(fixture.store.revise_plan(&fixture.worker, request.clone()).is_err());
+    assert_eq!(fixture.store.revise_plan(&fixture.supervisor, request.clone()).unwrap(), 2);
+    let after = fixture.store.query_run("run-a").unwrap();
+    assert_eq!(fixture.store.current_token("run-a").unwrap(), token_before);
+    assert_eq!(after.go_nodes[0].cell_nodes.len(), 2);
+    assert_eq!(after.go_nodes[0].cell_nodes[0].state, "d1_passed");
+    assert_eq!(after.go_nodes[0].cell_nodes[0].attempt, before.go_nodes[0].cell_nodes[0].attempt);
+    assert_eq!(after.go_nodes[0].cell_nodes[1].state, "planned");
+    assert!(before.events.iter().all(|old| after.events.iter().any(|new| new == old)));
+    assert!(fixture.store.revise_plan(&fixture.supervisor, request.clone()).is_err());
+    let mut again = request;
+    again.event_id = "duplicate-or-unaccepted-append".into();
+    again.snapshot["expected_plan_revision"] = json!(2);
+    assert!(fixture.store.revise_plan(&fixture.supervisor, again).is_err());
+    let mut next = handoff(5, "checker-a", "worker-a");
+    next.cell_id = "CELL-002".into();
+    next.payload_type = "WORKER_TASK".into();
+    fixture.store.handoff_token(&fixture.checker, next).unwrap();
+    let mut d0 = event("repair-d0", EventType::D0Completed, json!({"verdict":"PASS"}));
+    d0.cell_id = Some("CELL-002".into());
+    d0.plan_revision = 2;
+    fixture.store.write_event(&fixture.worker, d0).unwrap();
+    let mut report = handoff(6, "worker-a", "checker-a");
+    report.cell_id = "CELL-002".into();
+    report.payload_type = "WORKER_REPORT".into();
+    fixture.store.handoff_token(&fixture.worker, report).unwrap();
+    let mut d1 = event("repair-d1", EventType::D1Passed, json!({"verdict":"PASS"}));
+    d1.role_instance_id = "checker-a".into();
+    d1.cell_id = Some("CELL-002".into());
+    d1.plan_revision = 2;
+    fixture.store.write_event(&fixture.checker, d1).unwrap();
+    let mut ready = handoff(7, "checker-a", "supervisor-a");
+    ready.cell_id = "CELL-002".into();
+    ready.payload_type = "D2_READY".into();
+    fixture.store.handoff_token(&fixture.checker, ready).unwrap();
+    let mut d2 = event("repair-d2", EventType::D2Passed, json!({"verdict":"PASS"}));
+    d2.role_instance_id = "supervisor-a".into();
+    d2.go_id = None;
+    d2.cell_id = None;
+    d2.attempt = None;
+    d2.plan_revision = 2;
+    fixture.store.write_event(&fixture.supervisor, d2).unwrap();
+    let final_state = fixture.store.query_run("run-a").unwrap();
+    assert!(final_state.go_nodes[0].cell_nodes.iter().all(|cell| cell.state == "d1_passed"));
+    assert!(final_state.events.iter().any(|item| item.event_id == "original-d2-failure"));
+    assert!(final_state.events.iter().any(|item| item.event_id == "repair-d2"));
+}
+
+#[test]
 fn token_cannot_skip_the_checker() {
     let fixture = Fixture::new();
     assert!(matches!(
@@ -2373,6 +2453,327 @@ fn legacy_d1_candidate_chain_with_shape(
         .handoff_token(&fixture.checker, escalation)
         .unwrap();
     (fixture, candidate_sha256)
+}
+
+#[test]
+fn unbound_onsite_owner_labels_do_not_close_an_active_ow() {
+    let fixture = Fixture::new();
+    fixture.store.handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a")).unwrap();
+    let mut pass = event("accepted-before-close", EventType::D1Passed, json!({"verdict":"PASS"}));
+    pass.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, pass).unwrap();
+    let mut ready=handoff(3, "checker-a", "supervisor-a"); ready.payload_type="D2_READY".into();
+    fixture.store.handoff_token(&fixture.checker, ready).unwrap();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.2' WHERE run_id='run-a'", []).unwrap();
+    fixture.store.bind_overwatcher(&fixture.supervisor, BindOverwatcherRequest {
+        event_id:"bind-incomplete-close-ow".into(), run_id:"run-a".into(),
+        identity:role("overwatcher-a", Role::Overwatcher), endpoint:endpoint("session-overwatcher-a"),
+        observation_mode:ObservationMode::ForegroundActiveTurn, cadence_seconds:600,
+        foreground_turn_id:"old-ow-turn".into(), native_active_session_evidence_ref:"original-proof".into(),
+        binding_revision:1, canonical_task_id:"original-ow".into(), reason:"observe".into(),
+        occurred_at:"2026-09-20T00:02:00Z".into()
+    }).unwrap();
+    let mut d2 = event("accepted-d2", EventType::D2Passed, json!({"verdict":"PASS"}));
+    d2.role_instance_id="supervisor-a".into(); d2.go_id=None; d2.cell_id=None; d2.attempt=None;
+    fixture.store.write_event(&fixture.supervisor, d2).unwrap();
+    let terminal = fixture.store.query_run("run-a").unwrap();
+    let snapshot = fixture._root.path().join("owner-close-terminal.json");
+    fs::write(&snapshot, serde_json::to_vec(&terminal).unwrap()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    let proof = fixture._root.path().join("owner-close-census.json");
+    fs::write(&proof, serde_json::to_vec(&json!({
+        "schema_version":"slk.run-quiescence/v1","run_id":"run-a","pause_id":"owner-close",
+        "runtime_revision":terminal.runtime_snapshot.as_ref().unwrap().runtime_revision,
+        "status":"NOT_QUIESCENT","attempt_roots":[fixture._root.path()],
+        "observed_at":"2026-09-20T00:03:00Z","inspections":[]
+    })).unwrap()).unwrap();
+    let owner = fixture._root.path().join("owner-close-authorization.json");
+    fs::write(&owner, br#"{"run_id":"run-a","approved":true,"request":"Complete this accepted Run without rewriting history"}"#).unwrap();
+    let stop = fixture._root.path().join("owner-close-ow-stop.json");
+    let stopped = json!({"run_id":"run-a","role_instance_id":"overwatcher-a",
+        "session_id":"session-overwatcher-a","status":"COMPLETED","source":"collaboration.list_agents"});
+    fs::write(&stop, serde_json::to_vec(&stopped).unwrap()).unwrap();
+    let hash = |path: &std::path::Path| format!("{:x}",Sha256::digest(fs::read(path).unwrap()));
+    let mut close = event("owner-authorized-run-close", EventType::RunClosed, json!({
+        "terminal_snapshot_path":snapshot,"terminal_snapshot_sha256":hash(&snapshot),
+        "quiescence_path":proof,"quiescence_sha256":hash(&proof),
+        "close_binding_path":snapshot,"close_binding_sha256":hash(&snapshot)
+    }));
+    close.role_instance_id="supervisor-a".into(); close.go_id=None; close.cell_id=None; close.attempt=None;
+    close.occurred_at="2026-09-20T00:03:00Z".into();
+    assert!(fixture.store.write_event(&fixture.supervisor,close.clone()).is_err());
+    close.details["incomplete_ow_close"] = json!({
+        "role_instance_id":"overwatcher-a","binding_revision":1,
+        "owner_authorization_path":owner,"owner_authorization_sha256":hash(&owner),
+        "stop_evidence_path":stop,"stop_evidence_sha256":hash(&stop),
+        "reason":"Owner directs terminal close; old OW final cycle is missing, not fabricated"
+    });
+    let writers = fixture._root.path().join("actual-stopped-writers.json");
+    fs::write(&writers, serde_json::to_vec(&json!({"run_id":"run-a",
+        "status":"NO_ACTIVE_ENGINEERING_WRITERS", "observed_at":close.occurred_at,
+        "dsh":{"status":"NATIVE_SESSION_STOPPED","session_id":"session-worker-a","active_matching_hosts":[]},
+        "ocrv":{"checked_executor_identities":1,"active_matching_executors":[]},
+        "supervisor":{"session_id":"session-supervisor-a","current_coordinator_only":true},
+        "history_gaps_preserved":true})).unwrap()).unwrap();
+    close.details["incomplete_ow_close"]["writer_stop_evidence_path"]=json!(writers);
+    close.details["incomplete_ow_close"]["writer_stop_evidence_sha256"]=json!(hash(&writers));
+    let good_writers: serde_json::Value=serde_json::from_slice(&fs::read(&writers).unwrap()).unwrap();
+    for damage in ["active-ocrv", "active-dsh", "wrong-session", "not-coordinator"] {
+        let mut bad=good_writers.clone();
+        match damage {
+            "active-ocrv" => bad["ocrv"]["active_matching_executors"]=json!([{"pid":123}]),
+            "active-dsh" => bad["dsh"]["active_matching_hosts"]=json!([{"pid":123}]),
+            "wrong-session" => bad["dsh"]["session_id"]=json!("another-worker"),
+            _ => bad["supervisor"]["current_coordinator_only"]=json!(false),
+        }
+        fs::write(&writers,serde_json::to_vec(&bad).unwrap()).unwrap();
+        close.details["incomplete_ow_close"]["writer_stop_evidence_sha256"]=json!(hash(&writers));
+        assert!(fixture.store.write_event(&fixture.supervisor,close.clone()).is_err(),"{damage}");
+    }
+    fs::write(&writers,serde_json::to_vec(&good_writers).unwrap()).unwrap();
+    close.details["incomplete_ow_close"]["writer_stop_evidence_sha256"]=json!(hash(&writers));
+    let mut unknown=stopped.clone(); unknown["status"]=json!("UNKNOWN");
+    fs::write(&stop, serde_json::to_vec(&unknown).unwrap()).unwrap();
+    close.details["incomplete_ow_close"]["stop_evidence_sha256"]=json!(hash(&stop));
+    assert!(fixture.store.write_event(&fixture.supervisor,close.clone()).is_err());
+    fs::write(&stop, serde_json::to_vec(&stopped).unwrap()).unwrap();
+    close.details["incomplete_ow_close"]["stop_evidence_sha256"]=json!(hash(&stop));
+    assert!(fixture.store.write_event(&fixture.supervisor,close).is_err());
+    let result=fixture.store.query_run("run-a").unwrap();
+    assert_eq!(result.summary.closure_state,"open");
+    assert_eq!(result.overwatch_cycles.len(),0);
+    let gap: i64=db.query_row("SELECT COUNT(*) FROM overwatcher_binding_transitions WHERE run_id='run-a' AND transition_type='INCOMPLETE_SHUTDOWN'",[],|row|row.get(0)).unwrap();
+    assert_eq!(gap,0);
+}
+
+fn save_close_json(path: &std::path::Path, value: &serde_json::Value) -> String {
+    fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
+    format!("{:x}", Sha256::digest(fs::read(path).unwrap()))
+}
+
+fn current_test_process() -> serde_json::Value {
+    #[cfg(windows)]
+    let creation = {
+        use std::ffi::c_void;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetCurrentProcess() -> *mut c_void;
+            fn GetProcessTimes(handle: *mut c_void, creation: *mut u64, exit: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
+        }
+        let (mut created, mut exit, mut kernel, mut user) = (0, 0, 0, 0);
+        assert_ne!(unsafe { GetProcessTimes(GetCurrentProcess(), &mut created, &mut exit, &mut kernel, &mut user) }, 0);
+        format!("win-filetime:{created}")
+    };
+    #[cfg(not(windows))]
+    let creation = {
+        let stat = fs::read_to_string(format!("/proc/{}/stat", std::process::id())).unwrap();
+        format!("proc-start:{}", stat.rsplit_once(')').unwrap().1.split_whitespace().nth(19).unwrap())
+    };
+    json!({"pid":std::process::id(),"creation_time":creation})
+}
+
+fn ready_close_fixture() -> (Fixture, WriteRequest) {
+    let fixture = Fixture::new();
+    fixture.store.handoff_token(&fixture.supervisor, handoff(2, "supervisor-a", "checker-a")).unwrap();
+    let mut pass = event("d1-close-ready", EventType::D1Passed, json!({"verdict":"PASS"}));
+    pass.role_instance_id = "checker-a".into();
+    fixture.store.write_event(&fixture.checker, pass).unwrap();
+    let mut ready = handoff(3, "checker-a", "supervisor-a"); ready.payload_type = "D2_READY".into();
+    fixture.store.handoff_token(&fixture.checker, ready).unwrap();
+    let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+    db.execute("UPDATE runs SET slk_version='4.3.5' WHERE run_id='run-a'", []).unwrap();
+    let mut d2 = event("d2-close-ready", EventType::D2Passed, json!({"verdict":"PASS"}));
+    d2.role_instance_id = "supervisor-a".into(); d2.go_id = None; d2.cell_id = None; d2.attempt = None;
+    fixture.store.write_event(&fixture.supervisor, d2).unwrap();
+    let snapshot = fixture._root.path().join("close-terminal.json");
+    let hash = save_close_json(&snapshot, &serde_json::to_value(fixture.store.query_run("run-a").unwrap()).unwrap());
+    db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+    let mut close = event("standard-close", EventType::RunClosed, json!({
+        "terminal_snapshot_path":snapshot,"terminal_snapshot_sha256":hash,
+        "close_binding_path":snapshot,"close_binding_sha256":hash}));
+    close.role_instance_id = "supervisor-a".into(); close.go_id = None; close.cell_id = None; close.attempt = None;
+    close.occurred_at = "2026-09-20T00:05:00Z".into();
+    (fixture, close)
+}
+
+fn stopped_historical_resume(fixture: &Fixture) -> (std::path::PathBuf, serde_json::Value) {
+    let root = fixture._root.path();
+    let source = root.join("run-a/message-old");
+    let resumed = source.join("native-resumes/11111111-1111-4111-8111-111111111111");
+    fs::create_dir_all(&resumed).unwrap();
+    let home = root.join("runtime/runs/worker-instance/home");
+    let session = home.join("sessions/project/session-worker-a/session.v4.jsonl.zstd");
+    fs::create_dir_all(session.parent().unwrap()).unwrap();
+    fs::write(&session, b"isolated closed native Session bytes").unwrap();
+    let endpoint = json!({"schema_version":"slk.transport-endpoint/v1","run_id":"run-a","role":"worker",
+        "role_instance_id":"worker-a","endpoint_version":1,"adapter":"dsh-worker","host_id":"local","state":"active",
+        "address":{"session_id":"session-worker-a","runtime_root":root.join("runtime"),"instance_id":"worker-instance","cwd":root}});
+    let envelope = json!({"schema_version":"slk.transport-envelope/v1","run_id":"run-a","cell_id":"CELL-001",
+        "message_id":"message-old","receiver_role_instance_id":"worker-a","receiver_role":"worker","receiver_endpoint_version":1,
+        "payload_sha256":"a".repeat(64)});
+    let start = json!({"schema_version":"slk.native-start/v2","status":"STARTED","adapter":"dsh-worker","run_id":"run-a","cell_id":"CELL-001",
+        "message_id":"message-old","request_sha256":"a".repeat(64),"native_request_sha256":"b".repeat(64),
+        "observed_at":"2026-09-20T00:00:00Z","process":{"pid":4294967295_u32,"creation_time":"win-filetime:1"},
+        "native_task":{"kind":"dsh-session","id":"session-worker-a","status":"RUNNING"}});
+    let mut original_hashes = serde_json::Map::new();
+    for (name, value) in [("endpoint.json", &endpoint), ("envelope.json", &envelope), ("started.json", &start)] {
+        original_hashes.insert(name.into(), json!(save_close_json(&source.join(name), value)));
+        save_close_json(&resumed.join(name), value);
+    }
+    fs::write(resumed.join("instructions.md"), b"Original continuation instructions").unwrap();
+    let marker = json!({"schema_version":"slk.worker-native-resume/v1","invocation_id":resumed.file_name().unwrap().to_str().unwrap(),
+        "original_source":source,"original_source_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&original_hashes).unwrap())),
+        "binding_sha256":"c".repeat(64),"instructions_sha256":format!("{:x}",Sha256::digest(fs::read(resumed.join("instructions.md")).unwrap())),
+        "coordinator_process":{"pid":4294967294_u32,"creation_time":"win-filetime:1"}});
+    let marker_hash = save_close_json(&resumed.join("native-resume.json"), &marker);
+    let start_hash = format!("{:x}",Sha256::digest(fs::read(resumed.join("started.json")).unwrap()));
+    let host = json!({"id":"d".repeat(64),"pid":4294967293_u32,"process_created":"win-filetime:1","native_home":home,
+        "observed_at":"2026-09-20T00:03:00Z","coverage":"COMPLETE","omitted":0,"liveness":"EXITED",
+        "objects":[{"session_id":"session-worker-a","source":session,"event_source":"DSH_NATIVE_EMISSION","status":"RUNNING"}]});
+    let row = json!({"native_start_path":resumed.join("started.json"),"native_start_sha256":start_hash,
+        "message_id":"message-old","status":"UNKNOWN","processes":[],
+        "reason":"native continuation lacks its exact frozen historical Host reference",
+        "current_safety":{"status":"STOPPED","source_gap":"FROZEN_HOST_UNAVAILABLE","native_start_sha256":start_hash,
+            "endpoint_sha256":format!("{:x}",Sha256::digest(fs::read(resumed.join("endpoint.json")).unwrap())),
+            "resume_marker_sha256":marker_hash,"coordinator":{"pid":4294967294_u32,"creation_time":"win-filetime:1","exists":false,"identity_matches":false},
+            "observed_at":"2026-09-20T00:03:00Z","native_stop":{
+                "session":{"status":"NATIVE_SESSION_STOPPED","session_id":"session-worker-a","path":session,
+                    "sha256":format!("{:x}",Sha256::digest(fs::read(&session).unwrap())),"last_seq":5,"turn":1,"turn_end_seq":5,"turn_ended_at":"2026-09-20T00:02:00Z"},
+                "launcher":{"pid":4294967295_u32,"creation_time":"win-filetime:1","exists":false,"identity_matches":false},
+                "native_probe":{"coverage":"UNKNOWN","hosts":[host]}}}});
+    (resumed, row)
+}
+
+#[test]
+fn standard_close_preserves_historical_unknown_only_with_exact_current_stop() {
+    for damage in [None, Some("missing-proof"), Some("active"), Some("unknown-current"), Some("wrong-session"),
+        Some("start-hash"), Some("endpoint-hash"), Some("marker-hash"), Some("instructions"), Some("source-hash"),
+        Some("native-host"), Some("durable-hash"), Some("noncreator"), Some("coordinator"), Some("wrong-ancestry"),
+        Some("live-coordinator"), Some("live-native-host")] {
+        let (fixture, mut close) = ready_close_fixture();
+        let (resumed, mut row) = stopped_historical_resume(&fixture);
+        match damage {
+            Some("missing-proof") => { row.as_object_mut().unwrap().remove("current_safety"); }
+            Some("active") => row["current_safety"]["native_stop"]["launcher"]["exists"] = json!(true),
+            Some("unknown-current") => row["current_safety"]["native_stop"]["launcher"]["exists"] = json!(null),
+            Some("wrong-session") => row["current_safety"]["native_stop"]["session"]["session_id"] = json!("foreign"),
+            Some("start-hash") => row["native_start_sha256"] = json!("0".repeat(64)),
+            Some("endpoint-hash") => row["current_safety"]["endpoint_sha256"] = json!("0".repeat(64)),
+            Some("marker-hash") => row["current_safety"]["resume_marker_sha256"] = json!("0".repeat(64)),
+            Some("instructions") => fs::write(resumed.join("instructions.md"), b"changed").unwrap(),
+            Some("source-hash") | Some("wrong-ancestry") => {
+                let path = resumed.join("native-resume.json");
+                let mut marker: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                if damage == Some("source-hash") { marker["original_source_sha256"] = json!("0".repeat(64)); }
+                else { marker["original_source"] = json!(fixture._root.path()); }
+                row["current_safety"]["resume_marker_sha256"] = json!(save_close_json(&path, &marker));
+            }
+            Some("native-host") => row["current_safety"]["native_stop"]["native_probe"]["hosts"][0]["liveness"] = json!("UNKNOWN"),
+            Some("durable-hash") => row["current_safety"]["native_stop"]["session"]["sha256"] = json!("0".repeat(64)),
+            Some("coordinator") => row["current_safety"]["coordinator"]["pid"] = json!(42),
+            Some("live-coordinator") => {
+                let path = resumed.join("native-resume.json");
+                let mut marker: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                marker["coordinator_process"] = current_test_process();
+                row["current_safety"]["coordinator"] = marker["coordinator_process"].clone();
+                row["current_safety"]["coordinator"]["exists"] = json!(false);
+                row["current_safety"]["coordinator"]["identity_matches"] = json!(false);
+                row["current_safety"]["resume_marker_sha256"] = json!(save_close_json(&path, &marker));
+            }
+            Some("live-native-host") => {
+                let live = current_test_process();
+                row["current_safety"]["native_stop"]["native_probe"]["hosts"][0]["pid"] = live["pid"].clone();
+                row["current_safety"]["native_stop"]["native_probe"]["hosts"][0]["process_created"] = live["creation_time"].clone();
+            }
+            Some("noncreator") => {
+                close.role_instance_id = "different-creator".into();
+            }
+            _ => {}
+        }
+        if damage == Some("active") { row["current_safety"]["native_stop"]["launcher"]["identity_matches"] = json!(true); }
+        let census = json!({"schema_version":"slk.run-quiescence/v1","run_id":"run-a","pause_id":"close",
+            "runtime_revision":fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision,
+            "status":"NOT_QUIESCENT","attempt_roots":[fixture._root.path()],"observed_at":"2026-09-20T00:05:00Z","inspections":[row]});
+        let path = fixture._root.path().join("close-census.json");
+        close.details["quiescence_sha256"] = json!(save_close_json(&path, &census)); close.details["quiescence_path"] = json!(path);
+        let result = fixture.store.write_event(&fixture.supervisor, close);
+        assert_eq!(result.is_ok(), damage.is_none(), "{damage:?}: {result:?}");
+        let preserved: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(preserved["inspections"][0]["status"], "UNKNOWN");
+    }
+}
+
+#[test]
+fn accepted_desktop_close_requires_exact_not_sent_boundary() {
+    for damage in [None, Some("no-boundary"), Some("sent"), Some("uncertain"), Some("wrong-message"), Some("wrong-endpoint"), Some("wrong-hash"), Some("stale-census")] {
+        let (fixture, mut close) = ready_close_fixture();
+        let source = fixture._root.path().join("run-a/message-unsent");
+        fs::create_dir_all(&source).unwrap();
+        let endpoint = json!({"run_id":"run-a","adapter":"codex-app-server","role":"supervisor","address":{"desktop":{}}});
+        let endpoint_hash = save_close_json(&source.join("endpoint.json"), &endpoint);
+        save_close_json(&source.join("envelope.json"), &json!({"run_id":"run-a","message_id":"message-unsent","payload_sha256":"a".repeat(64)}));
+        save_close_json(&source.join("accepted.json"), &json!({"status":"accepted"}));
+        let mut boundary = json!({"schema_version":"slk.desktop-send-boundary/v1","phase":"NOT_SENT","run_id":"run-a",
+            "message_id":"message-unsent","request_sha256":"a".repeat(64),"endpoint_sha256":endpoint_hash,
+            "error_code":"CODEX_THREAD_STATE_UNKNOWN","observed_at":"2026-09-20T00:03:00Z"});
+        match damage {
+            Some("sent") => { save_close_json(&source.join("desktop-send.json"), &json!({})); }
+            Some("uncertain") => { save_close_json(&source.join("desktop-readback-anchor.json"), &json!({})); }
+            Some("wrong-message") => boundary["message_id"] = json!("different-message"),
+            Some("wrong-endpoint") => boundary["endpoint_sha256"] = json!("0".repeat(64)),
+            Some("wrong-hash") => boundary["request_sha256"] = json!("0".repeat(64)),
+            _ => {}
+        }
+        if damage != Some("no-boundary") { save_close_json(&source.join("desktop-pre-send-failure.json"), &boundary); }
+        let census = json!({"schema_version":"slk.run-quiescence/v1","run_id":"run-a","pause_id":"close",
+            "runtime_revision":fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision,
+            "status":"QUIESCENT","attempt_roots":[fixture._root.path()],
+            "observed_at":if damage == Some("stale-census") {"2026-09-20T00:03:00Z"} else {"2026-09-20T00:05:00Z"},
+            "inspections":[{"native_start_path":source.join("started.json"),"native_start_sha256":null,
+                "message_id":"message-unsent","status":"STAGED_NOT_STARTED","processes":[]}]});
+        let path = fixture._root.path().join("close-census.json");
+        close.details["quiescence_sha256"] = json!(save_close_json(&path, &census)); close.details["quiescence_path"] = json!(path);
+        let result = fixture.store.write_event(&fixture.supervisor, close);
+        assert_eq!(result.is_ok(), damage.is_none(), "{damage:?}: {result:?}");
+    }
+}
+
+#[test]
+fn historical_current_stop_allows_already_closed_ow_but_not_pause() {
+    for pause in [false, true] {
+        let (fixture, mut close) = ready_close_fixture();
+        let db = slk_state_core::schema::open_database(fixture._root.path()).unwrap();
+        db.execute("UPDATE runs SET slk_version='4.4.2' WHERE run_id='run-a'", []).unwrap();
+        fixture.store.bind_overwatcher(&fixture.supervisor, BindOverwatcherRequest {
+            event_id:"bind-stopped-ow".into(), run_id:"run-a".into(), identity:role("overwatcher-a",Role::Overwatcher),
+            endpoint:endpoint("session-overwatcher-a"), observation_mode:ObservationMode::ForegroundActiveTurn,
+            cadence_seconds:600, foreground_turn_id:"old-ow-turn".into(), native_active_session_evidence_ref:"native:old-ow".into(),
+            binding_revision:1, canonical_task_id:"old-ow-task".into(), reason:"isolated closure fixture".into(),
+            occurred_at:"2026-09-20T00:02:00Z".into(),
+        }).unwrap();
+        // Authenticated native close is independently exercised in overwatcher.rs.
+        db.execute("UPDATE overwatcher_bindings SET lifecycle_state='archived',credential_state='revoked' WHERE run_id='run-a'", []).unwrap();
+        db.execute("UPDATE runs SET slk_version='4.4.3' WHERE run_id='run-a'", []).unwrap();
+        let (_, row) = stopped_historical_resume(&fixture);
+        if pause {
+            fixture.store.write_event(&fixture.supervisor,
+                lifecycle_event(&fixture,"pause-current-stop","RUN_PAUSE_REQUESTED","pause-current-stop")).unwrap();
+        }
+        let census = json!({"schema_version":"slk.run-quiescence/v1","run_id":"run-a","pause_id":"pause-current-stop",
+            "runtime_revision":fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap().runtime_revision,
+            "status":if pause {"QUIESCENT"} else {"NOT_QUIESCENT"},"attempt_roots":[fixture._root.path()],
+            "observed_at":"2026-09-20T00:05:00Z","inspections":[row]});
+        let path = fixture._root.path().join("closed-ow-census.json");
+        let hash = save_close_json(&path,&census);
+        if pause {
+            close = lifecycle_event(&fixture,"pause-current-stop-confirm","RUN_PAUSED","pause-current-stop");
+            close.occurred_at = "2026-09-20T00:05:00Z".into();
+        }
+        close.details["quiescence_path"] = json!(path); close.details["quiescence_sha256"] = json!(hash);
+        let result = fixture.store.write_event(&fixture.supervisor,close);
+        assert_eq!(result.is_ok(), !pause, "pause={pause}: {result:?}");
+    }
 }
 
 struct Fixture {

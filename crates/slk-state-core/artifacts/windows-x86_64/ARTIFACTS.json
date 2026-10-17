@@ -3,12 +3,12 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "2a398957ffeaa7e1178f115f0dcd2fabb0b4d4549b91f18ec28f862225e7d34a",
-        "size": 3158478
+        "sha256": "08c02c6622994e08d1d240edb2ffdf488b8a6d13ddeec61f5fa2ab44e263ae28",
+        "size": 3334606
       }
     ],
-    "sha256": "2a398957ffeaa7e1178f115f0dcd2fabb0b4d4549b91f18ec28f862225e7d34a",
-    "size": 3158478
+    "sha256": "08c02c6622994e08d1d240edb2ffdf488b8a6d13ddeec61f5fa2ab44e263ae28",
+    "size": 3334606
   },
   "build": {
     "command": [
@@ -20,21 +20,21 @@
       "-p",
       "slk-state-core"
     ],
-    "scope": "SLK 4.5.3 state-core library; application assembly has separate frozen-input provenance",
+    "scope": "SLK 4.5.4 state-core library; application assembly has separate frozen-input provenance",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "lib/slk_state_core.rlib",
-      "sha256": "6e84e8d5c1e31bd27dcf9e61c81929165fb479cd4e3adc764bbcd92f62f6b2e7",
-      "size": 10169314
+      "sha256": "e3130e1698dfc31a039fadaca0a9cabe65204dc0644c256af910a903bfbf00eb",
+      "size": 10902740
     }
   ],
-  "product_version": "4.5.3",
+  "product_version": "4.5.4",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "c001498c7fc125eb9cdb2dfceca408d9c8010375c21b6de5bff901add0e8448a",
-    "Cargo.toml": "f01e8fc8958d3a42ec5d10d6c6f284af2433750558cad1aa8efcb7635ce87834",
+    "Cargo.lock": "90b8de006d66c9f7ee3b8470afcc790d90e005c28f456a323508047d57dfe1a7",
+    "Cargo.toml": "2f074607be79242c65df797c4aec5fd284562b28e620974650e7603c74d515a5",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "a7cbb32a0d52a5cb8b79e28d0012b4ca5577c00d5f9de8eaf0f224c2deed7077",
     "migrations/0001.sql": "60a609c3f64c0ef4bf11c1f2d98316ff432b16508d551eb649d05acd25adf087",
@@ -52,22 +52,23 @@
     "src/export.rs": "52d691f11936c0515a41dbfed767acfce1ae266e2535da5768d46f862d89d753",
     "src/lib.rs": "79c85c8a51044aa2b0e00640034dfe4aeeb37cbf0798ec56d74d0dfcb6531a5d",
     "src/model.rs": "660acdd609baa7844194675957eaafed38b1f8f5c1a2841bf814a3f428f3ac5a",
+    "src/overwatcher_native.rs": "e6d3cfe48c7db52058e681364535b50fb453545a12deca88da25402e5b7fe08f",
     "src/query.rs": "a39cb9dbd68a46b61a309660b1db1be36603220617132dc843d2cde7273101cc",
     "src/recovery_start.rs": "ff5a2dca70765eab5d6da287a53425ff2a4720f373a2dd88783b1047102d4c04",
     "src/schema.rs": "f909f4d531e563ef59c97a9c2ff2d243050b73b09bffe3aa7dfe3b092e2e4f1a",
-    "src/write.rs": "125760fb8f3e4172fcc980f5b985eefd374e6702ebceaafcabed621ebd08afee",
+    "src/write.rs": "d5ece08dc1ca60200edde43f96a2ea3f277cc9a317021db473b1fa32f7a17ecb",
     "tests/auth.rs": "9dffe83e3dbeb6cab98a761f11a543cfe22e7db29cb423997b5f55f334d5c3f6",
     "tests/concurrency.rs": "005b059b6269f3bd4b0fb5f34399c9ee3e5434eb4ddb46fddb59eb11ea09e268",
     "tests/config.rs": "898492a826d84ae75000c93ad17ba796573f91dfdae0789906fa6f421a21b14e",
     "tests/evidence.rs": "99fdb9b476039bc0261129052c09b749ff81c2c4e48de4a69b3c04105c2d2b2e",
     "tests/export.rs": "8f4f9c4cd669c2f32edb166e12f0bc298e2ba870fb59c7eea2491089aef442c0",
     "tests/overwatch_continuity.rs": "73ad9349625aea4952a09f7fe2c6f3285565d465d0269082e5863698f41fa11e",
-    "tests/overwatcher.rs": "925c04696d78e5ba9ef48cc2f62b6cd8bfda0364563baaf1e44cd32fef41981b",
+    "tests/overwatcher.rs": "ff57c3437b992509555bad55b9d374bafda63398338fde677fcf1eea368403fc",
     "tests/query.rs": "07f8df0cbd88625f16fb4897fcb1aa0a2e5e0c3e243044425d8402b9b615d5d3",
     "tests/run_admin.rs": "1ec422ae97417d9343ae4162f445a7ac6f944ecae8f620deda5ec92c4654316d",
     "tests/runtime_snapshot.rs": "dd87bd5e79d5e23ccb00f5a35af079abbc5682209ca241d15182d6d793903e4d",
     "tests/schema.rs": "dadad86969dfc7d1a936f387a07fc88ca83537570b9cbc42a4c215835ddd87ba",
-    "tests/write_flow.rs": "5fa87be2303adc41dc91d34774f53afcfe21c7eaa123d4e1540351d20244e887"
+    "tests/write_flow.rs": "482f02511628ef3722cf678e60806a920923cfd5a046027ae7a99b80726af040"
   },
   "target": "windows-x86_64",
   "tool": "slk-state-core"
