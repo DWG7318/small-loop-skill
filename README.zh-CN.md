@@ -48,7 +48,7 @@ Supervisor 在项目根目录创建 `SLK-RUN-<RUN-ID>.md`。Worker、Checker、S
 
 原工作簿新增正式「结项总结」，记录实际作者与带时区时间、成果、关键问题与现场处理、剩余事项及必要证据。设备署名由 Agent 提供电脑名、IP地址、操作系统版本；公网出口 IP 只是建议，未知写「未获取」，BI 不探测。以后更正追加作者、时间与来源，不改写历史 D2。
 
-[`slk-finalize-run`](skills/slk-finalize-run/SKILL.md) 只接已有真实 D2 PASS 或授权终止结论后的未完成收尾：保存总结、同步唯一当前状态与 CLOSED 令牌、确认准确 Worker/Checker 工程活动已结束并仅归档它们，再由原创建 Supervisor 使用 BI 读取并归档。已完成项跳过，方法收尾、BI 本地归档与云端保存分别报告；断网留待上传，不重做准备或 D0/D1/D2、不重开工程，保留 Supervisor 及原记录。
+[`slk-finalize-run`](skills/slk-finalize-run/SKILL.md) 只接已有真实 D2 PASS 或授权终止结论后的未完成收尾：先确认准确 Worker/Checker 工程活动已结束，再保存总结、同步唯一当前状态与 CLOSED 令牌并仅归档它们，最后由原创建 Supervisor 使用 BI 读取并归档。活动未确认结束时保留未完成，不写终态或归档。已完成项跳过，方法收尾、BI 本地归档与云端保存分别报告；断网留待上传，不重做准备或 D0/D1/D2、不重开工程，保留 Supervisor 及原记录。
 
 ## 安装
 

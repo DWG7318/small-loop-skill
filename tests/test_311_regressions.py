@@ -38,6 +38,26 @@ def test_finalization_preserves_existing_acceptance_and_handles_only_remaining_w
         assert forbidden not in final
 
 
+def test_member_activity_is_confirmed_ended_before_terminal_state_or_archive():
+    final = read_skill("slk-finalize-run")
+    confirmation = final.index("确认本 Run 的 Worker、Checker 工程活动已结束")
+    assert confirmation < final.index("完成状态为 `CLOSED`") < final.index("--bi-archive")
+    incomplete = final[confirmation:final.index("完成状态为 `CLOSED`")]
+    assert "未确认结束" in incomplete
+    assert "不进入成员归档或 BI 归档" in incomplete
+    assert "不写终态" in incomplete
+
+
+def test_public_summary_keeps_private_originals_out_of_bi_upload():
+    summary = section(read_skill("slk-record-run"), "结项总结")
+    assert "适合公开" in summary
+    for private_content in ("账号密码", "访问令牌", "敏感日志", "私有路径"):
+        assert private_content in summary
+    assert "原始证据留在项目内" in summary
+    assert "不新增逐份审批" in summary
+    assert "不让 BI 改写" in summary
+
+
 def test_original_workbook_has_one_structured_summary_with_author_and_time():
     template = (SKILLS / "slk-record-run/assets/SLK-RUN.template.md").read_text(encoding="utf-8")
     assert template.count("\n## 结项总结\n") == 1
