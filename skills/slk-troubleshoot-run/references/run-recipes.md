@@ -35,7 +35,13 @@ Supervisor 核对本 Run 当前绑定、原生 parent/child/当前激活、真�
 
 ## 暂停或关闭只成功了一半
 
-暂停/恢复按 `$slk-pause-run` 保留中央/Temporal 成功部分与原请求，从同一 operation 继续；D2/末轮 OW/Run close/角色归档按 `$slk-close-run` 原顺序只补未完成后缀。不重跑验收、不变 event ID、不把中央终态写入或 planned archive 当作清理完成。回读原最终收据及精确原生目标才报告完成；否则列明真实已做/未做和下一动作。
+暂停/恢复按 `$slk-pause-run` 保留中央/Temporal 成功部分与原请求，从同一 operation 继续；已有 D2 后的末轮 OW/Run close/角色归档按 `$slk-finalize-run` 原顺序只补未完成后缀。不重跑验收、不变 event ID、不把中央终态写入或 planned archive 当作清理完成。回读原最终收据及精确原生目标才报告完成；否则列明真实已做/未做和下一动作。
+
+## 材料、运行目录和耗时
+
+- Git 外/ignored `.codex` 的 D0 原件只给新清单不代表 Checker 可读：核对原 evidence 索引与 `slk_read_evidence` 实际消费者。必要时在已索引 Worker 交付对象的客观证据分区保留完整原始结果，初始 D1 不混入 Worker 判断；不强塞产品 Git、不截断。
+- DSH home 或 ACL 不符时先定位当前原生调用实际使用的 home、repo/common-dir/objects 可写范围，只修准确作用域；不要以继承的旧 home 误判新配置已生效，也不广泛授权整盘。仍被候选引用的 Git alternates/对象不能清除；先验证消费者能解析准确 commit/tree，再决定资源处置。
+- OCRV 单请求 timeout/旧 last_error 不等于整次 D1 FAIL 或停止。检查原会话仍在做什么、正式结论是否已出；30分钟停留提醒交 Supervisor 判断，不自动重启有效审查。调查慢读取需分别记录同入口起止和原生查询次数，不把两种不同时间点的差值当根因。
 
 ## 证据不符合任何预案
 

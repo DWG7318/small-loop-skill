@@ -33,7 +33,7 @@ def native_config(tmp_path, method_version="4.5.0"):
     return root, config
 
 
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"])
 def test_450_config_load_is_static_and_requires_native_v2(tmp_path, monkeypatch, method_version):
     root, config = native_config(tmp_path, method_version)
     monkeypatch.setattr(standard_adapter, "_run_json", lambda *_a, **_k: pytest.fail("config load must be static"))
@@ -47,7 +47,7 @@ def test_450_config_load_is_static_and_requires_native_v2(tmp_path, monkeypatch,
 
 
 def test_config_and_bootstrap_reject_unpublished_method(tmp_path):
-    native_config(tmp_path, "4.5.5")
+    native_config(tmp_path, "4.5.6")
     with pytest.raises(ValueError, match="not closed"):
         standard_adapter._load_config(RUN_ID)
     with pytest.raises(ValueError, match="not closed"):
@@ -71,7 +71,7 @@ def test_450_static_proof_correlation_rejects_drift(tmp_path, field, value):
     ("ACTIVE", "CONTINUITY_UNPROVEN", "ANOMALY"), ("UNKNOWN", "CURRENT", "ANOMALY"),
     ("COMPLETED_WITHOUT_TERMINAL", "CONTINUITY_UNPROVEN", "EXITED"),
     ("FAILED_WITHOUT_TERMINAL", "CURRENT", "EXITED")])
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"])
 def test_450_audit_uses_one_projection_native_proof_and_retains_small_hashed_evidence(tmp_path, monkeypatch, native, cadence, expected, method_version):
     _, config = native_config(tmp_path, method_version)
     ow = config["overwatcher_activity"]
@@ -94,7 +94,12 @@ def test_450_audit_uses_one_projection_native_proof_and_retains_small_hashed_evi
     request = {"run_id": RUN_ID, "overwatcher_role_instance_id": "ow-a", "endpoint_ref": "ow-endpoint-a", "audit_cycle": 1}
     result = asyncio.run(standard_adapter.inspect_overwatcher(request))
     assert result["status"] == expected and len(queries) == 1
-    assert set(result) == {"status", "run_id", "overwatcher_role_instance_id", "audit_cycle", "evidence_sha256", "receipt_sha256"}
+    expected_fields = {"status", "run_id", "overwatcher_role_instance_id", "audit_cycle", "evidence_sha256", "receipt_sha256"}
+    if method_version == "4.5.5":
+        expected_fields.add("alarm_key")
+        assert len(result["alarm_key"]) == 64
+        int(result["alarm_key"], 16)
+    assert set(result) == expected_fields
     evidence = Path(config["notification_attempt_root"]) / RUN_ID / "overwatcher-audits" / (result["evidence_sha256"] + ".json")
     assert standard_adapter._receipt(json.loads(evidence.read_text())) == result["evidence_sha256"]
     # Another observation in the same audit cycle may retain different evidence.
@@ -102,9 +107,11 @@ def test_450_audit_uses_one_projection_native_proof_and_retains_small_hashed_evi
     assert repeated["status"] == expected and repeated["evidence_sha256"] != result["evidence_sha256"]
     assert evidence.is_file()
     assert (evidence.parent / (repeated["evidence_sha256"] + ".json")).is_file()
+    if method_version == "4.5.5":
+        assert repeated["alarm_key"] == result["alarm_key"]
 
 
-@pytest.mark.parametrize("method,expected", [(version, "OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION") for version in ("4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4")] + [("4.4.5", "OVERWATCHER_AUDIT_FAILED")])
+@pytest.mark.parametrize("method,expected", [(version, "OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION") for version in ("4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5")] + [("4.4.5", "OVERWATCHER_AUDIT_FAILED")])
 def test_workflow_accepts_exited_only_from_immutable_450_startup(monkeypatch, method, expected):
     from slk_temporal import workflows
     instance = RunSlkWorkflow()
@@ -145,7 +152,7 @@ def test_existing_guard_updates_have_exact_hashed_cli_identity_and_closed_reply(
 
 
 @pytest.mark.parametrize("same_cell", [True, False])
-@pytest.mark.parametrize("method", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.4.5"])
+@pytest.mark.parametrize("method", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5", "4.4.5"])
 @pytest.mark.parametrize("handoff", [("worker-a", "checker-a"), ("checker-a", "supervisor-a")])
 def test_450_guard_does_not_stop_current_cell_but_blocks_the_next(monkeypatch, same_cell, method, handoff):
     from slk_temporal.continuity import RunContinuity
@@ -164,7 +171,7 @@ def test_450_guard_does_not_stop_current_cell_but_blocks_the_next(monkeypatch, s
     following = {**delivery_value(), "operation_id": "next", "message_id": "next-message",
         "cell_id": previous.cell_id if same_cell else "CELL-002",
         "sender_role_instance_id": handoff[0], "receiver_role_instance_id": handoff[1]}
-    if same_cell and method in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}:
+    if same_cell and method in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"}:
         assert instance.request_delivery(following) == "DELIVERY_REQUESTED"
         assert instance._runtime_guard_blocker is not None and instance._run_pause is None
     else:
@@ -190,7 +197,7 @@ def test_450_guard_cannot_guess_current_scope_or_accept_another_run():
         instance.request_delivery({**delivery_value(), "run_id": "RUN-B"})
 
 
-@pytest.mark.parametrize("method", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.4.5"])
+@pytest.mark.parametrize("method", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5", "4.4.5"])
 def test_450_schema_and_bootstrap_compatibility(tmp_path, method):
     from jsonschema import Draft202012Validator
     root, config = native_config(tmp_path, method) if method != "4.4.5" else config_root(tmp_path, method)

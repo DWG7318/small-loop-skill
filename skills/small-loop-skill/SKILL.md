@@ -5,12 +5,12 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 # Small Loop Skill
 
-SLK 4.5.4 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
+SLK 4.5.5 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
 
 ## 谁负责什么
 
-- Codex Supervisor：Owner 确认的人选，负责方案、异常决策、正式 FAIL 的改进指引、豁免及最终 D2；也是现场临时补漏、核验与记录的第一责任人，不能以等待 SLK 源码修复代替可行的现场处置。可打破不适用的流程安排，但不伪造事实、借他人权限或接管 Checker D1。项目未结束时保持 active，以有界原生等待接收结果和 OW 报告，不退出等待自己的 child 唤醒。
-- OCRV Checker：派发既定 CELL、隔离 D1、PASS 后推进下一 CELL；DSH Worker：施工当前 CELL、最低 D0、交候选。真实型号/reasoning 与原生端点必须登记，不以 Codex 对话冒充二者。
+- Supervisor：Owner 确认的人选，负责方案、异常决策、正式 FAIL 的改进指引、豁免及最终 D2；也是现场临时补漏、核验与记录的第一责任人，不能以等待 SLK 源码修复代替可行的现场处置。可打破不适用的流程安排，但不伪造事实、借他人权限或接管 Checker D1。项目未结束时保持 active，以有界原生等待接收结果和 OW 报告，不退出等待自己的 child 唤醒。
+- Checker：派发既定 CELL、隔离 D1、PASS 后推进下一 CELL；Worker：施工当前 CELL、最低 D0、交候选。推荐 Codex Supervisor、OCRV Checker、DSH Worker，但角色不等同品牌，具体 Agent/模型由 Owner 确认。登记真实型号/reasoning、身份和可用原生适配器；不按名称冒充能力，不让同一实例自审自批。
 - OW：Supervisor 的唯一直属 subagent，覆盖其全部 Run，不跨 Supervisor 共用。每 Run 分开登记 scope/证据/观察凭据；用 Owner 确认的高效低推理开销模型，gpt-6-luna high/xhigh 仅推荐。持续 active，每600秒核验真实运行、记录自身观察、只向父级报告异常/疑似/UNKNOWN，报告后继续。只观察，不干预、不代发工程消息、不重试/修复，不写 BI/TOKEN/工程事实。仅所属 Supervisor 可决定并二次确认停止；单 Run 暂停/关闭不停止其他 Run 的观察。
 
 时段仅建议（北京时间 UTC+8，不随时区变）：DSH 18:00–次日08:00，OCRV 22:00–次日08:00；Supervisor 与 Owner 按紧迫度商定启动时间，不作开工/派发门槛或到点停工要求。
@@ -58,7 +58,8 @@ Temporal 是一套共享 headless 服务、每 Run 独立 SLK.Start/SLK.Run；�
 - 首 FAIL 普通返工：`$slk-rework-cell`
 - Supervisor 调整/豁免/显式身份或版本采用：`$slk-adjust-run`
 - 已有精确消息的恢复：`$slk-recover-communication`
-- 最终 D2 与收尾：`$slk-close-run`
+- 最终组合 D2：`$slk-close-run`
+- 已有最终结论后的收尾与归档：`$slk-finalize-run`
 
 不是每个角色先读整套；仅随新情境补读对应指引及需要的参考。
 

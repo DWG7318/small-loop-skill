@@ -22,7 +22,7 @@ Supervisor 对现场补漏与结果核验负责，不把可处理的漏交资料
 | 正常 D1 FAIL / INCOMPLETE / 调整路线 | 首 FAIL 用 `$slk-rework-cell`；第二次连续 FAIL、INCOMPLETE 或 D2/能力问题用 `$slk-adjust-run`。排障不改判。 |
 | 锁/独占资源冲突 | [资源恢复](../slk-execute-cell/references/resource-contention.md)，从同一检查/施工节点继续。 |
 | OW/Temporal 保障异常、UNKNOWN 或状态矛盾 | Supervisor 核实并沿 `$slk-overwatch-run` / `$slk-manage-temporal` 修复；保障恢复前不派下一 CELL。 |
-| 需暂停、重配置或处理半提交恢复 | `$slk-pause-run`；REQUESTED≠PAUSED，保留精确在途 operation，从已完成部分之后续做。收尾半提交用 `$slk-close-run`。 |
+| 需暂停、重配置或处理半提交恢复 | `$slk-pause-run`；REQUESTED≠PAUSED，保留精确在途 operation，从已完成部分之后续做。已有最终结论后的收尾半提交用 `$slk-finalize-run`。 |
 | 首次/中途更换后的组件、配置、登记、理解或就绪缺项 | `$slk-troubleshoot-preflight`；看当前准备操作，不因已有 Run 就当施工消息故障。 |
 
 ## 权限与返回

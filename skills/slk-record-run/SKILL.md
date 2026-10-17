@@ -24,6 +24,14 @@ description: Use when an active Small Loop Skill (SLK) Run needs its root record
 
 业务及记录先完成，已有原始报告保存并独立投递；记录/ACK/Temporal 错误不扣报告，工程交接另核实真实启动与 TOKEN 提交，作为最后工程动作。Worker/Checker 随后结束本次激活、不盯后继；Supervisor 仍 active，以有界原生等待接收结果/OW 报告。保存不等于送达，送达不等于 PASS。Markdown 导出失败只 warning，不改变工程事实。
 
+## 结项总结与设备署名
+
+原创建 Supervisor 经既有密封 `slk-transport supervisor-admin`，选择 `operation=record-closeout-summary`。operation 文件只含 `run_id`、稳定的 `original_id`、`body`、实际 `recorded_at`，可附 `device_signature`（`computer_name`、`ip_address`、`os_version`）；精确请求外壳沿 [管理合同](../../docs/contracts/slk-supervisor-admin.schema.json)。自己写成果、关键问题/已知或未知原因、现场补漏及效果、剩余事项和必要来源，不凑流水账，不传密码、令牌、私有大日志或敏感路径。公开 WebBI 只收这份适合公开的正文，原始证据留本地。
+
+工具生成作者、来源修订与内容指纹；同一原请求重放复用，需更正时新 `original_id` 追加并保留旧原件。此总结入口不推进工程 revision、TOKEN、D2 或重开 Run；其他工程事实仍按原权限/版本规则。先保存并读回总结，再收尾/归档；总结未提供不伪造内容。
+
+署名由执行 Agent 提供：电脑名、IP 地址、操作系统版本。公网出口 IP 仅建议，未知显示「未获取」，不为此增加 BI 探测、外部查询或准备门槛；可读署名不替换稳定设备 ID。桌面 BI 原样读取，独立上传同一云端；WebBI 不直接抓取 Agent/数据库。方法关闭、本地归档、待上传或云端保存分别报告。
+
 ## 身份与只读边界
 
 Owner、其他 Agent、BI/webBI 只通过 slk-bi-query 读投影。各 worktree 仍指向同一中央数据根，不另造记录权威。历史独立身份收敛或旧合同采用交 `$slk-adjust-run`，须 Owner 显式 ID/授权、准确快照与不可变回执；不能按标题合并、抹历史或声称文字升级。

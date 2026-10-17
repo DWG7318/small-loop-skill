@@ -1,5 +1,15 @@
 # SLK Migration Guide
 
+## Current patch: 4.5.4 to 4.5.5, companion BI/WebBI 1.1.6
+
+Install verified precompiled outputs at an authorized safe boundary. Installation does not adopt or relabel active Runs, restart members, close workflows or alter project-local 3.x installations. Existing contracts and evidence remain valid under their recorded versions. Brand-neutral selection applies to new effective 4.5.5 contracts, not silent changes to an older frozen team.
+
+Use `slk-finalize-run` when real acceptance/termination already exists. Preserve original operation IDs and successful closeout parts; do not rerun D2 because archive or upload remains incomplete. Creator-authenticated closeout summaries use the existing sealed Supervisor command and immutable evidence; no state-schema migration or new runtime service is required.
+
+BI1.1.6 can still read supported older state databases and registered Markdown Runs without requiring new summary fields. WebBI receives only desktop projections. Apply cloud D1 migration `0002_receipts.sql` before the new Worker: it adds upload receipts and isolates message keys by device and Run. Keep the database and original archive rows; do not recreate storage. A bare HTTP202 is not the new durable-save acknowledgement, so an older server leaves a new desktop upload pending until the compatible service is available. Local closure remains valid offline.
+
+3.1.1 is an independent maintenance release based on 3.1.0, not an adoption target for 4.x. Its original workbook and native roles remain its method authority; shared BI binaries do not import OW, Temporal, central state or 4.x credentials into 3.x.
+
 ## Current patch migration: 4.4.1 to 4.4.2
 
 Current 4.4.2 output-delivery maintenance supersedes report-format/automatic-verdict recovery advice below: preserve history, configure original Worker/Checker explicit actions, and follow the linked compatibility guide. Retired context/partial/terminal-budget commands are not executable migration paths; no historical verdict is silently reinterpreted.

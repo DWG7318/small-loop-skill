@@ -1,4 +1,74 @@
-# Validation Report — SLK 4.5.4
+# Validation Report — SLK 4.5.5
+
+## 2026-10-18 — creator-owned closeout and BI/WebBI 1.1.6
+
+The 3.1.1 maintenance line is independent: 73 tests and 14 Skills pass there;
+no OW, Temporal, central state or sealed RoleHost is imported into that method.
+Both lines add a small `slk-finalize-run` after their existing D2 acceptance.
+Existing acceptance is not rerun to complete summary, archive or cloud delivery.
+
+Final Rust workspace passes246 tests. Core4.5.5 passes181, including standalone locked compilation. Independent
+CLI/query/cargo consumers pass8/2/25 tests against the published immutable core
+revision, without the parent workspace patch. BI1.1.6 passes244 frontend tests
+and30 Rust tests after the caller correction. Its separate locked build runs
+without the main repository. The final production EXE also passes18 isolated
+integration checks with the actual inherited host identity: legacy3.0.9/3.1.0,
+3.1.1 summary/archive/correction,4.x co-read, wrong creator and active-Run denial.
+Cloud-pending checks use the same frozen native library, not GUI IPC or a second
+real computer. No real engineering Run was used as a fixture.
+
+Temporal passes385 tests with3 explicit skips, including actual SDK replay of
+old and new histories on an isolated test server. Review caught and fixed two
+additional cases: resolving alarmA must not lose current alarmB; checkpoint
+restore must preserve the cause-to-original-alarm relationship. Unchanged
+causes reuse notification obligations without discarding fresh audit evidence.
+Independent Skill review preserves exact creator authority, genuine quiescence,
+shared-OW boundaries, existing D2 facts, and per-Run cloud pending status.
+
+The original Run11 census rejection was traced to a real notification material
+source, not repaired by admitting every missing envelope. Exact native request,
+endpoint, prompt/material hash and readback remain required. The focused final
+census/Desktop rerun passes200 tests with1 skip. An earlier broad transport
+batch had2033 passes,5 skips and5 failures:3 overlapped in-flight census edits,
+and2 encountered a test-only one-second process startup deadline under load.
+The deadline was not loosened in production. The fresh complete transport and
+Skill batch passes2057 tests with5 skips.
+
+The remaining full installation/repository/Eval/state batch passed640 tests
+with9 skips and exposed2 stale assertions: the Eval pack still expected4.5.4,
+and the Supervisor operation set omitted the new record-closeout-summary.
+These test expectations were updated without changing production semantics.
+Final review also adds4.5.5 to the existing D2 start/identity/idempotency test
+matrix. After manifest regeneration, all327 affected Eval, repository, Skill,
+state and RoleHost tests pass. This preserves the initial failure evidence
+rather than calling it all-green. Installation checks are release-development
+tests, not extra preparation work for a user starting a Run.
+
+Source review also fixed crash-retry summary naming, exact cloud receipt
+invalidation, per-Run corrupt-pending isolation, destination-bound credential
+handling and stale archived uploads. Real-host BI integration then reproduced
+an existing THREAD/SESSION equality assumption incompatible with child threads.
+The current-thread-first legacy-fallback correction passes3 actual CLI
+subprocess regressions and independent review. The discarded first EXE is not
+delivered. Final BI SHA256 is
+`3ee93ef92ee05ef628577a95f5571632d3cbbd5fc39af03f0589121ebb22a519`.
+One initial new test used the wrong isolation environment variable and created
+one fixture-only registration in the default BI registry. Exact temporary path,
+creation time and no-overwrite code proved that record was test-created; only
+that record was removed. Tests now always supply an explicit temporary config.
+This is disclosed rather than claiming the first test had no side effect.
+
+Cloud migration0002 and WebBI1.1.6 deployment succeeded. Public active/archive
+API reads return1.1.6, preserving22 Runs,21 archived and2002 messages; no foreign
+key violations. Production cloud write/authenticated upload and physical
+two-device acceptance are not inferred from that read-only post-deploy check.
+
+Original Run11 OW INPUT_INVALID full error evidence was not retained. A Windows
+equivalent-path seam is reproduced and fixed, but is not asserted to explain
+every historical rejection. Multi-device persistence is tested with fixtures;
+no second physical desktop is available for real two-computer acceptance.
+No live Run, installed runtime, LCEV Task14 or shared service was modified for
+these tests. Cloud migration, final artifacts and releases are separate evidence.
 
 ## 2026-10-17 — Run09/Run10 continuity and closure repair
 

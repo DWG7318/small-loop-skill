@@ -12,7 +12,7 @@ from temporalio.worker import Worker, Replayer, UnsandboxedWorkflowRunner
 from slk_temporal import workflows
 from slk_temporal.contracts import StartSlkRequest
 from .test_contracts import start_value, delivery_value, ack_value
-from .test_workflows import _environment, prepare_run, deliver_message, request_recovery, inspect_overwatcher
+from .test_workflows import _environment, _wait_for_phase, prepare_run, deliver_message, request_recovery, inspect_overwatcher
 
 
 @pytest.mark.asyncio
@@ -38,6 +38,7 @@ async def test_pre451_failed_notice_history_replays_without_new_retry_or_timer(t
                 start = {**start_value(), "task_queue": queue}
                 handle = await env.client.start_workflow(legacy.RunSlkWorkflow.run,
                     {"startup": start, "admission_required": True}, id=queue, task_queue=queue)
+                await _wait_for_phase(handle, env, "AWAITING_ADMISSION")
                 await handle.execute_update("request_admission", {"run_id": start["run_id"],
                     "startup_fingerprint": StartSlkRequest.from_dict(start).startup_fingerprint,
                     "workflow_identity_sha256": "9" * 64})

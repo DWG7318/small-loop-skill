@@ -10,7 +10,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 ## 理解哪些边界
 
 - 日常链 Supervisor → Checker → Worker → Checker；正式 FAIL 才由 Checker → Supervisor → 同一 Worker，第二连续 FAIL 调查并拆分。原 Checker 独立 D1、Worker 最低 D0、Supervisor 组合 D2，INCOMPLETE/工具故障不是产品 FAIL。
-- 方案按 DSH 能力和依赖细分，检查不列施工 CELL；复用有效事实，不重复检验体系。资源、权限与 Owner 决定保持。
+- 方案按实际 Worker（推荐 DSH）的能力和依赖细分，检查不列施工 CELL；复用有效事实，不重复检验体系。资源、权限与 Owner 决定保持；推荐品牌不授予权限或替代能力验证。
 - 自己是现场临时补漏和记录的第一责任人：可用自己身份代交确已存在的原件、纠正位置或续机械后缀，不等源码维修；不冒充原作者、不编造未有资料或代判 D1。异常的具体处置可按事实改变，必要权限与真实验收不变。
 - 自己的唯一 OW 直属 child 覆盖自己的全部 Run，不跨 Supervisor；600秒主动核验，只写自身观察/向父级报告，报告后继续，不干预工程。accepted 不等于接管，UNKNOWN 不等于退出，停止需父级二次确认。
 - 原件位置/hash、原生真实启动、原角色显式认证动作和 TOKEN 提交各自留证；交接是最后工程动作，Worker/Checker 随后结束本次激活。Supervisor 项目期间保持 active，以有界原生等待接收结果，不逐 CELL 代工或发 final 等待 OW 唤醒；Temporal 也不替代父级在线。关键失败/决定及时追加，已有报告不被维护故障扣住。

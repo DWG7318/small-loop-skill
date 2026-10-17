@@ -1,5 +1,16 @@
 # Changelog
 
+## SLK 4.5.5 / BI-WebBI 1.1.6
+
+- Separate finalization from D2: reuse real acceptance and already completed steps, preserve creator authority, and close only this Run's bindings and workflow pair.
+- Select the exact Supervisor or OW credential for the original close operation; accept equivalent Windows spelling of the same evidence file without weakening hash or identity checks.
+- Store creator-authored concise closeout originals and corrections as immutable evidence, without changing engineering events, TOKEN, plan, D2 or runtime revision.
+- Remove brand allowlists for new 4.5.5 role metadata while retaining implemented adapter capabilities, independent sessions, original authorization and historical contracts.
+- Keep fresh Temporal audit evidence while avoiding duplicate repair notices for an unchanged proven cause; real new causes and exact Supervisor resolutions remain reportable. Existing histories use compatible patch markers.
+- BI/WebBI 1.1.6 retains agent-provided summaries and device signatures, independent per-device Run spaces, sticky archives and durable confirmed upload state. WebBI still receives only desktop uploads. No BI-side data inference or device/IP probe is added.
+- Resolve the current native Codex thread before its inherited legacy root session, so legitimate child-created Runs can register and archive without granting another thread the creator's authority.
+- Preserve the separate 3.1.1 line, existing project runtimes, MIT license and precompiled distribution model.
+
 ## SLK 4.5.4 / BI-WebBI 1.1.4
 
 - Preserve Worker checkpoints and send non-candidates to Supervisor without triggering D1 or moving TOKEN; sealed historical deliveries remain immutable.

@@ -184,6 +184,194 @@ def test_census_counts_validated_same_turn_aliases_as_one_coordinator(tmp_path, 
     assert len(calls) == 2  # No cache crosses an inspection boundary.
 
 
+def seal_notification_input(notification, prompt_shape="inline"):
+    notice = wc._read_object(notification / "notification.json", "notice")
+    prompt = notice["message"] + "\n" + json.dumps(notice, ensure_ascii=False, sort_keys=True)
+    if prompt_shape != "inline":
+        from slk_transport.evidence import Attempt
+        from slk_transport.supervisor_notification import _NoticeIdentity
+        identity = _NoticeIdentity(notice["run_id"], notice["event_id"], wc.canonical_json_sha256(notice))
+        prompt = desktop._prepare_prompt(prompt, identity, Attempt(notification))
+        if prompt_shape == "legacy-material":
+            prompt = desktop.LEGACY_MATERIAL_PREFIX + prompt[len(desktop.MATERIAL_PREFIX):]
+    write_json(notification / "desktop-prompt.json", {"message_id": notice["event_id"], "prompt": prompt})
+    start = wc._read_object(notification / "started.json", "start")
+    start["native_request_sha256"] = hashlib.sha256(prompt.encode()).hexdigest()
+    write_json(notification / "started.json", start)
+    receipt = wc._read_object(notification / "desktop-readback.json", "receipt")
+    receipt["platform_item"]["output"]["text"] = desktop._delegation(prompt, receipt["caller_thread_id"])
+    write_json(notification / "desktop-readback.json", receipt)
+
+
+def notification_coordinator_fixture(tmp_path, monkeypatch, prompt_shape="inline"):
+    host, roots, _, notification, calls = coordinator_alias_fixture(tmp_path, monkeypatch)
+    # No Envelope call is in the census: the current turn was started only by
+    # this original notification, as in the Run 11 closeout regression.
+    host.projection()["native_invocations"] = []
+    seal_notification_input(notification, prompt_shape)
+    return host, [roots[1]], notification, calls
+
+
+@pytest.mark.parametrize("prompt_shape", ["inline", "material", "legacy-material"])
+def test_original_notification_can_be_the_only_coordinator_anchor(tmp_path, monkeypatch, prompt_shape):
+    host, roots, notification, calls = notification_coordinator_fixture(tmp_path, monkeypatch, prompt_shape)
+    before = {path: path.read_bytes() for path in notification.iterdir() if path.is_file()}
+    proof = host.inspect_run_quiescence("close", roots, notification / "started.json")
+    assert proof["status"] == "QUIESCENT", proof
+    assert len(proof["inspections"]) == 1
+    assert proof["inspections"][0]["status"] == "COORDINATING"
+    assert native.census_coordinator_sources(proof) == [notification / "started.json"]
+    assert len(calls) == 1
+    assert {path: path.read_bytes() for path in notification.iterdir() if path.is_file()} == before
+
+
+@pytest.mark.parametrize("damage", ["caller", "endpoint", "run", "schema", "sender", "receiver", "notice",
+    "start-hash", "native-input", "receipt-caller", "forged-prompt", "missing-readback", "bad-item", "missing-turn"])
+def test_notification_coordinator_requires_exact_original_identity(tmp_path, monkeypatch, damage):
+    host, roots, notification, _ = notification_coordinator_fixture(tmp_path, monkeypatch)
+    if damage == "caller":
+        monkeypatch.setenv("CODEX_THREAD_ID", "another-thread")
+    elif damage == "endpoint":
+        host.endpoints["supervisor"] = {**host.endpoint("supervisor"), "endpoint_version": 2}
+    elif damage in {"run", "schema", "sender", "receiver", "notice"}:
+        notice = wc._read_object(notification / "notification.json", "notice")
+        key, value = {"run": ("run_id", "RUN-OTHER"), "schema": ("schema_version", "slk.fake-notification/v1"),
+            "sender": ("sender_role_instance_id", "temporal:OTHER"),
+            "receiver": ("receiver_role_instance_id", "another-supervisor"),
+            "notice": ("message", "发现异常，请查验。 altered")}[damage]
+        write_json(notification / "notification.json", {**notice, key: value})
+    elif damage == "start-hash":
+        start = wc._read_object(notification / "started.json", "start")
+        write_json(notification / "started.json", {**start, "request_sha256": "0" * 64})
+    elif damage == "missing-readback":
+        (notification / "desktop-readback.json").unlink()
+    else:
+        receipt = wc._read_object(notification / "desktop-readback.json", "receipt")
+        if damage == "receipt-caller":
+            receipt["caller_thread_id"] = "another-caller"
+        elif damage == "bad-item":
+            receipt["platform_item"]["type"] = "unrelated"
+        elif damage == "missing-turn":
+            receipt["turn_id"] = "unobserved-turn"
+            start = wc._read_object(notification / "started.json", "start")
+            start["native_task"]["id"] = "thr_exact:unobserved-turn:item-alias"
+            write_json(notification / "started.json", start)
+        else:
+            receipt["platform_item"]["output"]["text"] = desktop._delegation("not the notice", receipt["caller_thread_id"])
+            if damage == "forged-prompt":
+                start = wc._read_object(notification / "started.json", "start")
+                write_json(notification / "started.json", {**start,
+                    "native_request_sha256": hashlib.sha256(b"not the notice").hexdigest()})
+        write_json(notification / "desktop-readback.json", receipt)
+    proof = host.inspect_run_quiescence("close", roots, notification / "started.json")
+    assert proof["status"] == "NOT_QUIESCENT", proof
+    assert proof["inspections"][0]["status"] == "UNKNOWN"
+    assert native.census_coordinator_sources(proof) == []
+
+
+@pytest.mark.parametrize("damage", ["missing-prompt", "prompt-message", "material-hash", "material-envelope", "forged-material"])
+def test_notification_anchor_rechecks_original_material_chain(tmp_path, monkeypatch, damage):
+    host, roots, source, _ = notification_coordinator_fixture(tmp_path, monkeypatch, "material")
+    if damage == "missing-prompt":
+        (source / "desktop-prompt.json").unlink()
+    elif damage == "prompt-message":
+        value = wc._read_object(source / "desktop-prompt.json", "prompt")
+        write_json(source / "desktop-prompt.json", {**value, "message_id": "another-notice"})
+    else:
+        value = wc._read_object(source / "desktop-material.json", "material")
+        if damage == "material-envelope":
+            value["envelope"]["payload_sha256"] = "0" * 64
+        else:
+            value["prompt"] = "forged original notification"
+        write_json(source / "desktop-material.json", value)
+        if damage == "forged-material":
+            from slk_transport.supervisor_notification import _NoticeIdentity
+            notice = wc._read_object(source / "notification.json", "notice")
+            identity = _NoticeIdentity(notice["run_id"], notice["event_id"], wc.canonical_json_sha256(notice))
+            prompt = desktop._material_prompt(source / "desktop-material.json", (source / "desktop-material.json").read_bytes(), identity)
+            write_json(source / "desktop-prompt.json", {"message_id": notice["event_id"], "prompt": prompt})
+            start = wc._read_object(source / "started.json", "start")
+            write_json(source / "started.json", {**start, "native_request_sha256": hashlib.sha256(prompt.encode()).hexdigest()})
+            receipt = wc._read_object(source / "desktop-readback.json", "receipt")
+            receipt["platform_item"]["output"]["text"] = desktop._delegation(prompt, receipt["caller_thread_id"])
+            write_json(source / "desktop-readback.json", receipt)
+    proof = host.inspect_run_quiescence("close", roots, source / "started.json")
+    assert proof["status"] == "NOT_QUIESCENT", proof
+    assert proof["inspections"][0]["status"] == "UNKNOWN"
+
+
+@pytest.mark.parametrize("other_turn", [False, True])
+def test_notification_anchor_exempts_only_the_same_supervisor_turn(tmp_path, monkeypatch, other_turn):
+    host, roots, envelope, notification, _ = coordinator_alias_fixture(tmp_path, monkeypatch, other_turn=other_turn)
+    seal_notification_input(notification)
+    for call in host.projection()["native_invocations"]:
+        call["start_evidence_sha256"] = wc._sha256(Path(call["start_evidence_path"]))
+    proof = host.inspect_run_quiescence("close", roots, notification / "started.json")
+    assert proof["status"] == ("NOT_QUIESCENT" if other_turn else "QUIESCENT"), proof
+    rows = {row["native_start_path"]: row for row in proof["inspections"]}
+    assert rows[str(notification / "started.json")]["status"] == "COORDINATING"
+    assert rows[str(envelope / "started.json")]["status"] == ("UNKNOWN" if other_turn else "COORDINATING")
+
+
+@pytest.mark.parametrize("damage", [None, "ended-turn", "missing-turn", "input"])
+def test_ow_consumer_requeries_notification_anchor_before_accepting_cycle(tmp_path, monkeypatch, damage):
+    from slk_transport import overwatcher_admin
+
+    host, roots, source, calls = notification_coordinator_fixture(tmp_path, monkeypatch, "material")
+    # Persist the same prepared endpoint so the consumer's newly loaded Host
+    # validates the real binding, not a mocked Host or canned census result.
+    role = host.binding["roles"]["supervisor"]
+    write_json(Path(role["endpoint_path"]), host.endpoint("supervisor"))
+    role["endpoint_sha256"] = wc._sha256(Path(role["endpoint_path"]))
+    binding = write_json(tmp_path / "observer-host.json", host.binding)
+    projection = {"summary": {"run_id": "RUN-A", "state": "paused"},
+        "runtime_snapshot": {"runtime_revision": 7, "plan_revision": 1, "token_sequence": 3,
+            "token_holder_role_instance_id": host.endpoint("supervisor")["role_instance_id"], "latest_message_id": None},
+        "roles": [{"role": role, "role_instance_id": host.endpoint(role)["role_instance_id"], "lifecycle": "active",
+            "endpoints": [{"state": "active", "endpoint_version": host.endpoint(role)["endpoint_version"],
+                "transport_adapter": host.endpoint(role)["adapter"]}]} for role in ("supervisor", "checker", "worker")],
+        "events": [], "native_invocations": []}
+    monkeypatch.setattr(host, "projection", lambda: projection)
+    monkeypatch.setattr(wc, "_default_load_current_projection", lambda *_a, **_k: projection)
+    original = host.inspect_run_quiescence("pause-1", roots, source / "started.json")
+    assert original["status"] == "QUIESCENT"
+    original_path = write_json(tmp_path / "original-pause.json", original)
+    projection["events"] = [{"event_type": "RUN_PAUSED", "details_json": json.dumps({"pause_id": "pause-1",
+        "quiescence_path": str(original_path), "quiescence_sha256": wc._sha256(original_path)})}]
+    monkeypatch.setenv("CODEX_THREAD_ID", "independent-ow")
+    began = native.utc_now()
+    fresh = host.inspect_run_quiescence("pause-1", roots, source / "started.json", coordinator_observer=True)
+    fresh_path = write_json(tmp_path / "fresh-census.json", fresh)
+    query = native.collect_overwatch_scope(None, run_id="RUN-A", state_command=host.state)
+    query_path = write_json(tmp_path / "scope-query.json", query)
+    cycle = {**projection["runtime_snapshot"], "go_id": None, "cell_id": None, "attempt": None,
+        "started_at": began, "completed_at": native.utc_now(), "cadence_seconds": 600,
+        "checklist": {"stall_and_duplicates": "CLEAR"}, "anomaly_codes": [],
+        "evidence_refs": [{"path": str(path), "sha256": wc._sha256(path)} for path in (binding, fresh_path, query_path)]}
+    assert len(calls) == 2
+    if damage == "input":
+        material = wc._read_object(source / "desktop-material.json", "material")
+        write_json(source / "desktop-material.json", {**material, "prompt": "changed after observation"})
+    elif damage is not None:
+        original_read = desktop.DesktopClient.call
+        def changed_read(*args):
+            view = original_read(*args)
+            if damage == "missing-turn":
+                view["turns"] = []
+            else:
+                for turn in view["turns"]:
+                    turn["status"] = "completed"
+                view["thread"]["status"]["type"] = "idle"
+            return view
+        monkeypatch.setattr(desktop.DesktopClient, "call", changed_read)
+    if damage is None:
+        overwatcher_admin._verify_cycle(cycle, "RUN-A", host.state)
+    else:
+        with pytest.raises(ValueError, match="native writers changed"):
+            overwatcher_admin._verify_cycle(cycle, "RUN-A", host.state)
+    assert len(calls) == 3  # A fresh native read is required at consumption.
+
+
 @pytest.mark.parametrize("damage", [None, "hash", "other-turn", "other-host"])
 def test_coordinator_consumers_count_exact_receipts_not_claimed_labels(tmp_path, monkeypatch, damage):
     host, roots, coordinator, alias, _ = coordinator_alias_fixture(tmp_path, monkeypatch,
@@ -637,8 +825,9 @@ def test_accepted_desktop_pre_send_failure_is_not_an_unknown_executor(tmp_path, 
     assert proof["inspections"][0]["status"] == ("STAGED_NOT_STARTED" if damage is None else "UNKNOWN")
 
 
-@pytest.mark.parametrize("damage", [None, "missing-core", "unknown-field", "active-writer", "nonobject-provenance"])
-def test_generated_census_is_consumed_by_real_state_cli(tmp_path, monkeypatch, damage):
+@pytest.mark.parametrize("notification_anchor", [False, True])
+@pytest.mark.parametrize("damage", [None, "missing-core", "unknown-field", "active-writer", "nonobject-provenance", "start-hash"])
+def test_generated_census_is_consumed_by_real_state_cli(tmp_path, monkeypatch, damage, notification_anchor):
     """Exercise the shared Rust pause/closure consumer, never a live Run or DB."""
     suffix = ".exe" if os.name == "nt" else ""
     binary = Path(__file__).parents[2] / "target/debug" / f"slk-state{suffix}"
@@ -681,6 +870,9 @@ def test_generated_census_is_consumed_by_real_state_cli(tmp_path, monkeypatch, d
     desktop_root.mkdir()
     _, notice_root, notice_source, endpoint, notice = notification_source(desktop_root, monkeypatch)
     desktop_start(notice_source, endpoint, notice)
+    if notification_anchor:
+        seal_notification_input(notice_source, "material")
+        monkeypatch.setenv("CODEX_THREAD_ID", endpoint.address["thread_id"])
     host.endpoints["supervisor"] = asdict(endpoint)
     monkeypatch.setattr(host, "projection", projection)
     monkeypatch.setattr(desktop.DesktopClient, "__init__", lambda *_a: None)
@@ -690,15 +882,18 @@ def test_generated_census_is_consumed_by_real_state_cli(tmp_path, monkeypatch, d
     monkeypatch.setattr(desktop.DesktopClient, "close", lambda *_a: None)
     monkeypatch.setattr(desktop.DesktopClient, "call", lambda *_a: {
         "thread": {"id": endpoint.address["thread_id"], "hostId": endpoint.host_id,
-                   "cwd": endpoint.address["cwd"], "status": {"type": "idle"}},
-        "page": {"hasMore": False}, "turns": [{"id": "turn-original", "status": "completed", "items": []}]})
-    proof = host.inspect_run_quiescence("isolated-census", [dsh_source.parents[1], notice_root])
+                   "cwd": endpoint.address["cwd"], "status": {"type": "active" if notification_anchor else "idle"}},
+        "page": {"hasMore": False}, "turns": [{"id": "turn-original",
+            "status": "inProgress" if notification_anchor else "completed", "items": []}]})
+    proof = host.inspect_run_quiescence("isolated-census", [dsh_source.parents[1], notice_root],
+        notice_source / "started.json" if notification_anchor else None)
     assert proof["status"] == "QUIESCENT", proof
     assert len(proof["inspections"]) == 2
-    assert all(row["status"] == "STOPPED" for row in proof["inspections"])
+    assert sorted(row["status"] for row in proof["inspections"]) == (["COORDINATING", "STOPPED"]
+        if notification_anchor else ["STOPPED", "STOPPED"])
     assert any(isinstance(row.get("native_stop"), dict) for row in proof["inspections"])
     assert any(isinstance(row.get("native_reader"), dict) for row in proof["inspections"])
-    row = proof["inspections"][0]
+    row = next(row for row in proof["inspections"] if row["native_start_path"] == str(notice_source / "started.json"))
     if damage == "missing-core":
         row.pop("message_id")
     elif damage == "unknown-field":
@@ -707,6 +902,8 @@ def test_generated_census_is_consumed_by_real_state_cli(tmp_path, monkeypatch, d
         row["processes"] = [{"exists": True, "identity_matches": True}]
     elif damage == "nonobject-provenance":
         row["native_reader"] = "not an object"
+    elif damage == "start-hash":
+        row["native_start_sha256"] = "0" * 64
     proof_path = write_json(tmp_path / "generated-census.json", proof)
     request = event("RUN_PAUSED", proof_path)
     before = projection()["runtime_snapshot"]["runtime_revision"]

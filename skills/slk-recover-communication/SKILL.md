@@ -15,7 +15,7 @@ description: Use when an active Small Loop Skill (SLK) Run has an exact delivery
 
 ## 按实际异常选入口
 
-- Codex 已受理但缺平台回读：仅对原 attempt 用 `consume-desktop-readback`，不再发送。
+- Codex 已受理但缺平台回读：仅对原 attempt 用 `consume-desktop-readback --source-attempt <准确原attempt目录>`，不再发送。原 Temporal 通知目录的 `notification.json` 也走其已有消费分支，不强套 Checker-only `prepare-desktop-current-turn`；每条原通知只补原回执，重复调用复用结果，既有 proof 不改，新检查引用新回读事实。
 - 普通发送和一次 exact retry 都因 active Desktop writer 未解析而失败，且明确返回 `DESKTOP_BRIDGE_REQUIRED`：Desktop 宿主用既有 prepare/complete 原样投递并留真实 host receipt。原 operation 与实际新消息各保身份，不重写旧信封、不争 active writer 或在其前 resume。
 - PowerShell 用 `python <slk-transport.pyz>` 而非 `& <slk-transport.pyz>`；`--attempt-root` 是 attempts 根，不是 `<run_id>/<message_id>`。
 - 明确工程行动仍由原责任角色提交；Supervisor 仅在原登记 Session 用 `submit-supervisor-decision`，不等整个 turn 终结。密封凭据只由所属可信入口消费，不借他人权限或编辑 SQLite。

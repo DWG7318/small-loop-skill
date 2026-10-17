@@ -5,7 +5,7 @@ description: Use when an active Small Loop Skill (SLK) Run has reached its truth
 
 # Archive the Run's members
 
-仅用于已启用 SLK 的 Run，由 Supervisor 负责。归档是确切状态操作，不是把对话叫作“已归档”。工程收尾次序由 `$slk-close-run` 控制。
+仅用于已启用 SLK 的 Run，由 Supervisor 负责。归档是确切状态操作，不是把对话叫作“已归档”。工程收尾次序由 `$slk-finalize-run` 控制，本指引仅说明成员操作。
 
 ## 正常结束次序
 

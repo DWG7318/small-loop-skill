@@ -9,8 +9,8 @@ description: Use when an active Small Loop Skill (SLK) Run needs its current tea
 
 ## 按顺序补缺，不重复已完成项
 
-1. Owner 已确认方案、Supervisor 与模型后，由该 Supervisor 一次 init-run/根记录，冻结 Run/project/当前 plan revision、中央数据根与自身准确身份，打开可见 BI 1.1.1。已有 Run 读回原身份，不重建。
-2. 给 Supervisor 简明角色定位并沿 `$slk-grill-supervisor` 完成现有 Eval/理解确认。随后 Supervisor 建立/指定 OCRV Checker，由 Checker 建立/指定 DSH Worker，各自取得准确原生端点和本人权限；不创建 Codex Checker/Worker。
+1. Owner 已确认方案、Supervisor 与模型后，由该 Supervisor 一次 init-run/根记录，冻结 Run/project/当前 plan revision、中央数据根与自身准确身份，打开本机已验预编译 BI（本轮配套 1.1.6）。已有 Run 读回原身份，不重建。
+2. 给 Supervisor 简明角色定位并沿 `$slk-grill-supervisor` 完成现有 Eval/理解确认。随后 Supervisor 建立/指定 Checker，由 Checker 建立/指定 Worker，各自取得准确原生端点和本人权限；按 `$slk-select-models` 的推荐选择，不能按品牌替代真实身份、独立性和适配能力。
 3. Supervisor 启动或复用自己唯一直属 OW child，覆盖自己的全部 Run，不跨 Supervisor；每 Run 单独绑定技术 instance、scope、cycle、观察凭据，实际 parent/child 相同。只给观察权，不继承父级工程权限。真实型号/reasoning 已确认，gpt-6-luna high/xhigh 仅推荐。
 4. 建立本 Run 唯一 RUN_TEAM_REGISTRY，分开登记 agent identity、runtime、native/session locator、message endpoint、transport/status adapter、delivery success signal、设备、model/reasoning、Skill/工具版本及 revision。准确 Host 路径/hash 与密封权限匹配；不凭标题、窗口或历史位置猜地址。凭据操作按需读[认证说明](references/credential-preparation.md)。
 5. 各角色只读本角色职责/禁区、真实交接对象和现有8个 runtime-critical 场景；纠正误解后确认，普通 CELL 切换不重复，变化只复核受影响理解。完整结构化回应绑定当前 revision，未变理解可复用但不伪装新实测。OCRV 没任意聊天入口时不假造 Eval；核对当前原生 config/工具/MCP 与已验等价能力，首次真实审查保留准确 runtime_root + host + endpoint version 的 harness、native start/result，不为准备另跑正式 D1。

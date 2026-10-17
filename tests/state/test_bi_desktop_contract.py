@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 BI_ROOT = ROOT / "apps" / "slk-bi"
+EXPECTED_BI_VERSION = "1.1.6"
 
 
 def test_bi_has_no_slk_state_mutation_surface():
@@ -16,7 +17,13 @@ def test_bi_has_no_slk_state_mutation_surface():
     )
 
     assert package["name"] == "slk-bi"
-    assert package["version"] == "1.1.4"
+    assert package["version"] == EXPECTED_BI_VERSION
+    cargo = (BI_ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
+    rust_version = re.search(r'(?m)^version\s*=\s*"([^"]+)"', cargo)
+    assert rust_version is not None
+    assert rust_version.group(1) == EXPECTED_BI_VERSION
+    web_version = (BI_ROOT / "src" / "version.ts").read_text(encoding="utf-8")
+    assert f'export const BI_VERSION = "{EXPECTED_BI_VERSION}" as const;' in web_version
     assert set(capability["permissions"]) == {
         "core:default",
         "core:window:allow-start-dragging",
@@ -69,7 +76,7 @@ def test_bi_window_is_compact_and_not_maximizable():
     assert window["closable"] is True
     assert window["decorations"] is False
     assert window["title"] == "LE BI"
-    assert config["version"] == "1.1.4"
+    assert config["version"] == EXPECTED_BI_VERSION
 
 
 def test_archived_runs_keep_readable_content_and_an_opaque_fallback():

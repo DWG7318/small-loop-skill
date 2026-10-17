@@ -225,9 +225,15 @@ def validate(root: Path) -> list[str]:
         check(marker in audit, "SLK_REPO_AUDIT_MATRIX", marker, errors)
     # A historical 4.3.1 audit is evidence of that version, not the inventory
     # authority for later Skills. Check current coverage against its own review.
-    review_path = root / "docs/superpowers/plans/2026-10-11-slk-4.5.0-skill-review-ledger.md"
-    check(review_path.is_file(), "SLK_REPO_SKILL_REVIEW", str(review_path), errors)
-    review = utf8_text(review_path, errors) if review_path.is_file() else ""
+    review = ""
+    for relative in (
+        "docs/superpowers/plans/2026-10-11-slk-4.5.0-skill-review-ledger.md",
+        "docs/maintenance/2026-10-18-slk-4.5.5-skill-review.md",
+    ):
+        review_path = root / relative
+        check(review_path.is_file(), "SLK_REPO_SKILL_REVIEW", str(review_path), errors)
+        if review_path.is_file():
+            review += utf8_text(review_path, errors)
     for name in EXPECTED_SKILLS:
         check(name in review, "SLK_REPO_AUDIT_SKILL", name, errors)
 

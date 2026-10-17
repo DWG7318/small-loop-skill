@@ -50,7 +50,7 @@
       "required": ["method_version", "run_id", "role_instance_id", "endpoint_ref", "native_address", "native_execution_id"],
       "oneOf": [{"required": ["native_source_path"], "not": {"required": ["native_source_paths"]}}, {"required": ["native_source_paths"], "not": {"required": ["native_source_path"]}}],
       "properties": {
-        "method_version": {"enum": ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"]},
+        "method_version": {"enum": ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"]},
         "run_id": {"$ref": "#/$defs/text"}, "role_instance_id": {"$ref": "#/$defs/text"}, "endpoint_ref": {"$ref": "#/$defs/text"},
         "native_address": {"$ref": "#/$defs/nativeAddress"},
         "native_execution_id": {"type": "string", "pattern": "^codex-subagent-(spawn|followup):call_[A-Za-z0-9_]+$"},

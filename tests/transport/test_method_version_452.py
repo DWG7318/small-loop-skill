@@ -28,13 +28,13 @@ def test_method_contract_admits_454_and_preserves_prior_versions_but_not_unpubli
     assert contracts
     for contract in contracts:
         validator = Draft202012Validator(contract)
-        for version in ("4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"):
+        for version in ("4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"):
             assert validator.is_valid(version)
-        assert not validator.is_valid("4.5.5")
+        assert not validator.is_valid("4.5.6")
 
 
 def test_transport_method_admission_is_additive_and_closed():
     from slk_transport import SUPPORTED_METHOD_VERSIONS
 
-    assert all(version in SUPPORTED_METHOD_VERSIONS for version in ("4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"))
-    assert "4.5.5" not in SUPPORTED_METHOD_VERSIONS
+    assert all(version in SUPPORTED_METHOD_VERSIONS for version in ("4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"))
+    assert "4.5.6" not in SUPPORTED_METHOD_VERSIONS

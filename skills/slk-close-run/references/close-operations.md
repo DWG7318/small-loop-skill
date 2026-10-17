@@ -1,6 +1,6 @@
 # 关闭操作（条件参考）
 
-仅在封装 D2 开始/关闭请求、核对停稳 proof 或 Cargo lease 时读相应段。工程判断和关闭顺序以 `slk-close-run` 为准；精确机器字段的权威是原合同/消费者，不另造关闭协议。
+仅在封装 D2 开始/关闭请求、核对停稳 proof 或 Cargo lease 时读相应段。D2 判断以 `slk-close-run`、收尾顺序以 `slk-finalize-run` 为准；精确机器字段的权威是原合同/消费者，不另造关闭协议。
 
 ## D2 的原请求
 
@@ -9,6 +9,8 @@
 组合回修后的 D2 再检查使用新收到的准确 D2_READY attempt 与当前冻结 Host，在实际开始时由同一标准入口记录属于该来源的一次开始；旧开始/失败历史保留，不复用旧来源的开始证明，不自己编 event ID，也不把重放同一开始当作新轮次。
 
 ## 当前 revision 的停稳与 close-run
+
+已绑定 child 真实结束而不能写末轮时，创建 Supervisor 可用原 `close-overwatcher`：`final_cycle_id=null`、当前 `runtime_revision`、`archive_evidence_ref` 指向准确当前绑定的原始 `native_active_session_evidence_ref`，仅用自身密封权限。消费者回读父子/当前激活实际终态；不借 OW 凭据、不伪造观察或以摘要替换原件。ACTIVE/UNKNOWN 不走此分支；合法退出也不免除后续当前 writer 停稳。
 
 沿原 [Transport 生命周期](../../../docs/transport/SLK-TRANSPORT.md#run-lifecycle)由 Host 生成 proof，不手写 JSON：
 

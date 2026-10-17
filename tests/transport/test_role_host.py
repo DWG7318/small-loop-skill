@@ -684,7 +684,7 @@ def supervisor_result_fixture(tmp_path, *, d2=False):
     return host, source, incoming, result, projection
 
 
-CURRENT_D2_VERSIONS = ["4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"]
+CURRENT_D2_VERSIONS = ["4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"]
 
 
 def current_d2_fixture(tmp_path, monkeypatch, *, method_version="4.4.3"):

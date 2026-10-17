@@ -3046,7 +3046,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slk-bi-desktop"
-version = "1.1.4"
+version = "1.1.6"
 dependencies = [
  "regex",
  "reqwest 0.12.28",
@@ -3062,7 +3062,7 @@ dependencies = [
 
 [[package]]
 name = "slk-bi-query"
-version = "4.5.4"
+version = "4.5.5"
 dependencies = [
  "serde_json",
  "slk-state-core",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "slk-cargo"
-version = "4.5.4"
+version = "4.5.5"
 dependencies = [
  "serde_json",
  "slk-state-core",
@@ -3081,17 +3081,19 @@ dependencies = [
 
 [[package]]
 name = "slk-state-cli"
-version = "4.5.4"
+version = "4.5.5"
 dependencies = [
  "serde",
  "serde_json",
  "sha2",
  "slk-state-core",
+ "tempfile",
+ "time",
 ]
 
 [[package]]
 name = "slk-state-core"
-version = "4.5.4"
+version = "4.5.5"
 dependencies = [
  "directories",
  "quick-xml",

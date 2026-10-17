@@ -27,6 +27,7 @@ EXPECTED_SKILLS = (
     "slk-adjust-run",
     "slk-recover-communication",
     "slk-close-run",
+    "slk-finalize-run",
 )
 ARTIFACT_NAMES = (
     "slk-bi-desktop.exe",
