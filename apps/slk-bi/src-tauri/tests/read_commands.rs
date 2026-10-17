@@ -1,5 +1,5 @@
 use slk_bi_desktop_lib::commands::{
-    metadata, projects_from, runs_from, validate_sync_payload, REGISTERED_READ_COMMANDS,
+    projects_from, runs_from, validate_sync_payload, REGISTERED_READ_COMMANDS,
 };
 use slk_state_core::config::configure_at;
 use slk_state_core::model::{
@@ -63,9 +63,10 @@ fn desktop_registers_the_nine_read_only_projection_commands() {
 
 #[test]
 fn metadata_exposes_bi_version_and_a_nonempty_device_identity_without_secrets() {
-    let value = metadata().unwrap();
+    let isolated = tempfile::tempdir().unwrap();
+    let value = slk_bi_desktop_lib::commands::metadata_at(isolated.path()).unwrap();
     assert_eq!(value["schema_version"], "slk.bi.metadata/v1");
-    assert_eq!(value["bi_version"], "1.1.4");
+    assert_eq!(value["bi_version"], "1.1.6");
     assert!(value["device_id"].as_str().unwrap().len() >= 3);
     assert!(value["device_name"].as_str().unwrap().len() >= 1);
     let serialized = value.to_string().to_ascii_lowercase();

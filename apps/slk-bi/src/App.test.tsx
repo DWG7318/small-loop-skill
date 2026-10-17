@@ -81,11 +81,11 @@ describe("LE BI shell", () => {
     expect(screen.queryByRole("list", { name: /CELL 记录/ })).not.toBeInTheDocument();
   });
 
-  it("shows BI 1.1.4 and the exact local device identity in the header", async () => {
+  it("shows BI 1.1.6 and stable configured identity without inferring current facts from historical Runs", async () => {
     render(<App api={fixtureApi} />);
 
-    expect(await screen.findByText("1.1.4")).toBeVisible();
-    expect(screen.getByText("Workstation A · device-a")).toBeVisible();
+    expect(await screen.findByText("1.1.6")).toBeVisible();
+    expect(screen.getByText("Workstation A · device-a")).toHaveAttribute("title", "device-a");
     expect(screen.queryByRole("slider", { name: "背景透明度" })).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "设置" }));
     expect(screen.getByRole("slider", { name: "背景透明度" })).toBeVisible();

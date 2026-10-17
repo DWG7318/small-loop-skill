@@ -1,6 +1,8 @@
+pub mod caller;
 mod cli;
 pub mod commands;
 pub mod sources;
+pub mod upload_state;
 
 use std::ffi::OsStr;
 
@@ -104,6 +106,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::metadata,
             commands::sync_webbi,
+            commands::webbi_settings,
+            commands::save_webbi_settings,
             commands::projects,
             commands::runs,
             commands::run,

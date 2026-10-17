@@ -8,22 +8,19 @@
       },
       {
         "path": "payload.zip.part002",
-        "sha256": "b7c95cbf500cb827e4de7854e1fa3f2baad0ec26369d83a3b8b16087ee983b70",
-        "size": 8202590
+        "sha256": "000e99eebf8a2ebe1b229da367bd7ab034c2d2b53deaba66be1842cf47626b5b",
+        "size": 8203750
       }
     ],
-    "sha256": "3f14705fd6f2aad8064b25dfd5cd9c24795a97585755fde4fbe361ebd03d9106",
-    "size": 75311454
+    "sha256": "3577f367205d912fa5bfda0806b40e106a70bd4eb6a5633c5458f2f58995a95b",
+    "size": 75312614
   },
   "build": {
-    "release": "v4.5.4",
-    "reused_runtime": {
-      "archive_sha256": "99df948d02f9ea9d16529c18eb439336c3661c1a5136cae23a6f3ddb478b87e0",
-      "index_sha256": "af8f49eb1ca802c205ebf652a46e5b4fc932edcd91aa1f15eb60d016241c0958",
-      "product_version": "4.5.3"
-    },
-    "source_hash_mode": "sha256-raw",
-    "template_command": "pip wheel --no-deps --no-build-isolation --no-index ./integrations/temporal"
+    "command": "uv build --wheel ./integrations/temporal",
+    "previous_index_sha256": "551619fca1732006edd35d531bf7dfda7dd47eb5d4d86fc795a8a7c7324ca277",
+    "release": "v4.5.5",
+    "runtime": "Byte-identical previous prepared runtime, no service executed",
+    "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
@@ -6757,33 +6754,33 @@
       "size": 159710720
     },
     {
-      "path": "wheels/slk_temporal_templates-4.5.4-py3-none-any.whl",
-      "sha256": "fc6d4a773e7e57ca493fb62dfe67cd3c6551c5342b99f01c707d411ede03b91b",
-      "size": 45339
+      "path": "wheels/slk_temporal_templates-4.5.5-py3-none-any.whl",
+      "sha256": "2cf19944dcd8c305e3c187f751805f73635e9e14f8f54a51c010971ccfaa6a1c",
+      "size": 46505
     }
   ],
-  "product_version": "4.5.4",
+  "product_version": "4.5.5",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
     ".gitignore": "0b208f55b2f3e6dcf5b7ebc38de2457028713d3e7dbff73e5d3206f9d3f34a5c",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "2944af60e23a77589f5107be963163b3028c5aaedbbc39c93d4a8e8a8700d18f",
-    "pyproject.toml": "4c8616b622b6b22fd267c1c31020c6c3c5aebc8c49af75a59a2cffed1beb31b8",
+    "pyproject.toml": "858318cff279be8e8f047a6b1bdd25eb2aed98de3c2ac88139a87edd2e39cd8e",
     "slk-overwatcher-capabilities.json": "c8061035ab138dedf56ed38ff4d86f453c9c83ed133cdb9de380ef722ee11912",
     "slk-overwatcher-native-capabilities.json": "8b6c87c59a57716e70745b707b13b7eca21edf4e0ab5839d94a42c88e4a6a5fe",
-    "src/slk_temporal/__init__.py": "b83bb4a09009f6daf3dcb4637401d303e1a184bd321ff6d0d50a08d7f0a48947",
+    "src/slk_temporal/__init__.py": "1a42d1b6fa7717db271a8ab31cd55947992c587acf2611acd932bd875f140e18",
     "src/slk_temporal/activities.py": "545bd9fd0b9567e101efd0260061be2828eb532b62e60a49f9595332d255a61e",
     "src/slk_temporal/admitter.py": "8c0d7f0a6b625e3a7744214728cf8c9aed4a6753a98bfeb0622672b5b6fe17d4",
-    "src/slk_temporal/checkpoint.py": "d8b8485f986b131cb4e602f2c82d23f9c21eeaceece0b2202829b359ffa22f2d",
+    "src/slk_temporal/checkpoint.py": "c48e5e60188d5cefed644c9e9d4a6b964fbc336ab22a0db34c41321bfc75fcbf",
     "src/slk_temporal/continuity.py": "da39247925136b11b71f8cf03c47b9a311547e9de9ad931f11cee2fdbb7e53e9",
-    "src/slk_temporal/contracts.py": "0611e53e669538bc80064f5168edc706445c7b864ceccd1f42b9cae21736b0bd",
+    "src/slk_temporal/contracts.py": "ca6abf93644f9412b17679f0a3bf0cd70b7ed9faf7d4853ad9abd04de85141fe",
     "src/slk_temporal/delivery_client.py": "69bea91f778770fd8580751565fd575bf7985c592078fe1bc6eecc7e285b56f4",
     "src/slk_temporal/inspector.py": "9d6f2c965bb3aa5f9e51690b36437834fccda3f97a283a8135e5efef03e756fe",
-    "src/slk_temporal/recovery_client.py": "b3357b78a699379e1ddfc0b081553bcea1adb5e2695c1fdfe72907294bc00233",
-    "src/slk_temporal/standard_adapter.py": "7dd7f269f1e6a9de0f2372d3068e6bdd1ec13e774c568bc9428323b683b68a10",
+    "src/slk_temporal/recovery_client.py": "6b847c5a4d4757ed85982ac7192a094b37faae8addc27a05c4b3066ded6ca835",
+    "src/slk_temporal/standard_adapter.py": "989f0fa96ff9a75e5e2f62016c452452046c039605264d217a51b9e0d3516b6e",
     "src/slk_temporal/starter.py": "97faa4b67fc2b595c77bcf8d2643fcbeb5225678153d0f85533a1643c59d13d3",
     "src/slk_temporal/worker.py": "dbb16b241b5ee2e815076dad327fd632afae401dcbc2a09c57a9805512f8aafc",
-    "src/slk_temporal/workflows.py": "80512d2695ac92cdb9c976dadc7321052e9dac1b1cde26493665c0f0cba340a3",
+    "src/slk_temporal/workflows.py": "3647c33bf0cadcfff950f9787daad4977df888fb5848c803cab4a0daee4b1274",
     "tests/test_independent_contract.py": "fa5475a85d63a8f4e9c361d7308e9722c4b6a1bb4604eec3961f27ee7ddd0b53"
   },
   "target": "windows-x86_64",

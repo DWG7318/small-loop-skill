@@ -144,11 +144,11 @@ describe("WebBI 1.1 browser UI", () => {
     expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveValue("100");
     fireEvent.change(screen.getByRole("slider", { name: "背景透明度" }), { target: { value: "37" } });
     expect(document.documentElement.style.getPropertyValue("--bi-surface-opacity")).toBe("63%");
-    expect(screen.getByText((_, element) => element?.textContent === "电脑 Workstation A · device-a")).toBeInTheDocument();
+    expect(screen.getByText("未获取 · 未获取 · 未获取")).toHaveAttribute("title", "device-a");
 
     fireEvent.click(screen.getByRole("link", { name: /Close flow/ }));
     expect(await screen.findByRole("heading", { name: "Close flow" })).toBeInTheDocument();
-    expect(screen.getByText("Workstation A · device-a")).toBeInTheDocument();
+    expect(screen.getAllByText("未获取 · 未获取 · 未获取").length).toBeGreaterThan(0);
     expect(screen.getByText("Supervisor")).toBeInTheDocument();
     expect(screen.getByText("Checker")).toBeInTheDocument();
     expect(screen.getByText("Worker")).toBeInTheDocument();

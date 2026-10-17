@@ -8,6 +8,7 @@ pub fn execute(args: &[String]) -> Option<Result<Value, String>> {
         "--bi-preview"
             | "--bi-register"
             | "--bi-archive"
+            | "--bi-summary"
             | "--bi-read"
             | "--bi-list"
             | "--help"
@@ -25,6 +26,7 @@ pub fn execute(args: &[String]) -> Option<Result<Value, String>> {
             return Ok(json!({"usage":[
             "slk-bi-desktop --bi-register <record.md> --project-id <id> --project-name <name>",
             "slk-bi-desktop --bi-read <run-id>", "slk-bi-desktop --bi-archive <run-id>",
+            "slk-bi-desktop --bi-summary <run-id> (creator-authored formal correction; preserves archive snapshot)",
             "slk-bi-desktop --bi-preview <record.md> --project-id <id> --project-name <name> (read-only, no registration)",
             "slk-bi-desktop --bi-list", "Optional: --config <BI source config path> (isolated tests)",
             "Registration/archive use native CODEX_THREAD_ID; no caller identity argument. Engineering source is read-only."]}));
@@ -34,6 +36,9 @@ pub fn execute(args: &[String]) -> Option<Result<Value, String>> {
                 .position(|v| v == name)
                 .and_then(|i| args.get(i + 1))
         };
+        if option("--supervisor").is_some() || option("--caller").is_some() {
+            return Err("SLK_BI_CALLER_ARGUMENT_UNSUPPORTED".into());
+        }
         let config = if let Some(path) = option("--config") {
             PathBuf::from(path)
         } else {
@@ -56,6 +61,9 @@ pub fn execute(args: &[String]) -> Option<Result<Value, String>> {
             "--bi-read" => crate::commands::run_from(&config, value, "run"),
             "--bi-archive" => {
                 crate::sources::archive(&registry, value, &crate::sources::native_caller()?)
+            }
+            "--bi-summary" => {
+                crate::sources::record_summary(&registry, value, &crate::sources::native_caller()?)
             }
             _ => crate::sources::register(
                 &registry,

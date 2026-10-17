@@ -49,7 +49,7 @@ export function notificationKey(
   deviceId: string,
   message: AuthoritativeMessage,
 ) {
-  return `${configVersion}:${deviceId}:${message.message_id}`;
+  return `${configVersion}:${deviceId}:${message.run_id}:${message.message_id}`;
 }
 
 export function toPublicNotificationSettings(

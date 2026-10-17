@@ -58,6 +58,8 @@ def validate_checkpoint(value: object) -> dict:
         latest = state["latest_runtime_alarm_event_id"]
         if not isinstance(latest, str) or not IDENTIFIER.fullmatch(latest):
             raise ValueError("checkpoint latest alarm identity is invalid")
+    if isinstance(state, Mapping) and "last_overwatcher_alarm" in state:
+        extra.add("last_overwatcher_alarm")
     if v2:
         extra.add("run_pause")
         pause = state.get("run_pause") if isinstance(state, Mapping) else None
@@ -131,6 +133,31 @@ def validate_checkpoint(value: object) -> dict:
         or not all(isinstance(guard[k], str) and IDENTIFIER.fullmatch(guard[k]) for k in (
             "event_id", "kind", "source_operation_id"))):
         raise ValueError("checkpoint guard is invalid")
+    if "last_overwatcher_alarm" in state:
+        alarm = state["last_overwatcher_alarm"]
+        if (startup.method_version != "4.5.5" or not isinstance(alarm, Mapping)
+            or set(alarm) != {"alarm_key", "blocker"}
+            or not isinstance(alarm["alarm_key"], str) or not SHA256.fullmatch(alarm["alarm_key"])):
+            raise ValueError("checkpoint Overwatcher alarm cause is invalid")
+        blocker = alarm["blocker"]
+        if (not isinstance(blocker, Mapping) or set(blocker) != {"event_id", "kind", "run_id",
+            "responsible_role_instance_id", "source_operation_id", "threshold_seconds"}
+            or startup.overwatcher is None or blocker["run_id"] != startup.run_id
+            or blocker["responsible_role_instance_id"] != startup.overwatcher.role_instance_id
+            or blocker["kind"] not in ("OVERWATCHER_ACTIVITY_ANOMALY", "OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION")
+            or type(blocker["threshold_seconds"]) is not int or blocker["threshold_seconds"] != 0
+            or not isinstance(blocker["event_id"], str)
+            or blocker["source_operation_id"] != "runtime-guard-" + blocker["event_id"]):
+            raise ValueError("checkpoint Overwatcher alarm obligation changed identity")
+        prefix = startup.run_id + "-overwatcher-audit-"
+        cycle = blocker["event_id"].removeprefix(prefix)
+        if (not blocker["event_id"].startswith(prefix) or not cycle.isascii() or not cycle.isdigit()
+            or not 1 <= int(cycle) <= state["overwatcher_audit_cycle"] or cycle != str(int(cycle))):
+            raise ValueError("checkpoint Overwatcher alarm audit identity is invalid")
+        pending = state.get("pending_supervisor_notifications", {}).get(blocker["event_id"])
+        if (pending is not None and pending != blocker
+            or guard is not None and guard["event_id"] == blocker["event_id"] and guard != blocker):
+            raise ValueError("checkpoint Overwatcher alarm changed the original obligation")
     failure = state["notification_failure"]
     if failure is not None and (not isinstance(failure, Mapping) or set(failure) != {"event_id", "reason"}
         or not all(isinstance(row, str) and row for row in failure.values())):

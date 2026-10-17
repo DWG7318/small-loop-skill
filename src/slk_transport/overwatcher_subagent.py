@@ -65,7 +65,7 @@ def _fields(value: Mapping[str, Any], *, proof: bool = False) -> frozenset[str]:
 
 
 def _identity(value: Mapping[str, Any]) -> None:
-    if value.get("method_version") not in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}:
+    if value.get("method_version") not in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"}:
         raise OverwatcherSubagentError("subagent OW method version is unsupported")
     for field in ("run_id", "role_instance_id", "endpoint_ref"):
         _text(value.get(field), field)

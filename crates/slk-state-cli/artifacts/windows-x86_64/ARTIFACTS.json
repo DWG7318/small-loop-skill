@@ -3,40 +3,46 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "cb42f07f3e15c7b5537567d3bfa6d9ca80e31c119144df86ca6480a821e511f0",
-        "size": 2079671
+        "sha256": "ee16fcbbc597a376465ba30f0878a367cf03dfb4921b8ec65c532529db95b4ba",
+        "size": 2120443
       }
     ],
-    "sha256": "cb42f07f3e15c7b5537567d3bfa6d9ca80e31c119144df86ca6480a821e511f0",
-    "size": 2079671
+    "sha256": "ee16fcbbc597a376465ba30f0878a367cf03dfb4921b8ec65c532529db95b4ba",
+    "size": 2120443
   },
   "build": {
-    "assembly": "D:\\LCcoding\\.codex\\.tmp\\454-release\\assemble_release.py",
+    "commands": [
+      "C:\\Users\\DWG\\AppData\\Roaming\\npm\\pnpm.ps1 --dir C:\\Users\\DWG\\.config\\superpowers\\worktrees\\SLK\\slk-4-5-5\\apps\\slk-bi tauri build --no-bundle",
+      "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
+      "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
+    ],
+    "independent_core": "d7d8cb6f4dedc3de26629824c8c50bcb3416a807",
     "provenance": "BUILD-PROVENANCE.json",
-    "release": "v4.5.4",
+    "release": "v4.5.5",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "BUILD-PROVENANCE.json",
-      "sha256": "3ce1158cad19d3c692b737da22d4b681c11792603274e60f551dc485b7035755",
-      "size": 25066
+      "sha256": "2f3e87a171414acd1fef4c90858be9944f1be888e26cb90cfa715b084acced0f",
+      "size": 24864
     },
     {
       "path": "bin/slk-state.exe",
-      "sha256": "24e297332b298a5a7c537d73d662a55a52a44397420816fc0c666cfdc0d6f505",
-      "size": 5081600
+      "sha256": "56af2a4ee77d73073cc4aef0516db631d498ad2f1eb6c9b941aabfa2d837348f",
+      "size": 5200896
     }
   ],
-  "product_version": "4.5.4",
+  "product_version": "4.5.5",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "bd6d3fcf157f03a8b48d428c662b1000cad2aae5feeef6c0a5dd11af6dc23b67",
-    "Cargo.toml": "d619ea078b486f49c26e7e907caa8c6f97e92dd525b7e82361aebb178a8c8dce",
+    "Cargo.lock": "3a45653ea9996555df78cf9e1d8edda538ca56b72d778c3c7b50571f2e344c4f",
+    "Cargo.toml": "f27b67fcb2f0b1abb0c647c82f0b43987db7d47e20cbf1c3aa4f6857965173d8",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
-    "README.md": "9147a3fc466ccbc6152d804a1220e64e0b0cb753132098d60573c6451bf9e917",
-    "src/main.rs": "f1c499e14371bda108a805c27db034dc53f4c1ba0f3dcf399cbaa2a8b1434d9b",
-    "tests/cli_contract.rs": "312de3a6d9e1fe70fde70d7231845e35d703313d95e77cdaf23f09ba7c875c19"
+    "README.md": "476708cc89facbb24e8db78106a9f5eb1433df384b923146ec3a751983d59acc",
+    "src/main.rs": "c97dd3ed781114929bd571aff4e10eead87ad2be10a5a61aecb8248ea77f6a4f",
+    "tests/cli_contract.rs": "312de3a6d9e1fe70fde70d7231845e35d703313d95e77cdaf23f09ba7c875c19",
+    "tests/close_overwatcher.rs": "701530dd618d2afa11014dbeb93df3ed6a07b76c00b6c8468d3b212799cfe785"
   },
   "target": "windows-x86_64",
   "tool": "slk-state"

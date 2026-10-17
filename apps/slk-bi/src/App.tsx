@@ -5,6 +5,7 @@ import { type SlkApi, tauriApi } from "./api";
 import { AppState, type AppStateValue } from "./components/AppState";
 import { RunStrip } from "./components/RunStrip";
 import { BackgroundTransparency } from "./components/BackgroundTransparency";
+import { CloudSettings } from "./components/CloudSettings";
 import { archivedRunSummaries, buildRunStripView, visibleRunSummaries } from "./runPresentation";
 import { useSlkData } from "./useSlkData";
 import { MESSAGE_CATALOG } from "./messages/catalog";
@@ -19,7 +20,7 @@ import {
   type ReadMarker,
 } from "./messages/readMarkers";
 import { BI_VERSION } from "./version";
-import { useWebBiSync } from "./webbi/useWebBiSync";
+import { useWebBiSync, syncStatusLabel } from "./webbi/useWebBiSync";
 import "./styles/tokens.css";
 import "./styles/app.css";
 
@@ -93,7 +94,9 @@ export function App({ api = tauriApi }: AppProps) {
   const requestSize = useRef<(() => void) | null>(null);
   const [resizeError, setResizeError] = useState<string>();
   const { snapshot, staleReason, loading, refresh } = useSlkData(api);
-  useWebBiSync(api, snapshot);
+  const [syncSettingsRevision, setSyncSettingsRevision] = useState(0);
+  const sync = useWebBiSync(api, snapshot, syncSettingsRevision);
+  const syncFor = (id: string) => sync.runs?.find((result) => result.run_id === id);
   const [readMarkers, setReadMarkers] = useState<Record<string, ReadMarker>>({});
 
   const messagesByRun = useMemo(
@@ -310,11 +313,12 @@ export function App({ api = tauriApi }: AppProps) {
         <code className="product-version">{BI_VERSION}</code>
         {snapshot ? (
           <code className="device-identity" title={snapshot.metadata.device_id}>
-            {snapshot.metadata.device_name} · {snapshot.metadata.device_id}
+            {snapshot.metadata.device_name && snapshot.metadata.device_name !== "未获取" ? `${snapshot.metadata.device_name} · ` : ""}{snapshot.metadata.device_id}
           </code>
         ) : null}
         {staleReason ? <span className="stale-notice" title={staleReason}>STALE</span> : null}
         {resizeError ? <span className="stale-notice" title={resizeError}>SIZE</span> : null}
+        <span className="upload-status" title={sync.error ?? sync.runs?.find((run) => run.error)?.error ?? undefined}>{syncStatusLabel[sync.status]}</span>
         <div className="window-controls">
           <button type="button" aria-label="设置" title="设置" aria-expanded={settingsVisible}
             aria-controls="appearance-settings" className={settingsVisible ? "is-pressed" : ""}
@@ -354,6 +358,7 @@ export function App({ api = tauriApi }: AppProps) {
 
       <section id="appearance-settings" className="appearance-settings" aria-label="BI 设置" hidden={!settingsVisible}>
         <BackgroundTransparency surface="desktop" />
+        {settingsVisible ? <CloudSettings api={api} onSaved={() => { setSyncSettingsRevision((value) => value + 1); void refresh(); }} /> : null}
       </section>
 
       {appState ? (
@@ -371,6 +376,9 @@ export function App({ api = tauriApi }: AppProps) {
                 <RunStrip
                   key={view.runId}
                   view={view}
+                  run={snapshot?.runDetails.find((run) => run.run_id === view.runId)}
+                  syncLabel={syncStatusLabel[syncFor(view.runId)?.status ?? (sync.status === "disabled" ? "disabled" : "pending")]}
+                  savedAt={syncFor(view.runId)?.receipt?.saved_at}
                   unread={unread(view.runId)}
                   open={expandedRunId === view.runId}
                   onToggle={() => toggleRun(view.runId)}
@@ -390,6 +398,9 @@ export function App({ api = tauriApi }: AppProps) {
                     <RunStrip
                       key={view.runId}
                       view={view}
+                      run={snapshot?.runDetails.find((run) => run.run_id === view.runId)}
+                      syncLabel={syncStatusLabel[syncFor(view.runId)?.status ?? (sync.status === "disabled" ? "disabled" : "pending")]}
+                      savedAt={syncFor(view.runId)?.receipt?.saved_at}
                       archived
                       unread={unread(view.runId)}
                       open={expandedRunId === view.runId}

@@ -45,6 +45,7 @@ OPERATIONS = {
     "close-run": {"recorded"},
     "abandon-run": {"recorded"},
     "close-role": {"closed", "already_closed"},
+    "record-closeout-summary": {"summary_recorded", "summary_replayed"},
 }
 PROVISION_OPERATIONS = {"register-role", "bind-overwatcher", "replace-overwatcher"}
 RESULT_FIELDS = {

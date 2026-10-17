@@ -155,6 +155,7 @@ class RunSlkWorkflow:
         self._pending_supervisor_notifications: dict[str, dict[str, Any]] = {}
         self._latest_runtime_alarm_event_id: str | None = None
         self._overwatcher_audit_cycle = 0
+        self._last_overwatcher_alarm: tuple[str, dict[str, Any]] | None = None
         self._next_overwatcher_audit_at = None
         self._runtime_guard_blocker: dict[str, Any] | None = None
         self._notification_failure: dict[str, Any] | None = None
@@ -520,14 +521,20 @@ class RunSlkWorkflow:
             )
             if self._runtime_checks_closed():
                 return
+            deduplicate = workflow.patched("slk-4.5.5-audit-cause-dedup")
+            fields = {"status", "run_id", "overwatcher_role_instance_id", "audit_cycle",
+                      "evidence_sha256", "receipt_sha256"}
+            alarm_key = receipt.get("alarm_key") if isinstance(receipt, Mapping) else None
+            if deduplicate and self._startup.method_version == "4.5.5" and alarm_key is not None:
+                if (not isinstance(alarm_key, str) or len(alarm_key) != 64
+                    or any(c not in "0123456789abcdef" for c in alarm_key)):
+                    raise ValueError("Overwatcher alarm cause identity is invalid")
+                fields.add("alarm_key")
             receipt = _closed_receipt(
                 receipt,
-                {
-                    "status", "run_id", "overwatcher_role_instance_id", "audit_cycle",
-                    "evidence_sha256", "receipt_sha256",
-                },
+                fields,
                 status=({"CLEAR", "ANOMALY", "EXITED", "LATE"} if workflow.patched("slk-4.5.1-late-is-not-dead")
-                        else {"CLEAR", "ANOMALY", "EXITED"}) if self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"} else {"CLEAR", "ANOMALY"},
+                        else {"CLEAR", "ANOMALY", "EXITED"}) if self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"} else {"CLEAR", "ANOMALY"},
             )
             if (
                 receipt.get("run_id") != self._startup.run_id
@@ -551,12 +558,19 @@ class RunSlkWorkflow:
             await self._notify_supervisor(blocker)
             return
         if receipt["status"] in {"ANOMALY", "EXITED"}:
+            if deduplicate and alarm_key is not None and self._last_overwatcher_alarm is not None:
+                if self._last_overwatcher_alarm[0] == alarm_key:
+                    return  # Existing undelivered notice is retried by the normal pending queue.
             blocker = self._set_runtime_guard(
                 event_id=f"{self._startup.run_id}-overwatcher-audit-{self._overwatcher_audit_cycle}",
                 kind="OVERWATCHER_EXIT_REQUIRES_SUPERVISOR_CONFIRMATION" if receipt["status"] == "EXITED" else "OVERWATCHER_ACTIVITY_ANOMALY",
                 role_instance_id=overwatcher.role_instance_id,
             )
+            if deduplicate and alarm_key is not None:
+                self._last_overwatcher_alarm = (alarm_key, dict(blocker))
             await self._notify_supervisor(blocker)
+        else:
+            self._last_overwatcher_alarm = None
 
     def _set_runtime_guard(
         self, *, event_id: str, kind: str, role_instance_id: str
@@ -721,7 +735,7 @@ class RunSlkWorkflow:
             raise ApplicationError("SLK Run has not initialized", non_retryable=True)
         if not self._admitted:
             raise ApplicationError("full new-Run admission must pass before delivery", non_retryable=True)
-        if self._runtime_guard_blocker is not None and self._startup.method_version not in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}:
+        if self._runtime_guard_blocker is not None and self._startup.method_version not in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"}:
             raise ApplicationError("runtime guard must be repaired before the next CELL delivery", non_retryable=True)
         request = self._update_value(DeliveryRequest.from_dict, value)
         if self._runtime_guard_blocker is not None:
@@ -790,7 +804,7 @@ class RunSlkWorkflow:
             overwatcher is None
             or notice.run_id != self._startup.run_id
             or notice.overwatcher_role_instance_id != overwatcher.role_instance_id
-            or (self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}
+            or (self._startup.method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"}
                 and notice.requested_by_role_instance_id != self._startup.supervisor.role_instance_id)
         ):
             raise ApplicationError("Overwatcher exit notice changed the frozen Run identity", non_retryable=True)
@@ -817,6 +831,14 @@ class RunSlkWorkflow:
         self._runtime_guard_blocker = None
         # Settle only this exact obligation, never another alarm for the same OW.
         self._pending_supervisor_notifications.pop(resolution.blocker_event_id, None)
+        if self._last_overwatcher_alarm is not None:
+            latest = self._last_overwatcher_alarm[1]
+            if latest["event_id"] == resolution.blocker_event_id:
+                self._last_overwatcher_alarm = None
+            else:
+                # Resolving A cannot discharge a newer observed B. Preserve
+                # B's exact original obligation, even when its notice arrived.
+                self._runtime_guard_blocker = dict(latest)
         return "RUNTIME_GUARD_REPAIRED"
 
     @workflow.update
@@ -858,6 +880,8 @@ class RunSlkWorkflow:
         self._member_residency_notice_attempted = state.get("member_residency_notice_attempted", False)
         self._pending_supervisor_notifications = dict(state.get("pending_supervisor_notifications", {}))
         self._latest_runtime_alarm_event_id = state.get("latest_runtime_alarm_event_id")
+        alarm = state.get("last_overwatcher_alarm")
+        self._last_overwatcher_alarm = (alarm["alarm_key"], dict(alarm["blocker"])) if alarm is not None else None
         pending = self._continuity.pending_delivery()
         self._restored_pending_operation = (pending.operation_id if pending is not None
             and pending.operation_id in self._delivery_started
@@ -878,6 +902,9 @@ class RunSlkWorkflow:
                if self._notification_truth else {}),
             **({"latest_runtime_alarm_event_id": self._latest_runtime_alarm_event_id}
                if self._latest_runtime_alarm_event_id is not None else {}),
+            **({"last_overwatcher_alarm": {"alarm_key": self._last_overwatcher_alarm[0],
+                "blocker": dict(self._last_overwatcher_alarm[1])}}
+               if self._last_overwatcher_alarm is not None else {}),
             **({"run_pause": self._run_pause} if self._run_pause is not None else {}),
             "admitted": self._admitted,
             "admission_attempt": self._admission_attempt,

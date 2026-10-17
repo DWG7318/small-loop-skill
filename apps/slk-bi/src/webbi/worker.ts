@@ -8,6 +8,7 @@ import {
   type NotificationSettingsInput,
   type WebBiDevice,
   type WebBiUploadEnvelope,
+  type WebBiRunReceipt,
 } from "./contracts";
 import {
   notificationKey,
@@ -22,6 +23,7 @@ export interface WebBiArchiveRecord {
   run: RunView;
   messages: AuthoritativeMessage[];
   updated_at: string;
+  source_generated_at?: string;
 }
 
 export function isArchivedRun(run: RunView) {
@@ -37,6 +39,7 @@ export interface IngestedMessage {
 export interface IngestResult {
   bootstrap: boolean;
   inserted_messages: IngestedMessage[];
+  receipts: WebBiRunReceipt[];
 }
 
 export interface NtfyDeliveryTarget {
@@ -110,10 +113,10 @@ async function deliverNewMessages(
     result.inserted_messages.map(({ message }) => message),
     target.settings,
   );
-  const selectedIds = new Set(selected.map(({ message_id }) => message_id));
+  const selectedIds = new Set(selected.map(({ run_id, message_id }) => JSON.stringify([run_id, message_id])));
   let failures = 0;
   for (const record of result.inserted_messages) {
-    if (!selectedIds.has(record.message.message_id)) continue;
+    if (!selectedIds.has(JSON.stringify([record.message.run_id, record.message.message_id]))) continue;
     const key = notificationKey(
       target.settings.config_version,
       record.device.device_id,
@@ -152,6 +155,7 @@ export function createWebBiHandler(dependencies: WebBiHandlerDependencies) {
           inserted_message_count: result.inserted_messages.length,
           historical_bootstrap: result.bootstrap,
           notification_failures,
+          receipts: result.receipts,
         }, 202);
       }
 

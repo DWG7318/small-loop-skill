@@ -8,6 +8,8 @@ import {
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { ProjectSummary, RoleProjection } from "../contracts";
+import { deviceSignatureLabel } from "../closeout";
+import { CloseoutSummary } from "../components/CloseoutSummary";
 import { catalogKey } from "../messages/catalog";
 import type { MessageCatalogEntry } from "../messages/messageFeed";
 import {
@@ -207,7 +209,7 @@ function RunList({ api }: { api: WebBiApi }) {
                   <span>{view.timingAvailable === false ? "耗时未提供" : view.totalWorkMs ? `${Math.floor(view.totalWorkMs / 60_000)}m` : "0m"}</span>
                   <span>SLK {view.slkVersion}</span>
                 </span>
-                <code className="webbi-device">电脑 {record.device.device_name} · {record.device.device_id}</code>
+                <code className="webbi-device" title={record.device.device_id}>{deviceSignatureLabel(record.run.device_signature)}</code>
                 <IconChevronRight className="webbi-open" size={21} aria-hidden="true" />
               </a>
             </li>
@@ -250,11 +252,12 @@ function RunDetail({ api, deviceId, runId }: { api: WebBiApi; deviceId: string; 
         <span className={`webbi-status tone-${view.statusTone}`}>{view.status}</span>
       </section>
       <dl className="webbi-detail-meta">
-        <div><dt>电脑</dt><dd>{record.device.device_name} · {record.device.device_id}</dd></div>
+        <div><dt>电脑 · IP · OS</dt><dd>{deviceSignatureLabel(record.run.device_signature)}</dd></div>
         <div><dt>Run ID</dt><dd><code>{record.run.run_id}</code></dd></div>
         <div><dt>SLK</dt><dd>{view.slkVersion}</dd></div>
         <div><dt>D1 验收</dt><dd>{formatCellProgress(view)}</dd></div>
       </dl>
+      <CloseoutSummary run={record.run} savedAt={record.updated_at} />
       <div className="webbi-detail-grid">
         <section>
           <header className="webbi-section-head"><h2>CELL 记录</h2><small>来自电脑端 BI 同一投影</small></header>

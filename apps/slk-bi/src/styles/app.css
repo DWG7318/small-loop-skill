@@ -401,6 +401,21 @@ html[data-bi-surface="desktop"] .archive-panel > header {
 }
 .background-transparency input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .background-transparency-value { min-width: 4ch; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
-.appearance-settings { display: flex; align-items: center; gap: 18px; min-height: 46px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--lcd); color: var(--ink-2); }
+.appearance-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; min-height: 46px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--lcd); color: var(--ink-2); }
 .appearance-settings[hidden] { display: none; }
 .appearance-settings .background-transparency { font-size: var(--text-10); }
+/* Formal records use the existing LCD vocabulary; text is never clipped or rewritten. */
+.closeout-summary { padding: 10px 14px; border-top: 1px solid var(--line); color: var(--ink); }
+.closeout-summary h2, .cloud-settings h2 { font-size: 1rem; margin: 0 0 6px; }
+.closeout-summary p { margin: 6px 0; }
+.closeout-body { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 75ch; line-height: 1.6; }
+.closeout-provenance, .device-signature { font-size: var(--text-10); overflow-wrap: anywhere; }
+.upload-status { font-size: var(--text-9); white-space: nowrap; }
+.run-upload-status { margin: 8px 14px; }
+.cloud-settings { padding: 10px 14px; width: 100%; color: var(--ink); }
+.cloud-settings label { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.cloud-settings input { flex: 1; min-width: 0; background: var(--lcd); color: var(--ink); border: 1px solid var(--frame); padding: 5px; }
+.cloud-settings input::placeholder { color: var(--ink-2); }
+.cloud-settings p { font-size: var(--text-10); line-height: 1.5; max-width: 75ch; }
+.cloud-settings button { background: var(--plastic); color: var(--ink); border: 1px solid var(--frame); padding: 5px 10px; }
+.cloud-settings input:focus-visible { outline: 2px solid var(--blue); }

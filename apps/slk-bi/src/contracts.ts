@@ -242,7 +242,24 @@ export interface RunsView {
   runs: RunSummary[];
 }
 
+export interface DeviceSignature {
+  computer_name: string | null;
+  ip_address: string | null;
+  os_version: string | null;
+}
+
+export interface CloseoutSummary {
+  body: string;
+  authored_by: string;
+  recorded_at: string;
+  source_id: string;
+  source_revision: number;
+  content_sha256: string;
+}
+
 export interface RunView {
+  device_signature?: DeviceSignature;
+  closeout_summary?: CloseoutSummary;
   source_record?: {
     kind: "markdown";
     creator_supervisor_id: string;
@@ -351,6 +368,18 @@ export function parseRunsProjection(value: unknown): RunsView {
 
 export function parseRunProjection(value: unknown): RunView {
   const projection = schema(value, "slk.bi.run/v1");
+  if (projection.device_signature !== undefined) {
+    const signature = object(projection.device_signature);
+    const keys = ["computer_name", "ip_address", "os_version"];
+    if (Object.keys(signature).length !== keys.length || keys.some((key) => signature[key] !== null && typeof signature[key] !== "string")) throw new Error("SLK_BI_DEVICE_SIGNATURE_INVALID");
+  }
+  if (projection.closeout_summary !== undefined) {
+    const summary = object(projection.closeout_summary);
+    const strings = ["body", "authored_by", "recorded_at", "source_id", "content_sha256"];
+    if (Object.keys(summary).length !== 6 || strings.some((key) => typeof summary[key] !== "string" || !(summary[key] as string).trim())
+      || !Number.isSafeInteger(summary.source_revision) || Number(summary.source_revision) < 1
+      || !/^[a-f0-9]{64}$/.test(String(summary.content_sha256)) || Number.isNaN(Date.parse(String(summary.recorded_at)))) throw new Error("SLK_BI_CLOSEOUT_SUMMARY_INVALID");
+  }
   object(projection.summary);
   object(projection.administrative_snapshot);
   if (projection.source_record !== undefined) {

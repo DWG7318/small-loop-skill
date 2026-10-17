@@ -46,8 +46,9 @@ describe("WebBI ntfy selection", () => {
     });
     expect(selected.map((item) => item.message_id)).toEqual(["EVENT:b"]);
     expect(notificationKey(3, "device-a", selected[0]!)).toBe(
-      "3:device-a:EVENT:b",
+      "3:device-a:run-a:EVENT:b",
     );
+    expect(notificationKey(3, "device-a", { ...selected[0]!, run_id: "run-b" })).not.toBe(notificationKey(3, "device-a", selected[0]!));
   });
 
   it("never returns the stored ntfy secret to the browser", () => {

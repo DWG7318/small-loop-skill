@@ -3,6 +3,92 @@ use std::fs;
 
 const RECORD: &str = "# SLK Run — R1\n\n## Run 定义\n- 创建Supervisor：supervisor-a\n- 目标：小工程\n- SLK版本：项目 3.0.9\n- 开始时间：2026-10-14T00:00:00Z\n\n## 当前摘要（唯一，按事实更新）\n- 当前状态：CLOSED / D2 PASS\n- 最终CELL与进度：1、2 D1 PASS / 2/2\n\n## 成员\n| 角色 | 对话/任务ID | 状态 |\n|---|---|---|\n| Supervisor | supervisor-a | 保留 |\n| Checker | checker-a | ARCHIVED |\n| Worker | worker-a | ARCHIVED |\n\n## GO 与 CELL 计划\n- 1：读取配置\n- 2：保存配置\n\n## CELL 历史\n历史 D1 FAIL 不应覆盖当前摘要\n";
 
+fn with_summary(body: &str) -> String {
+    format!("{RECORD}\n## 结项总结\n- 记录者：supervisor-a\n- 记录时间：2026-10-18T00:00:00Z\n\n{body}\n")
+}
+
+#[test]
+fn formal_summary_preserves_body_signature_and_rejects_conflicting_sections_and_authors() {
+    assert!(project_markdown(RECORD, "p", "P")
+        .unwrap()
+        .get("closeout_summary")
+        .is_none());
+    let input = with_summary("恢复原交接后完成，未重跑验收。\n\n第二段");
+    let run = project_markdown(
+        &input.replace(
+            "- 目标：",
+            "- 电脑名：PC-A\n- IP地址：\n- OS版本：Windows 11\n- 目标：",
+        ),
+        "p",
+        "P",
+    )
+    .unwrap();
+    assert_eq!(
+        run["closeout_summary"]["body"],
+        "恢复原交接后完成，未重跑验收。\n\n第二段\n"
+    );
+    assert_eq!(run["device_signature"]["computer_name"], "PC-A");
+    assert!(run["device_signature"]["ip_address"].is_null());
+    assert!(project_markdown(
+        &input.replace("记录者：supervisor-a", "记录者：worker-a"),
+        "p",
+        "P"
+    )
+    .is_err());
+    assert!(project_markdown(&format!("{input}\n## 结项总结\n不同正文"), "p", "P").is_err());
+    assert!(project_markdown(&format!("{input}\n## 结项总结"), "p", "P").is_err());
+    assert!(project_markdown(
+        &input.replace(
+            "记录者：supervisor-a",
+            "记录者：supervisor-a\n- 记录者：worker-a"
+        ),
+        "p",
+        "P"
+    )
+    .is_err());
+    assert!(
+        project_markdown(&input.replace("## 结项总结", "## 结项总结草稿"), "p", "P")
+            .unwrap()
+            .get("closeout_summary")
+            .is_none()
+    );
+}
+
+#[test]
+fn summary_revision_survives_restarts_and_archive_correction_does_not_rewrite_snapshot() {
+    use slk_bi_desktop_lib::sources::{load_run, record_summary};
+    let temp = tempfile::tempdir().unwrap();
+    let record = temp.path().join("run.md");
+    let registry = temp.path().join("sources");
+    fs::write(&record, with_summary("原文")).unwrap();
+    register(&registry, &record, "p", "P", "supervisor-a").unwrap();
+    let first = load_run(&registry, "R1").unwrap().unwrap();
+    assert_eq!(first["closeout_summary"]["source_revision"], 1);
+    assert_eq!(
+        load_run(&registry, "R1").unwrap().unwrap()["closeout_summary"],
+        first["closeout_summary"]
+    );
+    let archived = archive(&registry, "R1", "supervisor-a").unwrap();
+    let snapshot_path = fs::read_dir(&registry)
+        .unwrap()
+        .map(|x| x.unwrap().path())
+        .find(|p| p.extension().is_some_and(|x| x == "archive"))
+        .unwrap();
+    let snapshot = fs::read(&snapshot_path).unwrap();
+    fs::write(&record, with_summary("更正：原事实不动")).unwrap();
+    assert!(record_summary(&registry, "R1", "worker-a").is_err());
+    record_summary(&registry, "R1", "supervisor-a").unwrap();
+    let changed = load_run(&registry, "R1").unwrap().unwrap();
+    assert_eq!(changed["closeout_summary"]["source_revision"], 2);
+    assert_eq!(changed["summary"], archived["summary"]);
+    assert_eq!(
+        changed["administrative_snapshot"],
+        archived["administrative_snapshot"]
+    );
+    assert_eq!(fs::read(snapshot_path).unwrap(), snapshot);
+    assert_eq!(archive(&registry, "R1", "supervisor-a").unwrap(), archived);
+}
+
 #[test]
 fn reads_legacy_markdown_without_inventing_ow_messages_models_or_timings() {
     let run = project_markdown(RECORD, "project-a", "Project A").unwrap();

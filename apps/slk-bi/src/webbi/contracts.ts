@@ -20,6 +20,18 @@ export interface WebBiRunUpload {
   messages: AuthoritativeMessage[];
 }
 
+export interface WebBiRunReceipt {
+  device_id: string;
+  run_id: string;
+  payload_sha256: string;
+  archived: boolean;
+  source_id: string | null;
+  source_revision: number | null;
+  content_sha256: string | null;
+  saved_at: string;
+  error?: string;
+}
+
 export interface WebBiUploadEnvelope {
   schema_version: "slk.bi.upload/v1";
   bi_version: BiVersion;

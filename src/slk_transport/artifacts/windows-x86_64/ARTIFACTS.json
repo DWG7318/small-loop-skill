@@ -3,43 +3,48 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "991accf336ce6a1f76cee3111fbb61079fc8e357ac8d9654d9010723dac8bdbd",
-        "size": 462433
+        "sha256": "25d8374fd251cf1c0379bd62caf517fb7035fdefb3c0d6e660f0d61a1c3a0195",
+        "size": 463451
       }
     ],
-    "sha256": "991accf336ce6a1f76cee3111fbb61079fc8e357ac8d9654d9010723dac8bdbd",
-    "size": 462433
+    "sha256": "25d8374fd251cf1c0379bd62caf517fb7035fdefb3c0d6e660f0d61a1c3a0195",
+    "size": 463451
   },
   "build": {
-    "assembly": "D:\\LCcoding\\.codex\\.tmp\\454-release\\assemble_release.py",
+    "commands": [
+      "C:\\Users\\DWG\\AppData\\Roaming\\npm\\pnpm.ps1 --dir C:\\Users\\DWG\\.config\\superpowers\\worktrees\\SLK\\slk-4-5-5\\apps\\slk-bi tauri build --no-bundle",
+      "C:\\Users\\DWG\\.cargo\\bin\\cargo.exe build --release -p slk-state-cli -p slk-bi-query -p slk-cargo",
+      "C:\\Python314\\python.exe scripts/build_transport_zipapp.py"
+    ],
+    "independent_core": "d7d8cb6f4dedc3de26629824c8c50bcb3416a807",
     "provenance": "BUILD-PROVENANCE.json",
-    "release": "v4.5.4",
+    "release": "v4.5.5",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "BUILD-PROVENANCE.json",
-      "sha256": "3ce1158cad19d3c692b737da22d4b681c11792603274e60f551dc485b7035755",
-      "size": 25066
+      "sha256": "2f3e87a171414acd1fef4c90858be9944f1be888e26cb90cfa715b084acced0f",
+      "size": 24864
     },
     {
       "path": "bin/slk-transport.pyz",
-      "sha256": "1e1a17b89516e5dddafd2428783630014193fcf397cca519d4cda17a9c9db36c",
-      "size": 232254
+      "sha256": "0d8855f041a8a8cda4032d8b63bf0e15ed2abf48905b578073fe6d2e5613227e",
+      "size": 232801
     },
     {
-      "path": "wheels/slk_transport-4.5.4-py3-none-any.whl",
-      "sha256": "94f5a490af8159be144d8e125cd99ba3005aab3e287551173944364f523453c2",
-      "size": 228827
+      "path": "wheels/slk_transport-4.5.5-py3-none-any.whl",
+      "sha256": "5f23abbfd885ef24e245a8bf543cc7851b5654f38493f02f611183cb1f5c8e62",
+      "size": 229417
     }
   ],
-  "product_version": "4.5.4",
+  "product_version": "4.5.5",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
     ".gitignore": "27b0d681f273f0d9ce0e8666005ec5dc2c621e1de4a868384291b7995479ade2",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
-    "README.md": "1259d36a08484a7da87e6ca34cf36497c4a115325345348ca83f44f25c3ef86b",
-    "__init__.py": "ec2014e2e6e2dc7e8a0721207f73cacf1065530cfa51ccfdbdf4a79001f45467",
+    "README.md": "4a4578dc74002166b9cc216c02a08aaf265505474a4c09927ccd4337fa203f1a",
+    "__init__.py": "05e20bd988f880cd757b9b1c29fdecc54445a98f2efb7508a56d52582265d657",
     "active_writer.py": "1bd015d3aab31dcdd69a665041178faea269ca8044002c098124e2e8825419b7",
     "adapters/__init__.py": "fcfc80e34f8a0ba71be2512ae8b8696b47f4b7795c7865eb22804d0ec7ec86d1",
     "adapters/base.py": "9e0773330b15e7d261e8e47fb38fbe21a080a0cef9755fd39d6738e4bf0336f5",
@@ -64,21 +69,21 @@
     "native_activity.py": "0d419b5ddb277deab4be6bbb7deca99c616e6d1d54b0fd3e9a1ea60c5baa05fd",
     "native_ocrv.py": "8e5f335c1adea8a1ec6832dd738f01abeb1c51c3fc05b1cb80a51c43aef29649",
     "overwatcher_admin.py": "9960419c1a9f49707a2431d86d0a5699e6ebe22dd3ba60a5467ca4421f367fce",
-    "overwatcher_continuity.py": "4ffcf9aaf6f9718e5315d01011f816cbfce7857d451cc00cea1049d16c74ccf9",
+    "overwatcher_continuity.py": "eee6734885cc2d8a278dbd45812fe9cbac619bd842c157a5218ce265c980c9c6",
     "overwatcher_desktop.py": "ad5f1c6be33eb248e0ca7aeb026f586ff5bea3f85ffa584d6ab8c5c2230cfc3c",
-    "overwatcher_subagent.py": "e0e1f5f924c463393d08d5de7463feba12d15b35cba91c87a6e87f67aaba6c42",
+    "overwatcher_subagent.py": "1be976f5319f7643a27bcb88046a4a7dfd82f0d18ee1ff3f0d50deac1d0c869f",
     "partial_review.py": "09573bc4a5d990e76523f3a1e3b05de53550e7de0f4db16c6e0aa785a343e419",
     "platform_records.py": "987cd07c7bfcc041f146dea608e7622b3272dfc42a338c36b0bcd6f2f2138c5c",
     "pre_start_rejection.py": "0c0fdb40d5c150aa47fdfd571d10ede3014a8c6d7ed2843841b77118cfd97edb",
     "process.py": "bd2f52a94e183b1eb33c59880821df7828112a92ce6463f524a78e567cd4e30f",
-    "pyproject.toml": "0f4625c4cb3bdb9d63292c922d7cb794759526a0d15cdd92622d7ea56956fd6f",
+    "pyproject.toml": "317dd613146e293dcb1d676c5a6686a86b8a4b929977e04d97c73388ccb593ac",
     "recovery.py": "7366ad1534b763ae3957d4bad576d5e008ab1d2b7a1f0d3cb2a10e065dae0470",
-    "role_eval.py": "de50ad5e7905cbb8e884d8c5b800e98b2ecb412a069509f9c0b4ae8209394fab",
-    "role_host.py": "3dcff074807ef04c90c3ad2259c5d0aaa66363fdd8311c2adf19c6be2bee5f4d",
-    "run_readiness.py": "ce2336f9c4ccb034740fee2c3bfe8eafe714573ecc2018b074f7c7f99e4e3c27",
+    "role_eval.py": "fd2303829a4bd0945244b9892023540a4bf5d5c64f505b2ffab238306f56b019",
+    "role_host.py": "231a8b41d38f9abbe6cc010ce4751480f38d8a15a9fb004b2b228faa1e757987",
+    "run_readiness.py": "35a1bb6e1367be62f076341823e8eaf8a217e95e093832b8bed0adcd97527c30",
     "runtime_binding_migration.py": "a83e7d56fb3ff97a08ddfab5f2be46fa43dfca54f6474ac35b8a7a8aba3eabb6",
     "subprocess_watch.py": "1ea11c75dabc955650f52e6e2510c408a81228b5a66d3602ece35a446fb221b9",
-    "supervisor_admin.py": "bc59e0babcd62472f0ca525ff4b0e68ec566ee7523f7a6557a762ae9c4bbe50a",
+    "supervisor_admin.py": "951683b1d04b740abc27330f983fe1893b1f010adeb5f63a083368ecc2f32133",
     "supervisor_notification.py": "39d3fd0f66c21fbe04c3dde5c7137c37b75abe74af6d8d1cde4146662ef7ca00",
     "task_file.py": "8aaf5bd2c5ba4dc440938d92de34248f4d45496b543b308dbca8ac3829f2d8ef",
     "temporal_reload.py": "16216914186d3ae30a4bddbce9e9c30ca0ac18b7feba6e05aa9ac08fe261adde",

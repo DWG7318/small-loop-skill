@@ -31,11 +31,22 @@ export interface SlkApi {
   events(runId: string): Promise<EventsView>;
   evidence(runId: string): Promise<EvidenceView>;
   syncWebBi(payload: WebBiUploadEnvelope): Promise<WebBiSyncResult>;
+  webBiSettings?(): Promise<WebBiSettings>;
+  saveWebBiSettings?(input: { url: string; device_id: string; token?: string }): Promise<WebBiSettings>;
+}
+
+export interface WebBiSettings {
+  url: string;
+  device_id: string;
+  has_token: boolean;
+  sources: { url: string; device_id: string; token: string };
 }
 
 export interface WebBiSyncResult {
-  status: "disabled" | "uploaded";
+  status: "disabled" | "uploaded" | "pending" | "failed";
   upload_id: string | null;
+  error?: string;
+  runs?: { run_id: string; status: WebBiSyncResult["status"]; error?: string | null; receipt?: import("./webbi/contracts").WebBiRunReceipt | null }[];
 }
 
 export interface BiMetadata {
@@ -58,4 +69,6 @@ export const tauriApi: SlkApi = {
   events: async (runId) => parseEventsProjection(await invoke("events", { runId })),
   evidence: async (runId) => parseEvidenceProjection(await invoke("evidence", { runId })),
   syncWebBi: async (payload) => await invoke<WebBiSyncResult>("sync_webbi", { payload }),
+  webBiSettings: async () => await invoke<WebBiSettings>("webbi_settings"),
+  saveWebBiSettings: async (input) => await invoke<WebBiSettings>("save_webbi_settings", { input }),
 };

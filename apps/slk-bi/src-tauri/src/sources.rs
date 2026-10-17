@@ -60,6 +60,75 @@ fn field<'a>(section: &'a str, keys: &[&str]) -> &'a str {
     ""
 }
 
+fn formal_field<'a>(section: &'a str, keys: &[&str]) -> Result<&'a str, String> {
+    let mut values = Vec::new();
+    for line in section.lines() {
+        let line = line.trim().trim_start_matches("- ");
+        for key in keys {
+            if let Some(tail) = line.strip_prefix(key) {
+                if let Some(value) = tail.strip_prefix('：').or_else(|| tail.strip_prefix(':')) {
+                    values.push(value.trim());
+                }
+            }
+        }
+    }
+    let first = values.first().copied().unwrap_or("");
+    if values.iter().any(|value| *value != first) {
+        return Err("SLK_BI_FORMAL_FIELD_CONFLICT".into());
+    }
+    Ok(first)
+}
+
+fn closeout(input: &str, run_id: &str, creator: &str) -> Result<Option<Value>, String> {
+    let mut sections = Vec::new();
+    for (index, _) in input.match_indices("## 结项总结") {
+        if index != 0 && input.as_bytes()[index - 1] != b'\n' {
+            continue;
+        }
+        let tail = &input[index + "## 结项总结".len()..];
+        if !tail.is_empty() && !tail.starts_with('\n') {
+            continue;
+        }
+        sections.push(
+            tail.strip_prefix('\n')
+                .unwrap_or(tail)
+                .split("\n## ")
+                .next()
+                .unwrap_or(""),
+        );
+    }
+    let Some(section) = sections.first() else {
+        return Ok(None);
+    };
+    if sections.iter().any(|other| other != section) {
+        return Err("SLK_BI_AMBIGUOUS_SECTION:结项总结".into());
+    }
+    let (metadata, body) = section
+        .split_once("\n\n")
+        .ok_or("SLK_BI_SUMMARY_METADATA_REQUIRED")?;
+    let author = formal_field(metadata, &["记录者"])?.trim_matches('`');
+    let at = formal_field(metadata, &["记录时间"])?;
+    if author != creator {
+        return Err("SLK_BI_SUMMARY_CREATOR_MISMATCH".into());
+    }
+    if body.trim().is_empty()
+        || time::OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339).is_err()
+    {
+        return Err("SLK_BI_SUMMARY_INVALID".into());
+    }
+    let mut value = json!({"body":body,"authored_by":author,"recorded_at":at,"source_id":format!("markdown:{run_id}:1"),"source_revision":1});
+    set_summary_hash(&mut value)?;
+    Ok(Some(value))
+}
+
+fn set_summary_hash(value: &mut Value) -> Result<(), String> {
+    // Explicit formatting shares JSON.stringify's agreed key order, independent of map ordering.
+    let encoded = format!("{{\"body\":{},\"authored_by\":{},\"recorded_at\":{},\"source_id\":{},\"source_revision\":{}}}",
+        value["body"], value["authored_by"], value["recorded_at"], value["source_id"], value["source_revision"]);
+    value["content_sha256"] = json!(digest(encoded.as_bytes()));
+    Ok(())
+}
+
 pub fn project_markdown(input: &str, project: &str, project_name: &str) -> Result<Value, String> {
     let input = input.trim_start_matches('\u{feff}').replace("\r\n", "\n");
     let id = input
@@ -133,7 +202,7 @@ pub fn project_markdown(input: &str, project: &str, project_name: &str) -> Resul
             "takeover_at":null,"exited_at":null,"endpoints":[],"display_state":"unknown","binding_mode":null}));
     }
     let explicit_creator =
-        field(definition, &["创建Supervisor", "创建 Supervisor"]).trim_matches('`');
+        formal_field(definition, &["创建Supervisor", "创建 Supervisor"])?.trim_matches('`');
     let creator = if explicit_creator.is_empty() {
         roles
             .iter()
@@ -227,7 +296,7 @@ pub fn project_markdown(input: &str, project: &str, project_name: &str) -> Resul
             (initial.checked_add(added) == Some(total))
                 .then(|| json!({"initial":initial,"split_added":added}))
         });
-    Ok(json!({"schema_version":"slk.bi.run/v1","run_id":id,
+    let mut run = json!({"schema_version":"slk.bi.run/v1","run_id":id,
         "summary":{"archive_control":"creator","run_id":id,"project_id":project,"run_name":id,"run_description":goal,"goal":goal,
             "slk_version":version,"origin_slk_version":version,"source_kind":"solo","source_project_name":project_name,
             "state":if closure == "open" {"unknown"} else {"closed"},"closure_state":closure,"current_plan_revision":0,
@@ -242,7 +311,31 @@ pub fn project_markdown(input: &str, project: &str, project_name: &str) -> Resul
         "boundaries_json":"{}","go_nodes":[{"go_id":"record","ordinal":1,"title":"CELL","objective":"","state":"unknown","outcome":null,"cell_nodes":cells}],
         "roles":roles,"plan_revisions":[],"events":[],"token_history":[],"evidence":[],"cell_count_origin":count_origin,
         "overwatch_cycles":[],"overwatcher_native_status_receipts":[],"overwatcher_incident_transitions":[],
-        "overwatcher_binding_transitions":[],"operational_observations":[],"reconciliation_receipts":[],"method_adoption_receipts":[]}))
+        "overwatcher_binding_transitions":[],"operational_observations":[],"reconciliation_receipts":[],"method_adoption_receipts":[]});
+    if let Some(summary) = closeout(&input, id, creator)? {
+        run["closeout_summary"] = summary;
+    }
+    let device_keys = [
+        ("computer_name", vec!["电脑名", "计算机名"]),
+        ("ip_address", vec!["IP地址", "IP 地址"]),
+        ("os_version", vec!["OS版本", "OS 版本", "操作系统版本"]),
+    ];
+    if device_keys
+        .iter()
+        .any(|(_, keys)| !field(definition, keys).is_empty())
+    {
+        let mut signature = json!({});
+        for (key, keys) in device_keys {
+            let value = field(definition, &keys);
+            signature[key] = if value.is_empty() || value == "未获取" {
+                Value::Null
+            } else {
+                json!(value)
+            };
+        }
+        run["device_signature"] = signature;
+    }
+    Ok(run)
 }
 
 fn entry_path(root: &Path, run_id: &str) -> std::path::PathBuf {
@@ -261,6 +354,106 @@ fn project_entry(entry: &Value) -> Result<Value, String> {
         return Err("SLK_BI_SOURCE_IDENTITY_CHANGED".into());
     }
     Ok(run)
+}
+
+// Revisions are immutable BI source receipts, never a manually supplied Agent counter.
+fn version_summary(root: &Path, run: &mut Value) -> Result<(), String> {
+    let Some(mut summary) = run.get("closeout_summary").cloned() else {
+        return Ok(());
+    };
+    let directory = entry_path(root, text(run, "run_id")).with_extension("summaries");
+    fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    for _ in 0..8 {
+        let mut latest: Option<Value> = None;
+        for file in fs::read_dir(&directory).map_err(|e| e.to_string())? {
+            let path = file.map_err(|e| e.to_string())?.path();
+            if path.extension().and_then(|x| x.to_str()) != Some("json") {
+                continue;
+            }
+            let value = read_json(&path)?;
+            if latest.as_ref().is_none_or(|old| {
+                value["source_revision"].as_u64() > old["source_revision"].as_u64()
+            }) {
+                latest = Some(value);
+            }
+        }
+        if let Some(old) = &latest {
+            if ["body", "authored_by", "recorded_at"]
+                .iter()
+                .all(|key| old[*key] == summary[*key])
+            {
+                run["closeout_summary"] = old.clone();
+                return Ok(());
+            }
+        }
+        let revision = latest
+            .as_ref()
+            .and_then(|old| old["source_revision"].as_u64())
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or("SLK_BI_SUMMARY_REVISION_OVERFLOW")?;
+        summary["source_revision"] = json!(revision);
+        summary["source_id"] = json!(format!("markdown:{}:{revision}", text(run, "run_id")));
+        set_summary_hash(&mut summary)?;
+        let target = directory.join(format!("{revision}.json"));
+        match write_new(&target, &summary) {
+            Ok(()) => {
+                run["closeout_summary"] = summary;
+                return Ok(());
+            }
+            Err(_) if target.exists() => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err("SLK_BI_SUMMARY_RECEIPT_BUSY".into())
+}
+
+fn latest_summary(root: &Path, run: &mut Value) -> Result<(), String> {
+    let directory = entry_path(root, text(run, "run_id")).with_extension("summaries");
+    if !directory.exists() {
+        return Ok(());
+    }
+    let mut latest = run.get("closeout_summary").cloned();
+    for file in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let path = file.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("json") {
+            continue;
+        }
+        let value = read_json(&path)?;
+        let mut verified = value.clone();
+        set_summary_hash(&mut verified)?;
+        if verified != value
+            || value["authored_by"] != run["source_record"]["creator_supervisor_id"]
+        {
+            return Err("SLK_BI_SUMMARY_RECEIPT_INVALID".into());
+        }
+        if latest
+            .as_ref()
+            .is_none_or(|old| value["source_revision"].as_u64() > old["source_revision"].as_u64())
+        {
+            latest = Some(value);
+        }
+    }
+    if let Some(value) = latest {
+        run["closeout_summary"] = value;
+    }
+    Ok(())
+}
+
+pub fn record_summary(root: &Path, run_id: &str, caller: &str) -> Result<Value, String> {
+    let entry = read_json(&entry_path(root, run_id))?;
+    if caller.is_empty() || entry["creator_supervisor_id"] != caller {
+        return Err("SLK_BI_CREATOR_REQUIRED".into());
+    }
+    let mut run = project_entry(&entry)?;
+    if run["summary"]["closure_state"] == "open" {
+        return Err("SLK_BI_SOURCE_NOT_CLOSED".into());
+    }
+    if run.get("closeout_summary").is_none() {
+        return Err("SLK_BI_SUMMARY_MISSING".into());
+    }
+    version_summary(root, &mut run)?;
+    Ok(run["closeout_summary"].clone())
 }
 pub fn register(
     root: &Path,
@@ -311,6 +504,7 @@ pub fn archive(root: &Path, run_id: &str, caller: &str) -> Result<Value, String>
     if run["summary"]["closure_state"] == "open" {
         return Err("SLK_BI_SOURCE_NOT_CLOSED".into());
     }
+    version_summary(root, &mut run)?;
     let at = now();
     run["summary"]["archived_at"] = json!(at);
     run["summary"]["archive_reason"] = json!("Creator Supervisor archived closed Run information");
@@ -333,7 +527,7 @@ pub fn load_run(root: &Path, run_id: &str) -> Result<Option<Value>, String> {
     }
     let entry = read_json(&path)?;
     let receipt = path.with_extension("archive");
-    let run = if receipt.exists() {
+    let mut run = if receipt.exists() {
         read_json(&receipt)?
     } else {
         project_entry(&entry)?
@@ -342,6 +536,11 @@ pub fn load_run(root: &Path, run_id: &str) -> Result<Option<Value>, String> {
         || run["source_record"]["creator_supervisor_id"] != entry["creator_supervisor_id"]
     {
         return Err("SLK_BI_SOURCE_IDENTITY_CHANGED".into());
+    }
+    if receipt.exists() {
+        latest_summary(root, &mut run)?;
+    } else {
+        version_summary(root, &mut run)?;
     }
     Ok(Some(run))
 }
@@ -370,12 +569,7 @@ pub fn collect(root: &Path) -> Collection {
         }
         let loaded = (|| {
             let entry = read_json(&path)?;
-            let archive = path.with_extension("archive");
-            let run = if archive.exists() {
-                read_json(&archive)?
-            } else {
-                project_entry(&entry)?
-            };
+            let run = load_run(root, text(&entry, "run_id"))?.ok_or("SLK_BI_SOURCE_MISSING")?;
             Ok::<_, String>((entry, run))
         })();
         match loaded {
@@ -399,16 +593,5 @@ pub fn collect(root: &Path) -> Collection {
 }
 
 pub fn native_caller() -> Result<String, String> {
-    let thread = std::env::var("CODEX_THREAD_ID")
-        .ok()
-        .filter(|s| !s.trim().is_empty());
-    let session = std::env::var("CODEX_SESSION_ID")
-        .ok()
-        .filter(|s| !s.trim().is_empty());
-    if thread.is_some() && session.is_some() && thread != session {
-        return Err("SLK_BI_CALLER_ID_CONFLICT".into());
-    }
-    thread
-        .or(session)
-        .ok_or("SLK_BI_NATIVE_CALLER_MISSING".into())
+    crate::caller::creator_session(&crate::caller::CodexHost)
 }

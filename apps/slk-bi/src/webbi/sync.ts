@@ -30,7 +30,7 @@ export function buildUploadEnvelope(
     runs: orderedRuns(snapshot).map((run) => ({
       run,
       messages: projectSupportedAuthoritativeMessages(run, MESSAGE_CATALOG).filter(
-        ({ message_id }) => !uploadedMessageIds.has(message_id),
+        ({ run_id, message_id }) => !uploadedMessageIds.has(JSON.stringify([run_id, message_id])),
       ),
     })),
   };

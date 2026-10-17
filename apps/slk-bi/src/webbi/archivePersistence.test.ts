@@ -11,6 +11,7 @@ describe("persistent WebBI archival", () => {
     const sqlite = new DatabaseSync(":memory:");
     try {
       sqlite.exec(readFileSync(new URL("../../webbi/migrations/0001.sql", import.meta.url), "utf8"));
+      sqlite.exec(readFileSync(new URL("../../webbi/migrations/0002_receipts.sql", import.meta.url), "utf8"));
       const database = { prepare(query: string) {
         const stmt = sqlite.prepare(query);
         let params: (string | number | null)[] = [];

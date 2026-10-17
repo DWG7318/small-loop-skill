@@ -1,6 +1,6 @@
 [package]
 name = "slk-bi-desktop"
-version = "1.1.4"
+version = "1.1.6"
 edition = "2021"
 license = "MIT"
 description = "Read-only desktop BI for Small Loop Skill"
@@ -18,13 +18,13 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde_json = "1.0.151"
 regex = "1"
 sha2 = "0.10.9"
-time = { version = "0.3.54", features = ["formatting"] }
+time = { version = "0.3.54", features = ["formatting", "parsing"] }
 tempfile = "3.27.0"
-slk-state-core = { git = "https://github.com/DWG7318/slk-state-core.git", rev = "0aba753f5d328484e59ec1c5c13fa594fedc3d19" }
+slk-state-core = { git = "https://github.com/DWG7318/slk-state-core.git", rev = "d7d8cb6f4dedc3de26629824c8c50bcb3416a807" }
 tauri = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Security_Cryptography"] }
 
 [features]
 default = ["custom-protocol"]

@@ -6,6 +6,7 @@ and return engineering results; sealed credentials remain in this host process.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -214,7 +215,7 @@ class RoleHost:
                 raise ValueError("resume Host differs from the registered original role/endpoint")
         config = wc._read_object(config_path, "resume original adapter config")
         method_version = current["runtime_snapshot"].get("method_version")
-        native_subagent = method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}
+        native_subagent = method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"}
         if native_subagent and (config.get("method_version") != method_version
             or config.get("run_id") != self.binding["run_id"]
             or config.get("schema_version") != "slk.temporal-standard-adapter/v2"):
@@ -673,7 +674,7 @@ class RoleHost:
                 if start["adapter"] == "dsh-worker" and activity.get("sample") is None:
                     raise ValueError("DSH stop requires its original live registry sample")
                 if coordinator_started_path is not None and path.resolve() == coordinator_started_path.resolve():
-                    if (envelope is None or activity["status"] != "RUNNING"
+                    if (activity["status"] != "RUNNING"
                         or not bridge and endpoint != self.endpoint("supervisor")):
                         raise ValueError("pause coordinator is not the exact current Supervisor call")
                     if bridge:
@@ -684,6 +685,15 @@ class RoleHost:
                             or Path(endpoint["address"]["cwd"]).resolve() != Path(current["address"]["cwd"]).resolve()
                             or not coordinator_observer and os.environ.get("CODEX_THREAD_ID") != endpoint["address"]["thread_id"]):
                             raise ValueError("bridge coordinator is not the exact current Supervisor call")
+                    elif envelope is None:
+                        # Notifications are original calls, not Envelopes. The
+                        # census above already verified their notice/start and
+                        # sealed readback against the exact live Desktop turn.
+                        prompt = self._notification_census_prompt(source, notice)
+                        if (start["native_task"]["kind"] != "codex-desktop-turn"
+                            or start["native_request_sha256"] != hashlib.sha256(prompt.encode()).hexdigest()
+                            or not coordinator_observer and os.environ.get("CODEX_THREAD_ID") != endpoint["address"]["thread_id"]):
+                            raise ValueError("notification coordinator is not the exact current Supervisor call")
                     else:
                         self._supervisor_start_proof(source, envelope, observer=coordinator_observer)
                     row["status"] = "COORDINATING"
@@ -745,6 +755,30 @@ class RoleHost:
             "status": "QUIESCENT" if all(row["status"] in {"STOPPED", "STAGED_NOT_STARTED", "COORDINATING"}
                 for row in inspections) else "NOT_QUIESCENT", "inspections": inspections,
             "attempt_roots": [str(root.resolve()) for root in attempt_roots], "observed_at": native.utc_now()}
+
+    @staticmethod
+    def _notification_census_prompt(source: Path, notice: Mapping[str, Any]) -> str:
+        """Read the original inline/material chain without rendering or writing it."""
+        from .adapters import codex_desktop as desktop
+        from .adapters.base import AdapterError
+        from .evidence import Attempt
+        from .supervisor_notification import _NoticeIdentity
+
+        saved = wc._read_object(source / "desktop-prompt.json", "original notification prompt")
+        if (set(saved) != {"message_id", "prompt"} or saved["message_id"] != notice["event_id"]
+            or not isinstance(saved["prompt"], str)):
+            raise ValueError("original notification prompt identity changed")
+        prompt = original = saved["prompt"]
+        identity = _NoticeIdentity(notice["run_id"], notice["event_id"], canonical_json_sha256(notice))
+        try:
+            desktop._validate_material(prompt, identity, Attempt(source))
+        except AdapterError as exc:
+            raise ValueError(str(exc)) from exc
+        if prompt.startswith((desktop.MATERIAL_PREFIX, desktop.LEGACY_MATERIAL_PREFIX)):
+            original = wc._read_object(source / "desktop-material.json", "original notification material")["prompt"]
+        if original != notice["message"] + "\n" + json.dumps(notice, ensure_ascii=False, sort_keys=True):
+            raise ValueError("original native input differs from the notification")
+        return prompt
 
     @staticmethod
     def _historical_dsh_current_stop(source: Path, endpoint: Mapping[str, Any], envelope: Envelope | None,
@@ -1786,7 +1820,7 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
-        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.5.5"}
             or any(event.get("event_type") == "D2_STARTED"
                    and wc._event_details(event).get("source_message_id") == envelope.message_id
                    and any(key in wc._event_details(event) for key in (

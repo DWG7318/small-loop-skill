@@ -1,4 +1,6 @@
 import { formatDuration, formatCellProgress, type RunStripCell, type RunStripView } from "../runPresentation";
+import type { RunView } from "../contracts";
+import { CloseoutSummary } from "./CloseoutSummary";
 
 interface RunStripProps {
   view: RunStripView;
@@ -6,6 +8,9 @@ interface RunStripProps {
   unread?: boolean;
   open?: boolean;
   onToggle?: () => void;
+  run?: RunView;
+  syncLabel?: string;
+  savedAt?: string;
 }
 
 const MARK = {
@@ -67,7 +72,7 @@ function CellRow({ cell }: { cell: RunStripCell }) {
   );
 }
 
-export function RunStrip({ view, archived = false, unread = false, open = false, onToggle }: RunStripProps) {
+export function RunStrip({ view, archived = false, unread = false, open = false, onToggle, run, syncLabel, savedAt }: RunStripProps) {
   const progressTone = view.statusTone === "done" ? "done" : view.statusTone === "active" ? "active" : "wait";
   const tone = groupTone(view.sourceGroupKey);
 
@@ -123,6 +128,8 @@ export function RunStrip({ view, archived = false, unread = false, open = false,
             {view.cells.map((cell) => <CellRow key={cell.cellId} cell={cell} />)}
           </ol>
           {!view.cells.length ? <p className="quiet-empty">尚无施工记录</p> : null}
+          {syncLabel ? <p className="run-upload-status">{syncLabel}</p> : null}
+          {run ? <CloseoutSummary run={run} savedAt={savedAt} /> : null}
         </div>
       ) : null}
     </li>
