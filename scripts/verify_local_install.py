@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
+import marshal
 import os
+import re
 import stat
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import CodeType
 
 # Verification is read-only, including inside the exact managed script surface.
 sys.dont_write_bytecode = True
@@ -131,6 +135,56 @@ def _inventory(base: Path, directory: Path) -> set[str]:
     return actual
 
 
+def _same_cache_code(actual: object, expected: CodeType) -> bool:
+    if not isinstance(actual, CodeType) or actual != expected:
+        return False
+    # CodeType equality omits execution-layout metadata. Check those fields
+    # too, including every nested function, without executing cached code.
+    fields = ("co_stacksize", "co_varnames", "co_freevars", "co_cellvars", "co_qualname", "co_exceptiontable")
+    if any(getattr(actual, field) != getattr(expected, field) for field in fields):
+        return False
+    return all(_same_cache_code(cached, compiled) for cached, compiled in zip(actual.co_consts, expected.co_consts)
+               if isinstance(compiled, CodeType))
+
+
+def _source_backed_python_cache(base: Path, path: str, listed: dict[str, tuple[str, int]]) -> bool:
+    # Installer equality may retain a candidate cache; this final gate proves
+    # its code matches verified source. This reads local installed caches only;
+    # marshal is not a general-purpose untrusted-input format. No code is run.
+    match = re.fullmatch(
+        r"tools/slk/runtime/python/(?P<parent>(?:[^/]+/)*)__pycache__/"
+        r"(?P<module>[^/]+)\.(?P<tag>cpython-[0-9]+)(?:\.opt-(?P<opt>[12]))?\.pyc", path,
+    )
+    if match is None or match["tag"] != sys.implementation.cache_tag:
+        return False
+    source_key = f"tools/slk/runtime/python/{match['parent']}{match['module']}.py"
+    if source_key not in listed:
+        return False
+    source = base / source_key
+    try:
+        with (base / path).open("rb") as stream:
+            header = stream.read(16)
+            if len(header) != 16 or header[:4] != importlib.util.MAGIC_NUMBER:
+                return False
+            flags = int.from_bytes(header[4:8], "little")
+            if flags not in (0, 1, 3):
+                return False
+            source_bytes = source.read_bytes()
+            digest, size = listed[source_key]
+            if len(source_bytes) != size or hashlib.sha256(source_bytes).hexdigest() != digest:
+                return False
+            if flags & 1:
+                if header[8:16] != importlib.util.source_hash(source_bytes):
+                    return False
+            elif int.from_bytes(header[12:16], "little") != (len(source_bytes) & 0xFFFFFFFF):
+                return False
+            code = compile(source_bytes, str(source), "exec", dont_inherit=True, optimize=int(match["opt"] or 0))
+            cached = marshal.load(stream)
+            return not stream.read(1) and _same_cache_code(cached, code)
+    except (EOFError, OSError, SyntaxError, TypeError, ValueError, OverflowError, RecursionError):
+        return False
+
+
 def verify(root: Path | str, *, package_mode: bool = False) -> dict[str, object]:
     base = Path(root).resolve()
     manifest_path = base / "install-manifest.json" if package_mode else base / "tools/slk/install-manifest.json"
@@ -200,6 +254,10 @@ def verify(root: Path | str, *, package_mode: bool = False) -> dict[str, object]
             directory = base / Path(prefix)
             actual = _inventory(base, directory)
             expected = {path for path in listed if path.startswith(prefix + "/")}
+            if prefix == PYTHON_RUNTIME_PATH:
+                # Only installed, unlisted generated caches may be extra. Every
+                # declared source/runtime file was already hash-verified above.
+                actual -= {path for path in actual - expected if _source_backed_python_cache(base, path, listed)}
             if actual != expected:
                 raise VerificationError(f"installed managed surface has missing or extra files: {prefix}")
 

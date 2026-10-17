@@ -223,8 +223,24 @@ try {
             Get-ChildItem -LiteralPath $active, $source -Recurse -Force) | Where-Object {
                 ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
             })
-        if ($reparse.Count -eq 0 -and
-            (Get-ManagedState $codexRoot @($relative)) -ceq (Get-ManagedState $stage @($relative))) {
+        if ($reparse.Count -ne 0) { continue }
+        $activeState = Get-ManagedState $codexRoot @($relative)
+        $sourceState = Get-ManagedState $stage @($relative)
+        if ($relative -ceq 'tools/slk/runtime/python') {
+            # Compare managed bytes, not source-backed CPython caches created
+            # by a running interpreter. The full rollback snapshot stays exact.
+            $comparable = [ordered]@{}
+            foreach ($entry in ($activeState | ConvertFrom-Json).PSObject.Properties) {
+                if ($entry.Name -cmatch '^tools/slk/runtime/python/(?<parent>(?:[^/]+/)*)__pycache__/(?<module>[^/]+)\.cpython-[0-9]+(?:\.opt-[0-9]+)?\.pyc$') {
+                    $sourceRelative = "tools/slk/runtime/python/$($Matches.parent)$($Matches.module).py"
+                    if (-not (Test-Path -LiteralPath (Join-Path $stage $entry.Name) -PathType Leaf) -and
+                        (Test-Path -LiteralPath (Join-Path $stage $sourceRelative) -PathType Leaf)) { continue }
+                }
+                $comparable[$entry.Name] = $entry.Value
+            }
+            $activeState = $comparable | ConvertTo-Json -Compress
+        }
+        if ($activeState -ceq $sourceState) {
             [void]$unchangedRuntimeRoots.Add($relative)
         }
     }

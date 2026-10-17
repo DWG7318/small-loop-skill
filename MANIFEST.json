@@ -60,7 +60,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "7b53ae25fe2c615385b01a4e38e4c531a52adda77819b6703ab027a912e540af"
+      "sha256": "87e25b441a165a10c46b7521432629db5005c2f7afb69cc5132ac5f3150deda3"
     },
     {
       "path": "VERSION",
@@ -1104,7 +1104,7 @@
     },
     {
       "path": "docs/maintenance/2026-10-17-slk-4.5.4-implementation.md",
-      "sha256": "86d41ea63477b8339cd9487a25f361ebf03020fe154fb77c5f4f97dd9b2d5ec3"
+      "sha256": "ee7db4800052ed285c14146f946ecebd5d68b52ab625ea993c97e90bc580ab47"
     },
     {
       "path": "docs/maintenance/4.3.6-budget-partial-continuation-20261003.md",
@@ -1816,7 +1816,7 @@
     },
     {
       "path": "scripts/install_local.ps1",
-      "sha256": "405248353bf77a1bf3ba7e8521d2bb77ff02995a318cbbac3e0b156184c4f2b6"
+      "sha256": "5e7482a817d32a5d17e0d4003f6c0adda1be10035ef742a988a129f9df61b1ab"
     },
     {
       "path": "scripts/local_package_metadata.py",
@@ -1884,7 +1884,7 @@
     },
     {
       "path": "scripts/verify_local_install.py",
-      "sha256": "e6d6cb87c18d531c7ded2f007d26a9f6ec426e712fc0735f9812162df12bad3b"
+      "sha256": "778e3efcecad1b3f9d83c908d7182c5a8953177e3c8aa996e8562d6366e939e3"
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
@@ -2336,7 +2336,7 @@
     },
     {
       "path": "tests/install/test_identical_runtime_install.py",
-      "sha256": "c5f2764a59c7e21b6a5e7481c58bff980af3d730c67fb1705273201a0bad759d"
+      "sha256": "626f373732454a5282b6381b3d844666a72c77b9a6d8116c6193dea0861790c4"
     },
     {
       "path": "tests/install/test_local_install.py",

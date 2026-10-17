@@ -25,9 +25,23 @@ tests with 3 skips, and exposed two stale contract assertions (native resume
 basis and Supervisor close-OW operation). Those assertions were corrected to
 the independently tested 4.5.4 semantics, including rejection of simultaneous
 historical resume bases. The complete affected repository/Skill/state checks
-are rerun after the final manifest is regenerated. This is combined full/scoped
+passed 174 tests after the final manifest was regenerated. The three native DSH
+home-resolver cases also passed in isolated synthetic homes. This is combined full/scoped
 evidence, not a claim that the earlier batch was all-green. Final package
 acceptance is recorded in release evidence; skipped cases are not passes.
+
+The first source freeze passed GitHub CI: Windows 2746 passed / 102 skipped and
+Ubuntu 2682 passed / 166 skipped. The first frozen package passed 25 source-free
+smoke checks and full expanded ZIP verification. Deployment audit then found 288 source-backed
+CPython cache files in the in-use installed interpreter: all 1,344 delivered
+Python files were identical. The installer and installed-tree verifier must
+recognize only these derived caches without replacing the unchanged runtime.
+Package-mode verification stays exact; unknown extras, source-less bytecode,
+changed managed files and cached code differing from verified source are not
+exempt. Installed-cache checking compares code without executing it; raw marshal
+byte equality is not used because legitimate interned-string encodings differ.
+This final delivery fix requires focused
+regression and a newly frozen package; earlier package hashes are not final.
 
 No live product Run or provider call is an acceptance test. R6 whole-CELL context
 cache reuse remains unimplemented rather than claiming unmeasured convergence
