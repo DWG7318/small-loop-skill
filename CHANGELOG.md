@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.1
+
+- Independent maintenance from `v3.1.0` (`e20096629dc520e9affb8b2697eb6e5d1b720a56`); no 4.x method/runtime, OW, Temporal, state database or RoleHost is imported.
+- Move post-D2 closeout into one short `slk-finalize-run` Skill. Reuse real acceptance or authorized termination, skip completed steps, confirm exact Worker/Checker activity ended, archive only those members, and retain Supervisor and original records.
+- Add one formal closeout summary in the original workbook with actual authorship/timezone, important problems and onsite treatment, remaining risks and evidence. Agent-supplied device signature is optional when unknown; BI does not probe it.
+- Save the summary before BI read/archive. Keep method closure, local archival and cloud saving distinct; offline upload remains pending without repeating engineering. Corrections append provenance without rewriting historical D2.
+- Make Agent brands/model names recommendations rather than allowlists. Owner-confirmed identities and models, visible Supervisor → Checker → Worker creation, final-action handoffs, current-CELL D1 escalation and cause-based D2 decisions remain intact.
+- Pair with independent precompiled BI/WebBI 1.1.6; trusted creator identity stays in the BI host adapter, not a caller-supplied identity or new method authorization layer. The collection now has 14 Skills / 17 Skill payload files, an inventory rather than a fixed quota.
+
 ## 3.1.0
 
 - Independently based on 3.0.9 (`fc03fc422b61ff7d266835cfb39799ffd68f3062`), without any 4.x method/runtime changes.

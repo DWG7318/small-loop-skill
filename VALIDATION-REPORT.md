@@ -1,4 +1,8 @@
-# Validation Report — SLK 3.0.9
+# Validation Reports
+
+Current maintenance implementation: [SLK 3.1.1 verification](docs/3.1.1-verification.md). This records local test-first evidence and explicitly separates pending independent behavior/BI integration acceptance. Earlier reports below remain historical evidence, not a 3.1.1 live-Run claim.
+
+## Historical validation — SLK 3.0.9
 
 Date: 2026-10-14
 

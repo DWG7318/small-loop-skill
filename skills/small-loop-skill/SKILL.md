@@ -28,7 +28,7 @@ Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>
 - 新 Run、GO 与初始 CELL 方案：`$slk-plan-run`
 - Supervisor、Checker、Worker 的模型能力选择：`$slk-select-models`
 - Supervisor 开工前理解确认：`$slk-grill-supervisor`
-- 建立、持续观察、恢复、更换或归档成员：`$slk-manage-team`
+- 建立、持续观察、恢复或更换成员：`$slk-manage-team`
 - Checker 派发前校准并交付既定 CELL：`$slk-dispatch-cell`
 - Worker 施工与最低 D0：`$slk-execute-cell`
 - Checker 隔离执行 D1：`$slk-check-cell`
@@ -36,7 +36,8 @@ Supervisor 通过理解确认后，先在项目根目录创建 `SLK-RUN-<RUN-ID>
 - D1 未通过后的普通返工：`$slk-rework-cell`
 - Supervisor 处理升级决策、返工路线、能力安排、Owner 授权建议或豁免：`$slk-adjust-run`
 - Worker 向 Checker 交付未达，或任一成员收到当前令牌却未完成节点便结束：`$slk-recover-communication`
-- 所有计划 CELL 明确处理后的 D2、归档和 Owner 结论：`$slk-close-run`
+- 所有计划 CELL 明确处理后的 D2 组合验收：`$slk-close-run`
+- 已有真实 D2 或授权终止结果后的剩余收尾：`$slk-finalize-run`
 
 通常读取当前情境对应的指导即可；新的情况出现时，再补充相关 Skill。
 

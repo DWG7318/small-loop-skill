@@ -14,10 +14,10 @@ from skill_testkit import (
 
 
 def test_version_is_current_3x_maintenance() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.1.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "3.1.1"
 
 
-def test_collection_has_one_main_and_twelve_children() -> None:
+def test_collection_has_one_main_and_the_current_children() -> None:
     actual = tuple(sorted(path.name for path in SKILLS.iterdir() if path.is_dir()))
     assert actual == tuple(sorted(EXPECTED_SKILLS))
 
@@ -463,8 +463,7 @@ def test_manage_team_covers_visible_creation_recovery_tests_and_archive() -> Non
         "明确失效",
         "极端",
         "接管",
-        "归档 Worker",
-        "归档 Checker",
+        "$slk-finalize-run",
         "状态",
     ):
         assert marker in text
@@ -746,18 +745,17 @@ def test_close_run_combines_d2_repair_archive_and_owner_conclusion() -> None:
         "端到端",
         "关键风险",
         "Checker → Worker → Checker",
-        "归档 Worker",
-        "归档 Checker",
-        "保留 Supervisor",
         "D0",
         "D1",
         "豁免",
         "Owner",
-        "$slk-record-run",
-        "$slk-manage-team",
+        "$slk-finalize-run",
         "$slk-adjust-run",
     ):
         assert marker in text
+    final = read_skill("slk-finalize-run")
+    for marker in ("归档 Worker", "归档 Checker", "保留 Supervisor", "Owner", "$slk-record-run"):
+        assert marker in final
     assert "全部 CELL 完成后" not in text
     assert "全部 CELL 完成后" not in read_skill("small-loop-skill")
     assert "全部完成时" not in read_skill("slk-check-cell")
@@ -838,7 +836,7 @@ def test_linear_loop_uses_one_visible_relay_token_without_a_new_subsystem() -> N
         "令牌编号、Run、CELL、当前节点、接收者、候选（如有）、下一动作和根记录路径",
     ):
         assert marker in main
-    assert len(EXPECTED_SKILLS) == 13
+    assert len(EXPECTED_SKILLS) == len(tuple(SKILLS.glob("*/SKILL.md")))
     assert not any(path.name.startswith("slk-token") for path in SKILLS.iterdir())
 
 
@@ -882,7 +880,9 @@ def test_existing_handoffs_move_the_same_token_between_existing_roles() -> None:
     assert "Worker → Checker" in execute and "SLK TOKEN" in execute
     assert "Checker → Worker" in check and "Checker → Supervisor" in check
     assert "Supervisor → Checker" in adjust and "SLK TOKEN" in adjust
-    assert "最终令牌" in close and "CLOSED" in close
+    assert "$slk-finalize-run" in close
+    final = read_skill("slk-finalize-run")
+    assert "最终令牌" in final and "CLOSED" in final
     assert "原令牌编号" in recover and "新编号" not in recover
 
 

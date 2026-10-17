@@ -10,7 +10,7 @@ description: Use when an active Small Loop Skill (SLK) Run has D1 PASS or Superv
 
 ## 当前目标
 
-所有计划 CELL 都有明确处理结果后，Supervisor 判断全部成果合起来是否正确。通过后完成记录、成员归档和 Owner 结论；发现组合问题时，把工作送回最近的正常节点。
+所有计划 CELL 都有明确处理结果后，Supervisor 判断全部成果合起来是否正确。通过后转入收尾；发现组合问题时，把工作送回最近的正常节点。
 
 ## D2 交接
 
@@ -37,11 +37,7 @@ Checker → Worker → Checker
 
 ## D2 通过后的收尾
 
-1. 调用 `$slk-record-run` 汇总最终 CELL 数、D0结果、D1通过数、Supervisor豁免数、D2结论、限制和证据位置，同步唯一当前摘要的 GO/CELL 进度、最终候选与下一动作，并把最终 `SLK TOKEN` 标记为 `CLOSED`、不再流转；旧号不重开已关闭 Run。
-2. 调用 `$slk-manage-team`，建议依次归档 Worker、归档 Checker，并保留 Supervisor 对话。
-3. 向 Owner 发送一个简洁结论，例如：Run 已完工，D0/D1/D2结果、豁免数量、已知限制和根记录路径。
-
-归档结果据实同步成员状态和当前摘要，旧的准备/未开始占位标为历史或更新，不抹去失败和原始交接。收尾完成后 Supervisor 结束持续观察，保留对话、最终交接、D2结论和根记录路径，方便 Owner 查询。
+保存真实 D2 结果后调用 `$slk-finalize-run`，完成剩余记录、成员与 BI 归档及 Owner 简报；这里不再执行另一份收尾清单。
 
 ## 负面提示词
 

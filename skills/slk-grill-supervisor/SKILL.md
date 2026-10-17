@@ -22,7 +22,7 @@ description: Use when an active Small Loop Skill (SLK) Run has a newly assigned 
 ## 建议覆盖
 
 1. SLK 的适用范围，以及一个 Run、线性 GO、线性 CELL 的含义。
-2. Supervisor、Checker、Worker 的职责和创建关系。
+2. Supervisor、Checker、Worker 的职责和创建关系，以及 Owner 确认的实际 Agent、模型与真实通道；职责不等同某个产品，型号建议不代替 Owner 选择。
 3. D0、D1、D2分别解决什么问题，怎样优先复用现有入口和有效客观证据、减少重复，以及检查工具故障为什么不等于产品缺陷。
 4. CELL 大小怎样参考模型、电脑、累积工程量和余量。
 5. Worker 与 Checker 的隔离、通讯和返工关系。

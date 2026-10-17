@@ -12,6 +12,8 @@ description: Use when an active Small Loop Skill (SLK) Run is establishing, obse
 
 让 Supervisor、Checker、Worker 以项目中的可见对话存在，并在建立、接管和归档时保持清楚的任务 ID、关系和状态。
 
+职责不绑定 Agent 品牌；按 Owner 确认的实际 Agent、模型和平台能力建立成员与真实通道。平台缺少可信身份、原生消息或归档能力时如实说明相应限制，不以同名或文字声明冒充可见成员或已完成操作。
+
 ## 建立成员组
 
 推荐的创建关系是一条向下交接链。原对话创建 Supervisor；Supervisor 接管后的后续顺序如下。
@@ -53,11 +55,11 @@ Supervisor 只在旁观时终止，由原对话恢复其观察活动，附当前
 
 ## 收尾归档
 
-D2 通过且最终记录完整后，建议按准确任务 ID 先真实归档 Worker、再真实归档 Checker，以返回结果和归档状态确认；失败或未确认如实记录。Supervisor 继续保留，方便 Owner 后续查询。
+已有真实 D2 或授权终止结果时，转到 `$slk-finalize-run` 处理剩余收尾；成员管理不再重复归档清单。
 
 ## 完成后
 
-建立或恢复完成后，日常工作回到 Checker 与 Worker 的中断前节点，Supervisor 继续低 Token 观察；收尾归档完成后，把结果交还 `$slk-close-run`。Run 正式收尾或 Owner 明确停止后才结束持续观察。
+建立或恢复完成后，日常工作回到 Checker 与 Worker 的中断前节点，Supervisor 继续低 Token 观察。Run 正式收尾或 Owner 明确停止后才结束持续观察。
 
 ## 负面提示词
 

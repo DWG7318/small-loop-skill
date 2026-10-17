@@ -30,11 +30,12 @@ def test_manifest_covers_the_collection_and_excludes_itself() -> None:
     manifest = json.loads(read("MANIFEST.json"))
     paths = {item["path"] for item in manifest["files"]}
     assert manifest["name"] == "Small Loop Skill Collection"
-    assert manifest["version"] == "3.1.0"
-    assert manifest["skill_count"] == 13
+    assert manifest["version"] == "3.1.1"
+    assert manifest["skill_count"] == len(tuple((ROOT / "skills").glob("*/SKILL.md")))
     assert "MANIFEST.json" not in paths
     assert "skills/small-loop-skill/SKILL.md" in paths
     assert "skills/slk-close-run/SKILL.md" in paths
+    assert "skills/slk-finalize-run/SKILL.md" in paths
     assert "skills/slk-record-run/assets/SLK-RUN.template.md" in paths
 
 
@@ -42,10 +43,10 @@ def test_readmes_explain_the_lightweight_collection_and_recovery_version() -> No
     english = read("README.md")
     chinese = read("README.zh-CN.md")
     for text in (english, chinese):
-        assert "3.1.0" in text
+        assert "3.1.1" in text
         assert "v3.0.8" in text
-        assert "maintenance/3.1.0" in text
-        assert "12" in text
+        assert "maintenance/3.1.1" in text
+        assert "13" in text
         assert "skills/small-loop-skill/SKILL.md" in text
         assert "v2.6.0" in text
         assert "Control Conversation" not in text

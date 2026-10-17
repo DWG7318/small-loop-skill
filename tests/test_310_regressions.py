@@ -19,7 +19,7 @@ def test_turn_end_does_not_authorize_duplicate_cargo_work_or_global_kill():
 
 def test_bi_uses_existing_record_and_does_not_add_4x_runtime():
     record = read_skill("slk-record-run")
-    assert "预编译" in record and "1.1.4" in record
+    assert "预编译" in record and "1.1.6" in record
     assert "创建 Supervisor" in record
     assert "不改写工程结论" in record
     assert "Temporal" not in record and "Overwatcher" not in record

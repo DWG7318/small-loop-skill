@@ -10,7 +10,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = ROOT / "skills"
-VERSION = "3.1.0"
+VERSION = "3.1.1"
 COLLECTION_NAME = "Small Loop Skill Collection"
 EXPECTED_SKILLS = (
     "small-loop-skill",
@@ -26,6 +26,7 @@ EXPECTED_SKILLS = (
     "slk-adjust-run",
     "slk-recover-communication",
     "slk-close-run",
+    "slk-finalize-run",
 )
 EXCLUDED_DIRS = {".git", ".codex", "__pycache__", ".pytest_cache"}
 EXCLUDED_FILES = {"MANIFEST.json"}

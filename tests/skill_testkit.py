@@ -20,6 +20,7 @@ EXPECTED_CHILDREN = (
     "slk-adjust-run",
     "slk-recover-communication",
     "slk-close-run",
+    "slk-finalize-run",
 )
 EXPECTED_SKILLS = (MAIN_SKILL, *EXPECTED_CHILDREN)
 

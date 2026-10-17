@@ -48,3 +48,13 @@ Adopt at a Run boundary in the authorized project only: verify the new Skill pay
 Base: `fc03fc422b61ff7d266835cfb39799ffd68f3062`. Replace only the authorized project's 3.x Skills after its active Run ends; never merge 4.x runtime or replace global 4.x. D1 escalation, role boundaries and final-action handoffs stay unchanged. D2 findings no longer force model changes by count; recovery accounts for external jobs left behind by an ended turn. Carry forward the Owner-approved Supervisor recommendation (6.1-sol/high minimum recommended).
 
 BI 1.1.4 is an independent compiled companion. Register the existing Markdown through its creator Supervisor, without migrating engineering state. The source remains authoritative. Missing metadata is unknown; no invented OW, timings or message types. See `skills/slk-record-run/references/bi.md`. The new BI reference makes 16 Skill payload files; retain all 13 Skills.
+
+## 3.1.0 → 3.1.1
+
+Base: `e20096629dc520e9affb8b2697eb6e5d1b720a56`. This independent maintenance adds only `slk-finalize-run` to the existing 13 Skills: currently 14 directories / 17 Skill payload files, not a permanent limit. The old D2 and team-management entries route remaining closeout there instead of duplicating checklists. No OW, Temporal, state database, RoleHost or 4.x method/runtime is added.
+
+Keep the existing root workbook and real D2/termination result. Add its concise closeout summary with actual author/timezone and Agent-supplied device signature (unknown values remain unknown); save before BI read/archive. Reuse completed closeout evidence, confirm only this Run's Worker/Checker activities have ended, and retain Supervisor and history. Method closure, local archive and cloud save are separate; network failure leaves upload pending, not reopened engineering. Later corrections append provenance without rewriting D2 or archived snapshots.
+
+Owner confirms actual Supervisor/Agent/model choices across brands. Recommended model capability does not become an allowlist or authorize a cheap Supervisor downgrade. Preserve visible Supervisor → Checker → Worker creation, normal Checker ↔ Worker messages, final-action handoffs, current-CELL D1 escalation, Owner binding and cause-based D2 decisions.
+
+Use the independent precompiled BI/WebBI 1.1.6 companion; do not compile on usage machines or upgrade their engineering method to 4.x. Unsupported trusted host identity leaves creator-only archival pending, not bypassed by names or flags. Adopt only in an authorized project at a Run boundary; do not silently change an active Run, overwrite global Skills, or deploy to another project. Local verification does not authorize installation, remote publication or a new Run.
