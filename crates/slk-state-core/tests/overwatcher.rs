@@ -56,6 +56,20 @@ fn current_443_central_writes_keep_long_original_identifiers() {
 }
 
 #[test]
+fn current_overwatcher_does_not_require_a_fabricated_reasoning_setting() {
+    let root=tempfile::tempdir().unwrap();let store=StateStore::new(root.path());
+    let supervisor=store.init_run(init_request("run-a","supervisor-a")).unwrap().supervisor_credential;
+    let mut binding=subagent_binding("run-a","overwatcher-a","/root/ow");
+    binding.identity.reasoning.clear();
+    binding.identity.model="owner-selected-child-model".into();
+    let mut unsupported=binding.clone();unsupported.endpoint.transport_adapter="unknown-adapter".into();
+    assert!(store.bind_overwatcher(&supervisor,unsupported).is_err());
+    store.bind_overwatcher(&supervisor,binding).unwrap();
+    let run=store.query_run("run-a").unwrap();
+    assert_eq!(run.role("overwatcher").unwrap().reasoning,"");
+}
+
+#[test]
 fn current_release_can_admit_its_registered_overwatcher_without_relabeling_history() {
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
@@ -2815,8 +2829,8 @@ fn slk_452_preserves_subagent_ownership_and_admits_initial_dispatch() {
 }
 
 #[test]
-fn slk_453_and_454_preserve_subagent_identity_and_reject_unpublished_455() {
-    for version in ["4.5.3", "4.5.4"] {
+fn slk_453_through_455_preserve_subagent_identity_and_reject_unpublished_456() {
+    for version in ["4.5.3", "4.5.4", "4.5.5"] {
     let fixture = Fixture::new_450();
     slk_state_core::schema::open_database(fixture._root.path()).unwrap()
         .execute("UPDATE runs SET slk_version=?1 WHERE run_id='run-a'", [version]).unwrap();
@@ -2835,11 +2849,11 @@ fn slk_453_and_454_preserve_subagent_identity_and_reject_unpublished_455() {
 
     let unpublished = Fixture::new_450();
     slk_state_core::schema::open_database(unpublished._root.path()).unwrap()
-        .execute("UPDATE runs SET slk_version='4.5.5' WHERE run_id='run-a'", []).unwrap();
+        .execute("UPDATE runs SET slk_version='4.5.6' WHERE run_id='run-a'", []).unwrap();
     assert!(matches!(unpublished.store.bind_overwatcher(&unpublished.supervisor,
         subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")),
         Err(StateError::OverwatcherBindingInvalid(message)) if message.contains("supported effective SLK contract")));
-    assert_eq!(unpublished.store.query_run("run-a").unwrap().summary.slk_version, "4.5.5");
+    assert_eq!(unpublished.store.query_run("run-a").unwrap().summary.slk_version, "4.5.6");
     assert_eq!(unpublished.store.current_token("run-a").unwrap().sequence, 1);
 }
 
@@ -4503,9 +4517,18 @@ fn documented_member_unknown_fragment_is_accepted_by_central_writer() {
     let issued = fixture.store.bind_overwatcher(&fixture.supervisor,
         subagent_binding("run-a", "overwatcher-a", "session-overwatcher-a")).unwrap();
     let snapshot = fixture.store.query_run("run-a").unwrap().runtime_snapshot.unwrap();
-    let document = include_str!("../../../skills/slk-overwatch-run/references/cycle-evidence.md");
+    // The independent core repository must also run this behavior test without
+    // a parent SLK checkout. In the full collection additionally check doc parity.
     let fragment: serde_json::Value = serde_json::from_str(
-        document.split("```json\n").nth(1).unwrap().split("\n```").next().unwrap()).unwrap();
+        include_str!("fixtures/member-unknown-cycle.json")).unwrap();
+    let document_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../skills/slk-overwatch-run/references/cycle-evidence.md");
+    if document_path.is_file() {
+        let document = std::fs::read_to_string(document_path).unwrap().replace("\r\n", "\n");
+        let documented: serde_json::Value = serde_json::from_str(
+            document.split("```json\n").nth(1).unwrap().split("\n```").next().unwrap()).unwrap();
+        assert_eq!(fragment, documented);
+    }
     let mut value = serde_json::to_value(overwatch_cycle(1)).unwrap();
     for (key, entry) in fragment.as_object().unwrap() {
         value[key] = entry.clone();
@@ -4611,11 +4634,17 @@ fn nonworker_query_window_for_method(method_version: &str) {
 #[test]
 fn current_worker_cycle_cannot_refresh_old_completion_sample_with_a_wide_window() {
     for method_version in ["4.4.3", "4.4.4", "4.4.5"] {
-        worker_query_window_for_method(method_version);
+        worker_query_window_for_method(method_version, false);
     }
 }
 
-fn worker_query_window_for_method(method_version: &str) {
+#[cfg(windows)]
+#[test]
+fn current_cycle_accepts_same_native_file_with_windows_separator_variants_and_mixed_refs() {
+    worker_query_window_for_method("4.5.4", true);
+}
+
+fn worker_query_window_for_method(method_version: &str, mixed_refs: bool) {
     let fixture = Fixture::new_423();
     let issued = fixture
         .store
@@ -4676,7 +4705,7 @@ fn worker_query_window_for_method(method_version: &str) {
         .unwrap()
         .runtime_snapshot
         .unwrap();
-    let query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
+    let mut query = json!({"schema_version":"slk.overwatch-scope-inspection/v1", "run_id":"run-a",
         "source_message_id":snapshot.latest_message_id, "runtime_snapshot":snapshot,
         "runtime_projection_sha256":"a".repeat(64), "query_error":null,
         "native_start_path":source.path, "native_start_sha256":source.sha256,
@@ -4719,6 +4748,26 @@ fn worker_query_window_for_method(method_version: &str) {
         "worker-inspection.json",
         &serde_json::to_vec(&inspection).unwrap(),
     );
+    if mixed_refs {
+        cycle.started_at="2026-10-09T00:03:59Z".into();
+        cycle.next_cycle_at="2026-10-09T00:14:00+00:00".into();
+        query["worker_completion"]=inspection;
+        cycle.evidence_refs[1]=fixture.evidence_ref("fresh-worker-query.json",&serde_json::to_vec(&query).unwrap());
+        cycle.evidence_refs.extend([
+            fixture.evidence_ref("activity.json",br#"{"schema_version":"slk.native-activity/v1","status":"ACTIVE"}"#),
+            fixture.evidence_ref("completion.json",br#"{"schema_version":"slk.native-completion/v1"}"#),
+            fixture.evidence_ref("host.json",br#"{"schema_version":"slk.role-host/v2"}"#),
+            fixture.evidence_ref("notes.txt",b"synthetic non-JSON supporting evidence"),
+        ]);
+        // A distinct original with identical bytes/hash must not satisfy identity.
+        let mut wrong_file=cycle.clone();
+        let bytes=fs::read(&cycle.evidence_refs[0].path).unwrap();
+        wrong_file.evidence_refs[0]=fixture.evidence_ref("wrong-start.json",&bytes);
+        assert!(fixture.store.record_overwatch_cycle(&issued.credential,wrong_file).is_err());
+        // Windows separators and dot components locate the SAME original file.
+        cycle.evidence_refs[0].path=cycle.evidence_refs[0].path.replace('\\',"/");
+        assert_ne!(cycle.evidence_refs[0].path,query["native_start_path"].as_str().unwrap());
+    }
     fixture
         .store
         .record_overwatch_cycle(&issued.credential, cycle)

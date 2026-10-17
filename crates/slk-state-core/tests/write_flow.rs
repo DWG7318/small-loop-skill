@@ -1484,7 +1484,7 @@ fn token_cannot_skip_the_checker() {
 }
 
 #[test]
-fn fixed_engineering_role_bindings_fail_closed() {
+fn historical_engineering_role_bindings_remain_frozen() {
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
     let mut invalid_supervisor = init_request("run-a");
@@ -1495,6 +1495,8 @@ fn fixed_engineering_role_bindings_fail_closed() {
     ));
 
     let initialized = store.init_run(init_request("run-a")).unwrap();
+    slk_state_core::schema::open_database(root.path()).unwrap()
+        .execute("UPDATE runs SET slk_version='4.5.4' WHERE run_id='run-a'", []).unwrap();
     let mut invalid_checker = role_request("register-checker", "checker-a", Role::Checker);
     invalid_checker.identity.agent_runtime = "codex".into();
     invalid_checker.identity.provider = "openai".into();
@@ -1507,7 +1509,7 @@ fn fixed_engineering_role_bindings_fail_closed() {
 }
 
 #[test]
-fn supervisor_binding_is_exact_61_sol_with_owner_selected_high_or_xhigh() {
+fn new_run_supervisor_model_is_not_brand_restricted() {
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
     let mut selected = init_request("run-a");
@@ -1516,12 +1518,51 @@ fn supervisor_binding_is_exact_61_sol_with_owner_selected_high_or_xhigh() {
 
     let root = tempfile::tempdir().unwrap();
     let store = StateStore::new(root.path());
-    let mut wrong_class = init_request("run-b");
-    wrong_class.supervisor.model = "gpt-5.6-sol".into();
-    assert!(matches!(
-        store.init_run(wrong_class),
-        Err(StateError::RoleBindingInvalid { .. })
-    ));
+    let mut selected = init_request("run-b");
+    selected.supervisor.model = "owner-selected-model".into();
+    selected.supervisor.provider = "actual-provider".into();
+    selected.supervisor.agent_runtime = "actual-runtime".into();
+    selected.supervisor.reasoning.clear(); // Platform does not expose this setting.
+    store.init_run(selected).unwrap();
+}
+
+#[test]
+fn current_roles_allow_model_choice_but_require_real_adapter_and_independent_endpoint() {
+    let root=tempfile::tempdir().unwrap();
+    let store=StateStore::new(root.path());
+    let supervisor=store.init_run(init_request("run-a")).unwrap().supervisor_credential;
+    let mut checker=role_request("new-checker","checker-a",Role::Checker);
+    checker.identity.agent_runtime="codex".into(); checker.identity.provider="another-provider".into();
+    checker.identity.model="custom-model".into(); checker.identity.reasoning.clear();
+    checker.endpoint.transport_adapter="codex-app-server".into();
+    let mut unsupported=checker.clone(); unsupported.endpoint.transport_adapter="imaginary-adapter".into();
+    assert!(matches!(store.register_role(&supervisor,unsupported),Err(StateError::RoleBindingInvalid{..})));
+    let mut shared=checker.clone(); shared.identity.session_id="session-supervisor-a".into(); shared.endpoint.session_id=shared.identity.session_id.clone();
+    assert!(store.register_role(&supervisor,shared).is_err());
+    let checker_credential=store.register_role(&supervisor,checker).unwrap().credential;
+    let mut worker=role_request("new-worker","worker-a",Role::Worker);
+    worker.identity.agent_runtime="other-runtime".into(); worker.identity.provider="other-provider".into(); worker.identity.model="another-model".into(); worker.identity.reasoning.clear();
+    store.register_role(&checker_credential,worker).unwrap();
+    let mut endpoint=endpoint_v("new-checker-session",2); endpoint.transport_adapter="codex-app-server".into();
+    store.rebind_session(&supervisor,RebindSessionRequest {event_id:"rebind-generic".into(),run_id:"run-a".into(),role_instance_id:"checker-a".into(),endpoint,reason:"exact new endpoint".into(),occurred_at:"2026-10-18T00:00:00Z".into()}).unwrap();
+    let before=store.query_run("run-a").unwrap();
+    let mut endpoint=endpoint_v("session-supervisor-a",3); endpoint.transport_adapter="codex-app-server".into();
+    assert!(store.rebind_session(&supervisor,RebindSessionRequest {event_id:"rebind-shared".into(),run_id:"run-a".into(),role_instance_id:"checker-a".into(),endpoint,reason:"invalid shared session".into(),occurred_at:"2026-10-18T00:00:01Z".into()}).is_err());
+    assert_eq!(store.query_run("run-a").unwrap(),before);
+}
+
+#[test]
+fn current_supervisor_model_revision_accepts_platform_reasoning_without_brand_gate() {
+    let root=tempfile::tempdir().unwrap();
+    let store=StateStore::new(root.path());
+    let supervisor=store.init_run(init_request("run-a")).unwrap().supervisor_credential;
+    let proof=root.path().join("owner.txt");fs::write(&proof,b"Owner selected another actual model").unwrap();
+    let request=ReviseRoleModelRequest {event_id:"chosen-model".into(),run_id:"run-a".into(),role_instance_id:"supervisor-a".into(),expected_runtime_revision:1,model:"selected-platform-model".into(),reasoning:String::new(),owner_evidence:EvidenceReference {path:proof.to_string_lossy().into_owned(),sha256:format!("{:x}",Sha256::digest(fs::read(&proof).unwrap()))},reason:"Owner choice".into(),occurred_at:"2026-10-18T00:00:00Z".into()};
+    assert!(store.revise_role_model(&supervisor,request.clone()).is_ok());
+    let before=store.query_run("run-a").unwrap();
+    let mut stale=request;stale.event_id="stale-model".into();stale.model="another-model".into();
+    assert!(store.revise_role_model(&supervisor,stale).is_err());
+    assert_eq!(store.query_run("run-a").unwrap(),before);
 }
 
 #[test]

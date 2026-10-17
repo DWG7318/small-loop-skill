@@ -127,6 +127,16 @@ impl StateStore {
         render_operational_observations(&connection, run_id, &mut markdown)?;
         render_administration_receipts(&connection, run_id, &mut markdown)?;
         render_evidence(&connection, run_id, &mut markdown)?;
+        if let Some(original) = crate::closeout::load_closeout(&connection, &self.data_root, run_id)? {
+            let summary = original.closeout_summary;
+            writeln!(markdown, "\n## Closeout summary\n").unwrap();
+            writeln!(markdown, "{}\n", summary.body).unwrap();
+            writeln!(markdown, "- Author: `{}` — recorded `{}`", summary.authored_by, summary.recorded_at).unwrap();
+            writeln!(markdown, "- Source: `{}` revision {} — SHA-256 `{}`", summary.source_id, summary.source_revision, summary.content_sha256).unwrap();
+            if let Some(signature) = original.device_signature {
+                writeln!(markdown, "- Device signature: `{}`", serde_json::to_string(&signature)?).unwrap();
+            }
+        }
 
         let export_directory = self
             .data_root

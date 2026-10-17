@@ -1,6 +1,6 @@
 [package]
 name = "slk-state-core"
-version = "4.5.4"
+version = "4.5.5"
 edition = "2021"
 license = "MIT"
 description = "Canonical state, transaction, and read-model library for Small Loop Skill"

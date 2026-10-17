@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod config;
+pub mod closeout;
 pub mod evidence;
 pub mod export;
 pub mod model;

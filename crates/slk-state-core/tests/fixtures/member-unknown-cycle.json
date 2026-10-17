@@ -1,0 +1,14 @@
+{
+  "native_liveness": "IN_PROGRESS",
+  "checklist": {
+    "run_position": "CLEAR",
+    "role_bindings": "CLEAR",
+    "direct_handoffs": "CLEAR",
+    "cell_lifecycle": "CLEAR",
+    "stall_and_duplicates": "ANOMALY",
+    "bi_projection": "CLEAR",
+    "active_session": "CLEAR",
+    "terminal_closure": "NOT_APPLICABLE"
+  },
+  "anomaly_codes": ["ACTIVITY_UNPROVEN"]
+}

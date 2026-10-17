@@ -283,6 +283,10 @@ pub struct RunProjection {
     pub boundaries_json: String,
     pub go_nodes: Vec<GoProjection>,
     pub cell_count_origin: Option<CellCountOrigin>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closeout_summary: Option<crate::closeout::CloseoutSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_signature: Option<crate::closeout::DeviceSignature>,
     pub roles: Vec<RoleProjection>,
     pub plan_revisions: Vec<PlanRevisionProjection>,
     pub events: Vec<EventProjection>,
@@ -398,6 +402,7 @@ impl StateStore {
         let cell_count_origin = initial_plan
             .as_deref()
             .and_then(|plan| cell_count_origin(run_id, plan, &go_nodes, &events));
+        let closeout = crate::closeout::load_closeout(&connection, &self.data_root, run_id)?;
         Ok(RunProjection {
             schema_version: connection
                 .pragma_query_value(None, "user_version", |row| row.get(0))?,
@@ -407,6 +412,8 @@ impl StateStore {
             boundaries_json,
             go_nodes,
             cell_count_origin,
+            closeout_summary: closeout.as_ref().map(|original| original.closeout_summary.clone()),
+            device_signature: closeout.and_then(|original| original.device_signature),
             roles: load_roles(&connection, run_id)?,
             plan_revisions: load_plan_revisions(&connection, run_id)?,
             events,

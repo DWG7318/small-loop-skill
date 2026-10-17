@@ -268,6 +268,7 @@ pub struct RoleIdentity {
     pub agent_runtime: String,
     pub provider: String,
     pub model: String,
+    #[serde(default)]
     pub reasoning: String,
     pub session_id: String,
 }
@@ -724,6 +725,7 @@ pub struct ReviseRoleModelRequest {
     pub role_instance_id: String,
     pub expected_runtime_revision: u64,
     pub model: String,
+    #[serde(default)]
     pub reasoning: String,
     pub owner_evidence: EvidenceReference,
     pub reason: String,

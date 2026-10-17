@@ -48,6 +48,11 @@ impl StateStore {
         credential: &Credential,
         request: EvidenceRequest,
     ) -> Result<SavedEvidence, StateError> {
+        if request.evidence_type == crate::closeout::CLOSEOUT_EVIDENCE_TYPE {
+            return Err(StateError::EvidenceInvalid(
+                "run_closeout_summary requires record-closeout-summary creator authorization".into(),
+            ));
+        }
         if !valid_identifier(&request.evidence_id) {
             return Err(StateError::EvidenceInvalid(
                 "evidence_id must be 1-128 ASCII letters, digits, '-', '_' or '.'".into(),

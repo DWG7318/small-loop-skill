@@ -169,7 +169,11 @@ impl StateStore {
 
     pub fn init_run(&self, request: InitRunRequest) -> Result<InitializedRun, StateError> {
         validate_linear_plan(&request)?;
-        validate_engineering_role_binding(&request.supervisor, &request.supervisor_endpoint)?;
+        if request.supervisor.role != Role::Supervisor {
+            return Err(StateError::RoleBindingInvalid { role: request.supervisor.role,
+                reason: "Run creator must be a Supervisor".into() });
+        }
+        validate_engineering_role_binding(&request.supervisor, &request.supervisor_endpoint, env!("CARGO_PKG_VERSION"))?;
         let snapshot = serde_json::to_string(&request)?;
         let payload_sha256 = sha256_hex(snapshot.as_bytes());
         self.with_immediate_transaction(|transaction| {
@@ -737,7 +741,6 @@ impl StateStore {
             || request.identity.agent_runtime.trim().is_empty()
             || request.identity.provider.trim().is_empty()
             || request.identity.model.trim().is_empty()
-            || request.identity.reasoning.trim().is_empty()
             || request.identity.session_id.trim().is_empty()
             || request.identity.session_id != request.endpoint.session_id
             || request.endpoint.host_identity.trim().is_empty()
@@ -762,6 +765,11 @@ impl StateStore {
                 [&request.run_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
+            if uses_capability_role_bindings(&run_contract.0) {
+                validate_engineering_endpoint_binding(Role::Overwatcher, &request.endpoint, &run_contract.0)?;
+            } else if request.identity.reasoning.trim().is_empty() {
+                return Err(StateError::OverwatcherBindingInvalid("historical Overwatcher reasoning must remain recorded".into()));
+            }
             if !matches!(runtime_guard_version(&run_contract.0), "4.2.1" | "4.2.2" | "4.2.3" | "4.2.4" | "4.2.5" | "4.2.6" | "4.2.7" | "4.2.8" | "4.2.9" | "4.2.10" | "4.2.11" | "4.3.0" | "4.3.1" | "4.3.2" | "4.3.3" | "4.3.4" | "4.3.5" | "4.3.6" | "4.4.0" | "4.4.1" | "4.4.2" | "4.4.3" | "4.4.4" | "4.4.5")
                 || run_contract.1 == "archived"
                 || run_contract.2 != "open"
@@ -971,7 +979,6 @@ impl StateStore {
         credential: &Credential,
         request: RegisterRoleRequest,
     ) -> Result<IssuedCredential, StateError> {
-        validate_engineering_role_binding(&request.identity, &request.endpoint)?;
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(
                 transaction,
@@ -979,6 +986,11 @@ impl StateStore {
                 credential,
                 EventType::RoleRegistered,
             )?;
+            let method_version: String = transaction.query_row("SELECT slk_version FROM runs WHERE run_id=?1", [&request.run_id], |r|r.get(0))?;
+            validate_engineering_role_binding(&request.identity, &request.endpoint, &method_version)?;
+            if uses_capability_role_bindings(&method_version) {
+                validate_independent_engineering_endpoint(transaction, &request.run_id, &request.identity.role_instance_id, &request.endpoint)?;
+            }
             let authorized = matches!(
                 (actor.role, request.identity.role),
                 (Role::Supervisor, Role::Checker) | (Role::Checker, Role::Worker)
@@ -1605,7 +1617,6 @@ impl StateStore {
         credential: &Credential,
         request: ReplaceRoleRequest,
     ) -> Result<IssuedCredential, StateError> {
-        validate_engineering_role_binding(&request.replacement, &request.endpoint)?;
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(
                 transaction,
@@ -1613,6 +1624,11 @@ impl StateStore {
                 credential,
                 EventType::RoleReplaced,
             )?;
+            let method_version: String = transaction.query_row("SELECT slk_version FROM runs WHERE run_id=?1", [&request.run_id], |r|r.get(0))?;
+            validate_engineering_role_binding(&request.replacement, &request.endpoint, &method_version)?;
+            if uses_capability_role_bindings(&method_version) {
+                validate_independent_engineering_endpoint(transaction, &request.run_id, &request.old_role_instance_id, &request.endpoint)?;
+            }
             let old_role_text: String = transaction
                 .query_row(
                     "SELECT role FROM role_instances
@@ -2041,7 +2057,10 @@ impl StateStore {
                     }
                     (binding.1, binding.2, binding.3, binding.4, binding.5)
                 } else {
-                    validate_engineering_endpoint_binding(target_role, &request.endpoint)?;
+                    validate_engineering_endpoint_binding(target_role, &request.endpoint, &method_version)?;
+                    if uses_capability_role_bindings(&method_version) {
+                        validate_independent_engineering_endpoint(transaction, &request.run_id, &request.role_instance_id, &request.endpoint)?;
+                    }
                     transaction.query_row(
                         "SELECT endpoint_version, transport_adapter, host_identity, session_id, native_address_json
                          FROM role_endpoints
@@ -2125,15 +2144,14 @@ impl StateStore {
         request: ReviseRoleModelRequest,
     ) -> Result<ModelRevisionResult, StateError> {
         validate_evidence_reference(&request.owner_evidence)?;
-        if request.model != "gpt-6.1-sol" || !matches!(request.reasoning.as_str(), "high" | "xhigh")
-        {
-            return Err(StateError::RoleBindingInvalid {
-                role: Role::Supervisor,
-                reason: "Supervisor model must be canonical gpt-6.1-sol with Owner-selected high or xhigh reasoning".into(),
-            });
-        }
         self.with_immediate_transaction(|transaction| {
             let actor = authorize_event(transaction, &request.run_id, credential, EventType::ModelChanged)?;
+            let method_version: String = transaction.query_row("SELECT slk_version FROM runs WHERE run_id=?1", [&request.run_id], |r|r.get(0))?;
+            if if uses_capability_role_bindings(&method_version) { request.model.trim().is_empty() }
+                else { request.model != "gpt-6.1-sol" || !matches!(request.reasoning.as_str(), "high" | "xhigh") } {
+                return Err(StateError::RoleBindingInvalid { role:Role::Supervisor,
+                    reason:"model choice must satisfy the Run's recorded method contract".into() });
+            }
             if actor.role != Role::Supervisor
                 || actor.role_instance_id != request.role_instance_id
             {
@@ -3118,7 +3136,6 @@ impl StateStore {
             || request.replacement.agent_runtime.trim().is_empty()
             || request.replacement.provider.trim().is_empty()
             || request.replacement.model.trim().is_empty()
-            || request.replacement.reasoning.trim().is_empty()
             || request.endpoint.endpoint_version == 0
             || request.endpoint.transport_adapter.trim().is_empty()
             || request.endpoint.host_identity.trim().is_empty()
@@ -3166,6 +3183,11 @@ impl StateStore {
                 [&request.run_id],
                 |row| row.get(0),
             )?;
+            if uses_capability_role_bindings(&method_version) {
+                validate_engineering_endpoint_binding(Role::Overwatcher, &request.endpoint, &method_version)?;
+            } else if request.replacement.reasoning.trim().is_empty() {
+                return Err(StateError::OverwatcherBindingInvalid("historical Overwatcher reasoning must remain recorded".into()));
+            }
             if !uses_revisioned_runtime_contract(&method_version) {
                 return Err(StateError::OverwatcherBindingInvalid(
                     "revisioned replacement requires an effective revisioned runtime contract".into(),
@@ -4349,16 +4371,25 @@ fn validate_current_scope_query(
     let Some((path, digest)) = source else {
         return Err(invalid());
     };
-    if query["native_start_path"].as_str() != Some(path.as_str())
+    if !query["native_start_path"].as_str().is_some_and(|value| same_evidence_file(value, &path))
         || query["native_start_sha256"].as_str() != Some(digest.as_str())
         || !request
             .evidence_refs
             .iter()
-            .any(|reference| reference.path == path && reference.sha256 == digest)
+            .any(|reference| same_evidence_file(&reference.path, &path) && reference.sha256 == digest)
     {
         return Err(invalid());
     }
     Ok(true)
+}
+
+fn same_evidence_file(left: &str, right: &str) -> bool {
+    let (left,right)=(Path::new(left),Path::new(right));
+    if !left.is_absolute() || !right.is_absolute() { return false; }
+    match (left.canonicalize(),right.canonicalize()) {
+        (Ok(left),Ok(right))=>left==right,
+        _=>false,
+    }
 }
 
 fn validate_worker_completion_cycle(
@@ -4976,7 +5007,17 @@ fn authoritative_cell_nodes(
 fn validate_engineering_role_binding(
     identity: &crate::model::RoleIdentity,
     endpoint: &crate::model::EndpointIdentity,
+    method_version: &str,
 ) -> Result<(), StateError> {
+    if uses_capability_role_bindings(method_version) {
+        if !valid_identifier(&identity.role_instance_id) || identity.agent_runtime.trim().is_empty()
+            || identity.provider.trim().is_empty() || identity.model.trim().is_empty()
+            || identity.session_id != endpoint.session_id {
+            return Err(StateError::RoleBindingInvalid { role:identity.role,
+                reason:"recorded runtime, provider, model and exact Session identity are required".into() });
+        }
+        return validate_engineering_endpoint_binding(identity.role, endpoint, method_version);
+    }
     if identity.role == Role::Supervisor {
         let fixed_identity = identity.agent_runtime == "codex"
             && identity.provider == "openai"
@@ -5030,7 +5071,25 @@ fn validate_engineering_role_binding(
 fn validate_engineering_endpoint_binding(
     role: Role,
     endpoint: &crate::model::EndpointIdentity,
+    method_version: &str,
 ) -> Result<(), StateError> {
+    if uses_capability_role_bindings(method_version) {
+        // These installed adapter implementations declare distinct capabilities.
+        // Admission still has to verify actual native operations; this is not a
+        // claim that arbitrary runtimes or adapters are production-supported.
+        let supported = match endpoint.transport_adapter.as_str() {
+            "codex-app-server" => true,
+            "ocrv-checker" => role==Role::Checker,
+            "dsh-worker" => role==Role::Worker,
+            _ => false,
+        };
+        if !supported || endpoint.endpoint_version==0 || endpoint.host_identity.trim().is_empty()
+            || endpoint.session_id.trim().is_empty() || !endpoint.native_address.is_object() {
+            return Err(StateError::RoleBindingInvalid { role,
+                reason:"a supported role-capable adapter and complete exact endpoint are required".into() });
+        }
+        return Ok(());
+    }
     let expected = match role {
         Role::Supervisor => "codex-app-server",
         Role::Checker => "ocrv-checker",
@@ -5043,6 +5102,23 @@ fn validate_engineering_endpoint_binding(
             reason: "session rebound must retain the fixed role adapter".into(),
         });
     }
+    Ok(())
+}
+
+fn uses_capability_role_bindings(version: &str) -> bool { version == "4.5.5" }
+
+fn validate_independent_engineering_endpoint(connection: &Connection, run_id: &str,
+    excluded_role_instance_id: &str, endpoint: &crate::model::EndpointIdentity) -> Result<(),StateError>
+{
+    let reused: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM role_endpoints e JOIN role_instances r
+         ON r.run_id=e.run_id AND r.role_instance_id=e.role_instance_id
+         WHERE e.run_id=?1 AND e.role_instance_id<>?2 AND e.state='active' AND r.lifecycle='active'
+         AND e.transport_adapter=?3 AND e.host_identity=?4 AND e.session_id=?5)
+         OR EXISTS(SELECT 1 FROM overwatcher_bindings WHERE run_id=?1 AND lifecycle_state='active'
+         AND transport_adapter=?3 AND host_identity=?4 AND session_id=?5)",
+        params![run_id,excluded_role_instance_id,endpoint.transport_adapter,endpoint.host_identity,endpoint.session_id],|r|r.get(0))?;
+    if reused {return Err(StateError::RunAdministrationInvalid("engineering roles require independent native Sessions".into()));}
     Ok(())
 }
 
@@ -6539,7 +6615,7 @@ fn validate_d2_event(
 }
 
 fn uses_supervisor_subagent(version: &str) -> bool {
-    matches!(version, "4.5.0" | "4.5.1" | "4.5.2" | "4.5.3" | "4.5.4")
+    matches!(version, "4.5.0" | "4.5.1" | "4.5.2" | "4.5.3" | "4.5.4" | "4.5.5")
 }
 
 // 4.5.x changes OW ownership, not the existing engineering/runtime protections.
