@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import jsonschema
+
 from scripts import validate_repository
 
 
@@ -305,13 +307,20 @@ def test_441_temporal_handoff_schemas_are_closed_and_bind_the_standard_client() 
         "PRE_START_REJECTION_ABANDONED"]
 
 
-def test_overwatcher_resume_has_exactly_one_basis_and_cycle_enum_excludes_incident_code() -> None:
+def test_overwatcher_resume_allows_native_proof_without_fabricating_history() -> None:
     resume = json.loads(read("docs/contracts/slk-overwatcher-turn-resume.schema.json"))
     cycle = json.loads(read("docs/contracts/slk-overwatch-cycle.schema.json"))
 
     assert "last_anomaly_cycle_id" not in resume["required"]
     assert "last_native_status_id" not in resume["required"]
-    assert len(resume["oneOf"]) == 2
+    assert len(resume["oneOf"]) == 3
+    basis = jsonschema.Draft202012Validator({"oneOf": resume["oneOf"]})
+    # Self-contained native proof is checked by the state core; old receipts
+    # remain alternatives, but naming both historical bases is still invalid.
+    assert basis.is_valid({})
+    assert basis.is_valid({"last_anomaly_cycle_id": "cycle-1"})
+    assert basis.is_valid({"last_native_status_id": "status-1"})
+    assert not basis.is_valid({"last_anomaly_cycle_id": "cycle-1", "last_native_status_id": "status-1"})
     anomaly_codes = cycle["properties"]["anomaly_codes"]["items"]["enum"]
     assert "OVERWATCHER_ACTIVE_DEGRADED" in anomaly_codes
     assert "OVERWATCHER_CONTINUITY_VIOLATION" not in anomaly_codes
@@ -431,7 +440,7 @@ def test_441_saved_authority_and_reload_contracts_are_closed() -> None:
     overwatcher = json.loads(read("docs/contracts/slk-overwatcher-admin.schema.json"))
     assert set(supervisor["$defs"]["request"]["properties"]["operation"]["enum"]) == {
         "start-d2", "pause-run", "resume-run", "adopt-method-contract", "revise-role-model", "resume-overwatcher-turn", "rebind-session",
-        "revise-plan", "close-run", "abandon-run", "close-role",
+        "revise-plan", "close-overwatcher", "close-run", "abandon-run", "close-role",
     }
     assert supervisor["$defs"]["overwatcherCloseRequest"]["properties"]["operation"] == {
         "const": "close-overwatcher",

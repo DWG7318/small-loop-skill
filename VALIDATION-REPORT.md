@@ -20,8 +20,14 @@ D0/D1/new-D2 regression without rewriting earlier results.
 The initial broad Python run was not green: missing async test support, a stale
 debug executable and changing source manifests caused failures. The isolated
 environment and debug binaries were corrected before the complete transport and
-Temporal reruns above. Installation/repository tests and final package acceptance
-are recorded separately in the delivery receipt; skipped cases are not passes.
+Temporal reruns above. The complete installation/repository batch passed 539
+tests with 3 skips, and exposed two stale contract assertions (native resume
+basis and Supervisor close-OW operation). Those assertions were corrected to
+the independently tested 4.5.4 semantics, including rejection of simultaneous
+historical resume bases. The complete affected repository/Skill/state checks
+are rerun after the final manifest is regenerated. This is combined full/scoped
+evidence, not a claim that the earlier batch was all-green. Final package
+acceptance is recorded in release evidence; skipped cases are not passes.
 
 No live product Run or provider call is an acceptance test. R6 whole-CELL context
 cache reuse remains unimplemented rather than claiming unmeasured convergence

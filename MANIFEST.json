@@ -60,7 +60,7 @@
     },
     {
       "path": "VALIDATION-REPORT.md",
-      "sha256": "25e0df762bf37448786e443a9200a5e2f14a08c00dddca3f23d19ac26c14c3d9"
+      "sha256": "7b53ae25fe2c615385b01a4e38e4c531a52adda77819b6703ab027a912e540af"
     },
     {
       "path": "VERSION",
@@ -612,11 +612,11 @@
     },
     {
       "path": "crates/slk-bi-query/Cargo.lock",
-      "sha256": "be52989b3c737f0cf5e7d631f215e93de4dd28a8ae903898a80d20044d2dd749"
+      "sha256": "19e067c0e5212eb220c92b2cafd93129f3ce95ceea7fe1a224e5308c89e6769a"
     },
     {
       "path": "crates/slk-bi-query/Cargo.toml",
-      "sha256": "9f8a12e8d1dd56865f90d7710ec011d3fef733983223f9e48526e4f0a93a273c"
+      "sha256": "b8f1d897d6edb4e0ce9a2bca8ec20cb48e408d2d778ca12434640e2c47250868"
     },
     {
       "path": "crates/slk-bi-query/LICENSE",
@@ -628,11 +628,11 @@
     },
     {
       "path": "crates/slk-bi-query/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "2a93548ce51a43b8026ed9d989569fceb5d1518c783fa37bc59c9b9e3a86d01a"
+      "sha256": "1d38a3e8cf7f028565616cf16dead93342b39971c9033827afba687a4d10825d"
     },
     {
       "path": "crates/slk-bi-query/artifacts/windows-x86_64/payload.zip",
-      "sha256": "3c599ea9ef7eb8ec0681dac720f9693f59da550ba3bb1a3812c3813f01b40e55"
+      "sha256": "3461a900e1b36bcc4d148e57210cda40dbc9277061ff60c2fa4e12fdaeacac35"
     },
     {
       "path": "crates/slk-bi-query/src/main.rs",
@@ -644,11 +644,11 @@
     },
     {
       "path": "crates/slk-cargo/Cargo.lock",
-      "sha256": "26620fba9d1a8a38328ae8b7300a737b3c5aaddd8de98f6e8b12ff8a0493fc53"
+      "sha256": "0b9c3ed3413c14570f6232f6a2c9e77d1429bfabf562c58037ca0386c50b17be"
     },
     {
       "path": "crates/slk-cargo/Cargo.toml",
-      "sha256": "86f6f8294952308a051b3a672228bfaac52e1157a6bda9314c1033b51a487c29"
+      "sha256": "41bdbb654234ac809e4bd81eddaeae0cf122cf807ba42254be785dd34a0acfa6"
     },
     {
       "path": "crates/slk-cargo/LICENSE",
@@ -660,11 +660,11 @@
     },
     {
       "path": "crates/slk-cargo/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "dcaac9e5f68c93e180e15bde7ef6f21ef52e5e4e6f23907464e3802475657198"
+      "sha256": "9b8961944b832107383acd46164b75c4a7b7d3db105bc0353a1a461d6e2ad57e"
     },
     {
       "path": "crates/slk-cargo/artifacts/windows-x86_64/payload.zip",
-      "sha256": "5f79f0d817d461b93a465900d4c985c10346cd7ca928e5047175d244fb026240"
+      "sha256": "08ad82c51b5e8ee3e19b5f02eb17f65d4c826b67129052b83f7648b4b0a7d95b"
     },
     {
       "path": "crates/slk-cargo/src/args.rs",
@@ -708,11 +708,11 @@
     },
     {
       "path": "crates/slk-state-cli/Cargo.lock",
-      "sha256": "dc25364b4f55a7f33639f3495139a1e26f63891c72197f7e967ac0fab02c88c7"
+      "sha256": "bd6d3fcf157f03a8b48d428c662b1000cad2aae5feeef6c0a5dd11af6dc23b67"
     },
     {
       "path": "crates/slk-state-cli/Cargo.toml",
-      "sha256": "af764e4322b995ed288171f0b8fac6f74bae4d82f83eb6cab39c013045d4de58"
+      "sha256": "d619ea078b486f49c26e7e907caa8c6f97e92dd525b7e82361aebb178a8c8dce"
     },
     {
       "path": "crates/slk-state-cli/LICENSE",
@@ -724,11 +724,11 @@
     },
     {
       "path": "crates/slk-state-cli/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "7166e17ec17fda5e676502f2dcee6eae60236fe07b64029de248d3e86b24ae4a"
+      "sha256": "a825429c77f00aa5c86550401e3f8cb9d241819460bdd8e37315b4a413f4a4bd"
     },
     {
       "path": "crates/slk-state-cli/artifacts/windows-x86_64/payload.zip",
-      "sha256": "bc3d5b8b6f45cf82f55435ea428ef512f5e3be72212069f7b163e6adf8880196"
+      "sha256": "cb42f07f3e15c7b5537567d3bfa6d9ca80e31c119144df86ca6480a821e511f0"
     },
     {
       "path": "crates/slk-state-cli/src/main.rs",
@@ -740,7 +740,7 @@
     },
     {
       "path": "crates/slk-state-core/Cargo.lock",
-      "sha256": "c001498c7fc125eb9cdb2dfceca408d9c8010375c21b6de5bff901add0e8448a"
+      "sha256": "90b8de006d66c9f7ee3b8470afcc790d90e005c28f456a323508047d57dfe1a7"
     },
     {
       "path": "crates/slk-state-core/Cargo.toml",
@@ -756,11 +756,11 @@
     },
     {
       "path": "crates/slk-state-core/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "78b77226c14253bdc0701d8689a793ce9dc24ee68eb625f72d1ecedd0ab66716"
+      "sha256": "c1f1076a9ebdfcd5f6c8956e5c7667bc346d90a099280242554c8386529a2a08"
     },
     {
       "path": "crates/slk-state-core/artifacts/windows-x86_64/payload.zip",
-      "sha256": "2a398957ffeaa7e1178f115f0dcd2fabb0b4d4549b91f18ec28f862225e7d34a"
+      "sha256": "08c02c6622994e08d1d240edb2ffdf488b8a6d13ddeec61f5fa2ab44e263ae28"
     },
     {
       "path": "crates/slk-state-core/migrations/0001.sql",
@@ -840,7 +840,7 @@
     },
     {
       "path": "crates/slk-state-core/src/write.rs",
-      "sha256": "f3ab0bb35351d43b2947f7c66218232cc4db6c9f453025f8175cc218537f6b5c"
+      "sha256": "d5ece08dc1ca60200edde43f96a2ea3f277cc9a317021db473b1fa32f7a17ecb"
     },
     {
       "path": "crates/slk-state-core/tests/auth.rs",
@@ -888,7 +888,7 @@
     },
     {
       "path": "crates/slk-state-core/tests/write_flow.rs",
-      "sha256": "c0f8e7404d08d5b3dac73900433a55248675327ba4ac466449b88540ed554675"
+      "sha256": "482f02511628ef3722cf678e60806a920923cfd5a046027ae7a99b80726af040"
     },
     {
       "path": "docs/contracts/slk-checker-completion.schema.json",
@@ -1020,7 +1020,7 @@
     },
     {
       "path": "docs/contracts/slk-subagent-overwatcher.schema.json",
-      "sha256": "811c49c4d37f6fa01c7949726df381076e732d97025e98c2ce20ff2d960e4bf1"
+      "sha256": "7e1b7a6d1f9e0e62d2e19f01e2898f494d1da1488c40b312327bac5c6a480d9e"
     },
     {
       "path": "docs/contracts/slk-supervisor-admin.schema.json",
@@ -1104,7 +1104,7 @@
     },
     {
       "path": "docs/maintenance/2026-10-17-slk-4.5.4-implementation.md",
-      "sha256": "3bfb98086afcdb29a968765f68d64087149b362a4b9be69a9a0efa00bc4dbdcc"
+      "sha256": "86d41ea63477b8339cd9487a25f361ebf03020fe154fb77c5f4f97dd9b2d5ec3"
     },
     {
       "path": "docs/maintenance/4.3.6-budget-partial-continuation-20261003.md",
@@ -1140,11 +1140,11 @@
     },
     {
       "path": "docs/runtime/SLK-TOOL-MODULES.json",
-      "sha256": "dc9176af3647acf45685a56522a05455412026f1f58fa7e171f4f3ba5ca89baf"
+      "sha256": "68a82830ca662f79c4553bc7d312ad7ac6d739d80f9f5c0a4c7fb2c4489f1dab"
     },
     {
       "path": "docs/runtime/SLK-TOOL-MODULES.md",
-      "sha256": "25a02ef3bd038783e73237ff0df812f976d89bbf95ba371c17953596c3d73032"
+      "sha256": "18ef8847785c93a172f8ed7befbcd290c80a26ae606a699a37592da2ced40f7e"
     },
     {
       "path": "docs/runtime/SLK-WINDOWS-RUNTIME.md",
@@ -1468,7 +1468,7 @@
     },
     {
       "path": "docs/transport/SLK-TRANSPORT.md",
-      "sha256": "9662d2e79c956681cd62d4fd16827d3f7058f0e7af5369b055332e232dda85d3"
+      "sha256": "9270e763201e2d2e70eff3db6ada554fbad4faa016a987574d0d54db5531de99"
     },
     {
       "path": "integrations/dsh/LICENSE",
@@ -1556,7 +1556,7 @@
     },
     {
       "path": "integrations/native-probe/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "c40becb6e0b5fc24749f5da7514d1b6d901e148873fac455038d5871ae0ed0c7"
+      "sha256": "3028c6f0d101c067ac8cf4c9d41819258649466db8610036cb04ce5fb7230375"
     },
     {
       "path": "integrations/native-probe/artifacts/windows-x86_64/payload.zip",
@@ -1652,15 +1652,15 @@
     },
     {
       "path": "integrations/ocrv/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "ac7ef5c969b1631565b94b2b84ff458738566e5c612f872d7f0cc625fc6e1ec0"
+      "sha256": "2205ed4f3590cff592d05ab0b915b915d77514bb015f188abae419d7939aff10"
     },
     {
       "path": "integrations/ocrv/artifacts/windows-x86_64/payload.zip.part001",
-      "sha256": "2ad68715e5b2b4757ae2db44842ee6037f26f26b3ae18920d3e069cbf0d0947c"
+      "sha256": "e5ef886fd4314397015182d5168589007f14b8d528a1783882dd8b2ce089ea27"
     },
     {
       "path": "integrations/ocrv/artifacts/windows-x86_64/payload.zip.part002",
-      "sha256": "3ccf842ca163d6901622957ccf60362eb5d01719e94ced2724545f89e96daf05"
+      "sha256": "6e2bb7fb52483b36b976bdfce1302d6d69c36dc75f31527fcb014f6c734a6d48"
     },
     {
       "path": "integrations/ocrv/install.ps1",
@@ -1684,7 +1684,7 @@
     },
     {
       "path": "integrations/ocrv/slk_checker_adapter.py",
-      "sha256": "c8c4aedef8cf69ac846248af74a1fcdfac0b60fa0a2988c29e443a4a0b23b2b0"
+      "sha256": "3527cc57bf66f77dbf2dbf04d45be2633fc328725fdafc4969b1fa03a3585f16"
     },
     {
       "path": "integrations/ocrv/slk_checker_decision.py",
@@ -1712,7 +1712,7 @@
     },
     {
       "path": "integrations/temporal/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "af8f49eb1ca802c205ebf652a46e5b4fc932edcd91aa1f15eb60d016241c0958"
+      "sha256": "551619fca1732006edd35d531bf7dfda7dd47eb5d4d86fc795a8a7c7324ca277"
     },
     {
       "path": "integrations/temporal/artifacts/windows-x86_64/payload.zip.part001",
@@ -1720,7 +1720,7 @@
     },
     {
       "path": "integrations/temporal/artifacts/windows-x86_64/payload.zip.part002",
-      "sha256": "baa6a64684e6a1afdf236ac6630a212ce667573a5753d826047c16f4e30f4a63"
+      "sha256": "b7c95cbf500cb827e4de7854e1fa3f2baad0ec26369d83a3b8b16087ee983b70"
     },
     {
       "path": "integrations/temporal/pyproject.toml",
@@ -1888,7 +1888,7 @@
     },
     {
       "path": "skills/slk-adjust-run/SKILL.md",
-      "sha256": "e412fe9fe1a2c3662ac81caf60b70ac7ee6077787746c8b88e3921e78ab3a90d"
+      "sha256": "4ba90b43f703a3661c1182d8060697d6b0eb1c1517bff36a4958a5d0f28d1b87"
     },
     {
       "path": "skills/slk-adjust-run/references/adjustment-operations.md",
@@ -1948,7 +1948,7 @@
     },
     {
       "path": "skills/slk-overwatch-run/SKILL.md",
-      "sha256": "6a61d91590e21d582e19c614717bc06aebe91f6b2b512656dd63859ed464a5be"
+      "sha256": "85f719270c704c3c73692d7f9fd8f6d01e656c266a9d226c354b59c15cde5ccf"
     },
     {
       "path": "skills/slk-overwatch-run/references/cycle-evidence.md",
@@ -2036,7 +2036,7 @@
     },
     {
       "path": "src/slk_overwatch_tools/artifacts/BUILD_INPUTS.json",
-      "sha256": "4b3b45ac4e714b472914320891f7bc492feafd46e1eba9652b4ffb43d3673c2a"
+      "sha256": "8d1dcac7a0464a75dcd2f579413d4e395a861e0b5298b36be300a44dfaa86dbb"
     },
     {
       "path": "src/slk_overwatch_tools/artifacts/slk_overwatch_tools-1.0.0-py3-none-any.whl",
@@ -2045,6 +2045,10 @@
     {
       "path": "src/slk_overwatch_tools/artifacts/slk_overwatch_tools-1.0.2-py3-none-any.whl",
       "sha256": "4472d48cf746e185dc6ef80aafc654a52c252c88109d563be69f379aea7b1901"
+    },
+    {
+      "path": "src/slk_overwatch_tools/artifacts/slk_overwatch_tools-1.0.3-py3-none-any.whl",
+      "sha256": "2b8ba284d0d2faf78ea5d419d00cf5f21e25c933c2ca5b32ee2ba4ba6ea52b1c"
     },
     {
       "path": "src/slk_overwatch_tools/build_wheel.py",
@@ -2116,11 +2120,11 @@
     },
     {
       "path": "src/slk_transport/artifacts/windows-x86_64/ARTIFACTS.json",
-      "sha256": "877d996d76d780ae2df3c45aa63c7fca2087fd32fef60b6cb193cfbd2a556adb"
+      "sha256": "0de2d6db168d17f3f5c684358819059a6695f00d63a43eea365c5bef51689575"
     },
     {
       "path": "src/slk_transport/artifacts/windows-x86_64/payload.zip",
-      "sha256": "c624d73730c9ece6962460b6ccc1dbceb4b21c3bb75bc8b1ebc0e989e24bcbdc"
+      "sha256": "991accf336ce6a1f76cee3111fbb61079fc8e357ac8d9654d9010723dac8bdbd"
     },
     {
       "path": "src/slk_transport/build_zipapp.py",
@@ -2220,7 +2224,7 @@
     },
     {
       "path": "src/slk_transport/pyproject.toml",
-      "sha256": "3d8d8a3cbcdab54bd2b6cd06588e2a446dcffbe058440b21778853065d4ed1eb"
+      "sha256": "0f4625c4cb3bdb9d63292c922d7cb794759526a0d15cdd92622d7ea56956fd6f"
     },
     {
       "path": "src/slk_transport/recovery.py",
@@ -2232,7 +2236,7 @@
     },
     {
       "path": "src/slk_transport/role_host.py",
-      "sha256": "4272808c92c47b5378bb3b0c59d90b7d6619b3cd5b6985ac02dbdacf1cf951e2"
+      "sha256": "3dcff074807ef04c90c3ad2259c5d0aaa66363fdd8311c2adf19c6be2bee5f4d"
     },
     {
       "path": "src/slk_transport/run_readiness.py",
@@ -2356,7 +2360,7 @@
     },
     {
       "path": "tests/install/test_ocrv_materials.py",
-      "sha256": "7d4bebf0a9f970a2ab27b85d5517ff9166cb38f7cb4404771089fa16d3c7d2d2"
+      "sha256": "32dd63a74a163d61d4a163165d495b2c72d0c7f6a7508c6246fc1a6660eddeb7"
     },
     {
       "path": "tests/install/test_ocrv_preflight.py",
@@ -2392,7 +2396,7 @@
     },
     {
       "path": "tests/state/test_bi_desktop_contract.py",
-      "sha256": "1f2fa9c2276e2407490a1cd4347729ba997eb2854a4afe55209dcf525fede223"
+      "sha256": "08db039430d47dcb0aeaa96e0e58f0e7eaacda25d58aca7dc6b5c2c6fafc2c57"
     },
     {
       "path": "tests/state/test_bi_message_catalog_contract.py",
@@ -2480,7 +2484,7 @@
     },
     {
       "path": "tests/test_repository_300.py",
-      "sha256": "1c4ccde46f71bbba27911c7fbbb4ee4aae8e026ca4f0d9a806a4001cb76a9951"
+      "sha256": "7eaa2c14737046987d75262f50d92fe563c6caff2318cbf7058b47af91148f29"
     },
     {
       "path": "tests/test_repository_build_metadata.py",
@@ -2644,7 +2648,7 @@
     },
     {
       "path": "tests/transport/test_output_delivery.py",
-      "sha256": "c03487eb0a1efe233ff6e4d66424172b3020a18ff36e9648daf4e3b23ecd95e1"
+      "sha256": "d7b3b4314bef062036f2652418c44c701e8b63a16d205ba7ca588b8fa7a28a93"
     },
     {
       "path": "tests/transport/test_overwatcher_admin.py",
