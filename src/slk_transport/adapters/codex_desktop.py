@@ -8,8 +8,8 @@ import shutil
 import time
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping
-from xml.sax.saxutils import escape
+from typing import Any, Callable, Mapping
+from xml.sax.saxutils import escape, unescape
 
 from .base import AdapterError
 from ..contracts import ContractError, DeliveryResult, Endpoint, Envelope, RESULT_SCHEMA, SHA256, canonical_json_sha256
@@ -228,6 +228,15 @@ class DesktopClient(JsonRpcProcess):
         result = self.request(request_id, "tools/call", {"name": name, "arguments": dict(arguments),
             "_meta": {"codex_thread_id": caller}}, timeout)
         content = result.get("content")
+        if result.get("isError") is True and isinstance(content, list):
+            detail = "\n".join(item["text"] for item in content
+                if isinstance(item, Mapping) and item.get("type") == "text" and isinstance(item.get("text"), str))
+            # Only an explicit response-size error is a page-size signal. Tool
+            # permissions, invalid input and identity failures are not retried.
+            oversized = any(term in detail.casefold() for term in (
+                "response too large", "response size exceeded", "result too large", "invalid string length"))
+            code = "CODEX_DESKTOP_READ_PAGE_TOO_LARGE" if name == "read_thread" and oversized else "CODEX_DESKTOP_TOOL_FAILED"
+            raise AdapterError(code, detail or f"Desktop {name} failed")
         if (result.get("isError") is not False or not isinstance(content, list) or len(content) != 1
             or not isinstance(content[0], Mapping) or content[0].get("type") != "text"):
             raise AdapterError("CODEX_DESKTOP_TOOL_FAILED", f"Desktop {name} did not return one successful text result")
@@ -238,6 +247,103 @@ class DesktopClient(JsonRpcProcess):
         if not isinstance(value, Mapping):
             raise AdapterError("CODEX_DESKTOP_PROTOCOL_INVALID", "Desktop result is not an object")
         return value
+
+
+def read_desktop_page(read: Callable[[Mapping[str, Any]], Mapping[str, Any]], arguments: Mapping[str, Any],
+                      *, page_cache: dict | None = None, cache_scope: tuple = ()) -> tuple[Mapping[str, Any], str]:
+    """Retry only the failed read page, retaining its cursor and output shape."""
+    from .. import native_activity
+    shapes = []
+    limit = arguments["turnLimit"]
+    while True:
+        shape = {**arguments, "turnLimit": limit}
+        key = (*cache_scope, canonical_json_sha256(shape))
+        shapes.append((shape, key))
+        if page_cache is not None and key in page_cache:
+            return page_cache[key]
+        if limit == 1:
+            break
+        limit = max(1, limit // 2)
+    for shape, key in shapes:
+        try:
+            result = read(shape), native_activity.utc_now()
+        except (TimeoutError, AdapterError) as exc:
+            if shape["turnLimit"] == 1 and isinstance(exc, TimeoutError):
+                raise AdapterError("CODEX_RPC_TIMEOUT", "Desktop read_thread timed out at the original cursor's "
+                    "minimum page; do not resend" + (": " + str(exc) if str(exc) else "")) from exc
+            if (shape["turnLimit"] == 1 or isinstance(exc, AdapterError)
+                and exc.error_code not in {"CODEX_RPC_TIMEOUT", "CODEX_DESKTOP_READ_PAGE_TOO_LARGE"}):
+                raise
+            continue
+        if page_cache is not None:
+            page_cache[key] = result
+        return result
+    raise AssertionError("minimum Desktop page was not attempted")
+
+
+def next_desktop_cursor(view: Mapping[str, Any], seen: set[str]) -> str | None:
+    page = view.get("page")
+    if not isinstance(page, Mapping) or type(page.get("hasMore")) is not bool:
+        raise AdapterError("CODEX_DESKTOP_PROTOCOL_INVALID", "Desktop history page is malformed")
+    if not page["hasMore"]:
+        return None
+    cursor = page.get("nextCursor")
+    if not isinstance(cursor, str) or not cursor or cursor in seen:
+        raise AdapterError("CODEX_DESKTOP_READBACK_UNPROVED", "Desktop history cursor is missing or repeated; do not resend")
+    seen.add(cursor)
+    return cursor
+
+
+def desktop_pre_send_failure(source: Path, endpoint: Mapping[str, Any], *, run_id: str,
+                             message_id: str, request_sha256: str) -> bool:
+    """An accepted transport envelope is not proof that a native send began."""
+    path = source / "desktop-pre-send-failure.json"
+    if not path.is_file() or any((source / name).exists() for name in (
+        "desktop-readback-anchor.json", "desktop-send.json", "started.json", "desktop-readback.json")):
+        return False
+    value = _read_object(path, "Desktop pre-send boundary")
+    if (set(value) != {"schema_version", "phase", "run_id", "message_id", "request_sha256", "endpoint_sha256",
+            "error_code", "observed_at"}
+        or value.get("schema_version") != "slk.desktop-send-boundary/v1" or value.get("phase") != "NOT_SENT"
+        or value.get("run_id") != run_id or value.get("message_id") != message_id
+        or value.get("request_sha256") != request_sha256
+        or value.get("endpoint_sha256") != hashlib.sha256((source / "endpoint.json").read_bytes()).hexdigest()
+        or not isinstance(value.get("error_code"), str) or not value["error_code"]
+        or not isinstance(value.get("observed_at"), str) or not value["observed_at"]
+        or endpoint.get("run_id") != run_id):
+        raise ValueError("Desktop pre-send boundary changed its original identity")
+    if (source / "failed.json").is_file():
+        failed = DeliveryResult.from_dict(_read_object(source / "failed.json", "original Desktop failure"))
+        if (failed.run_id != run_id or failed.message_id != message_id or failed.adapter != endpoint["adapter"]
+            or failed.status != "failed" or failed.native_identity or failed.error_code != value["error_code"]
+            or path.name not in failed.evidence):
+            raise ValueError("Desktop pre-send boundary differs from its original failure")
+    return True
+
+
+def validate_desktop_receipt(proof: Mapping[str, Any], start: Mapping[str, Any]) -> None:
+    """Validate the sealed original input; lifecycle readers need no live body."""
+    item = proof.get("platform_item")
+    output = item.get("output") if isinstance(item, Mapping) else None
+    if (not isinstance(output, Mapping) or output.get("truncated") is not False
+        or not isinstance(output.get("text"), str)
+        or item.get("id") != proof.get("platform_item_id")
+        or item.get("type") != "functionCallOutput" or item.get("name") != "send_message_to_thread"
+        or item.get("namespace") != "codex_app"
+        or not isinstance(proof.get("caller_thread_id"), str) or not proof["caller_thread_id"]
+        or proof.get("message_id") != start["message_id"]
+        or proof.get("turn_status") not in {"completed", "inProgress", "active"}
+        or start["native_task"]["id"] != f"{proof.get('thread_id')}:{proof.get('turn_id')}:{proof.get('platform_item_id')}"):
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "sealed Desktop receipt identity is incomplete or changed")
+    # XML parsers normalize CRLF; the native request digest binds exact bytes.
+    prefix = "<codex_delegation>\n  <source_thread_id>" + escape(proof["caller_thread_id"]) + "</source_thread_id>\n  <input>"
+    suffix = "</input>\n</codex_delegation>"
+    if not output["text"].startswith(prefix) or not output["text"].endswith(suffix):
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "sealed Desktop original input wrapper or caller changed")
+    prompt = unescape(output["text"][len(prefix):-len(suffix)])
+    if (_delegation(prompt, proof["caller_thread_id"]) != output["text"]
+        or hashlib.sha256(prompt.encode()).hexdigest() != start["native_request_sha256"]):
+        raise AdapterError("CODEX_DESKTOP_READBACK_DRIFT", "sealed Desktop original input hash or caller changed")
 
 
 def _view(value: Mapping[str, Any], endpoint: Endpoint) -> tuple[Mapping[str, Any], list]:
@@ -505,7 +611,13 @@ def consume_desktop_readback(
     """Read the original Desktop delivery once; never send or create a replacement turn."""
     validate_desktop_address(endpoint.address)
     address, binding = endpoint.address, endpoint.address["desktop"]
-    reader, target = _executor(endpoint, envelope), address["thread_id"]
+    reader, target = os.environ.get("CODEX_THREAD_ID"), address["thread_id"]
+    # Reading an original delivery is not new sending authority. Keep its
+    # sealed caller identity below, independently of the current reader.
+    if (not isinstance(reader, str) or not reader.strip() or reader != reader.strip()
+        or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")
+        or os.environ.get("CODEX_INTERNAL_ORIGINATOR_OVERRIDE") != "Codex Desktop"):
+        raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "the trusted Desktop readback capability was not inherited")
     if prompt is None:
         prompt_record = _read_object(attempt.root / "desktop-prompt.json", "Desktop prompt evidence")
         if (set(prompt_record) != {"message_id", "prompt"}
@@ -548,6 +660,7 @@ def consume_desktop_readback(
             if (started["native_task"]["kind"] != "codex-desktop-turn"
                 or started["native_task"]["id"] != native_id):
                 raise ValueError("saved native start changed identity")
+            validate_desktop_receipt(proof, started)
         except (OSError, KeyError, ValueError) as exc:
             raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "saved native start changed identity") from exc
         return DeliveryResult(
@@ -572,13 +685,24 @@ def consume_desktop_readback(
             raise AdapterError("CODEX_DESKTOP_HOST_UNAVAILABLE", "installed Desktop plugin lacks read_thread")
         args = {"threadId": target, "hostId": endpoint.host_id, "turnLimit": 2,
                 "includeOutputs": True, "maxOutputCharsPerItem": min(DESKTOP_READ_LIMIT, len(expected) + 512)}
-        view = client.call(3, "read_thread", args, reader, timeout)
-        _, turns = _view(view, endpoint)
-        matches = _matching_items(turns, previous=set(anchor["previous_turn_ids"]),
-            previous_items=set(anchor["previous_item_ids"]), active=set(anchor["active_turn_ids"]),
-            expected=expected)
-        if len(matches) > 1:
-            raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "multiple native items claim this exact delivery")
+        request_id, matches, cursors = 3, [], set()
+        def read_page(arguments):
+            nonlocal request_id
+            current = request_id
+            request_id += 1
+            return client.call(current, "read_thread", arguments, reader, timeout)
+        while True:
+            view, _ = read_desktop_page(read_page, args)
+            _, turns = _view(view, endpoint)
+            matches.extend(_matching_items(turns, previous=set(anchor["previous_turn_ids"]),
+                previous_items=set(anchor["previous_item_ids"]), active=set(anchor["active_turn_ids"]),
+                expected=expected))
+            if len(matches) > 1:
+                raise AdapterError("CODEX_DESKTOP_READBACK_AMBIGUOUS", "multiple native items claim this exact delivery")
+            cursor = next_desktop_cursor(view, cursors)
+            if cursor is None:
+                break
+            args["cursor"] = cursor
         if not matches:
             raise AdapterError("CODEX_DESKTOP_READBACK_UNPROVED", "original accepted send still lacks exact native proof; do not resend")
         return _readback_result(endpoint, envelope, attempt, *matches[0], prompt_sha256, str(caller),
@@ -598,6 +722,14 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
     timeout = float(address["startup_timeout_seconds"])
     command, native_runtime = resolve_desktop_runtime(address, attempt=attempt)
     client = DesktopClient(command, Path(str(address["cwd"])))
+    def record_pre_send_failure(code):
+        path = attempt.root / "desktop-pre-send-failure.json"
+        if (not path.exists() and (attempt.root / "endpoint.json").is_file()
+            and not (attempt.root / "desktop-readback-anchor.json").exists()):
+            attempt.write_json_once(path.name, {"schema_version": "slk.desktop-send-boundary/v1", "phase": "NOT_SENT",
+                "run_id": envelope.run_id, "message_id": envelope.message_id, "request_sha256": envelope.payload_sha256,
+                "endpoint_sha256": hashlib.sha256((attempt.root / "endpoint.json").read_bytes()).hexdigest(),
+                "error_code": code, "observed_at": utc_now()})
     try:
         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
             "clientInfo": {"name": "slk_transport_desktop", "version": "4.4.5"}}, timeout)
@@ -714,7 +846,11 @@ def deliver_desktop(endpoint: Endpoint, envelope: Envelope, attempt: Attempt, pr
             # The transport bounds startup/RPCs, not an already proven engineering turn.
             # Residency alarms and recovery decisions remain with Temporal/Supervisor.
             time.sleep(.5 if proven else min(.5, max(.001, deadline - now)))
+    except AdapterError as error:
+        record_pre_send_failure(error.error_code)
+        raise
     except TimeoutError as error:
+        record_pre_send_failure("CODEX_RPC_TIMEOUT")
         raise AdapterError("CODEX_RPC_TIMEOUT", "Desktop native tool timed out; accepted/start evidence remains separate") from error
     finally:
         client.close()

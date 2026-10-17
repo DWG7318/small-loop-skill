@@ -33,10 +33,11 @@ REQUEST_FIELDS = {
     "d1_criteria", "evidence_files", "review_scope", "capacity",
 }
 SCOPE_FIELDS = {"include_paths", "exclude_paths", "criterion_ids", "scope_sha256"}
-CAPACITY_FIELDS = {
+LEGACY_CAPACITY_FIELDS = {
     "max_background_characters", "max_background_bytes", "max_changed_lines",
-    "max_segment_paths", "max_tokens", "max_tokens_budget", "timeout_minutes",
+    "max_segment_paths",
 }
+CAPACITY_FIELDS = {"max_tokens", "max_tokens_budget", "timeout_minutes"}
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40,64}$")
 
@@ -151,19 +152,49 @@ def _compact_evidence(path: Path) -> dict[str, Any]:
         if isinstance(next_payload, dict) and isinstance(next_payload.get("changed_paths"), list):
             all_paths = [value for value in next_payload["changed_paths"]
                          if isinstance(value, str) and value]
-            shown = all_paths[:1000]
-            summary["changed_paths"] = shown
+            summary["changed_paths"] = all_paths
             summary["changed_paths_summary"] = {
                 "total": len(all_paths),
-                "shown": len(shown),
-                "omitted": len(all_paths) - len(shown),
+                "shown": len(all_paths),
+                "omitted": 0,
                 "source": str(path.resolve()),
             }
+        # Only existing explicit public D0 locators grant admission. Never scan
+        # prose, tool output, private reasoning or arbitrary JSON path fields.
+        declared = []
+        for owner in (raw, next_payload):
+            d0 = owner.get("d0") if isinstance(owner, dict) else None
+            refs = d0.get("evidence_files") if isinstance(d0, dict) else None
+            if isinstance(refs, list):
+                declared.extend(ref for ref in refs if isinstance(ref, str) and ref.strip())
+        if declared:
+            summary["declared_evidence_files"] = declared
         for key in ("base_commit", "head_commit", "candidate_commit"):
             if isinstance(raw.get(key), str):
                 summary[key] = raw[key]
     item["summary"] = summary
     return item
+
+
+def _private_evidence_reason(path: Path) -> str | None:
+    name = path.name.lower()
+    if name in {"native.stdout.txt", "native.stderr.txt", "ocrv.stdout.txt", "ocrv.stderr.txt",
+                "thinking.txt", "reasoning.txt"}:
+        return "PRIVATE_DIAGNOSTIC"
+    # Native OCRV/Codex JSONL and DSH session stores contain private messages,
+    # reasoning and tool payloads. A D0 locator (even frozen) cannot make them
+    # public evidence. Check the resolved source before any content read/hash;
+    # ordinary public D0 logs outside these native storage shapes stay uncapped.
+    parents = {part.lower() for part in path.parts[:-1]}
+    if (parents & {"sessions", "archived_sessions"}
+        and (path.suffix.lower() == ".jsonl"
+             or (name.startswith("session-") and path.suffix.lower() == ".json"))):
+        return "PRIVATE_DIAGNOSTIC"
+    if (name in {".env", "auth.json", "credentials.json", "credentials", "id_rsa", "id_ed25519"}
+        or name.startswith(".env.") or path.suffix.lower() in {".dpapi", ".key", ".pem"}
+        or any(part.lower() in {"credentials", ".ssh", ".secrets"} for part in path.parts)):
+        return "PRIVATE_CREDENTIAL"
+    return None
 
 
 def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
@@ -185,9 +216,9 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
     if scope["scope_sha256"] != _canonical_sha(scope_body):
         raise RequestError("review scope hash mismatch")
     capacity = value["capacity"]
-    if not isinstance(capacity, dict) or set(capacity) != CAPACITY_FIELDS:
+    if not isinstance(capacity, dict) or set(capacity) not in (CAPACITY_FIELDS, CAPACITY_FIELDS | LEGACY_CAPACITY_FIELDS):
         raise RequestError("capacity must use the exact field set")
-    positive = CAPACITY_FIELDS - {"max_tokens_budget", "timeout_minutes"}
+    positive = {"max_tokens"}
     if not all(
         isinstance(capacity[name], int) and not isinstance(capacity[name], bool) and capacity[name] > 0
         for name in positive
@@ -217,33 +248,41 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
             raise RequestError("duplicate frozen evidence path")
         frozen_paths.add(path)
     evidence: list[dict[str, Any]] = []
-    private_names = {"native.stderr.txt", "ocrv.stderr.txt", "thinking.txt", "reasoning.txt"}
-    for raw_path in evidence_paths:
-        path = Path(_nonempty(raw_path, "evidence file")).resolve()
-        if path in frozen_paths:
-            continue  # An overlapping legacy locator never overrides a frozen hash.
-        if not path.is_file():
-            raise RequestError(f"evidence file does not exist: {path}")
-        if path.name.lower() in private_names:
-            continue  # private diagnostics remain archived, not engineering input
-        evidence.append(_compact_evidence(path))
     evidence_gaps = []
-    for ref in frozen_refs:
-        path = Path(ref["path"]).resolve()
-        if path.name.lower() in private_names:
-            evidence_gaps.append({**ref, "reason": "PRIVATE_DIAGNOSTIC"})
+    frozen_by_path = {Path(ref["path"]).resolve(): ref for ref in frozen_refs}
+    pending = [(raw, None) for raw in evidence_paths] + [(ref["path"], None) for ref in frozen_refs]
+    seen: set[Path] = set()
+    for raw_path, declared_by in pending:
+        path = Path(_nonempty(raw_path, "evidence file"))
+        if not path.is_absolute():
+            evidence_gaps.append({"path": str(path), "reason": "NOT_ABSOLUTE", "declared_by": declared_by})
+            continue
+        path = path.resolve()
+        if path in seen:
+            continue
+        seen.add(path)
+        ref = frozen_by_path.get(path)
+        locator = {**(ref or {}), "path": str(path)}
+        if declared_by is not None:
+            locator["declared_by"] = declared_by
+        reason = _private_evidence_reason(path)
+        if reason:
+            evidence_gaps.append({**locator, "reason": reason})
             continue
         try:
             item = _compact_evidence(path)
         except OSError:
-            evidence_gaps.append({**ref, "reason": "UNAVAILABLE"})
+            evidence_gaps.append({**locator, "reason": "UNAVAILABLE"})
             continue
-        if item["sha256"] != ref["sha256"] or ("bytes" in ref and item["bytes"] != ref["bytes"]):
-            evidence_gaps.append({**ref, "reason": "CHANGED", "observed_sha256": item["sha256"],
+        if ref is not None and (item["sha256"] != ref["sha256"] or ("bytes" in ref and item["bytes"] != ref["bytes"])):
+            evidence_gaps.append({**locator, "reason": "CHANGED", "observed_sha256": item["sha256"],
                                   "observed_bytes": item["bytes"]})
             continue
-        item["sha256"] = ref["sha256"]  # The reader is pinned to the original approval.
+        item["availability"] = "AVAILABLE"
+        if declared_by is not None:
+            item["declared_by"] = declared_by
         evidence.append(item)
+        pending.extend((child, str(path)) for child in item["summary"].get("declared_evidence_files", []))
     management = value.get("management_context")
     if "management_context" in value:
         fields = {"management_action", "management_summary", "management_evidence_refs"}
@@ -274,6 +313,7 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
         "cell_goal": _nonempty(value["cell_goal"], "cell_goal"),
         "d1_criteria": criteria,
         "evidence": evidence,
+        "evidence_gaps": evidence_gaps,
         "review_scope": {**scope_body, "scope_sha256": scope["scope_sha256"]},
         "capacity": dict(capacity),
     }
@@ -281,7 +321,6 @@ def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
         normalized["management_context"] = management
     if "evidence_refs" in value:
         normalized["evidence_refs"] = [dict(ref) for ref in frozen_refs]
-        normalized["evidence_gaps"] = evidence_gaps
     return normalized
 
 
@@ -327,8 +366,9 @@ def _index_materials(
         **(native_context or {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
         "native_task_id": invocation,
     }
-    frozen = ({"evidence_refs": request["evidence_refs"], "evidence_gaps": request["evidence_gaps"]}
-              if "evidence_refs" in request else {})
+    frozen = {"evidence_gaps": request["evidence_gaps"]}
+    if "evidence_refs" in request:
+        frozen["evidence_refs"] = request["evidence_refs"]
     original = _compact_evidence(request_path.resolve())
     if native_context is not None and original["sha256"] != native_context["native_request_sha256"]:
         raise RequestError("original request hash does not match native invocation")
@@ -707,6 +747,32 @@ def _normalized_findings(review: dict[str, Any] | None) -> list[dict[str, Any]] 
     ]
 
 
+def _normalized_retry_report(review: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Project the native public HTTP metadata, never bodies or SDK error text."""
+    report = review.get("retry_report") if isinstance(review, dict) else None
+    if (not isinstance(report, dict) or report.get("schema_version") != "ocr.llm-retry-report/v1"
+        or not isinstance(report.get("requests"), list)):
+        return None
+    def fields(value, strings=(), integers=(), booleans=()):
+        return {key: item for key, item in value.items() if
+                (key in strings and isinstance(item, str)) or
+                (key in integers and type(item) is int) or
+                (key in booleans and type(item) is bool)}
+    projected = fields(report, ("schema_version",), ("total_requests", "retried_requests",
+        "total_retries", "recovered_requests", "failed_requests", "cancelled_requests"))
+    projected["requests"] = []
+    for request in report.get("requests", []):
+        if not isinstance(request, dict) or not isinstance(request.get("attempts"), list):
+            return None
+        item = fields(request, ("logical_request_id", "provider", "model", "file_path", "task_type", "outcome"),
+                      ("request_no",))
+        item["attempts"] = [fields(attempt, ("outcome", "error_class", "failure_phase", "request_id"),
+            ("attempt", "status_code", "retry_after_ms", "observed_backoff_ms", "duration_to_headers_ms"),
+            ("sdk_retry_directive",)) for attempt in request.get("attempts", []) if isinstance(attempt, dict)]
+        projected["requests"].append(item)
+    return projected
+
+
 def _transport_import_path() -> None:
     root = _packaged_root()
     if root is not None:
@@ -751,7 +817,8 @@ def _resume_preflight(native, request_path: Path, resume_session: str | None,
         from slk_transport.adapters.ocrv import OcrvAdapter
         expected = OcrvAdapter()._candidate_request(envelope, OcrvAdapter._executing_capacity(endpoint["address"]))
         actual = _validate_request(_read_json(request_path))
-        if any(actual[key] != expected[key] for key in ("run_id", "cell_id", "repository", "candidate", "cell_goal", "d1_criteria", "review_scope", "capacity")):
+        if (any(actual[key] != expected[key] for key in ("run_id", "cell_id", "repository", "candidate", "cell_goal", "d1_criteria", "review_scope"))
+            or any(actual["capacity"][key] != expected["capacity"][key] for key in CAPACITY_FIELDS)):
             raise RequestError("resume changed the original frozen CELL/candidate scope")
         start = validate_native_start(receipt, adapter=endpoint["adapter"], run_id=envelope.run_id,
             cell_id=envelope.cell_id, message_id=envelope.message_id, request_sha256=envelope.payload_sha256,
@@ -841,8 +908,8 @@ def run(
         _write_json_atomic(index_path, {
             **(native[1] if native is not None else {"run_id": request["run_id"], "cell_id": request["cell_id"]}),
             "native_task_id": invocation, "evidence": request["evidence"],
-            **({"evidence_refs": request["evidence_refs"], "evidence_gaps": request["evidence_gaps"]}
-               if "evidence_refs" in request else {}),
+            "evidence_gaps": request["evidence_gaps"],
+            **({"evidence_refs": request["evidence_refs"]} if "evidence_refs" in request else {}),
         })
     source = None
     if native is not None:
@@ -1054,8 +1121,10 @@ def run(
             "exit_code": returncode,
             "closure_reason": "EXPLICIT_D1_COMPLETED" if completed_decision is not None else None,
             "closure_error": closure_error,
+            "retry_report": _normalized_retry_report(review),
         },
-        "evidence": request["evidence"], "request_sha256": _sha256(result_request_path or request_path),
+        "evidence": request["evidence"], "evidence_gaps": request["evidence_gaps"],
+        "request_sha256": _sha256(result_request_path or request_path),
         "artifacts": {
             "background": str(background_path), "raw_review": str(raw_path),
             "stdout": str(stdout_path), "stderr": str(stderr_path),

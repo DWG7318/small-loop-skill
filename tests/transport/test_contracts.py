@@ -117,6 +117,29 @@ def test_cell_dispatch_requires_closed_worker_wrapper_before_delivery() -> None:
             parse_delivery(endpoint, changed)
 
 
+def test_worker_checkpoint_can_report_to_supervisor_without_candidate() -> None:
+    endpoint = endpoint_value(role="supervisor")
+    raw = envelope_value(sender_role="worker", receiver_role="supervisor")
+    raw["payload_type"] = "WORKER_REPORT"
+    raw["payload"] = {"candidate_status": "NOT_PROVIDED", "files": []}
+    raw["payload_sha256"] = payload_hash(raw["payload"])
+    assert parse_delivery(endpoint, raw).envelope.token_sequence == 1
+
+
+@pytest.mark.parametrize("kind,payload", [
+    ("CANDIDATE_READY", {"candidate_status": "PROVIDED", "candidate": {"kind": "commit", "commit": "abc"}}),
+    ("WORKER_REPORT", {"candidate_status": "PROVIDED"}),
+    ("WORKER_REPORT", {"candidate_status": "NOT_PROVIDED", "candidate": None}),
+    ("WORKER_REPORT", {}),
+    ("TRANSPORT_PROBE", {"candidate_status": "NOT_PROVIDED"}),
+])
+def test_worker_cannot_bypass_checker_with_engineering_handoff(kind, payload) -> None:
+    raw = envelope_value(sender_role="worker", receiver_role="supervisor")
+    raw.update(payload_type=kind, payload=payload, payload_sha256=payload_hash(payload))
+    with pytest.raises(ContractError, match="role edge|checkpoint"):
+        parse_delivery(endpoint_value(role="supervisor"), raw)
+
+
 @pytest.mark.parametrize(
     ("sender_role", "receiver_role"),
     [

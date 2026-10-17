@@ -97,7 +97,7 @@ def _validate_ow_attestation(
     if not SHA256.fullmatch(expected_sha256) or _sha256(path) != expected_sha256:
         raise ValueError("Overwatcher attestation hash changed")
     value = _object(path, "Overwatcher attestation")
-    if method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}:
+    if method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}:
         # Static reference correlation only. Ordinary delivery must not require
         # a live native list sample; audit/resume invoke the original transport
         # proof reader and current central binding check, not a copied validator.
@@ -168,8 +168,8 @@ def _load_config(run_id: str) -> dict[str, Any]:
     schema_version = value.get("schema_version")
     if (set(value) != CONFIG_FIELDS or schema_version not in {
             "slk.temporal-standard-adapter/v1", "slk.temporal-standard-adapter/v2"}
-        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3"} or value.get("run_id") != run_id
-        or (value.get("method_version") in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"} and schema_version != "slk.temporal-standard-adapter/v2")):
+        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"} or value.get("run_id") != run_id
+        or (value.get("method_version") in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"} and schema_version != "slk.temporal-standard-adapter/v2")):
         raise ValueError("standard adapter Run config is not closed")
     value["transport_command"] = _command(value["transport_command"], "transport command")
     value["query_command"] = _command(value["query_command"], "query command")
@@ -220,7 +220,7 @@ def _load_bootstrap_config(run_id: str) -> dict[str, Any]:
     value = _object(_CONFIG_ROOT / f"{run_id}.bootstrap.json", "standard adapter bootstrap config")
     if (set(value) != BOOTSTRAP_FIELDS
         or value.get("schema_version") != "slk.temporal-standard-bootstrap/v1"
-        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3"} or value.get("run_id") != run_id):
+        or value.get("method_version") not in {"4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"} or value.get("run_id") != run_id):
         raise ValueError("standard adapter bootstrap config is not closed")
     value["query_command"] = _command(value["query_command"], "query command")
     value["state_config_path"] = str(_existing_path(value["state_config_path"], "state config"))
@@ -332,7 +332,7 @@ async def prepare_run(value: dict[str, Any]) -> dict[str, Any]:
             or projection.get("runtime_snapshot", {}).get("runtime_revision") != request.runtime_revision
             or projection.get("runtime_snapshot", {}).get("method_version") != request.method_version):
             raise ValueError("new Run admission or live runtime revision does not match startup")
-        if config["admission_kind"] == "PRODUCT" and projection["runtime_snapshot"]["method_version"] in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}:
+        if config["admission_kind"] == "PRODUCT" and projection["runtime_snapshot"]["method_version"] in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}:
             # Basic preflight proves registration, not native child liveness.
             # Reuse the frozen proof and this current projection, without the audit's cadence gate.
             ow = config["overwatcher_activity"]
@@ -469,7 +469,7 @@ async def inspect_overwatcher(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Overwatcher audit changed the frozen identity")
 
     def perform() -> dict[str, Any]:
-        native_subagent = config["method_version"] in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}
+        native_subagent = config["method_version"] in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}
         arguments = ["inspect-native-activity", "--started", ow["started_path"]]
         if config["schema_version"] == "slk.temporal-standard-adapter/v2":
             proof_flag = "--subagent-overwatcher-proof" if native_subagent else "--desktop-overwatcher-attestation"

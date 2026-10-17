@@ -872,7 +872,10 @@ def inspect_worker_completion(
         outgoing = parse_delivery(target, raw).envelope
         if ((outgoing.run_id, outgoing.go_id, outgoing.cell_id) != (envelope.run_id, envelope.go_id, envelope.cell_id)
             or outgoing.sender_role_instance_id != endpoint.role_instance_id
-            or outgoing.receiver_role != "checker"
+            or (outgoing.receiver_role != "checker" and not (
+                outgoing.receiver_role == "supervisor" and outgoing.payload_type == "WORKER_REPORT"
+                and outgoing.payload.get("candidate_status") == "NOT_PROVIDED"
+                and "candidate" not in outgoing.payload))
             or outgoing.payload.get("source_message_id") != envelope.message_id):
             raise CompletionError("WORKER_COMPLETION_EVIDENCE_INVALID", "output report changed dispatch identity")
         native = output_root / "output-attempts" / outgoing.run_id / outgoing.message_id

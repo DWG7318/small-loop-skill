@@ -34,9 +34,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Explicit local probe dependency failed.' }
     & $Go mod tidy
     if ($LASTEXITCODE -ne 0) { throw 'OCRV dependencies failed.' }
-    & $Go test ./internal/session ./internal/agent ./internal/llmloop ./internal/mcp
+    & $Go test ./internal/session ./internal/agent ./internal/llmloop ./internal/mcp ./internal/llm
     if ($LASTEXITCODE -ne 0) { throw 'OCRV native lifecycle/whole-CELL regression failed.' }
-    & $Go build -trimpath -buildvcs=false -ldflags '-X main.Version=1.12.13-slkprobe.1.0.1' -o (Join-Path $output 'opencodereview-1.12.13-slkprobe.1.0.1.exe') ./cmd/opencodereview
+    & $Go build -trimpath -buildvcs=false -ldflags '-X main.Version=1.12.13-slkprobe.1.0.2' -o (Join-Path $output 'opencodereview-1.12.13-slkprobe.1.0.2.exe') ./cmd/opencodereview
     if ($LASTEXITCODE -ne 0) { throw 'Modified OCRV build failed.' }
 } finally { Pop-Location }
 Write-Output ('Developer source retained at ' + $source)

@@ -28,21 +28,23 @@ def _session(path: Path, source: Mapping[str, Any], request: Mapping[str, Any]) 
     ended = False
     terminal_event = None
     conflict = False
+    activity = {"last_request_at": None, "last_response_at": None, "last_tool_at": None,
+                "last_error_at": None, "phase": "SESSION_STARTED"}
     with path.open("rb") as stream:
         for raw in stream:
-            # An incomplete append is not a new native fact. Private response
-            # records need no JSON decoding and are never copied into evidence.
+            # An incomplete append is not a new native fact. Only the public
+            # envelope metadata is projected; no prompt/response/error body.
             if not raw.endswith(b"\n"):
                 break
-            kind_match = re.search(br'"type"\s*:\s*"(session_start|llm_request|tool_call|session_end)"', raw)
+            kind_match = re.search(br'"type"\s*:\s*"(session_start|llm_request|llm_response|llm_error|tool_call|session_end)"', raw)
             if kind_match is None:
                 continue
             kind = kind_match[1].decode("ascii")
-            if kind == "llm_request" and (input_proof is not None or marker.encode() not in raw):
-                continue
             row = json.loads(raw)
             if row.get("type") != kind:
                 continue
+            if kind in {"llm_request", "llm_response", "llm_error"} and not isinstance(row.get("timestamp"), str):
+                continue  # Old private-only rows contain no observable event time.
             if kind == "session_start" and not ended:
                 if header is not None or row.get("sessionId") != path.stem:
                     raise ValueError("native header is not unique")
@@ -61,14 +63,25 @@ def _session(path: Path, source: Mapping[str, Any], request: Mapping[str, Any]) 
             elif header is None or row.get("sessionId") != header["session_id"]:
                 raise ValueError("native action changed Session identity")
             if kind == "llm_request":
-                if any(isinstance(message, dict) and isinstance(message.get("content"), str)
+                if input_proof is None and any(isinstance(message, dict) and isinstance(message.get("content"), str)
                        and marker in message["content"].splitlines() for message in row.get("messages", [])):
                     input_proof = {"input_record_uuid": row["uuid"], "input_record_sha256": hashlib.sha256(raw).hexdigest()}
-                continue
+            metadata = {"llm_request": ("last_request_at", "AWAITING_MODEL"),
+                        "llm_response": ("last_response_at", "MODEL_RESPONDED"),
+                        "llm_error": ("last_error_at", "REQUEST_FAILED"),
+                        "tool_call": ("last_tool_at", "TOOL_COMPLETED")}
+            if kind in metadata:
+                key, phase = metadata[kind]
+                activity.update({key: row["timestamp"], "phase": phase})
+            elif kind == "session_end":
+                activity["phase"] = "SESSION_ENDED"
             sequence += 1
             last = {"kind": {"session_start": "OCRV_SESSION_START", "tool_call": "OCRV_TOOL_CALL",
+                             "llm_request": "OCRV_LLM_REQUEST", "llm_response": "OCRV_LLM_RESPONSE",
+                             "llm_error": "OCRV_ERROR",
                              "session_end": "OCRV_SESSION_END"}[kind],
-                    "sequence": sequence, "session_id": row["sessionId"], "observed_at": row["timestamp"]}
+                    "sequence": sequence, "session_id": row["sessionId"], "observed_at": row["timestamp"],
+                    "observed_activity": dict(activity)}
             if kind == "tool_call":
                 last.update({key: row[key] for key in ("tool_name", "ok", "duration_ms")})
             public_record = {"kind": last["kind"], "sequence": sequence, "observed_at": row["timestamp"],

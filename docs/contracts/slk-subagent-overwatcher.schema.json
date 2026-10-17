@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "slk-subagent-overwatcher.schema.json",
-  "title": "SLK 4.5.3 read-only native subagent request and original-record proof",
-  "$comment": "Current Codex private JSONL adapter, not a stable universal API or cryptographic host attestation. native_execution_id locates a real parent spawn/followup call, not a child turn UUID; legacy foreground_turn_id stores this explicitly kinded execution locator. Parent host identity is declared registration data, not independently proved by rollout. Followup requires the exact previous activation, a fresh completed pre-sample, empty tool return, and a new running query after that return; an accepted request alone is not activation. Freeze only original spawn, previous/current activation and pre/post sample records, never recursive history or the growing file hash. canonical_task_id remains original spawn while current native task/message/hash follows activation. Optional exact linked child metadata allows its own original list_agents sample; parent-only proofs do not prove child tool activity. Neither proves authority, isolation, future liveness or autonomous cadence. Reader PID is not child PID. Test roots are simulations.",
+  "title": "SLK 4.5.4 read-only native subagent request and original-record proof",
+  "$comment": "Current Codex private JSONL adapter, not a stable universal API or cryptographic host attestation. native_execution_id locates a real parent spawn/followup call, not a child turn UUID; legacy foreground_turn_id stores this explicitly kinded execution locator. Parent host identity is declared registration data, not independently proved by rollout. Followup requires the exact previous activation, a fresh terminal (COMPLETED or FAILED) pre-sample, empty tool return, and a new running query after that return; an accepted request alone is not activation. Freeze only original spawn, previous/current activation and pre/post sample records, never recursive history or the growing file hash. canonical_task_id remains original spawn while current native task/message/hash follows activation. Optional exact linked child metadata allows its own original list_agents sample; parent-only proofs do not prove child tool activity. Neither proves authority, isolation, future liveness or autonomous cadence. Reader PID is not child PID. Test roots are simulations.",
   "oneOf": [{"$ref": "#/$defs/request"}, {"$ref": "#/$defs/proof"}],
   "$defs": {
     "text": {"type": "string", "minLength": 1, "pattern": "^\\S(?:[\\s\\S]*\\S)?$"},
@@ -50,7 +50,7 @@
       "required": ["method_version", "run_id", "role_instance_id", "endpoint_ref", "native_address", "native_execution_id"],
       "oneOf": [{"required": ["native_source_path"], "not": {"required": ["native_source_paths"]}}, {"required": ["native_source_paths"], "not": {"required": ["native_source_path"]}}],
       "properties": {
-        "method_version": {"enum": ["4.5.0", "4.5.1", "4.5.2", "4.5.3"]},
+        "method_version": {"enum": ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"]},
         "run_id": {"$ref": "#/$defs/text"}, "role_instance_id": {"$ref": "#/$defs/text"}, "endpoint_ref": {"$ref": "#/$defs/text"},
         "native_address": {"$ref": "#/$defs/nativeAddress"},
         "native_execution_id": {"type": "string", "pattern": "^codex-subagent-(spawn|followup):call_[A-Za-z0-9_]+$"},
@@ -73,6 +73,7 @@
     "followupProof": {
       "required": ["activation_call_sha256", "activation_output_sha256", "activation_query_timestamp", "activation_output_timestamp", "previous_activation_call_sha256", "previous_activation_output_sha256", "previous_activation_query_timestamp", "previous_activation_output_timestamp", "pre_activation_sample_call_sha256", "pre_activation_sample_output_sha256", "pre_activation_sample_query_timestamp", "pre_activation_sample_output_timestamp"],
       "properties": {
+        "pre_activation_agent_status": {"enum": ["COMPLETED", "FAILED"], "description": "Optional original pre-activation terminal fact. FAILED represents an exact interrupted native sample, never completed or missing. Required for self-contained central followup reconciliation; older proofs remain readable."},
         "activation_call_sha256": {"$ref": "#/$defs/sha256"}, "activation_output_sha256": {"$ref": "#/$defs/sha256"},
         "activation_query_timestamp": {"$ref": "#/$defs/timestamp"}, "activation_output_timestamp": {"$ref": "#/$defs/timestamp"},
         "previous_activation_call_sha256": {"$ref": "#/$defs/sha256"}, "previous_activation_output_sha256": {"$ref": "#/$defs/sha256"},

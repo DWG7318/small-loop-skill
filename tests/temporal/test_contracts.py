@@ -161,7 +161,7 @@ def runtime_guard_resolution_value() -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+@pytest.mark.parametrize("version", ["4.4.0", "4.4.1", "4.4.2", "4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
 def test_compatible_start_preserves_original_method_version(version):
     value = start_value()
     value["method_version"] = version
@@ -204,7 +204,7 @@ def test_start_contract_is_closed_and_has_exact_role_topology() -> None:
         (lambda value: value.update({"runtime_revision": True}), "runtime_revision"),
         (lambda value: value.update({"ack_timeout_seconds": 0}), "ack_timeout_seconds"),
         (lambda value: value.update({"method_version": "4.2.11"}), "method_version"),
-        (lambda value: value.update({"method_version": "4.5.4"}), "method_version"),
+        (lambda value: value.update({"method_version": "4.5.5"}), "method_version"),
     ],
 )
 def test_start_contract_fails_closed(mutate, match: str) -> None:

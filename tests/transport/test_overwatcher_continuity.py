@@ -94,7 +94,7 @@ def test_443_shared_session_keeps_each_runs_cadence_separate():
 
 
 @pytest.mark.parametrize("fault", [None, "session", "execution", "run"])
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
 def test_450_cadence_only_joins_current_child_and_execution(fault, method_version):
     value = projection()
     value["summary"]["slk_version"] = method_version

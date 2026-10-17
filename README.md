@@ -1,8 +1,8 @@
 # Small Loop Skill (SLK)
 
-Current source version: **4.5.3**. See the [453 changes](CHANGELOG.md) and [validation evidence](VALIDATION-REPORT.md). Installation is confirmed by the target machine's installation receipt, not this version label. Existing Run identities and their historical method versions are not relabeled.
+Current source version: **4.5.4**. See the [454 changes](CHANGELOG.md) and [validation evidence](VALIDATION-REPORT.md). Installation is confirmed by the target machine's installation receipt, not this version label. Existing Run identities and their historical method versions are not relabeled.
 
-**BI/WebBI 1.1.3** and the reviewed Run09 repairs ship together as **SLK 4.5.3**. See [implementation verification](docs/maintenance/reports/2026-10-15-bi113-run09-implementation-result.md) and [release correction](docs/maintenance/2026-10-15-453-version-correction.md). BI uses actual CELL segments (ten per row, up to three rows), verified initial-plus-split counts, and a 0–100% transparency slider in 1% steps. The segment limit is display-only, never a Run CELL limit. Download the precompiled Windows package; ordinary installation does not compile. SLK 3.1.0 remains deferred. Future SLK releases increment the plain patch version, without build suffixes.
+**BI/WebBI 1.1.4** is integrated unchanged with the Run09/Run10 handoff, observation and closure repairs in **SLK 4.5.4**. See the [implementation plan](docs/maintenance/2026-10-17-slk-4.5.4-implementation.md). BI supports independent method versions, shows actual CELL segments (ten per row, up to three rows), initial-plus-split counts and a 0–100% transparency slider. These are display rules, never CELL limits. Ordinary installation uses precompiled outputs. LCEV's project-local SLK 3.1.0 and Task14 remain separate and are not upgraded or restarted by this release. Versions use plain patch increments, without build suffixes.
 
 SLK is the linear form of Loop Engineering for one bounded small or medium Run, or one relatively independent scope inside a larger project. One SLK is one Run with one serial CELL path.
 

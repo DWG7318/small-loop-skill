@@ -52,7 +52,7 @@ def request_fixture(root, method_version="4.4.2"):
         "evidence_root": str(root / "versioned")}
 
 
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
 def test_recovery_preserves_exact_method_identity_and_central_authority(tmp_path, monkeypatch, method_version):
     request = request_fixture(tmp_path, method_version)
     value, identity, checkpoint = recovery.validate_request(request)
@@ -71,7 +71,7 @@ def test_recovery_preserves_exact_method_identity_and_central_authority(tmp_path
         "runtime_revision": pending["source_runtime_revision"]})
     config = {"transport_command": ["simulated"], "role_host_binding": request["source_host"], "state_config_path": "simulated"}
     assert recovery._central(config, startup, checkpoint, {"plan_revision": 7}) == projection
-    projection["runtime_snapshot"]["method_version"] = "4.5.4"
+    projection["runtime_snapshot"]["method_version"] = "4.5.5"
     with pytest.raises(ValueError, match="central boundary"):
         recovery._central(config, startup, checkpoint, {"plan_revision": 7})
 

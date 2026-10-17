@@ -3,36 +3,36 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "bc3d5b8b6f45cf82f55435ea428ef512f5e3be72212069f7b163e6adf8880196",
-        "size": 1990125
+        "sha256": "cb42f07f3e15c7b5537567d3bfa6d9ca80e31c119144df86ca6480a821e511f0",
+        "size": 2079671
       }
     ],
-    "sha256": "bc3d5b8b6f45cf82f55435ea428ef512f5e3be72212069f7b163e6adf8880196",
-    "size": 1990125
+    "sha256": "cb42f07f3e15c7b5537567d3bfa6d9ca80e31c119144df86ca6480a821e511f0",
+    "size": 2079671
   },
   "build": {
-    "assembly": "D:/LCcoding/.codex/.tmp/453-release/assemble_release.py",
+    "assembly": "D:\\LCcoding\\.codex\\.tmp\\454-release\\assemble_release.py",
     "provenance": "BUILD-PROVENANCE.json",
-    "release": "v4.5.3",
+    "release": "v4.5.4",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "BUILD-PROVENANCE.json",
-      "sha256": "2baa46ce75d24123ab465c960eff97b2f04258cf5ae319aad23746488e098499",
-      "size": 24746
+      "sha256": "3ce1158cad19d3c692b737da22d4b681c11792603274e60f551dc485b7035755",
+      "size": 25066
     },
     {
       "path": "bin/slk-state.exe",
-      "sha256": "8fb316985790042b8dcdbd8082d78799c3dfe3c3433ad29abe2d0fd794587f56",
-      "size": 4820992
+      "sha256": "24e297332b298a5a7c537d73d662a55a52a44397420816fc0c666cfdc0d6f505",
+      "size": 5081600
     }
   ],
-  "product_version": "4.5.3",
+  "product_version": "4.5.4",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "dc25364b4f55a7f33639f3495139a1e26f63891c72197f7e967ac0fab02c88c7",
-    "Cargo.toml": "1452e4d66b40226eb33091a75051aba9a3bbe8dfc143a758aa1f786be25fb4d7",
+    "Cargo.lock": "bd6d3fcf157f03a8b48d428c662b1000cad2aae5feeef6c0a5dd11af6dc23b67",
+    "Cargo.toml": "d619ea078b486f49c26e7e907caa8c6f97e92dd525b7e82361aebb178a8c8dce",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "9147a3fc466ccbc6152d804a1220e64e0b0cb753132098d60573c6451bf9e917",
     "src/main.rs": "f1c499e14371bda108a805c27db034dc53f4c1ba0f3dcf399cbaa2a8b1434d9b",

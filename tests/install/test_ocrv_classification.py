@@ -37,3 +37,38 @@ def test_native_wrapper_has_no_engineering_classifier():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert not hasattr(module, "_classify")
+
+
+def test_retry_metadata_retains_four_429_and_timeout_only_without_private_payloads():
+    spec = importlib.util.spec_from_file_location('slk_retry_projection',
+        ROOT / 'integrations/ocrv/slk_checker_adapter.py')
+    adapter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter)
+    attempts = [{'attempt': 1, 'outcome': 'error', 'error_class': 'rate_limited',
+        'failure_phase': 'http', 'status_code': 429, 'retry_after_ms': 275546000 + i * 300000,
+        'duration_to_headers_ms': 244 + i * 14, 'reasoning': 'PRIVATE'} for i in range(4)]
+    attempts.append({'attempt': 1, 'outcome': 'error', 'error_class': 'timeout',
+        'failure_phase': 'context', 'duration_to_headers_ms': 300000})
+    report = {'schema_version': 'ocr.llm-retry-report/v1', 'total_requests': 56,
+        'failed_requests': 5, 'retried_requests': 0, 'total_retries': 0,
+        'recovered_requests': 0, 'cancelled_requests': 0,
+        'requests': [{'logical_request_id': str(i), 'provider': 'dashscope-tokenplan',
+            'model': 'qwen3.8-max', 'file_path': 'fixture.py', 'task_type': 'main_task',
+            'request_no': i + 1, 'outcome': 'failed', 'attempts': [attempt],
+            'body': 'PRIVATE'} for i, attempt in enumerate(attempts)], 'credentials': 'PRIVATE'}
+    projected = adapter._normalized_retry_report({'retry_report': report})
+    assert projected['total_requests'] == 56 and projected['total_retries'] == 0
+    assert [r['attempts'][0].get('status_code') for r in projected['requests']] == [429, 429, 429, 429, None]
+    assert projected['requests'][0]['attempts'][0]['retry_after_ms'] == 275546000
+    assert 'PRIVATE' not in json.dumps(projected)
+    assert adapter._normalized_retry_report({}) is None
+
+
+@pytest.mark.parametrize('requests', [None, {}, [{'attempts': None}], [{'attempts': {}}]])
+def test_unavailable_retry_metadata_is_unknown_not_empty_or_a_report_failure(requests):
+    spec = importlib.util.spec_from_file_location('slk_retry_bad_projection',
+        ROOT / 'integrations/ocrv/slk_checker_adapter.py')
+    adapter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter)
+    assert adapter._normalized_retry_report({'retry_report': {
+        'schema_version': 'ocr.llm-retry-report/v1', 'requests': requests}}) is None

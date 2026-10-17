@@ -229,10 +229,17 @@ class Envelope:
             raise ContractError("message_id must be a canonical UUID")
         sender_role = _choice(value["sender_role"], ROLES, "sender_role")
         receiver_role = _choice(value["receiver_role"], ROLES, "receiver_role")
-        if (sender_role, receiver_role) not in ROLE_EDGES:
-            raise ContractError(f"unsupported role edge: {sender_role}->{receiver_role}")
         payload_type = _identifier(value["payload_type"], "payload_type")
         payload = _json(_mapping(value["payload"], "payload"), "payload")
+        checkpoint_report = (
+            (sender_role, receiver_role) == ("worker", "supervisor")
+            and payload_type == "WORKER_REPORT"
+            and payload.get("candidate_status") == "NOT_PROVIDED"
+            and "candidate" not in payload
+        )
+        # Operational output is not a D1 handoff. Candidates still go to Checker.
+        if (sender_role, receiver_role) not in ROLE_EDGES and not checkpoint_report:
+            raise ContractError(f"unsupported role edge: {sender_role}->{receiver_role}")
         if payload_type == "CELL_DISPATCH":
             if (sender_role, receiver_role) != ("supervisor", "checker"):
                 raise ContractError("CELL_DISPATCH requires supervisor->checker")

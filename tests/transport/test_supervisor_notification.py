@@ -49,6 +49,57 @@ def test_accepted_notification_retry_is_readback_only(tmp_path, monkeypatch):
     assert sum(row["name"] == "send_message_to_thread" for row in calls) == 1
 
 
+def test_historical_notice_readback_keeps_original_executor_and_uses_readonly_current_reader(tmp_path, monkeypatch):
+    from test_codex_desktop import historical_readback_fixture
+    from slk_transport.adapters.codex_desktop import DesktopClient, consume_desktop_readback
+    endpoint, envelope, attempt, item, page = historical_readback_fixture(tmp_path, monkeypatch)
+    notice = {"schema_version": "slk.temporal-notification/v1", "run_id": endpoint.run_id,
+        "event_id": envelope.message_id, "sender_role_instance_id": "temporal:" + endpoint.run_id,
+        "receiver_role_instance_id": endpoint.role_instance_id, "message": "发现异常，请查验。"}
+    original_endpoint = asdict(endpoint)
+    original_endpoint["address"]["desktop"]["caller_thread_id"] = "registered-caller"
+    attempt.write_json_once("endpoint.json", original_endpoint)
+    attempt.write_json_once("notification.json", notice)
+    monkeypatch.setenv("CODEX_THREAD_ID", "later-trusted-reader")
+    calls = []
+    def read(_self, _id, name, args, caller, _timeout):
+        assert name == "read_thread" and caller == "later-trusted-reader"
+        calls.append(dict(args))
+        return (page("latest", more=True, cursor="history") if "cursor" not in args else
+            page("original", items=[item]))
+    monkeypatch.setattr(DesktopClient, "call", read)
+    target, identity = notification.notification_readback_identity(notice, original_endpoint, attempt)
+    result = consume_desktop_readback(target, identity, attempt)
+    assert result.native_identity["turn_id"] == "original"
+    assert target.address["desktop"]["caller_thread_id"] == "caller-exact"
+    assert len(calls) == 2
+    assert notification.wc._read_object(attempt.root / "endpoint.json", "endpoint") == original_endpoint
+
+
+def test_cli_historical_notification_readback_routes_notice_not_envelope(tmp_path, monkeypatch):
+    from slk_transport import cli
+    from slk_transport.adapters import codex_desktop
+    from slk_transport.contracts import DeliveryResult
+    from slk_transport.evidence import Attempt
+    from test_codex_desktop import historical_readback_fixture
+    endpoint, envelope, attempt, _, _ = historical_readback_fixture(tmp_path, monkeypatch)
+    notice = {"schema_version": "slk.temporal-notification/v1", "run_id": endpoint.run_id,
+        "event_id": envelope.message_id, "sender_role_instance_id": "temporal:" + endpoint.run_id,
+        "receiver_role_instance_id": endpoint.role_instance_id, "message": "发现异常，请查验。"}
+    attempt.write_json_once("endpoint.json", asdict(endpoint))
+    attempt.write_json_once("notification.json", notice)
+    seen = []
+    def recover(target, identity, source):
+        assert isinstance(source, Attempt) and source.root == attempt.root
+        assert identity.message_id == notice["event_id"] and identity.payload_sha256 == notification.canonical_json_sha256(notice)
+        seen.append(target)
+        return DeliveryResult("slk.transport-result/v1", identity.message_id, identity.run_id,
+            target.adapter, "completed", {}, None, ())
+    monkeypatch.setattr(codex_desktop, "consume_desktop_readback", recover)
+    assert cli.main(["consume-desktop-readback", "--source-attempt", str(attempt.root)]) == 0
+    assert seen == [endpoint]
+
+
 def test_notification_receipt_write_failure_recovers_original_delivery_without_resend(tmp_path, monkeypatch):
     endpoint, notice, projection = fixture(tmp_path, monkeypatch)
     original = notification.Attempt.write_json_once

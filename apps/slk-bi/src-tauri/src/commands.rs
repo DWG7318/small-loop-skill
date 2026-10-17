@@ -185,7 +185,7 @@ pub fn validate_sync_payload(payload: &Value, expected_device_id: &str) -> Resul
     if object.get("schema_version").and_then(Value::as_str) != Some("slk.bi.upload/v1")
         || !matches!(
             object.get("bi_version").and_then(Value::as_str),
-            Some("1.1.0") | Some("1.1.1") | Some("1.1.2") | Some(BI_VERSION)
+            Some("1.1.0") | Some("1.1.1") | Some("1.1.2") | Some("1.1.3") | Some(BI_VERSION)
         )
     {
         return Err("SLK_WEBBI_UPLOAD_VERSION_UNSUPPORTED".into());
@@ -293,23 +293,106 @@ fn store_from(config_path: &Path) -> Result<StateStore, String> {
     Ok(StateStore::new(root))
 }
 
-fn default_path() -> Result<PathBuf, String> {
+pub fn default_path() -> Result<PathBuf, String> {
     default_config_path().map_err(|error| error.to_string())
 }
 
 pub fn projects_from(config_path: &Path) -> Result<Value, String> {
-    store_from(config_path)?
-        .projects_view()
-        .map_err(|error| error.to_string())
+    combined(config_path, "projects")
 }
 
 pub fn runs_from(config_path: &Path, project_id: Option<String>) -> Result<Value, String> {
-    store_from(config_path)?
-        .runs_view(project_id.as_deref())
-        .map_err(|error| error.to_string())
+    let mut result = combined(config_path, "runs")?;
+    if let Some(project) = project_id {
+        result["runs"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|r| r["project_id"] == project);
+    }
+    Ok(result)
 }
 
-fn run_from(config_path: &Path, run_id: &str, view: &str) -> Result<Value, String> {
+fn combined(config_path: &Path, kind: &str) -> Result<Value, String> {
+    let local = crate::sources::collect(&config_path.with_file_name("bi-sources"));
+    let mut warnings = local.warnings;
+    let stored = store_from(config_path).and_then(|store| {
+        if kind == "projects" {
+            store.projects_view()
+        } else {
+            store.runs_view(None)
+        }
+        .map_err(|e| e.to_string())
+    });
+    let mut result = match stored {
+        Ok(value) => value,
+        Err(error) => {
+            if local.runs.is_empty() && config_path.exists() {
+                return Err(error);
+            }
+            if config_path.exists() {
+                warnings.push(format!("State database: {error}"));
+            }
+            json!({"schema_version":format!("slk.bi.{kind}/v1"),kind:[]})
+        }
+    };
+    let incoming = if kind == "projects" {
+        local.projects
+    } else {
+        local
+            .runs
+            .into_iter()
+            .map(|r| r["summary"].clone())
+            .collect()
+    };
+    let rows = result[kind]
+        .as_array_mut()
+        .ok_or("SLK_BI_PROJECTION_INVALID")?;
+    let id_key = if kind == "projects" {
+        "project_id"
+    } else {
+        "run_id"
+    };
+    for row in incoming {
+        if let Some(previous) = rows.iter_mut().find(|r| r[id_key] == row[id_key]) {
+            if kind == "projects" {
+                previous["run_count"] = json!(
+                    previous["run_count"].as_u64().unwrap_or(0)
+                        + row["run_count"].as_u64().unwrap_or(0)
+                );
+            } else {
+                warnings.push(format!("Run identity collision: {}", row[id_key]));
+            }
+        } else {
+            rows.push(row);
+        }
+    }
+    if !warnings.is_empty() {
+        result["source_warnings"] = json!(warnings);
+    }
+    Ok(result)
+}
+
+pub fn run_from(config_path: &Path, run_id: &str, view: &str) -> Result<Value, String> {
+    if let Some(run) = crate::sources::load_run(&config_path.with_file_name("bi-sources"), run_id)?
+    {
+        if store_from(config_path)
+            .and_then(|s| s.run_view(run_id).map_err(|e| e.to_string()))
+            .is_ok()
+        {
+            return Err("SLK_BI_SOURCE_IDENTITY_COLLISION".into());
+        }
+        if view == "run" {
+            return Ok(run);
+        }
+        let key = match view {
+            "graph" => "go_nodes",
+            "plans" => "plan_revisions",
+            key => key,
+        };
+        return Ok(
+            json!({"schema_version":format!("slk.bi.{view}/v1"),"run_id":run_id,key:run[key]}),
+        );
+    }
     let store = store_from(config_path)?;
     let result = match view {
         "run" => store.run_view(run_id),

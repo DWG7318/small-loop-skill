@@ -1,4 +1,36 @@
-# Validation Report — SLK 4.5.3
+# Validation Report — SLK 4.5.4
+
+## 2026-10-17 — Run09/Run10 continuity and closure repair
+
+Source and isolated-regression acceptance: Rust workspace **218 passed**;
+transport/Eval **1933 passed, 5 skipped**; Temporal **337 passed, 3 skipped**
+against its own SDK test server; BI frontend **230 passed** plus typecheck.
+The maintained OCRV patch passed its five affected Go packages before producing
+native `1.12.13-slkprobe.1.0.2`. The package retains the original precompiled
+BI 1.1.4 (`6649de8a50b4dde73044cd6b0809b81b057c166eb22e2247115a63aedfb58222`).
+
+Independent review verified checkpoint-versus-candidate routing, private-material
+exclusion, exact OW native followup/terminal identities, and creator-authorized
+close. It found and corrected hash/read consistency and an overly broad freshness
+relaxation: historical gaps may remain disclosed, but current safety still needs
+fresh evidence. Existing independent D1, real D2, current-writer checks and
+Supervisor authority are not bypassed. Genuine D2 FAIL tail repair has a full
+D0/D1/new-D2 regression without rewriting earlier results.
+
+The initial broad Python run was not green: missing async test support, a stale
+debug executable and changing source manifests caused failures. The isolated
+environment and debug binaries were corrected before the complete transport and
+Temporal reruns above. Installation/repository tests and final package acceptance
+are recorded separately in the delivery receipt; skipped cases are not passes.
+
+No live product Run or provider call is an acceptance test. R6 whole-CELL context
+cache reuse remains unimplemented rather than claiming unmeasured convergence
+speed. Missing historical executor evidence remains UNKNOWN. An accidental
+native `--version` startup may have refreshed OCRV probe metadata; this incident
+and the unchanged 16 protected LCEV 3.1.0 files are disclosed in the
+[implementation ledger](docs/maintenance/2026-10-17-slk-4.5.4-implementation.md).
+No further native OCRV execution is used in package smoke. LCEV 3.1.0/Task14
+must not be migrated, restarted or reconfigured by this 4.x release.
 
 ## 2026-10-15 — plain 4.5.3 release identity
 

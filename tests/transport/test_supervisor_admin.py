@@ -167,6 +167,35 @@ def test_closed_admin_consumer_executes_only_exact_terminal_operations(
     assert overwatcher_secret not in json.dumps(result)
 
 
+def test_ended_child_close_uses_authenticated_supervisor_not_dead_child(tmp_path, monkeypatch):
+    request = terminal_request_fixture(tmp_path, "close-overwatcher")
+    value = json.loads(request.read_text())
+    value.pop("sealed_overwatcher_credential_path")
+    operation = Path(value["operation_request_path"])
+    raw = json.loads(operation.read_text())
+    raw["final_cycle_id"] = None
+    write_json(operation, raw)
+    value["operation_request_sha256"] = hashlib.sha256(operation.read_bytes()).hexdigest()
+    write_json(request, value)
+    calls = []
+    monkeypatch.setattr(admin.wc, "unprotect_dpapi_hex", lambda path: "supervisor-secret")
+    def run(command, arguments, credential=None, credential_scope="role"):
+        calls.append((arguments[0], credential, credential_scope))
+        if arguments[0] == "authenticate-role":
+            return {"status": "authenticated", "run_id": "RUN-A", "role": "supervisor",
+                    "role_instance_id": "RUN-A-supervisor-001", "runtime_revision": 7}
+        return {"status": "overwatcher_closed", "run_id": "RUN-A"}
+    monkeypatch.setattr(admin.wc, "_run_json_command", run)
+    result = admin.execute_sealed_supervisor_admin(request,
+        request_sha256=hashlib.sha256(request.read_bytes()).hexdigest())
+    assert result["status"] == "SUPERVISOR_ADMIN_COMPLETED"
+    assert calls == [("authenticate-role", "supervisor-secret", "role"),
+                     ("close-overwatcher", "supervisor-secret", "role")]
+    from jsonschema import Draft202012Validator
+    contract = Path(__file__).resolve().parents[2] / "docs/contracts/slk-supervisor-admin.schema.json"
+    Draft202012Validator(json.loads(contract.read_text())).validate(value)
+
+
 def test_close_run_admin_rejects_nonterminal_write_before_credential_access(tmp_path, monkeypatch):
     request = terminal_request_fixture(tmp_path, "close-run")
     value = json.loads(request.read_text())

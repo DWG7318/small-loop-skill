@@ -5,7 +5,7 @@ description: Use when one bounded engineering Run has a single serial CELL path 
 
 # Small Loop Skill
 
-SLK 4.5.3 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
+SLK 4.5.4 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适合中小工程或大工程的独立范围。仅 Owner 明确选择本方法后启用；不要按任务规模自动启动。
 
 ## 谁负责什么
 
@@ -14,6 +14,8 @@ SLK 4.5.3 是线性 Loop Engineering：一个 Run 直接包含顺序 CELL，适�
 - OW：Supervisor 的唯一直属 subagent，覆盖其全部 Run，不跨 Supervisor 共用。每 Run 分开登记 scope/证据/观察凭据；用 Owner 确认的高效低推理开销模型，gpt-6-luna high/xhigh 仅推荐。持续 active，每600秒核验真实运行、记录自身观察、只向父级报告异常/疑似/UNKNOWN，报告后继续。只观察，不干预、不代发工程消息、不重试/修复，不写 BI/TOKEN/工程事实。仅所属 Supervisor 可决定并二次确认停止；单 Run 暂停/关闭不停止其他 Run 的观察。
 
 时段仅建议（北京时间 UTC+8，不随时区变）：DSH 18:00–次日08:00，OCRV 22:00–次日08:00；Supervisor 与 Owner 按紧迫度商定启动时间，不作开工/派发门槛或到点停工要求。
+
+Supervisor 必须对工程的实际推进负责：遇到阻塞，先用权限内的现成办法临时疏通，确认原责任人恢复工作，将流程和工具的系统性改进另行记录，不能把排障本身做成另一个工程、拖住当前交付。
 
 ## 准备与正常工作
 

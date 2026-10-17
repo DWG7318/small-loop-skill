@@ -161,7 +161,8 @@ export class D1WebBiStore implements WebBiStore {
          VALUES(?1,?2,?3,?4,?5)
          ON CONFLICT(device_id,run_id) DO UPDATE SET
            archived=excluded.archived,payload_json=excluded.payload_json,updated_at=excluded.updated_at
-         WHERE excluded.updated_at > runs.updated_at`,
+         WHERE excluded.updated_at > runs.updated_at
+           AND (runs.archived=0 OR excluded.archived=1)`,
       ).bind(
         envelope.device.device_id,
         item.run.run_id,

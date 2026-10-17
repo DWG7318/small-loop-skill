@@ -111,6 +111,30 @@ def test_exact_marker_exposes_native_tool_even_when_wrapper_stays_sequence_zero(
     assert "PRIVATE" not in json.dumps(first) + binding.decode()
 
 
+def test_latest_model_request_response_and_failure_metadata_is_not_stale_tool_activity(tmp_path):
+    started, source, session, header, request, tool = fixture(tmp_path)
+    rows = [
+        {**request, 'uuid': 'second-request', 'timestamp': '2026-10-01T00:02:00Z',
+         'messages': [{'content': 'PRIVATE_PROMPT'}]},
+        {'type': 'llm_response', 'sessionId': header['sessionId'], 'timestamp': '2026-10-01T00:03:00Z',
+         'response': 'PRIVATE_RESPONSE', 'reasoning': 'PRIVATE_REASONING'},
+        {**request, 'uuid': 'third-request', 'timestamp': '2026-10-01T00:04:00Z',
+         'messages': [{'content': 'PRIVATE_PROMPT'}]},
+        {'type': 'llm_error', 'sessionId': header['sessionId'], 'timestamp': '2026-10-01T00:09:00Z',
+         'error': 'PRIVATE_RAW_ERROR'},
+    ]
+    with session.open('a', encoding='utf-8') as stream:
+        stream.write(''.join(json.dumps(row) + '\n' for row in rows))
+    result = inspect(started)
+    assert result['last_event']['kind'] == 'OCRV_ERROR'
+    assert result['last_event']['observed_at'] == rows[-1]['timestamp']
+    assert result['last_event']['observed_activity'] == {
+        'last_request_at': rows[2]['timestamp'], 'last_response_at': rows[1]['timestamp'],
+        'last_tool_at': tool['timestamp'], 'last_error_at': rows[3]['timestamp'], 'phase': 'REQUEST_FAILED'}
+    assert result['error'] == 'OCRV_SESSION_STATUS_UNAVAILABLE'
+    assert 'PRIVATE' not in json.dumps(result)
+
+
 @pytest.mark.parametrize("damage", ["missing-marker", "wrong-commit", "ambiguous"])
 def test_session_identity_never_comes_from_latest_time_or_same_cwd(tmp_path, damage):
     started, source, session, header, request, tool = fixture(tmp_path)

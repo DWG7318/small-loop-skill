@@ -16,7 +16,7 @@ def test_bi_has_no_slk_state_mutation_surface():
     )
 
     assert package["name"] == "slk-bi"
-    assert package["version"] == "1.1.3"
+    assert package["version"] == "1.1.4"
     assert set(capability["permissions"]) == {
         "core:default",
         "core:window:allow-start-dragging",
@@ -69,7 +69,7 @@ def test_bi_window_is_compact_and_not_maximizable():
     assert window["closable"] is True
     assert window["decorations"] is False
     assert window["title"] == "LE BI"
-    assert config["version"] == "1.1.3"
+    assert config["version"] == "1.1.4"
 
 
 def test_archived_runs_keep_readable_content_and_an_opaque_fallback():

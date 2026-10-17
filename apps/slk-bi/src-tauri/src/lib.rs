@@ -1,4 +1,6 @@
+mod cli;
 pub mod commands;
+pub mod sources;
 
 use std::ffi::OsStr;
 
@@ -77,6 +79,16 @@ mod single_instance {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Some(result) = cli::execute(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        match result {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if !should_launch_interface(std::env::args_os().skip(1)) {
         return;
     }

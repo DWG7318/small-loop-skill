@@ -8,7 +8,7 @@ The original document/log reading tools remain uncapped.
 
 Developer builds with `./build.ps1 -Go <go executable>` (Go 1.25.5+ and Git).
 The same source module builds the short-lived `slk-native-probe.exe` helper and
-the clearly modified OCRV `1.12.13-slkprobe.1.0.1` executable. The official OCRV
+the clearly modified OCRV `1.12.13-slkprobe.1.0.2` executable. The official OCRV
 source archive, maintained lifecycle/writer and SLK whole-CELL patch and original license
 notices are in `upstream`; this is not an unchanged upstream release.
 

@@ -58,12 +58,14 @@ def _fields(value: Mapping[str, Any], *, proof: bool = False) -> frozenset[str]:
         if proof:
             base |= {"child_session_id", "child_meta_sha256", "child_link_sha256"}
     if _execution(value.get("native_execution_id"))[0] == "codex-subagent-followup":
+        if proof and "pre_activation_agent_status" in value:
+            base |= {"pre_activation_agent_status"}
         return base | (FOLLOWUP_PROOF_FIELDS if proof else FOLLOWUP_REQUEST_FIELDS)
     return base
 
 
 def _identity(value: Mapping[str, Any]) -> None:
-    if value.get("method_version") not in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}:
+    if value.get("method_version") not in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}:
         raise OverwatcherSubagentError("subagent OW method version is unsupported")
     for field in ("run_id", "role_instance_id", "endpoint_ref"):
         _text(value.get(field), field)
@@ -203,6 +205,8 @@ def _proof(path: Path, digest: str, started_path: Path) -> dict[str, Any]:
             raise OverwatcherSubagentError("native source provenance differs from original record digests")
     if value["agent_status"] != "RUNNING" or sha256_file(started_path) != value["started_sha256"]:
         raise OverwatcherSubagentError("subagent OW proof does not match its running native start")
+    if "pre_activation_agent_status" in value and value["pre_activation_agent_status"] not in {"COMPLETED", "FAILED"}:
+        raise OverwatcherSubagentError("subagent OW previous activation is not terminal")
     return value
 
 
@@ -285,6 +289,8 @@ def attest_subagent_overwatcher(request_path: Path, *, request_sha256: str, evid
                  "canonical_task_id": _canonical_task_id(request), "native_task_id": _task_id(request),
                  **{field: snapshot[field] for field in _fields(request, proof=True) if field in snapshot},
                  "checked_at": utc_now(), "started_sha256": sha256_file(started_path)}
+        if "pre_activation_agent_status" in snapshot:
+            proof["pre_activation_agent_status"] = snapshot["pre_activation_agent_status"]
         _write_once(proof_path, _json_bytes(proof))
     return {"status": "ATTESTED", "run_id": request["run_id"], "role_instance_id": request["role_instance_id"],
             "endpoint_ref": request["endpoint_ref"], "started_path": str(started_path),
@@ -310,6 +316,7 @@ def subagent_overwatcher_probe(proof_path: Path, *, proof_sha256: str,
         original = snapshot["samples"].get(proof["sample_call_id"])
         fields = _fields(request, proof=True)
         if (original is None or any(snapshot[field] != proof[field] for field in fields if field.startswith(("spawn_", "activation_", "previous_activation_", "pre_activation_sample_")) and field != "pre_activation_sample_call_id")
+            or ("pre_activation_agent_status" in proof and snapshot["pre_activation_agent_status"] != proof["pre_activation_agent_status"])
             or any(original[field] != proof[field] for field in fields if field.startswith("sample_"))
             or original["agent_status"] != proof["agent_status"]):
             raise OverwatcherSubagentError("original native records changed after attestation")

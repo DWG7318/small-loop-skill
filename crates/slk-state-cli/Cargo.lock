@@ -411,7 +411,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slk-state-cli"
-version = "4.5.3"
+version = "4.5.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -421,8 +421,8 @@ dependencies = [
 
 [[package]]
 name = "slk-state-core"
-version = "4.5.3"
-source = "git+https://github.com/DWG7318/slk-state-core.git?rev=0aba753f5d328484e59ec1c5c13fa594fedc3d19#0aba753f5d328484e59ec1c5c13fa594fedc3d19"
+version = "4.5.4"
+source = "git+https://github.com/DWG7318/slk-state-core.git?rev=694db5d68b65c023bd8524867eb091b3f61f88ad#694db5d68b65c023bd8524867eb091b3f61f88ad"
 dependencies = [
  "directories",
  "quick-xml",

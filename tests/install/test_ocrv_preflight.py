@@ -131,6 +131,19 @@ def test_checker_background_decision_is_whole_candidate_not_native_file_group(tm
         assert marker in background
 
 
+def test_current_request_capacity_omits_retired_advisories_but_legacy_request_still_reads(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('capacity_adapter', ADAPTER)
+    adapter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter)
+    request, _, _ = _request(tmp_path)
+    value = json.loads(request.read_text())
+    legacy = adapter._validate_request(value)
+    value['capacity'] = {name: value['capacity'][name] for name in ('max_tokens', 'max_tokens_budget', 'timeout_minutes')}
+    current = adapter._validate_request(value)
+    assert adapter._background(current) == adapter._background(legacy)
+
+
 def test_installed_adapter_preflight_uses_exact_exclude_scope_without_model(tmp_path: Path) -> None:
     request, output, _repository = _request(tmp_path)
     evidence = tmp_path / "worker-result.json"

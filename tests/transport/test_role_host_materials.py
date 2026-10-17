@@ -187,16 +187,40 @@ def test_role_host_schema_accepts_optional_frozen_refs_and_old_binding(tmp_path)
 
 
 @pytest.mark.parametrize("with_bytes", [False, True])
-def test_ocrv_request_schema_accepts_frozen_material_producer_and_old_request(tmp_path, monkeypatch, with_bytes):
+@pytest.mark.parametrize("legacy_capacity", [False, True])
+def test_ocrv_request_schema_accepts_frozen_material_producer_and_old_request(tmp_path, monkeypatch, with_bytes, legacy_capacity):
     import jsonschema
     host, source, _, _, ref = material_host(tmp_path, with_bytes=with_bytes)
     _, sent = deliver(host, source, monkeypatch)
     request = OcrvAdapter()._candidate_request(sent[0])
+    if legacy_capacity:
+        request["capacity"].update({"max_background_characters": 8000,
+            "max_background_bytes": 24000, "max_changed_lines": 1000, "max_segment_paths": 10})
     assert request["evidence_refs"] == [ref]
     schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-ocrv-d1-preflight.schema.json").read_text())
     jsonschema.validate(request, schema)
+    load_ocrv("slk_checker_adapter.py")._validate_request(request)
     del request["evidence_refs"]
     jsonschema.validate(request, schema)
+
+
+@pytest.mark.parametrize("damage", ["missing-execution-field", "partial-legacy", "extra"])
+def test_ocrv_capacity_schema_and_consumer_reject_malformed_shape(tmp_path, monkeypatch, damage):
+    import jsonschema
+    host, source, _, _, _ = material_host(tmp_path)
+    _, sent = deliver(host, source, monkeypatch)
+    request = OcrvAdapter()._candidate_request(sent[0])
+    if damage == "missing-execution-field":
+        del request["capacity"]["timeout_minutes"]
+    elif damage == "partial-legacy":
+        request["capacity"]["max_background_characters"] = 8000
+    else:
+        request["capacity"]["undocumented_evidence_limit"] = 8000
+    schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-ocrv-d1-preflight.schema.json").read_text())
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(request, schema)
+    with pytest.raises(ValueError):
+        load_ocrv("slk_checker_adapter.py")._validate_request(request)
 
 
 @pytest.mark.parametrize("damage", ["not-array", "not-object", "no-path", "empty-path", "no-hash", "bad-hash", "extra", "bool-bytes", "negative-bytes", "duplicate"])
@@ -264,17 +288,42 @@ def test_frozen_legacy_overlap_reaches_consumer_gap_through_producer(tmp_path, m
     assert any(item["path"] == str(source / "worker-result.json") for item in normalized["evidence"])
 
 
-@pytest.mark.parametrize("damage", ["undeclared", "unrelated", "no-hash", "bad-hash", "extra", "relative", "bool-bytes", "duplicate"])
-def test_missing_legacy_file_requires_valid_matching_frozen_ref(tmp_path, monkeypatch, damage):
+@pytest.mark.parametrize("frozen_ref", ["undeclared", "unrelated"])
+def test_missing_legacy_file_reaches_catalog_as_honest_unavailable_gap(tmp_path, monkeypatch, frozen_ref):
+    host, source, _, original, _ = material_host(tmp_path)
+    _, sent = deliver(host, source, monkeypatch)
+    payload = sent[0].payload
+    original.unlink()
+    payload["evidence_files"].append(str(original))
+    if frozen_ref == "undeclared":
+        del payload["evidence_refs"]
+    else:
+        payload["evidence_refs"][0]["path"] = str(tmp_path / "different-original.md")
+    request = OcrvAdapter()._candidate_request(sent[0])
+    adapter = load_ocrv("slk_checker_adapter.py")
+    normalized = adapter._validate_request(request)
+    gaps = normalized["evidence_gaps"]
+    assert len(gaps) == (1 if frozen_ref == "undeclared" else 2)
+    assert all(gap["reason"] == "UNAVAILABLE" for gap in gaps)
+    assert any(gap["path"] == str(original) for gap in gaps)
+    assert all(item["path"] != str(original) for item in normalized["evidence"])
+    assert any(item["path"] == str(source / "worker-result.json") for item in normalized["evidence"])
+    request_path = write_json(tmp_path / "indexed-request.json", request)
+    adapter._index_materials(normalized, request_path, tmp_path, "legacy-gap", {"invocations": []})
+    catalog = wc._read_object(tmp_path / "material-catalog.json", "honest legacy material gaps")
+    assert catalog["evidence_gaps"] == gaps
+    assert "do not claim whole-CELL PASS" in adapter._background(normalized)
+
+
+@pytest.mark.parametrize("damage", ["no-hash", "bad-hash", "extra", "relative", "bool-bytes", "duplicate"])
+def test_missing_legacy_file_does_not_bypass_frozen_ref_shape_validation(tmp_path, monkeypatch, damage):
     host, source, _, original, _ = material_host(tmp_path)
     _, sent = deliver(host, source, monkeypatch)
     payload = sent[0].payload
     original.unlink()
     payload["evidence_files"].append(str(original))
     ref = payload["evidence_refs"][0]
-    if damage == "undeclared": del payload["evidence_refs"]
-    elif damage == "unrelated": ref["path"] = str(tmp_path / "different-original.md")
-    elif damage == "no-hash": del ref["sha256"]
+    if damage == "no-hash": del ref["sha256"]
     elif damage == "bad-hash": ref["sha256"] = "unknown"
     elif damage == "extra": ref["auto_discover"] = True
     elif damage == "relative": ref["path"] = original.name

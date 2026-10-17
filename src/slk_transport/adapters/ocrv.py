@@ -111,10 +111,6 @@ EXPECTED_PROVIDER = "dashscope-tokenplan"
 EXPECTED_MODEL = "qwen3.8-max"
 VERDICT_EXIT_CODES = {"PASS": 0, "FAIL": 2, "INCOMPLETE": 3}
 DEFAULT_REVIEW_CAPACITY = {
-    "max_background_characters": 8_000,
-    "max_background_bytes": 12_000,
-    "max_changed_lines": 800,
-    "max_segment_paths": 2,
     "max_tokens": 200_000,
     "max_tokens_budget": 0,
     "timeout_minutes": 0,
@@ -130,6 +126,26 @@ def _positive_seconds(value: Any) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
         raise AdapterError("OCRV_ADDRESS_INVALID", "timeout_seconds must be positive")
     return float(value)
+
+
+def _provider_failure(result: Any) -> str | None:
+    """A failed provider request is a transport fact, never a Checker verdict."""
+    review = result.get("review") if isinstance(result, Mapping) else None
+    report = review.get("retry_report") if isinstance(review, Mapping) else None
+    if (not isinstance(report, Mapping) or report.get("schema_version") != "ocr.llm-retry-report/v1"
+        or not isinstance(report.get("requests"), list)):
+        return None
+    attempts = [attempt for request in report.get("requests", []) if isinstance(request, Mapping)
+                and request.get("outcome") == "failed" and isinstance(request.get("attempts"), list)
+                for attempt in request["attempts"]
+                if isinstance(attempt, Mapping)]
+    if any(attempt.get("status_code") == 429 for attempt in attempts):
+        return "OCRV_PROVIDER_RATE_LIMITED"
+    if any(attempt.get("status_code") in (401, 402, 403) for attempt in attempts):
+        return "OCRV_PROVIDER_REJECTED"
+    if any(attempt.get("error_class") == "timeout" for attempt in attempts):
+        return "OCRV_REQUEST_TIMEOUT"
+    return None
 
 
 def _positive_integer(value: Any, label: str) -> int:
@@ -384,10 +400,9 @@ class OcrvAdapter:
         evidence_files = payload["evidence_files"]
         if not isinstance(evidence_files, list) or not all(
             isinstance(item, str) and Path(item).is_absolute()
-            and (Path(item).resolve() in frozen_paths or Path(item).is_file())
             for item in evidence_files
         ):
-            raise AdapterError("OCRV_PAYLOAD_INVALID", "evidence_files must contain existing absolute files or frozen originals")
+            raise AdapterError("OCRV_PAYLOAD_INVALID", "evidence_files must contain absolute original locators")
         scope = {
             "include_paths": [],
             "exclude_paths": [],
@@ -501,7 +516,7 @@ class OcrvAdapter:
             {"exit_code": completed.returncode, "run_id": envelope.run_id, "cell_id": envelope.cell_id,
              "native_started": child_start is not None,
              "review_invocation_id": child_start["native_task"]["id"] if child_start else None},
-            start_error or (None if completed.returncode == 0 else "OCRV_EXIT_NONZERO"),
+            start_error or (None if completed.returncode == 0 else _provider_failure(result) or "OCRV_EXIT_NONZERO"),
             tuple(name for name in ("started.json", "ocrv-request.json", "ocrv-result.json",
                 "ocrv-review.json", "native.stdout.txt", "native.stderr.txt") if (attempt.root / name).is_file()))
 

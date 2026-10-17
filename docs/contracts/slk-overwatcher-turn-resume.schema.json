@@ -7,7 +7,8 @@
   "required": ["event_id", "run_id", "role_instance_id", "session_id", "binding_revision", "expected_runtime_revision", "previous_foreground_turn_id", "foreground_turn_id", "native_active_session_evidence", "reason", "occurred_at"],
   "oneOf": [
     {"required": ["last_anomaly_cycle_id"], "not": {"required": ["last_native_status_id"]}},
-    {"required": ["last_native_status_id"], "not": {"required": ["last_anomaly_cycle_id"]}}
+    {"required": ["last_native_status_id"], "not": {"required": ["last_anomaly_cycle_id"]}},
+    {"description": "Native subagent only: exact raw terminal-to-RUNNING followup proof is validated by the state core; no historical status receipt is fabricated.", "not": {"anyOf": [{"required": ["last_anomaly_cycle_id"]}, {"required": ["last_native_status_id"]}]}}
   ],
   "properties": {
     "event_id": {"$ref": "#/$defs/identifier"},

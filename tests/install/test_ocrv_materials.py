@@ -386,3 +386,152 @@ def test_unavailable_report_findings_are_not_empty_findings():
     assert adapter._normalized_findings(None) is None
     assert adapter._normalized_findings({}) is None
     assert adapter._normalized_findings({'comments': []}) == []
+
+
+def test_legacy_missing_and_private_evidence_are_catalogued_as_gaps(tmp_path):
+    adapter = load('slk_checker_adapter.py')
+    path, _, _ = _request(tmp_path)
+    request = adapter._read_json(path)
+    missing, private = tmp_path / 'missing.log', tmp_path / 'native.stderr.txt'
+    private.write_text('PRIVATE_DIAGNOSTIC')
+    request['evidence_files'] += [str(missing), str(private)]
+    normalized = adapter._validate_request(request)
+    adapter._index_materials(normalized, path, tmp_path, 'native-materials', {})
+    catalog = adapter._read_json(tmp_path / 'material-catalog.json')
+    assert {(item['path'], item['reason']) for item in catalog['evidence_gaps']} == {
+        (str(missing), 'UNAVAILABLE'), (str(private), 'PRIVATE_DIAGNOSTIC')}
+    assert all(item['availability'] == 'AVAILABLE' for item in catalog['evidence'])
+    assert 'PRIVATE_DIAGNOSTIC' not in json.dumps(normalized['evidence'])
+
+
+def test_changed_path_inventory_keeps_every_path(tmp_path):
+    adapter = load('slk_checker_adapter.py')
+    evidence = tmp_path / 'worker-result.json'
+    paths = [f'src/file-{index}.py' for index in range(1100)]
+    evidence.write_text(json.dumps({'next_payload': {'changed_paths': paths}}))
+    compact = adapter._compact_evidence(evidence)
+    assert compact['summary']['changed_paths'] == paths
+    assert compact['summary']['changed_paths_summary']['omitted'] == 0
+
+
+def test_declared_nested_d0_files_enter_catalog_without_following_prose_or_private_files(tmp_path, monkeypatch):
+    adapter = load('slk_checker_adapter.py')
+    path, _, _ = _request(tmp_path)
+    request = adapter._read_json(path)
+    report = Path(request['evidence_files'][0])
+    log, missing = tmp_path / 'public.log', tmp_path / 'not-created.log'
+    private, credential = tmp_path / 'native.stderr.txt', tmp_path / 'credentials.json'
+    log.write_text('complete public test output\n' * 3000)
+    private.write_text('DO_NOT_READ')
+    credential.write_text('DO_NOT_READ')
+    report.write_text(json.dumps({'next_payload': {'d0': {'evidence_files': [
+        str(log), str(missing), str(report), str(private), str(credential)],
+        'notes': str(tmp_path / 'prose-is-not-permission.log')}}}))
+    original_read = adapter._compact_evidence
+    def public_only(file):
+        assert file not in {private, credential}
+        return original_read(file)
+    monkeypatch.setattr(adapter, '_compact_evidence', public_only)
+    normalized = adapter._validate_request(request)
+    indexed = {item['path']: item for item in normalized['evidence']}
+    assert set(indexed) == {str(report), str(log)}
+    assert indexed[str(log)]['sha256'] == hashlib.sha256(log.read_bytes()).hexdigest()
+    assert {(gap['path'], gap['reason']) for gap in normalized['evidence_gaps']} == {
+        (str(missing), 'UNAVAILABLE'), (str(private), 'PRIVATE_DIAGNOSTIC'),
+        (str(credential), 'PRIVATE_CREDENTIAL')}
+    context = {'run_id': request['run_id'], 'cell_id': request['cell_id'], 'message_id': 'nested-materials',
+               'native_request_sha256': adapter._sha256(path)}
+    index = adapter._index_materials(normalized, path, tmp_path, 'native-nested', {}, context)
+    receipt = tmp_path / 'native-start.received.json'
+    receipt.write_text(json.dumps({**context, 'native_task': {'id': 'native-nested'}}))
+    monkeypatch.setenv('SLK_NATIVE_START_RECEIPT', str(receipt))
+    monkeypatch.setenv('SLK_CHECKER_EVIDENCE_INDEX', str(index))
+    monkeypatch.setenv('SLK_CHECKER_EVIDENCE_INDEX_SHA256', adapter._sha256(index))
+    bridge = load('slk_checker_decision.py')
+    catalog = json.loads(bridge.read_evidence(1)['text'])
+    number = next(item['index'] for item in catalog['evidence'] if item['path'] == str(log))
+    original = bridge.read_evidence(number)
+    assert original['eof'] is True and original['text'] == log.read_bytes().decode('utf-8')
+
+
+def test_nested_locator_cannot_override_frozen_hash(tmp_path):
+    adapter = load('slk_checker_adapter.py')
+    path, _, _ = _request(tmp_path)
+    request = adapter._read_json(path)
+    log = tmp_path / 'changed.log'
+    log.write_text('new bytes')
+    Path(request['evidence_files'][0]).write_text(json.dumps({'d0': {'evidence_files': [str(log)]}}))
+    request['evidence_refs'] = [{'path': str(log), 'sha256': '0' * 64}]
+    normalized = adapter._validate_request(request)
+    assert str(log) not in {item['path'] for item in normalized['evidence']}
+    assert [(item['path'], item['reason']) for item in normalized['evidence_gaps']] == [(str(log), 'CHANGED')]
+
+
+@pytest.mark.parametrize('locator', ['nested', 'direct', 'frozen'])
+@pytest.mark.parametrize('relative', [
+    'sessions/native-session-a.jsonl',
+    '.opencodereview/sessions/repository/opaque-id.jsonl',
+    '.codex/sessions/2026/10/17/rollout-a.jsonl',
+    '.codex/archived_sessions/rollout-a.jsonl',
+    'home/storages/session_projcache/sessions/session-a.json',
+    'sessions/NATIVE-SESSION-A.JSONL',
+    'native.stdout.txt',
+    'ocrv.stdout.txt',
+])
+def test_native_private_materials_are_rejected_before_hash_or_read(tmp_path, monkeypatch, locator, relative):
+    adapter = load('slk_checker_adapter.py')
+    path, _, _ = _request(tmp_path)
+    request = adapter._read_json(path)
+    report = Path(request['evidence_files'][0])
+    private = tmp_path / relative
+    private.parent.mkdir(parents=True, exist_ok=True)
+    private.write_text(json.dumps({'type': 'tool_call', 'arguments': 'PRIVATE_ARGUMENTS',
+                                   'result': 'PRIVATE_RESULT'}), encoding='utf-8')
+    if locator == 'nested':
+        report.write_text(json.dumps({'d0': {'evidence_files': [str(private)]}}))
+    elif locator == 'direct':
+        request['evidence_files'].append(str(private))
+    else:
+        # Even an approved locator/hash is not permission to disclose native transcripts.
+        request['evidence_refs'] = [{'path': str(private), 'sha256': 'a' * 64}]
+    original_compact = adapter._compact_evidence
+
+    def public_only(file):
+        assert file != private.resolve(), 'private native source reached the hashing/reading boundary'
+        return original_compact(file)
+
+    monkeypatch.setattr(adapter, '_compact_evidence', public_only)
+    normalized = adapter._validate_request(request)
+    assert str(private) not in {item['path'] for item in normalized['evidence']}
+    assert [(gap['path'], gap['reason']) for gap in normalized['evidence_gaps']] == [
+        (str(private), 'PRIVATE_DIAGNOSTIC')]
+    assert 'observed_sha256' not in normalized['evidence_gaps'][0]
+    index = adapter._index_materials(normalized, path, tmp_path, 'private-material-test', {})
+    assert str(private) not in {item['path'] for item in adapter._read_json(index)['evidence']}
+
+
+@pytest.mark.parametrize('relative', ['public-d0.jsonl', 'sessions/public-test-results.log'])
+def test_public_d0_logs_remain_fully_readable_after_native_session_exclusion(tmp_path, monkeypatch, relative):
+    adapter = load('slk_checker_adapter.py')
+    path, _, _ = _request(tmp_path)
+    request = adapter._read_json(path)
+    original = tmp_path / relative
+    original.parent.mkdir(parents=True, exist_ok=True)
+    public_text = 'Complete public D0 test output\n' * 3000 + 'EOF'
+    original.write_text(public_text, encoding='utf-8')
+    Path(request['evidence_files'][0]).write_text(json.dumps({'d0': {'evidence_files': [str(original)]}}))
+    normalized = adapter._validate_request(request)
+    assert normalized['evidence_gaps'] == []
+    identity = {'run_id': request['run_id'], 'cell_id': request['cell_id'], 'message_id': 'public-d0',
+                'native_request_sha256': adapter._sha256(path)}
+    index = adapter._index_materials(normalized, path, tmp_path, 'public-d0', {}, identity)
+    receipt = tmp_path / 'native-start.received.json'
+    receipt.write_text(json.dumps({**identity, 'native_task': {'id': 'public-d0'}}))
+    monkeypatch.setenv('SLK_NATIVE_START_RECEIPT', str(receipt))
+    monkeypatch.setenv('SLK_CHECKER_EVIDENCE_INDEX', str(index))
+    monkeypatch.setenv('SLK_CHECKER_EVIDENCE_INDEX_SHA256', adapter._sha256(index))
+    reader = load('slk_checker_decision.py')
+    catalog = json.loads(reader.read_evidence(1)['text'])
+    number = next(item['index'] for item in catalog['evidence'] if item['path'] == str(original))
+    result = reader.read_evidence(number)
+    assert result['eof'] is True and result['text'] == original.read_bytes().decode('utf-8')

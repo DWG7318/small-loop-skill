@@ -339,6 +339,8 @@ def test_real_cli_resume_is_the_observed_checker_and_cycle_consumer_agrees(tmp_p
     assert query['native_resume']['native_start_path'] == str(fresh / 'started.json')
     assert query['native_start_path'] == str((source / 'started.json').resolve())
     assert query['native_start_sha256'] == wc._sha256(source / 'started.json')
+    assert query['native_probe_paths'] == {
+        name: str(fresh / (name + '.json')) for name in ('started', 'completed', 'failed')}
     assert query['worker_completion'] is None
     admin._verify_cycle(cycle_for(tmp_path, source, projection, query), 'RUN-A', ['slk-state'])
     assert all(path.read_bytes() == data for path, data in old.items())
@@ -373,6 +375,7 @@ def test_checker_observation_does_not_fall_back_to_original_after_invalid_resume
     query = native.collect_overwatch_scope(source / 'started.json', run_id='RUN-A', state_command=['slk-state'])
     assert query['native_activity']['status'] == 'UNKNOWN'
     assert 'NATIVE_RESUME_QUERY_UNAVAILABLE' in query['native_activity']['error']
+    assert query['native_probe_paths'] is None
     assert query['native_start_sha256'] == wc._sha256(source / 'started.json')
     admin._verify_cycle(cycle_for(tmp_path, source, projection, query), 'RUN-A', ['slk-state'])
 

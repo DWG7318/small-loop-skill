@@ -13,12 +13,13 @@ import type { MessageCatalogEntry } from "../messages/messageFeed";
 import {
   acknowledgeDisplayedMessages,
   bootstrapReadMarker,
+  displayedUpdateIds,
   hasUnreadMessages,
   mergeReadMarker,
   parseReadMarker,
   type ReadMarker,
 } from "../messages/readMarkers";
-import { buildRunStripView, type RunStripView } from "../runPresentation";
+import { buildRunStripView, formatCellProgress, type RunStripView } from "../runPresentation";
 import { BI_VERSION } from "../version";
 import { BackgroundTransparency } from "../components/BackgroundTransparency";
 import type { NotificationSettingsInput } from "./contracts";
@@ -94,6 +95,10 @@ function UnreadBadge() {
   return <span className="webbi-unread"><span aria-hidden="true" />有更新</span>;
 }
 
+function updateIds(record: WebBiArchiveRecord) {
+  return displayedUpdateIds(record.messages.map(({ message_id }) => message_id), record.run.source_record?.revision);
+}
+
 function RunList({ api }: { api: WebBiApi }) {
   const [archived, setArchived] = useState(false);
   const [records, setRecords] = useState<WebBiArchiveRecord[]>([]);
@@ -128,7 +133,7 @@ function RunList({ api }: { api: WebBiApi }) {
       const next = { ...current };
       for (const record of records) {
         const key = recordKey(record);
-        const ids = record.messages.map(({ message_id }) => message_id);
+        const ids = updateIds(record);
         const stored = next[key] ?? parseReadMarker(window.localStorage.getItem(readKey(record)));
         next[key] = stored ? mergeReadMarker(stored, ids) : bootstrapReadMarker(ids);
         window.localStorage.setItem(readKey(record), JSON.stringify(next[key]));
@@ -139,14 +144,14 @@ function RunList({ api }: { api: WebBiApi }) {
 
   function unread(record: WebBiArchiveRecord) {
     const marker = markers[recordKey(record)];
-    return marker ? hasUnreadMessages(marker, record.messages.map(({ message_id }) => message_id)) : false;
+    return marker ? hasUnreadMessages(marker, updateIds(record)) : false;
   }
 
   function acknowledge(record: WebBiArchiveRecord) {
     const key = recordKey(record);
     const marker = acknowledgeDisplayedMessages(
       markers[key] ?? bootstrapReadMarker([]),
-      record.messages.map(({ message_id }) => message_id),
+      updateIds(record),
     );
     window.localStorage.setItem(readKey(record), JSON.stringify(marker));
     setMarkers((current) => ({ ...current, [key]: marker }));
@@ -198,8 +203,8 @@ function RunList({ api }: { api: WebBiApi }) {
                   <span className={`webbi-status tone-${view.statusTone}`}>{view.status}</span>
                 </span>
                 <span className="webbi-run-meta">
-                  <b>{view.progress.passed}/{view.progress.total} CELL</b>
-                  <span>{view.totalWorkMs ? `${Math.floor(view.totalWorkMs / 60_000)}m` : "0m"}</span>
+                  <b>{formatCellProgress(view)}</b>
+                  <span>{view.timingAvailable === false ? "耗时未提供" : view.totalWorkMs ? `${Math.floor(view.totalWorkMs / 60_000)}m` : "0m"}</span>
                   <span>SLK {view.slkVersion}</span>
                 </span>
                 <code className="webbi-device">电脑 {record.device.device_name} · {record.device.device_id}</code>
@@ -248,7 +253,7 @@ function RunDetail({ api, deviceId, runId }: { api: WebBiApi; deviceId: string; 
         <div><dt>电脑</dt><dd>{record.device.device_name} · {record.device.device_id}</dd></div>
         <div><dt>Run ID</dt><dd><code>{record.run.run_id}</code></dd></div>
         <div><dt>SLK</dt><dd>{view.slkVersion}</dd></div>
-        <div><dt>D1 验收</dt><dd>{view.progress.passed}/{view.progress.total} CELL</dd></div>
+        <div><dt>D1 验收</dt><dd>{formatCellProgress(view)}</dd></div>
       </dl>
       <div className="webbi-detail-grid">
         <section>

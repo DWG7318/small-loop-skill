@@ -317,7 +317,7 @@ def validate_native_task_activity(
     scalar_types = {"kind": (str,), "sequence": (int,), "observed_at": (str,),
         "detail_sha256": (str,), "summary_sha256": (str,), "session_id": (str,), "tool_name": (str,),
         "ok": (bool,), "duration_ms": (int, float), "duration_seconds": (int, float), "exit_code": (int,)}
-    if (set(event) - set(scalar_types) - {"tail", "native_process", "native_process_state"}
+    if (set(event) - set(scalar_types) - {"tail", "native_process", "native_process_state", "observed_activity"}
         or any(type(event[key]) not in types for key, types in scalar_types.items() if key in event)):
         raise NativeActivityError("native activity event must be public metadata-only")
     for key in ("detail_sha256", "summary_sha256"):
@@ -329,6 +329,23 @@ def validate_native_task_activity(
                 raise ValueError("timezone is missing")
         except ValueError as exc:
             raise NativeActivityError("native activity event timestamp is invalid") from exc
+    if "observed_activity" in event:
+        activity = event["observed_activity"]
+        time_fields = {"last_request_at", "last_response_at", "last_tool_at", "last_error_at"}
+        if (not isinstance(activity, Mapping) or set(activity) != time_fields | {"phase"}
+            or not isinstance(activity["phase"], str) or activity["phase"] not in {
+                "SESSION_STARTED", "AWAITING_MODEL", "MODEL_RESPONDED", "TOOL_COMPLETED",
+                "REQUEST_FAILED", "SESSION_ENDED"}):
+            raise NativeActivityError("native observed activity must be closed metadata-only")
+        for field in time_fields:
+            if activity[field] is None:
+                continue
+            try:
+                if (not isinstance(activity[field], str)
+                    or datetime.fromisoformat(activity[field].replace("Z", "+00:00")).tzinfo is None):
+                    raise ValueError("timezone is missing")
+            except ValueError as exc:
+                raise NativeActivityError("native observed activity timestamp is invalid") from exc
     if "native_process" in event:
         process = event["native_process"]
         if (not isinstance(process, Mapping) or set(process) != PROCESS_FIELDS
@@ -584,6 +601,14 @@ def inspect_native_activity(
 ) -> dict[str, Any]:
     start = validate_native_start(started_path)
     observed = observed_at or utc_now()
+    if start["native_task"]["kind"] == "codex-subagent":
+        # This platform child has no transport terminal receipt. Even an
+        # explicitly supplied local file cannot replace its original records.
+        terminal_paths = ()
+    elif not terminal_paths:
+        # The original start already locates this invocation. A caller supplying
+        # only --started must not turn its real terminal receipt into DEAD.
+        terminal_paths = (started_path.with_name("completed.json"), started_path.with_name("failed.json"))
     terminal_status, terminal, terminal_error = _terminal_result(start, terminal_paths)
     if terminal_error is not None:
         return {
@@ -713,7 +738,7 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
 
     query_started_at = utc_now()
     projection = snapshot = None
-    start_sha256 = completion = resume_metadata = None
+    start_sha256 = completion = resume_metadata = probe_source = None
     query_error = None
     attempt_observation = None
     native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
@@ -802,6 +827,7 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
                     native = resumed.inspect_native(inspect_native_activity)
                     completion = (wc.inspect_worker_completion(resumed.source, projection, observed_at=utc_now(),
                         cadence_seconds=600, native_inspector=lambda *_a, **_k: native) if worker else None)
+                    probe_source = resumed.source
             except (KeyError, TypeError, OSError, ValueError) as exc:
                 resume_metadata = completion = None
                 native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
@@ -812,10 +838,11 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
                         terminal_paths=(source / "completed.json", source / "failed.json"))
                     completion = (wc.inspect_worker_completion(source, projection, observed_at=utc_now(), cadence_seconds=600,
                                   native_inspector=lambda *_a, **_k: native) if worker else None)
+                    probe_source = source
             if sha256_file(started_path) != start_sha256:
                 raise NativeActivityError("original native start changed during query")
         except (KeyError, TypeError, OSError, ValueError) as exc:
-            start_sha256 = None
+            start_sha256 = probe_source = None
             native = {"schema_version": ACTIVITY_SCHEMA, "status": "UNKNOWN", "observed_at": utc_now(),
                       "error": f"ORIGINAL_NATIVE_QUERY_UNAVAILABLE: {exc}"}
     query_completed_at = utc_now()
@@ -844,6 +871,11 @@ def collect_overwatch_scope(started_path: Path | None, *, run_id: str, state_com
             **({"native_resume": resume_metadata} if resume_metadata is not None else {}),
             "source_message_id": snapshot.get("latest_message_id") if snapshot is not None else None,
             "native_start_path": str(started_path.resolve()) if started_path is not None else None,
+            # Keep the immutable central start above; these are the exact
+            # selected leaf's CLI inputs, not a replacement central identity.
+            "native_probe_paths": ({name: str(probe_source / (name + ".json"))
+                                    for name in ("started", "completed", "failed")}
+                                   if probe_source is not None else None),
             "native_start_sha256": start_sha256, "runtime_snapshot": snapshot,
             "runtime_projection_sha256": wc.canonical_json_sha256(projection) if query_error is None else None,
             "native_activity": native, "worker_completion": completion,

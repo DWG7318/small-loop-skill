@@ -3,36 +3,36 @@
     "parts": [
       {
         "path": "payload.zip",
-        "sha256": "5f79f0d817d461b93a465900d4c985c10346cd7ca928e5047175d244fb026240",
-        "size": 1541436
+        "sha256": "08ad82c51b5e8ee3e19b5f02eb17f65d4c826b67129052b83f7648b4b0a7d95b",
+        "size": 1571889
       }
     ],
-    "sha256": "5f79f0d817d461b93a465900d4c985c10346cd7ca928e5047175d244fb026240",
-    "size": 1541436
+    "sha256": "08ad82c51b5e8ee3e19b5f02eb17f65d4c826b67129052b83f7648b4b0a7d95b",
+    "size": 1571889
   },
   "build": {
-    "assembly": "D:/LCcoding/.codex/.tmp/453-release/assemble_release.py",
+    "assembly": "D:\\LCcoding\\.codex\\.tmp\\454-release\\assemble_release.py",
     "provenance": "BUILD-PROVENANCE.json",
-    "release": "v4.5.3",
+    "release": "v4.5.4",
     "source_hash_mode": "sha256-raw"
   },
   "payload": [
     {
       "path": "BUILD-PROVENANCE.json",
-      "sha256": "2baa46ce75d24123ab465c960eff97b2f04258cf5ae319aad23746488e098499",
-      "size": 24746
+      "sha256": "3ce1158cad19d3c692b737da22d4b681c11792603274e60f551dc485b7035755",
+      "size": 25066
     },
     {
       "path": "bin/slk-cargo.exe",
-      "sha256": "72efa563b21573d86ce99f69b96bc36a178e230c7f6e2bd2750860eee910c1ff",
-      "size": 3204096
+      "sha256": "5376816ff69d7ad82676fb90c92978d1a496298089bb555a863176b301fb183f",
+      "size": 3302400
     }
   ],
-  "product_version": "4.5.3",
+  "product_version": "4.5.4",
   "schema_version": "slk.tool-artifacts/v1",
   "source_sha256": {
-    "Cargo.lock": "26620fba9d1a8a38328ae8b7300a737b3c5aaddd8de98f6e8b12ff8a0493fc53",
-    "Cargo.toml": "9051ab9b0ed6cd930b1d24eaa51f9cb373a14b70f6ea081066d413fa6bd99a71",
+    "Cargo.lock": "0b9c3ed3413c14570f6232f6a2c9e77d1429bfabf562c58037ca0386c50b17be",
+    "Cargo.toml": "41bdbb654234ac809e4bd81eddaeae0cf122cf807ba42254be785dd34a0acfa6",
     "LICENSE": "0f2472d7dac181baa6a0e0c96df5e097099083b577151f029d5cced7270377a7",
     "README.md": "059a7efca8a73270a04f07f4afca48bed61c344993d930f03b4c0543291cb80a",
     "src/args.rs": "abe878ce5acba0ae784dee3021ca6fec04414f88eaf42903db00527c2b41a4b2",

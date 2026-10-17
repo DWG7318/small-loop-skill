@@ -520,3 +520,96 @@ def test_active_desktop_receives_new_item_on_same_native_turn_without_writer_tak
     calls = [json.loads(s) for s in (tmp_path / "native-calls.jsonl").read_text().splitlines()]
     assert {c["name"] for c in calls} == {"read_thread", "send_message_to_thread"}
     assert sum(c["name"] == "send_message_to_thread" for c in calls) == 1
+
+
+def historical_readback_fixture(tmp_path, monkeypatch):
+    from slk_transport.adapters import codex_desktop as desktop
+    endpoint = prepared(tmp_path, monkeypatch)
+    envelope = supervisor_envelope()
+    attempt = AttemptStore(tmp_path / "attempts").create(envelope)
+    prompt = "The complete original engineering input."
+    digest = hashlib.sha256(prompt.encode()).hexdigest()
+    attempt.write_json_once("desktop-prompt.json", {"message_id": envelope.message_id, "prompt": prompt})
+    attempt.write_json_once("desktop-readback-anchor.json", {
+        "schema_version": "slk.desktop-readback-anchor/v1", "thread_id": "thr_exact",
+        "host_id": endpoint.host_id, "caller_thread_id": "caller-exact", "message_id": envelope.message_id,
+        "prompt_sha256": digest, "previous_turn_ids": ["turn-before"], "previous_item_ids": [], "active_turn_ids": []})
+    attempt.write_json_once("desktop-send.json", {"thread_id": "thr_exact", "caller_thread_id": "caller-exact",
+        "message_id": envelope.message_id, "prompt_sha256": digest, "result": {"threadId": "thr_exact"}})
+    monkeypatch.setattr(DesktopClient, "__init__", lambda *_: None)
+    monkeypatch.setattr(DesktopClient, "request", lambda _s, _i, method, *_a:
+        {"tools": [{"name": "read_thread"}]} if method == "tools/list" else {})
+    monkeypatch.setattr(DesktopClient, "notify", lambda *_: None)
+    monkeypatch.setattr(DesktopClient, "close", lambda *_: None)
+    item = {"id": "item-original", "type": "functionCallOutput", "name": "send_message_to_thread",
+        "namespace": "codex_app", "output": {"truncated": False, "text": desktop._delegation(prompt, "caller-exact")}}
+    def page(turn, *, more=False, cursor=None, items=()):
+        return {"thread": {"id": "thr_exact", "hostId": endpoint.host_id, "cwd": endpoint.address["cwd"],
+            "status": {"type": "idle"}}, "page": {"hasMore": more, "nextCursor": cursor},
+            "turns": [{"id": turn, "status": "completed", "items": list(items)}]}
+    return endpoint, envelope, attempt, item, page
+
+
+@pytest.mark.parametrize("damage", [None, "duplicate", "cursor-loop", "wrong-thread", "wrong-input", "minimum-failure"])
+def test_historical_readback_paginates_exact_input_and_never_sends(tmp_path, monkeypatch, damage):
+    endpoint, envelope, attempt, item, page = historical_readback_fixture(tmp_path, monkeypatch)
+    before = {path.name: path.read_bytes() for path in attempt.root.iterdir()}
+    calls = []
+    def read(_self, _id, name, arguments, *_):
+        assert name == "read_thread"
+        calls.append(dict(arguments))
+        assert arguments["includeOutputs"] is True
+        if "cursor" not in arguments:
+            return page("turn-latest", more=True, cursor="opaque-history", items=[{**item, "id": "duplicate"}]
+                if damage == "duplicate" else [])
+        assert arguments["cursor"] == "opaque-history"
+        if arguments["turnLimit"] > 1 or damage == "minimum-failure":
+            raise TimeoutError("original read page timed out")
+        if damage == "wrong-input":
+            item["output"]["text"] += "changed"
+        result = page("turn-original", more=damage == "cursor-loop", cursor="opaque-history", items=[item])
+        if damage == "wrong-thread": result["thread"]["id"] = "foreign"
+        return result
+    monkeypatch.setattr(DesktopClient, "call", read)
+    if damage is None:
+        result = consume_desktop_readback(endpoint, envelope, attempt)
+        assert result.native_identity["turn_id"] == "turn-original"
+        assert consume_desktop_readback(endpoint, envelope, attempt) == result
+    else:
+        with pytest.raises(AdapterError) as error:
+            consume_desktop_readback(endpoint, envelope, attempt)
+        if damage == "minimum-failure":
+            assert error.value.error_code == "CODEX_RPC_TIMEOUT"
+            assert "original read page timed out" in str(error.value)
+        assert not (attempt.root / "started.json").exists()
+        assert not (attempt.root / "desktop-readback.json").exists()
+    assert len(calls) == 3
+    assert [call["turnLimit"] for call in calls] == [2, 2, 1]
+    assert all((attempt.root / name).read_bytes() == data for name, data in before.items())
+
+
+@pytest.mark.parametrize("code", ["CODEX_THREAD_ID_MISMATCH", "CODEX_DESKTOP_PROTOCOL_INVALID", "CODEX_DESKTOP_TOOL_FAILED"])
+def test_history_read_errors_do_not_broadly_retry(tmp_path, monkeypatch, code):
+    endpoint, envelope, attempt, _, _ = historical_readback_fixture(tmp_path, monkeypatch)
+    calls = []
+    def read(*args):
+        calls.append(args)
+        raise AdapterError(code, "original non-page failure")
+    monkeypatch.setattr(DesktopClient, "call", read)
+    with pytest.raises(AdapterError, match="original non-page failure"):
+        consume_desktop_readback(endpoint, envelope, attempt)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("detail,expected", [
+    ("read_thread response too large", "CODEX_DESKTOP_READ_PAGE_TOO_LARGE"),
+    ("access denied", "CODEX_DESKTOP_TOOL_FAILED"),
+    ("invalid arguments: maxOutputCharsPerItem is too big", "CODEX_DESKTOP_TOOL_FAILED"),
+])
+def test_desktop_page_failure_classification_preserves_native_error(tmp_path, monkeypatch, detail, expected):
+    monkeypatch.setattr(DesktopClient, "__init__", lambda *_: None)
+    monkeypatch.setattr(DesktopClient, "request", lambda *_:
+        {"isError": True, "content": [{"type": "text", "text": detail}]})
+    with pytest.raises(AdapterError) as error:
+        DesktopClient([], tmp_path).call(3, "read_thread", {}, "reader", 1)
+    assert error.value.error_code == expected and str(error.value) == detail

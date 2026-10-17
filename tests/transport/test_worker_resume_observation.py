@@ -115,6 +115,25 @@ def test_scope_accepts_exact_selected_resume_argument_and_retains_central_origin
     assert result["native_resume"]["native_start_sha256"] == wc._sha256(fresh / "started.json")
 
 
+@pytest.mark.parametrize("state", ["active", "completed", "pending"])
+def test_scope_returns_three_probe_paths_for_selected_leaf_without_caller_guessing(tmp_path, monkeypatch, state):
+    source, endpoint, envelope, _projection = original_scope(tmp_path, monkeypatch)
+    fresh = continuation(source, endpoint, envelope, terminal=state == "completed", pending=state == "pending")
+    result = collect(source)
+    assert result["native_probe_paths"] == {
+        name: str(fresh / (name + ".json")) for name in ("started", "completed", "failed")}
+    assert result["native_start_path"] == str((source / "started.json").resolve())
+    assert result["native_activity"]["status"] == {
+        "active": "ACTIVE", "completed": "COMPLETED", "pending": "UNKNOWN"}[state]
+
+
+def test_scope_probe_paths_point_to_original_only_when_no_resume_exists(tmp_path, monkeypatch):
+    source, _endpoint, _envelope, _projection = original_scope(tmp_path, monkeypatch)
+    result = collect(source)
+    assert result["native_probe_paths"] == {
+        name: str(source / (name + ".json")) for name in ("started", "completed", "failed")}
+
+
 def test_scope_rejects_superseded_resume_argument(tmp_path, monkeypatch):
     source, endpoint, envelope, _projection = original_scope(tmp_path, monkeypatch)
     now = datetime.now(timezone.utc)
@@ -123,6 +142,7 @@ def test_scope_rejects_superseded_resume_argument(tmp_path, monkeypatch):
     result = collect(old)
     assert result["native_activity"]["status"] == "UNKNOWN"
     assert "selected" in result["native_activity"]["error"]
+    assert result["native_probe_paths"] is None
 
 
 def test_pending_accepted_invocation_is_unknown_not_old_completed(tmp_path, monkeypatch):
@@ -172,6 +192,7 @@ def test_untrustworthy_resume_never_falls_back_to_old_completion(tmp_path, monke
     assert "NATIVE_RESUME_QUERY_UNAVAILABLE" in result["native_activity"]["error"]
     assert result["native_start_sha256"] == wc._sha256(source / "started.json")
     assert result["worker_completion"] is None
+    assert result["native_probe_paths"] is None
 
 
 def test_two_live_native_activations_are_ambiguous(tmp_path, monkeypatch):

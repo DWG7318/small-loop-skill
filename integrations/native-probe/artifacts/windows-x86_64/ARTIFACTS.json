@@ -11,42 +11,21 @@
     "size": 2119675
   },
   "build": {
-    "command": [
-      "scripts/tool_artifacts.py archive_module (task-local orchestration)"
-    ],
     "modified_ocrv": {
-      "payload_scope": "Not contained in this helper archive; carried by the separate OCRV runtime.",
-      "recipe": "upstream/ocrv-native-probe.patch and build.ps1",
-      "sha256": "644cd50c1f3295e380a8da6a3d2818a8a3f585980a139ca9dfffff3a88e0f0e8",
-      "upstream_commit": "fabbdb296b0d97e2140ada8d54ca7d6d6d1d7ad4",
-      "version": "1.12.13-slkprobe.1.0.1 (local modified binary, not official)"
+      "patch_sha256": "53feb53760ab10f4115507de575cc6a47ff29d4599a5ee7d4eda67a6ff915fbb",
+      "payload_scope": "Separate OCRV module; not in this helper archive.",
+      "sha256": "64ac022fc5e0ff792b4f79909507ac3d0554a4e4e8010d5d59751ffbac7e2c82",
+      "version": "1.12.13-slkprobe.1.0.2"
     },
-    "prepared_runtime_inventory_sha256": "5368701908426d4e2e258da5c91abd2ebd19aae141d34099bc89ade61403fbd2",
     "rebuild_status": "No helper or DSH payload rebuilt; all four payload files byte-identical to verified 1.0.0 archive.",
-    "repository_update": "Repository tag 1.0.1 is planned for updated OCRV patch/recipe sources; this does not upgrade helper product version.",
-    "reused_450_artifact": {
+    "release": "v4.5.4",
+    "reused_payload": {
       "archive_sha256": "16242cbac629259cdf7db55fe1d8b7c5a4748076ef35b5dae16bfd5a842cceb7",
-      "index_sha256": "314049bbb64c9d7b0f361d27df3c828d598a7a0a3a8b8d6b22e492da706f6d99",
-      "original_build": {
-        "command": [
-          "./build.ps1 -Go <Go 1.26.3 executable>"
-        ],
-        "modified_ocrv": {
-          "path": "artifacts/windows-amd64/opencodereview-1.12.13-slkprobe.1.0.0.exe",
-          "recipe": "upstream/ocrv-native-probe.patch and build.ps1",
-          "reproducibility": "Go build metadata includes the actual local module replacement path; cross-root byte identity is not claimed",
-          "sha256": "7274c6132e78cbaede23347f2ccc2932710c125cec299814e069cc551e9070ca",
-          "upstream_commit": "fabbdb296b0d97e2140ada8d54ca7d6d6d1d7ad4",
-          "version": "1.12.13-slkprobe.1.0.0 (not an official binary)"
-        },
-        "source_hash_mode": "sha256-raw",
-        "toolchain": "go1.26.3 windows/amd64; upstream minimum go1.25.5"
-      },
-      "product_version": "1.0.0",
-      "verification": "original index, each archive part and combined archive verified; selected restored bytes rehashed"
+      "index_sha256": "c40becb6e0b5fc24749f5da7514d1b6d901e148873fac455038d5871ae0ed0c7",
+      "product_version": "1.0.0"
     },
-    "scope": "isolated developer archive; no installation, provider calls, account data or Run data",
-    "source_hash_mode": "sha256-raw"
+    "source_hash_mode": "sha256-raw",
+    "source_update": "Current OCRV patch sources are re-indexed; helper product identity remains 1.0.0."
   },
   "payload": [
     {
@@ -75,8 +54,8 @@
   "source_sha256": {
     ".gitignore": "e1e3fcf18be39c8a6e1e76d969e326bcf1185982586f73f47c54f6efb3ed15f1",
     "LICENSE": "feee640007c4680ef0b465dc06a3b91b3563adcd73f2e4689c0f112b56e7d45a",
-    "README.md": "5307fd09b2cc41b305ce04bacea43ad50f2ef98b6ca3a5d11d3a30423d2d60ff",
-    "build.ps1": "4867ab7e0f3db1f444a26480854d02068e3426fadea1827308c422050c751ab5",
+    "README.md": "6e396ea157b0fc75fdf9d346b39b07899aabc62d3aa37faf41b412ecb7949731",
+    "build.ps1": "db61fda61d37558f2b21a2cfe26ce509852f42d64ab1829288ca5ae85e57dc59",
     "cmd/slk-native-probe/main.go": "f1459fec233f9cc26f4aad8209aa00cf72564a1a28e898204bd91db80e8afd4c",
     "dsh/activity.mjs": "d386b762aaa5d9d70e6e4f4eb0a1b11e0417435167de82b0765f1807a4e808a1",
     "dsh/probe.mjs": "0aa60ba0fad869a5eea2a285eca69d75af343100c9fa89889b34d0a2fb33c62e",
@@ -94,7 +73,7 @@
     "store_fault_test.go": "2287ec683683bc02f880737e5c3f677c3dcf4493a498e65ac90d768a1d621968",
     "upstream/README.md": "cf03eb7be0176c899810145c0fbb80bcbcd41fdb2279f29f1b6725061c8fb3ce",
     "upstream/ocrv-fabbdb296b0d97e2140ada8d54ca7d6d6d1d7ad4.zip": "64d2e772bd1f5f7ba9806756853af41bdcc9d2afafd910e0b337eccdac9969f8",
-    "upstream/ocrv-native-probe.patch": "23234c11259522f57ea5aafc7539b0136137c7277e91af1c9b21c703bab3e714"
+    "upstream/ocrv-native-probe.patch": "53feb53760ab10f4115507de575cc6a47ff29d4599a5ee7d4eda67a6ff915fbb"
   },
   "target": "windows-x86_64",
   "tool": "slk-native-probe"

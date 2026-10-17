@@ -1,4 +1,5 @@
 import type { RunView } from "../contracts";
+import { isArchivedSummary } from "../runPresentation";
 import { BI_VERSION } from "../version";
 import type { AuthoritativeMessage, MessageCatalogEntry } from "../messages/messageFeed";
 import {
@@ -24,9 +25,7 @@ export interface WebBiArchiveRecord {
 }
 
 export function isArchivedRun(run: RunView) {
-  return run.summary.closure_state !== "open"
-    || run.summary.state === "archived"
-    || Boolean(run.summary.archived_at);
+  return isArchivedSummary(run.summary);
 }
 
 export interface IngestedMessage {

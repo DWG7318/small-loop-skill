@@ -623,11 +623,15 @@ def _consume_desktop_readback(args: argparse.Namespace) -> int:
     from .adapters.codex_desktop import consume_desktop_readback
 
     source = args.source_attempt.resolve()
-    parsed = parse_delivery(
-        _read_object(source / "endpoint.json", "source endpoint"),
-        _read_object(source / "envelope.json", "source envelope"),
-    )
-    result = consume_desktop_readback(parsed.endpoint, parsed.envelope, Attempt(source))
+    endpoint_raw = _read_object(source / "endpoint.json", "source endpoint")
+    if (source / "notification.json").is_file():
+        from .supervisor_notification import notification_readback_identity
+        endpoint, identity = notification_readback_identity(
+            _read_object(source / "notification.json", "source notification"), endpoint_raw, Attempt(source))
+    else:
+        parsed = parse_delivery(endpoint_raw, _read_object(source / "envelope.json", "source envelope"))
+        endpoint, identity = parsed.endpoint, parsed.envelope
+    result = consume_desktop_readback(endpoint, identity, Attempt(source))
     _emit(result.to_dict())
     return 0 if result.status in {"completed", "started"} else 3
 

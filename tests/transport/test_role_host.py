@@ -382,7 +382,7 @@ def test_recovery_preflight_checks_all_engineering_endpoints_not_only_supervisor
 
 
 @pytest.mark.parametrize("native,cadence", [("ACTIVE", "CURRENT"), ("UNKNOWN", "CURRENT"), ("ACTIVE", "CONTINUITY_UNPROVEN")])
-@pytest.mark.parametrize("version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+@pytest.mark.parametrize("version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
 def test_450_resume_uses_native_proof_and_same_projection_without_terminal_shortcut(tmp_path, monkeypatch, native, cadence, version):
     host, _, _ = prepared_host(tmp_path)
     current = {"summary": {"run_id": host.binding["run_id"]},
@@ -684,7 +684,7 @@ def supervisor_result_fixture(tmp_path, *, d2=False):
     return host, source, incoming, result, projection
 
 
-CURRENT_D2_VERSIONS = ["4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3"]
+CURRENT_D2_VERSIONS = ["4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"]
 
 
 def current_d2_fixture(tmp_path, monkeypatch, *, method_version="4.4.3"):

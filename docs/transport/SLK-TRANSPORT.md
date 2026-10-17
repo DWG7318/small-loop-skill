@@ -1,6 +1,19 @@
 # SLK Cross-Agent Transport
 
-`slk-transport 4.5.3` carries an exact delivery into the registered native Agent endpoint and verifies actual activity without moving D1 authority. Current product preparation checks present components, role understanding/identity, consumers, visible BI, the real Temporal pair and Supervisor's active direct OW child. It does not wait for the first CELL/cycle or replay historical conformance. Supervisor remains active using bounded native waits through the project; Worker/Checker finish their activation after their final verified handoff. DSH stages the immutable candidate; headless OCRV records its own explicit D1.
+## D2 corrective CELL registration (4.5.4)
+
+The existing sealed `supervisor-admin` operation `revise-plan` accepts snapshot
+`{"expected_plan_revision":N,"d2_repair_cell_append":{"source_d2_failed_event_id":"exact latest D2_FAILED","cell":{"go_id":"existing tail container","cell_id":"new identity","ordinal":M+1,"title":"correction","objective":"actual product outcome"}}}`.
+It atomically appends exactly one planned tail CELL only after all existing required
+CELLs are accepted, preserving their nodes, events, candidates and the current TOKEN.
+The original Supervisor authenticates the change; stale revisions, wrong D2 outcomes,
+collisions, non-tail insertion and concurrent split/append are rejected. This is not
+a D0/D1/D2 decision or a way to move TOKEN. Continue with the original Checker/Worker,
+genuine native start and ordinary atomic delivery commit; review the full correction
+range rather than only the final test-only commit. No database/schema migration or
+method version adoption is involved.
+
+`slk-transport 4.5.4` carries an exact delivery into the registered native Agent endpoint and verifies actual activity without moving D1 authority. Current product preparation checks present components, role understanding/identity, consumers, visible BI, the real Temporal pair and Supervisor's active direct OW child. It does not wait for the first CELL/cycle or replay historical conformance. Supervisor remains active using bounded native waits through the project; Worker/Checker finish their activation after their final verified handoff. DSH stages the immutable candidate; headless OCRV records its own explicit D1.
 
 Historical `preflight-conformance-sample` / `seal-normal-chain-source` remain explicit development/adoption tools for their original contracts, not ordinary 4.5.x startup prerequisites. The frozen `root_record_path` still resolves to the same-Run automatic export under the configured data root, not a hand-written substitute.
 
@@ -166,3 +179,27 @@ Supervisor abandonment is management authority and remains valid when Checker/Wo
 
 Historical live two-Run evidence is recorded in [`SLK-TRANSPORT-LIVE-ACCEPTANCE.md`](SLK-TRANSPORT-LIVE-ACCEPTANCE.md).
 \nCurrent simplification evidence is in [the local validation ledger](../superpowers/specs/2026-10-09-output-delivery-without-host-review-validation.md); offline wiring does not claim actual model competence or product adoption.\n
+## Truthful checkpoint, native liveness and terminal closure (4.5.4)
+
+A Worker checkpoint without a candidate is preserved and delivered to the original
+Supervisor, not used to start D1 or move TOKEN. Sealed legacy requests retain their
+original address and immutable bytes. Candidate-bearing reports retain the normal
+Worker → Checker route. Recovery reuses the original message and pages its exact
+readback; a page-size/timeout fallback never resends work or skips an unread cursor.
+
+Stop census reads native turn metadata and hash-bound immutable input with
+`includeOutputs=false`; engineering evidence readback remains separate. Historical
+UNKNOWN stays UNKNOWN. Only a separately verified current-stop proof for the exact
+original invocation may satisfy closure safety; missing identity, a live executor,
+unproven current state or altered evidence still blocks close. The Run creator's
+authenticated authority remains required. No free-form `approved:true` exception
+or process-count-only statement substitutes for those checks.
+
+An already-ended OW child cannot write a final cycle. The existing close-overwatcher
+command can instead consume the creator Supervisor's authority and exact original
+parent/child/current-execution terminal records, without a final_cycle_id; it records
+the incomplete shutdown honestly and retires only that Run binding. Normal live-child
+final-cycle closure keeps its OW authority. No synthetic cycle, history rewrite or
+shared-service shutdown is introduced. Same-child recovery uses a verified original
+terminal record plus native followup and fresh RUNNING activation before changing the
+current execution pointer. Details and examples remain in the existing close/OW Skills.

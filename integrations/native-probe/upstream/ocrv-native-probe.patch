@@ -404,6 +404,184 @@ index 0000000..292dad3
 +		t.Fatal("MCP isError returned outer success")
 +	}
 +}
+diff --git a/internal/llm/client.go b/internal/llm/client.go
+index 2213b15..91be0e7 100644
+--- a/internal/llm/client.go
++++ b/internal/llm/client.go
+@@ -454,7 +454,7 @@ func retryCodesMiddleware(codes []int) func(*http.Request, func(*http.Request) (
+ 		if err != nil {
+ 			return resp, err
+ 		}
+-		if codeSet[resp.StatusCode] {
++		if codeSet[resp.StatusCode] && !slkRetryAfterExceedsDeadline(req, resp) {
+ 			resp.Header.Set("x-should-retry", "true")
+ 		}
+ 		return resp, err
+diff --git a/internal/llm/request_timeout.go b/internal/llm/request_timeout.go
+index 9f5810c..809c212 100644
+--- a/internal/llm/request_timeout.go
++++ b/internal/llm/request_timeout.go
+@@ -7,11 +7,24 @@ import (
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"net/http"
++	"os"
++	"time"
++
++	openai "github.com/openai/openai-go/v3"
+ )
+ 
+ var ErrRequestTimeout = errors.New("LLM request timeout (configure OCR_LLM_TIMEOUT or provider timeout_sec)")
+ 
+ func describeTimeout(ctx context.Context, err error) error {
++	// Preserve the typed provider refusal and expose its public retry hint
++	// immediately; do not turn it into a request deadline or a D1 decision.
++	var refusal *openai.Error
++	if os.Getenv("SLK_CHECKER_WHOLE_CELL") == "1" && errors.As(err, &refusal) && refusal.StatusCode == http.StatusTooManyRequests && refusal.Response != nil {
++		if hint := parseRetryAfterMS(refusal.Response.Header, time.Now()); hint > 0 {
++			return fmt.Errorf("HTTP429 Retry-After=%dms: %w", hint, err)
++		}
++	}
+ 	if !errors.Is(err, context.DeadlineExceeded) {
+ 		return err
+ 	}
+diff --git a/internal/llm/retry_observer.go b/internal/llm/retry_observer.go
+index 29d77bd..6128361 100644
+--- a/internal/llm/retry_observer.go
++++ b/internal/llm/retry_observer.go
+@@ -5,6 +5,7 @@ package llm
+ 
+ import (
+ 	"net/http"
++	"os"
+ 	"strconv"
+ 	"time"
+ )
+@@ -44,10 +45,29 @@ func newRetryObserver(collector *RetryCollector) retryObserver {
+ 		endedAt := time.Now()
+ 
+ 		collector.RecordAttempt(meta, observeAttempt(res, err, endedAt), startedAt, endedAt)
++		// SLK: an already refused request must not wait until its deadline
++		// merely to turn the original HTTP429 into a generic timeout. Preserve
++		// the observed headers above; only the SDK's retry control sees this
++		// cloned response. No response body or private error text is inspected.
++		if err == nil && slkRetryAfterExceedsDeadline(req, res) {
++			stopped := *res
++			stopped.Header = res.Header.Clone()
++			stopped.Header.Set("x-should-retry", "false")
++			res = &stopped
++		}
+ 		return res, err
+ 	}
+ }
+ 
++func slkRetryAfterExceedsDeadline(req *http.Request, res *http.Response) bool {
++	if os.Getenv("SLK_CHECKER_WHOLE_CELL") != "1" || res == nil || res.StatusCode != http.StatusTooManyRequests {
++		return false
++	}
++	deadline, bounded := req.Context().Deadline()
++	hint := parseRetryAfterMS(res.Header, time.Now())
++	return bounded && hint > 0 && time.Duration(hint)*time.Millisecond >= time.Until(deadline)
++}
++
+ // observeAttempt turns one transport result into an AttemptRecord.
+ //
+ // Classification runs whenever the status is non-2xx or the transport failed.
+diff --git a/internal/llm/slk_retry_deadline_test.go b/internal/llm/slk_retry_deadline_test.go
+new file mode 100644
+index 0000000..19d86b9
+--- /dev/null
++++ b/internal/llm/slk_retry_deadline_test.go
+@@ -0,0 +1,88 @@
++package llm
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	openai "github.com/openai/openai-go/v3"
++)
++
++func TestSLKRetryAfterBeyondRequestDeadlinePreservesProviderRefusal(t *testing.T) {
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "1")
++	var calls atomic.Int32
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		calls.Add(1)
++		w.Header().Set("Content-Type", "application/json")
++		w.Header().Set("Retry-After", "276446")
++		w.WriteHeader(http.StatusTooManyRequests)
++		fmt.Fprint(w, `{"error":{"message":"limited","type":"rate_limit"}}`)
++	}))
++	defer server.Close()
++	collector := NewRetryCollector()
++	client := NewOpenAIClient(ClientConfig{URL: server.URL, APIKey: "fixture", Model: "fixture", Timeout: 200 * time.Millisecond, RetryCodes: []int{429}, retryCollector: collector})
++	_, err := ping(metaCtx(testMeta()), client)
++	var refusal *openai.Error
++	if !errors.As(err, &refusal) || refusal.StatusCode != 429 || errors.Is(err, context.DeadlineExceeded) {
++		t.Fatalf("expected original typed HTTP429, got %T: %v", err, err)
++	}
++	if !strings.Contains(err.Error(), "Retry-After=276446000ms") {
++		t.Fatalf("Retry-After is not visible in public failure: %v", err)
++	}
++	if refusal.Response.Header.Get("Retry-After") != "276446" || calls.Load() != 1 {
++		t.Fatalf("original Retry-After lost or retried: %v / %d", refusal.Response.Header, calls.Load())
++	}
++	observed := attemptsFor(t, collector, testMeta())
++	if len(observed) != 1 || observed[0].StatusCode != 429 || observed[0].RetryAfterMS != 276446000 {
++		t.Fatalf("original observation changed: %+v", observed)
++	}
++}
++
++func TestSLKTimeoutWithoutProviderResponseRemainsTimeout(t *testing.T) {
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "1")
++	release := make(chan struct{})
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
++	defer server.Close()
++	defer close(release)
++	collector := NewRetryCollector()
++	client := NewOpenAIClient(ClientConfig{URL: server.URL, APIKey: "fixture", Model: "fixture", Timeout: 50 * time.Millisecond, retryCollector: collector})
++	_, err := ping(metaCtx(testMeta()), client)
++	if !errors.Is(err, ErrRequestTimeout) {
++		t.Fatalf("expected timeout, got %v", err)
++	}
++	observed := attemptsFor(t, collector, testMeta())
++	if len(observed) != 1 || observed[0].StatusCode != 0 || observed[0].ErrorClass != ErrorClassTimeout {
++		t.Fatalf("timeout was reclassified: %+v", observed)
++	}
++}
++
++func TestSLKRetryAfterWithinDeadlineKeepsOriginalRetry(t *testing.T) {
++	t.Setenv("SLK_CHECKER_WHOLE_CELL", "1")
++	var calls atomic.Int32
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		if calls.Add(1) == 1 {
++			w.Header().Set("Retry-After-Ms", "1")
++			w.WriteHeader(http.StatusTooManyRequests)
++			fmt.Fprint(w, `{"error":{"message":"brief limit"}}`)
++			return
++		}
++		fmt.Fprint(w, openAIOKBody)
++	}))
++	defer server.Close()
++	collector := NewRetryCollector()
++	client := NewOpenAIClient(ClientConfig{URL: server.URL, APIKey: "fixture", Model: "fixture", Timeout: time.Second, retryCollector: collector})
++	if _, err := ping(metaCtx(testMeta()), client); err != nil || calls.Load() != 2 {
++		t.Fatalf("bounded retry was changed: calls=%d error=%v", calls.Load(), err)
++	}
++	report, err := collector.Freeze("fixture")
++	if err != nil || report.RecoveredRequests != 1 || report.TotalRetries != 1 {
++		t.Fatalf("recovery facts changed: %+v / %v", report, err)
++	}
++}
 diff --git a/internal/session/persist.go b/internal/session/persist.go
 index 3a76da5..94b08d0 100644
 --- a/internal/session/persist.go

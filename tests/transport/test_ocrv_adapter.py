@@ -58,6 +58,34 @@ def candidate_envelope(tmp_path: Path) -> Envelope:
     return Envelope.from_dict(raw)
 
 
+def test_missing_declared_evidence_reaches_catalog_instead_of_rejecting_candidate(tmp_path):
+    raw = asdict(candidate_envelope(tmp_path))
+    missing = str(tmp_path / 'missing-original.log')
+    raw['payload']['evidence_files'] = [missing]
+    raw['payload_sha256'] = canonical_json_sha256(raw['payload'])
+    request = OcrvAdapter()._candidate_request(Envelope.from_dict(raw))
+    assert request['evidence_files'] == [missing]
+
+
+@pytest.mark.parametrize('attempt,outcome,code', [
+    ({'status_code': 429, 'error_class': 'rate_limited'}, 'failed', 'OCRV_PROVIDER_RATE_LIMITED'),
+    ({'status_code': 403, 'error_class': 'authentication'}, 'failed', 'OCRV_PROVIDER_REJECTED'),
+    ({'error_class': 'timeout'}, 'failed', 'OCRV_REQUEST_TIMEOUT'),
+    ({'status_code': 429, 'error_class': 'rate_limited'}, 'recovered', 'OCRV_EXIT_NONZERO'),
+    ({'status_code': {}, 'error_class': 'unknown'}, 'failed', 'OCRV_EXIT_NONZERO'),
+])
+def test_provider_failure_is_transport_fact_not_d1(tmp_path, monkeypatch, attempt, outcome, code):
+    endpoint, envelope = checker_endpoint(tmp_path, 'incomplete'), candidate_envelope(tmp_path)
+    adapter = OcrvAdapter()
+    result = {'verdict': None, 'review': {'retry_report': {'schema_version': 'ocr.llm-retry-report/v1',
+        'requests': [{'outcome': outcome, 'attempts': [attempt]}]}}}
+    monkeypatch.setattr(adapter, '_read_ocrv_result', lambda *_: result)
+    delivered = adapter.deliver(endpoint, envelope, AttemptStore(tmp_path / 'attempts').create(envelope))
+    assert delivered.error_code == code
+    assert delivered.status == 'failed'
+    assert result['verdict'] is None
+
+
 @pytest.fixture
 def original_checker_adapter():
     path = Path(__file__).parents[2] / "integrations/ocrv/slk_checker_adapter.py"
@@ -243,7 +271,7 @@ def test_registered_checker_freezes_only_executing_review_limits(tmp_path: Path)
     assert {key: request["capacity"][key] for key in (
         "max_tokens", "max_tokens_budget", "timeout_minutes"
     )} == raw["address"]["review_capacity"]
-    assert request["capacity"]["max_changed_lines"] == 800  # legacy advisory only
+    assert set(request["capacity"]) == {"max_tokens", "max_tokens_budget", "timeout_minutes"}
 
 
 @pytest.mark.parametrize("damage", ["missing", "extra", "zero-max-tokens"])
@@ -528,7 +556,8 @@ def test_ocrv_large_background_is_advisory_and_reaches_one_real_review(
     assert result.status == "completed"
     assert "review_segment_count" not in result.native_identity
     request = json.loads((attempt.root / "ocrv-request.json").read_text(encoding="utf-8"))
-    assert sum(map(len, request["d1_criteria"])) > request["capacity"]["max_background_characters"]
+    assert sum(map(len, request["d1_criteria"])) > 8000  # the retired advisory is not emitted
+    assert "max_background_characters" not in request["capacity"]
     assert (attempt.root / "ocrv-result.json").is_file()
 
 
@@ -629,7 +658,16 @@ def test_retired_output_recovery_never_spawns_or_writes_state(tmp_path, monkeypa
     assert not (attempt.root / "ocrv-result.json").exists()
 
 
-def prepared_ocrv_resume_source(tmp_path, monkeypatch, adapter, damage=None):
+def test_native_resume_retains_historical_advisories_without_changing_executing_capacity(tmp_path, monkeypatch, original_checker_adapter):
+    adapter = original_checker_adapter
+    _, source, _, _, request = prepared_ocrv_resume_source(tmp_path, monkeypatch, adapter,
+                                                          damage='partial', legacy_capacity=True)
+    before = request.read_bytes()
+    assert adapter._resume_preflight(adapter._native_context(), request, 'original-session') is None
+    assert request.read_bytes() == before
+
+
+def prepared_ocrv_resume_source(tmp_path, monkeypatch, adapter, damage=None, legacy_capacity=False):
     from types import SimpleNamespace
     from slk_transport.adapters.ocrv import _native_start_context
     from slk_transport import role_host as hosts, native_ocrv, worker_completion as wc
@@ -637,7 +675,11 @@ def prepared_ocrv_resume_source(tmp_path, monkeypatch, adapter, damage=None):
     source = tmp_path / 'attempts' / envelope.run_id / envelope.message_id
     source.mkdir(parents=True)
     request_path = source / 'ocrv-request.json'
-    request_path.write_text(json.dumps(OcrvAdapter()._candidate_request(envelope)))
+    request = OcrvAdapter()._candidate_request(envelope)
+    if legacy_capacity:
+        request['capacity'].update(max_background_characters=8000, max_background_bytes=12000,
+                                   max_changed_lines=800, max_segment_paths=2)
+    request_path.write_text(json.dumps(request))
     context = _native_start_context(endpoint, envelope, adapter._sha256(request_path))
     receipt = source / 'native-start.received.json'
     with subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()'], stdin=subprocess.PIPE) as process:

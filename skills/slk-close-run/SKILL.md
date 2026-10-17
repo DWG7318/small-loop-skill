@@ -26,6 +26,8 @@ description: Use when an active Small Loop Skill (SLK) Run has D1 PASS or Superv
 
 从未绑定 OW 的历史 Run 跳过两个 OW 节点；不是允许当前 Run 缺少必要 OW。`D2_PASSED` 只表示工程验收通过，不代表全部清理完成。
 
+若已绑定 child 真实结束，无法再写末轮，创建本 Run 的 Supervisor 可走原 `close-overwatcher` 入口：`final_cycle_id` 为空、`runtime_revision` 准确，`archive_evidence_ref` 指向当前绑定的原始 `native_active_session_evidence_ref`，使用自身密封权限；中央回读准确父子/当前激活原生终态后只解除本 Run。历史缺轮保留，不伪造 child 观察或以自写摘要代替原件。后续关闭仍须证明当前 writer 停稳；历史 UNKNOWN 与当前安全分开记录，原生证据不足不当作已停止。
+
 1. 冻结 D2_PASSED 同一 runtime revision 的真实 query 投影。OW 在真实 active 执行中写本 Run 唯一末轮观察，实查原生调用、残留 executor/子进程、状态与证据；需要恢复时保持同一 child/Session 的准确新激活身份，缺证记 UNKNOWN，不补造 cycle。
 2. Supervisor 按 `$slk-archive-members` 的既有 `close-overwatcher` 操作解除**本 Run**绑定，绑定末轮 cycle 和匹配 revision。OW 是同一真实 Supervisor 的唯一直属 child，平时每 600 秒逐 Run 巡查；解除一个 Run 不停止 child，不影响其他 active/PAUSED Run。全部绑定结束后也只有所属 Supervisor 可决定停止，由退出 hook/二次确认完成；不关闭共享服务。
 3. OW close 改变 revision 后，重新取得当前 revision 的实际 `inspect-run-quiescence` proof，覆盖本 Run 全部 Worker/Checker/Supervisor 旧调用、非持令牌者和 OCRV 实际 executor；仅准确当前主管收尾调用可协调。活调用等原生安全停点/自然退出，UNKNOWN 不当作停止，不猜 PID 或用 archived/completed 标签假停。按[关闭操作](references/close-operations.md)密封原 `supervisor-admin close-run`，写唯一 `RUN_CLOSED`；再通过原客户端结束/核实该 Run **精确** `SLK.Run/SLK.Start` 的实际 COMPLETED 与 close time，最终成功收据才算此操作完成。保留共享 Temporal 服务/Worker、其他 Run pair 和 Supervisor 对话。

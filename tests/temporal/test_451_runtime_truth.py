@@ -173,7 +173,7 @@ def test_native_active_late_cycle_is_not_dead(tmp_path, monkeypatch, age, expect
     assert result["status"] == expected
 
 
-@pytest.mark.parametrize("method_version", ["4.5.1", "4.5.2", "4.5.3"])
+@pytest.mark.parametrize("method_version", ["4.5.1", "4.5.2", "4.5.3", "4.5.4"])
 def test_451_configuration_and_startup_use_native_subagent_semantics(tmp_path, method_version):
     import json
     from pathlib import Path

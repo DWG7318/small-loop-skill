@@ -34,4 +34,8 @@ Temporal独立每1200秒核验OW；成员责任停留1800秒直接提醒Supervis
 
 真实退出由宿主已提供的原生观察入口/退出Hook及Temporal保障向父级报告；不要把文档写有Hook当作平台已自动注册。UNKNOWN不等于退出，恢复可信证据不强制重启。仅所属Supervisor可决定并二次确认停止，包括其主动叫停也要确认。解除一个Run不停止其他Run；全部解除仍须父级确认。
 
+父级对同一已结束 child 原生 followup 后，须用原始父子记录证明旧激活终态与新激活 RUNNING，再走 `resume-overwatcher-turn`；不要求已结束 child 自证，不复用旧 running。原生 interrupted 如实作为失败终态，不补造 COMPLETED/cycle。工程收尾的已结束 child 例外由 `$slk-close-run` 管理，OW 不因此取得工程权限。
+
+使用新原生 followup 证据恢复时，同时省略 `last_native_status_id` 与 `last_anomaly_cycle_id`，引用工具新生成、含 `pre_activation_agent_status` 的 proof；不能自己填一个历史 status/cycle 来凑数。
+
 正常Run终态依次D2_PASSED→terminal snapshot→本Run final cycle→close-overwatcher→RUN_CLOSED。凭据丢失由Supervisor恢复原绑定，不伪造cycle/退出。OW自己只可record-overwatch-cycle/record-overwatcher-status，不借他人凭据；工程角色也不代填你的观察。

@@ -1,4 +1,4 @@
-# 4.5.3 tool repositories and prepared outputs
+# 4.5.4 tool repositories and prepared outputs
 
 [SLK-TOOL-MODULES.json](SLK-TOOL-MODULES.json) is the release's exact mapping of
 11 source prefixes to independent repositories, commits, tags, product versions
@@ -8,18 +8,20 @@ copy or submodule checkout required for normal use.
 
 Every independent repository starts its extraction history at tag `1.0.0`.
 Repository tags and product versions are separate: this delivery uses SLK
-changed tools/templates `4.5.3`, BI/WebBI `1.1.3`, OW helper `1.0.2` and native probe
-`1.0.0`. Unchanged OCRV integration retains `4.5.2`; DSH retains `4.5.1`.
+changed tools/templates and OCRV integration `4.5.4`, BI/WebBI `1.1.4`, OW helper
+`1.0.3` and native probe helper `1.0.0`. DSH retains `4.5.1`.
 Changed module repositories advance without rewriting historical tags;
 the exact commits, tags and artifact hashes are in the JSON map.
-The 4.5.3 package retains the exact precompiled BI 1.1.3 executable, source and
+The 4.5.4 package retains the exact precompiled BI 1.1.4 executable, source and
 published artifact index. Its independent core pin remains unchanged. The new
 state core, its three CLI consumers, transport and Temporal templates advance;
 the three CLI manifests and lockfiles pin the new core. The new five-artifact
 assembly records BI reuse with its original hashes and provenance, separately
 from the four rebuilt outputs. No existing BI tag or old proof is rewritten.
-The native OCRV executable and seven third-party runtimes are reused only after
-hash verification, not described as newly compiled. Project 3.1.0 is deferred.
+The native OCRV executable is rebuilt as `1.12.13-slkprobe.1.0.2` with the typed
+provider-error correction. Other third-party runtime bytes are hash-verified
+and reused, not described as newly compiled. LCEV's project-local 3.1.0 and
+active Task14 remain isolated from this global 4.x delivery.
 The shared state core remains the sole SQL/transaction authority. The OW helper
 and native probe acquire no engineering write, dispatch or repair authority.
 
@@ -27,9 +29,9 @@ The artifact indices record actual payload hashes, source hashes and build
 provenance. Large ZIPs use verifiable parts of at most 64MiB, not paid LFS or
 link-only placeholders. Exact upstream source archives, patches, licenses and
 compiled outputs remain in Git. See [prepared runtimes](SLK-450-PREPARED-RUNTIMES.md)
-for the original runtime preparation and reproduction limitations. The 4.5.3
-package reuses the hash-verified 4.5.1 third-party runtime bytes, including local
-OCRV `1.12.13-slkprobe.1.0.1`. Its `BUILD-PROVENANCE.json` captures current inputs,
+for the original runtime preparation and reproduction limitations. The 4.5.4
+package reuses hash-verified 4.5.1 third-party runtime bytes except for the
+explicitly rebuilt OCRV. Its `BUILD-PROVENANCE.json` captures current inputs,
 actual build commands and the unchanged BI reuse evidence before assembly, then
 seals the produced/reused bytes; package assembly verifies that same batch.
 

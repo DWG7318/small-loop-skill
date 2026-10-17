@@ -26,6 +26,32 @@ class _NoticeIdentity:
     cell_id: str = "PREPARATION"
 
 
+def notification_readback_identity(notice: Mapping[str, Any], endpoint_raw: Mapping[str, Any],
+                                   attempt: Attempt) -> tuple[Endpoint, _NoticeIdentity]:
+    """Recover only an existing notice's immutable transport identity, never send."""
+    fields = {"schema_version", "run_id", "event_id", "sender_role_instance_id", "receiver_role_instance_id", "message"}
+    endpoint = Endpoint.from_dict(endpoint_raw)
+    if (set(notice) != fields or notice.get("schema_version") not in {"slk.ow-notification/v1", "slk.temporal-notification/v1"}
+        or not all(isinstance(notice[k], str) and notice[k] and notice[k] == notice[k].strip() for k in fields)
+        or str(uuid.UUID(notice["event_id"])) != notice["event_id"]
+        or not notice["message"].startswith("发现异常，请查验") or len(notice["message"]) > 4000
+        or endpoint.role != "supervisor" or endpoint.run_id != notice["run_id"]
+        or endpoint.role_instance_id != notice["receiver_role_instance_id"] or "desktop" not in endpoint.address
+        or attempt.root.name != notice["event_id"] or attempt.root.parent.name != notice["run_id"]
+        or wc._read_object(attempt.root / "notification.json", "original notice") != dict(notice)
+        or wc._read_object(attempt.root / "endpoint.json", "original notification endpoint") != dict(endpoint_raw)
+        or (attempt.root / "envelope.json").exists()
+        or notice["schema_version"] == "slk.temporal-notification/v1" and notice["sender_role_instance_id"] != "temporal:" + notice["run_id"]):
+        raise ValueError("original notification readback identity changed")
+    anchor = wc._read_object(attempt.root / "desktop-readback-anchor.json", "original notification anchor")
+    caller = anchor.get("caller_thread_id")
+    if not isinstance(caller, str) or not caller.strip() or caller != caller.strip():
+        raise ValueError("original notification executor is unproved")
+    delivery = Endpoint.from_dict({**dict(endpoint_raw), "address": {**dict(endpoint_raw["address"]),
+        "desktop": {**dict(endpoint_raw["address"]["desktop"]), "caller_thread_id": caller}}})
+    return delivery, _NoticeIdentity(notice["run_id"], notice["event_id"], canonical_json_sha256(notice))
+
+
 def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mapping[str, Any],
                                  projection: Mapping[str, Any], attempt_root: Path) -> dict[str, Any]:
     fields = {"schema_version", "run_id", "event_id", "sender_role_instance_id", "receiver_role_instance_id", "message"}
@@ -76,7 +102,7 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
     if root.is_dir() and any(root.iterdir()):
         names = {p.name for p in root.iterdir()}
         allowed = {"endpoint.json", "notification.json", "desktop-material.json", "desktop-target-observation.json",
-                   "desktop-target-observation-latest.json", "command-rebind.json"}
+                   "desktop-target-observation-latest.json", "command-rebind.json", "desktop-pre-send-failure.json"}
         if accepted:
             allowed |= {"desktop-send.json", "desktop-readback-anchor.json", "desktop-prompt.json",
                         "desktop-readback.json", "started.json", "delivery-result.json", "native-activity.json"}
@@ -110,8 +136,11 @@ def notify_registered_supervisor(notice: Mapping[str, Any], endpoint_raw: Mappin
     # Only exact platform delivery proves wake. The Supervisor still decides what
     # to do; the current trusted Desktop caller is only the transport executor.
     # It does not replace the registered semantic OW/Temporal sender or target.
-    native = (consume_desktop_readback(delivery_endpoint, identity, attempt) if accepted else
-              deliver_desktop(delivery_endpoint, identity, attempt, prompt, wait_for_completion=False))
+    if accepted:
+        delivery_endpoint, identity = notification_readback_identity(notice, endpoint_raw, attempt)
+        native = consume_desktop_readback(delivery_endpoint, identity, attempt)
+    else:
+        native = deliver_desktop(delivery_endpoint, identity, attempt, prompt, wait_for_completion=False)
     wc._write_or_reuse_stable_request(root / "delivery-result.json", native.to_dict())
     start = validate_native_start(root / "started.json", adapter=endpoint.adapter, run_id=notice["run_id"],
         cell_id="PREPARATION", message_id=notice["event_id"], request_sha256=identity.payload_sha256)

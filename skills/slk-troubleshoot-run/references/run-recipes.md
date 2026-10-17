@@ -17,6 +17,8 @@ slk-transport inspect-native-activity --started <准确原started.json>
 
 ## 原生状态 UNKNOWN / 成员疑似失活
 
+Worker 原生返回只有进度/checkpoint、没有可验收候选时，保存原报告并直接交 Supervisor 处置，不进入 Checker D1、不提交候选 TOKEN；已封存的旧投递按原地址续交，不改写消息。服务商明确 429/拒绝与证据缺失是运行事实，不改判 D1 FAIL。OCRV 读取外部 D0 原件须使用证据目录中的准确路径与哈希；缺件记 UNAVAILABLE，不用一份新清单冒充已读。
+
 先核对当前精确登记/native start/最新真实采样时间与原调用结束或 executor 证据。旧 running、重读时间、其他 Session、OCRV launcher 退出均不能补缺证。保留最后可证动作及 UNKNOWN 原因；Supervisor 按 `$slk-replace-member` 选择恢复/替换，不猜 PID 杀进程、不借他人凭据。修复后核实同一目标的真实启动/端点/职责与必要通讯，只重验改变部分。
 
 ## TOKEN、候选或 revision 对不上

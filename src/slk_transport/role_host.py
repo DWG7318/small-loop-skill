@@ -161,7 +161,11 @@ class RoleHost:
         state = self.projection().get("summary", {}).get("state")
         if state in {"closed", "archived"}:
             raise wc.CompletionError("RUN_CLOSED", "terminal Run rejects new native engineering dispatch")
-        if state == "paused" or (state == "pause_requested" and (envelope.sender_role, envelope.receiver_role)
+        checkpoint = (envelope.sender_role == "worker" and envelope.receiver_role == "supervisor"
+            and envelope.payload_type == "WORKER_REPORT"
+            and envelope.payload.get("candidate_status") == "NOT_PROVIDED" and "candidate" not in envelope.payload)
+        if state == "paused" or (state == "pause_requested" and not checkpoint
+            and (envelope.sender_role, envelope.receiver_role)
             not in {("worker", "checker"), ("checker", "supervisor")}):
             raise wc.CompletionError("RUN_PAUSED", "Run pause blocks new native engineering dispatch; retain the original operation")
         if endpoint.get("role") == "worker":
@@ -210,7 +214,7 @@ class RoleHost:
                 raise ValueError("resume Host differs from the registered original role/endpoint")
         config = wc._read_object(config_path, "resume original adapter config")
         method_version = current["runtime_snapshot"].get("method_version")
-        native_subagent = method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3"}
+        native_subagent = method_version in {"4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}
         if native_subagent and (config.get("method_version") != method_version
             or config.get("run_id") != self.binding["run_id"]
             or config.get("schema_version") != "slk.temporal-standard-adapter/v2"):
@@ -522,7 +526,8 @@ class RoleHost:
                    "message_id": central.get("message_id") if central else source.name,
                    "status": "UNKNOWN", "processes": []}
             try:
-                if path in source_errors:
+                historical_gap = source_errors.get(path)
+                if historical_gap and historical_gap != "native continuation lacks its exact frozen historical Host reference":
                     raise ValueError(source_errors[path])
                 endpoint = wc._read_object(source / "endpoint.json", "native census endpoint")
                 envelope = None
@@ -572,6 +577,10 @@ class RoleHost:
                                 and failed.status == "failed" and failed.error_code == "OCRV_CANDIDATE_NOT_PROVIDED")
                     accepted = any((source / name).exists() for name in (
                         "accepted.json", "desktop-send.json", "desktop-readback-anchor.json", "notification-result.json"))
+                    if endpoint.get("adapter") == "codex-app-server" and "desktop" in endpoint.get("address", {}):
+                        from .adapters.codex_desktop import desktop_pre_send_failure
+                        prestart = desktop_pre_send_failure(source, endpoint, run_id=run_id,
+                            message_id=message_id, request_sha256=request_sha256)
                     if central is None and (not accepted or prestart):
                         row["status"] = "STAGED_NOT_STARTED"
                     else:
@@ -586,6 +595,14 @@ class RoleHost:
                 if central is not None and (central["start_evidence_sha256"] != row["native_start_sha256"]
                     or central["role_instance_id"] != receiver_role_instance_id):
                     raise ValueError("old central native identity changed")
+                if historical_gap:
+                    stop = self._historical_dsh_current_stop(source, endpoint, envelope, start)
+                    row.update(reason=historical_gap, current_safety={"status": "STOPPED",
+                        "source_gap": "FROZEN_HOST_UNAVAILABLE", "endpoint_sha256": wc._sha256(source / "endpoint.json"),
+                        "native_start_sha256": row["native_start_sha256"], **stop,
+                        "observed_at": native.utc_now()})
+                    inspections.append(row)
+                    continue
                 if start["native_task"]["kind"] == "checker-dispatch":
                     # This adapter's synchronous routing call has no native
                     # task-activity producer or separate OCRV review executor.
@@ -730,6 +747,41 @@ class RoleHost:
             "attempt_roots": [str(root.resolve()) for root in attempt_roots], "observed_at": native.utc_now()}
 
     @staticmethod
+    def _historical_dsh_current_stop(source: Path, endpoint: Mapping[str, Any], envelope: Envelope | None,
+                                     start: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Verify present executor safety without inventing missing Host authority."""
+        from dataclasses import asdict
+        from . import native_activity as native
+        marker = wc._read_object(source / "native-resume.json", "historical native continuation")
+        original = source.parent.parent
+        if (envelope is None or source.parent.name != "native-resumes"
+            or set(marker) != {"schema_version", "invocation_id", "original_source", "original_source_sha256",
+                "binding_sha256", "instructions_sha256", "coordinator_process"}
+            or marker["schema_version"] != "slk.worker-native-resume/v1"
+            or marker["invocation_id"] != source.name or str(uuid.UUID(source.name)) != source.name
+            or not isinstance(marker["binding_sha256"], str) or not SHA256.fullmatch(marker["binding_sha256"])
+            or Path(marker["original_source"]).resolve() != original.resolve()
+            or marker["original_source_sha256"] != RoleHost._source_sha256(original, "worker")
+            or marker["instructions_sha256"] != wc._sha256(source / "instructions.md")
+            or wc._read_object(original / "endpoint.json", "original endpoint") != endpoint
+            or wc._read_object(original / "envelope.json", "original envelope") != asdict(envelope)
+            or endpoint.get("adapter") != "dsh-worker" or endpoint.get("role") != "worker"
+            or start["adapter"] != "dsh-worker"
+            or any(path.is_symlink() or getattr(path, "is_junction", lambda: False)() for path in (source, source.parent, original))):
+            raise ValueError("historical continuation current safety changed its original identity")
+        coordinator = marker["coordinator_process"]
+        if (not isinstance(coordinator, Mapping) or set(coordinator) != {"pid", "creation_time"}
+            or type(coordinator["pid"]) is not int or coordinator["pid"] < 1
+            or not isinstance(coordinator["creation_time"], str) or not coordinator["creation_time"]):
+            raise ValueError("historical continuation coordinator identity is unavailable")
+        observed = native.process_probe(coordinator["pid"], coordinator["creation_time"])
+        if observed["exists"] and observed["identity_matches"]:
+            raise ValueError("historical continuation coordinator is still alive")
+        return {"native_stop": RoleHost._dsh_census_stop(endpoint, start),
+            "resume_marker_sha256": wc._sha256(source / "native-resume.json"),
+            "coordinator": {**coordinator, **observed}}
+
+    @staticmethod
     def _dsh_census_stop(endpoint: Mapping[str, Any], start: Mapping[str, Any]) -> Mapping[str, Any]:
         from . import native_activity as native
         from .worker_session_stop import native_session_stopped
@@ -782,6 +834,10 @@ class RoleHost:
         endpoint = Endpoint.from_dict(endpoint_raw)
         if bridge_started_path is None:
             proof = wc._read_object(source / "desktop-readback.json", "original Desktop readback")
+            try:
+                desktop.validate_desktop_receipt(proof, start)
+            except AdapterError as exc:
+                raise ValueError(str(exc)) from exc
         else:
             envelope = wc._read_object(source / "envelope.json", "bridge original envelope")
             if native.read_census_native_start(bridge_started_path, run_id=start["run_id"], message_id=envelope["message_id"]) != start:
@@ -814,25 +870,28 @@ class RoleHost:
             command, reader_proof = desktop.resolve_desktop_runtime(reader_address)
             timeout = float(endpoint.address["startup_timeout_seconds"])
             arguments = {"threadId": endpoint.address["thread_id"], "hostId": endpoint.host_id,
-                "turnLimit": 10, "includeOutputs": True, "maxOutputCharsPerItem": desktop.DESKTOP_READ_LIMIT}
+                "turnLimit": 10, "includeOutputs": False, "maxOutputCharsPerItem": 500}
             cursors = set()
-            while True:
-                key = (tuple(command), endpoint.host_id, endpoint.address["thread_id"],
-                    str(Path(endpoint.address["cwd"]).resolve()), arguments.get("cursor"))
-                cached = page_cache.get(key)
-                if cached is None:
-                    if client is None:
-                        client = desktop.DesktopClient(command, Path(str(endpoint.address["cwd"])))
+            request_id = 3
+            def read_page(shape):
+                nonlocal client, request_id
+                if client is None:
+                    client = desktop.DesktopClient(command, Path(str(endpoint.address["cwd"])))
+                    try:
                         client.request(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
-                            "clientInfo": {"name": "slk_run_quiescence", "version": "4.5.3"}}, timeout)
+                            "clientInfo": {"name": "slk_run_quiescence", "version": "4.5.4"}}, timeout)
                         client.notify("notifications/initialized", {})
                         catalog = client.request(2, "tools/list", {}, timeout)
-                        if "read_thread" not in {item.get("name") for item in catalog.get("tools", []) if isinstance(item, Mapping)}:
-                            raise ValueError("installed Desktop plugin lacks read_thread")
-                    view = client.call(3 + len(cursors), "read_thread", arguments, reader, timeout)
-                    observed_at = native.utc_now()
-                else:
-                    view, observed_at = cached
+                    except (TimeoutError, AdapterError) as exc:
+                        raise ValueError("Desktop reader initialization failed: " + str(exc)) from exc
+                    if "read_thread" not in {item.get("name") for item in catalog.get("tools", []) if isinstance(item, Mapping)}:
+                        raise ValueError("installed Desktop plugin lacks read_thread")
+                current_id = request_id
+                request_id += 1
+                return client.call(current_id, "read_thread", shape, reader, timeout)
+            while True:
+                view, observed_at = desktop.read_desktop_page(read_page, arguments, page_cache=page_cache,
+                    cache_scope=(tuple(command), str(Path(endpoint.address["cwd"]).resolve()), reader))
                 checked_endpoint = endpoint
                 current = self.endpoint("supervisor")
                 if (isinstance(view.get("thread"), Mapping) and view["thread"].get("hostId") == "local"
@@ -844,16 +903,24 @@ class RoleHost:
                     from dataclasses import replace
                     checked_endpoint = replace(endpoint, host_id="local")
                 thread, turns = desktop._view(view, checked_endpoint)
-                page_cache[key] = (view, observed_at)
                 matches = [turn for turn in turns if turn["id"] == proof["turn_id"]]
                 if len(matches) > 1:
                     raise ValueError("native census Desktop turn is ambiguous")
                 if matches:
                     turn = matches[0]
                     items = [item for item in turn["items"] if item.get("id") == proof["platform_item_id"]]
-                    if len(items) > 1 or (items and bridge_started_path is None and items[0] != proof["platform_item"]):
+                    # Original bytes remain bound by the saved native receipt.
+                    # This census needs immutable input identity and live turn
+                    # status, not a second ingestion of the entire chat body.
+                    if len(items) > 1 or (items and bridge_started_path is None and any(
+                        items[0].get(key) != proof["platform_item"].get(key)
+                        for key in ("id", "type", "name", "namespace") if key in proof["platform_item"]
+                    )):
                         raise ValueError("native census Desktop original input changed")
-                    if items and bridge_started_path is not None:
+                    if items and bridge_started_path is not None and any(items[0].get(key) != expected
+                        for key, expected in (("type", "functionCallOutput"), ("name", "send_message_to_thread"), ("namespace", "codex_app"))):
+                        raise ValueError("native census Desktop bridge input changed")
+                    if items and bridge_started_path is not None and "output" in items[0]:
                         # The immutable native record proves the original bridge
                         # input; any visible live representation must agree too.
                         import xml.etree.ElementTree as ET
@@ -881,11 +948,9 @@ class RoleHost:
                         "status": "COMPLETED" if status == "completed" else "RUNNING" if status in {"active", "inProgress"} else "FAILED",
                         "sequence": len(cursors) + 1, "observed_at": observed_at,
                         "last_event": {"kind": "DESKTOP_TURN_" + status.upper(), "sequence": len(cursors) + 1}, "waiting_on": None}, reader_proof
-                page = view.get("page", {})
-                cursor = page.get("nextCursor")
-                if page.get("hasMore") is not True or not isinstance(cursor, str) or not cursor or cursor in cursors:
+                cursor = desktop.next_desktop_cursor(view, cursors)
+                if cursor is None:
                     raise ValueError("native census Desktop exact turn is unavailable")
-                cursors.add(cursor)
                 arguments["cursor"] = cursor
         except (AdapterError, TimeoutError) as exc:
             raise ValueError(str(exc)) from exc
@@ -1517,6 +1582,19 @@ class RoleHost:
                         payload["candidate"] = dict(candidate)
             payload["candidate_status"] = "PROVIDED" if "candidate" in payload else "NOT_PROVIDED"
             kind = "CANDIDATE_READY" if "candidate" in payload else "WORKER_REPORT"
+            if "candidate" not in payload:
+                # A native checkpoint/exit is output, not an engineering candidate.
+                # Deliver the original fact straight to the registered Supervisor;
+                # do not create a doomed Checker attempt or move the work TOKEN.
+                target_role = "supervisor"
+                prior_path = root / "output-envelope.json"
+                if prior_path.is_file():
+                    prior = wc._read_object(prior_path, "original output envelope")
+                    if prior.get("payload_type") == "WORKER_REPORT" and prior.get("receiver_role") == "checker":
+                        # An already sealed legacy message retains its address/id.
+                        # Stable-request validation below still rejects any other drift.
+                        target_role = "checker"
+                target = self.endpoint(target_role)
         outgoing = parse_delivery(target, {
             **asdict(envelope), "message_id": wc._stable_id(identity, "output-delivery"),
             "token_sequence": envelope.token_sequence + 1 if action else envelope.token_sequence,
@@ -1708,7 +1786,7 @@ class RoleHost:
                 return {"status": "OWNED_HANDOFF_ALREADY_COMMITTED", "message_id": outgoing.message_id,
                         "native_attempt_path": str(native)}
         projection = self._boundary(envelope)
-        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3"}
+        if operation == "d2" and (projection.get("runtime_snapshot", {}).get("method_version") in {"4.4.3", "4.4.4", "4.4.5", "4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"}
             or any(event.get("event_type") == "D2_STARTED"
                    and wc._event_details(event).get("source_message_id") == envelope.message_id
                    and any(key in wc._event_details(event) for key in (

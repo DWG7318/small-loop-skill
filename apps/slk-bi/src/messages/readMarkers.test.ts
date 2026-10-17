@@ -3,11 +3,19 @@ import { describe, expect, it } from "vitest";
 import {
   acknowledgeDisplayedMessages,
   bootstrapReadMarker,
+  displayedUpdateIds,
   hasUnreadMessages,
   mergeReadMarker,
 } from "./readMarkers";
 
 describe("BI 1.1 read markers", () => {
+  it("tracks Markdown view revisions without generating a formal message type", () => {
+    const marker = bootstrapReadMarker(displayedUpdateIds([], "one"));
+    const changed = displayedUpdateIds([], "two");
+    expect(changed).toEqual(["VIEW:two"]);
+    expect(hasUnreadMessages(marker, changed)).toBe(true);
+    expect(hasUnreadMessages(acknowledgeDisplayedMessages(marker, changed), changed)).toBe(false);
+  });
   it("treats the historical bootstrap as read", () => {
     const marker = bootstrapReadMarker(["EVENT:a", "EVENT:b"]);
     expect(hasUnreadMessages(marker, ["EVENT:a", "EVENT:b"])).toBe(false);

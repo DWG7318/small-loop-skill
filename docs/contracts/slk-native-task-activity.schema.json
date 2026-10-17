@@ -46,6 +46,18 @@
         "duration_ms": {"type": "number"},
         "duration_seconds": {"type": "number"},
         "exit_code": {"type": "integer"},
+        "observed_activity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["last_request_at", "last_response_at", "last_tool_at", "last_error_at", "phase"],
+          "properties": {
+            "last_request_at": {"type": ["string", "null"], "format": "date-time"},
+            "last_response_at": {"type": ["string", "null"], "format": "date-time"},
+            "last_tool_at": {"type": ["string", "null"], "format": "date-time"},
+            "last_error_at": {"type": ["string", "null"], "format": "date-time"},
+            "phase": {"enum": ["SESSION_STARTED", "AWAITING_MODEL", "MODEL_RESPONDED", "TOOL_COMPLETED", "REQUEST_FAILED", "SESSION_ENDED"]}
+          }
+        },
         "native_process": {
           "type": "object",
           "additionalProperties": false,

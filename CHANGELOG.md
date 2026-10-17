@@ -1,5 +1,15 @@
 # Changelog
 
+## SLK 4.5.4 / BI-WebBI 1.1.4
+
+- Preserve Worker checkpoints and send non-candidates to Supervisor without triggering D1 or moving TOKEN; sealed historical deliveries remain immutable.
+- Follow exact historical readback pages with adaptive page size on transport-size/timeouts; distinguish not-sent and sent-but-unconfirmed without duplicate delivery.
+- Verify same-child OW followup against original parent/child/activation records; interrupted exits remain factual failures. Read latest native probe evidence without changing original start identity.
+- Separate current writer safety from disclosed missing historical receipts. Creator-authenticated close of an ended child requires its exact native proof, not fabricated final cycles or approval flags.
+- Preserve OCRV HTTP 429 and Retry-After instead of replacing them with generic timeout. Catalog permitted external D0 artifacts fully; absent evidence remains UNAVAILABLE. Ship newly compiled OCRV 1.12.13-slkprobe.1.0.2.
+- Permit a minimal tail repair CELL for an exact D2 failure, retaining accepted history and the normal D0/D1/new D2 path. No test-only CELL, new role, daemon or database migration.
+- Integrate published BI 1.1.4 source and unchanged precompiled artifact. Keep LCEV project-local 3.1.0/Task14 separate. No speculative OCRV context cache or unmeasured speed claim.
+
 ## SLK 4.5.3 / BI-WebBI 1.1.3
 
 - Correct the release identity requested by Owner: this delivery is 4.5.3,

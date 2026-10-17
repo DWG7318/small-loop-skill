@@ -46,6 +46,21 @@ def test_subagent_without_original_proof_never_accepts_self_written_activity(tmp
     assert malformed_probe["error"] == "NATIVE_QUERY_FAILED"
 
 
+@pytest.mark.parametrize("explicit", [False, True])
+def test_subagent_local_terminal_never_bypasses_original_native_records(simulated, explicit):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    result = attest()
+    started = json.loads((evidence / "started.json").read_text())
+    terminal = evidence / "completed.json"
+    terminal.write_text(json.dumps({"schema_version": "slk.transport-result/v1",
+        "message_id": started["message_id"], "run_id": started["run_id"],
+        "adapter": started["adapter"], "status": "completed", "native_identity": {},
+        "error_code": None, "evidence": ["started.json"]}))
+    actual = inspect(result, **({"terminal_paths": (terminal,)} if explicit else {}))
+    assert actual["status"] == "ACTIVE"
+    assert actual["terminal_evidence"] is None
+
+
 PARENT = "11111111-1111-4111-8111-111111111111"
 CHILD = "/root/ow"
 SECRET = "PRIVATE BUSINESS AND FINAL CONTENT"
@@ -113,7 +128,7 @@ def simulated(tmp_path, monkeypatch):
     return reader, source, records, request, request_path, evidence, save, attest, inspect
 
 
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
 def test_native_running_attestation_is_closed_small_and_reused(simulated, method_version) -> None:
     reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
     request["method_version"] = method_version
@@ -136,7 +151,7 @@ def test_native_running_attestation_is_closed_small_and_reused(simulated, method
 
 def test_native_attestation_rejects_unpublished_method(simulated):
     reader, _source, _records, request, _request_path, evidence, _save, attest, _inspect = simulated
-    request["method_version"] = "4.5.4"
+    request["method_version"] = "4.5.5"
     with pytest.raises(reader.OverwatcherSubagentError, match="method version is unsupported"):
         attest()
     assert not (evidence / "subagent-overwatcher-proof.json").exists()
@@ -401,6 +416,42 @@ def followup_records(records, request, *, target=CHILD, previous="codex-subagent
                    previous_native_execution_id=previous, pre_activation_sample_call_id="call_pre")
 
 
+def test_interrupted_child_can_followup_without_claiming_old_completion(simulated):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    followup_records(records, request)
+    records[6]["payload"]["output"] = json.dumps({"agents": [
+        {"agent_name": CHILD, "agent_status": "interrupted"}]})
+    result = attest()
+    proof = json.loads((evidence / "subagent-overwatcher-proof.json").read_text())
+    assert proof["native_execution_id"] == "codex-subagent-followup:call_followup"
+    assert proof["previous_native_execution_id"] == "codex-subagent-spawn:call_spawn"
+    assert proof["pre_activation_agent_status"] == "FAILED"
+    assert proof["canonical_task_id"] == "codex-subagent-spawn-call_spawn"
+    assert proof["pre_activation_sample_output_sha256"] == hashlib.sha256(
+        json.dumps(records[6]).encode()).hexdigest()
+    assert inspect(result)["status"] == "ACTIVE"
+    assert SECRET not in json.dumps(proof)
+
+
+@pytest.mark.parametrize("child_source", [False, True])
+def test_exact_interrupted_status_is_failed_not_unknown_or_completed(simulated, child_source):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    if child_source:
+        child_records, _link, save_child = linked_child(simulated)
+    result = attest()
+    records.extend(sample(stamp(), "interrupted", "call_interrupted"))
+    if child_source:
+        # A stopped child need not issue another self-query to prove its exit.
+        child_records.pop()
+        save_child()
+    save()
+    actual = inspect(result, process_probe=lambda *_: pytest.fail("reader PID is not child liveness"))
+    assert actual["status"] == "FAILED_WITHOUT_TERMINAL"
+    assert actual["error"] is None
+    assert actual["last_event"]["observed_at"] == records[-1]["timestamp"]
+    assert SECRET not in json.dumps(actual)
+
+
 @pytest.mark.parametrize("target", [CHILD, "ow"])
 def test_followup_proves_a_new_execution_but_keeps_original_canonical_task(simulated, target):
     reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
@@ -412,12 +463,31 @@ def test_followup_proves_a_new_execution_but_keeps_original_canonical_task(simul
     assert started["message_id"] == "codex-subagent-followup-call_followup"
     assert started["native_request_sha256"] == proof["activation_call_sha256"]
     assert proof["pre_activation_sample_call_id"] == "call_pre"
+    assert proof["pre_activation_agent_status"] == "COMPLETED"
     assert SECRET not in json.dumps(proof)
     assert inspect(result)["status"] == "ACTIVE"
     schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-subagent-overwatcher.schema.json").read_text())
     validator = Draft202012Validator(schema)
     validator.validate(request)
     validator.validate(proof)
+
+
+@pytest.mark.parametrize("declared", [None, "FAILED"])
+def test_followup_terminal_metadata_is_optional_for_old_proofs_but_never_overrides_raw(simulated, declared):
+    reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
+    followup_records(records, request)
+    result = attest()
+    proof_path = Path(result["proof_path"])
+    proof = json.loads(proof_path.read_text())
+    if declared is None:
+        proof.pop("pre_activation_agent_status")
+    else:
+        proof["pre_activation_agent_status"] = declared
+    proof_path.write_text(json.dumps(proof))
+    result["proof_sha256"] = hashlib.sha256(proof_path.read_bytes()).hexdigest()
+    actual = inspect(result)
+    assert actual["status"] == ("ACTIVE" if declared is None else "UNKNOWN")
+    assert SECRET not in json.dumps(actual)
 
 
 def cross_rollouts(simulated, *, followup=True, split=3):
@@ -609,7 +679,7 @@ def test_cross_rollout_schema_requires_exact_activation_provenance(simulated, fo
     "missing-activation-output", "wrong-activation-output", "duplicate-activation", "duplicate-pre",
     "post-before-output", "another-activation", "wrong-previous", "previous-not-latest",
 ])
-def test_followup_requires_exact_completed_previous_execution_and_post_return_running(simulated, fault):
+def test_followup_requires_exact_terminal_previous_execution_and_post_return_running(simulated, fault):
     reader, source, records, request, request_path, evidence, save, attest, inspect = simulated
     followup_records(records, request)
     if fault == "busy-pre": records[6]["payload"]["output"] = json.dumps({"agents": [{"agent_name": CHILD, "agent_status": "running"}]})

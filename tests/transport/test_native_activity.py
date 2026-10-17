@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -98,6 +99,37 @@ def test_native_activity_tail_is_metadata_only_and_bounded_to_twelve() -> None:
             message_id="11111111-1111-4111-8111-111111111111",
             observed_at="2026-10-01T00:05:00Z",
         )
+
+
+@pytest.mark.parametrize("phase", ["SESSION_STARTED", "AWAITING_MODEL", "MODEL_RESPONDED",
+                                  "TOOL_COMPLETED", "REQUEST_FAILED", "SESSION_ENDED"])
+def test_native_observed_activity_accepts_closed_timestamps_and_phase(phase):
+    observation = {"last_request_at": "2026-10-01T00:04:58Z", "last_response_at": None,
+                   "last_tool_at": None, "last_error_at": "2026-10-01T00:04:59Z", "phase": phase}
+    value = {"schema_version": "slk.native-task-activity/v1", "adapter": "ocrv-checker",
+        "run_id": "RUN-A", "cell_id": "CELL-001", "message_id": "11111111-1111-4111-8111-111111111111",
+        "native_task_id": "session-a", "status": "RUNNING", "sequence": 3,
+        "observed_at": "2026-10-01T00:05:00Z", "last_event": {
+            "kind": "OCRV_ERROR", "sequence": 3, "observed_activity": observation}, "waiting_on": None}
+    assert validate_native_task_activity(value, adapter=value["adapter"], run_id=value["run_id"],
+        cell_id=value["cell_id"], message_id=value["message_id"], observed_at=value["observed_at"]) == value
+    schema = json.loads((Path(__file__).parents[2] / "docs/contracts/slk-native-task-activity.schema.json").read_text())
+    formats = FormatChecker()
+    # JSON Schema's optional RFC3339 dependency is not installed on every host.
+    @formats.checks("date-time", raises=ValueError)
+    def zoned_timestamp(value):
+        return not isinstance(value, str) or datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is not None
+    validator = Draft202012Validator(schema, format_checker=formats)
+    validator.validate(value)
+
+    for damage in ({**observation, "error_text": "PRIVATE"}, {**observation, "phase": "making-progress"},
+                   {**observation, "last_request_at": "2026-10-01T00:04:58"},
+                   {**observation, "last_response_at": 123}, {"phase": phase}, None):
+        value["last_event"]["observed_activity"] = damage
+        assert list(validator.iter_errors(value))
+        with pytest.raises(NativeActivityError, match="observed activity"):
+            validate_native_task_activity(value, adapter=value["adapter"], run_id=value["run_id"],
+                cell_id=value["cell_id"], message_id=value["message_id"], observed_at=value["observed_at"])
 
 
 def test_windows_retained_handle_of_exited_process_is_not_alive(monkeypatch):
@@ -266,6 +298,36 @@ def test_exact_unique_terminal_completes_without_a_liveness_probe(tmp_path: Path
     assert result["status"] == "COMPLETED"
     assert result["terminal_evidence"] == str(completed)
     assert result["error"] is None
+
+
+@pytest.mark.parametrize("state", ["completed", "failed"])
+def test_started_only_probe_finds_its_exact_sibling_terminal(tmp_path: Path, state: str) -> None:
+    receipt = _start_receipt(tmp_path)
+    terminal = _terminal(tmp_path / f"{state}.json",
+        message_id="11111111-1111-4111-8111-111111111111", status=state)
+    before = {path: path.read_bytes() for path in (receipt, terminal)}
+    result = inspect_native_activity(receipt,
+        process_probe=lambda *_: {"exists": False, "identity_matches": False})
+    assert result["status"] == state.upper()
+    assert result["terminal_evidence"] == str(terminal)
+    assert result["process"] is None
+    assert all(path.read_bytes() == data for path, data in before.items())
+
+
+@pytest.mark.parametrize("damage", ["wrong-message", "conflict"])
+def test_started_only_probe_does_not_ignore_untrustworthy_sibling_terminals(tmp_path: Path, damage: str) -> None:
+    receipt = _start_receipt(tmp_path)
+    _terminal(tmp_path / "completed.json", status="completed", message_id=(
+        "22222222-2222-4222-8222-222222222222" if damage == "wrong-message"
+        else "11111111-1111-4111-8111-111111111111"))
+    if damage == "conflict":
+        _terminal(tmp_path / "failed.json", status="failed",
+            message_id="11111111-1111-4111-8111-111111111111")
+    result = inspect_native_activity(receipt,
+        process_probe=lambda *_: {"exists": False, "identity_matches": False})
+    assert result["status"] == "UNKNOWN"
+    assert result["error"] == ("TERMINAL_EVIDENCE_IDENTITY_MISMATCH" if damage == "wrong-message"
+                               else "TERMINAL_EVIDENCE_CONFLICT")
 
 
 def test_conflicting_terminal_files_cannot_choose_a_convenient_outcome(tmp_path: Path) -> None:

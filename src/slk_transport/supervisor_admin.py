@@ -204,10 +204,11 @@ def execute_sealed_supervisor_admin(
         operation == "register-role" and request.get("issued_role") == "worker"
     )
     overwatcher_closing = operation == "close-overwatcher"
+    overwatcher_authority = overwatcher_closing and "sealed_overwatcher_credential_path" in request
     expected_fields = (
         WORKER_PROVISION_FIELDS if worker_provisioning
         else PROVISION_FIELDS if provisioning
-        else OVERWATCHER_CLOSE_FIELDS if overwatcher_closing
+        else OVERWATCHER_CLOSE_FIELDS if overwatcher_authority
         else FIELDS
     )
     if (set(request) != expected_fields
@@ -230,7 +231,7 @@ def execute_sealed_supervisor_admin(
     )
     overwatcher_sealed = (
         Path(request["sealed_overwatcher_credential_path"])
-        if overwatcher_closing else None
+        if overwatcher_authority else None
     )
     operation_request = Path(request["operation_request_path"])
     result_path = Path(request["result_path"])
@@ -250,6 +251,8 @@ def execute_sealed_supervisor_admin(
     operation_value = _object(operation_request, "Supervisor operation request")
     if operation_value.get("run_id") != run_id:
         raise ValueError("Supervisor operation changed Run identity")
+    if overwatcher_closing and bool(operation_value.get("final_cycle_id")) != overwatcher_authority:
+        raise ValueError("final cycle close uses OW authority; ended-child close uses Supervisor authority")
     if operation == "close-run" and operation_value.get("event_type") != "RUN_CLOSED":
         raise ValueError("close-run requires the exact RUN_CLOSED event")
     if operation == "abandon-run" and operation_value.get("event_type") != "RUN_ABANDONED":
@@ -344,7 +347,7 @@ def execute_sealed_supervisor_admin(
                     "saved credential does not authenticate the exact current Checker revision"
                 )
             operation_secret = checker_secret
-        elif overwatcher_closing:
+        elif overwatcher_authority:
             overwatcher_secret = wc.unprotect_dpapi_hex(overwatcher_sealed)
             operation_secret = overwatcher_secret
         if operation in {"start-d2", "pause-run", "resume-run"}:
@@ -387,7 +390,7 @@ def execute_sealed_supervisor_admin(
             state_result = recovered_result
         elif operation in {"start-d2", "pause-run", "resume-run"}:
             pass  # Original RoleHost wrote the single existing D2_STARTED event.
-        elif overwatcher_closing:
+        elif overwatcher_authority:
             state_result = wc._run_json_command(
                 list(state_command), state_arguments, credential=operation_secret,
                 credential_scope="overwatcher",

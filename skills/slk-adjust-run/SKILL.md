@@ -35,4 +35,4 @@ OW 只向所属 Supervisor 报告观察，不替主管恢复成员、选路线�
 
 ## 仅在对应技术情境读取
 
-旧 Checker 有限 aggregate budget/timeout 需要容量迁移，或 Owner 已指定 canonical/source 身份时，读[调整操作](references/adjustment-operations.md)的相应小节。Owner 冻结有限预算时不迁移。不要编辑 SQLite、伪造凭据/启动、猜 canonical、另造替代 Run，或借迁移改写原工程事实。
+旧 Checker 有限 aggregate budget/timeout 需要容量迁移、Owner 已指定 canonical/source 身份，或真实 D2 FAIL 需要追加尾部修复 CELL 时，读[调整操作](references/adjustment-operations.md)的相应小节。Owner 冻结有限预算时不迁移。不要编辑 SQLite、伪造凭据/启动、猜 canonical、另造替代 Run，或借迁移改写原工程事实。

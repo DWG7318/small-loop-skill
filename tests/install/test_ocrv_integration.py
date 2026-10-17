@@ -40,7 +40,7 @@ def _load_recovery():
     return module
 
 
-def test_compact_evidence_discloses_path_omission_and_keeps_source(tmp_path: Path) -> None:
+def test_compact_evidence_keeps_complete_path_inventory_and_source(tmp_path: Path) -> None:
     module = _load_adapter()
     evidence = tmp_path / "worker-result.json"
     paths = [f"src/file-{index:04d}.py" for index in range(1005)]
@@ -50,11 +50,11 @@ def test_compact_evidence_discloses_path_omission_and_keeps_source(tmp_path: Pat
 
     compact = module._compact_evidence(evidence)
 
-    assert compact["summary"]["changed_paths"] == paths[:1000]
+    assert compact["summary"]["changed_paths"] == paths
     assert compact["summary"]["changed_paths_summary"] == {
         "total": 1005,
-        "shown": 1000,
-        "omitted": 5,
+        "shown": 1005,
+        "omitted": 0,
         "source": str(evidence.resolve()),
     }
 

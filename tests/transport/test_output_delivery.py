@@ -59,6 +59,76 @@ def test_missing_worker_candidate_is_not_replaced_by_workspace(tmp_path, monkeyp
         assert 'candidate' not in body['payload']
 
 
+@pytest.mark.parametrize('body', ['checkpoint only', '{"candidate":{"kind":"none"}}', ''])
+def test_checkpoint_goes_directly_to_supervisor_without_checker_attempt(tmp_path, monkeypatch, body):
+    from slk_transport import worker_completion as wc
+    host, source, incoming = prepared_host(tmp_path)
+    (source / 'worker-result.json').write_text(body, encoding='utf-8')
+    monkeypatch.setattr(wc, 'unprotect_dpapi_hex', lambda _: 'offline-secret')
+    monkeypatch.setattr(host, '_authenticate', lambda *_: None)
+    monkeypatch.setattr(host, '_send_owned', lambda *_a, **_k: pytest.fail('checkpoint cannot move TOKEN'))
+    calls = []
+    def send(_command, arguments, **_kwargs):
+        calls.append(json.loads(Path(arguments[arguments.index('--envelope') + 1]).read_text()))
+        return {'status': 'started'}
+    monkeypatch.setattr(wc, '_run_json_command', send)
+    result = host.complete(source)
+    assert len(calls) == 1
+    assert calls[0]['receiver_role'] == 'supervisor'
+    assert calls[0]['sender_role'] == 'worker'
+    assert calls[0]['payload_type'] == 'WORKER_REPORT'
+    assert calls[0]['token_sequence'] == incoming.token_sequence
+    assert calls[0]['payload']['candidate_status'] == 'NOT_PROVIDED'
+    assert 'candidate' not in calls[0]['payload']
+    assert result['status'] == 'OUTPUT_DELIVERED'
+    assert (source / 'worker-result.json').read_text(encoding='utf-8') == body
+
+
+@pytest.mark.parametrize('state,allowed', [('active', True), ('pause_requested', True),
+                                         ('paused', False), ('closed', False)])
+def test_checkpoint_drains_to_supervisor_without_allowing_new_work(tmp_path, monkeypatch, state, allowed):
+    host, source, incoming = prepared_host(tmp_path)
+    target = host.endpoint('supervisor')
+    payload = {'candidate_status': 'NOT_PROVIDED'}
+    envelope = Envelope.from_dict({**asdict(incoming), 'sender_role':'worker',
+        'sender_role_instance_id':host.endpoint('worker')['role_instance_id'],
+        'receiver_role':'supervisor', 'receiver_role_instance_id':target['role_instance_id'],
+        'receiver_endpoint_version':target['endpoint_version'], 'payload_type':'WORKER_REPORT',
+        'payload':payload, 'payload_sha256':canonical_json_sha256(payload)})
+    monkeypatch.setattr(host, 'projection', lambda: {'summary':{'state':state}})
+    if allowed:
+        host.validate_native_dispatch(target, envelope, tmp_path/'outgoing')
+    else:
+        from slk_transport.worker_completion import CompletionError
+        with pytest.raises(CompletionError, match='Run'):
+            host.validate_native_dispatch(target, envelope, tmp_path/'outgoing')
+
+
+def test_existing_checkpoint_envelope_keeps_its_original_checker_route(tmp_path, monkeypatch):
+    from slk_transport import worker_completion as wc
+    host, source, incoming = prepared_host(tmp_path)
+    (source / 'worker-result.json').write_text('historic checkpoint')
+    monkeypatch.setattr(wc, 'unprotect_dpapi_hex', lambda _: 'offline-secret')
+    monkeypatch.setattr(host, '_authenticate', lambda *_: None)
+    sent = []
+    monkeypatch.setattr(wc, '_run_json_command', lambda _c, args, **_k:
+        sent.append(json.loads(Path(args[args.index('--envelope') + 1]).read_text())) or {'status': 'started'})
+    host.complete(source)
+    root = source / 'role-host'
+    target = host.endpoint('checker')
+    saved = json.loads((root / 'output-envelope.json').read_text())
+    saved.update(receiver_role='checker', receiver_role_instance_id=target['role_instance_id'],
+                 receiver_endpoint_version=target['endpoint_version'])
+    # Fixture of the immutable pre-4.5.4 request. Upgrading does not rewrite/resend it to a new role.
+    (root / 'output-envelope.json').write_text(json.dumps(saved))
+    (root / 'output-endpoint.json').write_text(json.dumps(target))
+    before = (root / 'output-envelope.json').read_bytes()
+    host.complete(source)
+    assert sent[-1] == saved
+    assert (root / 'output-envelope.json').read_bytes() == before
+    assert sent[-1]['token_sequence'] == incoming.token_sequence
+
+
 @pytest.mark.parametrize('mode', ['raw-report', 'raw-report-exit42'])
 def test_actual_ocrv_adapter_preserves_arbitrary_report_and_exit(tmp_path, mode):
     endpoint, envelope = checker_endpoint(tmp_path, mode), candidate_envelope(tmp_path)
@@ -177,7 +247,7 @@ def test_actual_report_path_keeps_raw_partial_files_and_deduplicates(tmp_path, m
     first, second = host.complete(source), host.complete(source)
     assert first['status'] == second['status'] == 'OUTPUT_DELIVERED'
     assert len(calls) == 1
-    assert calls[0].receiver_role == ('checker' if role == 'worker' else 'supervisor')
+    assert calls[0].receiver_role == 'supervisor'
     files = calls[0].payload['files']
     assert any(row['path'] == str((partial / 'result.json').resolve()) for row in files)
     assert (source / ('worker-result.json' if role == 'worker' else 'ocrv-result.json')).read_bytes() == raw

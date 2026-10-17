@@ -36,12 +36,19 @@
     "capacity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_background_characters", "max_background_bytes", "max_changed_lines", "max_segment_paths", "max_tokens", "max_tokens_budget", "timeout_minutes"],
+      "required": ["max_tokens", "max_tokens_budget", "timeout_minutes"],
+      "description": "Execution controls only. The complete four-field historical advisory set remains readable for original requests; it does not limit or truncate evidence.",
+      "dependentRequired": {
+        "max_background_characters": ["max_background_bytes", "max_changed_lines", "max_segment_paths"],
+        "max_background_bytes": ["max_background_characters", "max_changed_lines", "max_segment_paths"],
+        "max_changed_lines": ["max_background_characters", "max_background_bytes", "max_segment_paths"],
+        "max_segment_paths": ["max_background_characters", "max_background_bytes", "max_changed_lines"]
+      },
       "properties": {
-        "max_background_characters": { "type": "integer", "minimum": 1 },
-        "max_background_bytes": { "type": "integer", "minimum": 1 },
-        "max_changed_lines": { "type": "integer", "minimum": 1 },
-        "max_segment_paths": { "type": "integer", "minimum": 1 },
+        "max_background_characters": { "type": "integer", "minimum": 1, "deprecated": true },
+        "max_background_bytes": { "type": "integer", "minimum": 1, "deprecated": true },
+        "max_changed_lines": { "type": "integer", "minimum": 1, "deprecated": true },
+        "max_segment_paths": { "type": "integer", "minimum": 1, "deprecated": true },
         "max_tokens": { "type": "integer", "minimum": 1 },
         "max_tokens_budget": { "type": "integer", "minimum": 0 },
         "timeout_minutes": { "type": "integer", "minimum": 0 }

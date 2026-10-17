@@ -17,3 +17,7 @@
 适用：同一项目已有多个独立初始化身份，Owner 明确 canonical/source Run ID。先取得闭合 Owner 授权证据及各 Run 精确快照，由 canonical 当前 Supervisor 使用 `reconcile-run-identities`；需要新方法语义时再显式 `adopt-method-contract`，分别保留真实收据。
 
 不按标题、最近时间、摘要或自由文本猜身份；不能因对账改写 CELL、D0/D1/D2、角色、证据或 TOKEN，不能重建 Run、伪造凭证或用终态倒推启动。中途失败保留原请求/证据，只续未完成后缀。原公开入口与身份合同见 [Transport](../../../docs/transport/SLK-TRANSPORT.md)。
+
+## D2 真实缺陷的尾部修复 CELL
+
+全部原 CELL 已接受而真实 D2 FAIL 暴露组合缺陷时，Supervisor 可用既有 `revise-plan` 的 `d2_repair_cell_append`，绑定准确 `source_d2_failed_event_id` 与 `expected_plan_revision`，在最后 GO 尾部追加一个最小修复 CELL（`go_id/cell_id/ordinal/title/objective`）。保留原验收、失败、计划和 TOKEN 历史；不是重开已通过 CELL，也不以复测本身充作 CELL。新范围仍沿 Checker → Worker → Checker 完成真实 D0/D1，再做受影响的 D2。

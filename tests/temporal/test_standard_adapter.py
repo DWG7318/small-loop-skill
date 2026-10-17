@@ -176,7 +176,7 @@ def test_standard_adapter_prepares_from_new_run_admission_and_live_revision(tmp_
     ("COMPLETED_WITHOUT_TERMINAL", None), ("UNKNOWN", "NATIVE_ACTIVITY_STALE"),
     ("ACTIVE", "NATIVE_QUERY_FAILED"),
 ])
-@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3"])
+@pytest.mark.parametrize("method_version", ["4.5.0", "4.5.1", "4.5.2", "4.5.3", "4.5.4"])
 def test_450_product_start_requires_one_native_active_read_after_current_join(tmp_path, monkeypatch, native_status, native_error, method_version):
     root, config = config_root(tmp_path, method_version)
     ow = config["overwatcher_activity"]
